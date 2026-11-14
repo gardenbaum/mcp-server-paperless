@@ -54,6 +54,8 @@ from paperless_mcp.domain.ports import (  # noqa: TC001 -- Ports' annotations ar
     DocumentReader,
     DocumentWriter,
     InstanceReader,
+    MailReader,
+    MailWriter,
     PdfWriter,
     PermissionReader,
     PermissionWriter,
@@ -73,6 +75,7 @@ from paperless_mcp.paperless.bulk import PaperlessBulkWriter
 from paperless_mcp.paperless.client import PaperlessClient, RetryPolicy
 from paperless_mcp.paperless.documents import PaperlessDocumentReader, PaperlessDocumentWriter
 from paperless_mcp.paperless.instance import PaperlessInstanceReader
+from paperless_mcp.paperless.mail import PaperlessMailReader, PaperlessMailWriter
 from paperless_mcp.paperless.pdf import PaperlessPdfWriter
 from paperless_mcp.paperless.permissions import PaperlessPermissionReader, PaperlessPermissionWriter
 from paperless_mcp.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
@@ -125,6 +128,8 @@ class Ports:
     pdf_writes: PdfWriter
     sharing: SharingReader
     sharing_writes: SharingWriter
+    mail: MailReader
+    mail_writes: MailWriter
 
 
 def fake_ports(state: FakeState, user: str) -> Ports:
@@ -149,6 +154,8 @@ def fake_ports(state: FakeState, user: str) -> Ports:
         pdf_writes=writer,
         sharing=fake,
         sharing_writes=writer,
+        mail=fake,
+        mail_writes=writer,
     )
 
 
@@ -172,6 +179,8 @@ def live_ports(client: PaperlessClient) -> Ports:
         pdf_writes=PaperlessPdfWriter(client),
         sharing=PaperlessSharingReader(client),
         sharing_writes=PaperlessSharingWriter(client),
+        mail=PaperlessMailReader(client),
+        mail_writes=PaperlessMailWriter(client),
     )
 
 
