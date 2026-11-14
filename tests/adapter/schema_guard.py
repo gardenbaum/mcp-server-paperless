@@ -208,6 +208,14 @@ WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
         "TrashView answers a document the user may not delete with "
         "HttpResponseForbidden('Insufficient permissions'), text/html (PLMCP-27)"
     ),
+    ("POST", "/api/mail_accounts/test/", 400): (
+        "a failed login is answered with HttpResponseBadRequest('Unable to connect to server'), "
+        "text/html; field errors are DRF JSON as usual (PLMCP-29)"
+    ),
+    ("POST", "/api/mail_accounts/test/", 403): (
+        "a user who may not change the account is answered with "
+        "HttpResponseForbidden('Insufficient permissions'), text/html (PLMCP-29)"
+    ),
     ("GET", "/api/status/", 200): (
         "3.4.2 nests index, classifier and sanity check under `tasks` and sends null errors; "
         "the schema has them top-level and non-nullable (PLMCP-7)"

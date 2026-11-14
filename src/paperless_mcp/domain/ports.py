@@ -32,6 +32,15 @@ if TYPE_CHECKING:
         Suggestions,
     )
     from paperless_mcp.domain.instance import InstanceOverview
+    from paperless_mcp.domain.mail import (
+        MailAccount,
+        MailAccountTestResult,
+        MailAccountValues,
+        MailRule,
+        MailRuleValues,
+        ProcessedMailPage,
+        ProcessedStatus,
+    )
     from paperless_mcp.domain.pdf import Output, PageSlot, StartedTasks
     from paperless_mcp.domain.permissions import (
         AccessChange,
@@ -847,5 +856,144 @@ class SharingWriter(Protocol):
                 synchronously and without a mail server answers 500). Whether anyone received
                 the message is unknown; the request is never repeated.
             PermissionDenied: The user may not see a document.
+        """
+        ...
+
+
+class MailReader(Protocol):
+    """Mail accounts, rules and processed mail the current user may see.
+
+    No method returns a password, token or any mask of one: a ``MailAccount`` has no such field.
+    """
+
+    async def list_mail_accounts(self) -> tuple[MailAccount, ...]:
+        """Every mail account the user may see, over all pages, in Paperless order (by id).
+
+        Raises:
+            PermissionDenied: The user lacks the global ``view_mailaccount`` permission.
+            PaperlessMcpError: More accounts than this server reads at most.
+        """
+        ...
+
+    async def get_mail_account(self, account_id: int) -> MailAccount:
+        """One mail account.
+
+        Raises:
+            NotFound: No such account, or the user may not see it.
+            PermissionDenied: The user lacks the global ``view_mailaccount`` permission.
+        """
+        ...
+
+    async def list_mail_rules(self) -> tuple[MailRule, ...]:
+        """Every mail rule the user may see, over all pages, in Paperless order (by ``order``).
+
+        Raises:
+            PermissionDenied: The user lacks the global ``view_mailrule`` permission.
+            PaperlessMcpError: More rules than this server reads at most.
+        """
+        ...
+
+    async def get_mail_rule(self, rule_id: int) -> MailRule:
+        """One mail rule.
+
+        Raises:
+            NotFound: No such rule, or the user may not see it.
+            PermissionDenied: The user lacks the global ``view_mailrule`` permission.
+        """
+        ...
+
+    async def list_processed_mail(
+        self, *, rule_id: int | None, status: ProcessedStatus | None, page: int, page_size: int
+    ) -> ProcessedMailPage:
+        """One page of the processed mail the user may see, newest processed first.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the global ``view_processedmail`` permission.
+        """
+        ...
+
+
+class MailWriter(Protocol):
+    """Changes to mail accounts and rules, and the two actions that contact the mail server."""
+
+    async def create_mail_account(self, values: MailAccountValues) -> MailAccount:
+        """Create an account from ``values`` (name, server, port, username and password are needed).
+
+        Raises:
+            Validation: A missing or rejected value.
+            PermissionDenied: The user may not add mail accounts.
+        """
+        ...
+
+    async def update_mail_account(self, account_id: int, values: MailAccountValues) -> MailAccount:
+        """Change the fields that are set in ``values``; the password stays unless it is set.
+
+        Raises:
+            NotFound: No such account, or the user may not see it.
+            Validation: A rejected value.
+            PermissionDenied: The user may not change this account.
+        """
+        ...
+
+    async def delete_mail_account(self, account_id: int) -> None:
+        """Delete an account; Paperless deletes its rules and their processed mail with it.
+
+        Raises:
+            NotFound: No such account, or the user may not see it.
+            PermissionDenied: The user may not delete this account.
+        """
+        ...
+
+    async def test_mail_account(self, account_id: int) -> MailAccountTestResult:
+        """Connect to the account's mail server and log in with its saved password.
+
+        A failure to connect or to log in is a result with ``success`` false, not an error.
+        Nothing is changed on the mail server or in Paperless.
+
+        Raises:
+            NotFound: No such account, or the user may not see it.
+            PermissionDenied: The user may not change this account (Paperless asks for it).
+        """
+        ...
+
+    async def process_mail_account(self, account_id: int) -> None:
+        """Queue a fetch of the account's mail now, instead of at the next scheduled run.
+
+        Paperless works in the background: documents appear and the rule actions run on the
+        mail server after this returns. The request is never repeated.
+
+        Raises:
+            NotFound: No such account, or the user may not see it.
+            PermissionDenied: The user may not change this account.
+        """
+        ...
+
+    async def create_mail_rule(self, values: MailRuleValues) -> MailRule:
+        """Create a rule from ``values`` (name and account are needed).
+
+        Raises:
+            Validation: A missing or rejected value, or an account or taxonomy id that does
+                not exist.
+            PermissionDenied: The user may not add mail rules.
+        """
+        ...
+
+    async def update_mail_rule(self, rule_id: int, values: MailRuleValues) -> MailRule:
+        """Change the fields that are set in ``values``.
+
+        Raises:
+            NotFound: No such rule, or the user may not see it.
+            Validation: A rejected value.
+            PermissionDenied: The user may not change this rule.
+        """
+        ...
+
+    async def delete_mail_rule(self, rule_id: int) -> None:
+        """Delete a rule; Paperless deletes its processed mail with it.
+
+        Raises:
+            NotFound: No such rule, or the user may not see it.
+            PermissionDenied: The user may not delete this rule.
         """
         ...

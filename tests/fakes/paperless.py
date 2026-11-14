@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Concatenate, cast
 
 from pydantic import JsonValue
 
-from fakes import sharing
+from fakes import mail, sharing
 from fakes.accounts import (
     ADMIN,
     BLIND,
@@ -43,6 +43,13 @@ from fakes.accounts import (
 from fakes.custom_field_query import compile_query
 from fakes.document_values import coerce, reject, tag_closure
 from fakes.permissions import access_of, check_principals, set_grants
+from fakes.mail import (
+    FakeMailAccount,
+    FakeMailRule,
+    FakeProcessedMail,
+    MailData,
+)
+from fakes.mail import Viewer as MailViewer
 from fakes.sharing import FakeShareBundle, FakeShareLink, SentEmail, SharingData, Viewer
 from fakes.taxonomy_rules import check_colour, check_match, check_name, check_path, with_ids
 from fakes.view_filters import ONLY_ONE_SEARCH, combines, searches, view_filters
@@ -110,6 +117,15 @@ if TYPE_CHECKING:
         PermissionsChange,
     )
     from paperless_mcp.domain.documents import FileVersion
+    from paperless_mcp.domain.mail import (
+        MailAccount,
+        MailAccountTestResult,
+        MailAccountValues,
+        MailRule,
+        MailRuleValues,
+        ProcessedMailPage,
+        ProcessedStatus,
+    )
     from paperless_mcp.domain.pdf import Output, PageSlot
     from paperless_mcp.domain.permissions import AccessChange, PermissionKind
     from paperless_mcp.domain.sharing import FileVersionKind, ShareBundle, ShareLink
@@ -423,6 +439,18 @@ class FakeState:
     # sets `email_enabled`; a valid message then fails like 3.4.2 does without one.
     outbox: list[SentEmail] = field(default_factory=list[SentEmail])
     email_enabled: bool = False
+    mail_accounts: list[FakeMailAccount] = field(default_factory=list[FakeMailAccount])
+    mail_rules: list[FakeMailRule] = field(default_factory=list[FakeMailRule])
+    processed_mail: list[FakeProcessedMail] = field(default_factory=list[FakeProcessedMail])
+    # The imaginary mail servers (see fakes/mail.py): working logins as (server, port, username,
+    # password), hosts that answer, hosts that accept a connection and never answer, and the ids
+    # of the accounts a fetch was queued for, in order.
+    mail_logins: set[tuple[str, int, str, str]] = field(
+        default_factory=set[tuple[str, int, str, str]]
+    )
+    mail_hosts: set[str] = field(default_factory=set[str])
+    mail_silent_hosts: set[str] = field(default_factory=set[str])
+    mail_fetches: list[int] = field(default_factory=list[int])
     tasks: list[FakeTask] = field(default_factory=list[FakeTask])
     # Deleted documents, newest last; reads no longer see them, the Paperless trash does.
     trash: list[FakeDocument] = field(default_factory=list[FakeDocument])
@@ -2584,6 +2612,101 @@ class FakePaperless:
             message=message,
             use_archive_version=use_archive_version,
         )
+
+    # --- MailReader and MailWriter (the logic is in fakes/mail.py)
+
+    def _mail(self) -> MailData:
+        state = self.state
+        return MailData(
+            state.mail_accounts,
+            state.mail_rules,
+            state.processed_mail,
+            state.mail_logins,
+            state.mail_hosts,
+            state.mail_silent_hosts,
+            state.mail_fetches,
+        )
+
+    def _mail_viewer(self) -> MailViewer:
+        state, user = self.state, self.user
+        return MailViewer(
+            id=user.id,
+            is_superuser=user.is_superuser,
+            has=user.has,
+            users=frozenset(u.id for u in state.users),
+            tags=frozenset(t.id for t in state.tags),
+            correspondents=frozenset(c.id for c in state.correspondents),
+            document_types=frozenset(d.id for d in state.document_types),
+        )
+
+    async def list_mail_accounts(self) -> tuple[MailAccount, ...]:
+        """`MailReader.list_mail_accounts`."""
+        return mail.list_accounts(self._mail(), self._mail_viewer())
+
+    async def get_mail_account(self, account_id: int) -> MailAccount:
+        """`MailReader.get_mail_account`."""
+        return mail.get_account(self._mail(), self._mail_viewer(), account_id)
+
+    async def list_mail_rules(self) -> tuple[MailRule, ...]:
+        """`MailReader.list_mail_rules`."""
+        return mail.list_rules(self._mail(), self._mail_viewer())
+
+    async def get_mail_rule(self, rule_id: int) -> MailRule:
+        """`MailReader.get_mail_rule`."""
+        return mail.get_rule(self._mail(), self._mail_viewer(), rule_id)
+
+    async def list_processed_mail(
+        self, *, rule_id: int | None, status: ProcessedStatus | None, page: int, page_size: int
+    ) -> ProcessedMailPage:
+        """`MailReader.list_processed_mail`."""
+        return mail.list_processed(
+            self._mail(),
+            self._mail_viewer(),
+            rule_id=rule_id,
+            status=status,
+            page=page,
+            page_size=page_size,
+        )
+
+    @write
+    async def create_mail_account(self, values: MailAccountValues) -> MailAccount:
+        """`MailWriter.create_mail_account`."""
+        return mail.create_account(self._mail(), self._mail_viewer(), values)
+
+    @write
+    async def update_mail_account(self, account_id: int, values: MailAccountValues) -> MailAccount:
+        """`MailWriter.update_mail_account`."""
+        return mail.update_account(self._mail(), self._mail_viewer(), account_id, values)
+
+    @write
+    async def delete_mail_account(self, account_id: int) -> None:
+        """`MailWriter.delete_mail_account`."""
+        mail.delete_account(self._mail(), self._mail_viewer(), account_id)
+
+    @write
+    async def test_mail_account(self, account_id: int) -> MailAccountTestResult:
+        """`MailWriter.test_mail_account`."""
+        return mail.test_account(self._mail(), self._mail_viewer(), account_id)
+
+    @write
+    async def process_mail_account(self, account_id: int) -> None:
+        """`MailWriter.process_mail_account`."""
+        mail.process_account(self._mail(), self._mail_viewer(), account_id)
+
+    @write
+    async def create_mail_rule(self, values: MailRuleValues) -> MailRule:
+        """`MailWriter.create_mail_rule`."""
+        return mail.create_rule(self._mail(), self._mail_viewer(), values)
+
+    @write
+    async def update_mail_rule(self, rule_id: int, values: MailRuleValues) -> MailRule:
+        """`MailWriter.update_mail_rule`."""
+        return mail.update_rule(self._mail(), self._mail_viewer(), rule_id, values)
+
+    @write
+    async def delete_mail_rule(self, rule_id: int) -> None:
+        """`MailWriter.delete_mail_rule`."""
+        mail.delete_rule(self._mail(), self._mail_viewer(), rule_id)
 
     async def get_document_content(self, document_id: int) -> str:
         """`DocumentReader.get_document_content` (retrieve with `fields=content`)."""
