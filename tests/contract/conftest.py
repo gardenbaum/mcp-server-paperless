@@ -55,6 +55,8 @@ from paperless_mcp.domain.ports import (  # noqa: TC001 -- Ports' annotations ar
     DocumentWriter,
     InstanceReader,
     PdfWriter,
+    PermissionReader,
+    PermissionWriter,
     SharingReader,
     SharingWriter,
     TaskReader,
@@ -72,6 +74,7 @@ from paperless_mcp.paperless.client import PaperlessClient, RetryPolicy
 from paperless_mcp.paperless.documents import PaperlessDocumentReader, PaperlessDocumentWriter
 from paperless_mcp.paperless.instance import PaperlessInstanceReader
 from paperless_mcp.paperless.pdf import PaperlessPdfWriter
+from paperless_mcp.paperless.permissions import PaperlessPermissionReader, PaperlessPermissionWriter
 from paperless_mcp.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
 from paperless_mcp.paperless.tasks import PaperlessTaskReader
 from paperless_mcp.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
@@ -117,6 +120,8 @@ class Ports:
     view_writes: ViewWriter
     trash: TrashReader
     trash_writes: TrashWriter
+    permissions: PermissionReader
+    permission_writes: PermissionWriter
     pdf_writes: PdfWriter
     sharing: SharingReader
     sharing_writes: SharingWriter
@@ -139,6 +144,8 @@ def fake_ports(state: FakeState, user: str) -> Ports:
         view_writes=writer,
         trash=fake,
         trash_writes=writer,
+        permissions=fake,
+        permission_writes=writer,
         pdf_writes=writer,
         sharing=fake,
         sharing_writes=writer,
@@ -160,6 +167,8 @@ def live_ports(client: PaperlessClient) -> Ports:
         view_writes=PaperlessViewWriter(client),
         trash=PaperlessTrashReader(client),
         trash_writes=PaperlessTrashWriter(client),
+        permissions=PaperlessPermissionReader(client),
+        permission_writes=PaperlessPermissionWriter(client),
         pdf_writes=PaperlessPdfWriter(client),
         sharing=PaperlessSharingReader(client),
         sharing_writes=PaperlessSharingWriter(client),

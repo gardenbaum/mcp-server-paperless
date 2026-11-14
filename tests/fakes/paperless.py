@@ -42,6 +42,7 @@ from fakes.accounts import (
 )
 from fakes.custom_field_query import compile_query
 from fakes.document_values import coerce, reject, tag_closure
+from fakes.permissions import access_of, check_principals, set_grants
 from fakes.sharing import FakeShareBundle, FakeShareLink, SentEmail, SharingData, Viewer
 from fakes.taxonomy_rules import check_colour, check_match, check_name, check_path, with_ids
 from fakes.view_filters import ONLY_ONE_SEARCH, combines, searches, view_filters
@@ -77,6 +78,7 @@ from paperless_mcp.domain.instance import (
     SystemStatus,
 )
 from paperless_mcp.domain.pdf import StartedTasks
+from paperless_mcp.domain.permissions import GroupPage, GroupRow, ObjectAccess, UserPage, UserRow
 from paperless_mcp.domain.tasks import TaskState, TaskStatus
 from paperless_mcp.domain.taxonomy import SelectOption, TaxonomyDetail, TaxonomyItem
 from paperless_mcp.domain.trash import TrashedDocument, TrashPage
@@ -109,6 +111,7 @@ if TYPE_CHECKING:
     )
     from paperless_mcp.domain.documents import FileVersion
     from paperless_mcp.domain.pdf import Output, PageSlot
+    from paperless_mcp.domain.permissions import AccessChange, PermissionKind
     from paperless_mcp.domain.sharing import FileVersionKind, ShareBundle, ShareLink
     from paperless_mcp.domain.taxonomy import (
         MatchingAlgorithm,
@@ -166,6 +169,10 @@ class FakeUser:
     is_superuser: bool = False
     is_staff: bool = False
     permissions: frozenset[str] = frozenset()
+    first_name: str = ""
+    last_name: str = ""
+    is_active: bool = True
+    groups: frozenset[int] = frozenset()
 
     def has(self, permission: str) -> bool:
         """Django's `has_perm`: superusers have every permission."""
@@ -568,6 +575,11 @@ def seeded() -> FakeState:
             ),
         ],
     )
+
+
+def _label(obj: FakeDocument | FakeTaxonomy) -> str:
+    """The title of a document, else the name."""
+    return obj.title if isinstance(obj, FakeDocument) else obj.name
 
 
 class WriteNotAllowedError(AssertionError):
@@ -2231,6 +2243,124 @@ class FakePaperless:
             )
         item.viewers, item.editors = views, changes
         item.view_groups, item.change_groups = view_groups, change_groups
+
+    # --- PermissionReader and PermissionWriter
+
+    def _permission_objects(self, kind: PermissionKind) -> list[FakeDocument] | list[FakeTaxonomy]:
+        state = self.state
+        return cast(
+            "list[FakeDocument] | list[FakeTaxonomy]",
+            {
+                "document": state.documents,
+                "tag": state.tags,
+                "correspondent": state.correspondents,
+                "document_type": state.document_types,
+                "storage_path": state.storage_paths,
+            }[kind],
+        )
+
+    async def get_permissions(
+        self, kind: PermissionKind, object_ids: Sequence[int]
+    ) -> list[ObjectAccess]:
+        """`PermissionReader.get_permissions` (the list views with `full_perms=true`).
+
+        A hidden object is not listed; the list needs the global view permission (403).
+        """
+        if not self.user.has(f"view_{kind.replace('_', '')}"):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
+        seen = {o.id: o for o in self._permission_objects(kind) if o.visible_to(self.user)}
+        return [
+            access_of(seen[number], _label(seen[number])) for number in object_ids if number in seen
+        ]
+
+    async def list_users(self, *, name_contains: str | None, page: int, page_size: int) -> UserPage:
+        """`PermissionReader.list_users` (UserViewSet list): by username, 403 without view_user."""
+        self._may_list("user")
+        needle = (name_contains or "").casefold()
+        users = sorted(
+            (u for u in self.state.users if needle in u.username.casefold()),
+            key=lambda u: (u.username.casefold(), u.id),
+        )
+        rows = tuple(
+            UserRow(
+                id=u.id,
+                username=u.username,
+                name=f"{u.first_name} {u.last_name}".strip() or None,
+                is_active=u.is_active,
+                is_superuser=u.is_superuser,
+                group_ids=tuple(sorted(u.groups)),
+            )
+            for u in users
+        )
+        shown, more = self._page(rows, page, page_size)
+        return UserPage(count=len(rows), next_page=more, rows=shown)
+
+    async def list_groups(
+        self, *, name_contains: str | None, page: int, page_size: int
+    ) -> GroupPage:
+        """`PermissionReader.list_groups` (GroupViewSet list): by name, 403 without view_group."""
+        self._may_list("group")
+        needle = (name_contains or "").casefold()
+        groups = sorted(
+            (g for g in self.state.groups if needle in g.name.casefold()),
+            key=lambda g: (g.name.casefold(), g.id),
+        )
+        rows = tuple(GroupRow(id=g.id, name=g.name) for g in groups)
+        shown, more = self._page(rows, page, page_size)
+        return GroupPage(count=len(rows), next_page=more, rows=shown)
+
+    def _may_list(self, kind: TaxonomyKind) -> None:
+        if not self.user.has(VIEW_PERMISSION[kind]):
+            message = "You do not have permission to perform this action."
+            raise PermissionDenied(message)
+
+    @staticmethod
+    def _page[R](
+        rows: tuple[R, ...], page: int, page_size: int
+    ) -> tuple[tuple[R, ...], int | None]:
+        """One page of ``rows`` and the next page number; a page past the end is a 404."""
+        first = (page - 1) * page_size
+        if page > 1 and first >= len(rows):
+            message = "Invalid page."
+            raise NotFound(message)
+        more = page + 1 if first + page_size < len(rows) else None
+        return rows[first : first + page_size], more
+
+    @write
+    async def set_permissions(
+        self, kind: PermissionKind, object_id: int, change: AccessChange
+    ) -> ObjectAccess:
+        """`PermissionWriter.set_permissions` (a PATCH with `owner` and `set_permissions`).
+
+        Order: the global change permission (403), the object among those the user may see (404),
+        ownership (403: a change grant is not enough), then the users and groups (400).
+        """
+        if not self.user.has(f"change_{kind.replace('_', '')}"):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
+        found = [o for o in self._permission_objects(kind) if o.id == object_id]
+        if not found or not found[0].visible_to(self.user):
+            message = "The Paperless object does not exist or is not visible to this user."
+            raise NotFound(message)
+        target = found[0]
+        if not (self.user.is_superuser or target.owner in {None, self.user.id}):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
+        state = self.state
+        given = change.permissions
+        if given is not None:
+            check_principals(given, state.users, state.groups)
+        if "owner" in change.model_fields_set and change.owner not in {
+            None,
+            *(u.id for u in state.users),
+        }:
+            reject("owner", f'Invalid pk "{change.owner}" - object does not exist.')
+        if "owner" in change.model_fields_set:
+            target.owner = change.owner
+        if given is not None:
+            set_grants(target, given)
+        return access_of(target, _label(target))
 
     # --- ViewReader and ViewWriter
 

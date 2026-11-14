@@ -34,6 +34,10 @@ if TYPE_CHECKING:
 
 SCHEMA_PATH = Path(__file__).parents[2] / "docs" / "vendor" / "paperless" / "openapi.json"
 
+FULL_PERMS_REASON = (
+    "the update serializers honour it like the retrieve ones and then answer the grants (PLMCP-28)"
+)
+
 # Query parameters an operation accepts although the generated schema omits them:
 # (method, path template) -> {parameter: reason}.
 UNDECLARED_QUERY_PARAMETERS: Mapping[tuple[str, str], Mapping[str, str]] = {
@@ -46,7 +50,12 @@ UNDECLARED_QUERY_PARAMETERS: Mapping[tuple[str, str], Mapping[str, str]] = {
             "the update serializer honours it like the retrieve one; without it the answer "
             "carries the whole OCR text (PLMCP-16)"
         ),
+        "full_perms": FULL_PERMS_REASON,
     },
+    ("PATCH", "/api/tags/{id}/"): {"full_perms": FULL_PERMS_REASON},
+    ("PATCH", "/api/correspondents/{id}/"): {"full_perms": FULL_PERMS_REASON},
+    ("PATCH", "/api/document_types/{id}/"): {"full_perms": FULL_PERMS_REASON},
+    ("PATCH", "/api/storage_paths/{id}/"): {"full_perms": FULL_PERMS_REASON},
 }
 # Query parameters the schema declares with the wrong type: (method, path template) ->
 # {parameter: reason}. Their value is not type-checked (the name must still be declared).
@@ -492,6 +501,25 @@ def _check_file_response(request: httpx2.Request, response: httpx2.Response) -> 
         raise SchemaViolationError(message)
 
 
+def _with_full_perms(request: httpx2.Request, response: httpx2.Response) -> httpx2.Response:
+    """The response to a `full_perms=true` request with the `user_can_change` the schema requires.
+
+    With ``full_perms=true`` 3.4.2 answers the grants in `permissions` and leaves out
+    `user_can_change`, which the schema requires of every object (PLMCP-28); it is filled in so
+    that the rest of the body is still checked.
+    """
+    body = _json_or_none(response)
+    if request.url.params.get("full_perms") != "true" or not isinstance(body, dict):
+        return response
+    objects = cast("Json", body)
+    rows = objects.get("results")
+    for row in cast("list[Json]", rows) if isinstance(rows, list) else [objects]:
+        _ = row.setdefault("user_can_change", True)
+    return httpx2.Response(
+        response.status_code, json=body, headers={"Content-Type": "application/json"}
+    )
+
+
 def _with_omitted_properties(
     request: httpx2.Request, template: str, response: httpx2.Response
 ) -> httpx2.Response:
@@ -527,7 +555,7 @@ def check_response(request: httpx2.Request, response: httpx2.Response) -> None:
             message = f"{request.method} {request.url.path}: not a DRF error body: {response.text}"
             raise SchemaViolationError(message)
         return
-    response = _with_omitted_properties(request, template, response)
+    response = _with_full_perms(request, _with_omitted_properties(request, template, response))
     errors = list(_OPENAPI.iter_response_errors(_Request(request), _Response(response)))
     if errors:
         raise _fail(request, f"{response.status_code} response does not match the schema", errors)

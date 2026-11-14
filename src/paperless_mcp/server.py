@@ -25,6 +25,7 @@ from paperless_mcp.paperless.client import RetryPolicy, connect
 from paperless_mcp.paperless.documents import PaperlessDocumentReader, PaperlessDocumentWriter
 from paperless_mcp.paperless.instance import PaperlessInstanceReader
 from paperless_mcp.paperless.pdf import PaperlessPdfWriter
+from paperless_mcp.paperless.permissions import PaperlessPermissionReader, PaperlessPermissionWriter
 from paperless_mcp.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
 from paperless_mcp.paperless.tasks import PaperlessTaskReader
 from paperless_mcp.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
@@ -39,6 +40,7 @@ from paperless_mcp.services.files import FileService
 from paperless_mcp.services.instance import InstanceService
 from paperless_mcp.services.notes import NoteService
 from paperless_mcp.services.pdf import PdfService
+from paperless_mcp.services.permissions import PermissionService
 from paperless_mcp.services.removal import DocumentRemoval
 from paperless_mcp.services.sharing import SharingService
 from paperless_mcp.services.tasks import TaskService
@@ -54,6 +56,7 @@ from paperless_mcp.tools import (
     bulk,
     core,
     pdf,
+    permissions,
     sharing,
     trash,
     upload,
@@ -91,6 +94,8 @@ if TYPE_CHECKING:
         DocumentWriter,
         InstanceReader,
         PdfWriter,
+        PermissionReader,
+        PermissionWriter,
         SharingReader,
         SharingWriter,
         TaskReader,
@@ -159,6 +164,7 @@ CATALOGUE: Final = Catalogue(
         trash.provider,
         pdf.provider,
         sharing.provider,
+        permissions.provider,
     ),
     annotations=ANNOTATIONS,
     tool_toolsets=TOOL_TOOLSETS,
@@ -188,6 +194,8 @@ class Ports:
     pdf_writes: PdfWriter
     sharing: SharingReader
     sharing_writes: SharingWriter
+    permissions: PermissionReader
+    permission_writes: PermissionWriter
 
 
 def paperless_ports(client: PaperlessClient) -> Ports:
@@ -208,6 +216,8 @@ def paperless_ports(client: PaperlessClient) -> Ports:
         pdf_writes=PaperlessPdfWriter(client),
         sharing=PaperlessSharingReader(client),
         sharing_writes=PaperlessSharingWriter(client),
+        permissions=PaperlessPermissionReader(client),
+        permission_writes=PaperlessPermissionWriter(client),
     )
 
 
@@ -324,6 +334,9 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 bulk_taxonomy=BulkTaxonomyEditor(adapters.taxonomy, adapters.bulk_writes, taxonomy),
                 trash=TrashService(
                     adapters.trash, adapters.trash_writes, taxonomy, web_url=web_url
+                ),
+                permissions=PermissionService(
+                    adapters.permissions, adapters.permission_writes, taxonomy, web_url=web_url
                 ),
             )
             overview = await services.instance.probe(settings.startup_timeout)

@@ -110,7 +110,9 @@ async def bulk_edit_taxonomy(  # noqa: PLR0913 -- one parameter per concept, des
     give (a list left out becomes empty); with merge it adds to them, and merge cannot set an
     owner. A change grant includes view. Users and groups by name or id. Custom fields are not
     supported. Paperless checks every object first: if you may not change one, none changes (you
-    need the permission and must own it, or it must have no owner).
+    need the permission and must own it, or it must have no owner). The permissions toolset's
+    set_permissions does the same for permissions and also covers documents; it merges by
+    default and asks for confirm only to replace grants or change an owner.
     """  # noqa: D205 -- the summary is one sentence; FastMCP sends the docstring as is
     return await services(ctx).bulk_taxonomy.edit(
         kind, items, operation, dry_run=dry_run, confirm=confirm
