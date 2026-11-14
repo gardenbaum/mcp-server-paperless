@@ -24,6 +24,7 @@ from paperless_mcp.paperless.bulk import PaperlessBulkWriter
 from paperless_mcp.paperless.client import RetryPolicy, connect
 from paperless_mcp.paperless.documents import PaperlessDocumentReader, PaperlessDocumentWriter
 from paperless_mcp.paperless.instance import PaperlessInstanceReader
+from paperless_mcp.paperless.mail import PaperlessMailReader, PaperlessMailWriter
 from paperless_mcp.paperless.pdf import PaperlessPdfWriter
 from paperless_mcp.paperless.permissions import PaperlessPermissionReader, PaperlessPermissionWriter
 from paperless_mcp.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
@@ -38,6 +39,7 @@ from paperless_mcp.services.document_edits import DocumentEditor
 from paperless_mcp.services.documents import DocumentService
 from paperless_mcp.services.files import FileService
 from paperless_mcp.services.instance import InstanceService
+from paperless_mcp.services.mail import MailService
 from paperless_mcp.services.notes import NoteService
 from paperless_mcp.services.pdf import PdfService
 from paperless_mcp.services.permissions import PermissionService
@@ -55,6 +57,7 @@ from paperless_mcp.tools import (
     ai,
     bulk,
     core,
+    mail,
     pdf,
     permissions,
     sharing,
@@ -93,6 +96,8 @@ if TYPE_CHECKING:
         DocumentReader,
         DocumentWriter,
         InstanceReader,
+        MailReader,
+        MailWriter,
         PdfWriter,
         PermissionReader,
         PermissionWriter,
@@ -165,6 +170,7 @@ CATALOGUE: Final = Catalogue(
         pdf.provider,
         sharing.provider,
         permissions.provider,
+        mail.provider,
     ),
     annotations=ANNOTATIONS,
     tool_toolsets=TOOL_TOOLSETS,
@@ -196,6 +202,8 @@ class Ports:
     sharing_writes: SharingWriter
     permissions: PermissionReader
     permission_writes: PermissionWriter
+    mail: MailReader
+    mail_writes: MailWriter
 
 
 def paperless_ports(client: PaperlessClient) -> Ports:
@@ -218,6 +226,8 @@ def paperless_ports(client: PaperlessClient) -> Ports:
         sharing_writes=PaperlessSharingWriter(client),
         permissions=PaperlessPermissionReader(client),
         permission_writes=PaperlessPermissionWriter(client),
+        mail=PaperlessMailReader(client),
+        mail_writes=PaperlessMailWriter(client),
     )
 
 
@@ -308,6 +318,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 sharing=SharingService(
                     adapters.sharing, adapters.sharing_writes, adapters.documents, web_url=web_url
                 ),
+                mail=MailService(adapters.mail, adapters.mail_writes, taxonomy),
                 uploads=UploadService(
                     adapters.documents,
                     adapters.document_writes,

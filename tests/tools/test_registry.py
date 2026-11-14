@@ -14,7 +14,7 @@ from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 from harness import admin, serve
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import BaseModel, Field, SecretStr
 
 from paperless_mcp.tools._shared import (
     ANNOTATIONS,
@@ -113,6 +113,66 @@ def unconfirmed(tools: list[Tool], publishing: frozenset[str] = PUBLISHING) -> l
         )
 
     return [t.name for t in tools if (destructive(t) or t.name in publishing) and not confirmed(t)]
+
+
+# Mail tools that are not destructive but need an optional confirm for the cases decision-18 names:
+# a rule that deletes or moves mail, an account pointed at another server, a rule handed over.
+MAIL_CONFIRMING = frozenset({"update_mail_account", "create_mail_rule", "update_mail_rule"})
+# Names that hold a secret. Nothing of the sort may be in a tool's output (decision-18), and an
+# input that takes one must be write-only.
+CREDENTIAL_WORDS = (
+    *("password", "passwd", "secret", "credential", "api_key", "apikey"),
+    *("refresh_token", "access_token", "auth_token"),
+)
+
+
+def credential_like(name: str) -> bool:
+    """A name that holds a secret; `is_token` (a flag) and `token_expires` (a date) do not."""
+    lowered = name.lower()
+    return lowered == "token" or any(word in lowered for word in CREDENTIAL_WORDS)
+
+
+def property_names(schema: object) -> set[str]:
+    """Every property name anywhere in a JSON schema (nested objects and definitions included)."""
+    if isinstance(schema, dict):
+        items = cast("dict[str, object]", schema)
+        own = set(cast("dict[str, object]", items.get("properties", {})))
+        return own.union(*(property_names(value) for value in items.values()))
+    if isinstance(schema, list):
+        return set[str]().union(*(property_names(v) for v in cast("list[object]", schema)))
+    return set()
+
+
+def credentials_in_output(tools: list[Tool]) -> list[str]:
+    """Tools whose output schema has a credential-like property (`tool.property`)."""
+    return [
+        f"{t.name}.{name}"
+        for t in tools
+        for name in sorted(property_names(t.output_schema))
+        if credential_like(name)
+    ]
+
+
+# Credential-like inputs that are not write-only, with the reason: the password of a PDF file the
+# user hands over to be unlocked, not a stored credential (PLMCP-23).
+PLAIN_INPUTS: frozenset[tuple[str, str]] = frozenset({("remove_document_password", "password")})
+
+
+def readable_credential_inputs(
+    tools: list[Tool], allowed: frozenset[tuple[str, str]] = PLAIN_INPUTS
+) -> list[str]:
+    """Credential-like input parameters that are not `writeOnly` (`tool.parameter`)."""
+
+    def write_only(schema: object) -> bool:
+        parts = cast("list[object]", cast("dict[str, object]", schema).get("anyOf", [schema]))
+        return any(cast("dict[str, object]", part).get("writeOnly") is True for part in parts)
+
+    return [
+        f"{t.name}.{name}"
+        for t in tools
+        for name, schema in cast("dict[str, object]", t.parameters.get("properties", {})).items()
+        if credential_like(name) and not write_only(schema) and (t.name, name) not in allowed
+    ]
 
 
 def formats(schema: object) -> set[str]:
@@ -231,6 +291,39 @@ async def test_self_test_a_publishing_tool_without_a_false_confirm_is_found() ->
     found = set(unconfirmed(await offending_tools(), frozenset({"publish_without_confirm"})))
 
     assert "publish_without_confirm" in found
+
+
+@pytest.mark.decision("decision-18")
+async def test_the_mail_tools_with_conditional_confirmations_take_confirm() -> None:
+    tools = await server_tools()
+
+    assert {t.name for t in tools} >= MAIL_CONFIRMING
+    assert unconfirmed(tools, MAIL_CONFIRMING) == []
+
+
+@pytest.mark.decision("decision-18")
+async def test_the_mail_destructive_tools_are_checked_for_confirm() -> None:
+    found = {t.name for t in await server_tools() if destructive(t)}
+
+    assert found >= {"delete_mail_account", "delete_mail_rule", "process_mail_account"}
+
+
+@pytest.mark.decision("decision-18")
+async def test_no_tool_returns_a_credential_and_credential_inputs_are_write_only() -> None:
+    tools = await server_tools()
+
+    assert credentials_in_output(tools) == []
+    assert readable_credential_inputs(tools) == []
+    taking_one = {t.name for t in tools if "password" in t.parameters.get("properties", {})}
+    assert taking_one == {"create_mail_account", "update_mail_account", "remove_document_password"}
+
+
+@pytest.mark.decision("decision-18")
+async def test_self_test_credentials_in_output_and_readable_inputs_are_found() -> None:
+    tools = await offending_tools()
+
+    assert credentials_in_output(tools) == ["leak_credentials.password"]
+    assert readable_credential_inputs(tools) == ["take_plain_password.password"]
 
 
 @pytest.mark.decision("decision-6")
@@ -369,6 +462,34 @@ async def read_only_but_destructive() -> None:
 async def drop_with_required_confirm(*, confirm: bool) -> bool:
     """Has a confirm, but it must be passed: the first call would already act."""
     return confirm
+
+
+class Leak(BaseModel):
+    """An output that carries a password."""
+
+    name: str
+    password: str
+
+
+@offenders.tool(annotations=ToolAnnotations(title="Leak", read_only_hint=True))
+@boundary
+async def leak_credentials() -> Leak:
+    """Returns a credential: the output check must find it."""
+    return Leak(name="x", password="y")
+
+
+@offenders.tool(annotations=ToolAnnotations(title="Plain", read_only_hint=True))
+@boundary
+async def take_plain_password(password: str) -> str:
+    """Takes a credential that is not write-only: the input check must find it."""
+    return password
+
+
+@offenders.tool(annotations=ToolAnnotations(title="Keyed", read_only_hint=True))
+@boundary
+async def take_write_only_password(password: SecretStr) -> int:
+    """Takes a credential as a SecretStr, which is write-only: not an offender."""
+    return len(password.get_secret_value())
 
 
 @offenders.resource("data://untagged")

@@ -1279,6 +1279,913 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': False,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Create mail account',
+      }),
+      'description': '''
+        Add an IMAP account that Paperless can fetch mail from. The password is never returned.
+        
+        The password is stored by Paperless and cannot be read back, not by this server either; to
+        change it, call update_mail_account with a new one. Security defaults to ssl. This only stores
+        the account: use test_mail_account to try the login and create_mail_rule to choose which mails
+        become documents. Gmail and Outlook OAuth accounts are set up in the Paperless web UI.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'character_set': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Character set of the server; default UTF-8.',
+          }),
+          'imap_port': dict({
+            'description': 'The IMAP port, e.g. 993.',
+            'maximum': 65535,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'imap_security': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'none',
+                  'ssl',
+                  'starttls',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'ssl: TLS from the start (port 993); starttls (port 143); none: no encryption.',
+          }),
+          'imap_server': dict({
+            'description': 'The IMAP host name.',
+            'maxLength': 256,
+            'minLength': 1,
+            'type': 'string',
+          }),
+          'name': dict({
+            'description': 'A unique name for the account.',
+            'maxLength': 256,
+            'minLength': 1,
+            'type': 'string',
+          }),
+          'password': dict({
+            'description': 'The password of the mail account (or its app password). Write-only: it is stored by Paperless and never shown again.',
+            'format': 'password',
+            'type': 'string',
+            'writeOnly': True,
+          }),
+          'username': dict({
+            'description': 'The login name.',
+            'maxLength': 256,
+            'minLength': 1,
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'name',
+          'imap_server',
+          'imap_port',
+          'username',
+          'password',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'create_mail_account',
+      'outputSchema': dict({
+        'description': 'A mail account. The password is never returned, only accepted when it is set.',
+        'properties': dict({
+          'account_type': dict({
+            'description': 'imap: password login; gmail_oauth, outlook_oauth: set up in the web UI.',
+            'enum': list([
+              'imap',
+              'gmail_oauth',
+              'outlook_oauth',
+            ]),
+            'type': 'string',
+          }),
+          'can_change': dict({
+            'description': 'Whether this user may change the account.',
+            'type': 'boolean',
+          }),
+          'character_set': dict({
+            'type': 'string',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'imap_port': dict({
+            'type': 'integer',
+          }),
+          'imap_security': dict({
+            'enum': list([
+              'none',
+              'ssl',
+              'starttls',
+            ]),
+            'type': 'string',
+          }),
+          'imap_server': dict({
+            'type': 'string',
+          }),
+          'is_token': dict({
+            'description': 'The stored secret is an access token.',
+            'type': 'boolean',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Id of the owning user; null: shared.',
+          }),
+          'token_expires': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'When the OAuth token expires; null: not applicable.',
+          }),
+          'username': dict({
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'imap_server',
+          'imap_port',
+          'imap_security',
+          'username',
+          'character_set',
+          'account_type',
+          'is_token',
+          'owner',
+          'can_change',
+          'token_expires',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Create mail account',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': False,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Create mail rule',
+      }),
+      'description': '''
+        Create a rule that turns the attachments of matching mails into documents.
+        
+        Tags, correspondent, document type and owner are given by name or id. Unset options keep
+        Paperless's defaults (INBOX, 30 days, attachments only, mark the mail read). A rule that is
+        enabled and DELETES or MOVES mail on the mail server needs confirm: without it the call fails
+        with an error that says which mails it would reach and what it does to them, creates nothing;
+        show that to the user and call again with confirm=true only once they agree. Mark read,
+        flag and tag need no confirm. Needs the add permission for rules and the change permission
+        for the account.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'account_id': dict({
+            'description': 'Mail account id, from list_mail_accounts.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'action': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'delete',
+                  'move',
+                  'mark_read',
+                  'flag',
+                  'tag',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'After import: mark_read (default; Paperless then skips read mail), flag (skips flagged mail), tag (adds the keyword in action_parameter), move (to the folder in action_parameter) or delete.',
+          }),
+          'action_parameter': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'The folder for move, the keyword for tag.',
+          }),
+          'assign_correspondent': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Correspondent name or id; implies assign_correspondent_from selected.',
+          }),
+          'assign_correspondent_from': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'none',
+                  'email_address',
+                  'name',
+                  'selected',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'none (default), email_address, name or selected.',
+          }),
+          'assign_document_type': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Document type name or id.',
+          }),
+          'assign_owner_from_rule': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': "Documents get the rule's owner; default true.",
+          }),
+          'assign_tags': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'integer',
+                    }),
+                  ]),
+                }),
+                'maxItems': 50,
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Tag names or ids the documents get.',
+          }),
+          'assign_title_from': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'subject',
+                  'filename',
+                  'none',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'subject (default), filename or none.',
+          }),
+          'attachment_type': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'attachments_only',
+                  'all_files',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'attachments_only (default) or all_files (inline images too).',
+          }),
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'consumption_scope': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'attachments',
+                  'eml',
+                  'eml_and_attachments',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'attachments (default), eml (the whole mail) or eml_and_attachments.',
+          }),
+          'enabled': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Default true.',
+          }),
+          'filter_attachment_filename_exclude': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Skip attachments whose whole name matches.',
+          }),
+          'filter_attachment_filename_include': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only attachments whose whole name matches, e.g. *.pdf or *invoice*.',
+          }),
+          'filter_body': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only mails matching this; wildcards where noted. Update: empty string clears.',
+          }),
+          'filter_from': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only mails matching this; wildcards where noted. Update: empty string clears.',
+          }),
+          'filter_subject': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only mails matching this; wildcards where noted. Update: empty string clears.',
+          }),
+          'filter_to': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only mails matching this; wildcards where noted. Update: empty string clears.',
+          }),
+          'folder': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'minLength': 1,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'IMAP folder to read; default INBOX. Sub-folders: . or /.',
+          }),
+          'maximum_age_days': dict({
+            'anyOf': list([
+              dict({
+                'maximum': 36500,
+                'minimum': 0,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only mails up to this old; default 30.',
+          }),
+          'name': dict({
+            'description': "The rule's name.",
+            'maxLength': 256,
+            'minLength': 1,
+            'type': 'string',
+          }),
+          'order': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Rules run lowest first; default 0.',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': "Username or id of the rule's owner.",
+          }),
+          'pdf_layout': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'default',
+                  'text_html',
+                  'html_text',
+                  'html',
+                  'text',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'How a mail becomes a PDF: default, text_html, html_text, html, text.',
+          }),
+          'stop_processing': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'No later rule runs once this one made a document.',
+          }),
+        }),
+        'required': list([
+          'name',
+          'account_id',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'create_mail_rule',
+      'outputSchema': dict({
+        'description': 'A mail rule: which mails of an account to import, and what happens to them afterwards.',
+        'properties': dict({
+          'account_id': dict({
+            'type': 'integer',
+          }),
+          'action': dict({
+            'description': 'What happens to a mail on the mail server after documents were made.',
+            'enum': list([
+              'delete',
+              'move',
+              'mark_read',
+              'flag',
+              'tag',
+            ]),
+            'type': 'string',
+          }),
+          'action_parameter': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The folder for move, the keyword for tag.',
+          }),
+          'assign_correspondent': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                'properties': dict({
+                  'id': dict({
+                    'type': 'integer',
+                  }),
+                  'name': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null if the user may not see its name.',
+                  }),
+                }),
+                'required': list([
+                  'id',
+                  'name',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Used with assign_correspondent_from selected.',
+          }),
+          'assign_correspondent_from': dict({
+            'enum': list([
+              'none',
+              'email_address',
+              'name',
+              'selected',
+            ]),
+            'type': 'string',
+          }),
+          'assign_document_type': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                'properties': dict({
+                  'id': dict({
+                    'type': 'integer',
+                  }),
+                  'name': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null if the user may not see its name.',
+                  }),
+                }),
+                'required': list([
+                  'id',
+                  'name',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'assign_owner_from_rule': dict({
+            'description': 'Documents get the owner of the rule.',
+            'type': 'boolean',
+          }),
+          'assign_tags': dict({
+            'items': dict({
+              'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+              'properties': dict({
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Null if the user may not see its name.',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'assign_title_from': dict({
+            'enum': list([
+              'subject',
+              'filename',
+              'none',
+            ]),
+            'type': 'string',
+          }),
+          'attachment_type': dict({
+            'enum': list([
+              'attachments_only',
+              'all_files',
+            ]),
+            'type': 'string',
+          }),
+          'can_change': dict({
+            'type': 'boolean',
+          }),
+          'consumption_scope': dict({
+            'enum': list([
+              'attachments',
+              'eml',
+              'eml_and_attachments',
+            ]),
+            'type': 'string',
+          }),
+          'enabled': dict({
+            'type': 'boolean',
+          }),
+          'filter_attachment_filename_exclude': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_attachment_filename_include': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_body': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_from': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_subject': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_to': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'folder': dict({
+            'type': 'string',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'maximum_age_days': dict({
+            'description': 'Only mails up to this many days old.',
+            'type': 'integer',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'order': dict({
+            'description': 'Rules run in this order, lowest first.',
+            'type': 'integer',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                'properties': dict({
+                  'id': dict({
+                    'type': 'integer',
+                  }),
+                  'name': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null if the user may not see its name.',
+                  }),
+                }),
+                'required': list([
+                  'id',
+                  'name',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'pdf_layout': dict({
+            'enum': list([
+              'default',
+              'text_html',
+              'html_text',
+              'html',
+              'text',
+            ]),
+            'type': 'string',
+          }),
+          'stop_processing': dict({
+            'description': 'No later rule runs once this one made a document.',
+            'type': 'boolean',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'account_id',
+          'enabled',
+          'order',
+          'folder',
+          'filter_from',
+          'filter_to',
+          'filter_subject',
+          'filter_body',
+          'filter_attachment_filename_include',
+          'filter_attachment_filename_exclude',
+          'maximum_age_days',
+          'attachment_type',
+          'consumption_scope',
+          'pdf_layout',
+          'action',
+          'action_parameter',
+          'assign_title_from',
+          'assign_tags',
+          'assign_correspondent_from',
+          'assign_correspondent',
+          'assign_document_type',
+          'assign_owner_from_rule',
+          'stop_processing',
+          'owner',
+          'can_change',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Create mail rule',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'views',
           ]),
         }),
@@ -2381,6 +3288,128 @@
         'type': 'object',
       }),
       'title': 'Delete document version',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': True,
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Delete mail account',
+      }),
+      'description': '''
+        Delete a mail account together with its rules and their processed-mail records.
+        
+        Paperless stops fetching from it; the mail on the server and the documents already imported
+        stay. Without confirm it deletes nothing and fails with an error that names the account and
+        its rules; describe that to the user and call again with confirm=true once they agree.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'account_id': dict({
+            'description': 'Mail account id, from list_mail_accounts.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+        }),
+        'required': list([
+          'account_id',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'delete_mail_account',
+      'outputSchema': dict({
+        'description': 'The outcome of a confirmed delete of a mail account.',
+        'properties': dict({
+          'id': dict({
+            'type': 'integer',
+          }),
+          'message': dict({
+            'description': 'What was deleted.',
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Delete mail account',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': True,
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Delete mail rule',
+      }),
+      'description': '''
+        Delete a mail rule and the records of the mail it processed.
+        
+        Paperless stops importing with it; the mail on the server and the documents already imported
+        stay. Without confirm it deletes nothing and fails with an error that names the rule and its
+        account; describe that to the user and call again with confirm=true once they agree.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'rule_id': dict({
+            'description': 'Mail rule id, from list_mail_rules.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'rule_id',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'delete_mail_rule',
+      'outputSchema': dict({
+        'description': 'The outcome of a confirmed delete of a mail rule.',
+        'properties': dict({
+          'id': dict({
+            'type': 'integer',
+          }),
+          'message': dict({
+            'description': 'What was deleted.',
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Delete mail rule',
     }),
     dict({
       '_meta': dict({
@@ -4889,6 +5918,470 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get mail account',
+      }),
+      'description': 'Read one mail account: server, port, security, username, type. Never its password.',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'account_id': dict({
+            'description': 'Mail account id, from list_mail_accounts.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'account_id',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'get_mail_account',
+      'outputSchema': dict({
+        'description': 'A mail account. The password is never returned, only accepted when it is set.',
+        'properties': dict({
+          'account_type': dict({
+            'description': 'imap: password login; gmail_oauth, outlook_oauth: set up in the web UI.',
+            'enum': list([
+              'imap',
+              'gmail_oauth',
+              'outlook_oauth',
+            ]),
+            'type': 'string',
+          }),
+          'can_change': dict({
+            'description': 'Whether this user may change the account.',
+            'type': 'boolean',
+          }),
+          'character_set': dict({
+            'type': 'string',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'imap_port': dict({
+            'type': 'integer',
+          }),
+          'imap_security': dict({
+            'enum': list([
+              'none',
+              'ssl',
+              'starttls',
+            ]),
+            'type': 'string',
+          }),
+          'imap_server': dict({
+            'type': 'string',
+          }),
+          'is_token': dict({
+            'description': 'The stored secret is an access token.',
+            'type': 'boolean',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Id of the owning user; null: shared.',
+          }),
+          'token_expires': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'When the OAuth token expires; null: not applicable.',
+          }),
+          'username': dict({
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'imap_server',
+          'imap_port',
+          'imap_security',
+          'username',
+          'character_set',
+          'account_type',
+          'is_token',
+          'owner',
+          'can_change',
+          'token_expires',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get mail account',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get mail rule',
+      }),
+      'description': 'Read one mail rule with all its settings and the names of what it assigns.',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'rule_id': dict({
+            'description': 'Mail rule id, from list_mail_rules.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'rule_id',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'get_mail_rule',
+      'outputSchema': dict({
+        'description': 'A mail rule: which mails of an account to import, and what happens to them afterwards.',
+        'properties': dict({
+          'account_id': dict({
+            'type': 'integer',
+          }),
+          'action': dict({
+            'description': 'What happens to a mail on the mail server after documents were made.',
+            'enum': list([
+              'delete',
+              'move',
+              'mark_read',
+              'flag',
+              'tag',
+            ]),
+            'type': 'string',
+          }),
+          'action_parameter': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The folder for move, the keyword for tag.',
+          }),
+          'assign_correspondent': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                'properties': dict({
+                  'id': dict({
+                    'type': 'integer',
+                  }),
+                  'name': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null if the user may not see its name.',
+                  }),
+                }),
+                'required': list([
+                  'id',
+                  'name',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Used with assign_correspondent_from selected.',
+          }),
+          'assign_correspondent_from': dict({
+            'enum': list([
+              'none',
+              'email_address',
+              'name',
+              'selected',
+            ]),
+            'type': 'string',
+          }),
+          'assign_document_type': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                'properties': dict({
+                  'id': dict({
+                    'type': 'integer',
+                  }),
+                  'name': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null if the user may not see its name.',
+                  }),
+                }),
+                'required': list([
+                  'id',
+                  'name',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'assign_owner_from_rule': dict({
+            'description': 'Documents get the owner of the rule.',
+            'type': 'boolean',
+          }),
+          'assign_tags': dict({
+            'items': dict({
+              'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+              'properties': dict({
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Null if the user may not see its name.',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'assign_title_from': dict({
+            'enum': list([
+              'subject',
+              'filename',
+              'none',
+            ]),
+            'type': 'string',
+          }),
+          'attachment_type': dict({
+            'enum': list([
+              'attachments_only',
+              'all_files',
+            ]),
+            'type': 'string',
+          }),
+          'can_change': dict({
+            'type': 'boolean',
+          }),
+          'consumption_scope': dict({
+            'enum': list([
+              'attachments',
+              'eml',
+              'eml_and_attachments',
+            ]),
+            'type': 'string',
+          }),
+          'enabled': dict({
+            'type': 'boolean',
+          }),
+          'filter_attachment_filename_exclude': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_attachment_filename_include': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_body': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_from': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_subject': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_to': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'folder': dict({
+            'type': 'string',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'maximum_age_days': dict({
+            'description': 'Only mails up to this many days old.',
+            'type': 'integer',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'order': dict({
+            'description': 'Rules run in this order, lowest first.',
+            'type': 'integer',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                'properties': dict({
+                  'id': dict({
+                    'type': 'integer',
+                  }),
+                  'name': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null if the user may not see its name.',
+                  }),
+                }),
+                'required': list([
+                  'id',
+                  'name',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'pdf_layout': dict({
+            'enum': list([
+              'default',
+              'text_html',
+              'html_text',
+              'html',
+              'text',
+            ]),
+            'type': 'string',
+          }),
+          'stop_processing': dict({
+            'description': 'No later rule runs once this one made a document.',
+            'type': 'boolean',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'account_id',
+          'enabled',
+          'order',
+          'folder',
+          'filter_from',
+          'filter_to',
+          'filter_subject',
+          'filter_body',
+          'filter_attachment_filename_include',
+          'filter_attachment_filename_exclude',
+          'maximum_age_days',
+          'attachment_type',
+          'consumption_scope',
+          'pdf_layout',
+          'action',
+          'action_parameter',
+          'assign_title_from',
+          'assign_tags',
+          'assign_correspondent_from',
+          'assign_correspondent',
+          'assign_document_type',
+          'assign_owner_from_rule',
+          'stop_processing',
+          'owner',
+          'can_change',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get mail rule',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'views',
           ]),
         }),
@@ -5265,7 +6758,11 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+<<<<<<< HEAD
             'permissions',
+=======
+            'mail',
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
           ]),
         }),
       }),
@@ -5273,6 +6770,7 @@
         'idempotentHint': True,
         'openWorldHint': False,
         'readOnlyHint': True,
+<<<<<<< HEAD
         'title': 'List groups',
       }),
       'description': '''
@@ -5282,21 +6780,205 @@
         list_taxonomy(kind="group") it returns id and name only, but it pages and filters on the
         server. Needs the view_group permission in Paperless; without it, ask an administrator for
         the ids and pass them.
+=======
+        'title': 'List mail accounts',
+      }),
+      'description': '''
+        List the mail accounts Paperless fetches documents from.
+        
+        Each row has the server, port, security, username and account type, never a password or token.
+        Needs the view permission for mail accounts. count is the total; pass next_page as page to
+        see more. The rules of an account are in list_mail_rules.
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
+<<<<<<< HEAD
           'name_contains': dict({
             'anyOf': list([
               dict({
                 'type': 'string',
+=======
+          'page': dict({
+            'default': 1,
+            'description': 'Page number, from 1.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'page_size': dict({
+            'default': 25,
+            'description': 'Rows per page, at most 100.',
+            'maximum': 100,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_mail_accounts',
+      'outputSchema': dict({
+        'description': 'One page of mail accounts.',
+        'properties': dict({
+          'accounts': dict({
+            'items': dict({
+              'description': 'A mail account. The password is never returned, only accepted when it is set.',
+              'properties': dict({
+                'account_type': dict({
+                  'description': 'imap: password login; gmail_oauth, outlook_oauth: set up in the web UI.',
+                  'enum': list([
+                    'imap',
+                    'gmail_oauth',
+                    'outlook_oauth',
+                  ]),
+                  'type': 'string',
+                }),
+                'can_change': dict({
+                  'description': 'Whether this user may change the account.',
+                  'type': 'boolean',
+                }),
+                'character_set': dict({
+                  'type': 'string',
+                }),
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'imap_port': dict({
+                  'type': 'integer',
+                }),
+                'imap_security': dict({
+                  'enum': list([
+                    'none',
+                    'ssl',
+                    'starttls',
+                  ]),
+                  'type': 'string',
+                }),
+                'imap_server': dict({
+                  'type': 'string',
+                }),
+                'is_token': dict({
+                  'description': 'The stored secret is an access token.',
+                  'type': 'boolean',
+                }),
+                'name': dict({
+                  'type': 'string',
+                }),
+                'owner': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'integer',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Id of the owning user; null: shared.',
+                }),
+                'token_expires': dict({
+                  'anyOf': list([
+                    dict({
+                      'format': 'date-time',
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'When the OAuth token expires; null: not applicable.',
+                }),
+                'username': dict({
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+                'imap_server',
+                'imap_port',
+                'imap_security',
+                'username',
+                'character_set',
+                'account_type',
+                'is_token',
+                'owner',
+                'can_change',
+                'token_expires',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'count': dict({
+            'description': 'How many accounts there are in total.',
+            'type': 'integer',
+          }),
+          'next_page': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The next page, null on the last one.',
+          }),
+          'page': dict({
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'count',
+          'page',
+          'next_page',
+          'accounts',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List mail accounts',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List mail rules',
+      }),
+      'description': '''
+        List the mail rules: which mails of an account become documents, and what happens next.
+        
+        Each row has the folder, filters, age limit, action (what runs on the mail server afterwards),
+        and the tags, correspondent, document type and owner it assigns, with their names. Rules run
+        in their order. count is the total; pass next_page as page to see more.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'account_id': dict({
+            'anyOf': list([
+              dict({
+                'minimum': 1,
+                'type': 'integer',
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
               }),
               dict({
                 'type': 'null',
               }),
             ]),
             'default': None,
+<<<<<<< HEAD
             'description': 'Only groups whose name contains this text, ignoring case.',
+=======
+            'description': 'Only the rules of this account; default: all.',
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
           }),
           'page': dict({
             'default': 1,
@@ -5314,6 +6996,7 @@
         }),
         'type': 'object',
       }),
+<<<<<<< HEAD
       'name': 'list_groups',
       'outputSchema': dict({
         'description': 'One page of groups.',
@@ -5332,10 +7015,487 @@
                 'name': dict({
                   'type': 'string',
                 }),
+=======
+      'name': 'list_mail_rules',
+      'outputSchema': dict({
+        'description': 'One page of mail rules.',
+        'properties': dict({
+          'count': dict({
+            'description': 'How many rules match in total.',
+            'type': 'integer',
+          }),
+          'next_page': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The next page, null on the last one.',
+          }),
+          'page': dict({
+            'type': 'integer',
+          }),
+          'rules': dict({
+            'items': dict({
+              'description': 'A mail rule: which mails of an account to import, and what happens to them afterwards.',
+              'properties': dict({
+                'account_id': dict({
+                  'type': 'integer',
+                }),
+                'action': dict({
+                  'description': 'What happens to a mail on the mail server after documents were made.',
+                  'enum': list([
+                    'delete',
+                    'move',
+                    'mark_read',
+                    'flag',
+                    'tag',
+                  ]),
+                  'type': 'string',
+                }),
+                'action_parameter': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'The folder for move, the keyword for tag.',
+                }),
+                'assign_correspondent': dict({
+                  'anyOf': list([
+                    dict({
+                      'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                          'description': 'Null if the user may not see its name.',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Used with assign_correspondent_from selected.',
+                }),
+                'assign_correspondent_from': dict({
+                  'enum': list([
+                    'none',
+                    'email_address',
+                    'name',
+                    'selected',
+                  ]),
+                  'type': 'string',
+                }),
+                'assign_document_type': dict({
+                  'anyOf': list([
+                    dict({
+                      'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                          'description': 'Null if the user may not see its name.',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'assign_owner_from_rule': dict({
+                  'description': 'Documents get the owner of the rule.',
+                  'type': 'boolean',
+                }),
+                'assign_tags': dict({
+                  'items': dict({
+                    'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                    'properties': dict({
+                      'id': dict({
+                        'type': 'integer',
+                      }),
+                      'name': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                        'description': 'Null if the user may not see its name.',
+                      }),
+                    }),
+                    'required': list([
+                      'id',
+                      'name',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'type': 'array',
+                }),
+                'assign_title_from': dict({
+                  'enum': list([
+                    'subject',
+                    'filename',
+                    'none',
+                  ]),
+                  'type': 'string',
+                }),
+                'attachment_type': dict({
+                  'enum': list([
+                    'attachments_only',
+                    'all_files',
+                  ]),
+                  'type': 'string',
+                }),
+                'can_change': dict({
+                  'type': 'boolean',
+                }),
+                'consumption_scope': dict({
+                  'enum': list([
+                    'attachments',
+                    'eml',
+                    'eml_and_attachments',
+                  ]),
+                  'type': 'string',
+                }),
+                'enabled': dict({
+                  'type': 'boolean',
+                }),
+                'filter_attachment_filename_exclude': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'filter_attachment_filename_include': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'filter_body': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'filter_from': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'filter_subject': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'filter_to': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'folder': dict({
+                  'type': 'string',
+                }),
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'maximum_age_days': dict({
+                  'description': 'Only mails up to this many days old.',
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'type': 'string',
+                }),
+                'order': dict({
+                  'description': 'Rules run in this order, lowest first.',
+                  'type': 'integer',
+                }),
+                'owner': dict({
+                  'anyOf': list([
+                    dict({
+                      'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                          'description': 'Null if the user may not see its name.',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'pdf_layout': dict({
+                  'enum': list([
+                    'default',
+                    'text_html',
+                    'html_text',
+                    'html',
+                    'text',
+                  ]),
+                  'type': 'string',
+                }),
+                'stop_processing': dict({
+                  'description': 'No later rule runs once this one made a document.',
+                  'type': 'boolean',
+                }),
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
               }),
               'required': list([
                 'id',
                 'name',
+<<<<<<< HEAD
+=======
+                'account_id',
+                'enabled',
+                'order',
+                'folder',
+                'filter_from',
+                'filter_to',
+                'filter_subject',
+                'filter_body',
+                'filter_attachment_filename_include',
+                'filter_attachment_filename_exclude',
+                'maximum_age_days',
+                'attachment_type',
+                'consumption_scope',
+                'pdf_layout',
+                'action',
+                'action_parameter',
+                'assign_title_from',
+                'assign_tags',
+                'assign_correspondent_from',
+                'assign_correspondent',
+                'assign_document_type',
+                'assign_owner_from_rule',
+                'stop_processing',
+                'owner',
+                'can_change',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'count',
+          'page',
+          'next_page',
+          'rules',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List mail rules',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List processed mail',
+      }),
+      'description': '''
+        List the mails Paperless handled, newest first, as compact rows.
+        
+        Each row has the subject, folder, when it arrived and was processed, the rule, and the status
+        (SUCCESS or FAILED with a short error). Use it to check a fetch or to find why a mail did
+        not become a document. count is the total; pass next_page as page to see more.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'page': dict({
+            'default': 1,
+            'description': 'Page number, from 1.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'page_size': dict({
+            'default': 25,
+            'description': 'Rows per page, at most 100.',
+            'maximum': 100,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'rule_id': dict({
+            'anyOf': list([
+              dict({
+                'minimum': 1,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only mail handled by this rule; default: all.',
+          }),
+          'status': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'SUCCESS',
+                  'FAILED',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'SUCCESS or FAILED; default: both.',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_processed_mail',
+      'outputSchema': dict({
+        'description': 'One page of processed mail, newest first.',
+        'properties': dict({
+          'count': dict({
+            'description': 'How many processed mails match in total.',
+            'type': 'integer',
+          }),
+          'mails': dict({
+            'items': dict({
+              'description': 'A mail Paperless handled: when, from which rule, and how it went.',
+              'properties': dict({
+                'error': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Why it failed, cut to one short line.',
+                }),
+                'folder': dict({
+                  'type': 'string',
+                }),
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'processed': dict({
+                  'format': 'date-time',
+                  'type': 'string',
+                }),
+                'received': dict({
+                  'format': 'date-time',
+                  'type': 'string',
+                }),
+                'rule_id': dict({
+                  'type': 'integer',
+                }),
+                'status': dict({
+                  'description': 'SUCCESS or FAILED.',
+                  'type': 'string',
+                }),
+                'subject': dict({
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'rule_id',
+                'subject',
+                'folder',
+                'received',
+                'processed',
+                'status',
+                'error',
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
               ]),
               'type': 'object',
             }),
@@ -5360,11 +7520,19 @@
           'count',
           'page',
           'next_page',
+<<<<<<< HEAD
           'groups',
         ]),
         'type': 'object',
       }),
       'title': 'List groups',
+=======
+          'mails',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List processed mail',
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
     }),
     dict({
       '_meta': dict({
@@ -6701,6 +8869,71 @@
         'type': 'object',
       }),
       'title': 'Merge documents as versions',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': True,
+        'idempotentHint': False,
+        'openWorldHint': True,
+        'readOnlyHint': False,
+        'title': 'Fetch mail now',
+      }),
+      'description': '''
+        Fetch the mail of an account now instead of at the next scheduled run (every 10 minutes).
+        
+        Paperless connects to the mail server in the background, imports documents from the mails
+        that the account's enabled rules match, and then runs each rule's action on those mails ON
+        THE MAIL SERVER: it can mark, flag or tag them, move them to another folder or DELETE them,
+        and this server cannot undo that. Without confirm it fetches nothing and fails with an error
+        that lists what each enabled rule would do; show that to the user and call again with
+        confirm=true only once they agree. The result only says the fetch was queued: follow the
+        outcome with list_processed_mail and list_tasks.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'account_id': dict({
+            'description': 'Mail account id, from list_mail_accounts.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+        }),
+        'required': list([
+          'account_id',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'process_mail_account',
+      'outputSchema': dict({
+        'description': 'The outcome of process_mail_account: Paperless queued the fetch.',
+        'properties': dict({
+          'id': dict({
+            'type': 'integer',
+          }),
+          'message': dict({
+            'description': 'What was started and where to see the outcome.',
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Fetch mail now',
     }),
     dict({
       '_meta': dict({
@@ -9193,6 +11426,68 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': True,
+        'openWorldHint': True,
+        'readOnlyHint': False,
+        'title': 'Test mail account',
+      }),
+      'description': '''
+        Try the login of a saved mail account: Paperless connects to its server and signs in.
+        
+        Changes nothing, on the server or in Paperless. A connection that fails is a normal result
+        (success false) with a hint what to check, not an error. Uses the saved password, which this
+        server never sees. Needs the change permission for the account. A server that accepts the
+        connection but never answers is given up on after about 45 seconds.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'account_id': dict({
+            'description': 'Mail account id, from list_mail_accounts.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'account_id',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'test_mail_account',
+      'outputSchema': dict({
+        'description': 'The outcome of a connection test of a saved mail account.',
+        'properties': dict({
+          'id': dict({
+            'type': 'integer',
+          }),
+          'message': dict({
+            'description': 'What happened and what to check if it failed.',
+            'type': 'string',
+          }),
+          'success': dict({
+            'description': 'Paperless connected and logged in.',
+            'type': 'boolean',
+          }),
+        }),
+        'required': list([
+          'id',
+          'success',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Test mail account',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'core',
           ]),
         }),
@@ -10172,6 +12467,1001 @@
         'type': 'object',
       }),
       'title': 'Update document',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Update mail account',
+      }),
+      'description': '''
+        Change a mail account; only what you pass changes, and the saved password stays.
+        
+        The password can be replaced but never read. Pointing the account at another server, port or
+        security setting WITHOUT a new password would make Paperless send the saved password there,
+        and turning encryption off sends it as plain text, so those need confirm: without it the call
+        fails with an error that says what would happen, changes nothing and quotes no password;
+        show that to the user and call again with confirm=true only once they agree.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'account_id': dict({
+            'description': 'Mail account id, from list_mail_accounts.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'character_set': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New character set.',
+          }),
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'imap_port': dict({
+            'anyOf': list([
+              dict({
+                'maximum': 65535,
+                'minimum': 1,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New IMAP port.',
+          }),
+          'imap_security': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'none',
+                  'ssl',
+                  'starttls',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'ssl: TLS from the start (port 993); starttls (port 143); none: no encryption.',
+          }),
+          'imap_server': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'minLength': 1,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New IMAP host.',
+          }),
+          'name': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'minLength': 1,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New unique name.',
+          }),
+          'password': dict({
+            'anyOf': list([
+              dict({
+                'description': 'The password of the mail account (or its app password). Write-only: it is stored by Paperless and never shown again.',
+                'format': 'password',
+                'type': 'string',
+                'writeOnly': True,
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'A new password; omit to keep it.',
+          }),
+          'username': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'minLength': 1,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New login name.',
+          }),
+        }),
+        'required': list([
+          'account_id',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'update_mail_account',
+      'outputSchema': dict({
+        'description': 'A mail account. The password is never returned, only accepted when it is set.',
+        'properties': dict({
+          'account_type': dict({
+            'description': 'imap: password login; gmail_oauth, outlook_oauth: set up in the web UI.',
+            'enum': list([
+              'imap',
+              'gmail_oauth',
+              'outlook_oauth',
+            ]),
+            'type': 'string',
+          }),
+          'can_change': dict({
+            'description': 'Whether this user may change the account.',
+            'type': 'boolean',
+          }),
+          'character_set': dict({
+            'type': 'string',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'imap_port': dict({
+            'type': 'integer',
+          }),
+          'imap_security': dict({
+            'enum': list([
+              'none',
+              'ssl',
+              'starttls',
+            ]),
+            'type': 'string',
+          }),
+          'imap_server': dict({
+            'type': 'string',
+          }),
+          'is_token': dict({
+            'description': 'The stored secret is an access token.',
+            'type': 'boolean',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Id of the owning user; null: shared.',
+          }),
+          'token_expires': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'When the OAuth token expires; null: not applicable.',
+          }),
+          'username': dict({
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'imap_server',
+          'imap_port',
+          'imap_security',
+          'username',
+          'character_set',
+          'account_type',
+          'is_token',
+          'owner',
+          'can_change',
+          'token_expires',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Update mail account',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Update mail rule',
+      }),
+      'description': '''
+        Change a mail rule; only what you pass changes, and what is already so is not written.
+        
+        Names and ids work like in create_mail_rule; an empty string clears a filter or the action
+        parameter. Needs confirm for (1) a rule that is enabled and deletes or moves mail when the
+        change widens or redirects what it reaches (account, folder, filters, age, action, parameter,
+        switching it on), and (2) handing the rule to another owner or to nobody. Without it the call
+        fails with an error that says what would happen and changes nothing; show that to the user
+        and call again with confirm=true only once they agree.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'account_id': dict({
+            'anyOf': list([
+              dict({
+                'minimum': 1,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Move the rule to this account.',
+          }),
+          'action': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'delete',
+                  'move',
+                  'mark_read',
+                  'flag',
+                  'tag',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New action: mark_read (default; Paperless then skips read mail), flag (skips flagged mail), tag (adds the keyword in action_parameter), move (to the folder in action_parameter) or delete.',
+          }),
+          'action_parameter': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'The folder for move, the keyword for tag; empty clears.',
+          }),
+          'assign_correspondent': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Correspondent name or id; implies selected.',
+          }),
+          'assign_correspondent_from': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'none',
+                  'email_address',
+                  'name',
+                  'selected',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New correspondent source.',
+          }),
+          'assign_document_type': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Document type name or id.',
+          }),
+          'assign_owner_from_rule': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': "Documents get the rule's owner.",
+          }),
+          'assign_tags': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'integer',
+                    }),
+                  ]),
+                }),
+                'maxItems': 50,
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Replaces the tags the rule assigns; [] removes them all.',
+          }),
+          'assign_title_from': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'subject',
+                  'filename',
+                  'none',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New title source.',
+          }),
+          'attachment_type': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'attachments_only',
+                  'all_files',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New scope.',
+          }),
+          'clear': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'enum': list([
+                    'assign_correspondent',
+                    'assign_document_type',
+                    'owner',
+                  ]),
+                  'type': 'string',
+                }),
+                'maxItems': 3,
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Settings to empty: assign_correspondent, assign_document_type or owner (no owner makes the rule visible to every user with the mail rule permission).',
+          }),
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'consumption_scope': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'attachments',
+                  'eml',
+                  'eml_and_attachments',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New scope.',
+          }),
+          'enabled': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Switch the rule on or off.',
+          }),
+          'filter_attachment_filename_exclude': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only mails matching this; wildcards where noted. Update: empty string clears.',
+          }),
+          'filter_attachment_filename_include': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only mails matching this; wildcards where noted. Update: empty string clears.',
+          }),
+          'filter_body': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only mails matching this; wildcards where noted. Update: empty string clears.',
+          }),
+          'filter_from': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only mails matching this; wildcards where noted. Update: empty string clears.',
+          }),
+          'filter_subject': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only mails matching this; wildcards where noted. Update: empty string clears.',
+          }),
+          'filter_to': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only mails matching this; wildcards where noted. Update: empty string clears.',
+          }),
+          'folder': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'minLength': 1,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New IMAP folder.',
+          }),
+          'maximum_age_days': dict({
+            'anyOf': list([
+              dict({
+                'maximum': 36500,
+                'minimum': 0,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New age limit in days.',
+          }),
+          'name': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 256,
+                'minLength': 1,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New name.',
+          }),
+          'order': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New position; lowest runs first.',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Username or id of the new owner.',
+          }),
+          'pdf_layout': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'default',
+                  'text_html',
+                  'html_text',
+                  'html',
+                  'text',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New PDF layout.',
+          }),
+          'rule_id': dict({
+            'description': 'Mail rule id, from list_mail_rules.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'stop_processing': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Stop later rules.',
+          }),
+        }),
+        'required': list([
+          'rule_id',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'update_mail_rule',
+      'outputSchema': dict({
+        'description': 'A mail rule: which mails of an account to import, and what happens to them afterwards.',
+        'properties': dict({
+          'account_id': dict({
+            'type': 'integer',
+          }),
+          'action': dict({
+            'description': 'What happens to a mail on the mail server after documents were made.',
+            'enum': list([
+              'delete',
+              'move',
+              'mark_read',
+              'flag',
+              'tag',
+            ]),
+            'type': 'string',
+          }),
+          'action_parameter': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The folder for move, the keyword for tag.',
+          }),
+          'assign_correspondent': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                'properties': dict({
+                  'id': dict({
+                    'type': 'integer',
+                  }),
+                  'name': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null if the user may not see its name.',
+                  }),
+                }),
+                'required': list([
+                  'id',
+                  'name',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Used with assign_correspondent_from selected.',
+          }),
+          'assign_correspondent_from': dict({
+            'enum': list([
+              'none',
+              'email_address',
+              'name',
+              'selected',
+            ]),
+            'type': 'string',
+          }),
+          'assign_document_type': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                'properties': dict({
+                  'id': dict({
+                    'type': 'integer',
+                  }),
+                  'name': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null if the user may not see its name.',
+                  }),
+                }),
+                'required': list([
+                  'id',
+                  'name',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'assign_owner_from_rule': dict({
+            'description': 'Documents get the owner of the rule.',
+            'type': 'boolean',
+          }),
+          'assign_tags': dict({
+            'items': dict({
+              'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+              'properties': dict({
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Null if the user may not see its name.',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'assign_title_from': dict({
+            'enum': list([
+              'subject',
+              'filename',
+              'none',
+            ]),
+            'type': 'string',
+          }),
+          'attachment_type': dict({
+            'enum': list([
+              'attachments_only',
+              'all_files',
+            ]),
+            'type': 'string',
+          }),
+          'can_change': dict({
+            'type': 'boolean',
+          }),
+          'consumption_scope': dict({
+            'enum': list([
+              'attachments',
+              'eml',
+              'eml_and_attachments',
+            ]),
+            'type': 'string',
+          }),
+          'enabled': dict({
+            'type': 'boolean',
+          }),
+          'filter_attachment_filename_exclude': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_attachment_filename_include': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_body': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_from': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_subject': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_to': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'folder': dict({
+            'type': 'string',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'maximum_age_days': dict({
+            'description': 'Only mails up to this many days old.',
+            'type': 'integer',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'order': dict({
+            'description': 'Rules run in this order, lowest first.',
+            'type': 'integer',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                'properties': dict({
+                  'id': dict({
+                    'type': 'integer',
+                  }),
+                  'name': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null if the user may not see its name.',
+                  }),
+                }),
+                'required': list([
+                  'id',
+                  'name',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'pdf_layout': dict({
+            'enum': list([
+              'default',
+              'text_html',
+              'html_text',
+              'html',
+              'text',
+            ]),
+            'type': 'string',
+          }),
+          'stop_processing': dict({
+            'description': 'No later rule runs once this one made a document.',
+            'type': 'boolean',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'account_id',
+          'enabled',
+          'order',
+          'folder',
+          'filter_from',
+          'filter_to',
+          'filter_subject',
+          'filter_body',
+          'filter_attachment_filename_include',
+          'filter_attachment_filename_exclude',
+          'maximum_age_days',
+          'attachment_type',
+          'consumption_scope',
+          'pdf_layout',
+          'action',
+          'action_parameter',
+          'assign_title_from',
+          'assign_tags',
+          'assign_correspondent_from',
+          'assign_correspondent',
+          'assign_document_type',
+          'assign_owner_from_rule',
+          'stop_processing',
+          'owner',
+          'can_change',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Update mail rule',
     }),
     dict({
       '_meta': dict({
@@ -17617,6 +20907,470 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get mail account',
+      }),
+      'description': 'Read one mail account: server, port, security, username, type. Never its password.',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'account_id': dict({
+            'description': 'Mail account id, from list_mail_accounts.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'account_id',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'get_mail_account',
+      'outputSchema': dict({
+        'description': 'A mail account. The password is never returned, only accepted when it is set.',
+        'properties': dict({
+          'account_type': dict({
+            'description': 'imap: password login; gmail_oauth, outlook_oauth: set up in the web UI.',
+            'enum': list([
+              'imap',
+              'gmail_oauth',
+              'outlook_oauth',
+            ]),
+            'type': 'string',
+          }),
+          'can_change': dict({
+            'description': 'Whether this user may change the account.',
+            'type': 'boolean',
+          }),
+          'character_set': dict({
+            'type': 'string',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'imap_port': dict({
+            'type': 'integer',
+          }),
+          'imap_security': dict({
+            'enum': list([
+              'none',
+              'ssl',
+              'starttls',
+            ]),
+            'type': 'string',
+          }),
+          'imap_server': dict({
+            'type': 'string',
+          }),
+          'is_token': dict({
+            'description': 'The stored secret is an access token.',
+            'type': 'boolean',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Id of the owning user; null: shared.',
+          }),
+          'token_expires': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'When the OAuth token expires; null: not applicable.',
+          }),
+          'username': dict({
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'imap_server',
+          'imap_port',
+          'imap_security',
+          'username',
+          'character_set',
+          'account_type',
+          'is_token',
+          'owner',
+          'can_change',
+          'token_expires',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get mail account',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get mail rule',
+      }),
+      'description': 'Read one mail rule with all its settings and the names of what it assigns.',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'rule_id': dict({
+            'description': 'Mail rule id, from list_mail_rules.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'rule_id',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'get_mail_rule',
+      'outputSchema': dict({
+        'description': 'A mail rule: which mails of an account to import, and what happens to them afterwards.',
+        'properties': dict({
+          'account_id': dict({
+            'type': 'integer',
+          }),
+          'action': dict({
+            'description': 'What happens to a mail on the mail server after documents were made.',
+            'enum': list([
+              'delete',
+              'move',
+              'mark_read',
+              'flag',
+              'tag',
+            ]),
+            'type': 'string',
+          }),
+          'action_parameter': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The folder for move, the keyword for tag.',
+          }),
+          'assign_correspondent': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                'properties': dict({
+                  'id': dict({
+                    'type': 'integer',
+                  }),
+                  'name': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null if the user may not see its name.',
+                  }),
+                }),
+                'required': list([
+                  'id',
+                  'name',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Used with assign_correspondent_from selected.',
+          }),
+          'assign_correspondent_from': dict({
+            'enum': list([
+              'none',
+              'email_address',
+              'name',
+              'selected',
+            ]),
+            'type': 'string',
+          }),
+          'assign_document_type': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                'properties': dict({
+                  'id': dict({
+                    'type': 'integer',
+                  }),
+                  'name': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null if the user may not see its name.',
+                  }),
+                }),
+                'required': list([
+                  'id',
+                  'name',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'assign_owner_from_rule': dict({
+            'description': 'Documents get the owner of the rule.',
+            'type': 'boolean',
+          }),
+          'assign_tags': dict({
+            'items': dict({
+              'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+              'properties': dict({
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Null if the user may not see its name.',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'assign_title_from': dict({
+            'enum': list([
+              'subject',
+              'filename',
+              'none',
+            ]),
+            'type': 'string',
+          }),
+          'attachment_type': dict({
+            'enum': list([
+              'attachments_only',
+              'all_files',
+            ]),
+            'type': 'string',
+          }),
+          'can_change': dict({
+            'type': 'boolean',
+          }),
+          'consumption_scope': dict({
+            'enum': list([
+              'attachments',
+              'eml',
+              'eml_and_attachments',
+            ]),
+            'type': 'string',
+          }),
+          'enabled': dict({
+            'type': 'boolean',
+          }),
+          'filter_attachment_filename_exclude': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_attachment_filename_include': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_body': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_from': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_subject': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'filter_to': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'folder': dict({
+            'type': 'string',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'maximum_age_days': dict({
+            'description': 'Only mails up to this many days old.',
+            'type': 'integer',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'order': dict({
+            'description': 'Rules run in this order, lowest first.',
+            'type': 'integer',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                'properties': dict({
+                  'id': dict({
+                    'type': 'integer',
+                  }),
+                  'name': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null if the user may not see its name.',
+                  }),
+                }),
+                'required': list([
+                  'id',
+                  'name',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'pdf_layout': dict({
+            'enum': list([
+              'default',
+              'text_html',
+              'html_text',
+              'html',
+              'text',
+            ]),
+            'type': 'string',
+          }),
+          'stop_processing': dict({
+            'description': 'No later rule runs once this one made a document.',
+            'type': 'boolean',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'account_id',
+          'enabled',
+          'order',
+          'folder',
+          'filter_from',
+          'filter_to',
+          'filter_subject',
+          'filter_body',
+          'filter_attachment_filename_include',
+          'filter_attachment_filename_exclude',
+          'maximum_age_days',
+          'attachment_type',
+          'consumption_scope',
+          'pdf_layout',
+          'action',
+          'action_parameter',
+          'assign_title_from',
+          'assign_tags',
+          'assign_correspondent_from',
+          'assign_correspondent',
+          'assign_document_type',
+          'assign_owner_from_rule',
+          'stop_processing',
+          'owner',
+          'can_change',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get mail rule',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'views',
           ]),
         }),
@@ -17993,7 +21747,11 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+<<<<<<< HEAD
             'permissions',
+=======
+            'mail',
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
           ]),
         }),
       }),
@@ -18001,6 +21759,7 @@
         'idempotentHint': True,
         'openWorldHint': False,
         'readOnlyHint': True,
+<<<<<<< HEAD
         'title': 'List groups',
       }),
       'description': '''
@@ -18010,21 +21769,205 @@
         list_taxonomy(kind="group") it returns id and name only, but it pages and filters on the
         server. Needs the view_group permission in Paperless; without it, ask an administrator for
         the ids and pass them.
+=======
+        'title': 'List mail accounts',
+      }),
+      'description': '''
+        List the mail accounts Paperless fetches documents from.
+        
+        Each row has the server, port, security, username and account type, never a password or token.
+        Needs the view permission for mail accounts. count is the total; pass next_page as page to
+        see more. The rules of an account are in list_mail_rules.
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
+<<<<<<< HEAD
           'name_contains': dict({
             'anyOf': list([
               dict({
                 'type': 'string',
+=======
+          'page': dict({
+            'default': 1,
+            'description': 'Page number, from 1.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'page_size': dict({
+            'default': 25,
+            'description': 'Rows per page, at most 100.',
+            'maximum': 100,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_mail_accounts',
+      'outputSchema': dict({
+        'description': 'One page of mail accounts.',
+        'properties': dict({
+          'accounts': dict({
+            'items': dict({
+              'description': 'A mail account. The password is never returned, only accepted when it is set.',
+              'properties': dict({
+                'account_type': dict({
+                  'description': 'imap: password login; gmail_oauth, outlook_oauth: set up in the web UI.',
+                  'enum': list([
+                    'imap',
+                    'gmail_oauth',
+                    'outlook_oauth',
+                  ]),
+                  'type': 'string',
+                }),
+                'can_change': dict({
+                  'description': 'Whether this user may change the account.',
+                  'type': 'boolean',
+                }),
+                'character_set': dict({
+                  'type': 'string',
+                }),
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'imap_port': dict({
+                  'type': 'integer',
+                }),
+                'imap_security': dict({
+                  'enum': list([
+                    'none',
+                    'ssl',
+                    'starttls',
+                  ]),
+                  'type': 'string',
+                }),
+                'imap_server': dict({
+                  'type': 'string',
+                }),
+                'is_token': dict({
+                  'description': 'The stored secret is an access token.',
+                  'type': 'boolean',
+                }),
+                'name': dict({
+                  'type': 'string',
+                }),
+                'owner': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'integer',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Id of the owning user; null: shared.',
+                }),
+                'token_expires': dict({
+                  'anyOf': list([
+                    dict({
+                      'format': 'date-time',
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'When the OAuth token expires; null: not applicable.',
+                }),
+                'username': dict({
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+                'imap_server',
+                'imap_port',
+                'imap_security',
+                'username',
+                'character_set',
+                'account_type',
+                'is_token',
+                'owner',
+                'can_change',
+                'token_expires',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'count': dict({
+            'description': 'How many accounts there are in total.',
+            'type': 'integer',
+          }),
+          'next_page': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The next page, null on the last one.',
+          }),
+          'page': dict({
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'count',
+          'page',
+          'next_page',
+          'accounts',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List mail accounts',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List mail rules',
+      }),
+      'description': '''
+        List the mail rules: which mails of an account become documents, and what happens next.
+        
+        Each row has the folder, filters, age limit, action (what runs on the mail server afterwards),
+        and the tags, correspondent, document type and owner it assigns, with their names. Rules run
+        in their order. count is the total; pass next_page as page to see more.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'account_id': dict({
+            'anyOf': list([
+              dict({
+                'minimum': 1,
+                'type': 'integer',
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
               }),
               dict({
                 'type': 'null',
               }),
             ]),
             'default': None,
+<<<<<<< HEAD
             'description': 'Only groups whose name contains this text, ignoring case.',
+=======
+            'description': 'Only the rules of this account; default: all.',
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
           }),
           'page': dict({
             'default': 1,
@@ -18042,6 +21985,7 @@
         }),
         'type': 'object',
       }),
+<<<<<<< HEAD
       'name': 'list_groups',
       'outputSchema': dict({
         'description': 'One page of groups.',
@@ -18060,10 +22004,487 @@
                 'name': dict({
                   'type': 'string',
                 }),
+=======
+      'name': 'list_mail_rules',
+      'outputSchema': dict({
+        'description': 'One page of mail rules.',
+        'properties': dict({
+          'count': dict({
+            'description': 'How many rules match in total.',
+            'type': 'integer',
+          }),
+          'next_page': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The next page, null on the last one.',
+          }),
+          'page': dict({
+            'type': 'integer',
+          }),
+          'rules': dict({
+            'items': dict({
+              'description': 'A mail rule: which mails of an account to import, and what happens to them afterwards.',
+              'properties': dict({
+                'account_id': dict({
+                  'type': 'integer',
+                }),
+                'action': dict({
+                  'description': 'What happens to a mail on the mail server after documents were made.',
+                  'enum': list([
+                    'delete',
+                    'move',
+                    'mark_read',
+                    'flag',
+                    'tag',
+                  ]),
+                  'type': 'string',
+                }),
+                'action_parameter': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'The folder for move, the keyword for tag.',
+                }),
+                'assign_correspondent': dict({
+                  'anyOf': list([
+                    dict({
+                      'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                          'description': 'Null if the user may not see its name.',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Used with assign_correspondent_from selected.',
+                }),
+                'assign_correspondent_from': dict({
+                  'enum': list([
+                    'none',
+                    'email_address',
+                    'name',
+                    'selected',
+                  ]),
+                  'type': 'string',
+                }),
+                'assign_document_type': dict({
+                  'anyOf': list([
+                    dict({
+                      'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                          'description': 'Null if the user may not see its name.',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'assign_owner_from_rule': dict({
+                  'description': 'Documents get the owner of the rule.',
+                  'type': 'boolean',
+                }),
+                'assign_tags': dict({
+                  'items': dict({
+                    'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                    'properties': dict({
+                      'id': dict({
+                        'type': 'integer',
+                      }),
+                      'name': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                        'description': 'Null if the user may not see its name.',
+                      }),
+                    }),
+                    'required': list([
+                      'id',
+                      'name',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'type': 'array',
+                }),
+                'assign_title_from': dict({
+                  'enum': list([
+                    'subject',
+                    'filename',
+                    'none',
+                  ]),
+                  'type': 'string',
+                }),
+                'attachment_type': dict({
+                  'enum': list([
+                    'attachments_only',
+                    'all_files',
+                  ]),
+                  'type': 'string',
+                }),
+                'can_change': dict({
+                  'type': 'boolean',
+                }),
+                'consumption_scope': dict({
+                  'enum': list([
+                    'attachments',
+                    'eml',
+                    'eml_and_attachments',
+                  ]),
+                  'type': 'string',
+                }),
+                'enabled': dict({
+                  'type': 'boolean',
+                }),
+                'filter_attachment_filename_exclude': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'filter_attachment_filename_include': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'filter_body': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'filter_from': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'filter_subject': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'filter_to': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'folder': dict({
+                  'type': 'string',
+                }),
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'maximum_age_days': dict({
+                  'description': 'Only mails up to this many days old.',
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'type': 'string',
+                }),
+                'order': dict({
+                  'description': 'Rules run in this order, lowest first.',
+                  'type': 'integer',
+                }),
+                'owner': dict({
+                  'anyOf': list([
+                    dict({
+                      'description': 'A tag, correspondent, document type or user a rule assigns, with its name if visible.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                          'description': 'Null if the user may not see its name.',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'pdf_layout': dict({
+                  'enum': list([
+                    'default',
+                    'text_html',
+                    'html_text',
+                    'html',
+                    'text',
+                  ]),
+                  'type': 'string',
+                }),
+                'stop_processing': dict({
+                  'description': 'No later rule runs once this one made a document.',
+                  'type': 'boolean',
+                }),
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
               }),
               'required': list([
                 'id',
                 'name',
+<<<<<<< HEAD
+=======
+                'account_id',
+                'enabled',
+                'order',
+                'folder',
+                'filter_from',
+                'filter_to',
+                'filter_subject',
+                'filter_body',
+                'filter_attachment_filename_include',
+                'filter_attachment_filename_exclude',
+                'maximum_age_days',
+                'attachment_type',
+                'consumption_scope',
+                'pdf_layout',
+                'action',
+                'action_parameter',
+                'assign_title_from',
+                'assign_tags',
+                'assign_correspondent_from',
+                'assign_correspondent',
+                'assign_document_type',
+                'assign_owner_from_rule',
+                'stop_processing',
+                'owner',
+                'can_change',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'count',
+          'page',
+          'next_page',
+          'rules',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List mail rules',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List processed mail',
+      }),
+      'description': '''
+        List the mails Paperless handled, newest first, as compact rows.
+        
+        Each row has the subject, folder, when it arrived and was processed, the rule, and the status
+        (SUCCESS or FAILED with a short error). Use it to check a fetch or to find why a mail did
+        not become a document. count is the total; pass next_page as page to see more.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'page': dict({
+            'default': 1,
+            'description': 'Page number, from 1.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'page_size': dict({
+            'default': 25,
+            'description': 'Rows per page, at most 100.',
+            'maximum': 100,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'rule_id': dict({
+            'anyOf': list([
+              dict({
+                'minimum': 1,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only mail handled by this rule; default: all.',
+          }),
+          'status': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'SUCCESS',
+                  'FAILED',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'SUCCESS or FAILED; default: both.',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_processed_mail',
+      'outputSchema': dict({
+        'description': 'One page of processed mail, newest first.',
+        'properties': dict({
+          'count': dict({
+            'description': 'How many processed mails match in total.',
+            'type': 'integer',
+          }),
+          'mails': dict({
+            'items': dict({
+              'description': 'A mail Paperless handled: when, from which rule, and how it went.',
+              'properties': dict({
+                'error': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Why it failed, cut to one short line.',
+                }),
+                'folder': dict({
+                  'type': 'string',
+                }),
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'processed': dict({
+                  'format': 'date-time',
+                  'type': 'string',
+                }),
+                'received': dict({
+                  'format': 'date-time',
+                  'type': 'string',
+                }),
+                'rule_id': dict({
+                  'type': 'integer',
+                }),
+                'status': dict({
+                  'description': 'SUCCESS or FAILED.',
+                  'type': 'string',
+                }),
+                'subject': dict({
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'rule_id',
+                'subject',
+                'folder',
+                'received',
+                'processed',
+                'status',
+                'error',
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
               ]),
               'type': 'object',
             }),
@@ -18088,11 +22509,19 @@
           'count',
           'page',
           'next_page',
+<<<<<<< HEAD
           'groups',
         ]),
         'type': 'object',
       }),
       'title': 'List groups',
+=======
+          'mails',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List processed mail',
+>>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
     }),
     dict({
       '_meta': dict({

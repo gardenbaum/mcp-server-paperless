@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from paperless_mcp.services.documents import DocumentService
     from paperless_mcp.services.files import FileService
     from paperless_mcp.services.instance import InstanceService
+    from paperless_mcp.services.mail import MailService
     from paperless_mcp.services.notes import NoteService
     from paperless_mcp.services.pdf import PdfService
     from paperless_mcp.services.permissions import PermissionService
@@ -46,7 +47,7 @@ if TYPE_CHECKING:
 
 # Every toolset; each tool carries exactly one of them as its only tag.
 TOOLSETS: Final = frozenset(
-    {"core", "ai", "bulk", "versions", "views", "trash", "pdf", "sharing", "permissions"}
+    {"core", "ai", "bulk", "versions", "views", "trash", "pdf", "sharing", "permissions", "mail"}
 )
 
 # Tools whose result is an image or a file as MCP content blocks, with no output schema and no
@@ -108,6 +109,19 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "set_permissions": "permissions",
     "list_users": "permissions",
     "list_groups": "permissions",
+    "list_mail_accounts": "mail",
+    "get_mail_account": "mail",
+    "create_mail_account": "mail",
+    "update_mail_account": "mail",
+    "delete_mail_account": "mail",
+    "test_mail_account": "mail",
+    "process_mail_account": "mail",
+    "list_mail_rules": "mail",
+    "get_mail_rule": "mail",
+    "create_mail_rule": "mail",
+    "update_mail_rule": "mail",
+    "delete_mail_rule": "mail",
+    "list_processed_mail": "mail",
 }
 
 # Toolsets that need a Paperless capability, mapped to it (only "ai" so far); the startup probe
@@ -412,6 +426,102 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=False,
         open_world_hint=True,
     ),
+    # Mail (decision-18). Passwords are write-only and never returned. Reading is read-only.
+    "list_mail_accounts": ToolAnnotations(
+        title="List mail accounts",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_mail_account": ToolAnnotations(
+        title="Get mail account",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "list_mail_rules": ToolAnnotations(
+        title="List mail rules",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_mail_rule": ToolAnnotations(
+        title="Get mail rule",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "list_processed_mail": ToolAnnotations(
+        title="List processed mail",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Storing an account contacts nobody. Updating one needs confirm only to point it at another
+    # server or turn off encryption, so it stays non-destructive and idempotent.
+    "create_mail_account": ToolAnnotations(
+        title="Create mail account",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+    "update_mail_account": ToolAnnotations(
+        title="Update mail account",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Destructive (decision-6): the rules and their processed-mail records go with an account.
+    "delete_mail_account": ToolAnnotations(
+        title="Delete mail account",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Logs in to the mail server with the saved password and changes nothing, but it is not
+    # read-only: Paperless asks for the change permission, and the tool contacts an outside server.
+    "test_mail_account": ToolAnnotations(
+        title="Test mail account",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=True,
+    ),
+    # Open world and destructive: a fetch imports documents and, depending on the rules, deletes
+    # or moves mail on the server, which cannot be undone from here. Needs confirm (decision-18).
+    "process_mail_account": ToolAnnotations(
+        title="Fetch mail now",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=True,
+    ),
+    # A rule stores what a later fetch will do; the mail server is touched then, not now. Rules
+    # that delete or move mail need confirm all the same (decision-18).
+    "create_mail_rule": ToolAnnotations(
+        title="Create mail rule",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+    "update_mail_rule": ToolAnnotations(
+        title="Update mail rule",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "delete_mail_rule": ToolAnnotations(
+        title="Delete mail rule",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     "list_document_versions": ToolAnnotations(
         title="List document versions",
         read_only_hint=True,
@@ -581,6 +691,7 @@ class Services:
     permissions: PermissionService
     pdf: PdfService
     sharing: SharingService
+    mail: MailService
 
 
 def services(ctx: Context) -> Services:
