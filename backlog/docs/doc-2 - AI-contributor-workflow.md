@@ -3,7 +3,7 @@ id: doc-2
 title: AI contributor workflow
 type: guide
 created_date: '2026-11-12T16:23:00Z'
-updated_date: '2026-11-12T16:23:00Z'
+updated_date: '2026-11-16T23:32:00Z'
 ---
 # AI contributor workflow
 
@@ -14,17 +14,17 @@ How AI sessions (local or Claude Code cloud) implement Backlog tasks in this rep
 A controller session runs the loop and delegates; it keeps its own context small.
 
 1. Controller: pick the next task whose dependencies are merged; `git switch -c plmcp-N-<slug>` from an up-to-date main; set the task In Progress and assign it.
-2. Implementer subagent (model sonnet, worktree isolation when tasks run in parallel): read `backlog instructions task-execution`, record the plan with `backlog task edit PLMCP-N --plan`, then strict TDD: every new test at every level (adapter, contract, service, tool, e2e) is run red before the code exists, then green. Append progress with `--append-notes`. `just check` and `just e2e` must pass.
+2. Implementer subagent (model sonnet, worktree isolation when tasks run in parallel): read `backlog instructions task-execution`, record the plan with `backlog task edit PLMCP-N --plan`, then strict TDD: every new test at every level (adapter, contract, service, tool, e2e) is run red before the code exists, then green. Append progress with `--append-notes`. `just check` must pass, and the live tests the change touches (`just e2e`, or `just e2e-paths` for a tier) when it changes runtime code.
 3. Reviewer subagent (model opus, independent, sees only the diff, the task and the design): checks acceptance criteria, design, decisions and gates. Findings are Critical, Important or Minor; Critical and Important are fixed in up to three fix rounds; Minor findings that later tasks depend on are fixed now, the rest go to the task notes as deferred.
 4. Controller: read `backlog instructions task-finalization`, check acceptance criteria with evidence, write the final summary, set status Done, commit on the branch. Leave a Definition-of-Done item unchecked when it is not true and say why.
-5. Controller: push, open the PR, wait for the required checks and for the Codex review to complete, handle every review thread, squash-merge, delete the branch, update main.
+5. Controller: push, open the PR, wait for the required checks, for the `e2e` fast tier (not required, decision-23) and for the Codex review to complete, handle every review thread, squash-merge, delete the branch, update main.
 
 ## GitHub from Claude Code cloud sessions
 
 - GraphQL is blocked: `gh pr` and `gh issue` do not work. Use REST through `gh api repos/gardenbaum/paperless-mcp/...`.
 - Review threads, auto-merge and draft state use the CCR routes: `GET .../pulls/{n}/ccr/review_threads`, `POST .../pulls/{n}/ccr/comments/{comment_id}/resolve`, `PUT .../pulls/{n}/ccr/auto_merge`.
 - Merge: `gh api -X PUT repos/gardenbaum/paperless-mcp/pulls/{n}/merge -f merge_method=squash`.
-- Branch protection on main: required checks `check (3.14)`, `check (3.15)`, `audit`, `e2e`; branch must be up to date; enforced for admins; linear history; all conversations resolved. Never weaken a gate without a decision (CLAUDE.md).
+- Branch protection on main: required checks `check (3.14)`, `check (3.15)` and `audit`; branch must be up to date; enforced for admins; linear history; all conversations resolved. `e2e` is not required (decision-23): on a pull request it runs a fast tier (live contract suite, stdio smoke test and the e2e modules of the touched toolsets; the controller waits for it and treats red as blocking), the full suite runs after every merge to main and nightly (`e2e-full.yml`), and a red run there is fixed first. Never weaken a gate without a decision (CLAUDE.md).
 - The Codex bot reviews every opened PR. Fix P1 findings before merging. P2/P3 findings are fixed in the PR unless they concern only test infrastructure or docs and would take long; then reply in the thread, create a follow-up task and resolve the thread.
 
 ## When something blocks

@@ -1,0 +1,65 @@
+name: E2E full suite
+
+# The whole live suite on the pinned paperless-ngx image, after every merge to main and nightly
+# (decision-23). Pull requests run only a fast tier (ci.yml, job `e2e`), so this is where a
+# regression it could not see turns up: a red shard fails the run, which GitHub reports on main.
+# The suite is split in shards, each on its own stack (`just e2e-shard K/N`, scripts/e2e_ci.py).
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-full-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # renovate: datasource=pypi depName=rust-just
+  RUST_JUST_VERSION: "1.59.0"
+
+jobs:
+  # The matrix must list every shard 1..SHARDS of scripts/e2e_ci.py (tests/quality checks it).
+  e2e-shard:
+    name: e2e-shard (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    # TIMEOUT-COMMENT-FULL
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/3", "2/3", "3/3"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Install just
+        run: uv tool install "rust-just==${RUST_JUST_VERSION}"
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      - name: Run the shard
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: just e2e-shard "$SHARD"
+
+      - name: Collect container logs
+        if: failure()
+        run: docker compose -f tests/e2e/compose.yaml logs --no-color > e2e-containers.log
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: e2e-container-logs-shard-${{ strategy.job-index }}
+          path: e2e-containers.log
+          retention-days: 7

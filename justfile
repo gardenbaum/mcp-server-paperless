@@ -169,6 +169,11 @@ e2e-up:
 e2e: e2e-up
     uv run pytest -m e2e --no-cov --durations=20
 
+# Run the live tests under the given pytest paths (CI's fast tier on a pull request: the paths come
+# from `scripts/e2e_ci.py scope`), e.g. `just e2e-paths tests/contract tests/e2e/test_stdio.py`.
+e2e-paths *paths: e2e-up
+    uv run pytest -m e2e --no-cov --durations=20 {{paths}}
+
 # Run one shard of the E2E tests, e.g. `just e2e-shard 2/3` (CI's `e2e-shard` jobs, one stack each).
 # Whole test modules are assigned to shards by their measured duration (scripts/e2e_ci.py), and
 # the shards together are exactly the suite `just e2e` runs.
