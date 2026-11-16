@@ -661,21 +661,29 @@ class MailService:
         action = settings.action
         self._check_action(action, values.get("action_parameter"))  # pyright: ignore[reportArgumentType] -- from a typed setting
         written = MailRuleValues.model_validate(values)
-        enabled = bool(values.get("enabled", True))
-        if _removes(enabled=enabled, action=action) and not confirm:
-            name = quoted(settings.name)
-            verb = f"create the enabled mail rule {name} for account {quoted(account)}"
-            raise ConfirmationRequired.for_effect(self._rule_effect(written, verb))
-        owner = values.get("owner")
-        if isinstance(owner, int) and not confirm and owner != (await self._caller())[0]:
-            who = await self._owner_name(owner)
-            effect = (
-                f"create the mail rule {quoted(settings.name)} for {who}: the owner takes it "
-                "over, and you may not be able to change it again"
-            )
-            raise ConfirmationRequired.for_effect(effect)
+        if not confirm:
+            effects = await self._create_effects(settings.name, account, written, values)
+            if effects:
+                raise ConfirmationRequired.for_effect("; and ".join(effects))
         [info] = await self._rule_infos([await self._writer.create_mail_rule(written)])
         return info
+
+    async def _create_effects(
+        self, name: str, account: str, written: MailRuleValues, values: Mapping[str, object]
+    ) -> list[str]:
+        """What creating the rule does that needs ``confirm``: removing mail, another owner."""
+        effects: list[str] = []
+        removes = _removes(enabled=bool(values.get("enabled", True)), action=written.action)
+        if removes:
+            verb = f"create the enabled mail rule {quoted(name)} for account {quoted(account)}"
+            effects.append(self._rule_effect(written, verb))
+        owner = values.get("owner")
+        if isinstance(owner, int) and owner != (await self._caller())[0]:
+            who = await self._owner_name(owner)
+            start = "it belongs to" if removes else f"create the mail rule {quoted(name)} for"
+            takeover = "the owner takes it over, and you may not be able to change it again"
+            effects.append(f"{start} {who}: {takeover}")
+        return effects
 
     async def update_rule(
         self,
