@@ -1,11 +1,11 @@
 ---
 id: PLMCP-33
 title: 'Prompts: triage_inbox, find_document, annual_review, cleanup_taxonomy'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-09T19:26:00Z'
-updated_date: '2026-11-16T23:12:00Z'
+updated_date: '2026-11-16T23:22:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -50,10 +50,12 @@ Guided multi-step tasks belong in prompts the LLM runs with the normal tools, no
 
 <!-- SECTION:NOTES:BEGIN -->
 Implemented tools/prompts.py (four prompts, SPECS table, shared CONFIRMATION), Catalogue.prompt_specs, prompt Visibility rule recomputed on each start from the tools actually listed, import-linter independence entry, decision-20. Tests (tests/tools/test_prompts.py) written first: first run red at import; visibility tests proven red by removing the transform. Surface snapshot updated deliberately: only prompt entries were added (216 lines, none removed) for default, all and read-only profiles; tool lists and the default tool budget are unchanged. No services/ or paperless/ changes, so no mutation run; no e2e added.
+
+Review round 1 (independent opus reviewer, via coordinator): no Critical. I1 fixed: the test scans rendered text for every TOOL_TOOLSETS name as a whole word and for backticked call forms; self-tests with synthetic prose and call-form prompts (the helper lives in the test file, so those self-tests passed on first run; the new checks on the real prompts and the new behaviour tests were run red). M1 fixed: prompt visibility is computed from the catalogue (selected tools minus unavailable toolsets), not from server.list_tools(); decision-20 updated. M2 fixed: a prompt without a SPECS entry is hidden. M3: cleanup_taxonomy kind is Literal[tag, correspondent, document_type, storage_path] | None; surface snapshot updated deliberately for the two profiles that list it (argument description and schema only). M4, M5, M6: prompt text corrected (rename vs merge, delete_taxonomy_item refuses first only, triage skips already reviewed documents). M7: confirmation_problems helper shared by both tests. DoD #1 stays unchecked.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Added four MCP prompts (triage_inbox, find_document, annual_review, cleanup_taxonomy) in tools/prompts.py. Each is tagged with one toolset, declares in SPECS the toolsets it needs and every tool it names, and ends with a shared confirmation rule (propose, wait for the user, then write; destructive tools via the confirm=true flow). Decision-20 records the new rule: a prompt is offered only while every tool it names can be called (toolset selected, not hidden by read-only mode, disabled tools or a missing capability), computed per start in the server lifespan; in read-only mode only find_document remains. AC2: tests/tools/test_prompts.py renders every prompt and checks the names it mentions (bare backticked identifiers) against the real TOOL_TOOLSETS registry and the declared toolsets, with self-tests over a synthetic violating provider. Verification: just check passed (ruff, format, basedpyright, import-linter incl. the independence entry for tools.prompts, 2848 tests, coverage 99.97 %, diff coverage 100 %). Surface snapshot changed deliberately: only prompt entries added in the default, all and read-only profiles; no tool changed, default tool budget unchanged. No services/ or paperless/ changes (no mutation run); no e2e added. Open: the independent opus review did not run (the reviewer session never started its turn), so no reviewer findings exist; DoD #1 stays unchecked because the new tests ran red as a whole (import error) and the visibility tests were shown to fail by removing the transform after the code existed, not each one individually before it; DoD #2 and #3 depend on the PR; DoD #4 is left unchecked.
+Added four MCP prompts (triage_inbox, find_document, annual_review, cleanup_taxonomy) in tools/prompts.py. Each is tagged with one toolset, declares in SPECS the toolsets and tools it needs, and ends with a shared confirmation rule (propose, wait for the user, then write; destructive calls through the confirm=true flow). Decision-20: a prompt is offered only while every tool it names can be called, computed per start from the catalogue (selected toolsets, hidden tools, missing capabilities); a prompt without a SPECS entry is hidden; in read-only mode only find_document remains. AC2: tests/tools/test_prompts.py renders every prompt, extracts the backticked tool names, checks them against the real TOOL_TOOLSETS and the declared toolsets, and fails on any tool named in prose or as a call; self-tests use synthetic violating prompts. Review: the independent reviewer found no Critical issue; I1 and M1 to M7 were fixed in the fix commit (see notes). Verification: just check passes (lint, types, import-linter, tests, 100 % diff coverage). Surface snapshot changed deliberately: prompt entries added; in the fix commit only the cleanup_taxonomy kind argument schema changed. No tool entry changed, default tool budget unchanged. No services/ or paperless/ changes (no mutation run); no e2e added. DoD #1 unchecked: the tests were not each seen red before the code (first run red as a whole at import). DoD #2 and #3 depend on the PR; DoD #4 unchecked.
 <!-- SECTION:FINAL_SUMMARY:END -->

@@ -317,9 +317,9 @@
         'arguments': list([
           dict({
             'description': '''
-              What to tidy: tag, correspondent, document_type or storage_path. Leave empty to look at all four.
+              What to tidy. Leave out to look at all four.
               
-              Provide a value matching the following JSON schema: {"description":"What to tidy: tag, correspondent, document_type or storage_path. Leave empty to look at all four.","type":"string"}. Encode non-string values as JSON.
+              Provide a value matching the following JSON schema: {"anyOf":[{"enum":["tag","correspondent","document_type","storage_path"],"type":"string"},{"type":"null"}],"description":"What to tidy. Leave out to look at all four."}. Encode non-string values as JSON.
             ''',
             'name': 'kind',
             'required': False,
@@ -422,9 +422,9 @@
         'arguments': list([
           dict({
             'description': '''
-              What to tidy: tag, correspondent, document_type or storage_path. Leave empty to look at all four.
+              What to tidy. Leave out to look at all four.
               
-              Provide a value matching the following JSON schema: {"description":"What to tidy: tag, correspondent, document_type or storage_path. Leave empty to look at all four.","type":"string"}. Encode non-string values as JSON.
+              Provide a value matching the following JSON schema: {"anyOf":[{"enum":["tag","correspondent","document_type","storage_path"],"type":"string"},{"type":"null"}],"description":"What to tidy. Leave out to look at all four."}. Encode non-string values as JSON.
             ''',
             'name': 'kind',
             'required': False,
