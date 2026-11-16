@@ -24,8 +24,11 @@ if TYPE_CHECKING:
 
     from contract.conftest import Backend, Ports
 
-pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
-
+pytestmark = [
+    pytest.mark.anyio,
+    pytest.mark.decision("decision-8"),
+    pytest.mark.decision("decision-18"),
+]
 LIST_ACCOUNTS, GET_ACCOUNT = "MailReader.list_mail_accounts", "MailReader.get_mail_account"
 LIST_RULES, GET_RULE = "MailReader.list_mail_rules", "MailReader.get_mail_rule"
 LIST_PROCESSED = "MailReader.list_processed_mail"
@@ -594,3 +597,21 @@ async def test_a_page_beyond_the_last_one_of_the_processed_mail_is_not_found(
         _ = await backend.admin.mail.list_processed_mail(
             rule_id=made.id, status=None, page=2, page_size=25
         )
+
+
+@pytest.mark.contract(UPDATE_RULE)
+async def test_an_empty_action_parameter_is_refused_and_none_is_taken_when_the_action_stays(
+    backend: Backend, mail: Mail
+) -> None:
+    """Probed on 3.4.2: "" is blank (400); null is accepted as long as the request has no action."""
+    account = await mail.account()
+    made = await mail.rule(account.id, action="move", action_parameter="Done")
+
+    with pytest.raises(Validation, match="action_parameter"):
+        _ = await backend.admin.mail_writes.update_mail_rule(
+            made.id, MailRuleValues(action_parameter="")
+        )
+    emptied = await backend.admin.mail_writes.update_mail_rule(
+        made.id, MailRuleValues(action_parameter=None)
+    )
+    assert (emptied.action, emptied.action_parameter) == ("move", None)

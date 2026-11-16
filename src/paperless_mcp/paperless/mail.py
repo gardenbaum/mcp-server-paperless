@@ -3,9 +3,9 @@
 The paths are ``/api/mail_accounts/``, ``/api/mail_rules/`` and ``/api/processed_mail/``. Probed on
 3.4.2:
 
-- Paperless masks the password of an account in every answer, as ``*`` repeated once per character
-  (so even the mask tells the length). The row models here have no password field, so neither the
-  password nor its mask gets any further than the parse.
+- Paperless masks the password in every answer with ``*`` repeated ``max(10, length)`` times
+  (so the mask still tells the length of a long password). The row models here have no password
+  field, so neither the password nor its mask gets any further than the parse.
 - A password that consists of ``*`` only means "unchanged" on a PATCH and is ignored: a real
   password of that kind would be dropped without a word, so it is refused up front.
 - ``POST /api/mail_accounts/test/`` takes an ``id`` and a password of ``*`` to test the saved
@@ -187,12 +187,12 @@ def beyond_last_page(page: int) -> NotFound:
 
 
 def failed_login() -> MailAccountTestResult:
-    """The result of a test whose login failed: Paperless says no more than that."""
+    """The result of a test whose login failed: Paperless says no more than that (HTTP 400)."""
     return MailAccountTestResult(
         success=False,
         message=(
-            "Paperless could not log in to the mail server. Check the server name, port, "
-            "security setting, username and password."
+            "Paperless could not connect to the mail server or log in. Check the server name, "
+            "port, security setting, username and password."
         ),
     )
 
@@ -202,9 +202,9 @@ def unreachable_server() -> MailAccountTestResult:
     return MailAccountTestResult(
         success=False,
         message=(
-            "Paperless could not connect to the mail server (the host is unknown or refuses the "
-            "connection, or the server broke off). Check the server name, port and security "
-            "setting."
+            "Paperless could not connect to the mail server, or failed while trying (the host "
+            "is unknown or refuses the connection, or the server broke off). Check the server "
+            "name, port and security setting."
         ),
     )
 
@@ -215,7 +215,9 @@ def silent_server() -> MailAccountTestResult:
         success=False,
         message=(
             f"The mail server did not answer within {TEST_TIMEOUT:.0f} seconds. Check the port "
-            "and the security setting: a port that expects TLS never answers a plain connection."
+            "and the security setting: a port that expects TLS never answers a plain "
+            "connection. The Paperless web worker may stay busy for several minutes, so do not "
+            "try again at once."
         ),
     )
 
@@ -452,6 +454,7 @@ class PaperlessMailWriter:
             "imap_security": row.imap_security,
             "username": row.username,
             "character_set": row.character_set,
+            "is_token": row.is_token,
             "password": KEEP_SAVED,
         }
 

@@ -29,8 +29,7 @@ if TYPE_CHECKING:
 
     from e2e.helpers import Stack
 
-pytestmark = [pytest.mark.e2e, pytest.mark.anyio]
-
+pytestmark = [pytest.mark.e2e, pytest.mark.anyio, pytest.mark.decision("decision-18")]
 type Json = dict[str, object]
 type Connected = Client[FastMCPTransport]
 
