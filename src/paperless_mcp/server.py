@@ -8,7 +8,7 @@ services on it and probes Paperless before the first request is served.
 import asyncio
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Final
 
 from fastmcp import FastMCP
@@ -60,6 +60,7 @@ from paperless_mcp.tools import (
     mail,
     pdf,
     permissions,
+    prompts,
     sharing,
     trash,
     upload,
@@ -148,6 +149,8 @@ class Catalogue:
         tool_toolsets: The toolset of every tool, keyed by tool name.
         toolsets: Every toolset name.
         requires: Toolsets that need a Paperless capability, mapped to it.
+        prompt_specs: What each prompt needs, keyed by prompt name; a prompt is offered only
+            while every tool it names can be called (decision-20).
     """
 
     providers: Sequence[Provider]
@@ -157,6 +160,9 @@ class Catalogue:
     requires: Mapping[str, str]
     remote_providers: Sequence[Provider] = ()
     local_providers: Sequence[Provider] = ()
+    prompt_specs: Mapping[str, prompts.PromptSpec] = field(
+        default_factory=dict[str, prompts.PromptSpec]
+    )
 
 
 CATALOGUE: Final = Catalogue(
@@ -171,6 +177,7 @@ CATALOGUE: Final = Catalogue(
         sharing.provider,
         permissions.provider,
         mail.provider,
+        prompts.provider,
     ),
     annotations=ANNOTATIONS,
     tool_toolsets=TOOL_TOOLSETS,
@@ -178,6 +185,7 @@ CATALOGUE: Final = Catalogue(
     requires=TOOLSET_REQUIRES,
     remote_providers=(upload.remote, versions.remote),
     local_providers=(upload_stdio.local, versions_stdio.local),
+    prompt_specs=prompts.SPECS,
 )
 
 
@@ -278,6 +286,8 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
         raise InvalidConfiguration(NO_TOOLS)
     # The one rule that hides toolsets whose capability is missing; each start replaces its tags.
     capability_rule = Visibility(enabled=False, tags=set())
+    # The one rule that hides prompts naming a tool that cannot be called (decision-20).
+    prompt_rule = Visibility(enabled=False, names=set(), components={"prompt"})
 
     @lifespan
     async def start(running: FastMCP) -> AsyncIterator[dict[str, object]]:
@@ -363,7 +373,9 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     overview.paperless_version,
                     overview.api_version,
                 )
-            await _hide_unavailable(running, capability_rule, catalogue, overview, enabled)
+            await _hide_unavailable(
+                running, (capability_rule, prompt_rule), catalogue, overview, enabled
+            )
             yield {SERVICES: services}
 
     server = FastMCP(
@@ -380,22 +392,31 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     if hidden:
         _ = server.disable(names=set(hidden), components={"tool"})
     server.add_transform(capability_rule)
+    server.add_transform(prompt_rule)
     return server
 
 
 async def _hide_unavailable(
     server: FastMCP,
-    rule: Visibility,
+    rules: tuple[Visibility, Visibility],
     catalogue: Catalogue,
     overview: InstanceOverview | None,
     enabled: frozenset[str],
 ) -> None:
-    """Hide toolsets whose capability Paperless lacks; fail if nothing is left to offer."""
+    """Hide toolsets whose capability Paperless lacks and the prompts that need what is hidden.
+
+    Fails if no tool is left to offer.
+    """
+    rule, prompt_rule = rules
     ai_enabled = overview.ai_enabled if overview else None
     unavailable = unavailable_toolsets(ai_enabled=ai_enabled, requires=catalogue.requires)
     rule.tags = set(unavailable)
     if unavailable:
         for toolset in sorted(unavailable & enabled):
             logger.warning("Toolset %s is hidden: Paperless does not offer what it needs", toolset)
-    if not await server.list_tools():
+    callable_tools = {tool.name for tool in await server.list_tools()}
+    if not callable_tools:
         raise InvalidConfiguration(NO_TOOLS)
+    prompt_rule.names = {
+        name for name, spec in catalogue.prompt_specs.items() if not spec.tools <= callable_tools
+    }
