@@ -1,9 +1,11 @@
 ---
 id: PLMCP-39
 title: Keep the live E2E job fast as toolsets grow
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-13T07:29:00Z'
+updated_date: '2026-11-16T23:20:00Z'
 labels:
   - ci
   - testing

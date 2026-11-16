@@ -1,8 +1,9 @@
 """Fixtures shared by every test level."""
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+import e2e_ci
 import pytest
 from e2e.helpers import BASE_URL, Stack, client, seed, token_for, wait_ready
 from fakes.accounts import BLIND, READER
@@ -11,6 +12,39 @@ from paperless_mcp.observability import QUIET_LOGGERS
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from _pytest.config import Config
+    from _pytest.config.argparsing import Parser
+
+
+def pytest_addoption(parser: Parser) -> None:
+    """`--e2e-shard K/N`: run only shard K of N (the CI job `e2e-shard`; see scripts/e2e_ci.py)."""
+    parser.addoption(
+        "--e2e-shard",
+        default=None,
+        type=e2e_ci.parse_shard,
+        metavar="K/N",
+        help="keep only the test modules of shard K out of N (balanced by measured duration)",
+    )
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(config: Config, items: list[pytest.Item]) -> None:
+    """Deselect the modules of the other shards, after `-m` has chosen the tests of the run.
+
+    A whole module goes to one shard (its fixtures and the stack's state stay together), and the
+    assignment depends only on the module paths, so the shards partition the suite exactly.
+    """
+    shard = cast("tuple[int, int] | None", config.getoption("--e2e-shard"))
+    if shard is None:
+        return
+    index, count = shard
+    module_of = {item: item.path.relative_to(config.rootpath).as_posix() for item in items}
+    plan = e2e_ci.assign_shards(sorted(set(module_of.values())), count=count)
+    kept = [item for item in items if plan[module_of[item]] == index]
+    dropped = [item for item in items if plan[module_of[item]] != index]
+    config.hook.pytest_deselected(items=dropped)
+    items[:] = kept
 
 
 @pytest.fixture
