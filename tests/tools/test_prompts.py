@@ -5,6 +5,7 @@ declared toolsets"; it reads the real tool registry (TOOL_TOOLSETS) and the decl
 The self-tests run it over a synthetic provider of violating prompts, so it is proven to fire.
 """
 
+import re
 from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
@@ -56,6 +57,32 @@ def prompt_problems(
     ]
 
 
+def loose_references(text: str, registry: Mapping[str, str] = TOOL_TOOLSETS) -> list[str]:
+    """Tools the text names without the bare backticked form, and backticked calls with arguments.
+
+    Prose ("then use bulk_edit_documents") and call forms (`search_documents(inbox=true)`) would
+    escape `mentioned_tools`, and with it the toolset check.
+    """
+    named = mentioned_tools(text)
+    prose = [
+        name for name in sorted(registry) if name not in named and re.search(rf"\b{name}\b", text)
+    ]
+    calls = [
+        span
+        for span in cast("list[str]", re.findall(r"`([^`]+)`", text))
+        if re.match(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?:\(| )", span)
+    ]
+    return [*prose, *calls]
+
+
+def confirmation_problems(text: str) -> list[str]:
+    """Why a prompt text does not tell the model to propose and wait before writing."""
+    if CONFIRMATION not in text:
+        return ["the confirmation rule is missing"]
+    lowered = CONFIRMATION.lower()
+    return [word for word in ("propose", "wait", "confirm") if word not in lowered]
+
+
 def full_server() -> FastMCP:
     return serve(admin(ai_enabled=True), toolsets=["all"])
 
@@ -93,10 +120,7 @@ async def test_a_prompt_proposes_changes_and_waits_for_confirmation_before_writi
 ) -> None:
     text = await render(full_server(), name, SAMPLES[name])
 
-    assert CONFIRMATION in text
-    assert "propose" in CONFIRMATION.lower()
-    assert "wait" in CONFIRMATION.lower()
-    assert "confirm" in CONFIRMATION.lower()
+    assert confirmation_problems(text) == []
 
 
 @pytest.mark.parametrize("name", sorted(PROMPTS))
@@ -104,6 +128,13 @@ async def test_a_prompt_names_only_tools_that_exist_in_its_declared_toolsets(nam
     text = await render(full_server(), name, SAMPLES[name])
 
     assert prompt_problems(text, SPECS[name].toolsets) == []
+
+
+@pytest.mark.parametrize("name", sorted(PROMPTS))
+async def test_a_prompt_names_no_tool_outside_the_backticked_form(name: str) -> None:
+    text = await render(full_server(), name, SAMPLES[name])
+
+    assert loose_references(text) == []
 
 
 @pytest.mark.parametrize("name", sorted(PROMPTS))
@@ -160,6 +191,18 @@ def names_only_declared_tools() -> str:
 
 
 @offenders.prompt(tags={"core"})
+def names_a_tool_in_prose() -> str:
+    """Names a real tool of another toolset without backticks."""
+    return "Call `search_documents`, then use bulk_edit_documents on the hits."
+
+
+@offenders.prompt(tags={"core"})
+def names_a_tool_as_a_call() -> str:
+    """Names tools in backticks but with arguments or a following word."""
+    return "Use `search_documents(inbox=true)` and `get_document with the id`."
+
+
+@offenders.prompt(tags={"core"})
 def never_waits() -> str:
     """Writes without the confirmation rule."""
     return "Call `update_document` for every inbox document."
@@ -184,6 +227,28 @@ async def test_self_test_a_tool_outside_the_declared_toolsets_is_found() -> None
     assert prompt_problems(text, frozenset({"core", "bulk"})) == []
 
 
+async def test_self_test_a_tool_named_in_prose_is_found() -> None:
+    text = await synthetic("names_a_tool_in_prose")
+
+    assert prompt_problems(text, frozenset({"core"})) == []  # the backtick check alone misses it
+    assert loose_references(text) == ["bulk_edit_documents"]
+
+
+async def test_self_test_a_backticked_call_form_is_found() -> None:
+    text = await synthetic("names_a_tool_as_a_call")
+
+    assert loose_references(text) == [
+        "get_document",
+        "search_documents",
+        "search_documents(inbox=true)",
+        "get_document with the id",
+    ]
+
+
+async def test_self_test_a_correct_prompt_has_no_loose_references() -> None:
+    assert loose_references(await synthetic("names_only_declared_tools")) == []
+
+
 async def test_self_test_a_correct_prompt_is_not_found() -> None:
     assert prompt_problems(await synthetic("names_only_declared_tools"), frozenset({"core"})) == []
 
@@ -195,7 +260,10 @@ async def test_self_test_the_tools_named_are_read_from_backticked_identifiers_on
 
 
 async def test_self_test_a_prompt_without_the_confirmation_rule_is_found() -> None:
-    assert CONFIRMATION not in await synthetic("never_waits")
+    assert confirmation_problems(await synthetic("never_waits")) == [
+        "the confirmation rule is missing"
+    ]
+    assert confirmation_problems(CONFIRMATION) == []
 
 
 async def test_the_check_reads_the_real_registry() -> None:
@@ -266,3 +334,52 @@ async def test_the_prompts_follow_the_capability_of_each_start() -> None:
     second = "triage_inbox" in await prompt_names(server)
 
     assert (first, second) == (True, False)
+
+
+async def test_a_prompt_without_a_spec_is_hidden() -> None:
+    extra = LocalProvider()
+
+    @extra.prompt(tags={"core"})
+    def unspecified() -> str:
+        """A prompt nobody declared."""
+        return "Do something."
+
+    catalogue = replace(CATALOGUE, providers=(*CATALOGUE.providers, extra))
+    server = serve(admin(), catalogue=catalogue)
+
+    assert await prompt_names(server) == PROMPTS
+    assert await prompt_names(server) == PROMPTS  # a second start keeps the same answer
+
+
+async def test_the_prompts_follow_the_catalogue_not_the_listing() -> None:
+    # A tool the catalogue offers but a listing would not (here: hidden by a transform added
+    # after the catalogue was read) does not take the prompt with it.
+    server = serve(admin())
+    _ = server.disable(names={"get_document"}, components={"tool"})
+
+    assert await prompt_names(server) == PROMPTS
+
+
+@pytest.mark.parametrize("kind", ["tag", "correspondent", "document_type", "storage_path"])
+async def test_cleanup_taxonomy_takes_a_kind_and_names_it(kind: str) -> None:
+    text = await render(full_server(), "cleanup_taxonomy", {"kind": kind})
+
+    assert f"the {kind} list" in text
+
+
+async def test_cleanup_taxonomy_refuses_a_kind_that_does_not_exist() -> None:
+    with pytest.raises(Exception, match="kind"):
+        _ = await render(full_server(), "cleanup_taxonomy", {"kind": "custom_field"})
+
+
+async def test_cleanup_taxonomy_describes_merging_and_renaming_correctly() -> None:
+    text = await render(full_server(), "cleanup_taxonomy")
+
+    assert "A rename does not merge" in text
+    assert "Some `update_taxonomy_item`" not in text
+
+
+async def test_triage_inbox_skips_documents_the_user_already_decided_on() -> None:
+    text = await render(full_server(), "triage_inbox")
+
+    assert "already reviewed in this conversation" in text

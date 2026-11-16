@@ -150,7 +150,8 @@ class Catalogue:
         toolsets: Every toolset name.
         requires: Toolsets that need a Paperless capability, mapped to it.
         prompt_specs: What each prompt needs, keyed by prompt name; a prompt is offered only
-            while every tool it names can be called (decision-20).
+            while every tool it names can be called (decision-20). A prompt without an entry
+            is never offered.
     """
 
     providers: Sequence[Provider]
@@ -282,7 +283,8 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     hidden = hidden_tools(
         catalogue.annotations, read_only=settings.read_only, disabled=settings.disabled_tools
     )
-    if not visible_tools(catalogue.tool_toolsets, enabled, hidden):
+    selected = visible_tools(catalogue.tool_toolsets, enabled, hidden)
+    if not selected:
         raise InvalidConfiguration(NO_TOOLS)
     # The one rule that hides toolsets whose capability is missing; each start replaces its tags.
     capability_rule = Visibility(enabled=False, tags=set())
@@ -374,7 +376,12 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     overview.api_version,
                 )
             await _hide_unavailable(
-                running, (capability_rule, prompt_rule), catalogue, overview, enabled
+                running,
+                (capability_rule, prompt_rule),
+                catalogue,
+                overview,
+                enabled=enabled,
+                selected=selected,
             )
             yield {SERVICES: services}
 
@@ -396,12 +403,14 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     return server
 
 
-async def _hide_unavailable(
+async def _hide_unavailable(  # noqa: PLR0913 -- the rules, the catalogue and what the start learned
     server: FastMCP,
     rules: tuple[Visibility, Visibility],
     catalogue: Catalogue,
     overview: InstanceOverview | None,
+    *,
     enabled: frozenset[str],
+    selected: frozenset[str],
 ) -> None:
     """Hide toolsets whose capability Paperless lacks and the prompts that need what is hidden.
 
@@ -414,9 +423,16 @@ async def _hide_unavailable(
     if unavailable:
         for toolset in sorted(unavailable & enabled):
             logger.warning("Toolset %s is hidden: Paperless does not offer what it needs", toolset)
-    callable_tools = {tool.name for tool in await server.list_tools()}
-    if not callable_tools:
+    if not await server.list_tools():
         raise InvalidConfiguration(NO_TOOLS)
+    # From the catalogue, not from a listing: what a caller may list can depend on who asks.
+    callable_tools = {name for name in selected if catalogue.tool_toolsets[name] not in unavailable}
+    # Reset first: the listing below skips what the previous start hid.
+    prompt_rule.names = set()
+    offered = {prompt.name for prompt in await server.list_prompts()}
     prompt_rule.names = {
-        name for name, spec in catalogue.prompt_specs.items() if not spec.tools <= callable_tools
+        name
+        for name in offered
+        if name not in catalogue.prompt_specs
+        or not catalogue.prompt_specs[name].tools <= callable_tools
     }

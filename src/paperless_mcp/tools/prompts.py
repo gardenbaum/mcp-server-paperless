@@ -9,7 +9,7 @@ ends with ``CONFIRMATION``: propose changes, wait for the user, then write.
 
 import re
 from dataclasses import dataclass
-from typing import Annotated, Final
+from typing import Annotated, Final, Literal
 
 from fastmcp.server.providers import LocalProvider
 from pydantic import Field
@@ -119,7 +119,8 @@ exist yet separately: it would have to be created with `create_taxonomy_item` fi
 to apply. Documents you are unsure about go in a separate list with your question.
 6. For what the user confirmed, create the missing items with `create_taxonomy_item` and apply \
 each document's changes with one call of `update_document`.
-7. Offer to continue with the next batch.
+7. Offer to continue with the next batch. Skip documents already reviewed in this conversation \
+(the user may have declined some of them), or move on with page.
 
 {CONFIRMATION}"""
 
@@ -184,14 +185,9 @@ the documents that would get it.
 @provider.prompt(tags={TOOLSET})
 def cleanup_taxonomy(
     kind: Annotated[
-        str,
-        Field(
-            description=(
-                "What to tidy: tag, correspondent, document_type or storage_path. "
-                "Leave empty to look at all four."
-            )
-        ),
-    ] = "",
+        Literal["tag", "correspondent", "document_type", "storage_path"] | None,
+        Field(description="What to tidy. Leave out to look at all four."),
+    ] = None,
 ) -> str:
     """Find duplicate, unused and badly named tags, correspondents and types and propose fixes."""
     scope = f"the {kind} list" if kind else "tags, correspondents, document types and storage paths"
@@ -202,13 +198,14 @@ Note the document count of every item.
 2. Look for: near-duplicates (case, plural, spelling, accents), names that mean the same, \
 items with no documents, items with a single document that look like a typo, and tags that \
 should sit under a parent tag. Check doubtful cases with `search_documents` on the item.
-3. Propose, for each finding: rename or merge into which item (keep the better name), or \
-delete, with the number of documents each step touches. Merge by moving the documents first \
-(`update_document` on each, or `update_taxonomy_item` to rename) and delete the emptied item \
-last. Deleting a tag also deletes its child tags and no taxonomy item has a trash: say so.
+3. Propose, for each finding: rename (`update_taxonomy_item`), merge into which item (keep the \
+better name), or delete, with the number of documents each step touches. A rename does not \
+merge: renaming to a name that exists is refused. To merge, find the documents of the item with \
+`search_documents` (page through all of them), move each with `update_document` (tags_add and \
+tags_remove, or set the correspondent or type), and delete the emptied item last. Deleting a \
+tag also deletes its child tags and no taxonomy item has a trash: say so.
 4. Present the proposals as a numbered list the user can approve or strike line by line.
-5. Apply the confirmed ones. `delete_taxonomy_item` and some `update_taxonomy_item` calls \
-refuse first and describe the effect; tell the user that effect and call again with \
-confirm=true only after the user agreed to it.
+5. Apply the confirmed ones. `delete_taxonomy_item` refuses first and describes the effect; tell \
+the user that effect and call again with confirm=true only after the user agreed to it.
 
 {CONFIRMATION}"""
