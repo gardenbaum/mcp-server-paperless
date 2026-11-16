@@ -637,3 +637,98 @@ reason = "A POST is never retried (IDEMPOTENT_METHODS), so retry=True changes no
 mutant = "paperless_mcp.paperless.permissions.xǁPaperlessPermissionWriterǁset_permissions__mutmut_14"
 function_hash = "ce495ff48d00"
 reason = "httpx2 upper-cases the method when it builds the request, so \"patch\" goes out as PATCH; the client reads only the built request's method."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.mail.x_attribute__mutmut_1"
+function_hash = "39c8e004a210"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.mail.x_attribute__mutmut_5"
+function_hash = "39c8e004a210"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.mail.x_attribute__mutmut_6"
+function_hash = "39c8e004a210"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁcreate_mail_account__mutmut_13"
+function_hash = "26356be43bcf"
+reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁupdate_mail_account__mutmut_13"
+function_hash = "db48a08b9286"
+reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_account__mutmut_4"
+function_hash = "f3d0a26cf1d3"
+reason = "retry is only tested for truth, so None means False; the tests cannot tell them apart."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_account__mutmut_9"
+function_hash = "f3d0a26cf1d3"
+reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁtest_mail_account__mutmut_12"
+function_hash = "b37220e2ac2e"
+reason = "retry is only tested for truth, so None means False; the tests cannot tell them apart."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁtest_mail_account__mutmut_18"
+function_hash = "b37220e2ac2e"
+reason = "POST is not in IDEMPOTENT_METHODS, so the client never retries it whatever retry says; dropping or flipping retry changes nothing for a POST."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁtest_mail_account__mutmut_20"
+function_hash = "b37220e2ac2e"
+reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁtest_mail_account__mutmut_21"
+function_hash = "b37220e2ac2e"
+reason = "POST is not in IDEMPOTENT_METHODS, so the client never retries it whatever retry says; dropping or flipping retry changes nothing for a POST."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁprocess_mail_account__mutmut_8"
+function_hash = "fd1c78202cae"
+reason = "retry is only tested for truth, so None means False; the tests cannot tell them apart."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁprocess_mail_account__mutmut_13"
+function_hash = "fd1c78202cae"
+reason = "POST is not in IDEMPOTENT_METHODS, so the client never retries it whatever retry says; dropping or flipping retry changes nothing for a POST."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁprocess_mail_account__mutmut_15"
+function_hash = "fd1c78202cae"
+reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁprocess_mail_account__mutmut_16"
+function_hash = "fd1c78202cae"
+reason = "POST is not in IDEMPOTENT_METHODS, so the client never retries it whatever retry says; dropping or flipping retry changes nothing for a POST."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁcreate_mail_rule__mutmut_13"
+function_hash = "88c4a41a2568"
+reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁupdate_mail_rule__mutmut_13"
+function_hash = "e7982c7c39e3"
+reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_rule__mutmut_4"
+function_hash = "e134741f2674"
+reason = "retry is only tested for truth, so None means False; the tests cannot tell them apart."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_rule__mutmut_9"
+function_hash = "e134741f2674"
+reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."

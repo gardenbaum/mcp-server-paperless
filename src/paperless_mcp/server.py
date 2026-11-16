@@ -318,7 +318,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 sharing=SharingService(
                     adapters.sharing, adapters.sharing_writes, adapters.documents, web_url=web_url
                 ),
-                mail=MailService(adapters.mail, adapters.mail_writes, taxonomy),
+                mail=MailService(adapters.mail, adapters.mail_writes, taxonomy, adapters.instance),
                 uploads=UploadService(
                     adapters.documents,
                     adapters.document_writes,

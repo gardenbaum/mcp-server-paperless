@@ -14,7 +14,7 @@ from typing import Annotated
 
 from fastmcp import Context
 from fastmcp.server.providers import LocalProvider
-from pydantic import BeforeValidator, Field, SecretStr
+from pydantic import Field, PlainValidator, SecretStr, WithJsonSchema
 
 from paperless_mcp.domain.documents import NameOrId
 from paperless_mcp.domain.mail import (
@@ -31,6 +31,7 @@ from paperless_mcp.domain.mail import (
     MailRuleListing,
     MailRuleSettings,
     MailScope,
+    NotText,
     PdfLayout,
     ProcessedMailListing,
     ProcessedStatus,
@@ -57,23 +58,25 @@ type Size = Annotated[int, Field(ge=1, le=LIST_LIMIT, description="Rows per page
 type Text = Annotated[str, Field(max_length=MAX_TEXT)]
 
 
-def text(value: object) -> object:
-    """A password sent as a JSON number is text to Paperless.
+def secret(value: object) -> SecretStr:
+    """A string as a SecretStr; anything else as ``NotText``, which the service refuses.
 
-    A value pydantic rejects is quoted in its validation error, which FastMCP passes to the
-    client unmasked; for a password that must not happen, so a number is made text up front.
+    It never raises: pydantic quotes a rejected input in its error (``input_value=``), FastMCP
+    passes that to the client and records it in traces, and the input may be a password.
     """
-    return str(value) if isinstance(value, int) and not isinstance(value, bool) else value
+    return SecretStr(value) if isinstance(value, str) else NotText()
 
+
+WRITE_ONLY_HELP = (
+    "The password of the mail account (or its app password), as text. Write-only: it is "
+    "stored by Paperless and never shown again."
+)
 
 type Password = Annotated[
     SecretStr,
-    BeforeValidator(text),
-    Field(
-        description=(
-            "The password of the mail account (or its app password). Write-only: it is stored by "
-            "Paperless and never shown again."
-        ),
+    PlainValidator(secret),
+    WithJsonSchema(
+        {"type": "string", "format": "password", "writeOnly": True, "description": WRITE_ONLY_HELP}
     ),
 ]
 type Security = Annotated[
@@ -228,7 +231,7 @@ async def process_mail_account(
     and this server cannot undo that. Without confirm it fetches nothing and fails with an error
     that lists what each enabled rule would do; show that to the user and call again with
     confirm=true only once they agree. The result only says the fetch was queued: follow the
-    outcome with list_processed_mail and list_tasks.
+    outcome with list_processed_mail and the Paperless task list.
     """
     return await services(ctx).mail.process_account(account_id, confirm=confirm)
 
@@ -345,7 +348,8 @@ async def create_mail_rule(  # noqa: PLR0913 -- the settings of a rule
     enabled and DELETES or MOVES mail on the mail server needs confirm: without it the call fails
     with an error that says which mails it would reach and what it does to them, creates nothing;
     show that to the user and call again with confirm=true only once they agree. Mark read,
-    flag and tag need no confirm. Needs the add permission for rules and the change permission
+    flag and tag need no confirm. An owner other than you needs confirm too. Needs the add
+    permission for rules and the change permission
     for the account.
     """
     return await services(ctx).mail.create_rule(
@@ -447,7 +451,9 @@ async def update_mail_rule(  # noqa: PLR0913 -- the settings of a rule
     Names and ids work like in create_mail_rule; an empty string clears a filter or the action
     parameter. Needs confirm for (1) a rule that is enabled and deletes or moves mail when the
     change widens or redirects what it reaches (account, folder, filters, age, action, parameter,
-    switching it on), and (2) handing the rule to another owner or to nobody. Without it the call
+    consumption scope, attachment type, switching it on), (2) changing the order or switching off
+    stop_processing of an enabled rule while another enabled rule of the account deletes or moves
+    mail, and (3) handing the rule to another owner or to nobody. Without it the call
     fails with an error that says what would happen and changes nothing; show that to the user
     and call again with confirm=true only once they agree.
     """

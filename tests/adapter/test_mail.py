@@ -29,10 +29,11 @@ from paperless_mcp.paperless.mail import (
 from paperless_mcp.paperless.pagination import MAX_ITEMS
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from adapter.conftest import ClientFactory
 
-pytestmark = pytest.mark.anyio
-
+pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-18")]
 type Json = dict[str, object]
 
 PASSWORD = "hunter2-Tr0ub4dor&3"
@@ -516,6 +517,7 @@ def saved_body() -> Json:
         "imap_security": 2,
         "username": "me@example.com",
         "character_set": "UTF-8",
+        "is_token": False,
         "password": "*",
         "id": 1,
     }
@@ -848,3 +850,171 @@ async def test_deleting_a_rule_that_does_not_exist_is_not_found(make_client: Cli
 
     with pytest.raises(NotFound):
         await PaperlessMailWriter(make_client(server)).delete_mail_rule(9)
+
+
+async def test_the_failed_results_say_what_to_check() -> None:
+    assert failed_login().message == (
+        "Paperless could not connect to the mail server or log in. Check the server name, "
+        "port, security setting, username and password."
+    )
+    assert unreachable_server().message == (
+        "Paperless could not connect to the mail server, or failed while trying (the host is "
+        "unknown or refuses the connection, or the server broke off). Check the server name, "
+        "port and security setting."
+    )
+    assert silent_server().message == (
+        "The mail server did not answer within 45 seconds. Check the port and the security "
+        "setting: a port that expects TLS never answers a plain connection. The Paperless web "
+        "worker may stay busy for several minutes, so do not try again at once."
+    )
+    assert connected().message == "Paperless connected and logged in."
+
+
+async def test_an_oauth_account_is_tested_and_fetched_as_a_token_account(
+    make_client: ClientFactory,
+) -> None:
+    token_account = {**ACCOUNT_WIRE, "account_type": 2, "is_token": True}
+    server = Recording(
+        ok(token_account), ok({"success": True}), ok(token_account), ok({"result": "OK"})
+    )
+    writer = PaperlessMailWriter(make_client(server))
+
+    _ = await writer.test_mail_account(1)
+    await writer.process_mail_account(1)
+
+    assert server.sent[1][2] is not None
+    assert server.sent[1][2]["is_token"] is True
+    assert server.sent[3][2] is not None
+    assert server.sent[3][2]["is_token"] is True
+
+
+async def test_every_filter_of_a_rule_is_read_back_and_blank_ones_are_none(
+    make_client: ClientFactory,
+) -> None:
+    names = (
+        *("filter_from", "filter_to", "filter_subject", "filter_body"),
+        *("filter_attachment_filename_include", "filter_attachment_filename_exclude"),
+    )
+    full = {**RULE_WIRE, **{name: f"value-{name}" for name in names}}
+    blank = {**RULE_WIRE, **dict.fromkeys(names, "")}
+    server = Recording(ok(full), ok(blank))
+    reader = PaperlessMailReader(make_client(server))
+
+    shown = await reader.get_mail_rule(7)
+    emptied = await reader.get_mail_rule(7)
+
+    assert {name: getattr(shown, name) for name in names} == {n: f"value-{n}" for n in names}
+    assert {name: getattr(emptied, name) for name in names} == dict.fromkeys(names)
+
+
+async def test_an_account_read_back_carries_owner_rights_and_expiry(
+    make_client: ClientFactory,
+) -> None:
+    wire = {
+        **ACCOUNT_WIRE,
+        "owner": None,
+        "user_can_change": False,
+        "character_set": "ISO-8859-1",
+        "imap_security": 1,
+        "expiration": "2026-12-01T10:00:00Z",
+    }
+    server = Recording(ok(wire))
+
+    found = await PaperlessMailReader(make_client(server)).get_mail_account(1)
+
+    assert found.model_dump() == {
+        **ACCOUNT.model_dump(),
+        "owner": None,
+        "can_change": False,
+        "character_set": "ISO-8859-1",
+        "imap_security": "none",
+        "expiration": datetime(2026, 12, 1, 10, tzinfo=UTC),
+    }
+
+
+async def test_every_not_found_names_the_missing_object_and_the_next_step(
+    make_client: ClientFactory,
+) -> None:
+    gone = httpx2.Response(404, json={"detail": "No such object."})
+    account_hint = "Hint: Call list_mail_accounts to see the accounts you can use."
+    rule_hint = "Hint: Call list_mail_rules to see the rules you can use."
+
+    async def failing(operation: str, *args: object) -> str:
+        writer = PaperlessMailWriter(make_client(Recording(gone, gone)))
+        call = cast("Callable[..., Awaitable[object]]", getattr(writer, operation))
+        with pytest.raises(NotFound) as raised:
+            _ = await call(*args)
+        return raised.value.describe()
+
+    assert await failing("update_mail_account", 9, MailAccountValues(name="x")) == (
+        f"No mail account 9 exists that this user may see. {account_hint}"
+    )
+    assert await failing("delete_mail_account", 9) == (
+        f"No mail account 9 exists that this user may see. {account_hint}"
+    )
+    assert await failing("test_mail_account", 9) == (
+        f"No mail account 9 exists that this user may see. {account_hint}"
+    )
+    assert await failing("process_mail_account", 9) == (
+        f"No mail account 9 exists that this user may see. {account_hint}"
+    )
+    assert await failing("update_mail_rule", 8, MailRuleValues(name="x")) == (
+        f"No mail rule 8 exists that this user may see. {rule_hint}"
+    )
+    assert await failing("delete_mail_rule", 8) == (
+        f"No mail rule 8 exists that this user may see. {rule_hint}"
+    )
+
+
+async def test_a_page_past_the_end_of_the_processed_mail_has_its_exact_texts(
+    make_client: ClientFactory,
+) -> None:
+    server = Recording(httpx2.Response(404, json={"detail": "Invalid page."}))
+
+    with pytest.raises(NotFound) as raised:
+        _ = await PaperlessMailReader(make_client(server)).list_processed_mail(
+            rule_id=None, status=None, page=9, page_size=25
+        )
+
+    assert raised.value.describe() == (
+        "Page 9 of the processed mail does not exist. "
+        "Hint: List it with page=1; count and next_page tell how far it goes."
+    )
+
+
+async def test_values_that_are_set_to_none_are_not_sent(make_client: ClientFactory) -> None:
+    server = Recording(ok(ACCOUNT_WIRE), ok(RULE_WIRE))
+    nothing = MailAccountValues(
+        name=None,
+        imap_server=None,
+        imap_port=None,
+        imap_security=None,
+        username=None,
+        password=None,
+        character_set=None,
+    )
+    none_rule = MailRuleValues(
+        attachment_type=None,
+        consumption_scope=None,
+        pdf_layout=None,
+        action=None,
+        assign_title_from=None,
+        assign_correspondent_from=None,
+        assign_tags=None,
+    )
+
+    _ = await PaperlessMailWriter(make_client(server)).update_mail_account(1, nothing)
+    _ = await PaperlessMailWriter(make_client(server)).update_mail_rule(7, none_rule)
+
+    assert [entry[2] for entry in server.sent] == [{}, {}]
+
+
+async def test_a_fetch_for_an_account_deleted_in_between_names_it(
+    make_client: ClientFactory,
+) -> None:
+    server = Recording(ok(ACCOUNT_WIRE), httpx2.Response(404, json={"detail": "gone"}))
+
+    with pytest.raises(NotFound) as raised:
+        await PaperlessMailWriter(make_client(server)).process_mail_account(1)
+
+    assert raised.value.message == "No mail account 1 exists that this user may see."

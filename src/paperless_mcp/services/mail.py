@@ -40,6 +40,7 @@ from paperless_mcp.domain.mail import (
     MailRuleInfo,
     MailRuleListing,
     MailRuleValues,
+    NotText,
     ProcessedMailListing,
     ProcessedMailRow,
     Reference,
@@ -64,7 +65,7 @@ if TYPE_CHECKING:
         RuleAction,
         RuleClearable,
     )
-    from paperless_mcp.domain.ports import MailReader, MailWriter
+    from paperless_mcp.domain.ports import InstanceReader, MailReader, MailWriter
     from paperless_mcp.domain.taxonomy import TaxonomyKind
     from paperless_mcp.services.taxonomy import TaxonomyResolver
 
@@ -73,6 +74,7 @@ MAX_ERROR: Final = 200
 # redirects what a rule that deletes or moves mail does on the server.
 REACH: Final = (
     *("enabled", "account_id", "folder", "maximum_age", "action", "action_parameter"),
+    *("consumption_scope", "attachment_type"),
     *("filter_from", "filter_to", "filter_subject", "filter_body"),
     *("filter_attachment_filename_include", "filter_attachment_filename_exclude"),
 )
@@ -147,7 +149,7 @@ def _does(action: RuleAction, parameter: str | None) -> str:
     }[action]
 
 
-def _removes(*, enabled: bool, action: RuleAction) -> bool:
+def _removes(*, enabled: bool, action: RuleAction | None) -> bool:
     return enabled and action in ACTIONS_REMOVING_MAIL
 
 
@@ -167,8 +169,19 @@ def _reach(rule: MailRuleValues | MailRule) -> str:
 class MailService:
     """Mail accounts, rules and processed mail for the current user."""
 
-    def __init__(self, reader: MailReader, writer: MailWriter, taxonomy: TaxonomyResolver) -> None:
-        """Read through ``reader``, write through ``writer``, resolve names through ``taxonomy``."""
+    def __init__(
+        self,
+        reader: MailReader,
+        writer: MailWriter,
+        taxonomy: TaxonomyResolver,
+        instance: InstanceReader,
+    ) -> None:
+        """Read through ``reader``, write through ``writer``, resolve names through ``taxonomy``.
+
+        ``instance`` tells who the caller is: a fetch also runs the rules of other users, and a
+        rule created for another owner needs a yes.
+        """
+        self._instance: InstanceReader = instance
         self._reader: MailReader = reader
         self._writer: MailWriter = writer
         self._taxonomy: TaxonomyResolver = taxonomy
@@ -250,6 +263,9 @@ class MailService:
 
     @staticmethod
     def _check_password(password: SecretStr) -> None:
+        if isinstance(password, NotText):
+            message = "The password must be text."
+            raise Validation(message, hint="Pass the password as a string.")
         secret = password.get_secret_value()
         if not secret.strip():
             message = "The password must not be empty."
@@ -334,6 +350,11 @@ class MailService:
             effects.append(plain)
         return "; and ".join(effects) or None
 
+    async def _caller(self) -> tuple[int | None, bool]:
+        """The id of the calling user (None if unknown) and whether they are a superuser."""
+        user = (await self._instance.get_overview()).current_user
+        return (None, False) if user is None else (user.id, user.is_superuser)
+
     async def _rules_of(self, account_id: int) -> list[MailRule] | None:
         """The rules of an account, or None if the user may not list rules."""
         try:
@@ -408,12 +429,15 @@ class MailService:
                 f"fetch the mail of account {label} ({account.imap_server}) now: "
                 f"{self._fetch_effect(rules)}"
             )
+            _, superuser = await self._caller()
+            if not superuser:
+                effect += ". Rules of other users on this account that you cannot see run too"
             raise ConfirmationRequired.for_effect(effect)
         await self._writer.process_mail_account(account_id)
         message = (
             f"Paperless queued a fetch of the mail of account {label}. It runs in the "
-            "background: new documents appear after consumption (see list_tasks) and "
-            "list_processed_mail shows the mails it handled."
+            "background: new documents appear after consumption (check the Paperless task list) "
+            "and list_processed_mail shows the mails it handled."
         )
         return MailFetchStarted(id=account_id, message=message)
 
@@ -575,18 +599,18 @@ class MailService:
         return (await self._reader.get_mail_account(account_id)).name
 
     @staticmethod
-    def _check_action(action: RuleAction, parameter: str | None) -> None:
+    def _check_action(action: RuleAction | None, parameter: str | None) -> None:
         if action in ACTIONS_WITH_PARAMETER and not parameter:
             what = "the folder to move the mail to" if action == "move" else "the tag to set"
             message = f"The action {action} needs action_parameter: {what}."
             raise Validation(message, hint=f"Pass action_parameter with {what}.")
 
     @staticmethod
-    def _correspondent_source(values: dict[str, object], current_source: str | None) -> None:
+    def _correspondent_source(values: dict[str, object]) -> None:
         """A named correspondent is used only with the source ``selected``: set it or refuse."""
         if "assign_correspondent" not in values or values["assign_correspondent"] is None:
             return
-        source = values.get("assign_correspondent_from", current_source)
+        source = values.get("assign_correspondent_from")
         if source == "selected":
             return
         if "assign_correspondent_from" in values:
@@ -594,7 +618,7 @@ class MailService:
             raise Validation(
                 message, hint="Pass assign_correspondent_from selected, or leave it out."
             )
-        values["assign_correspondent_from"] = "selected"
+        values["assign_correspondent_from"] = "selected"  # a value equal to the rule's is no change
 
     @staticmethod
     def _rule_effect(rule: MailRuleValues | MailRule, verb: str, *, then: bool = False) -> str:
@@ -631,8 +655,8 @@ class MailService:
             raise Validation(message, hint="Pass account_id; list_mail_accounts shows the ids.")
         account = await self._account_name(settings.account_id)
         values = await self._resolved(settings, ())
-        self._correspondent_source(values, None)
-        action: RuleAction = values.get("action", "mark_read")  # pyright: ignore[reportAssignmentType] -- from a typed setting
+        self._correspondent_source(values)
+        action = settings.action
         self._check_action(action, values.get("action_parameter"))  # pyright: ignore[reportArgumentType] -- from a typed setting
         written = MailRuleValues.model_validate(values)
         enabled = bool(values.get("enabled", True))
@@ -640,6 +664,14 @@ class MailService:
             name = quoted(settings.name)
             verb = f"create the enabled mail rule {name} for account {quoted(account)}"
             raise ConfirmationRequired.for_effect(self._rule_effect(written, verb))
+        owner = values.get("owner")
+        if isinstance(owner, int) and not confirm and owner != (await self._caller())[0]:
+            who = await self._owner_name(owner)
+            effect = (
+                f"create the mail rule {quoted(settings.name)} for {who}: the owner takes it "
+                "over, and you may not be able to change it again"
+            )
+            raise ConfirmationRequired.for_effect(effect)
         [info] = await self._rule_infos([await self._writer.create_mail_rule(written)])
         return info
 
@@ -666,7 +698,7 @@ class MailService:
             message = "Nothing to change: pass at least one setting."
             raise Validation(message, hint="Name the settings of the rule to change.")
         current = await self._reader.get_mail_rule(rule_id)
-        self._correspondent_source(wanted, current.assign_correspondent_from)
+        self._correspondent_source(wanted)
         self._action_changes(wanted, current)
         changes = {
             key: value for key, value in wanted.items() if self._differs(current, key, value)
@@ -716,14 +748,43 @@ class MailService:
             account = await self._account_name(result.account_id)
             verb = f"change the enabled {label} of account {quoted(account)}"
             effects.append(self._rule_effect(result, verb, then=True))
+        pacing = "order" in changes or changes.get("stop_processing") is False
+        if pacing and result.enabled and (later := await self._later_effect(result, label)):
+            effects.append(later)
         return effects
 
-    async def _owner_effect(self, label: str, owner: int | None) -> str:
-        if owner is None:
-            who = "every user who may view mail rules"
+    async def _later_effect(self, rule: MailRule, label: str) -> str | None:
+        """What a change of order or stop_processing lets other removing rules do, or None.
+
+        Conservative: any other enabled rule of the account that deletes or moves mail counts, in
+        front of this rule or behind it.
+        """
+        rules = await self._rules_of(rule.account_id) or []
+        others = [
+            r for r in rules if r.id != rule.id and _removes(enabled=r.enabled, action=r.action)
+        ]
+        if not others:
+            return None
+        named = " and ".join(f"{quoted(r.name)} (id {r.id})" for r in others)
+        if len(others) == 1:
+            subject = f"the enabled rule {named} of the same account, which"
+            does = "deletes mail" if others[0].action == "delete" else "moves mail"
         else:
-            names = await self._names("user")
-            who = f"user {quoted(names[owner])} (id {owner})" if owner in names else f"user {owner}"
+            subject = f"the enabled rules {named} of the same account, which"
+            does = "delete or move mail"
+        return (
+            f"change the order or stop_processing of the enabled {label}, so that {subject} "
+            f"{does}, may run for mails that {quoted(rule.name)} already imported from"
+        )
+
+    async def _owner_name(self, owner: int) -> str:
+        names = await self._names("user")
+        return f"user {quoted(names[owner])} (id {owner})" if owner in names else f"user {owner}"
+
+    async def _owner_effect(self, label: str, owner: int | None) -> str:
+        who = (
+            "every user who may view mail rules" if owner is None else await self._owner_name(owner)
+        )
         return (
             f"hand the {label} over to {who}: the new owner takes it over, and you may not be "
             "able to change it again"

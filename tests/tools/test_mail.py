@@ -19,6 +19,7 @@ pytestmark = [
     pytest.mark.decision("decision-4"),
     pytest.mark.decision("decision-6"),
     pytest.mark.decision("decision-15"),
+    pytest.mark.decision("decision-18"),
 ]
 
 type Json = dict[str, object]
@@ -197,22 +198,41 @@ async def test_an_account_is_created_listed_read_updated_and_never_shows_the_pas
     assert "***" not in everything
 
 
-async def test_a_password_sent_as_a_number_is_taken_as_text_and_never_echoed() -> None:
-    """Pydantic quotes a rejected input in its error, which would echo a password."""
+@pytest.mark.parametrize(
+    ("password", "echo"),
+    [
+        pytest.param(1234.5678, "1234.5678", id="float"),
+        pytest.param(987654321, "987654321", id="int"),
+        pytest.param(["hunter2-x", "y"], "hunter2-x", id="list"),
+        pytest.param({"p": "hunter2-x"}, "hunter2-x", id="object"),
+        pytest.param(True, "True", id="bool"),
+        pytest.param(None, "\0", id="null"),
+    ],
+)
+@pytest.mark.parametrize("tool", ["create_mail_account", "update_mail_account"])
+async def test_a_password_that_is_not_text_is_refused_without_quoting_it(
+    tool: str, password: object, echo: str
+) -> None:
     source = fake()
+    number = with_account(source.state)
+    arguments: Json = {"password": password}
+    if tool == "create_mail_account":
+        arguments |= {"name": "x", "imap_server": HOST, "imap_port": 993, "username": "u"}
+    else:
+        arguments |= {"account_id": number, "name": "renamed"}
 
-    made = await call(
-        source,
-        "create_mail_account",
-        name="x",
-        imap_server=HOST,
-        imap_port=993,
-        username="u",
-        password=987654321,
-    )
+    async with Client(server(source)) as client:
+        result = await client.call_tool(tool, arguments, raise_on_error=False)
 
-    assert source.state.mail_accounts[0].password == "987654321"
-    assert "987654321" not in repr(made)
+    shown = str(result.content)
+    assert echo not in shown
+    assert "input_value" not in shown
+    if password is None and tool == "update_mail_account":
+        assert not result.is_error  # an explicit null is "not given"
+    else:
+        assert result.is_error
+        assert "The password must be text" in shown
+    assert source.state.mail_accounts[-1].password == PASSWORD or tool == "create_mail_account"
 
 
 @pytest.mark.parametrize("password", ["", "   ", "*", "*****"])
@@ -284,7 +304,7 @@ async def test_a_connection_test_reports_the_outcome_and_never_the_password() ->
 
     assert good["success"] is True
     assert bad["success"] is False
-    assert "could not log in" in str(bad["message"])
+    assert "or log in" in str(bad["message"])
     assert "not-the-password" not in repr(bad)
 
 
