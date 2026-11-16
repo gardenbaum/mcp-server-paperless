@@ -16,10 +16,8 @@ The `e2e` check is required, so it must always report. The workflow splits it in
 import argparse
 import re
 import sys
-from typing import TYPE_CHECKING, TextIO
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence  # noqa: TC003 -- the CI jobs run this file on the runner's python 3.12, which evaluates annotations
+from typing import TextIO
 
 # The number of parallel e2e jobs. The workflow's matrix lists the same shards (a test checks it).
 SHARDS = 3
