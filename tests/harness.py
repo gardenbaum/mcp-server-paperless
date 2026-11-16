@@ -100,13 +100,10 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     pdf_writes: PdfWriter | None = None,
     sharing: SharingReader | None = None,
     sharing_writes: SharingWriter | None = None,
-<<<<<<< HEAD
     permissions: PermissionReader | None = None,
     permission_writes: PermissionWriter | None = None,
-=======
     mail: MailReader | None = None,
     mail_writes: MailWriter | None = None,
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     clock: Callable[[], float] = time.monotonic,
     startup_timeout: float = 2.0,
@@ -160,13 +157,10 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
             pdf_writes=pdf_writes or fake,
             sharing=sharing or fake,
             sharing_writes=sharing_writes or fake,
-<<<<<<< HEAD
             permissions=permissions or fake,
             permission_writes=permission_writes or fake,
-=======
             mail=mail or fake,
             mail_writes=mail_writes or fake,
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
         ),
         sleep=sleep,
         clock=clock,
