@@ -991,7 +991,9 @@
         give (a list left out becomes empty); with merge it adds to them, and merge cannot set an
         owner. A change grant includes view. Users and groups by name or id. Custom fields are not
         supported. Paperless checks every object first: if you may not change one, none changes (you
-        need the permission and must own it, or it must have no owner).
+        need the permission and must own it, or it must have no owner). The permissions toolset's
+        set_permissions also sets permissions and covers documents too; this tool's
+        set_permissions operation empties the lists you leave out, that tool keeps them.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -5263,6 +5265,111 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'permissions',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List groups',
+      }),
+      'description': '''
+        List Paperless user groups as compact rows: id and name.
+        
+        Use it to find the group names and ids to pass to set_permissions. Like
+        list_taxonomy(kind="group") it returns id and name only, but it pages and filters on the
+        server. Needs the view_group permission in Paperless; without it, ask an administrator for
+        the ids and pass them.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'name_contains': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only groups whose name contains this text, ignoring case.',
+          }),
+          'page': dict({
+            'default': 1,
+            'description': 'Page number, from 1.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'page_size': dict({
+            'default': 25,
+            'description': 'Rows per page, at most 100.',
+            'maximum': 100,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_groups',
+      'outputSchema': dict({
+        'description': 'One page of groups.',
+        'properties': dict({
+          'count': dict({
+            'description': 'How many groups match in total.',
+            'type': 'integer',
+          }),
+          'groups': dict({
+            'items': dict({
+              'description': 'A Paperless user group as a compact row (no permission list).',
+              'properties': dict({
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'next_page': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The next page, null on the last one.',
+          }),
+          'page': dict({
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'count',
+          'page',
+          'next_page',
+          'groups',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List groups',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'views',
           ]),
         }),
@@ -6080,6 +6187,142 @@
         'type': 'object',
       }),
       'title': 'List trash',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'permissions',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List users',
+      }),
+      'description': '''
+        List Paperless users as compact rows: id, username, name, active, superuser, group ids.
+        
+        Use it to find the usernames and ids to pass to set_permissions. Unlike
+        list_taxonomy(kind="user"), which returns only id and username, it says who is a superuser
+        (superusers see everything, whatever is granted), who is inactive and which groups a user is
+        in, and it pages. No e-mail addresses or permission lists are returned. Paperless lets only
+        users with the view_user permission list users; without it, ask an administrator for the
+        ids and pass them.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'name_contains': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only users whose username contains this text, ignoring case.',
+          }),
+          'page': dict({
+            'default': 1,
+            'description': 'Page number, from 1.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'page_size': dict({
+            'default': 25,
+            'description': 'Rows per page, at most 100.',
+            'maximum': 100,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_users',
+      'outputSchema': dict({
+        'description': 'One page of users.',
+        'properties': dict({
+          'count': dict({
+            'description': 'How many users match in total.',
+            'type': 'integer',
+          }),
+          'next_page': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The next page, null on the last one.',
+          }),
+          'page': dict({
+            'type': 'integer',
+          }),
+          'users': dict({
+            'items': dict({
+              'description': 'A Paperless user as a compact row (no e-mail address, no permission lists).',
+              'properties': dict({
+                'group_ids': dict({
+                  'description': 'Ids of the groups the user is in.',
+                  'items': dict({
+                    'type': 'integer',
+                  }),
+                  'type': 'array',
+                }),
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'is_active': dict({
+                  'type': 'boolean',
+                }),
+                'is_superuser': dict({
+                  'description': 'Superusers see and change everything, whatever is granted.',
+                  'type': 'boolean',
+                }),
+                'name': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'First and last name, if the user has them.',
+                }),
+                'username': dict({
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'username',
+                'name',
+                'is_active',
+                'is_superuser',
+                'group_ids',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'count',
+          'page',
+          'next_page',
+          'users',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List users',
     }),
     dict({
       '_meta': dict({
@@ -8326,6 +8569,402 @@
         'type': 'object',
       }),
       'title': 'Set document version label',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'permissions',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': True,
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Set permissions',
+      }),
+      'description': '''
+        Share documents, tags, correspondents, document types or storage paths, or hand them over.
+        
+        Sets who owns the objects and which users and groups may view or change them, by name or id.
+        A change grant includes view. Lists you leave out are never touched in either mode, so a
+        forgotten list never wipes anything, and unknown users or groups are an error before
+        anything is sent. mode merge (default) only adds to the grants; mode replace sets each list
+        you give to exactly that list (a changer always keeps view, replace change_users to take
+        change away). Granting access cannot be taken back, so every call that changes anything
+        needs confirm, in both modes and for owner changes: the first call is an error that
+        names, per object, who gains and who loses access and what the owner change does; describe
+        that to the user and call again with confirm=true. Objects that already are as asked are
+        left alone and need no confirm. Needs to own the objects (or no owner) or be a superuser, plus
+        the permission to change the kind. Other tools touch permissions too: update_document(owner=)
+        only changes a document's owner alongside other edits, and bulk_edit_taxonomy (bulk toolset)
+        sets permissions of taxonomy objects with a dry_run preview, and replaces the lists you
+        leave out; this tool also covers documents and keeps the lists you leave out. Look up users
+        and groups with list_users and list_groups.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'change_groups': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'integer',
+                    }),
+                  ]),
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Groups who may change, and so view: names or ids.',
+          }),
+          'change_users': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'integer',
+                    }),
+                  ]),
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Users who may change, and so view: usernames or ids.',
+          }),
+          'clear_owner': dict({
+            'default': False,
+            'description': 'true removes the owner: every user with the global permission to view the kind of object can then see it, and every user with the global permission to change it can change it. Needs confirm. Not together with owner.',
+            'type': 'boolean',
+          }),
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'items': dict({
+            'description': 'The objects, at most 100. Documents: ids from search_documents. Others: names or ids, see list_taxonomy.',
+            'items': dict({
+              'anyOf': list([
+                dict({
+                  'type': 'string',
+                }),
+                dict({
+                  'type': 'integer',
+                }),
+              ]),
+            }),
+            'maxItems': 100,
+            'minItems': 1,
+            'type': 'array',
+          }),
+          'kind': dict({
+            'description': 'What the objects are: document, tag, correspondent, document_type or storage_path.',
+            'enum': list([
+              'document',
+              'tag',
+              'correspondent',
+              'document_type',
+              'storage_path',
+            ]),
+            'type': 'string',
+          }),
+          'mode': dict({
+            'default': 'merge',
+            'description': 'merge (default) adds the given users and groups to the grants the objects have. replace makes each list you give exactly that list (an empty list removes all its grants).',
+            'enum': list([
+              'merge',
+              'replace',
+            ]),
+            'type': 'string',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Username or id of the new owner; see list_users.',
+          }),
+          'view_groups': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'integer',
+                    }),
+                  ]),
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Groups who may view: names or ids, see list_groups.',
+          }),
+          'view_users': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'integer',
+                    }),
+                  ]),
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Users who may view: usernames or ids, see list_users.',
+          }),
+        }),
+        'required': list([
+          'kind',
+          'items',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'set_permissions',
+      'outputSchema': dict({
+        'description': 'What set_permissions did, object by object.',
+        'properties': dict({
+          'changed_count': dict({
+            'type': 'integer',
+          }),
+          'kind': dict({
+            'enum': list([
+              'document',
+              'tag',
+              'correspondent',
+              'document_type',
+              'storage_path',
+            ]),
+            'type': 'string',
+          }),
+          'message': dict({
+            'type': 'string',
+          }),
+          'mode': dict({
+            'enum': list([
+              'merge',
+              'replace',
+            ]),
+            'type': 'string',
+          }),
+          'objects': dict({
+            'items': dict({
+              'description': 'One object with its access after the call.',
+              'properties': dict({
+                'access': dict({
+                  'description': 'Who owns an object and who may view or change it, by name.',
+                  'properties': dict({
+                    'change_groups': dict({
+                      'description': 'Groups who may view and change it.',
+                      'items': dict({
+                        'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                        'properties': dict({
+                          'id': dict({
+                            'type': 'integer',
+                          }),
+                          'name': dict({
+                            'type': 'string',
+                          }),
+                        }),
+                        'required': list([
+                          'id',
+                          'name',
+                        ]),
+                        'type': 'object',
+                      }),
+                      'type': 'array',
+                    }),
+                    'change_users': dict({
+                      'description': 'Users who may view and change it.',
+                      'items': dict({
+                        'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                        'properties': dict({
+                          'id': dict({
+                            'type': 'integer',
+                          }),
+                          'name': dict({
+                            'type': 'string',
+                          }),
+                        }),
+                        'required': list([
+                          'id',
+                          'name',
+                        ]),
+                        'type': 'object',
+                      }),
+                      'type': 'array',
+                    }),
+                    'owner': dict({
+                      'anyOf': list([
+                        dict({
+                          'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                          'properties': dict({
+                            'id': dict({
+                              'type': 'integer',
+                            }),
+                            'name': dict({
+                              'type': 'string',
+                            }),
+                          }),
+                          'required': list([
+                            'id',
+                            'name',
+                          ]),
+                          'type': 'object',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'Null: no owner, every user may use it.',
+                    }),
+                    'view_groups': dict({
+                      'description': 'Groups who may view it but not change it.',
+                      'items': dict({
+                        'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                        'properties': dict({
+                          'id': dict({
+                            'type': 'integer',
+                          }),
+                          'name': dict({
+                            'type': 'string',
+                          }),
+                        }),
+                        'required': list([
+                          'id',
+                          'name',
+                        ]),
+                        'type': 'object',
+                      }),
+                      'type': 'array',
+                    }),
+                    'view_users': dict({
+                      'description': 'Users who may view it but not change it.',
+                      'items': dict({
+                        'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                        'properties': dict({
+                          'id': dict({
+                            'type': 'integer',
+                          }),
+                          'name': dict({
+                            'type': 'string',
+                          }),
+                        }),
+                        'required': list([
+                          'id',
+                          'name',
+                        ]),
+                        'type': 'object',
+                      }),
+                      'type': 'array',
+                    }),
+                  }),
+                  'required': list([
+                    'owner',
+                    'view_users',
+                    'view_groups',
+                    'change_users',
+                    'change_groups',
+                  ]),
+                  'type': 'object',
+                }),
+                'changed': dict({
+                  'description': 'false: it already was as asked.',
+                  'type': 'boolean',
+                }),
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'description': 'The title of a document, else the name.',
+                  'type': 'string',
+                }),
+                'web_url': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Documents: link in the Paperless web UI; else null.',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+                'web_url',
+                'changed',
+                'access',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'unchanged_count': dict({
+            'description': 'Objects that already were as asked; they were left alone.',
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'kind',
+          'mode',
+          'changed_count',
+          'unchanged_count',
+          'objects',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Set permissions',
     }),
     dict({
       '_meta': dict({
@@ -17354,6 +17993,111 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'permissions',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List groups',
+      }),
+      'description': '''
+        List Paperless user groups as compact rows: id and name.
+        
+        Use it to find the group names and ids to pass to set_permissions. Like
+        list_taxonomy(kind="group") it returns id and name only, but it pages and filters on the
+        server. Needs the view_group permission in Paperless; without it, ask an administrator for
+        the ids and pass them.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'name_contains': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only groups whose name contains this text, ignoring case.',
+          }),
+          'page': dict({
+            'default': 1,
+            'description': 'Page number, from 1.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'page_size': dict({
+            'default': 25,
+            'description': 'Rows per page, at most 100.',
+            'maximum': 100,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_groups',
+      'outputSchema': dict({
+        'description': 'One page of groups.',
+        'properties': dict({
+          'count': dict({
+            'description': 'How many groups match in total.',
+            'type': 'integer',
+          }),
+          'groups': dict({
+            'items': dict({
+              'description': 'A Paperless user group as a compact row (no permission list).',
+              'properties': dict({
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'next_page': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The next page, null on the last one.',
+          }),
+          'page': dict({
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'count',
+          'page',
+          'next_page',
+          'groups',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List groups',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'views',
           ]),
         }),
@@ -18171,6 +18915,142 @@
         'type': 'object',
       }),
       'title': 'List trash',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'permissions',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List users',
+      }),
+      'description': '''
+        List Paperless users as compact rows: id, username, name, active, superuser, group ids.
+        
+        Use it to find the usernames and ids to pass to set_permissions. Unlike
+        list_taxonomy(kind="user"), which returns only id and username, it says who is a superuser
+        (superusers see everything, whatever is granted), who is inactive and which groups a user is
+        in, and it pages. No e-mail addresses or permission lists are returned. Paperless lets only
+        users with the view_user permission list users; without it, ask an administrator for the
+        ids and pass them.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'name_contains': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only users whose username contains this text, ignoring case.',
+          }),
+          'page': dict({
+            'default': 1,
+            'description': 'Page number, from 1.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'page_size': dict({
+            'default': 25,
+            'description': 'Rows per page, at most 100.',
+            'maximum': 100,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_users',
+      'outputSchema': dict({
+        'description': 'One page of users.',
+        'properties': dict({
+          'count': dict({
+            'description': 'How many users match in total.',
+            'type': 'integer',
+          }),
+          'next_page': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The next page, null on the last one.',
+          }),
+          'page': dict({
+            'type': 'integer',
+          }),
+          'users': dict({
+            'items': dict({
+              'description': 'A Paperless user as a compact row (no e-mail address, no permission lists).',
+              'properties': dict({
+                'group_ids': dict({
+                  'description': 'Ids of the groups the user is in.',
+                  'items': dict({
+                    'type': 'integer',
+                  }),
+                  'type': 'array',
+                }),
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'is_active': dict({
+                  'type': 'boolean',
+                }),
+                'is_superuser': dict({
+                  'description': 'Superusers see and change everything, whatever is granted.',
+                  'type': 'boolean',
+                }),
+                'name': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'First and last name, if the user has them.',
+                }),
+                'username': dict({
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'username',
+                'name',
+                'is_active',
+                'is_superuser',
+                'group_ids',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'count',
+          'page',
+          'next_page',
+          'users',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List users',
     }),
     dict({
       '_meta': dict({

@@ -55,6 +55,8 @@ from paperless_mcp.domain.ports import (  # noqa: TC001 -- Ports' annotations ar
     DocumentWriter,
     InstanceReader,
     PdfWriter,
+    PermissionReader,
+    PermissionWriter,
     SharingReader,
     SharingWriter,
     TaskReader,
@@ -72,6 +74,7 @@ from paperless_mcp.paperless.client import PaperlessClient, RetryPolicy
 from paperless_mcp.paperless.documents import PaperlessDocumentReader, PaperlessDocumentWriter
 from paperless_mcp.paperless.instance import PaperlessInstanceReader
 from paperless_mcp.paperless.pdf import PaperlessPdfWriter
+from paperless_mcp.paperless.permissions import PaperlessPermissionReader, PaperlessPermissionWriter
 from paperless_mcp.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
 from paperless_mcp.paperless.tasks import PaperlessTaskReader
 from paperless_mcp.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
@@ -117,6 +120,8 @@ class Ports:
     view_writes: ViewWriter
     trash: TrashReader
     trash_writes: TrashWriter
+    permissions: PermissionReader
+    permission_writes: PermissionWriter
     pdf_writes: PdfWriter
     sharing: SharingReader
     sharing_writes: SharingWriter
@@ -139,6 +144,8 @@ def fake_ports(state: FakeState, user: str) -> Ports:
         view_writes=writer,
         trash=fake,
         trash_writes=writer,
+        permissions=fake,
+        permission_writes=writer,
         pdf_writes=writer,
         sharing=fake,
         sharing_writes=writer,
@@ -160,6 +167,8 @@ def live_ports(client: PaperlessClient) -> Ports:
         view_writes=PaperlessViewWriter(client),
         trash=PaperlessTrashReader(client),
         trash_writes=PaperlessTrashWriter(client),
+        permissions=PaperlessPermissionReader(client),
+        permission_writes=PaperlessPermissionWriter(client),
         pdf_writes=PaperlessPdfWriter(client),
         sharing=PaperlessSharingReader(client),
         sharing_writes=PaperlessSharingWriter(client),
@@ -187,7 +196,12 @@ class Restricted(Protocol):
     """
 
     def __call__(
-        self, permissions: frozenset[str], *, view: Sequence[int] = (), change: Sequence[int] = ()
+        self,
+        permissions: frozenset[str],
+        *,
+        view: Sequence[int] = (),
+        change: Sequence[int] = (),
+        name: str | None = None,
     ) -> Ports: ...
 
 
@@ -315,11 +329,15 @@ def fake_share(state: FakeState) -> Share:
 
 def fake_restricted(state: FakeState) -> Restricted:
     def restricted(
-        permissions: frozenset[str], *, view: Sequence[int] = (), change: Sequence[int] = ()
+        permissions: frozenset[str],
+        *,
+        view: Sequence[int] = (),
+        change: Sequence[int] = (),
+        name: str | None = None,
     ) -> Ports:
         user = FakeUser(
             id=max(u.id for u in state.users) + 1,
-            username=f"contract-user-{uuid.uuid4().hex[:12]}",
+            username=name or f"contract-user-{uuid.uuid4().hex[:12]}",
             permissions=permissions,
         )
         state.users.append(user)
@@ -511,9 +529,13 @@ def live_restricted(
     """Live `Restricted`: a temporary user whose id goes on `users` for the finaliser."""
 
     def restricted(
-        permissions: frozenset[str], *, view: Sequence[int] = (), change: Sequence[int] = ()
+        permissions: frozenset[str],
+        *,
+        view: Sequence[int] = (),
+        change: Sequence[int] = (),
+        name: str | None = None,
     ) -> Ports:
-        name = f"contract-user-{uuid.uuid4().hex[:12]}"
+        name = name or f"contract-user-{uuid.uuid4().hex[:12]}"
         password = f"pw-{uuid.uuid4().hex}"
         body = {"username": name, "password": password, "user_permissions": sorted(permissions)}
         created = stack.admin.post("/api/users/", json=body).raise_for_status()

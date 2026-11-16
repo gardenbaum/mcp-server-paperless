@@ -10,7 +10,6 @@ change can take objects away from other users, or from the caller. ``dry_run`` p
 Paperless checks every object first, so a refusal changes none of them.
 """
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, Literal
 
 from paperless_mcp.domain.bulk import (
@@ -23,13 +22,8 @@ from paperless_mcp.domain.bulk import (
     SetPermissions,
     TaxonomyBulkReport,
 )
-from paperless_mcp.domain.errors import (
-    ConfirmationRequired,
-    PermissionDenied,
-    Validation,
-    listed,
-    quoted,
-)
+from paperless_mcp.domain.errors import ConfirmationRequired, Validation, listed
+from paperless_mcp.services.principals import resolve_principals
 from paperless_mcp.services.tag_hierarchy import descendants
 from paperless_mcp.services.taxonomy import pick
 from paperless_mcp.services.taxonomy_edits import LABELS
@@ -66,20 +60,8 @@ GRANT_LISTS: Final[tuple[tuple[str, Literal["user", "group"]], ...]] = (
 )
 
 
-def _numeric(value: NameOrId) -> bool:
-    return isinstance(value, int) or (value.strip().isascii() and value.strip().isdigit())
-
-
 def _plural(count: int, noun: str) -> str:
     return noun if count == 1 else f"{noun}s"
-
-
-@dataclass(frozen=True, slots=True)
-class _Principals:
-    """Users or groups as ids, with the words that name them in a message."""
-
-    ids: tuple[int, ...]
-    names: tuple[str, ...]
 
 
 class BulkTaxonomyEditor:
@@ -184,7 +166,7 @@ class BulkTaxonomyEditor:
         fields: dict[str, object] = {"merge": operation.merge}
         owner = ""
         if operation.owner is not None:
-            who = await self._principals("user", [operation.owner])
+            who = await resolve_principals(self._resolver, "user", [operation.owner])
             fields["owner"], owner = who.ids[0], f"set the owner to {who.names[0]}"
         if operation.clear_owner:
             fields["owner"] = None
@@ -194,7 +176,9 @@ class BulkTaxonomyEditor:
             shown: list[str] = []
             lists: dict[str, tuple[int, ...]] = {}
             for name, principal in GRANT_LISTS:
-                who = await self._principals(principal, getattr(operation, name) or [])
+                who = await resolve_principals(
+                    self._resolver, principal, getattr(operation, name) or []
+                )
                 lists[name] = who.ids
                 if getattr(operation, name) is not None or not operation.merge:
                     shown.append(f"{name.replace('_', ' ')} {', '.join(who.names) or 'none'}")
@@ -212,29 +196,6 @@ class BulkTaxonomyEditor:
             )
             sentence = sentence if owner else f"set {grants}"
         return PermissionsChange.model_validate(fields), sentence
-
-    async def _principals(
-        self, kind: Literal["user", "group"], values: Sequence[NameOrId]
-    ) -> _Principals:
-        """Ids and names of users or groups, checked against the list the user may see.
-
-        An id is passed on unchecked only when the user may not list that kind.
-        """
-        ids: list[int] = []
-        names: list[str] = []
-        for value in values:
-            try:
-                found = await self._resolver.resolve(kind, value)
-            except PermissionDenied as error:
-                if not _numeric(value):
-                    hint = f"Pass the {kind} id instead of the name."
-                    raise PermissionDenied(error.message, hint=hint) from None
-                ids.append(int(value))  # the user may not list them: Paperless decides
-                names.append(f"#{int(value)}")
-                continue
-            ids.append(found.id)
-            names.append(quoted(found.name))
-        return _Principals(ids=tuple(ids), names=tuple(names))
 
 
 def _below(

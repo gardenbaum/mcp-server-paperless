@@ -632,3 +632,8 @@ reason = "httpx2 upper-cases the method when it builds the request, so 'post' se
 mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁemail_documents__mutmut_30"
 function_hash = "94ea53e47cb7"
 reason = "A POST is never retried (IDEMPOTENT_METHODS), so retry=True changes nothing for it; retry=False documents the intent."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.permissions.xǁPaperlessPermissionWriterǁset_permissions__mutmut_14"
+function_hash = "ce495ff48d00"
+reason = "httpx2 upper-cases the method when it builds the request, so \"patch\" goes out as PATCH; the client reads only the built request's method."
