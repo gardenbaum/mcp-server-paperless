@@ -1228,6 +1228,23 @@ async def test_a_rule_owned_by_someone_else_needs_confirm_when_created() -> None
     assert setup.state.mail_rules == []
 
 
+async def test_a_removing_rule_for_someone_else_names_both_effects_when_created() -> None:
+    setup = Setup(writes=False)
+    account = setup.account()
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.create_rule(
+            MailRuleSettings(name="Purge", account_id=account, action="delete", owner="e2e-reader"),
+            confirm=False,
+        )
+
+    text = refusal(raised)
+    assert "which deletes each mail from the mail server" in text
+    takeover = "the owner takes it over, and you may not be able to change it again."
+    assert text.endswith(f"; and it belongs to user 'e2e-reader' (id 3): {takeover}")
+    assert setup.state.mail_rules == []
+
+
 async def test_a_rule_owned_by_the_caller_needs_no_confirmation_when_created() -> None:
     setup = Setup()
     account = setup.account()
