@@ -56,6 +56,14 @@ def check_password(password: str | None) -> None:
         raise masked_password()
 
 
+class NotText(SecretStr):
+    """Stands in for a password that was not text; the service refuses it without quoting it."""
+
+    def __init__(self) -> None:
+        """Hold nothing."""
+        super().__init__("")
+
+
 class MailAccount(BaseModel):
     """A mail account as the port reads it. It has no password: nothing here can leak one."""
 

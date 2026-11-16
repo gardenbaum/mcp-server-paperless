@@ -25,7 +25,7 @@ from paperless_mcp.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from paperless_mcp.domain.mail import MailRuleSettings
+from paperless_mcp.domain.mail import MailRuleSettings, NotText, Reference
 from paperless_mcp.paperless.auth import StaticTokenProvider
 from paperless_mcp.services.mail import MAX_ERROR, MailService
 from paperless_mcp.services.taxonomy import TaxonomyResolver
@@ -35,7 +35,11 @@ if TYPE_CHECKING:
 
     from paperless_mcp.domain.mail import RuleClearable
 
-pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
+pytestmark = [
+    pytest.mark.anyio,
+    pytest.mark.decision("decision-6"),
+    pytest.mark.decision("decision-18"),
+]
 
 PASSWORD = "S3cret-Passw0rd!x"
 HOST, PORT = "imap.example.com", 993
@@ -59,7 +63,7 @@ class Setup:
             ]
         self.fake: FakePaperless = FakePaperless(self.state, user=user, allow_writes=writes)
         taxonomy = TaxonomyResolver(self.fake, StaticTokenProvider("t"), ttl=3600.0)
-        self.service: MailService = MailService(self.fake, self.fake, taxonomy)
+        self.service: MailService = MailService(self.fake, self.fake, taxonomy, self.fake)
 
     def account(self, name: str = "Invoices", **fields: object) -> int:
         number = max((a.id for a in self.state.mail_accounts), default=0) + 1
@@ -408,7 +412,10 @@ async def test_a_connection_test_reports_a_login_that_fails_without_the_password
     result = await setup.service.test_account(number)
 
     assert not result.success
-    assert result.message.startswith("Mail account 'Invoices': Paperless could not log in")
+    assert result.message == (
+        "Mail account 'Invoices': Paperless could not connect to the mail server or log in. "
+        "Check the server name, port, security setting, username and password."
+    )
     assert PASSWORD not in result.model_dump_json()
 
 
@@ -493,7 +500,8 @@ async def test_a_confirmed_fetch_is_queued_and_says_where_the_outcome_shows() ->
     assert started.id == number
     assert started.message == (
         "Paperless queued a fetch of the mail of account 'Invoices'. It runs in the background: "
-        "new documents appear after consumption (see list_tasks) and list_processed_mail shows "
+        "new documents appear after consumption (check the Paperless task list) and "
+        "list_processed_mail shows "
         "the mails it handled."
     )
 
@@ -952,6 +960,8 @@ async def test_switching_to_deleting_needs_confirm() -> None:
         {"action_parameter": "Elsewhere"},
         {"account_id": 2},
         {"filter_attachment_filename_exclude": "*.png"},
+        {"consumption_scope": "eml"},
+        {"attachment_type": "all_files"},
     ],
 )
 async def test_widening_what_a_removing_rule_reaches_needs_confirm(
@@ -1138,3 +1148,642 @@ async def test_a_page_beyond_the_last_one_of_the_processed_mail_is_not_found() -
 
     with pytest.raises(NotFound, match="Page 4 of the processed mail"):
         _ = await setup.service.list_processed(rule_id=None, status=None, page=4, page_size=25)
+
+
+async def test_letting_later_rules_run_after_an_importing_rule_needs_confirm() -> None:
+    setup = Setup(writes=False)
+    account = setup.account()
+    first = setup.rule(account, "First", stop_processing=True, order=1)
+    _ = setup.rule(account, "Purge", action="delete", order=2)
+
+    with pytest.raises(ConfirmationRequired) as turned_off:
+        _ = await setup.service.update_rule(
+            first, MailRuleSettings(stop_processing=False), confirm=False
+        )
+    with pytest.raises(ConfirmationRequired) as reordered:
+        _ = await setup.service.update_rule(first, MailRuleSettings(order=5), confirm=False)
+
+    expected = (
+        "Nothing was changed. Confirming would change the order or stop_processing of the "
+        "enabled mail rule 'First' (id 1), so that the enabled rule 'Purge' (id 2) of the same "
+        "account, which deletes mail, may run for mails that 'First' already imported from."
+    )
+    assert refusal(turned_off) == expected
+    assert refusal(reordered) == expected
+
+
+async def test_stop_processing_and_order_are_free_without_a_removing_rule_nearby() -> None:
+    setup = Setup()
+    account = setup.account()
+    first = setup.rule(account, "First", stop_processing=True)
+    _ = setup.rule(account, "Marker", action="flag")
+    _ = setup.rule(account, "Off", action="delete", enabled=False)
+    other = setup.account("Other")
+    _ = setup.rule(other, "Elsewhere", action="delete")
+
+    changed = await setup.service.update_rule(
+        first, MailRuleSettings(stop_processing=False, order=4), confirm=False
+    )
+    turned_on = await setup.service.update_rule(
+        first, MailRuleSettings(stop_processing=True), confirm=False
+    )
+
+    assert (changed.stop_processing, changed.order, turned_on.stop_processing) == (False, 4, True)
+
+
+async def test_a_rule_owned_by_someone_else_needs_confirm_when_created() -> None:
+    setup = Setup(writes=False)
+    account = setup.account()
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.create_rule(
+            MailRuleSettings(name="Bills", account_id=account, owner="e2e-reader"), confirm=False
+        )
+
+    assert refusal(raised) == (
+        "Nothing was changed. Confirming would create the mail rule 'Bills' for user "
+        "'e2e-reader' (id 3): the owner takes it over, and you may not be able to change it "
+        "again."
+    )
+    assert setup.state.mail_rules == []
+
+
+async def test_a_rule_owned_by_the_caller_needs_no_confirmation_when_created() -> None:
+    setup = Setup()
+    account = setup.account()
+
+    made = await setup.service.create_rule(
+        MailRuleSettings(name="Bills", account_id=account, owner="admin"), confirm=False
+    )
+    elsewhere = await setup.service.create_rule(
+        MailRuleSettings(name="Other", account_id=account, owner="e2e-reader"), confirm=True
+    )
+
+    assert made.owner is not None
+    assert made.owner.id == 2
+    assert elsewhere.owner is not None
+    assert elsewhere.owner.id == 3
+
+
+async def test_a_caller_who_cannot_be_identified_confirms_every_owner() -> None:
+    permissions = frozenset({"view_mailaccount", "add_mailrule", "change_mailaccount"})
+    setup = Setup(READER[0], writes=False, permissions=permissions)
+    account = setup.account(owner=None)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.create_rule(
+            MailRuleSettings(name="Bills", account_id=account, owner=3), confirm=False
+        )
+
+    assert "for user 3:" in refusal(raised)
+
+
+async def test_a_fetch_by_a_user_who_is_not_a_superuser_warns_about_rules_it_cannot_see() -> None:
+    setup = Setup(
+        READER[0],
+        writes=False,
+        permissions=frozenset(
+            {"view_mailaccount", "view_mailrule", "add_mailaccount", "view_uisettings"}
+        ),
+    )
+    account = setup.account(owner=None)
+    _ = setup.rule(account, "Mine", owner=None)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.process_account(account, confirm=False)
+
+    assert refusal(raised).endswith(
+        " Rules of other users on this account that you cannot see run too."
+    )
+
+
+# --- connection changes, in detail
+
+
+async def test_a_port_only_change_needs_confirm() -> None:
+    setup = Setup(writes=False)
+    number = setup.account()
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.update_account(number, imap_port=143)
+
+    assert refusal(raised) == (
+        "Nothing was changed. Confirming would point mail account 'Invoices' (id 1) at "
+        f"{HOST} port 143 (SSL) instead of {HOST} port {PORT} (SSL): Paperless keeps the saved "
+        "password and sends it to the new server from its next fetch on."
+    )
+
+
+async def test_a_security_change_without_a_password_needs_confirm_and_is_named() -> None:
+    setup = Setup(writes=False)
+    number = setup.account()
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.update_account(number, imap_security="starttls")
+
+    assert f"at {HOST} port {PORT} (STARTTLS) instead of {HOST} port {PORT} (SSL)" in refusal(
+        raised
+    )
+
+
+async def test_an_account_that_has_no_encryption_can_be_renamed_and_kept_that_way() -> None:
+    setup = Setup()
+    number = setup.account(imap_security="none")
+
+    renamed = await setup.service.update_account(number, name="Plain", imap_security="none")
+
+    assert (renamed.name, renamed.imap_security) == ("Plain", "none")
+
+
+async def test_the_same_security_in_another_spelling_of_the_call_is_no_change() -> None:
+    setup = Setup(writes=False)
+    number = setup.account()
+
+    same = await setup.service.update_account(number, imap_security="ssl", imap_server=HOST)
+
+    assert same.imap_security == "ssl"
+
+
+# --- the action and its parameter
+
+
+@pytest.mark.parametrize(("action", "parameter"), [("move", "Archive"), ("tag", "paperless")])
+async def test_switching_to_move_or_tag_with_a_parameter_succeeds(
+    action: str, parameter: str
+) -> None:
+    setup = Setup()
+    number = setup.rule(setup.account(), enabled=False)
+
+    changed = await setup.service.update_rule(
+        number,
+        MailRuleSettings.model_validate({"action": action, "action_parameter": parameter}),
+        confirm=False,
+    )
+
+    assert (changed.action, changed.action_parameter) == (action, parameter)
+
+
+@pytest.mark.parametrize("action", ["move", "tag"])
+async def test_switching_to_move_or_tag_without_a_parameter_names_what_is_missing(
+    action: str,
+) -> None:
+    setup = Setup(writes=False)
+    number = setup.rule(setup.account())
+
+    with pytest.raises(Validation) as raised:
+        _ = await setup.service.update_rule(
+            number, MailRuleSettings.model_validate({"action": action}), confirm=False
+        )
+
+    what = "the folder to move the mail to" if action == "move" else "the tag to set"
+    assert raised.value.message == f"The action {action} needs action_parameter: {what}."
+    assert raised.value.hint == f"Pass action_parameter with {what}."
+
+
+async def test_an_empty_parameter_on_a_moving_rule_is_refused_and_a_new_one_is_taken() -> None:
+    setup = Setup()
+    number = setup.rule(setup.account(), action="move", action_parameter="Done", enabled=False)
+
+    with pytest.raises(Validation, match="The action move needs action_parameter"):
+        _ = await setup.service.update_rule(
+            number, MailRuleSettings(action_parameter=""), confirm=False
+        )
+    changed = await setup.service.update_rule(
+        number, MailRuleSettings(action_parameter="Elsewhere"), confirm=False
+    )
+
+    assert changed.action_parameter == "Elsewhere"
+
+
+async def test_an_empty_parameter_on_a_flagging_rule_is_taken_as_none() -> None:
+    setup = Setup()
+    number = setup.rule(setup.account(), action="flag", action_parameter="old")
+
+    changed = await setup.service.update_rule(
+        number, MailRuleSettings(action_parameter=""), confirm=False
+    )
+
+    assert changed.action_parameter is None
+
+
+async def test_an_action_that_stays_the_same_with_its_parameter_changes_the_parameter() -> None:
+    setup = Setup()
+    number = setup.rule(setup.account(), action="tag", action_parameter="a", enabled=False)
+
+    changed = await setup.service.update_rule(
+        number, MailRuleSettings(action="tag", action_parameter="b"), confirm=False
+    )
+
+    assert changed.action_parameter == "b"
+
+
+# --- paging
+
+
+async def test_an_empty_list_has_one_empty_first_page() -> None:
+    setup = Setup()
+
+    accounts = await setup.service.list_accounts(page=1, page_size=2)
+    rules = await setup.service.list_rules(account_id=None, page=1, page_size=2)
+
+    assert (accounts.count, accounts.next_page, accounts.accounts) == (0, None, ())
+    assert (rules.count, rules.next_page, rules.rules) == (0, None, ())
+    with pytest.raises(NotFound, match=r"There is no page 2: the list has 1 page\."):
+        _ = await setup.service.list_accounts(page=2, page_size=2)
+
+
+@pytest.mark.parametrize(
+    ("total", "page", "names", "following"),
+    [
+        (4, 1, ["A0", "A1"], 2),
+        (4, 2, ["A2", "A3"], None),
+        (5, 2, ["A2", "A3"], 3),
+        (5, 3, ["A4"], None),
+        (1, 1, ["A0"], None),
+    ],
+)
+async def test_pages_end_exactly_where_the_list_ends(
+    total: int, page: int, names: list[str], following: int | None
+) -> None:
+    setup = Setup()
+    account = setup.account()
+    for number in range(total):
+        _ = setup.account(f"B{number}")
+        _ = setup.rule(account, f"A{number}", order=number)
+
+    listing = await setup.service.list_rules(account_id=account, page=page, page_size=2)
+
+    assert ([r.name for r in listing.rules], listing.next_page) == (names, following)
+    assert listing.page == page
+
+
+async def test_a_page_past_the_end_counts_the_pages() -> None:
+    setup = Setup()
+    for number in range(4):
+        _ = setup.account(f"B{number}")
+
+    with pytest.raises(NotFound) as raised:
+        _ = await setup.service.list_accounts(page=3, page_size=2)
+
+    assert raised.value.message == "There is no page 3: the list has 2 pages."
+    assert raised.value.hint == "Start again at page 1."
+
+
+# --- everything a row carries
+
+
+async def test_a_rule_row_carries_every_setting() -> None:
+    setup = Setup()
+    account = setup.account()
+    number = setup.rule(
+        account,
+        "Full",
+        enabled=False,
+        order=4,
+        folder="Billing",
+        filter_from="f",
+        filter_to="t",
+        filter_subject="s",
+        filter_body="b",
+        filter_attachment_filename_include="i",
+        filter_attachment_filename_exclude="x",
+        maximum_age=9,
+        attachment_type="all_files",
+        consumption_scope="eml",
+        pdf_layout="html",
+        action="tag",
+        action_parameter="kw",
+        assign_title_from="filename",
+        assign_tags=(1,),
+        assign_correspondent_from="selected",
+        assign_correspondent=1,
+        assign_document_type=1,
+        assign_owner_from_rule=False,
+        stop_processing=True,
+        owner=2,
+    )
+
+    row = await setup.service.get_rule(number)
+
+    assert row.model_dump(
+        exclude={"assign_tags", "assign_correspondent", "assign_document_type", "owner"}
+    ) == {
+        "id": number,
+        "name": "Full",
+        "account_id": account,
+        "enabled": False,
+        "order": 4,
+        "folder": "Billing",
+        "filter_from": "f",
+        "filter_to": "t",
+        "filter_subject": "s",
+        "filter_body": "b",
+        "filter_attachment_filename_include": "i",
+        "filter_attachment_filename_exclude": "x",
+        "maximum_age_days": 9,
+        "attachment_type": "all_files",
+        "consumption_scope": "eml",
+        "pdf_layout": "html",
+        "action": "tag",
+        "action_parameter": "kw",
+        "assign_title_from": "filename",
+        "assign_correspondent_from": "selected",
+        "assign_owner_from_rule": False,
+        "stop_processing": True,
+        "can_change": True,
+    }
+    assert (row.owner, row.assign_correspondent, row.assign_document_type) == (
+        Reference(id=2, name="admin"),
+        Reference(id=1, name="e2e-acme"),
+        Reference(id=1, name="e2e-invoice"),
+    )
+    assert row.assign_tags == (Reference(id=1, name="e2e-finance"),)
+
+
+async def test_an_account_row_carries_every_setting() -> None:
+    setup = Setup()
+    number = setup.account(
+        imap_security="none",
+        character_set="ISO-8859-1",
+        account_type="outlook_oauth",
+        is_token=True,
+        expiration=DAY,
+    )
+
+    row = await setup.service.get_account(number)
+
+    assert row.model_dump() == {
+        "id": number,
+        "name": "Invoices",
+        "imap_server": HOST,
+        "imap_port": PORT,
+        "imap_security": "none",
+        "username": "me@example.com",
+        "character_set": "ISO-8859-1",
+        "account_type": "outlook_oauth",
+        "is_token": True,
+        "owner": 2,
+        "can_change": True,
+        "token_expires": DAY,
+    }
+
+
+async def test_several_rules_that_could_run_after_an_importing_rule_are_all_named() -> None:
+    setup = Setup(writes=False)
+    account = setup.account()
+    first = setup.rule(account, "First")
+    _ = setup.rule(account, "Purge", action="delete")
+    _ = setup.rule(account, "Archive", action="move", action_parameter="Done")
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.update_rule(first, MailRuleSettings(order=9), confirm=False)
+
+    assert refusal(raised) == (
+        "Nothing was changed. Confirming would change the order or stop_processing of the "
+        "enabled mail rule 'First' (id 1), so that the enabled rules 'Purge' (id 2) and "
+        "'Archive' (id 3) of the same account, which delete or move mail, may run for mails "
+        "that 'First' already imported from."
+    )
+
+
+# --- exact messages and hints (mutation: the text is the contract)
+
+
+async def test_the_password_refusals_have_their_exact_texts() -> None:
+    setup = Setup(writes=False)
+
+    async def refused(password: SecretStr) -> Validation:
+        with pytest.raises(Validation) as raised:
+            _ = await setup.service.create_account(
+                name="n",
+                imap_server=HOST,
+                imap_port=PORT,
+                username="u",
+                password=password,
+                imap_security=None,
+                character_set=None,
+            )
+        return raised.value
+
+    not_text = await refused(NotText())
+    blank = await refused(SecretStr("  "))
+    stars = await refused(SecretStr("***"))
+
+    assert (not_text.message, not_text.hint) == (
+        "The password must be text.",
+        "Pass the password as a string.",
+    )
+    assert (blank.message, blank.hint) == (
+        "The password must not be empty.",
+        "Pass the password of the mail account.",
+    )
+    assert stars.message.startswith("A password that consists only of asterisks")
+    assert stars.hint == "Leave password out to keep the saved one."
+
+
+async def test_an_update_with_nothing_to_change_has_its_exact_texts() -> None:
+    setup = Setup()
+    account = setup.account()
+    rule = setup.rule(account)
+
+    with pytest.raises(Validation) as for_account:
+        _ = await setup.service.update_account(account)
+    with pytest.raises(Validation) as for_rule:
+        _ = await setup.service.update_rule(rule, MailRuleSettings(), confirm=False)
+
+    assert (for_account.value.message, for_account.value.hint) == (
+        "Nothing to change: pass at least one setting.",
+        "Name the settings of the account to change.",
+    )
+    assert (for_rule.value.message, for_rule.value.hint) == (
+        "Nothing to change: pass at least one setting.",
+        "Name the settings of the rule to change.",
+    )
+
+
+async def test_a_rule_without_name_or_account_has_its_exact_texts() -> None:
+    setup = Setup()
+
+    with pytest.raises(Validation) as nameless:
+        _ = await setup.service.create_rule(MailRuleSettings(account_id=1), confirm=False)
+    with pytest.raises(Validation) as accountless:
+        _ = await setup.service.create_rule(MailRuleSettings(name="R"), confirm=False)
+
+    assert (nameless.value.message, nameless.value.hint) == (
+        "A mail rule needs a name.",
+        "Pass name.",
+    )
+    assert (accountless.value.message, accountless.value.hint) == (
+        "A mail rule needs an account.",
+        "Pass account_id; list_mail_accounts shows the ids.",
+    )
+
+
+async def test_a_name_that_is_both_set_and_cleared_has_its_exact_texts() -> None:
+    setup = Setup()
+    number = setup.rule(setup.account())
+
+    with pytest.raises(Validation) as raised:
+        _ = await setup.service.update_rule(
+            number, MailRuleSettings(owner="admin"), clear=("owner",), confirm=False
+        )
+
+    assert (raised.value.message, raised.value.hint) == (
+        "owner is both set and cleared in one call.",
+        "Either pass owner or name it in clear.",
+    )
+
+
+async def test_a_correspondent_with_another_source_has_its_exact_texts() -> None:
+    setup = Setup()
+    number = setup.rule(setup.account())
+
+    with pytest.raises(Validation) as raised:
+        _ = await setup.service.update_rule(
+            number,
+            MailRuleSettings(assign_correspondent=1, assign_correspondent_from="name"),
+            confirm=False,
+        )
+
+    assert (raised.value.message, raised.value.hint) == (
+        "assign_correspondent is used only with assign_correspondent_from selected.",
+        "Pass assign_correspondent_from selected, or leave it out.",
+    )
+
+
+async def test_the_refusals_about_unreadable_rules_have_their_exact_texts() -> None:
+    permissions = frozenset({"view_mailaccount", "delete_mailaccount", "add_mailaccount"})
+    setup = Setup(READER[0], writes=False, permissions=permissions)
+    number = setup.account(owner=None)
+
+    with pytest.raises(ConfirmationRequired) as deleting:
+        _ = await setup.service.delete_account(number, confirm=False)
+    with pytest.raises(ConfirmationRequired) as fetching:
+        _ = await setup.service.process_account(number, confirm=False)
+
+    assert refusal(deleting) == (
+        "Nothing was changed. Confirming would delete mail account 'Invoices' (id 1) with its "
+        "rules and the records of the mail they processed; Paperless stops fetching from it, "
+        "the mail on the server stays."
+    )
+    assert refusal(fetching) == (
+        f"Nothing was changed. Confirming would fetch the mail of account 'Invoices' ({HOST}) "
+        "now: Paperless connects to the mail server and imports documents; its rules could not "
+        "be read, so what they do to the mail is unknown. Rules of other users on this account "
+        "that you cannot see run too."
+    )
+
+
+async def test_a_confirmed_delete_by_a_user_who_cannot_list_rules_says_so() -> None:
+    permissions = frozenset({"view_mailaccount", "delete_mailaccount"})
+    setup = Setup(READER[0], permissions=permissions)
+    number = setup.account(owner=None)
+
+    gone = await setup.service.delete_account(number, confirm=True)
+
+    assert gone.message == (
+        "Mail account 'Invoices' (id 1) was deleted with its rules; Paperless no longer "
+        "fetches from it."
+    )
+
+
+async def test_a_fetch_with_one_enabled_rule_says_matches() -> None:
+    setup = Setup(writes=False)
+    number = setup.account()
+    _ = setup.rule(number, "Read")
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.process_account(number, confirm=False)
+
+    assert refusal(raised) == (
+        f"Nothing was changed. Confirming would fetch the mail of account 'Invoices' ({HOST}) "
+        "now: Paperless connects to the mail server and imports documents from the mails that "
+        "its 1 enabled rule matches, then acts on those mails on the server. Rule 'Read' "
+        "(id 1) marks the mail as read."
+    )
+
+
+async def test_a_caller_who_is_not_identified_is_told_about_rules_it_cannot_see() -> None:
+    permissions = frozenset({"view_mailaccount", "view_mailrule", "add_mailaccount"})
+    setup = Setup(READER[0], writes=False, permissions=permissions)
+    number = setup.account(owner=None)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.process_account(number, confirm=False)
+
+    ending = (
+        "no enabled rule, so Paperless imports nothing. Rules of other users on this account "
+        "that you cannot see run too."
+    )
+    assert refusal(raised).endswith(ending)
+
+
+async def test_a_move_rule_without_a_parameter_is_quoted_as_empty() -> None:
+    setup = Setup(writes=False)
+    number = setup.account()
+    rule = setup.rule(number, "Odd", action="move", action_parameter=None)
+
+    with pytest.raises(ConfirmationRequired) as fetching:
+        _ = await setup.service.process_account(number, confirm=False)
+    with pytest.raises(ConfirmationRequired) as widening:
+        _ = await setup.service.update_rule(rule, MailRuleSettings(folder="Other"), confirm=False)
+
+    assert "Rule 'Odd' (id 1) moves the mail to ''" in refusal(fetching)
+    assert "moves each mail to the folder '' on the mail server" in refusal(widening)
+
+
+async def test_two_effects_are_joined_in_one_refusal() -> None:
+    setup = Setup(writes=False)
+    number = setup.rule(setup.account(), "Purge", action="delete")
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.update_rule(
+            number, MailRuleSettings(folder="Other", owner=3), confirm=False
+        )
+
+    message = refusal(raised)
+    assert "; and change the enabled mail rule 'Purge'" in message
+    assert message.startswith("Nothing was changed. Confirming would hand the mail rule 'Purge'")
+
+
+async def test_switching_to_a_plain_action_keeps_a_parameter_that_is_given() -> None:
+    setup = Setup()
+    number = setup.rule(setup.account(), action="move", action_parameter="Done", enabled=False)
+    plain = setup.rule(1, "Plain", enabled=False)
+
+    kept = await setup.service.update_rule(
+        number, MailRuleSettings(action="flag", action_parameter="given"), confirm=False
+    )
+    from_nothing = await setup.service.update_rule(
+        plain, MailRuleSettings(action="flag", action_parameter="x"), confirm=False
+    )
+
+    assert (kept.action, kept.action_parameter) == ("flag", "given")
+    assert (from_nothing.action, from_nothing.action_parameter) == ("flag", "x")
+
+
+async def test_one_moving_rule_beside_a_reordered_one_is_named_with_its_verb() -> None:
+    setup = Setup(writes=False)
+    account = setup.account()
+    first = setup.rule(account, "First")
+    _ = setup.rule(account, "Archive", action="move", action_parameter="Done")
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.update_rule(first, MailRuleSettings(order=9), confirm=False)
+
+    assert "'Archive' (id 2) of the same account, which moves mail, may run" in refusal(raised)
+
+
+async def test_a_processed_error_is_one_line_cut_at_the_limit() -> None:
+    setup = Setup()
+    rule = setup.rule(setup.account())
+    setup.processed(rule, "exact", error="e" * MAX_ERROR)
+    setup.processed(rule, "over", error="o" * (MAX_ERROR + 1))
+    setup.processed(rule, "lines", error="first\nsecond   third")
+
+    listing = await setup.service.list_processed(rule_id=None, status=None, page=1, page_size=25)
+
+    by_subject = {m.subject: m.error for m in listing.mails}
+    assert by_subject["exact"] == "e" * MAX_ERROR
+    assert by_subject["over"] == "o" * (MAX_ERROR - 1) + "…"
+    assert by_subject["lines"] == "first second third"

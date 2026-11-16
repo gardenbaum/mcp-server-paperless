@@ -121,15 +121,17 @@ MAIL_CONFIRMING = frozenset({"update_mail_account", "create_mail_rule", "update_
 # Names that hold a secret. Nothing of the sort may be in a tool's output (decision-18), and an
 # input that takes one must be write-only.
 CREDENTIAL_WORDS = (
-    *("password", "passwd", "secret", "credential", "api_key", "apikey"),
-    *("refresh_token", "access_token", "auth_token"),
+    *("password", "passwd", "passphrase", "secret", "credential", "api_key", "apikey"),
+    *("private_key", "token"),
 )
+# Names that contain a credential word but hold none: a flag and a date.
+NOT_CREDENTIALS = frozenset({"is_token", "token_expires"})
 
 
 def credential_like(name: str) -> bool:
-    """A name that holds a secret; `is_token` (a flag) and `token_expires` (a date) do not."""
+    """A name that holds a secret: it contains a credential word and is not an allowed name."""
     lowered = name.lower()
-    return lowered == "token" or any(word in lowered for word in CREDENTIAL_WORDS)
+    return lowered not in NOT_CREDENTIALS and any(word in lowered for word in CREDENTIAL_WORDS)
 
 
 def property_names(schema: object) -> set[str]:
@@ -653,3 +655,22 @@ async def test_self_test_a_profile_over_the_budget_is_found() -> None:
         _ = crowded.tool(_no_op, name=f"tool_{number}")
 
     assert len(over_budget(list(await FastMCP(providers=[crowded]).list_tools()))) == 21
+
+
+@pytest.mark.decision("decision-18")
+@pytest.mark.parametrize(
+    "name",
+    [
+        *("password", "Password", "new_password", "token", "refresh_token", "access_token"),
+        *("my_token", "passphrase", "private_key", "client_secret", "api_key", "apikey"),
+        "credentials",
+    ],
+)
+def test_self_test_credential_names_are_recognised(name: str) -> None:
+    assert credential_like(name)
+
+
+@pytest.mark.decision("decision-18")
+@pytest.mark.parametrize("name", ["is_token", "token_expires", "title", "key_count", "name"])
+def test_self_test_harmless_names_are_not_credentials(name: str) -> None:
+    assert not credential_like(name)
