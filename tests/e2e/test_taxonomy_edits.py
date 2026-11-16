@@ -11,7 +11,7 @@ import pytest
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import consume, obj, parse, pdf, results, token_for
+from e2e.helpers import consume_text, obj, parse, results, token_for
 from paperless_mcp.server import create_server
 
 if TYPE_CHECKING:
@@ -59,8 +59,7 @@ def scratch(stack: Stack) -> Iterator[None]:
 @pytest.fixture
 def document(stack: Stack) -> Iterator[int]:
     title = f"plmcp19-doc-{uuid.uuid4().hex}"
-    _, created = consume(stack.admin, title, pdf(title))
-    assert created is not None
+    created = consume_text(stack.admin, title)
     yield created
     _ = stack.admin.delete(f"/api/documents/{created}/")
 

@@ -134,7 +134,7 @@ async def test_without_a_wait_the_task_id_comes_back_at_once_and_get_task_follow
     title = uploads.title()
 
     output = await upload(
-        uploads, server, content_base64=base64.b64encode(pdf(title)).decode(), filename="a.pdf"
+        uploads, server, content_base64=base64.b64encode(title.encode()).decode(), filename="a.txt"
     )
     async with Client(server) as client:
         followed = await client.call_tool(
@@ -155,12 +155,12 @@ async def test_a_taken_archive_serial_number_shows_up_as_a_failed_task(
     first, second = uploads.title(), uploads.title()
 
     one = await upload(
-        uploads, server, content_base64=base64.b64encode(pdf(first)).decode(),
-        filename="a.pdf", archive_serial_number=serial, wait_seconds=30,
+        uploads, server, content_base64=base64.b64encode(first.encode()).decode(),
+        filename="a.txt", archive_serial_number=serial, wait_seconds=30,
     )  # fmt: skip
     two = await upload(
-        uploads, server, content_base64=base64.b64encode(pdf(second)).decode(),
-        filename="b.pdf", archive_serial_number=serial, wait_seconds=30,
+        uploads, server, content_base64=base64.b64encode(second.encode()).decode(),
+        filename="b.txt", archive_serial_number=serial, wait_seconds=30,
     )  # fmt: skip
 
     assert one["state"] == "success"
@@ -205,8 +205,8 @@ async def test_the_console_script_uploads_a_file_by_path_over_stdio(
     title = uploads.title()
     folder = tmp_path / "inbox"
     folder.mkdir()
-    _ = (folder / f"{title} März.pdf").write_bytes(pdf(title))
-    _ = (tmp_path / "outside.pdf").write_bytes(pdf("outside"))
+    _ = (folder / f"{title} März.txt").write_bytes(title.encode())
+    _ = (tmp_path / "outside.txt").write_bytes(b"outside")
     script = shutil.which("paperless-mcp")
     assert script, "the paperless-mcp console script is not installed (uv sync)"
     transport = StdioTransport(
@@ -224,17 +224,17 @@ async def test_the_console_script_uploads_a_file_by_path_over_stdio(
         [tool] = [t for t in await client.list_tools() if t.name == "upload_document"]
         done = await client.call_tool(
             "upload_document",
-            {"path": str(folder / f"{title} März.pdf"), "title": title, "wait_seconds": 30},
+            {"path": str(folder / f"{title} März.txt"), "title": title, "wait_seconds": 30},
         )
         refused = await client.call_tool(
-            "upload_document", {"path": str(tmp_path / "outside.pdf")}, raise_on_error=False
+            "upload_document", {"path": str(tmp_path / "outside.txt")}, raise_on_error=False
         )
 
     assert "path" in cast("Json", tool.input_schema["properties"])
     assert done.structured_content is not None
     output: Json = done.structured_content
     uploads.tasks.append(str(output["task_id"]))
-    assert (output["state"], output["filename"]) == ("success", f"{title} März.pdf")
+    assert (output["state"], output["filename"]) == ("success", f"{title} März.txt")
     found = results(stack.admin.get("/api/documents/", params={"title__iexact": title}))
     assert [num(d["id"]) for d in found] == [output["document_id"]]
     assert refused.is_error

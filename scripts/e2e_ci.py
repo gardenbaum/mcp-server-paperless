@@ -1,11 +1,13 @@
-"""Helpers behind the e2e CI job (PLMCP-39, decision-18): here, not in shell, to be tested.
+"""Helpers behind the e2e CI job (PLMCP-39, decision-22): here, not in shell, to be tested.
 
 The `e2e` check is required, so it must always report. The workflow splits it in three:
 
 * ``scope`` (job `e2e-scope`): reads the NUL-separated paths a pull request changes and prints
-  ``run=true`` or ``run=false``: false only when every path is documentation or project management.
+  ``run=true`` or ``run=false``: false only when every path is documentation or project
+  management.
 * The shards (job `e2e-shard`): `just e2e-shard K/N` runs the part of the live suite that
-  ``assign_shards`` gives shard K; the pytest option ``--e2e-shard K/N`` (tests/conftest.py) uses it.
+  ``assign_shards`` gives shard K; the pytest option ``--e2e-shard K/N`` (tests/conftest.py)
+  applies it.
 * ``verdict`` (job `e2e`): fails unless every shard succeeded, or the scope said skip and the
   shards were skipped. A skipped required check counts as passing on GitHub, so this job must
   never be skipped itself and never treat a skipped, cancelled or failed shard as green.
@@ -13,8 +15,10 @@ The `e2e` check is required, so it must always report. The workflow splits it in
 
 import argparse
 import sys
-from collections.abc import Mapping, Sequence
-from typing import TextIO
+from typing import TYPE_CHECKING, TextIO
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 # The number of parallel e2e jobs. The workflow's matrix lists the same shards (a test checks it).
 SHARDS = 3
@@ -127,7 +131,11 @@ def main(argv: Sequence[str], *, stdin: TextIO, out: TextIO, err: TextIO) -> int
     if reason:
         _ = err.write(f"e2e_ci: {reason}\n")
         return 1
-    done = "every shard succeeded" if args.run == "true" else "skipped, the change touches no runtime file"
+    done = (
+        "every shard succeeded"
+        if args.run == "true"
+        else "skipped, the change touches no runtime file"
+    )
     _ = out.write(f"e2e: {done}\n")
     return 0
 

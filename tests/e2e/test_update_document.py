@@ -7,7 +7,7 @@ import pytest
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import consume, obj, parse, pdf, results
+from e2e.helpers import consume_text, obj, parse, results
 from paperless_mcp.server import create_server
 
 if TYPE_CHECKING:
@@ -26,8 +26,7 @@ type Json = dict[str, object]
 def document(stack: Stack) -> Iterator[int]:
     """A new document of the admin (deleted again, also when the test fails)."""
     title = f"plmcp16-{uuid.uuid4().hex}"
-    _, created = consume(stack.admin, title, pdf(title))
-    assert created is not None
+    created = consume_text(stack.admin, title)
     yield created
     _ = stack.admin.delete(f"/api/documents/{created}/")
 
@@ -36,8 +35,7 @@ def document(stack: Stack) -> Iterator[int]:
 def other_document(stack: Stack) -> Iterator[int]:
     """A second document of its own, to link to (never a seeded one: links are mirrored)."""
     title = f"plmcp16-{uuid.uuid4().hex}"
-    _, created = consume(stack.admin, title, pdf(title))
-    assert created is not None
+    created = consume_text(stack.admin, title)
     yield created
     _ = stack.admin.delete(f"/api/documents/{created}/")
 

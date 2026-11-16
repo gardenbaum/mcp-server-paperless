@@ -184,10 +184,10 @@ def test_the_union_of_the_shards_is_the_whole_live_suite_with_nothing_twice() ->
         )
         return [line for line in done.stdout.splitlines() if "::" in line]
 
-    specs = [("--e2e-shard", f"{n}/{e2e_ci.SHARDS}") for n in range(1, e2e_ci.SHARDS + 1)]
+    specs = [f"{n}/{e2e_ci.SHARDS}" for n in range(1, e2e_ci.SHARDS + 1)]
     with ThreadPoolExecutor() as pool:  # four collections at once: each one imports the suite
         whole_run = pool.submit(collect)
-        shards = list(pool.map(lambda spec: collect(*spec), specs))
+        shards = list(pool.map(lambda spec: collect("--e2e-shard", spec), specs))
         whole = whole_run.result()
     assert whole, "the e2e suite collects no tests"
     flat = [test for shard in shards for test in shard]

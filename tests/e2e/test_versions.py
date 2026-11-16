@@ -15,7 +15,7 @@ from fastmcp import Client
 from fastmcp.client.transports import StdioTransport
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import consume, num, pdf
+from e2e.helpers import consume_text, num
 from paperless_mcp.server import create_server
 
 if TYPE_CHECKING:
@@ -40,8 +40,7 @@ class Scope:
 
     def document(self) -> int:
         title = f"plmcp24-{uuid.uuid4().hex}"
-        _, created = consume(self.stack.admin, title, pdf(title))
-        assert created is not None
+        created = consume_text(self.stack.admin, title)
         self.ids.append(created)
         return created
 
