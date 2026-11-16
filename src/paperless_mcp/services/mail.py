@@ -156,7 +156,9 @@ def _removes(*, enabled: bool, action: RuleAction | None) -> bool:
 def _reach(rule: MailRuleValues | MailRule) -> str:
     """Which mails a rule looks at: folder, age and filters, as prose."""
     parts = [f"It covers mails in folder {quoted(rule.folder or 'INBOX')}"]
-    parts.append(f"up to {plural(rule.maximum_age or 30, 'day')} old")
+    # Paperless defaults an unset age to 30 days and filters by age only when it is above zero.
+    days = 30 if rule.maximum_age is None else rule.maximum_age
+    parts.append(f"up to {plural(days, 'day')} old" if days > 0 else "of any age")
     text = " ".join(parts)
     filters = [
         template.format(quoted(value))
