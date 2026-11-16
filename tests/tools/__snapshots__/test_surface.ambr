@@ -275,6 +275,103 @@
 # name: test_the_resources_and_prompts_match_the_snapshot[all]
   dict({
     'prompts': list([
+      dict({
+        '_meta': dict({
+          'fastmcp': dict({
+            'tags': list([
+              'core',
+            ]),
+          }),
+        }),
+        'arguments': list([
+          dict({
+            'description': '''
+              The calendar year to review.
+              
+              Provide a value matching the following JSON schema: {"description":"The calendar year to review.","maximum":2200,"minimum":1900,"type":"integer"}. Encode non-string values as JSON.
+            ''',
+            'name': 'year',
+            'required': True,
+          }),
+          dict({
+            'description': '''
+              What the review is for, for example tax return or insurance.
+              
+              Provide a value matching the following JSON schema: {"description":"What the review is for, for example tax return or insurance.","type":"string"}. Encode non-string values as JSON.
+            ''',
+            'name': 'purpose',
+            'required': False,
+          }),
+        ]),
+        'description': 'Review one year of documents for a purpose such as a tax return and find what is missing.',
+        'name': 'annual_review',
+      }),
+      dict({
+        '_meta': dict({
+          'fastmcp': dict({
+            'tags': list([
+              'core',
+            ]),
+          }),
+        }),
+        'arguments': list([
+          dict({
+            'description': '''
+              What to tidy: tag, correspondent, document_type or storage_path. Leave empty to look at all four.
+              
+              Provide a value matching the following JSON schema: {"description":"What to tidy: tag, correspondent, document_type or storage_path. Leave empty to look at all four.","type":"string"}. Encode non-string values as JSON.
+            ''',
+            'name': 'kind',
+            'required': False,
+          }),
+        ]),
+        'description': 'Find duplicate, unused and badly named tags, correspondents and types and propose fixes.',
+        'name': 'cleanup_taxonomy',
+      }),
+      dict({
+        '_meta': dict({
+          'fastmcp': dict({
+            'tags': list([
+              'core',
+            ]),
+          }),
+        }),
+        'arguments': list([
+          dict({
+            'description': '''
+              What to find, in your own words: sender, topic, rough date, amount.
+              
+              Provide a value matching the following JSON schema: {"description":"What to find, in your own words: sender, topic, rough date, amount.","type":"string"}. Encode non-string values as JSON.
+            ''',
+            'name': 'description',
+            'required': True,
+          }),
+        ]),
+        'description': 'Find one document in Paperless from a loose description and show where it is.',
+        'name': 'find_document',
+      }),
+      dict({
+        '_meta': dict({
+          'fastmcp': dict({
+            'tags': list([
+              'core',
+            ]),
+          }),
+        }),
+        'arguments': list([
+          dict({
+            'description': '''
+              How many inbox documents to work through at once.
+              
+              Provide a value matching the following JSON schema: {"description":"How many inbox documents to work through at once.","maximum":25,"minimum":1,"type":"integer"}. Encode non-string values as JSON.
+            ''',
+            'name': 'batch_size',
+            'required': False,
+          }),
+        ]),
+        'description': 'Work through the documents in the Paperless inbox and propose how to file each one.',
+        'name': 'triage_inbox',
+      }),
     ]),
     'resources': list([
     ]),
@@ -283,6 +380,103 @@
 # name: test_the_resources_and_prompts_match_the_snapshot[default]
   dict({
     'prompts': list([
+      dict({
+        '_meta': dict({
+          'fastmcp': dict({
+            'tags': list([
+              'core',
+            ]),
+          }),
+        }),
+        'arguments': list([
+          dict({
+            'description': '''
+              The calendar year to review.
+              
+              Provide a value matching the following JSON schema: {"description":"The calendar year to review.","maximum":2200,"minimum":1900,"type":"integer"}. Encode non-string values as JSON.
+            ''',
+            'name': 'year',
+            'required': True,
+          }),
+          dict({
+            'description': '''
+              What the review is for, for example tax return or insurance.
+              
+              Provide a value matching the following JSON schema: {"description":"What the review is for, for example tax return or insurance.","type":"string"}. Encode non-string values as JSON.
+            ''',
+            'name': 'purpose',
+            'required': False,
+          }),
+        ]),
+        'description': 'Review one year of documents for a purpose such as a tax return and find what is missing.',
+        'name': 'annual_review',
+      }),
+      dict({
+        '_meta': dict({
+          'fastmcp': dict({
+            'tags': list([
+              'core',
+            ]),
+          }),
+        }),
+        'arguments': list([
+          dict({
+            'description': '''
+              What to tidy: tag, correspondent, document_type or storage_path. Leave empty to look at all four.
+              
+              Provide a value matching the following JSON schema: {"description":"What to tidy: tag, correspondent, document_type or storage_path. Leave empty to look at all four.","type":"string"}. Encode non-string values as JSON.
+            ''',
+            'name': 'kind',
+            'required': False,
+          }),
+        ]),
+        'description': 'Find duplicate, unused and badly named tags, correspondents and types and propose fixes.',
+        'name': 'cleanup_taxonomy',
+      }),
+      dict({
+        '_meta': dict({
+          'fastmcp': dict({
+            'tags': list([
+              'core',
+            ]),
+          }),
+        }),
+        'arguments': list([
+          dict({
+            'description': '''
+              What to find, in your own words: sender, topic, rough date, amount.
+              
+              Provide a value matching the following JSON schema: {"description":"What to find, in your own words: sender, topic, rough date, amount.","type":"string"}. Encode non-string values as JSON.
+            ''',
+            'name': 'description',
+            'required': True,
+          }),
+        ]),
+        'description': 'Find one document in Paperless from a loose description and show where it is.',
+        'name': 'find_document',
+      }),
+      dict({
+        '_meta': dict({
+          'fastmcp': dict({
+            'tags': list([
+              'core',
+            ]),
+          }),
+        }),
+        'arguments': list([
+          dict({
+            'description': '''
+              How many inbox documents to work through at once.
+              
+              Provide a value matching the following JSON schema: {"description":"How many inbox documents to work through at once.","maximum":25,"minimum":1,"type":"integer"}. Encode non-string values as JSON.
+            ''',
+            'name': 'batch_size',
+            'required': False,
+          }),
+        ]),
+        'description': 'Work through the documents in the Paperless inbox and propose how to file each one.',
+        'name': 'triage_inbox',
+      }),
     ]),
     'resources': list([
     ]),
@@ -291,6 +485,28 @@
 # name: test_the_resources_and_prompts_match_the_snapshot[read-only]
   dict({
     'prompts': list([
+      dict({
+        '_meta': dict({
+          'fastmcp': dict({
+            'tags': list([
+              'core',
+            ]),
+          }),
+        }),
+        'arguments': list([
+          dict({
+            'description': '''
+              What to find, in your own words: sender, topic, rough date, amount.
+              
+              Provide a value matching the following JSON schema: {"description":"What to find, in your own words: sender, topic, rough date, amount.","type":"string"}. Encode non-string values as JSON.
+            ''',
+            'name': 'description',
+            'required': True,
+          }),
+        ]),
+        'description': 'Find one document in Paperless from a loose description and show where it is.',
+        'name': 'find_document',
+      }),
     ]),
     'resources': list([
     ]),
