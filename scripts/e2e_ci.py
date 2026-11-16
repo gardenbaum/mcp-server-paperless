@@ -14,6 +14,7 @@ The `e2e` check is required, so it must always report. The workflow splits it in
 """
 
 import argparse
+import re
 import sys
 from typing import TYPE_CHECKING, TextIO
 
@@ -99,6 +100,71 @@ def assign_shards(
         loads[lightest] += weights.get(module, default)
         plan[module] = lightest + 1
     return plan
+
+
+_JOBS = re.compile(r"^jobs:[ \t]*$", re.MULTILINE)
+_JOB = re.compile(r"^  ([\w-]+):[ \t]*$", re.MULTILINE)
+_KEY = re.compile(r"^    ([\w-]+):[ \t]*(.*?)[ \t]*$", re.MULTILINE)
+_SHARD_LIST = re.compile(r"^\s+shard:\s*\[(.*)\]\s*$", re.MULTILINE)
+
+
+def _jobs(workflow: str) -> dict[str, str]:
+    """The text of each job of a workflow, by id (jobs are the two-space-indented keys)."""
+    section = _JOBS.search(workflow)
+    body = workflow[section.end() :] if section else ""
+    marks = list(_JOB.finditer(body))
+    ends = [mark.start() for mark in marks[1:]] + [len(body)]
+    return {mark[1]: body[mark.end() : end] for mark, end in zip(marks, ends, strict=False)}
+
+
+def _needs(value: str) -> set[str]:
+    return {part.strip() for part in value.strip("[]").split(",") if part.strip()}
+
+
+def _keys(job: str) -> dict[str, str]:
+    return {key[1]: key[2] for key in _KEY.finditer(job)}
+
+
+def _aggregate_problems(job: str) -> list[str]:
+    keys = _keys(job)
+    problems: list[str] = []
+    if keys.get("if") != "always()":
+        problems.append("`e2e` must run `if: always()`, or a failed shard would skip it")
+    if _needs(keys.get("needs", "")) != {"e2e-scope", "e2e-shard"}:
+        problems.append("`e2e` must have needs: [e2e-scope, e2e-shard]")
+    if "name" in keys:
+        problems.append("`e2e` must not set a name: the required check is called `e2e`")
+    return problems
+
+
+def _shard_problems(job: str, shards: int) -> list[str]:
+    keys = _keys(job)
+    problems: list[str] = []
+    if "e2e-scope" not in _needs(keys.get("needs", "")):
+        problems.append("`e2e-shard` needs e2e-scope, whose output decides whether it runs")
+    if "outputs.run == 'true'" not in keys.get("if", ""):
+        problems.append("`e2e-shard` must run only `if` the scope's run == 'true'")
+    listed = _SHARD_LIST.search(job)
+    found = [item.strip().strip("\"'") for item in listed[1].split(",")] if listed else []
+    if found != [f"{n}/{shards}" for n in range(1, shards + 1)]:
+        problems.append(f"the matrix of `e2e-shard` must list 1/{shards} to {shards}/{shards}")
+    return problems
+
+
+def workflow_problems(workflow: str, *, shards: int) -> list[str]:
+    """Ways the e2e jobs of `workflow` could report green with a shard failed or never run."""
+    jobs = _jobs(workflow)
+    problems = [f"no job `{name}`" for name in ("e2e", "e2e-shard") if name not in jobs]
+    problems += [
+        f"`{name}` sets continue-on-error: a failure would not fail the check"
+        for name in ("e2e", "e2e-shard")
+        if "continue-on-error" in jobs.get(name, "")
+    ]
+    if "e2e" in jobs:
+        problems += _aggregate_problems(jobs["e2e"])
+    if "e2e-shard" in jobs:
+        problems += _shard_problems(jobs["e2e-shard"], shards)
+    return problems
 
 
 class _Args(argparse.Namespace):

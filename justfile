@@ -167,7 +167,13 @@ e2e-up:
 # Run only the E2E tests (marker `e2e`, deselected by `check`) against the stack, starting it if needed.
 # The stack is left running for fast reruns; the seeding is idempotent. No coverage: E2E tests do not count.
 e2e: e2e-up
-    uv run pytest -m e2e --no-cov
+    uv run pytest -m e2e --no-cov --durations=20
+
+# Run one shard of the E2E tests, e.g. `just e2e-shard 2/3` (CI's `e2e-shard` jobs, one stack each).
+# Whole test modules are assigned to shards by their measured duration (scripts/e2e_ci.py), and
+# the shards together are exactly the suite `just e2e` runs.
+e2e-shard shard: e2e-up
+    uv run pytest -m e2e --no-cov --durations=20 --e2e-shard {{shard}}
 
 # Run the E2E tests against the latest stable paperless-ngx 3.x image (weekly job; design 9.2),
 # not the pinned one. Own compose project and port (8011), so a stack from `e2e-up` is untouched.

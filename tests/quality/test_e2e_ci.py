@@ -187,10 +187,78 @@ def test_the_union_of_the_shards_is_the_whole_live_suite_with_nothing_twice() ->
     specs = [f"{n}/{e2e_ci.SHARDS}" for n in range(1, e2e_ci.SHARDS + 1)]
     with ThreadPoolExecutor() as pool:  # four collections at once: each one imports the suite
         whole_run = pool.submit(collect)
-        shards = list(pool.map(lambda spec: collect("--e2e-shard", spec), specs))
+        shard_runs = [pool.submit(collect, "--e2e-shard", spec) for spec in specs]
+        shards = [run.result() for run in shard_runs]
         whole = whole_run.result()
     assert whole, "the e2e suite collects no tests"
     flat = [test for shard in shards for test in shard]
     assert len(flat) == len(set(flat)), "a test is selected by two shards"
     assert sorted(flat) == sorted(whole)
     assert all(shards), "a shard selects no tests"
+
+
+# The workflow wiring ---------------------------------------------------------------------------
+
+WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+
+GOOD_WORKFLOW = """\
+jobs:
+  e2e-scope:
+    runs-on: ubuntu-latest
+  e2e-shard:
+    name: e2e-shard (${{ matrix.shard }})
+    needs: e2e-scope
+    if: needs.e2e-scope.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/3", "2/3", "3/3"]
+  e2e:
+    needs: [e2e-scope, e2e-shard]
+    if: always()
+    runs-on: ubuntu-latest
+"""
+
+
+def test_the_workflow_wires_the_scope_the_shards_and_the_aggregate_check_safely() -> None:
+    assert e2e_ci.workflow_problems(WORKFLOW.read_text("utf-8"), shards=e2e_ci.SHARDS) == []
+
+
+def test_the_reference_workflow_has_no_problems() -> None:
+    assert e2e_ci.workflow_problems(GOOD_WORKFLOW, shards=3) == []
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "problem"),
+    [
+        ("    if: always()\n", "", "always()"),
+        ("    if: always()\n", "    if: success()\n", "always()"),
+        (
+            "    if: always()\n",
+            "    if: always()\n    continue-on-error: true\n",
+            "continue-on-error",
+        ),
+        ("    needs: [e2e-scope, e2e-shard]\n", "    needs: [e2e-shard]\n", "needs"),
+        ("    needs: [e2e-scope, e2e-shard]\n", "    needs: [e2e-scope]\n", "needs"),
+        ("  e2e:\n", "  e2e:\n    name: something else\n", "name"),
+        ("  e2e:\n", "  e2e-all:\n", "no job `e2e`"),
+        ("    if: needs.e2e-scope.outputs.run == 'true'\n", "", "run == 'true'"),
+        ('["1/3", "2/3", "3/3"]', '["1/3", "2/3"]', "matrix"),
+        ('["1/3", "2/3", "3/3"]', '["1/3", "2/3", "3/3", "1/3"]', "matrix"),
+        ('["1/3", "2/3", "3/3"]', '["1/2", "2/2"]', "matrix"),
+        (
+            "      fail-fast: false\n",
+            "      fail-fast: false\n      continue-on-error: true\n",
+            "continue-on-error",
+        ),
+        ("  e2e-shard:\n", "  e2e-shard-x:\n", "no job `e2e-shard`"),
+        ("    needs: e2e-scope\n", "", "needs"),
+    ],
+)
+def test_a_workflow_that_could_pass_without_every_shard_is_reported(
+    old: str, new: str, problem: str
+) -> None:
+    broken = GOOD_WORKFLOW.replace(old, new)
+    assert broken != GOOD_WORKFLOW
+    found = e2e_ci.workflow_problems(broken, shards=3)
+    assert any(problem in line for line in found), found
