@@ -79,15 +79,12 @@ READ_VIEWS = {"list_saved_views", "get_saved_view", "run_saved_view"}
 SHIPPED_TRASH = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "trash"}
 SHARING = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "sharing"}
 READ_SHARING = {"list_share_links", "list_share_bundles"}
-<<<<<<< HEAD
 SHIPPED_PERMISSIONS = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "permissions"}
-=======
 MAIL = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "mail"}
 READ_MAIL = {
     *("list_mail_accounts", "get_mail_account", "list_mail_rules", "get_mail_rule"),
     "list_processed_mail",
 }
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
 
 
 async def names(server: FastMCP) -> set[str]:
@@ -118,15 +115,10 @@ async def test_several_toolsets_combine() -> None:
 async def test_all_offers_every_toolset_the_server_may_offer() -> None:
     server = serve(with_ai(enabled=True), catalogue=SYNTHETIC, toolsets=["all"])
 
-<<<<<<< HEAD
-    shipped = CORE | SHIPPED_AI | SHIPPED_BULK | SHIPPED_VERSIONS | VIEWS | SHIPPED_TRASH | SHARING
-    assert await names(server) == shipped | SHIPPED_PDF | SHIPPED_PERMISSIONS | {
-=======
     shipped = (
         CORE | SHIPPED_AI | SHIPPED_BULK | SHIPPED_VERSIONS | VIEWS | SHIPPED_TRASH | SHARING | MAIL
     )
-    assert await names(server) == shipped | SHIPPED_PDF | {
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
+    assert await names(server) == shipped | SHIPPED_PDF | SHIPPED_PERMISSIONS | {
         "ask_something",
         "scratch_change",
         "scratch_preview",

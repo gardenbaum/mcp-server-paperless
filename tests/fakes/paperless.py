@@ -42,7 +42,6 @@ from fakes.accounts import (
 )
 from fakes.custom_field_query import compile_query
 from fakes.document_values import coerce, reject, tag_closure
-from fakes.permissions import access_of, check_principals, set_grants
 from fakes.mail import (
     FakeMailAccount,
     FakeMailRule,
@@ -50,6 +49,7 @@ from fakes.mail import (
     MailData,
 )
 from fakes.mail import Viewer as MailViewer
+from fakes.permissions import access_of, check_principals, set_grants
 from fakes.sharing import FakeShareBundle, FakeShareLink, SentEmail, SharingData, Viewer
 from fakes.taxonomy_rules import check_colour, check_match, check_name, check_path, with_ids
 from fakes.view_filters import ONLY_ONE_SEARCH, combines, searches, view_filters
