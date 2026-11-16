@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from paperless_mcp.services.instance import InstanceService
     from paperless_mcp.services.notes import NoteService
     from paperless_mcp.services.pdf import PdfService
+    from paperless_mcp.services.permissions import PermissionService
     from paperless_mcp.services.removal import DocumentRemoval
     from paperless_mcp.services.sharing import SharingService
     from paperless_mcp.services.tasks import TaskService
@@ -44,7 +45,9 @@ if TYPE_CHECKING:
     from paperless_mcp.services.views import ViewService
 
 # Every toolset; each tool carries exactly one of them as its only tag.
-TOOLSETS: Final = frozenset({"core", "ai", "bulk", "versions", "views", "trash", "pdf", "sharing"})
+TOOLSETS: Final = frozenset(
+    {"core", "ai", "bulk", "versions", "views", "trash", "pdf", "sharing", "permissions"}
+)
 
 # Tools whose result is an image or a file as MCP content blocks, with no output schema and no
 # structured content (decision-11); every other tool has a typed return model (decision-4).
@@ -102,6 +105,9 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "rebuild_share_bundle": "sharing",
     "delete_share_bundle": "sharing",
     "email_documents": "sharing",
+    "set_permissions": "permissions",
+    "list_users": "permissions",
+    "list_groups": "permissions",
 }
 
 # Toolsets that need a Paperless capability, mapped to it (only "ai" so far); the startup probe
@@ -491,6 +497,28 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=False,
         open_world_hint=False,
     ),
+    "list_users": ToolAnnotations(
+        title="List users",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "list_groups": ToolAnnotations(
+        title="List groups",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Destructive (decision-6, decision-19): granting access cannot be taken back and replacing
+    # grants or changing an owner takes it away, so every change needs confirm. Repeating a call
+    # leaves the same state (idempotent).
+    "set_permissions": ToolAnnotations(
+        title="Set permissions",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
 }
 
 logger = logging.getLogger(__name__)
@@ -550,6 +578,7 @@ class Services:
     bulk_taxonomy: BulkTaxonomyEditor
     views: ViewService
     trash: TrashService
+    permissions: PermissionService
     pdf: PdfService
     sharing: SharingService
 

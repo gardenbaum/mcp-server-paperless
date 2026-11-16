@@ -33,6 +33,13 @@ if TYPE_CHECKING:
     )
     from paperless_mcp.domain.instance import InstanceOverview
     from paperless_mcp.domain.pdf import Output, PageSlot, StartedTasks
+    from paperless_mcp.domain.permissions import (
+        AccessChange,
+        GroupPage,
+        ObjectAccess,
+        PermissionKind,
+        UserPage,
+    )
     from paperless_mcp.domain.sharing import FileVersionKind, ShareBundle, ShareLink
     from paperless_mcp.domain.tasks import TaskStatus
     from paperless_mcp.domain.taxonomy import (
@@ -557,6 +564,64 @@ class TrashWriter(Protocol):
         Raises:
             PermissionDenied: As for ``restore_from_trash``.
             Validation: An id is not in the trash (or listed twice). Nothing is changed.
+        """
+        ...
+
+
+class PermissionReader(Protocol):
+    """Owners and grants of documents and taxonomy objects, and the users and groups."""
+
+    async def get_permissions(
+        self, kind: PermissionKind, object_ids: Sequence[int]
+    ) -> list[ObjectAccess]:
+        """The owner and the grants of the objects the user may see, in the order of ``object_ids``.
+
+        An id of an object that does not exist, or that the user may not see, is left out;
+        callers compare. A change grant is listed with its view grant (Paperless stores both).
+        Paperless shows grants of an object to any user who may see it.
+
+        Raises:
+            PermissionDenied: The user lacks the global view permission for ``kind``.
+        """
+        ...
+
+    async def list_users(self, *, name_contains: str | None, page: int, page_size: int) -> UserPage:
+        """One page of users in Paperless order (by username), optionally by part of the name.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the global ``view_user`` permission.
+        """
+        ...
+
+    async def list_groups(
+        self, *, name_contains: str | None, page: int, page_size: int
+    ) -> GroupPage:
+        """One page of groups in Paperless order (by name), optionally by part of the name.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the global ``view_group`` permission.
+        """
+        ...
+
+
+class PermissionWriter(Protocol):
+    """Changes to owners and grants."""
+
+    async def set_permissions(
+        self, kind: PermissionKind, object_id: int, change: AccessChange
+    ) -> ObjectAccess:
+        """Set the owner and/or the whole grants of one object and return how it is now.
+
+        Lists in ``change.permissions`` replace the object's lists, an empty list removes all of
+        them; granting change also grants view. The owner changes only if ``change`` sets it.
+
+        Raises:
+            NotFound: The object does not exist or the user may not see it.
+            PermissionDenied: Only the owner of the object (or anyone, for an object without
+                owner) and a superuser may change its permissions.
+            Validation: A user or group does not exist; nothing is changed.
         """
         ...
 

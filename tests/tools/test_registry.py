@@ -234,6 +234,7 @@ async def test_self_test_a_publishing_tool_without_a_false_confirm_is_found() ->
 
 
 @pytest.mark.decision("decision-6")
+@pytest.mark.decision("decision-19")
 async def test_the_confirm_check_has_destructive_tools_to_check() -> None:
     # Guards the check above against passing for want of a destructive tool.
     tools = await server_tools()
@@ -246,6 +247,7 @@ async def test_the_confirm_check_has_destructive_tools_to_check() -> None:
         "delete_document_version",
         "merge_documents_as_versions",
         "empty_trash",
+        "set_permissions",  # decision-19: every change is confirmed, merge included
     }
     assert found.isdisjoint({"update_document", "add_note", "get_document"})
 

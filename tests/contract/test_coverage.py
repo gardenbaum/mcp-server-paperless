@@ -26,6 +26,8 @@ from paperless_mcp.domain.ports import (
     DocumentWriter,
     InstanceReader,
     PdfWriter,
+    PermissionReader,
+    PermissionWriter,
     SharingReader,
     SharingWriter,
     TaskReader,
@@ -186,6 +188,8 @@ def test_ports_are_found_by_introspection() -> None:
         "pdf_writes": PdfWriter,
         "sharing": SharingReader,
         "sharing_writes": SharingWriter,
+        "permissions": PermissionReader,
+        "permission_writes": PermissionWriter,
     }
 
 
