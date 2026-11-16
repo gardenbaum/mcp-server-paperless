@@ -753,6 +753,26 @@ async def test_a_rule_that_deletes_mail_needs_confirm() -> None:
     assert setup.state.mail_rules == []
 
 
+@pytest.mark.parametrize(
+    ("days", "reach"), [(0, "of any age"), (1, "up to 1 day old")], ids=["zero", "one"]
+)
+async def test_the_age_limit_is_shown_as_paperless_applies_it(days: int, reach: str) -> None:
+    # Paperless filters by age only when maximum_age > 0: zero covers mails of any age.
+    setup = Setup(writes=False)
+    account = setup.account()
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.create_rule(
+            MailRuleSettings(
+                name="Purge all", account_id=account, action="delete", maximum_age_days=days
+            ),
+            confirm=False,
+        )
+
+    assert f"It covers mails in folder 'INBOX' {reach};" in refusal(raised)
+    assert setup.state.mail_rules == []
+
+
 async def test_a_rule_that_moves_mail_needs_confirm_and_names_the_folder() -> None:
     setup = Setup(writes=False)
     account = setup.account()
