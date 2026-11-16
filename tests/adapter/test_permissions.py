@@ -251,6 +251,7 @@ async def test_documents_are_patched_on_their_own_endpoint(make_client: ClientFa
         "document", 5354, AccessChange(owner=2)
     )
 
+    # No `fields` here: with it Paperless ignores set_permissions on a document (probed on 3.4.2).
     assert server.sent[0][:3] == ("PATCH", "/api/documents/5354/", {"full_perms": "true"})
     assert (changed.id, changed.name) == (5354, "plmcp28-d-c1b70e")
 
@@ -315,7 +316,6 @@ async def test_users_are_listed_as_compact_rows_with_the_username_filter(
             {
                 "page": "2",
                 "page_size": "2",
-                "ordering": "username",
                 "username__icontains": "plmcp28",
             },
             None,
@@ -367,7 +367,6 @@ async def test_groups_are_listed_by_name(make_client: ClientFactory) -> None:
     assert server.sent[0][2] == {
         "page": "1",
         "page_size": "10",
-        "ordering": "name",
         "name__icontains": "g1",
     }
     assert [(row.id, row.name) for row in page.rows] == [(3, "plmcp28-g1")]

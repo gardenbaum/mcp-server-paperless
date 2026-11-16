@@ -509,9 +509,9 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
-    # Destructive (decision-6, decision-12): replacing grants takes access away and an owner
-    # change can lock the caller out, so both need confirm. Merging only adds, so it does not.
-    # Repeating a call leaves the same state (idempotent).
+    # Destructive (decision-6, decision-19): granting access cannot be taken back and replacing
+    # grants or changing an owner takes it away, so every change needs confirm. Repeating a call
+    # leaves the same state (idempotent).
     "set_permissions": ToolAnnotations(
         title="Set permissions",
         read_only_hint=False,

@@ -2334,7 +2334,9 @@ class FakePaperless:
         """`PermissionWriter.set_permissions` (a PATCH with `owner` and `set_permissions`).
 
         Order: the global change permission (403), the object among those the user may see (404),
-        ownership (403: a change grant is not enough), then the users and groups (400).
+        the values (400: unknown users, groups or owner, and a name another object of the new
+        owner already has, as the serializer validates them), then ownership (403: a change
+        grant is not enough).
         """
         if not self.user.has(f"change_{kind.replace('_', '')}"):
             message = "The Paperless user may not perform this action."
@@ -2344,18 +2346,23 @@ class FakePaperless:
             message = "The Paperless object does not exist or is not visible to this user."
             raise NotFound(message)
         target = found[0]
-        if not (self.user.is_superuser or target.owner in {None, self.user.id}):
-            message = "The Paperless user may not perform this action."
-            raise PermissionDenied(message)
         state = self.state
         given = change.permissions
         if given is not None:
             check_principals(given, state.users, state.groups)
-        if "owner" in change.model_fields_set and change.owner not in {
-            None,
-            *(u.id for u in state.users),
-        }:
-            reject("owner", f'Invalid pk "{change.owner}" - object does not exist.')
+        if "owner" in change.model_fields_set:
+            if change.owner not in {None, *(u.id for u in state.users)}:
+                reject("owner", f'Invalid pk "{change.owner}" - object does not exist.')
+            clash = (
+                o
+                for o in self._permission_objects(kind)
+                if o is not target and o.owner == change.owner and _label(o) == _label(target)
+            )
+            if kind != "document" and any(clash):
+                reject("non_field_errors", "The fields name, owner must make a unique set.")
+        if not (self.user.is_superuser or target.owner in {None, self.user.id}):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
         if "owner" in change.model_fields_set:
             target.owner = change.owner
         if given is not None:

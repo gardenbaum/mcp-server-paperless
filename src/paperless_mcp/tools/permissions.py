@@ -1,9 +1,9 @@
 """The permissions toolset: who owns documents and taxonomy objects and who may view or change them.
 
-Opt-in (``PAPERLESS_MCP_TOOLSETS=core,permissions``). Granting access is safe and takes one call;
-taking it away, or handing an object to another owner, needs ``confirm`` and the refusal names who
-gains and who loses access (decision-12, decision-15). ``list_users`` and ``list_groups`` find
-the names and ids to grant to.
+Opt-in (``PAPERLESS_MCP_TOOLSETS=core,permissions``). Granting access cannot be taken back (what a
+user saw, they may have kept), so every call that changes anything needs ``confirm`` and the
+refusal names who gains and who loses access (decision-19, decision-12, decision-15).
+``list_users`` and ``list_groups`` find the names and ids to grant to.
 """
 
 from typing import Annotated
@@ -62,14 +62,15 @@ async def set_permissions(  # noqa: PLR0913 -- one parameter per concept, descri
     *,
     owner: Annotated[
         NameOrId | None,
-        Field(description="Username or id of the new owner; see list_users. Needs confirm."),
+        Field(description="Username or id of the new owner; see list_users."),
     ] = None,
     clear_owner: Annotated[
         bool,
         Field(
             description=(
-                "true removes the owner: every user who may view the kind of object can then "
-                "see and change it. Needs confirm. Not together with owner."
+                "true removes the owner: every user with the global permission to view the kind "
+                "of object can then see it, and every user with the global permission to change "
+                "it can change it. Needs confirm. Not together with owner."
             )
         ),
     ] = False,
@@ -95,7 +96,7 @@ async def set_permissions(  # noqa: PLR0913 -- one parameter per concept, descri
             description=(
                 "merge (default) adds the given users and groups to the grants the objects have. "
                 "replace makes each list you give exactly that list (an empty list removes all "
-                "its grants) and needs confirm."
+                "its grants)."
             )
         ),
     ] = "merge",
@@ -106,17 +107,18 @@ async def set_permissions(  # noqa: PLR0913 -- one parameter per concept, descri
     Sets who owns the objects and which users and groups may view or change them, by name or id.
     A change grant includes view. Lists you leave out are never touched in either mode, so a
     forgotten list never wipes anything, and unknown users or groups are an error before
-    anything is sent. mode merge (default) only adds: no confirm needed, nobody loses access.
-    mode replace sets each list you give to exactly that list: it needs confirm, and the first
-    call is an error that names who gains and who loses access (a changer always keeps view,
-    replace change_users to take change away). Changing the owner, or removing it, also needs
-    confirm in both modes; you may lose your own access that way. Objects that already are as
-    asked are left alone. Needs to own the objects (or no owner) or be a superuser, plus the
-    permission to change the kind. Other tools touch permissions too: update_document(owner=)
+    anything is sent. mode merge (default) only adds to the grants; mode replace sets each list
+    you give to exactly that list (a changer always keeps view, replace change_users to take
+    change away). Granting access cannot be taken back, so every call that changes anything
+    needs confirm, in both modes and for owner changes: the first call is an error that
+    names, per object, who gains and who loses access and what the owner change does; describe
+    that to the user and call again with confirm=true. Objects that already are as asked are
+    left alone and need no confirm. Needs to own the objects (or no owner) or be a superuser, plus
+    the permission to change the kind. Other tools touch permissions too: update_document(owner=)
     only changes a document's owner alongside other edits, and bulk_edit_taxonomy (bulk toolset)
-    sets permissions of taxonomy objects with a dry_run preview and always asks for confirm;
-    this tool also covers documents and merges by default. Look up users and groups with
-    list_users and list_groups.
+    sets permissions of taxonomy objects with a dry_run preview, and replaces the lists you
+    leave out; this tool also covers documents and keeps the lists you leave out. Look up users
+    and groups with list_users and list_groups.
     """
     request = PermissionsRequest(
         owner=owner,

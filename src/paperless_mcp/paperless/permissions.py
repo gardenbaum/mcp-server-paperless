@@ -13,7 +13,11 @@ Documents, tags, correspondents, document types and storage paths take ``owner``
   every change grant.
 - An unknown user or group is a 400 for the whole request; so is an unknown action.
 - ``id__in`` with ``full_perms=true`` lists the grants of many objects in one request; objects
-  the user may not see are not listed. Documents take ``fields`` to leave out their text.
+  the user may not see are not listed. Documents take ``fields`` to leave out their text on the
+  list, but NOT on the PATCH: with ``fields`` a document PATCH answers 200 and silently ignores
+  ``set_permissions`` (probed: the grants stay as they were), so the answer of a document PATCH
+  carries its whole text and the adapter reads only the fields it needs.
+- The users and groups lists are sent in Paperless's own order (case-insensitive by name).
 """
 
 from typing import TYPE_CHECKING, Final
@@ -165,7 +169,6 @@ class PaperlessPermissionReader:
         params: dict[str, str | int] = {
             "page": page,
             "page_size": page_size,
-            "ordering": "username",
         }
         if name_contains:
             params["username__icontains"] = name_contains
@@ -193,7 +196,6 @@ class PaperlessPermissionReader:
         params: dict[str, str | int] = {
             "page": page,
             "page_size": page_size,
-            "ordering": "name",
         }
         if name_contains:
             params["name__icontains"] = name_contains

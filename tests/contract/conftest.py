@@ -196,7 +196,12 @@ class Restricted(Protocol):
     """
 
     def __call__(
-        self, permissions: frozenset[str], *, view: Sequence[int] = (), change: Sequence[int] = ()
+        self,
+        permissions: frozenset[str],
+        *,
+        view: Sequence[int] = (),
+        change: Sequence[int] = (),
+        name: str | None = None,
     ) -> Ports: ...
 
 
@@ -324,11 +329,15 @@ def fake_share(state: FakeState) -> Share:
 
 def fake_restricted(state: FakeState) -> Restricted:
     def restricted(
-        permissions: frozenset[str], *, view: Sequence[int] = (), change: Sequence[int] = ()
+        permissions: frozenset[str],
+        *,
+        view: Sequence[int] = (),
+        change: Sequence[int] = (),
+        name: str | None = None,
     ) -> Ports:
         user = FakeUser(
             id=max(u.id for u in state.users) + 1,
-            username=f"contract-user-{uuid.uuid4().hex[:12]}",
+            username=name or f"contract-user-{uuid.uuid4().hex[:12]}",
             permissions=permissions,
         )
         state.users.append(user)
@@ -520,9 +529,13 @@ def live_restricted(
     """Live `Restricted`: a temporary user whose id goes on `users` for the finaliser."""
 
     def restricted(
-        permissions: frozenset[str], *, view: Sequence[int] = (), change: Sequence[int] = ()
+        permissions: frozenset[str],
+        *,
+        view: Sequence[int] = (),
+        change: Sequence[int] = (),
+        name: str | None = None,
     ) -> Ports:
-        name = f"contract-user-{uuid.uuid4().hex[:12]}"
+        name = name or f"contract-user-{uuid.uuid4().hex[:12]}"
         password = f"pw-{uuid.uuid4().hex}"
         body = {"username": name, "password": password, "user_permissions": sorted(permissions)}
         created = stack.admin.post("/api/users/", json=body).raise_for_status()

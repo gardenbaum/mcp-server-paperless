@@ -4,16 +4,18 @@
 complete new grants and sends only the objects that change. Two modes (the lists a caller leaves
 out, null, are never touched):
 
-- ``merge`` adds the given users and groups to the lists; nobody loses anything, so it needs no
-  confirmation.
-- ``replace`` makes each given list exactly what was asked, an empty list included; it needs
-  ``confirm`` and the refusal names who gains and who loses access (decision-15).
+- ``merge`` adds the given users and groups to the lists.
+- ``replace`` makes each given list exactly what was asked, an empty list included.
+
+Granting access is exposure that cannot be taken back, so every call that changes anything needs
+``confirm`` in both modes and the refusal names who gains and who loses access (decision-19,
+decision-15); changing the owner, also to none, is covered by it (decision-12). A call that
+changes nothing is neither sent nor confirmed.
 
 A change grant includes the view grant: a user who may change always may view, so replacing a
-view list never takes view from a changer; replace the change list for that. Changing the owner
-(also to none) needs ``confirm`` in both modes (decision-12). An object that already is as asked
-is neither sent nor confirmed. Unknown users and groups fail before anything is sent. The objects
-are sent one at a time; if one fails, the error says which were already changed.
+view list never takes view from a changer; replace the change list for that. Unknown users and
+groups fail before anything is sent. The objects are sent one at a time; if one fails, the error
+says which were already changed.
 """
 
 from dataclasses import dataclass
@@ -25,6 +27,7 @@ from paperless_mcp.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
+    UpstreamUnavailable,
     Validation,
     listed,
     quoted,
@@ -52,7 +55,7 @@ if TYPE_CHECKING:
         PermissionKind,
         PermissionsRequest,
     )
-    from paperless_mcp.domain.ports import PermissionReader, PermissionWriter
+    from paperless_mcp.domain.ports import InstanceReader, PermissionReader, PermissionWriter
     from paperless_mcp.services.principals import PrincipalKind
     from paperless_mcp.services.taxonomy import TaxonomyResolver
 
@@ -82,7 +85,10 @@ LISTING_HINT = (
     "Listing {} needs the view permission for them in Paperless. Ask an administrator for the "
     "ids; set_permissions takes ids too."
 )
-OWNER_EFFECT = "the new owner controls it; you may lose access to it"
+UNKNOWN_STATE = (
+    "Whether the change to {} was applied is unknown, because the request is not retried; read "
+    "its permissions before trying again. The objects after it were not changed."
+)
 # The owner a request asks for: one-tuple of the user (None removes the owner); None leaves it.
 type _Owner = tuple[int | None]
 # Levels of access, in order: none, view, change.
@@ -186,10 +192,14 @@ class PermissionService:
         reader: PermissionReader,
         writer: PermissionWriter,
         taxonomy: TaxonomyResolver,
+        instance: InstanceReader,
         *,
         web_url: str,
     ) -> None:
         """Read through ``reader``, change through ``writer``.
+
+        ``instance`` tells who the caller is, so a refusal does not warn the caller about
+        handing an object to themselves.
 
         ``taxonomy`` resolves names of taxonomy objects, users and groups and is the cache every
         write invalidates; ``web_url`` is the Paperless web UI, for links to documents.
@@ -197,6 +207,7 @@ class PermissionService:
         self._reader: PermissionReader = reader
         self._writer: PermissionWriter = writer
         self._taxonomy: TaxonomyResolver = taxonomy
+        self._instance: InstanceReader = instance
         self._web_url: str = web_url
 
     async def list_users(self, *, name_contains: str | None, page: int, page_size: int) -> UserList:
@@ -260,16 +271,22 @@ class PermissionService:
             raise _unseen(kind, [n for n in ids if n not in {row.id for row in found}])
         plans = [_plan(row, asked, owner, request.mode) for row in found]
         changing = [plan for plan in plans if plan.changes]
-        needs_confirm = any(plan.owner_changes for plan in changing) or (
-            request.mode == "replace" and any(plan.grants_change for plan in changing)
-        )
         names = await self._names(plans, [plan.grants for plan in changing])
-        if needs_confirm and not confirm:
+        if changing and not confirm:
+            caller = await self._caller()
             raise ConfirmationRequired.for_effect(
-                self._effect(kind, request.mode, changing, names, owner_label=_owners(kind))
+                self._effect(kind, request.mode, changing, names, caller)
             )
         written = await self._write(kind, changing)
         return self._result(kind, request.mode, plans, written, names)
+
+    async def _caller(self) -> int | None:
+        """The id of the Paperless user of the call; None if Paperless does not say."""
+        try:
+            current = (await self._instance.get_overview()).current_user
+        except PaperlessMcpError:
+            return None
+        return None if current is None else current.id
 
     async def _asked(self, request: PermissionsRequest) -> tuple[_Owner | None, _Asked]:
         """The owner and the lists of the request as ids; unknown users and groups fail here."""
@@ -345,14 +362,14 @@ class PermissionService:
                         kind, plan.current.id, _change(plan)
                     )
                 except PaperlessMcpError as error:
-                    if not written:
-                        raise
-                    done = listed([p.current.name for p in plans if p.current.id in written])
-                    message = (
-                        f"{error.message} Permissions were already changed on {done}; "
-                        f"{quoted(plan.current.name)} and the objects after it were not changed."
+                    unknown = (
+                        isinstance(error, UpstreamUnavailable) or type(error) is PaperlessMcpError
                     )
-                    raise type(error)(message, hint=error.hint) from None
+                    if not written and not unknown:
+                        raise
+                    raise _rebuilt(
+                        error, _halfway(error, plan, plans, written, unknown=unknown)
+                    ) from None
         finally:
             for kind_to_forget in (kind,) if kind != "document" else COUNTED:
                 self._taxonomy.invalidate(kind_to_forget)
@@ -408,8 +425,7 @@ class PermissionService:
         mode: Mode,
         changing: Sequence[_Plan],
         names: dict[PrincipalKind, dict[int, str]],
-        *,
-        owner_label: str,
+        caller: int | None,
     ) -> str:
         """What confirming would do, naming the first ``SHOWN`` objects and counting the rest."""
         label = LABELS[kind]
@@ -421,13 +437,40 @@ class PermissionService:
         several = len(changing) > 1
         details: list[str] = []
         for plan in changing[:SHOWN]:
-            parts = _delta(plan, names, owner_label)
+            parts = _delta(plan, names, kind, caller)
             prefix = f"{quoted(plan.current.name)}: " if several else ""
             details.append(prefix + "; ".join(parts))
         text = ". ".join(details)
         if len(changing) > SHOWN:
             text += f". {len(changing) - SHOWN} more would change as well"
         return f"{head}: {text}"
+
+
+def _halfway(
+    error: PaperlessMcpError,
+    plan: _Plan,
+    plans: Sequence[_Plan],
+    written: dict[int, ObjectAccess],
+    *,
+    unknown: bool,
+) -> str:
+    """The message of a failure among several writes: what changed and what is not known."""
+    parts = [error.message]
+    if written:
+        done = listed([p.current.name for p in plans if p.current.id in written])
+        parts.append(f"Permissions were already changed on {done}.")
+    if unknown:
+        parts.append(UNKNOWN_STATE.format(quoted(plan.current.name)))
+    else:
+        parts.append(f"{quoted(plan.current.name)} and the objects after it were not changed.")
+    return " ".join(parts)
+
+
+def _rebuilt(error: PaperlessMcpError, message: str) -> PaperlessMcpError:
+    """An error like ``error`` with ``message``: same class, hint and HTTP status."""
+    if isinstance(error, UpstreamUnavailable):
+        return type(error)(message, hint=error.hint, status=error.status)
+    return type(error)(message, hint=error.hint)
 
 
 def _users_of(grants: ObjectPermissions) -> set[int]:
@@ -440,10 +483,6 @@ def _groups_of(grants: ObjectPermissions) -> set[int]:
 
 def _owner_ids(access: ObjectAccess) -> set[int]:
     return set() if access.owner is None else {access.owner}
-
-
-def _owners(kind: PermissionKind) -> str:
-    return f"every user who may view {LABELS[kind]}s"
 
 
 def _unseen(kind: PermissionKind, missing: list[int]) -> NotFound:
@@ -510,19 +549,45 @@ BUCKETS: Final[tuple[tuple[str, tuple[tuple[int, int], ...]], ...]] = (
 )
 
 
-def _delta(plan: _Plan, names: dict[PrincipalKind, dict[int, str]], owner_label: str) -> list[str]:
+def _owner_part(
+    plan: _Plan, users: dict[int, str], kind: PermissionKind, caller: int | None
+) -> str:
+    """The phrase for an owner change: who loses and who takes what, and the caller's own risk."""
+    label = LABELS[kind]
+    before = plan.current.owner
+    if before is None:
+        old = "none"
+        lost = (
+            f"the {label} stops being visible to everyone who saw it through the global "
+            "permission; "
+        )
+    else:
+        old = quoted(users[before])
+        lost = f"{old} loses the control ownership gave; "
+    if plan.owner is None:
+        return (
+            f"the owner {old} is removed ({lost}every user with the global permission to view "
+            f"{label}s can then see it and every user with the global permission to change "
+            f"{label}s can change it)"
+        )
+    risk = "" if plan.owner == caller else "; you may lose access to it"
+    return (
+        f"the owner changes from {old} to {quoted(users[plan.owner])} "
+        f"({lost}the new owner controls it{risk})"
+    )
+
+
+def _delta(
+    plan: _Plan,
+    names: dict[PrincipalKind, dict[int, str]],
+    kind: PermissionKind,
+    caller: int | None,
+) -> list[str]:
     """The owner change and who gains and loses access, as phrases."""
     parts: list[str] = []
     users, groups = names["user"], names["group"]
     if plan.owner_changes:
-        before = plan.current.owner
-        old = quoted(users[before]) if before is not None else "none"
-        if plan.owner is None:
-            parts.append(f"the owner {old} is removed ({owner_label} can then see and change it)")
-        else:
-            parts.append(
-                f"the owner changes from {old} to {quoted(users[plan.owner])} ({OWNER_EFFECT})"
-            )
+        parts.append(_owner_part(plan, users, kind, caller))
     if plan.grants_change:
         old, new = plan.current.permissions, plan.grants
         moves = {

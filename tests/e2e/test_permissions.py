@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
     from e2e.helpers import Json, Stack
 
-pytestmark = [pytest.mark.e2e, pytest.mark.anyio]
+pytestmark = [pytest.mark.e2e, pytest.mark.anyio, pytest.mark.decision("decision-19")]
 
 PREFIX = "plmcp28-"
 # Not a secret: the password of throwaway users on the throwaway E2E stack.
@@ -113,7 +113,26 @@ def grants(stack: Stack, path: str, number: int) -> dict[str, list[int]]:
     }
 
 
-async def test_a_merge_adds_to_the_grants_by_name_and_a_replace_asks_first(
+async def test_a_merge_is_refused_without_confirm_and_names_who_would_gain_access(
+    stack: Stack, accounts: Accounts, documents: list[int]
+) -> None:
+    [document, _] = documents
+
+    message = await refused(
+        stack,
+        stack.admin_token,
+        "set_permissions",
+        kind="document",
+        items=[document],
+        view_users=[accounts.alice],
+    )
+
+    assert f"gains view: user '{accounts.alice}'" in message
+    assert "confirm=true" in message
+    assert grants(stack, "/api/documents/", document)["view_users"] == []
+
+
+async def test_a_merge_adds_to_the_grants_by_name_and_a_replace_asks_too(
     stack: Stack, accounts: Accounts, documents: list[int]
 ) -> None:
     first, second = documents
@@ -127,9 +146,16 @@ async def test_a_merge_adds_to_the_grants_by_name_and_a_replace_asks_first(
         items=[first, second],
         view_users=[accounts.alice],
         change_groups=[accounts.team],
+        confirm=True,
     )
     again = await run(
-        stack, token, "set_permissions", kind="document", items=[first], view_users=[accounts.bob]
+        stack,
+        token,
+        "set_permissions",
+        kind="document",
+        items=[first],
+        view_users=[accounts.bob],
+        confirm=True,
     )
 
     assert (merged["changed_count"], merged["unchanged_count"]) == (2, 0)
@@ -199,7 +225,8 @@ async def test_an_owner_is_handed_over_and_cleared_only_with_confirm(
     )
 
     assert f"the owner changes from 'admin' to '{accounts.alice}'" in handing
-    assert "the owner 'admin' is removed (every user who may view documents" in clearing
+    assert "the owner 'admin' is removed ('admin' loses the control ownership gave" in clearing
+    assert "every user with the global permission to view documents" in clearing
     assert obj(full(stack, "/api/documents/", document))["owner"] == before
 
     _ = await run(
@@ -241,6 +268,7 @@ async def test_taxonomy_objects_are_shared_by_name_and_unknown_names_send_nothin
         items=[name],
         change_users=[accounts.alice],
         view_groups=[accounts.team],
+        confirm=True,
     )
 
     assert "No user is named 'ghost'" in unknown
@@ -286,9 +314,16 @@ async def test_a_user_without_the_permissions_gets_errors_that_say_so(
         kind="document",
         items=[document],
         view_groups=[1],
+        confirm=True,
     )
     hidden = await refused(
-        stack, stack.blind_token, "set_permissions", kind="tag", items=[1], view_users=[3]
+        stack,
+        stack.blind_token,
+        "set_permissions",
+        kind="tag",
+        items=[1],
+        view_users=[3],
+        confirm=True,
     )
 
     assert "Listing users needs the view permission" in listing

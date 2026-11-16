@@ -18,7 +18,10 @@ from paperless_mcp.domain.errors import (
     Ambiguous,
     ConfirmationRequired,
     NotFound,
+    PaperlessMcpError,
     PermissionDenied,
+    UpstreamTimeout,
+    UpstreamUnavailable,
     Validation,
 )
 from paperless_mcp.domain.permissions import (
@@ -32,6 +35,7 @@ from paperless_mcp.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
     from paperless_mcp.domain.documents import NameOrId
+    from paperless_mcp.domain.instance import InstanceOverview
     from paperless_mcp.domain.permissions import (
         Mode,
         ObjectAccess,
@@ -43,6 +47,7 @@ if TYPE_CHECKING:
 pytestmark = [
     pytest.mark.anyio,
     pytest.mark.decision("decision-12"),
+    pytest.mark.decision("decision-19"),
     pytest.mark.decision("decision-15"),
 ]
 
@@ -81,11 +86,18 @@ class Recording(FakePaperless):
 @final
 class Setup:
     def __init__(
-        self, user: str = ADMIN[0], *, writes: bool = True, grant: frozenset[str] | None = None
+        self,
+        user: str = ADMIN[0],
+        *,
+        writes: bool = True,
+        grant: frozenset[str] | None = None,
+        only: frozenset[str] | None = None,
     ) -> None:
         self.state: FakeState = seeded()
         self.state.users = [
-            replace(u, permissions=u.permissions | (grant or frozenset()))
+            replace(
+                u, permissions=only if only is not None else u.permissions | (grant or frozenset())
+            )
             if u.username == user
             else u
             for u in self.state.users
@@ -95,7 +107,7 @@ class Setup:
             self.fake, StaticTokenProvider("t"), ttl=3600.0
         )
         self.service: PermissionService = PermissionService(
-            self.fake, self.fake, self.taxonomy, web_url=WEB
+            self.fake, self.fake, self.taxonomy, self.fake, web_url=WEB
         )
 
     async def run(
@@ -104,7 +116,7 @@ class Setup:
         items: list[NameOrId],
         *,
         mode: Mode = "merge",
-        confirm: bool = False,
+        confirm: bool = True,
         **request: object,
     ) -> PermissionsResult:
         asked = PermissionsRequest.model_validate({"mode": mode, **request})
@@ -122,7 +134,7 @@ def names(principals: tuple[object, ...]) -> list[str]:
 # --- merge
 
 
-async def test_merge_adds_grants_and_keeps_the_existing_ones_without_a_confirmation() -> None:
+async def test_a_confirmed_merge_adds_grants_and_keeps_the_existing_ones() -> None:
     setup = Setup()
     setup.document(PUBLIC).viewers = {READER_ID}
 
@@ -183,7 +195,7 @@ async def test_merge_upgrades_a_viewer_to_a_changer_and_never_downgrades() -> No
     assert row.access.view_users == ()
 
 
-async def test_merge_that_changes_nothing_sends_nothing_and_needs_no_confirmation() -> None:
+async def test_merge_that_changes_nothing_sends_nothing_and_needs_no_confirm() -> None:
     setup = Setup(writes=False)
     setup.document(PUBLIC).viewers = {READER_ID}
 
@@ -232,7 +244,9 @@ async def test_replace_needs_a_confirmation_that_names_who_loses_and_who_gains()
     document.view_groups = {GROUP}
 
     with pytest.raises(ConfirmationRequired) as refusal:
-        _ = await setup.run("document", [PUBLIC], mode="replace", view_users=["admin"])
+        _ = await setup.run(
+            "document", [PUBLIC], mode="replace", view_users=["admin"], confirm=False
+        )
 
     assert refusal.value.message == (
         "Nothing was changed. Confirming would replace the permissions of 1 document "
@@ -265,7 +279,9 @@ async def test_replace_with_an_empty_list_removes_that_list_and_says_so() -> Non
     document.viewers, document.editors = {READER_ID, BLIND_ID}, {BLIND_ID}
 
     with pytest.raises(ConfirmationRequired) as refusal:
-        _ = await setup.run("document", [PUBLIC], mode="replace", view_users=[], change_users=[])
+        _ = await setup.run(
+            "document", [PUBLIC], mode="replace", view_users=[], change_users=[], confirm=False
+        )
 
     assert "loses view and change: user 'e2e-blind'" in refusal.value.message
     assert "loses view: user 'e2e-reader'" in refusal.value.message
@@ -303,7 +319,9 @@ async def test_replace_that_only_adds_still_needs_a_confirmation() -> None:
     setup = Setup(writes=False)
 
     with pytest.raises(ConfirmationRequired, match="gains view: user 'e2e-reader'"):
-        _ = await setup.run("document", [PUBLIC], mode="replace", view_users=["e2e-reader"])
+        _ = await setup.run(
+            "document", [PUBLIC], mode="replace", view_users=["e2e-reader"], confirm=False
+        )
 
 
 # --- owner
@@ -313,11 +331,12 @@ async def test_changing_the_owner_needs_a_confirmation_in_either_mode() -> None:
     for mode in ("merge", "replace"):
         setup = Setup(writes=False)
         with pytest.raises(ConfirmationRequired) as refusal:
-            _ = await setup.run("document", [PRIVATE], mode=mode, owner="e2e-reader")
+            _ = await setup.run("document", [PRIVATE], mode=mode, owner="e2e-reader", confirm=False)
         assert refusal.value.message == (
             "Nothing was changed. Confirming would change the permissions of 1 document "
             "'e2e-private-note': the owner changes from 'admin' to 'e2e-reader' "
-            "(the new owner controls it; you may lose access to it)."
+            "('admin' loses the control ownership gave; the new owner controls it; you may "
+            "lose access to it)."
         )
         assert setup.fake.writes == []
 
@@ -339,12 +358,13 @@ async def test_clearing_the_owner_needs_a_confirmation_that_says_who_gets_access
     setup = Setup(writes=False)
 
     with pytest.raises(ConfirmationRequired) as refusal:
-        _ = await setup.run("document", [PRIVATE], clear_owner=True)
+        _ = await setup.run("document", [PRIVATE], clear_owner=True, confirm=False)
 
     assert refusal.value.message == (
         "Nothing was changed. Confirming would change the permissions of 1 document "
-        "'e2e-private-note': the owner 'admin' is removed (every user who may view documents "
-        "can then see and change it)."
+        "'e2e-private-note': the owner 'admin' is removed ('admin' loses the control ownership "
+        "gave; every user with the global permission to view documents can then see it and every "
+        "user with the global permission to change documents can change it)."
     )
 
     writing = Setup()
@@ -367,7 +387,9 @@ async def test_owner_and_grants_go_in_one_write_and_one_refusal() -> None:
     setup = Setup(writes=False)
 
     with pytest.raises(ConfirmationRequired) as refusal:
-        _ = await setup.run("document", [PRIVATE], owner="e2e-reader", view_users=[BLIND_ID])
+        _ = await setup.run(
+            "document", [PRIVATE], owner="e2e-reader", view_users=[BLIND_ID], confirm=False
+        )
 
     assert "the owner changes from 'admin' to 'e2e-reader'" in refusal.value.message
     assert "gains view: user 'e2e-blind'" in refusal.value.message
@@ -500,7 +522,7 @@ async def test_a_failure_halfway_says_what_was_already_changed() -> None:
         _ = await setup.run("tag", [FINANCE, INVOICES, 3], view_users=[READER_ID])
 
     assert failure.value.message == (
-        "Paperless rejected the request: boom Permissions were already changed on 'e2e-finance'; "
+        "Paperless rejected the request: boom Permissions were already changed on 'e2e-finance'. "
         "'e2e-invoices' and the objects after it were not changed."
     )
     assert setup.state.tags[0].viewers == {READER_ID}
@@ -534,7 +556,9 @@ async def test_the_confirmation_names_the_first_objects_and_counts_the_rest() ->
         setup.state.documents.append(FakeDocument(id=number, title=f"doc-{number}"))
 
     with pytest.raises(ConfirmationRequired) as refusal:
-        _ = await setup.run("document", list(range(10, 18)), mode="replace", view_users=[READER_ID])
+        _ = await setup.run(
+            "document", list(range(10, 18)), mode="replace", view_users=[READER_ID], confirm=False
+        )
 
     message = refusal.value.message
     assert (
@@ -667,7 +691,9 @@ async def test_the_result_counts_what_was_left_alone() -> None:
 async def test_the_refusal_names_each_object_once_there_are_two_and_counts_beyond_five() -> None:
     two = Setup(writes=False)
     with pytest.raises(ConfirmationRequired) as refusal:
-        _ = await two.run("document", [PUBLIC, PRIVATE], mode="replace", view_users=[READER_ID])
+        _ = await two.run(
+            "document", [PUBLIC, PRIVATE], mode="replace", view_users=[READER_ID], confirm=False
+        )
     assert refusal.value.message == (
         "Nothing was changed. Confirming would replace the permissions of 2 documents "
         "'e2e-public-invoice', 'e2e-private-note': 'e2e-public-invoice': gains view: user "
@@ -679,7 +705,7 @@ async def test_the_refusal_names_each_object_once_there_are_two_and_counts_beyon
         five.state.documents.append(FakeDocument(id=number, title=f"doc-{number}"))
     ids: list[NameOrId] = [PUBLIC, PRIVATE, 10, 11, 12]
     with pytest.raises(ConfirmationRequired) as exact:
-        _ = await five.run("document", ids, mode="replace", view_users=[READER_ID])
+        _ = await five.run("document", ids, mode="replace", view_users=[READER_ID], confirm=False)
     assert " more" not in exact.value.message.split("'doc-12'", 1)[1]
     assert "'doc-12': gains view: user 'e2e-reader'." in exact.value.message
 
@@ -688,7 +714,11 @@ async def test_the_refusal_names_each_object_once_there_are_two_and_counts_beyon
         eight.state.documents.append(FakeDocument(id=number, title=f"doc-{number}"))
     with pytest.raises(ConfirmationRequired) as over:
         _ = await eight.run(
-            "document", [PUBLIC, PRIVATE, *range(10, 16)], mode="replace", view_users=[READER_ID]
+            "document",
+            [PUBLIC, PRIVATE, *range(10, 16)],
+            mode="replace",
+            view_users=[READER_ID],
+            confirm=False,
         )
     assert over.value.message.endswith(". 3 more would change as well.")
 
@@ -724,11 +754,13 @@ async def test_the_refusal_names_users_and_groups_who_gain_or_lose_and_the_unown
             view_users=["admin"],
             change_users=[],
             change_groups=[],
+            confirm=False,
         )
 
     assert refusal.value.message == (
         "Nothing was changed. Confirming would replace the permissions of 1 document "
-        "'e2e-public-invoice': the owner changes from none to 'e2e-reader' (the new owner "
+        "'e2e-public-invoice': the owner changes from none to 'e2e-reader' (the document stops "
+        "being visible to everyone who saw it through the global permission; the new owner "
         "controls it; you may lose access to it); gains view: user 'admin'; "
         "loses change (keeps view): group 'e2e-group'; "
         "loses view: user 'e2e-reader'; loses view and change: user 'e2e-blind'."
@@ -739,7 +771,9 @@ async def test_several_people_in_one_bucket_are_separated_by_commas() -> None:
     setup = Setup(writes=False)
 
     with pytest.raises(ConfirmationRequired, match="gains view: user 'admin', user 'e2e-blind'"):
-        _ = await setup.run("document", [PUBLIC], mode="replace", view_users=["admin", "e2e-blind"])
+        _ = await setup.run(
+            "document", [PUBLIC], mode="replace", view_users=["admin", "e2e-blind"], confirm=False
+        )
 
 
 async def test_the_lookup_errors_keep_the_message_of_paperless_and_groups_page() -> None:
@@ -818,7 +852,12 @@ async def test_the_refusal_names_the_groups_of_every_object() -> None:
 
     with pytest.raises(ConfirmationRequired) as refusal:
         _ = await setup.run(
-            "document", [PUBLIC, PRIVATE], mode="replace", view_groups=[], view_users=[READER_ID]
+            "document",
+            [PUBLIC, PRIVATE],
+            mode="replace",
+            view_groups=[],
+            view_users=[READER_ID],
+            confirm=False,
         )
 
     message = refusal.value.message
@@ -837,7 +876,9 @@ async def test_the_refusal_names_the_groups_the_new_lists_add() -> None:
     setup.document(PUBLIC).view_groups = {GROUP}
 
     with pytest.raises(ConfirmationRequired) as refusal:
-        _ = await setup.run("document", [PUBLIC], mode="replace", change_groups=[GROUP])
+        _ = await setup.run(
+            "document", [PUBLIC], mode="replace", change_groups=[GROUP], confirm=False
+        )
 
     assert refusal.value.message.endswith("gains change: group 'e2e-group'.")
 
@@ -864,3 +905,125 @@ async def test_a_tag_write_forgets_tags_only_and_a_document_write_the_counted_ki
     assert setup.fake.taxonomy_reads == reads  # untouched: still cached
     _ = await setup.taxonomy.items("tag")
     assert setup.fake.taxonomy_reads == reads + 1
+
+
+# --- every change is confirmed (decision-19), the owner texts, uncertain failures
+
+
+async def test_a_merge_that_adds_a_grant_is_refused_without_confirm_and_writes_nothing() -> None:
+    setup = Setup(writes=False)
+
+    with pytest.raises(ConfirmationRequired) as refusal:
+        _ = await setup.run("document", [PUBLIC], view_users=["e2e-reader"], confirm=False)
+    with pytest.raises(ConfirmationRequired):
+        _ = await setup.run("tag", ["e2e-finance"], change_groups=[GROUP], confirm=False)
+
+    assert refusal.value.message == (
+        "Nothing was changed. Confirming would change the permissions of 1 document "
+        "'e2e-public-invoice': gains view: user 'e2e-reader'."
+    )
+    assert refusal.value.hint == CONFIRM_HINT
+    assert setup.fake.writes == []
+    assert setup.document(PUBLIC).viewers == set()
+
+
+async def test_only_a_call_that_changes_nothing_needs_no_confirm() -> None:
+    setup = Setup(writes=False)
+    setup.document(PUBLIC).viewers = {READER_ID}
+
+    result = await setup.run("document", [PUBLIC], view_users=["e2e-reader"], confirm=False)
+
+    assert result.changed_count == 0
+    assert setup.fake.writes == []
+
+
+async def test_handing_an_object_to_the_caller_does_not_warn_about_losing_access() -> None:
+    setup = Setup(writes=False)
+
+    with pytest.raises(ConfirmationRequired) as refusal:
+        _ = await setup.run("document", [PUBLIC], owner="admin", confirm=False)
+
+    assert refusal.value.message == (
+        "Nothing was changed. Confirming would change the permissions of 1 document "
+        "'e2e-public-invoice': the owner changes from none to 'admin' (the document stops being "
+        "visible to everyone who saw it through the global permission; the new owner controls it)."
+    )
+
+
+async def test_a_caller_paperless_does_not_name_is_still_warned() -> None:
+    # Without view_uisettings Paperless does not say who the caller is.
+    setup = Setup(
+        "e2e-reader",
+        writes=False,
+        only=frozenset({"view_document", "change_document", "view_user"}),
+    )
+    setup.document(PUBLIC).owner = READER_ID
+
+    with pytest.raises(ConfirmationRequired) as refusal:
+        _ = await setup.run("document", [PUBLIC], owner="admin", confirm=False)
+
+    assert refusal.value.message.endswith("the new owner controls it; you may lose access to it).")
+
+
+async def test_an_upstream_failure_says_the_object_may_have_changed_and_keeps_the_status() -> None:
+    timeout, busy = "Paperless did not respond in time.", "Paperless is busy."
+    odd = "Paperless sent an unexpected response for PATCH /x."
+
+    class Flaky(Recording):
+        @override
+        async def set_permissions(
+            self, kind: PermissionKind, object_id: int, change: AccessChange
+        ) -> ObjectAccess:
+            if object_id == INVOICES:
+                raise UpstreamTimeout(timeout, hint="Try later.")
+            if object_id == 3:
+                raise UpstreamUnavailable(busy, status=503)
+            if object_id == 4:
+                raise PaperlessMcpError(odd)
+            return await super().set_permissions(kind, object_id, change)
+
+    setup = Setup()
+    flaky = Flaky(setup.state, user=ADMIN[0], writes=True)
+    service = PermissionService(flaky, flaky, setup.taxonomy, flaky, web_url=WEB)
+    asked = PermissionsRequest(view_users=[READER_ID])
+
+    with pytest.raises(UpstreamTimeout) as second:
+        _ = await service.set_permissions("tag", [FINANCE, INVOICES], asked, confirm=True)
+    with pytest.raises(UpstreamUnavailable) as first:
+        _ = await service.set_permissions("tag", [3], asked, confirm=True)
+    with pytest.raises(PaperlessMcpError) as strange:
+        _ = await service.set_permissions("tag", [4], asked, confirm=True)
+
+    unknown = (
+        "Whether the change to {} was applied is unknown, because the request is not retried; "
+        "read its permissions before trying again. The objects after it were not changed."
+    )
+    assert second.value.message == (
+        "Paperless did not respond in time. Permissions were already changed on 'e2e-finance'. "
+        + unknown.format("'e2e-invoices'")
+    )
+    assert second.value.hint == "Try later."
+    assert (first.value.message, first.value.status) == (
+        "Paperless is busy. " + unknown.format("'e2e-private'"),
+        503,
+    )
+    assert type(strange.value) is PaperlessMcpError
+    assert strange.value.message == odd + " " + unknown.format("'e2e-inbox'")
+
+
+async def test_a_caller_lookup_that_fails_leaves_the_warning_in() -> None:
+    class Failing(Recording):
+        @override
+        async def get_overview(self) -> InstanceOverview:
+            message = "Paperless is busy."
+            raise UpstreamUnavailable(message)
+
+    setup = Setup(writes=False)
+    broken = Failing(setup.state, user=ADMIN[0], writes=False)
+    service = PermissionService(setup.fake, setup.fake, setup.taxonomy, broken, web_url=WEB)
+    asked = PermissionsRequest(owner="admin")
+
+    with pytest.raises(ConfirmationRequired) as refusal:
+        _ = await service.set_permissions("document", [PUBLIC], asked)
+
+    assert refusal.value.message.endswith("the new owner controls it; you may lose access to it).")

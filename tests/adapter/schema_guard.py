@@ -239,6 +239,19 @@ _NO_PERMISSIONS = (
 OMITTED_RESPONSE_PROPERTIES: Mapping[tuple[str, str, int], tuple[str, str]] = dict.fromkeys(
     _SAVED_VIEW_ENDPOINTS, _NO_PERMISSIONS
 )
+# Responses to a `full_perms=true` request that carry `permissions` instead of the
+# `user_can_change` the schema requires (PLMCP-28): the lists and the updates of the five objects.
+_PERMISSION_PATHS = (
+    "/api/documents/",
+    "/api/tags/",
+    "/api/correspondents/",
+    "/api/document_types/",
+    "/api/storage_paths/",
+)
+FULL_PERMS_RESPONSES: frozenset[tuple[str, str, int]] = frozenset(
+    {("GET", path, 200) for path in _PERMISSION_PATHS}
+    | {("PATCH", f"{path}{{id}}/", 200) for path in _PERMISSION_PATHS}
+)
 # Endpoints that answer a file: (method, path template) -> reason. The schema declares their 200 as
 # application/json (format binary), but Paperless sends the file with its own content type, so
 # openapi-core cannot match it. Their 200 is checked for what every file response has instead: a
@@ -501,15 +514,18 @@ def _check_file_response(request: httpx2.Request, response: httpx2.Response) -> 
         raise SchemaViolationError(message)
 
 
-def _with_full_perms(request: httpx2.Request, response: httpx2.Response) -> httpx2.Response:
-    """The response to a `full_perms=true` request with the `user_can_change` the schema requires.
+def _with_full_perms(
+    request: httpx2.Request, template: str, response: httpx2.Response
+) -> httpx2.Response:
+    """The response of `FULL_PERMS_RESPONSES` to a `full_perms=true` request, completed.
 
     With ``full_perms=true`` 3.4.2 answers the grants in `permissions` and leaves out
     `user_can_change`, which the schema requires of every object (PLMCP-28); it is filled in so
     that the rest of the body is still checked.
     """
+    listed = (request.method, template, response.status_code) in FULL_PERMS_RESPONSES
     body = _json_or_none(response)
-    if request.url.params.get("full_perms") != "true" or not isinstance(body, dict):
+    if not listed or request.url.params.get("full_perms") != "true" or not isinstance(body, dict):
         return response
     objects = cast("Json", body)
     rows = objects.get("results")
@@ -555,7 +571,9 @@ def check_response(request: httpx2.Request, response: httpx2.Response) -> None:
             message = f"{request.method} {request.url.path}: not a DRF error body: {response.text}"
             raise SchemaViolationError(message)
         return
-    response = _with_full_perms(request, _with_omitted_properties(request, template, response))
+    response = _with_full_perms(
+        request, template, _with_omitted_properties(request, template, response)
+    )
     errors = list(_OPENAPI.iter_response_errors(_Request(request), _Response(response)))
     if errors:
         raise _fail(request, f"{response.status_code} response does not match the schema", errors)

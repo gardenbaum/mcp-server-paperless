@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 pytestmark = [
     pytest.mark.anyio,
     pytest.mark.decision("decision-12"),
+    pytest.mark.decision("decision-19"),
     pytest.mark.decision("decision-15"),
 ]
 
@@ -127,6 +128,7 @@ async def test_the_description_says_how_it_differs_from_the_other_tools_that_set
     assert "update_document" in description
     assert "list_users" in description
     assert "never wipes" in description or "never removes" in description
+    assert "every call that changes anything needs confirm" in description
 
 
 async def test_the_lookups_say_how_they_differ_from_list_taxonomy() -> None:
@@ -150,6 +152,7 @@ async def test_a_merge_adds_a_grant_and_returns_the_access_by_name() -> None:
         items=[PUBLIC],
         view_users=["e2e-reader"],
         change_groups=["e2e-group"],
+        confirm=True,
     )
 
     [row] = objects(output)
@@ -158,6 +161,19 @@ async def test_a_merge_adds_a_grant_and_returns_the_access_by_name() -> None:
     assert cast("list[Json]", access["view_users"]) == [{"id": READER_ID, "name": "e2e-reader"}]
     assert cast("list[Json]", access["change_groups"]) == [{"id": 1, "name": "e2e-group"}]
     assert (output["kind"], output["mode"], output["changed_count"]) == ("document", "merge", 1)
+
+
+async def test_a_merge_without_confirm_is_an_error_naming_who_gains_access() -> None:
+    state = seeded()
+    source = fake(state, writes=False)
+
+    message = await refusal(
+        source, "set_permissions", kind="document", items=[PUBLIC], view_users=["e2e-reader"]
+    )
+
+    assert "Confirming would change the permissions of 1 document" in message
+    assert "gains view: user 'e2e-reader'" in message
+    assert state.documents[0].viewers == set()
 
 
 async def test_a_replace_without_confirm_is_an_error_naming_who_loses_access() -> None:
@@ -213,7 +229,12 @@ async def test_taxonomy_objects_are_named_and_unknown_names_are_errors() -> None
     source = fake()
 
     output = await call(
-        source, "set_permissions", kind="tag", items=["e2e-finance"], view_users=["e2e-reader"]
+        source,
+        "set_permissions",
+        kind="tag",
+        items=["e2e-finance"],
+        view_users=["e2e-reader"],
+        confirm=True,
     )
     message = await refusal(
         source, "set_permissions", kind="tag", items=["e2e-finance"], view_users=["ghost"]

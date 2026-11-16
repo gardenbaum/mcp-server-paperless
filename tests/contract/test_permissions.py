@@ -253,6 +253,38 @@ async def test_only_the_owner_or_a_superuser_with_the_permission_may_change_perm
         assert reader not in after.permissions.view_users
 
 
+@pytest.mark.contract(SET)
+@pytest.mark.parametrize("kind", TAXONOMY)
+async def test_an_owner_change_that_makes_a_name_clash_is_refused_and_changes_nothing(
+    backend: Backend, kind: BulkKind
+) -> None:
+    ports = backend.admin
+    reader = await user_id(ports, READER[0])
+    admin = await user_id(ports, ADMIN[0])
+    name = f"contract-item-{uuid.uuid4().hex}"
+    required = {"storage_path": {"path": "contract/{{ title }}"}}.get(kind, {})
+    values = TaxonomyValues.model_validate(required)
+    first = (await ports.taxonomy_writes.create_taxonomy_item(kind, name, values)).id
+    _ = await ports.permission_writes.set_permissions(kind, first, AccessChange(owner=reader))
+    second = (await ports.taxonomy_writes.create_taxonomy_item(kind, name, values)).id
+
+    with pytest.raises(Validation):
+        _ = await ports.permission_writes.set_permissions(kind, second, AccessChange(owner=reader))
+
+    assert backend.grants(kind, second).owner == admin
+
+
+@pytest.mark.contract(SET)
+async def test_unknown_users_are_refused_before_ownership_is_checked(backend: Backend) -> None:
+    [document] = backend.new_documents(1)
+    sharer = backend.restricted(CHANGER, change=[document])  # does not own the document
+
+    with pytest.raises(Validation):
+        _ = await sharer.permission_writes.set_permissions(
+            "document", document, AccessChange(permissions=ObjectPermissions(view_users=(MISSING,)))
+        )
+
+
 # --- list_users and list_groups
 
 
@@ -281,6 +313,24 @@ async def test_users_are_listed_compactly_by_username_and_can_be_filtered_and_pa
         _ = await ports.permissions.list_users(
             name_contains="e2e-", page=everyone.count + 1, page_size=1
         )
+
+
+@pytest.mark.contract(USERS)
+async def test_users_are_ordered_by_username_ignoring_case(backend: Backend) -> None:
+    prefix = f"cu{uuid.uuid4().hex[:8]}-"
+    _ = backend.restricted(frozenset({"view_user"}), name=f"{prefix}Bravo")
+    _ = backend.restricted(frozenset({"view_user"}), name=f"{prefix}alpha")
+    _ = backend.restricted(frozenset({"view_user"}), name=f"{prefix}Charlie")
+
+    page = await backend.admin.permissions.list_users(
+        name_contains=prefix.upper(), page=1, page_size=100
+    )
+
+    assert [row.username for row in page.rows] == [
+        f"{prefix}alpha",
+        f"{prefix}Bravo",
+        f"{prefix}Charlie",
+    ]
 
 
 @pytest.mark.contract(USERS)

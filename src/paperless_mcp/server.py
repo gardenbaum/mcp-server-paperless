@@ -336,7 +336,11 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.trash, adapters.trash_writes, taxonomy, web_url=web_url
                 ),
                 permissions=PermissionService(
-                    adapters.permissions, adapters.permission_writes, taxonomy, web_url=web_url
+                    adapters.permissions,
+                    adapters.permission_writes,
+                    taxonomy,
+                    adapters.instance,
+                    web_url=web_url,
                 ),
             )
             overview = await services.instance.probe(settings.startup_timeout)
