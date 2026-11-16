@@ -6759,11 +6759,7 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
-<<<<<<< HEAD
             'permissions',
-=======
-            'mail',
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
           ]),
         }),
       }),
@@ -6771,7 +6767,6 @@
         'idempotentHint': True,
         'openWorldHint': False,
         'readOnlyHint': True,
-<<<<<<< HEAD
         'title': 'List groups',
       }),
       'description': '''
@@ -6781,7 +6776,102 @@
         list_taxonomy(kind="group") it returns id and name only, but it pages and filters on the
         server. Needs the view_group permission in Paperless; without it, ask an administrator for
         the ids and pass them.
-=======
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'name_contains': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only groups whose name contains this text, ignoring case.',
+          }),
+          'page': dict({
+            'default': 1,
+            'description': 'Page number, from 1.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'page_size': dict({
+            'default': 25,
+            'description': 'Rows per page, at most 100.',
+            'maximum': 100,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_groups',
+      'outputSchema': dict({
+        'description': 'One page of groups.',
+        'properties': dict({
+          'count': dict({
+            'description': 'How many groups match in total.',
+            'type': 'integer',
+          }),
+          'groups': dict({
+            'items': dict({
+              'description': 'A Paperless user group as a compact row (no permission list).',
+              'properties': dict({
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'next_page': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The next page, null on the last one.',
+          }),
+          'page': dict({
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'count',
+          'page',
+          'next_page',
+          'groups',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List groups',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
         'title': 'List mail accounts',
       }),
       'description': '''
@@ -6790,17 +6880,10 @@
         Each row has the server, port, security, username and account type, never a password or token.
         Needs the view permission for mail accounts. count is the total; pass next_page as page to
         see more. The rules of an account are in list_mail_rules.
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
-<<<<<<< HEAD
-          'name_contains': dict({
-            'anyOf': list([
-              dict({
-                'type': 'string',
-=======
           'page': dict({
             'default': 1,
             'description': 'Page number, from 1.',
@@ -6968,18 +7051,13 @@
               dict({
                 'minimum': 1,
                 'type': 'integer',
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
               }),
               dict({
                 'type': 'null',
               }),
             ]),
             'default': None,
-<<<<<<< HEAD
-            'description': 'Only groups whose name contains this text, ignoring case.',
-=======
             'description': 'Only the rules of this account; default: all.',
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
           }),
           'page': dict({
             'default': 1,
@@ -6997,26 +7075,6 @@
         }),
         'type': 'object',
       }),
-<<<<<<< HEAD
-      'name': 'list_groups',
-      'outputSchema': dict({
-        'description': 'One page of groups.',
-        'properties': dict({
-          'count': dict({
-            'description': 'How many groups match in total.',
-            'type': 'integer',
-          }),
-          'groups': dict({
-            'items': dict({
-              'description': 'A Paperless user group as a compact row (no permission list).',
-              'properties': dict({
-                'id': dict({
-                  'type': 'integer',
-                }),
-                'name': dict({
-                  'type': 'string',
-                }),
-=======
       'name': 'list_mail_rules',
       'outputSchema': dict({
         'description': 'One page of mail rules.',
@@ -7322,13 +7380,10 @@
                   'description': 'No later rule runs once this one made a document.',
                   'type': 'boolean',
                 }),
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
               }),
               'required': list([
                 'id',
                 'name',
-<<<<<<< HEAD
-=======
                 'account_id',
                 'enabled',
                 'order',
@@ -7496,7 +7551,6 @@
                 'processed',
                 'status',
                 'error',
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
               ]),
               'type': 'object',
             }),
@@ -7521,19 +7575,11 @@
           'count',
           'page',
           'next_page',
-<<<<<<< HEAD
-          'groups',
-        ]),
-        'type': 'object',
-      }),
-      'title': 'List groups',
-=======
           'mails',
         ]),
         'type': 'object',
       }),
       'title': 'List processed mail',
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
     }),
     dict({
       '_meta': dict({
@@ -21750,11 +21796,7 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
-<<<<<<< HEAD
             'permissions',
-=======
-            'mail',
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
           ]),
         }),
       }),
@@ -21762,7 +21804,6 @@
         'idempotentHint': True,
         'openWorldHint': False,
         'readOnlyHint': True,
-<<<<<<< HEAD
         'title': 'List groups',
       }),
       'description': '''
@@ -21772,7 +21813,102 @@
         list_taxonomy(kind="group") it returns id and name only, but it pages and filters on the
         server. Needs the view_group permission in Paperless; without it, ask an administrator for
         the ids and pass them.
-=======
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'name_contains': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only groups whose name contains this text, ignoring case.',
+          }),
+          'page': dict({
+            'default': 1,
+            'description': 'Page number, from 1.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'page_size': dict({
+            'default': 25,
+            'description': 'Rows per page, at most 100.',
+            'maximum': 100,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_groups',
+      'outputSchema': dict({
+        'description': 'One page of groups.',
+        'properties': dict({
+          'count': dict({
+            'description': 'How many groups match in total.',
+            'type': 'integer',
+          }),
+          'groups': dict({
+            'items': dict({
+              'description': 'A Paperless user group as a compact row (no permission list).',
+              'properties': dict({
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'next_page': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The next page, null on the last one.',
+          }),
+          'page': dict({
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'count',
+          'page',
+          'next_page',
+          'groups',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List groups',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
         'title': 'List mail accounts',
       }),
       'description': '''
@@ -21781,17 +21917,10 @@
         Each row has the server, port, security, username and account type, never a password or token.
         Needs the view permission for mail accounts. count is the total; pass next_page as page to
         see more. The rules of an account are in list_mail_rules.
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
-<<<<<<< HEAD
-          'name_contains': dict({
-            'anyOf': list([
-              dict({
-                'type': 'string',
-=======
           'page': dict({
             'default': 1,
             'description': 'Page number, from 1.',
@@ -21959,18 +22088,13 @@
               dict({
                 'minimum': 1,
                 'type': 'integer',
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
               }),
               dict({
                 'type': 'null',
               }),
             ]),
             'default': None,
-<<<<<<< HEAD
-            'description': 'Only groups whose name contains this text, ignoring case.',
-=======
             'description': 'Only the rules of this account; default: all.',
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
           }),
           'page': dict({
             'default': 1,
@@ -21988,26 +22112,6 @@
         }),
         'type': 'object',
       }),
-<<<<<<< HEAD
-      'name': 'list_groups',
-      'outputSchema': dict({
-        'description': 'One page of groups.',
-        'properties': dict({
-          'count': dict({
-            'description': 'How many groups match in total.',
-            'type': 'integer',
-          }),
-          'groups': dict({
-            'items': dict({
-              'description': 'A Paperless user group as a compact row (no permission list).',
-              'properties': dict({
-                'id': dict({
-                  'type': 'integer',
-                }),
-                'name': dict({
-                  'type': 'string',
-                }),
-=======
       'name': 'list_mail_rules',
       'outputSchema': dict({
         'description': 'One page of mail rules.',
@@ -22313,13 +22417,10 @@
                   'description': 'No later rule runs once this one made a document.',
                   'type': 'boolean',
                 }),
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
               }),
               'required': list([
                 'id',
                 'name',
-<<<<<<< HEAD
-=======
                 'account_id',
                 'enabled',
                 'order',
@@ -22487,7 +22588,6 @@
                 'processed',
                 'status',
                 'error',
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
               ]),
               'type': 'object',
             }),
@@ -22512,19 +22612,11 @@
           'count',
           'page',
           'next_page',
-<<<<<<< HEAD
-          'groups',
-        ]),
-        'type': 'object',
-      }),
-      'title': 'List groups',
-=======
           'mails',
         ]),
         'type': 'object',
       }),
       'title': 'List processed mail',
->>>>>>> 21b5bba (feat: mail toolset with accounts, rules and processed mail (PLMCP-29))
     }),
     dict({
       '_meta': dict({
