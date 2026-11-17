@@ -18,6 +18,7 @@ E2E = [
     "client",
     "documents",
     "files",
+    "http",
     "notes_and_trash",
     "pdf",
     "search",
@@ -160,6 +161,108 @@ def test_a_changed_live_module_or_a_unit_test_of_a_toolset_runs_that_toolset() -
     )
 
 
+CORE_LIVE = (
+    "tests/contract/test_document_reader.py",
+    "tests/contract/test_document_writer.py",
+    "tests/contract/test_instance_reader.py",
+    "tests/contract/test_notes_and_trash.py",
+    "tests/contract/test_task_reader.py",
+    "tests/contract/test_taxonomy_edits.py",
+    "tests/contract/test_taxonomy_reader.py",
+    "tests/contract/test_taxonomy_writer.py",
+    "tests/e2e/test_documents.py",
+    "tests/e2e/test_files.py",
+    "tests/e2e/test_notes_and_trash.py",
+    "tests/e2e/test_search.py",
+    "tests/e2e/test_tasks.py",
+    "tests/e2e/test_taxonomy_edits.py",
+    "tests/e2e/test_update_document.py",
+)
+
+
+def test_the_core_toolset_runs_the_live_modules_of_documents_and_taxonomy() -> None:
+    selection = pick("src/paperless_mcp/tools/core.py")
+    assert set(CORE_LIVE) <= set(selection.targets)
+    assert selection.targets[0] == STDIO
+
+
+def test_a_domain_module_runs_the_toolset_of_its_name() -> None:
+    assert pick("src/paperless_mcp/domain/pdf.py").targets == (
+        STDIO,
+        contract("test_pdf"),
+        e2e("test_pdf"),
+    )
+    assert set(pick("src/paperless_mcp/domain/documents.py").targets) >= {
+        contract("test_document_writer"),
+        e2e("test_update_document"),
+    }
+
+
+def test_shared_plumbing_runs_the_smoke_set_and_the_modules_of_its_stem() -> None:
+    client = pick("src/paperless_mcp/paperless/client.py")
+    assert client.targets == (STDIO, *sorted((set(SMOKE) | {e2e("test_client")}) - {STDIO}))
+
+
+@pytest.mark.parametrize("name", ["app", "cli", "server"])
+def test_the_entry_points_run_the_http_transport_test_besides_the_smoke_set(name: str) -> None:
+    selection = pick(f"src/paperless_mcp/{name}.py")
+    assert set(selection.targets) == set(SMOKE) | {e2e("test_http")}
+
+
+def test_every_live_module_is_reachable_from_a_source_path_or_the_smoke_set() -> None:
+    """A module nothing selects runs only after the merge: a choice, not an accident."""
+    live = {
+        path.relative_to(ROOT).as_posix()
+        for folder in ("e2e", "contract")
+        for path in (ROOT / "tests" / folder).glob("test_*.py")
+    } - {"tests/contract/test_coverage.py"}  # guards the contract suite, has no live test
+    sources = [
+        path.relative_to(ROOT).as_posix() for path in (ROOT / "src" / "paperless_mcp").rglob("*.py")
+    ]
+    reached = set(SMOKE)
+    for source in sources:
+        reached |= set(e2e_ci.select([source], live_modules=live).targets)
+    assert live - reached == set()
+
+
+def test_a_cross_cutting_change_over_the_budget_is_split_not_cut() -> None:
+    weights = {f"tests/e2e/test_m{n}.py": 300.0 for n in range(5)}
+    targets = (STDIO, *weights)
+    groups = e2e_ci.split_tier(targets, weights={**weights, STDIO: 14.0}, budget=450.0, parts=3)
+    assert len(groups) == 3
+    assert sorted(t for group in groups for t in group) == sorted(targets)  # nothing dropped
+    assert STDIO in groups[0]
+
+
+def test_a_tier_within_the_budget_stays_one_group() -> None:
+    targets = (STDIO, e2e("test_pdf"))
+    assert e2e_ci.split_tier(targets, weights={STDIO: 14.0, e2e("test_pdf"): 77.0}) == [targets]
+
+
+def test_the_split_never_makes_more_groups_than_the_matrix_allows() -> None:
+    weights = {f"tests/e2e/test_m{n}.py": 900.0 for n in range(9)}
+    groups = e2e_ci.split_tier(tuple(weights), weights=weights, budget=450.0, parts=3)
+    assert len(groups) == 3
+
+
+def test_the_real_cross_cutting_example_fits_the_budget_per_group() -> None:
+    stems = ["documents", "bulk_documents", "pdf", "uploads", "versions", "sharing"]
+    live = {
+        path.relative_to(ROOT).as_posix()
+        for folder in ("e2e", "contract")
+        for path in (ROOT / "tests" / folder).glob("test_*.py")
+    }
+    paths = [f"src/paperless_mcp/services/{stem}.py" for stem in stems]
+    targets = e2e_ci.select(paths, live_modules=live).targets
+    assert sum(e2e_ci.MODULE_SECONDS.get(t, 0.0) for t in targets) > e2e_ci.TIER_BUDGET_SECONDS
+    groups = e2e_ci.split_tier(targets)
+    assert len(groups) > 1
+    assert all(
+        sum(e2e_ci.MODULE_SECONDS.get(t, 0.0) for t in group) <= e2e_ci.TIER_BUDGET_SECONDS
+        for group in groups
+    )
+
+
 def test_a_changed_stdio_test_runs_only_the_stdio_test() -> None:
     assert pick(STDIO).targets == (STDIO,)
 
@@ -167,15 +270,12 @@ def test_a_changed_stdio_test_runs_only_the_stdio_test() -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "src/paperless_mcp/server.py",
-        "src/paperless_mcp/app.py",
         "src/paperless_mcp/settings.py",
         "src/paperless_mcp/tools/_shared.py",
-        "src/paperless_mcp/tools/core.py",
         "src/paperless_mcp/tools/__init__.py",
-        "src/paperless_mcp/domain/documents.py",
         "src/paperless_mcp/domain/ports.py",
-        "src/paperless_mcp/paperless/client.py",
+        "src/paperless_mcp/domain/credentials.py",
+        "src/paperless_mcp/paperless/errors.py",  # a shared stem without a module of its name
         "src/paperless_mcp/services/unheard_of.py",
         "src/paperless_mcp/tools/new_toolset.py",  # no live module and no alias yet
         "src/paperless_mcp/prompts/guide.md",  # markdown below src is runtime data
@@ -237,6 +337,25 @@ def test_the_scope_command_prints_the_job_outputs_for_a_toolset_change() -> None
     assert lines[1] == f"targets={STDIO} {contract('test_pdf')} {e2e('test_pdf')}"
 
 
+def test_the_scope_command_gives_each_part_its_group_and_skips_the_parts_without_work() -> None:
+    stems = ["documents", "bulk_documents", "pdf", "uploads", "versions", "sharing"]
+    stdin = "".join(f"src/paperless_mcp/services/{stem}.py\0" for stem in stems)
+    seen: list[str] = []
+    modes: list[str] = []
+    for part in ("1/3", "2/3", "3/3"):
+        code, out, err = run_main(["scope", "--part", part], stdin=stdin)
+        assert code == 0
+        modes.append(out.splitlines()[0])
+        seen += out.splitlines()[1].removeprefix("targets=").split()
+        assert part in err  # the log line names the part and what it covers
+    all_targets = run_main(["scope"], stdin=stdin)[1].splitlines()[1].removeprefix("targets=")
+    assert sorted(seen) == sorted(all_targets.split())  # nothing dropped, nothing run twice
+    assert modes[0] == "mode=fast"
+    _, out, err = run_main(["scope", "--part", "3/3"], stdin="src/paperless_mcp/tools/pdf.py\0")
+    assert out == "mode=skip\ntargets=\n"
+    assert "no work" in err
+
+
 def test_the_scope_command_skips_documentation_only_changes() -> None:
     code, out, _ = run_main(["scope"], stdin="docs/a.md\0backlog/tasks/x.md\0")
     assert (code, out) == (0, "mode=skip\ntargets=\n")
@@ -264,9 +383,11 @@ def test_the_weights_name_the_live_modules_of_the_suite_and_split_it_evenly() ->
     }
     assert set(e2e_ci.MODULE_SECONDS) <= real, "a weight names a module that is gone"
     plan = e2e_ci.assign_shards(sorted(real), count=e2e_ci.SHARDS)
+    known = [e2e_ci.MODULE_SECONDS[m] for m in real if m in e2e_ci.MODULE_SECONDS]
+    average = sum(known) / len(known)  # an unweighted module counts so in assign_shards too
     loads = [0.0] * e2e_ci.SHARDS
     for module_path in real:
-        loads[plan[module_path] - 1] += e2e_ci.MODULE_SECONDS.get(module_path, 0.0)
+        loads[plan[module_path] - 1] += e2e_ci.MODULE_SECONDS.get(module_path, average)
     assert max(loads) <= 1.15 * sum(loads) / len(loads), loads
 
 
@@ -348,9 +469,12 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      matrix:
+        part: ["1/3", "2/3", "3/3"]
     steps:
       - id: scope
-        run: python3 scripts/e2e_ci.py scope
+        run: python3 scripts/e2e_ci.py scope --part "$PART"
       - if: steps.scope.outputs.mode != 'skip'
         run: just e2e-paths $TARGETS
       - if: failure() && steps.scope.outputs.mode != 'skip'
@@ -398,6 +522,8 @@ def test_the_reference_workflows_have_no_problems() -> None:
         ("      - if: steps.scope.outputs.mode != 'skip'\n", "      - if: success()\n", "mode"),
         ("      - if: steps.scope.outputs.mode != 'skip'\n", "      - if: false\n", "mode"),
         ("just e2e-paths $TARGETS", "just e2e", "e2e-paths"),
+        ('["1/3", "2/3", "3/3"]', '["1/3", "2/3"]', "matrix"),
+        ('scope --part "$PART"', "scope", "--part"),
         ("      - if: failure() && steps", "      - if: failure() || steps", "mode"),
         (
             "        run: docker compose logs",

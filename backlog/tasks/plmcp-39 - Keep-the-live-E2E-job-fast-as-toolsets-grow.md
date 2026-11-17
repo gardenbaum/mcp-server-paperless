@@ -1,11 +1,11 @@
 ---
 id: PLMCP-39
 title: Keep the live E2E job fast as toolsets grow
-status: Done
+status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-13T07:29:00Z'
-updated_date: '2026-11-17T08:31:00Z'
+updated_date: '2026-11-17T08:39:00Z'
 labels:
   - ci
   - testing
@@ -63,6 +63,8 @@ Shard evidence: shard 2/3 ran end to end on a second compose project (port 8021)
 Estimates, not measured: full run on main = 3 parallel shards, about 390 s of tests each, about 11-12 min hosted plus ~2 min stack start, so ~14 min (AC 3 stays unchecked until a run on main shows it). PR tier 2-10 min hosted.
 
 Controller: accepted decision-23 under the owner's standing delegation (2026-11-17, owner asked to implement PLMCP-39). Added persist-credentials: false to the PR e2e checkout (it only diffs, never pushes). AC #1 and #3 are verified by the first sharded runs on main; shard weights and timeouts get one follow-up adjustment if those runs disagree with the estimates.
+
+Review round (2026-11-17): decision-23 now supersedes decision-24 (decision-24 set to 'superseded by decision-23' via the CLI, one pointer line added to its body); core, domain and entry-point stems map to their live modules; shared stems run smoke plus their own module; a tier over 450 s is split over a 3-part matrix of the e2e job; scripts/ added to mutmut also_copy. AC #1 and #3 are verified by the first sharded runs on main (hosted timings, full run under 20 min); the controller sets Done after that.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

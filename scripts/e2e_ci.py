@@ -15,6 +15,7 @@ decision-24) runs a fast tier chosen from the changed paths; after a merge and n
 """
 
 import argparse
+import math
 import re
 import sys
 from collections.abc import Collection, Mapping, Sequence  # noqa: TC003 -- the CI jobs run this file on the runner's python 3.12, which evaluates annotations
@@ -85,15 +86,22 @@ MODULE_SECONDS: dict[str, float] = {
 PR_TIMEOUT_MINUTES = 20
 SHARD_TIMEOUT_MINUTES = 25
 
+# A tier heavier than this (recorded seconds, sandbox) is split over up to TIER_PARTS parallel jobs
+# of the `e2e` matrix (a cross-cutting change would pass the 20-minute guard on a hosted runner:
+# 450 s is about 13 minutes with the stack's start). The full run covers everything after the merge.
+TIER_BUDGET_SECONDS = 450.0
+TIER_PARTS = 3
+
 # What every pull request that changes code runs: the stdio smoke test.
 STDIO = "tests/e2e/test_stdio.py"
 # What a change outside the toolset map (shared code, helpers, build files) adds to the tier: the
-# stdio test and a read-only sample across the adapter, about 30 s together. The full suite
-# follows after the merge.
+# stdio test, the stack's own seeding test and a read-only sample across the adapter, about 35 s.
+# The full suite follows after the merge.
 SMOKE_TARGETS = frozenset(
     {
         STDIO,
         "tests/e2e/test_documents.py",
+        "tests/e2e/test_stack.py",
         "tests/contract/test_instance_reader.py",
         "tests/contract/test_task_reader.py",
         "tests/contract/test_taxonomy_reader.py",
@@ -104,6 +112,27 @@ SMOKE_TARGETS = frozenset(
 # modules of its own name in tests/e2e and tests/contract. A stem with none of either is outside
 # the map and adds the smoke set, so a new toolset is never skipped by accident.
 ALIASES: dict[str, tuple[str, ...]] = {
+    # tools/core.py registers the everyday tools: documents, notes, files, search, tasks, taxonomy
+    # and the instance overview (the live modules named after those subjects).
+    "core": (
+        "test_document_reader",
+        "test_document_writer",
+        "test_documents",
+        "test_files",
+        "test_instance_reader",
+        "test_notes_and_trash",
+        "test_search",
+        "test_task_reader",
+        "test_tasks",
+        "test_taxonomy_edits",
+        "test_taxonomy_reader",
+        "test_taxonomy_writer",
+        "test_update_document",
+    ),
+    # The entry points start the server the HTTP transport test talks to (decision-27).
+    "app": ("test_http",),
+    "cli": ("test_http",),
+    "server": ("test_http",),
     "documents": (
         "test_document_reader",
         "test_document_writer",
@@ -143,16 +172,19 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "admin_system": ("test_admin",),
 }
 
-# Shared plumbing every toolset goes through: a change runs the whole suite even where a stem
-# happens to name an e2e module (paperless/client.py and tests/e2e/test_client.py).
+# Shared plumbing every toolset goes through: such a change runs the smoke set and the modules its
+# stem names (paperless/client.py and tests/e2e/test_client.py), not one toolset alone.
 _SHARED_STEMS = frozenset({"client", "auth", "errors", "pagination", "disposition"})
+_ENTRY_STEMS = frozenset({"app", "cli", "server"})
 
 # Non-code: a change touching only these cannot alter what the live suite tests. Everything else,
 # including the workflow, the justfile, compose files, lock files, scripts, tests and the
 # vendored references (the adapter tests validate against docs/vendor), is code.
 _NON_CODE_PREFIXES = ("backlog/", "docs/", ".github/ISSUE_TEMPLATE/")
 _CODE_PREFIXES = ("docs/vendor/",)
-_SOURCE = re.compile(r"src/paperless_mcp/(?:tools|services|paperless)/([a-z][a-z0-9_]*)\.py")
+_SOURCE = re.compile(
+    r"src/paperless_mcp/(?:(?:tools|services|paperless|domain)/)?([a-z][a-z0-9_]*)\.py"
+)
 _UNIT_TEST = re.compile(r"tests/(?:adapter|services|tools)/test_([a-z][a-z0-9_]*)\.py")
 _LIVE_TEST = re.compile(r"tests/(?:e2e|contract)/test_[a-z][a-z0-9_]*\.py")
 
@@ -192,7 +224,10 @@ def _modules_for(path: str, live: Collection[str]) -> frozenset[str] | None:
     for pattern in (_SOURCE, _UNIT_TEST):
         found = pattern.fullmatch(path)
         if found:
-            return None if found[1] in _SHARED_STEMS else _modules_of(found[1], live) or None
+            modules = _modules_of(found[1], live)
+            if found[1] in _SHARED_STEMS or found[1] in _ENTRY_STEMS:
+                return modules | SMOKE_TARGETS
+            return modules or None
     if _LIVE_TEST.fullmatch(path):
         # A module that is gone (not in `live`) cannot be run: its toolset is unknown.
         return frozenset({path}) if path in live else None
@@ -216,6 +251,33 @@ def select(paths: Sequence[str], *, live_modules: Collection[str]) -> Selection:
         found = _modules_for(path, live_modules)
         modules.update(SMOKE_TARGETS if found is None else found)
     return Selection(skip=False, targets=_ordered(modules))
+
+
+def split_tier(
+    targets: Sequence[str],
+    *,
+    weights: Mapping[str, float] = MODULE_SECONDS,
+    budget: float = TIER_BUDGET_SECONDS,
+    parts: int = TIER_PARTS,
+) -> list[tuple[str, ...]]:
+    """The tier as one group, or as up to `parts` balanced groups when its weight passes `budget`.
+
+    A change that touches many toolsets would pass the hang guard in one job. Splitting never drops
+    a module: the groups together are exactly `targets`, the stdio test leads the first group.
+    """
+    known = [weights[target] for target in targets if target in weights]
+    default = sum(known) / len(known) if known else 1.0
+    total = sum(weights.get(target, default) for target in targets)
+    count = min(parts, max(1, math.ceil(total / budget)))
+    if count == 1:
+        return [tuple(targets)]
+    plan = assign_shards(targets, count=count, weights=weights)
+    groups = [tuple(t for t in targets if plan[t] == n) for n in range(1, count + 1)]
+    first = groups[plan[STDIO] - 1] if STDIO in plan else ()
+    groups = [group for group in groups if group]
+    if first and first != groups[0]:  # keep the stdio test in the group that runs first
+        groups.sort(key=lambda group: group != first)
+    return groups
 
 
 def _ordered(modules: Collection[str]) -> tuple[str, ...]:
@@ -257,6 +319,7 @@ _JOB = re.compile(r"^  ([\w-]+):[ \t]*$", re.MULTILINE)
 _KEY = re.compile(r"^    ([\w-]+):[ \t]*(.*?)[ \t]*$", re.MULTILINE)
 _STEP_IF = re.compile(r"^(?:      - |        )if:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
 _SHARD_LIST = re.compile(r"^\s+shard:\s*\[(.*)\]\s*$", re.MULTILINE)
+_PART_LIST = re.compile(r"^\s+part:\s*\[(.*)\]\s*$", re.MULTILINE)
 _ON_PULL_REQUEST = "github.event_name == 'pull_request'"
 _NOT_SKIPPED = "steps.scope.outputs.mode != 'skip'"
 
@@ -289,12 +352,20 @@ def _pull_request_problems(workflow: str) -> list[str]:
     problems: list[str] = []
     if keys.get("if", _ON_PULL_REQUEST) != _ON_PULL_REQUEST:
         problems.append(f"`e2e` may have no `if` but `{_ON_PULL_REQUEST}`: a skipped job passes")
-    if "name" in keys:
-        problems.append("`e2e` must not set a name: the check is called `e2e` (decision-23)")
+    if "name" in keys and not keys["name"].startswith("e2e"):
+        problems.append("`e2e` must keep a name starting with `e2e` (decision-23)")
     if "continue-on-error" in job:
         problems.append("`e2e` sets continue-on-error: a failure would not fail the check")
     if "id: scope" not in job or "e2e_ci.py scope" not in job:
         problems.append("`e2e` needs the scope step (`id: scope`, scripts/e2e_ci.py scope)")
+    listed = _PART_LIST.search(job)
+    parts = [item.strip().strip("\"'") for item in listed[1].split(",")] if listed else []
+    if parts != [f"{n}/{TIER_PARTS}" for n in range(1, TIER_PARTS + 1)]:
+        problems.append(
+            f"the matrix of `e2e` must list the parts 1/{TIER_PARTS} to {TIER_PARTS}/{TIER_PARTS}"
+        )
+    if "scope --part" not in job:
+        problems.append("`e2e` must give the scope its matrix part (`scope --part`)")
     if "just e2e-paths" not in job:
         problems.append("`e2e` must run the tier with `just e2e-paths`")
     problems += _timeout_problems("e2e", keys, PR_TIMEOUT_MINUTES)
@@ -337,12 +408,20 @@ class _Args(argparse.Namespace):
 
     command: str = ""
     root: Path = Path()
+    part: tuple[int, int] | None = None
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     scope = commands.add_parser("scope", help="mode and pytest targets from the paths on stdin")
+    _ = scope.add_argument(
+        "--part",
+        type=parse_shard,
+        default=None,
+        metavar="K/N",
+        help="print only group K of the N matrix parts (a heavy tier is split, see split_tier)",
+    )
     _ = scope.add_argument("--root", type=Path, default=Path(), help="the repository root")
     return parser
 
@@ -357,8 +436,19 @@ def main(argv: Sequence[str], *, stdin: TextIO, out: TextIO, err: TextIO) -> int
         for path in (args.root / "tests" / folder).glob("test_*.py")
     }
     selection = select(parse_paths(stdin.read()), live_modules=live)
-    _ = out.write(f"mode={'skip' if selection.skip else 'fast'}\n")
-    _ = out.write(f"targets={' '.join(selection.targets)}\n")
+    targets = selection.targets
+    skip = selection.skip
+    if args.part is not None and not skip:
+        index, _count = args.part
+        groups = split_tier(targets)
+        skip = index > len(groups)
+        targets = () if skip else groups[index - 1]
+        note = "no work for this part" if skip else f"{len(targets)} modules"
+        _ = err.write(f"e2e part {index}/{_count} of {len(groups)} group(s): {note}\n")
+        if len(groups) > 1 and index == 1:
+            _ = err.write(f"the tier is over its budget and split in {len(groups)} groups\n")
+    _ = out.write(f"mode={'skip' if skip else 'fast'}\n")
+    _ = out.write(f"targets={' '.join(targets)}\n")
     return 0
 
 
