@@ -1,0 +1,27 @@
+# Only what the image needs enters the build context (the Dockerfile copies named paths).
+.git
+.github
+.env
+.env.*
+.venv
+.ruff_cache
+.import_linter_cache
+.pytest_cache
+.mypy_cache
+.basedpyright
+mutants
+**/__pycache__
+**/*.py[cod]
+**/.env
+**/.env.*
+.coverage
+coverage.xml
+htmlcov
+dist
+build
+tests
+docs
+backlog
+scripts
+.claude
+.superpowers
