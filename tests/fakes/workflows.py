@@ -1,0 +1,316 @@
+"""The workflow part of FakePaperless: workflows with nested triggers and actions, as 3.4.2.
+
+Plain functions on the fake's state and user; `FakePaperless` delegates to them (and carries the
+write guard), so `paperless.py` does not grow further. What the contract tests pin on live 3.4.2:
+
+- Every user with the global permission of the model sees every workflow (workflows have no owner).
+- A trigger or action starts from the defaults of its type and keeps what is sent; a list that is
+  sent replaces the old one as a whole and every object in it gets a new id.
+- A consumption trigger needs a path, file name or mail rule filter; an e-mail action needs its
+  e-mail data, a webhook action a webhook with a URL that has a scheme; remote OCR needs a
+  consumption trigger in the workflow. Settings that belong to another type of action are stored
+  as sent (Paperless does not check them).
+- Names are unique and not blank; the list is ordered by `order`, then id.
+"""
+
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+from fakes.document_values import reject
+from paperless_mcp.domain.errors import PermissionDenied
+from paperless_mcp.domain.workflows import (
+    ACTION_FIELDS,
+    ACTION_TYPES,
+    MATCHING_ALGORITHMS,
+    SCHEDULE_DATE_FIELDS,
+    SOURCES,
+    TRIGGER_FIELDS,
+    TRIGGER_TYPES,
+    Field_,
+    Workflow,
+    WorkflowAction,
+    WorkflowTrigger,
+)
+from paperless_mcp.paperless.workflows import unseen_workflow
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Mapping
+
+    from pydantic import JsonValue
+
+    from paperless_mcp.domain.taxonomy import TaxonomyKind
+    from paperless_mcp.domain.workflows import WorkflowValues
+
+# What 3.4.2 fills in for a trigger and an action that leave a setting out.
+TRIGGER_DEFAULTS: dict[str, JsonValue] = {
+    "sources": [1, 2, 3],
+    "filter_path": None,
+    "filter_filename": None,
+    "filter_mailrule": None,
+    "matching_algorithm": 0,
+    "match": "",
+    "is_insensitive": True,
+    "filter_has_tags": [],
+    "filter_has_all_tags": [],
+    "filter_has_not_tags": [],
+    "filter_custom_field_query": None,
+    "filter_has_any_correspondents": [],
+    "filter_has_not_correspondents": [],
+    "filter_has_any_document_types": [],
+    "filter_has_not_document_types": [],
+    "filter_has_any_storage_paths": [],
+    "filter_has_not_storage_paths": [],
+    "filter_has_correspondent": None,
+    "filter_has_document_type": None,
+    "filter_has_storage_path": None,
+    "schedule_offset_days": 0,
+    "schedule_is_recurring": False,
+    "schedule_recurring_interval_days": 1,
+    "schedule_date_field": "added",
+    "schedule_date_custom_field": None,
+}
+ACTION_DEFAULTS: dict[str, JsonValue] = {
+    "assign_title": None,
+    "assign_tags": [],
+    "assign_correspondent": None,
+    "assign_document_type": None,
+    "assign_storage_path": None,
+    "assign_owner": None,
+    "assign_view_users": [],
+    "assign_view_groups": [],
+    "assign_change_users": [],
+    "assign_change_groups": [],
+    "assign_custom_fields": [],
+    "assign_custom_fields_values": {},
+    "remove_all_tags": False,
+    "remove_tags": [],
+    "remove_all_correspondents": False,
+    "remove_correspondents": [],
+    "remove_all_document_types": False,
+    "remove_document_types": [],
+    "remove_all_storage_paths": False,
+    "remove_storage_paths": [],
+    "remove_custom_fields": [],
+    "remove_all_custom_fields": False,
+    "remove_all_owners": False,
+    "remove_owners": [],
+    "remove_all_permissions": False,
+    "remove_view_users": [],
+    "remove_view_groups": [],
+    "remove_change_users": [],
+    "remove_change_groups": [],
+    "email": None,
+    "webhook": None,
+    "passwords": None,
+    "ai_suggestion_fields": None,
+    "ai_create_missing": False,
+    "ai_overwrite_existing": False,
+}
+EMAIL_DEFAULTS: dict[str, JsonValue] = {"include_document": False}
+WEBHOOK_DEFAULTS: dict[str, JsonValue] = {
+    "use_params": True,
+    "as_json": False,
+    "params": None,
+    "body": None,
+    "headers": None,
+    "include_document": False,
+}
+CONSUMPTION, SCHEDULED, EMAIL, WEBHOOK, REMOTE_OCR = 1, 4, 3, 4, 7
+MAX_NAME = 256
+
+
+@dataclass
+class WorkflowData:
+    """The workflow part of the fake's state (the list is shared with `FakeState`)."""
+
+    workflows: list[Workflow]
+    # The last id given to a trigger or action; Paperless numbers them apart, the fake together.
+    last_object_id: list[int] = field(default_factory=lambda: [0])
+
+
+@dataclass(frozen=True)
+class Actor:
+    """The acting user as the workflow functions need them."""
+
+    has: Callable[[str], bool]
+    known: Callable[[TaxonomyKind], frozenset[int]]
+
+
+def _allow(user: Actor, action: str) -> None:
+    if not user.has(f"{action}_workflow"):
+        message = "The Paperless user may not perform this action."
+        raise PermissionDenied(message)
+
+
+def list_workflows(data: WorkflowData, user: Actor) -> tuple[Workflow, ...]:
+    """`WorkflowReader.list_workflows`: by order, then id."""
+    _allow(user, "view")
+    return tuple(sorted(data.workflows, key=lambda w: (w.order, w.id)))
+
+
+def get_workflow(data: WorkflowData, user: Actor, workflow_id: int) -> Workflow:
+    """`WorkflowReader.get_workflow`."""
+    _allow(user, "view")
+    return _find(data, workflow_id)
+
+
+def _find(data: WorkflowData, workflow_id: int) -> Workflow:
+    found = [w for w in data.workflows if w.id == workflow_id]
+    if not found:
+        raise unseen_workflow(workflow_id)
+    return found[0]
+
+
+def create_workflow(data: WorkflowData, user: Actor, name: str, values: WorkflowValues) -> Workflow:
+    """`WorkflowWriter.create_workflow`."""
+    _allow(user, "add")
+    _check_name(data, name, except_id=None)
+    triggers = _triggers(data, user, values.triggers or ())
+    actions = _actions(data, user, values.actions or ())
+    _check_together(triggers, actions)
+    workflow = Workflow(
+        id=max((w.id for w in data.workflows), default=0) + 1,
+        name=name,
+        order=0 if values.order is None else values.order,
+        enabled=True if values.enabled is None else values.enabled,
+        triggers=triggers,
+        actions=actions,
+    )
+    data.workflows.append(workflow)
+    return workflow
+
+
+def update_workflow(
+    data: WorkflowData, user: Actor, workflow_id: int, values: WorkflowValues
+) -> Workflow:
+    """`WorkflowWriter.update_workflow` (a partial update)."""
+    _allow(user, "change")
+    old = _find(data, workflow_id)
+    if values.name is not None:
+        _check_name(data, values.name, except_id=workflow_id)
+    triggers = old.triggers if values.triggers is None else _triggers(data, user, values.triggers)
+    actions = old.actions if values.actions is None else _actions(data, user, values.actions)
+    _check_together(triggers, actions)
+    new = old.model_copy(
+        update={
+            "name": old.name if values.name is None else values.name,
+            "order": old.order if values.order is None else values.order,
+            "enabled": old.enabled if values.enabled is None else values.enabled,
+            "triggers": triggers,
+            "actions": actions,
+        }
+    )
+    data.workflows[data.workflows.index(old)] = new
+    return new
+
+
+def delete_workflow(data: WorkflowData, user: Actor, workflow_id: int) -> None:
+    """`WorkflowWriter.delete_workflow`."""
+    _allow(user, "delete")
+    data.workflows.remove(_find(data, workflow_id))
+
+
+def _check_name(data: WorkflowData, name: str, *, except_id: int | None) -> None:
+    if not name.strip():
+        reject("name", "This field may not be blank.")
+    if len(name) > MAX_NAME:
+        reject("name", f"Ensure this field has no more than {MAX_NAME} characters.")
+    if any(w.name == name and w.id != except_id for w in data.workflows):
+        reject("name", "workflow with this name already exists.")
+
+
+def _next_id(data: WorkflowData) -> int:
+    data.last_object_id[0] += 1
+    return data.last_object_id[0]
+
+
+def _check_references(
+    user: Actor, settings: Mapping[str, JsonValue], fields: Mapping[str, tuple[str, TaxonomyKind]]
+) -> None:
+    """Every id a setting names must exist ("Invalid pk")."""
+    for wire, kind in fields.values():
+        value = settings.get(wire)
+        ids = value if isinstance(value, list) else [value]
+        missing = [i for i in ids if isinstance(i, int) and i not in user.known(kind)]
+        if missing:
+            reject(wire, f'Invalid pk "{missing[0]}" - object does not exist.')
+
+
+def _kinds(fields: Iterable[Field_]) -> dict[str, tuple[str, TaxonomyKind]]:
+    """The settings that name objects, by Paperless's name, with the kind of object."""
+    return {f.wire: (f.wire, f.kind) for f in fields if f.kind is not None}
+
+
+def _triggers(
+    data: WorkflowData, user: Actor, given: tuple[WorkflowTrigger, ...]
+) -> tuple[WorkflowTrigger, ...]:
+    kinds = _kinds(TRIGGER_FIELDS.values())
+    made: list[WorkflowTrigger] = []
+    for trigger in given:
+        if trigger.type not in TRIGGER_TYPES:
+            reject("triggers.type", f'"{trigger.type}" is not a valid choice.')
+        settings = {**TRIGGER_DEFAULTS, **trigger.settings}
+        for source in settings["sources"] if isinstance(settings["sources"], list) else []:
+            if source not in SOURCES:
+                reject("sources", f'"{source}" is not a valid choice.')
+        if settings["matching_algorithm"] not in MATCHING_ALGORITHMS:
+            reject(
+                "matching_algorithm", f'"{settings["matching_algorithm"]}" is not a valid choice.'
+            )
+        if settings["schedule_date_field"] not in SCHEDULE_DATE_FIELDS:
+            reject(
+                "schedule_date_field", f'"{settings["schedule_date_field"]}" is not a valid choice.'
+            )
+        if trigger.type == CONSUMPTION and not any(
+            settings[k] for k in ("filter_path", "filter_filename", "filter_mailrule")
+        ):
+            reject("triggers", "File name, path or mail rule filter are required")
+        _check_references(user, settings, kinds)
+        made.append(WorkflowTrigger(id=_next_id(data), type=trigger.type, settings=settings))
+    return tuple(made)
+
+
+def _actions(
+    data: WorkflowData, user: Actor, given: tuple[WorkflowAction, ...]
+) -> tuple[WorkflowAction, ...]:
+    kinds = _kinds(f for fields in ACTION_FIELDS.values() for f in fields.values())
+    made: list[WorkflowAction] = []
+    for action in given:
+        if action.type not in ACTION_TYPES:
+            reject("actions.type", f'"{action.type}" is not a valid choice.')
+        settings = {**ACTION_DEFAULTS, **action.settings}
+        if action.type == EMAIL:
+            settings["email"] = _nested(action, "email", EMAIL_DEFAULTS, {"subject", "body", "to"})
+        if action.type == WEBHOOK:
+            hook = _nested(action, "webhook", WEBHOOK_DEFAULTS, {"url"})
+            if "://" not in str(hook["url"]):
+                reject("webhook.url", f"Unable to parse URI {hook['url']}, missing scheme")
+            settings["webhook"] = hook
+        _check_references(user, settings, kinds)
+        made.append(WorkflowAction(id=_next_id(data), type=action.type, settings=settings))
+    return tuple(made)
+
+
+def _nested(
+    action: WorkflowAction,
+    name: str,
+    defaults: dict[str, JsonValue],
+    required: set[str],
+) -> dict[str, JsonValue]:
+    """The e-mail or webhook data of an action, with its defaults (the adapter drops its id)."""
+    sent = action.settings.get(name)
+    if not isinstance(sent, dict):
+        reject("actions", f"{name.capitalize()} data is required for {name} actions")
+    for key in sorted(required - set(sent)):
+        reject(f"{name}.{key}", "This field is required.")
+    return {**defaults, **sent}
+
+
+def _check_together(
+    triggers: tuple[WorkflowTrigger, ...], actions: tuple[WorkflowAction, ...]
+) -> None:
+    """Remote OCR needs a consumption trigger."""
+    if any(a.type == REMOTE_OCR for a in actions) and not any(
+        t.type == CONSUMPTION for t in triggers
+    ):
+        reject("non_field_errors", "Remote OCR actions require a consumption started trigger")

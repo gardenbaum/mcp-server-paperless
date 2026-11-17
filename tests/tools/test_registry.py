@@ -98,10 +98,13 @@ def destructive(tool: Tool) -> bool:
 # Tools that publish documents to anyone with a URL (decision-17): they need confirm although
 # they are not destructive.
 PUBLISHING = frozenset({"create_share_link", "create_share_bundle"})
+# Tools that set up workflows, which run by themselves on documents (decision-21): they need
+# confirm for what they act on although they are not destructive.
+ACTING = frozenset({"create_workflow", "update_workflow"})
 
 
-def unconfirmed(tools: list[Tool], publishing: frozenset[str] = PUBLISHING) -> list[str]:
-    """Destructive or publishing tools without an optional `confirm: bool = False`."""
+def unconfirmed(tools: list[Tool], publishing: frozenset[str] = PUBLISHING | ACTING) -> list[str]:
+    """Destructive, publishing or acting tools without an optional `confirm: bool = False`."""
 
     def confirmed(tool: Tool) -> bool:
         properties = cast("dict[str, dict[str, object]]", tool.parameters.get("properties", {}))
@@ -328,6 +331,21 @@ async def test_self_test_credentials_in_output_and_readable_inputs_are_found() -
     assert readable_credential_inputs(tools) == ["take_plain_password.password"]
 
 
+@pytest.mark.decision("decision-21")
+async def test_the_acting_workflow_tools_exist_and_need_confirm() -> None:
+    tools = await server_tools()
+
+    assert {t.name for t in tools} >= ACTING
+    assert unconfirmed(tools, ACTING) == []
+
+
+@pytest.mark.decision("decision-21")
+async def test_self_test_an_acting_tool_without_a_false_confirm_is_found() -> None:
+    found = set(unconfirmed(await offending_tools(), frozenset({"act_without_confirm"})))
+
+    assert "act_without_confirm" in found
+
+
 @pytest.mark.decision("decision-6")
 @pytest.mark.decision("decision-19")
 async def test_the_confirm_check_has_destructive_tools_to_check() -> None:
@@ -438,6 +456,13 @@ async def drop_without_confirm() -> None:
 )
 async def publish_without_confirm() -> None:
     """Publishes without a confirm; not destructive, which only the publishing list catches."""
+
+
+@offenders.tool(
+    annotations=ToolAnnotations(title="Act", destructive_hint=False, open_world_hint=True)
+)
+async def act_without_confirm() -> None:
+    """Sets up something that runs on its own without a confirm; only the acting list catches it."""
 
 
 @offenders.tool(annotations=ToolAnnotations(title="Empty trash", destructive_hint=True))
