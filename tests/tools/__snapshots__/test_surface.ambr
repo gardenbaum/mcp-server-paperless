@@ -3359,6 +3359,1363 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'workflows',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': False,
+        'openWorldHint': True,
+        'readOnlyHint': False,
+        'title': 'Create workflow',
+      }),
+      'description': '''
+        Create a workflow with its triggers and actions.
+        
+        Returns it as stored. enabled defaults to true; pass enabled=false to build it first and switch it
+        on later with update_workflow.
+        
+        Triggers: 'consumption' (before a document is stored; needs a path, filename or mailrule filter),
+        'added' (after it is stored), 'updated', 'scheduled' (counts from a date of the document).
+        added, updated and scheduled can filter by content (match with matching_algorithm), tags,
+        correspondents, document types, storage paths and a custom field query. Taxonomy values are names
+        or ids, as in search_documents.
+        
+        Actions run in order on the matching document: 'assignment' (assign_title as a template such as
+        '{{ correspondent }} {{ created_year }}', tags, correspondent, document type, storage path, owner,
+        view and change permissions, custom fields with values), 'removal' (remove_all_* flags and
+        remove_* lists), 'email' (email: subject, body, to, include_document), 'webhook' (a POST request:
+        webhook: url, headers, params or body, include_document), 'move to trash' and 'remote OCR'
+        (consumption triggers only). Settings of another action type than the one given are an error.
+        Password removal and applying AI suggestions cannot be written here; use the Paperless web UI.
+        
+        A workflow runs by itself on every matching document once it is enabled. Without confirm, an
+        enabled workflow that moves to trash, e-mails, calls a webhook, removes things or changes owner or
+        permissions is refused with an error that says what it would do; describe that to the user and
+        call again with confirm=true once they agree. Disabled workflows and plain filing (tags, title,
+        correspondent and so on) need no confirm. Needs the workflow permissions in Paperless.
+  
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'actions': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'additionalProperties': False,
+                  'description': 'An action as a caller writes it: the type by number or name, taxonomy by name or id.',
+                  'properties': dict({
+                    'assign_change_groups': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Groups granted change permission.',
+                    }),
+                    'assign_change_users': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Users granted change permission.',
+                    }),
+                    'assign_correspondent': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Correspondent.',
+                    }),
+                    'assign_custom_fields': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Custom fields to add, without a value.',
+                    }),
+                    'assign_custom_fields_values': dict({
+                      'anyOf': list([
+                        dict({
+                          'additionalProperties': dict({
+                          }),
+                          'type': 'object',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Custom field name or id -> the value to set (overwrites).',
+                    }),
+                    'assign_document_type': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Document type.',
+                    }),
+                    'assign_owner': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Owner, a user name or id.',
+                    }),
+                    'assign_storage_path': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Storage path.',
+                    }),
+                    'assign_tags': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Tags to add.',
+                    }),
+                    'assign_title': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': "A Jinja template for the title, e.g. '{{ correspondent }}'.",
+                    }),
+                    'assign_view_groups': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Groups granted view permission.',
+                    }),
+                    'assign_view_users': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Users granted view permission.',
+                    }),
+                    'email': dict({
+                      'anyOf': list([
+                        dict({
+                          'additionalProperties': False,
+                          'description': 'What an e-mail action sends.',
+                          'properties': dict({
+                            'body': dict({
+                              'description': 'May use placeholders.',
+                              'minLength': 1,
+                              'type': 'string',
+                            }),
+                            'include_document': dict({
+                              'default': False,
+                              'description': 'Attach the document.',
+                              'type': 'boolean',
+                            }),
+                            'subject': dict({
+                              'description': 'May use placeholders.',
+                              'maxLength': 256,
+                              'minLength': 1,
+                              'type': 'string',
+                            }),
+                            'to': dict({
+                              'description': 'Addresses, comma separated.',
+                              'minLength': 1,
+                              'type': 'string',
+                            }),
+                          }),
+                          'required': list([
+                            'subject',
+                            'body',
+                            'to',
+                          ]),
+                          'type': 'object',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'For type email: what to send.',
+                    }),
+                    'id': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'The id the action has now (from get_workflow), to keep hidden values.',
+                    }),
+                    'remove_all_correspondents': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Clear it.',
+                    }),
+                    'remove_all_custom_fields': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Remove every custom field.',
+                    }),
+                    'remove_all_document_types': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Clear it.',
+                    }),
+                    'remove_all_owners': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Clear the owner.',
+                    }),
+                    'remove_all_permissions': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Remove every view and change grant.',
+                    }),
+                    'remove_all_storage_paths': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Clear it.',
+                    }),
+                    'remove_all_tags': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Remove every tag.',
+                    }),
+                    'remove_change_groups': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Groups to remove change permission from.',
+                    }),
+                    'remove_change_users': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Users to remove change permission from.',
+                    }),
+                    'remove_correspondents': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Remove when it is one of these.',
+                    }),
+                    'remove_custom_fields': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Custom fields to remove.',
+                    }),
+                    'remove_document_types': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Remove when it is one of these.',
+                    }),
+                    'remove_owners': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Clear the owner when it is one of these users.',
+                    }),
+                    'remove_storage_paths': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Remove when it is one of these.',
+                    }),
+                    'remove_tags': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Tags to remove.',
+                    }),
+                    'remove_view_groups': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Groups to remove view permission from.',
+                    }),
+                    'remove_view_users': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Users to remove view permission from.',
+                    }),
+                    'type': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'string',
+                        }),
+                      ]),
+                      'description': "The action type: 'assignment' (1), 'removal' (2), 'email' (3), 'webhook' (4), 'move to trash' (6) or 'remote OCR' (7, consumption triggers only). Settings of another type than this one are an error.",
+                    }),
+                    'webhook': dict({
+                      'anyOf': list([
+                        dict({
+                          'additionalProperties': False,
+                          'description': 'What a webhook action sends: a POST request.',
+                          'properties': dict({
+                            'as_json': dict({
+                              'default': False,
+                              'description': 'Send as JSON instead of form data.',
+                              'type': 'boolean',
+                            }),
+                            'body': dict({
+                              'anyOf': list([
+                                dict({
+                                  'type': 'string',
+                                }),
+                                dict({
+                                  'type': 'null',
+                                }),
+                              ]),
+                              'default': None,
+                              'description': 'Text to send instead of params; may use placeholders.',
+                            }),
+                            'headers': dict({
+                              'anyOf': list([
+                                dict({
+                                  'additionalProperties': dict({
+                                    'type': 'string',
+                                  }),
+                                  'type': 'object',
+                                }),
+                                dict({
+                                  'type': 'null',
+                                }),
+                              ]),
+                              'default': None,
+                              'description': "Request headers. Values are never shown again (they can hold tokens): get_workflow shows '(hidden)'; send that back with the action's id to keep the stored value.",
+                            }),
+                            'include_document': dict({
+                              'default': False,
+                              'description': 'Send the document too.',
+                              'type': 'boolean',
+                            }),
+                            'params': dict({
+                              'anyOf': list([
+                                dict({
+                                  'additionalProperties': dict({
+                                    'type': 'string',
+                                  }),
+                                  'type': 'object',
+                                }),
+                                dict({
+                                  'type': 'null',
+                                }),
+                              ]),
+                              'default': None,
+                              'description': 'Key-value pairs to send; may use placeholders.',
+                            }),
+                            'url': dict({
+                              'description': 'The URL to POST to.',
+                              'maxLength': 256,
+                              'minLength': 1,
+                              'type': 'string',
+                            }),
+                            'use_params': dict({
+                              'default': True,
+                              'description': 'Send params as key-value pairs instead of the body.',
+                              'type': 'boolean',
+                            }),
+                          }),
+                          'required': list([
+                            'url',
+                          ]),
+                          'type': 'object',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'For type webhook: what to send.',
+                    }),
+                  }),
+                  'required': list([
+                    'type',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'The actions to apply, in order; see the tool description.',
+          }),
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'enabled': dict({
+            'default': True,
+            'description': 'Whether the workflow runs once created.',
+            'type': 'boolean',
+          }),
+          'name': dict({
+            'description': 'A name not yet taken.',
+            'maxLength': 256,
+            'minLength': 1,
+            'type': 'string',
+          }),
+          'order': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Workflows run in this order, lowest first.',
+          }),
+          'triggers': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'additionalProperties': False,
+                  'description': 'A trigger as a caller writes it: the type by number or name, taxonomy by name or id.',
+                  'properties': dict({
+                    'custom_field_query': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'A custom field query as JSON text, as in search_documents (ids).',
+                    }),
+                    'filename': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Consumption only: file name filter, e.g. *invoice*.pdf.',
+                    }),
+                    'has_all_tags': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with all of these tags.',
+                    }),
+                    'has_any_correspondents': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with one of these correspondents.',
+                    }),
+                    'has_any_document_types': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with one of these document types.',
+                    }),
+                    'has_any_storage_paths': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with one of these storage paths.',
+                    }),
+                    'has_correspondent': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with this correspondent.',
+                    }),
+                    'has_document_type': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with this document type.',
+                    }),
+                    'has_not_correspondents': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with none of these correspondents.',
+                    }),
+                    'has_not_document_types': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with none of these document types.',
+                    }),
+                    'has_not_storage_paths': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with none of these storage paths.',
+                    }),
+                    'has_not_tags': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with none of these tags.',
+                    }),
+                    'has_storage_path': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with this storage path.',
+                    }),
+                    'has_tags': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with any of these tags.',
+                    }),
+                    'is_insensitive': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Ignore case in match.',
+                    }),
+                    'mailrule': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Consumption only: the id of a mail rule (forces mail_fetch).',
+                    }),
+                    'match': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Content filter text (not consumption).',
+                    }),
+                    'matching_algorithm': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'How match applies: none, any, all, exact, regex or fuzzy.',
+                    }),
+                    'path': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Consumption only: file path filter, * is a wildcard.',
+                    }),
+                    'schedule_date_custom_field': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Scheduled only: the date custom field, name or id.',
+                    }),
+                    'schedule_date_field': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Scheduled only: the date to count from: added, created, modified or custom_field (then give schedule_date_custom_field).',
+                    }),
+                    'schedule_is_recurring': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Scheduled only: run again and again.',
+                    }),
+                    'schedule_offset_days': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Scheduled only: days after the date (negative: before) to run.',
+                    }),
+                    'schedule_recurring_interval_days': dict({
+                      'anyOf': list([
+                        dict({
+                          'minimum': 1,
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Scheduled only: days between recurring runs.',
+                    }),
+                    'sources': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'integer',
+                              }),
+                              dict({
+                                'type': 'string',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Consumption only: where documents come from, any of consume_folder, api_upload (includes the web UI upload), mail_fetch, web_ui. Default: the first three.',
+                    }),
+                    'type': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'string',
+                        }),
+                      ]),
+                      'description': "The trigger type: 'consumption' (1, before a document is consumed; has sources, path, filename, mailrule), 'added' (2), 'updated' (3) or 'scheduled' (4; has the schedule_ settings).",
+                    }),
+                  }),
+                  'required': list([
+                    'type',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'The triggers that start the workflow; see the tool description.',
+          }),
+        }),
+        'required': list([
+          'name',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'create_workflow',
+      'outputSchema': dict({
+        'description': 'A workflow as tools show it.',
+        'properties': dict({
+          'actions': dict({
+            'items': dict({
+              'description': 'An action as tools show it.',
+              'properties': dict({
+                'id': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'integer',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'settings': dict({
+                  'additionalProperties': dict({
+                  }),
+                  'description': 'The settings that are not empty, named as create takes them.',
+                  'type': 'object',
+                }),
+                'type': dict({
+                  'type': 'integer',
+                }),
+                'type_name': dict({
+                  'description': "The label of the type, e.g. 'assignment'.",
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'type',
+                'type_name',
+                'settings',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'enabled': dict({
+            'type': 'boolean',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'order': dict({
+            'description': 'Workflows run in this order, lowest first.',
+            'type': 'integer',
+          }),
+          'triggers': dict({
+            'items': dict({
+              'description': 'A trigger as tools show it.',
+              'properties': dict({
+                'id': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'integer',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'settings': dict({
+                  'additionalProperties': dict({
+                  }),
+                  'description': 'The settings that are not at their default, named as create takes them.',
+                  'type': 'object',
+                }),
+                'type': dict({
+                  'type': 'integer',
+                }),
+                'type_name': dict({
+                  'description': "The label of the type, e.g. 'document added'.",
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'type',
+                'type_name',
+                'settings',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'order',
+          'enabled',
+          'triggers',
+          'actions',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Create workflow',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'core',
           ]),
         }),
@@ -4231,6 +5588,77 @@
         'type': 'object',
       }),
       'title': 'Delete taxonomy item',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'workflows',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': True,
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Delete workflow',
+      }),
+      'description': '''
+        Delete a workflow for good: it has no trash. No document is touched.
+        
+        The workflow stops running at once. Without confirm it deletes nothing and fails with an error
+        that says the effect (how many triggers and actions are lost); describe that to the user and
+        call again with confirm=true once they agree.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'workflow': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'The workflow: its name or id.',
+          }),
+        }),
+        'required': list([
+          'workflow',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'delete_workflow',
+      'outputSchema': dict({
+        'description': 'The outcome of a confirmed delete_workflow.',
+        'properties': dict({
+          'id': dict({
+            'type': 'integer',
+          }),
+          'message': dict({
+            'description': 'What was deleted.',
+            'type': 'string',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Delete workflow',
     }),
     dict({
       '_meta': dict({
@@ -6863,6 +8291,152 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'workflows',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get workflow',
+      }),
+      'description': '''
+        Read one workflow with its triggers and actions.
+        
+        The workflow matches by exact name, then ignoring case and accents, or by id; an unknown or
+        ambiguous name is an error that lists the closest names or candidates.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'workflow': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'The workflow: its name or id.',
+          }),
+        }),
+        'required': list([
+          'workflow',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'get_workflow',
+      'outputSchema': dict({
+        'description': 'A workflow as tools show it.',
+        'properties': dict({
+          'actions': dict({
+            'items': dict({
+              'description': 'An action as tools show it.',
+              'properties': dict({
+                'id': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'integer',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'settings': dict({
+                  'additionalProperties': dict({
+                  }),
+                  'description': 'The settings that are not empty, named as create takes them.',
+                  'type': 'object',
+                }),
+                'type': dict({
+                  'type': 'integer',
+                }),
+                'type_name': dict({
+                  'description': "The label of the type, e.g. 'assignment'.",
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'type',
+                'type_name',
+                'settings',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'enabled': dict({
+            'type': 'boolean',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'order': dict({
+            'description': 'Workflows run in this order, lowest first.',
+            'type': 'integer',
+          }),
+          'triggers': dict({
+            'items': dict({
+              'description': 'A trigger as tools show it.',
+              'properties': dict({
+                'id': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'integer',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'settings': dict({
+                  'additionalProperties': dict({
+                  }),
+                  'description': 'The settings that are not at their default, named as create takes them.',
+                  'type': 'object',
+                }),
+                'type': dict({
+                  'type': 'integer',
+                }),
+                'type_name': dict({
+                  'description': "The label of the type, e.g. 'document added'.",
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'type',
+                'type_name',
+                'settings',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'order',
+          'enabled',
+          'triggers',
+          'actions',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get workflow',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'versions',
           ]),
         }),
@@ -8754,6 +10328,155 @@
         'type': 'object',
       }),
       'title': 'List users',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'workflows',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List workflows',
+      }),
+      'description': '''
+        List the workflows of Paperless with their triggers and actions.
+        
+        Settings show names for tags, correspondents and so on, and only what is not at its default;
+        they use the names create_workflow takes. Webhook header values and passwords are never shown.
+        Needs the view permission for workflows in Paperless.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_workflows',
+      'outputSchema': dict({
+        'description': 'The workflows the user may see.',
+        'properties': dict({
+          'count': dict({
+            'type': 'integer',
+          }),
+          'workflows': dict({
+            'items': dict({
+              'description': 'A workflow as tools show it.',
+              'properties': dict({
+                'actions': dict({
+                  'items': dict({
+                    'description': 'An action as tools show it.',
+                    'properties': dict({
+                      'id': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'integer',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'settings': dict({
+                        'additionalProperties': dict({
+                        }),
+                        'description': 'The settings that are not empty, named as create takes them.',
+                        'type': 'object',
+                      }),
+                      'type': dict({
+                        'type': 'integer',
+                      }),
+                      'type_name': dict({
+                        'description': "The label of the type, e.g. 'assignment'.",
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'id',
+                      'type',
+                      'type_name',
+                      'settings',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'type': 'array',
+                }),
+                'enabled': dict({
+                  'type': 'boolean',
+                }),
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'type': 'string',
+                }),
+                'order': dict({
+                  'description': 'Workflows run in this order, lowest first.',
+                  'type': 'integer',
+                }),
+                'triggers': dict({
+                  'items': dict({
+                    'description': 'A trigger as tools show it.',
+                    'properties': dict({
+                      'id': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'integer',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'settings': dict({
+                        'additionalProperties': dict({
+                        }),
+                        'description': 'The settings that are not at their default, named as create takes them.',
+                        'type': 'object',
+                      }),
+                      'type': dict({
+                        'type': 'integer',
+                      }),
+                      'type_name': dict({
+                        'description': "The label of the type, e.g. 'document added'.",
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'id',
+                      'type',
+                      'type_name',
+                      'settings',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'type': 'array',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+                'order',
+                'enabled',
+                'triggers',
+                'actions',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'count',
+          'workflows',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List workflows',
     }),
     dict({
       '_meta': dict({
@@ -14396,6 +16119,1389 @@
         'type': 'object',
       }),
       'title': 'Update taxonomy item',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'workflows',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': True,
+        'openWorldHint': True,
+        'readOnlyHint': False,
+        'title': 'Update workflow',
+      }),
+      'description': '''
+        Change a workflow; only the settings you name change.
+        
+        triggers and actions each replace the whole list (pass all that should remain; an empty list
+        removes them). To keep a webhook header value, which is never shown, send it as '(hidden)' on an
+        action that carries the id it has in get_workflow (only while the URL keeps its scheme, host
+        and port); headers left out of a webhook are removed. Returns the workflow as stored.
+        
+        Triggers: 'consumption' (before a document is stored; needs a path, filename or mailrule filter),
+        'added' (after it is stored), 'updated', 'scheduled' (counts from a date of the document).
+        added, updated and scheduled can filter by content (match with matching_algorithm), tags,
+        correspondents, document types, storage paths and a custom field query. Taxonomy values are names
+        or ids, as in search_documents.
+        
+        Actions run in order on the matching document: 'assignment' (assign_title as a template such as
+        '{{ correspondent }} {{ created_year }}', tags, correspondent, document type, storage path, owner,
+        view and change permissions, custom fields with values), 'removal' (remove_all_* flags and
+        remove_* lists), 'email' (email: subject, body, to, include_document), 'webhook' (a POST request:
+        webhook: url, headers, params or body, include_document), 'move to trash' and 'remote OCR'
+        (consumption triggers only). Settings of another action type than the one given are an error.
+        Password removal and applying AI suggestions cannot be written here; use the Paperless web UI.
+        
+        A workflow runs by itself on every matching document once it is enabled. Without confirm, an
+        enabled workflow that moves to trash, e-mails, calls a webhook, removes things or changes owner or
+        permissions is refused with an error that says what it would do; describe that to the user and
+        call again with confirm=true once they agree. Disabled workflows and plain filing (tags, title,
+        correspondent and so on) need no confirm. Needs the workflow permissions in Paperless.
+  
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'actions': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'additionalProperties': False,
+                  'description': 'An action as a caller writes it: the type by number or name, taxonomy by name or id.',
+                  'properties': dict({
+                    'assign_change_groups': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Groups granted change permission.',
+                    }),
+                    'assign_change_users': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Users granted change permission.',
+                    }),
+                    'assign_correspondent': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Correspondent.',
+                    }),
+                    'assign_custom_fields': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Custom fields to add, without a value.',
+                    }),
+                    'assign_custom_fields_values': dict({
+                      'anyOf': list([
+                        dict({
+                          'additionalProperties': dict({
+                          }),
+                          'type': 'object',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Custom field name or id -> the value to set (overwrites).',
+                    }),
+                    'assign_document_type': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Document type.',
+                    }),
+                    'assign_owner': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Owner, a user name or id.',
+                    }),
+                    'assign_storage_path': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Storage path.',
+                    }),
+                    'assign_tags': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Tags to add.',
+                    }),
+                    'assign_title': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': "A Jinja template for the title, e.g. '{{ correspondent }}'.",
+                    }),
+                    'assign_view_groups': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Groups granted view permission.',
+                    }),
+                    'assign_view_users': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Users granted view permission.',
+                    }),
+                    'email': dict({
+                      'anyOf': list([
+                        dict({
+                          'additionalProperties': False,
+                          'description': 'What an e-mail action sends.',
+                          'properties': dict({
+                            'body': dict({
+                              'description': 'May use placeholders.',
+                              'minLength': 1,
+                              'type': 'string',
+                            }),
+                            'include_document': dict({
+                              'default': False,
+                              'description': 'Attach the document.',
+                              'type': 'boolean',
+                            }),
+                            'subject': dict({
+                              'description': 'May use placeholders.',
+                              'maxLength': 256,
+                              'minLength': 1,
+                              'type': 'string',
+                            }),
+                            'to': dict({
+                              'description': 'Addresses, comma separated.',
+                              'minLength': 1,
+                              'type': 'string',
+                            }),
+                          }),
+                          'required': list([
+                            'subject',
+                            'body',
+                            'to',
+                          ]),
+                          'type': 'object',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'For type email: what to send.',
+                    }),
+                    'id': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'The id the action has now (from get_workflow), to keep hidden values.',
+                    }),
+                    'remove_all_correspondents': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Clear it.',
+                    }),
+                    'remove_all_custom_fields': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Remove every custom field.',
+                    }),
+                    'remove_all_document_types': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Clear it.',
+                    }),
+                    'remove_all_owners': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Clear the owner.',
+                    }),
+                    'remove_all_permissions': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Remove every view and change grant.',
+                    }),
+                    'remove_all_storage_paths': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Clear it.',
+                    }),
+                    'remove_all_tags': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Remove every tag.',
+                    }),
+                    'remove_change_groups': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Groups to remove change permission from.',
+                    }),
+                    'remove_change_users': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Users to remove change permission from.',
+                    }),
+                    'remove_correspondents': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Remove when it is one of these.',
+                    }),
+                    'remove_custom_fields': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Custom fields to remove.',
+                    }),
+                    'remove_document_types': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Remove when it is one of these.',
+                    }),
+                    'remove_owners': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Clear the owner when it is one of these users.',
+                    }),
+                    'remove_storage_paths': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Remove when it is one of these.',
+                    }),
+                    'remove_tags': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Tags to remove.',
+                    }),
+                    'remove_view_groups': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Groups to remove view permission from.',
+                    }),
+                    'remove_view_users': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Users to remove view permission from.',
+                    }),
+                    'type': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'string',
+                        }),
+                      ]),
+                      'description': "The action type: 'assignment' (1), 'removal' (2), 'email' (3), 'webhook' (4), 'move to trash' (6) or 'remote OCR' (7, consumption triggers only). Settings of another type than this one are an error.",
+                    }),
+                    'webhook': dict({
+                      'anyOf': list([
+                        dict({
+                          'additionalProperties': False,
+                          'description': 'What a webhook action sends: a POST request.',
+                          'properties': dict({
+                            'as_json': dict({
+                              'default': False,
+                              'description': 'Send as JSON instead of form data.',
+                              'type': 'boolean',
+                            }),
+                            'body': dict({
+                              'anyOf': list([
+                                dict({
+                                  'type': 'string',
+                                }),
+                                dict({
+                                  'type': 'null',
+                                }),
+                              ]),
+                              'default': None,
+                              'description': 'Text to send instead of params; may use placeholders.',
+                            }),
+                            'headers': dict({
+                              'anyOf': list([
+                                dict({
+                                  'additionalProperties': dict({
+                                    'type': 'string',
+                                  }),
+                                  'type': 'object',
+                                }),
+                                dict({
+                                  'type': 'null',
+                                }),
+                              ]),
+                              'default': None,
+                              'description': "Request headers. Values are never shown again (they can hold tokens): get_workflow shows '(hidden)'; send that back with the action's id to keep the stored value.",
+                            }),
+                            'include_document': dict({
+                              'default': False,
+                              'description': 'Send the document too.',
+                              'type': 'boolean',
+                            }),
+                            'params': dict({
+                              'anyOf': list([
+                                dict({
+                                  'additionalProperties': dict({
+                                    'type': 'string',
+                                  }),
+                                  'type': 'object',
+                                }),
+                                dict({
+                                  'type': 'null',
+                                }),
+                              ]),
+                              'default': None,
+                              'description': 'Key-value pairs to send; may use placeholders.',
+                            }),
+                            'url': dict({
+                              'description': 'The URL to POST to.',
+                              'maxLength': 256,
+                              'minLength': 1,
+                              'type': 'string',
+                            }),
+                            'use_params': dict({
+                              'default': True,
+                              'description': 'Send params as key-value pairs instead of the body.',
+                              'type': 'boolean',
+                            }),
+                          }),
+                          'required': list([
+                            'url',
+                          ]),
+                          'type': 'object',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'For type webhook: what to send.',
+                    }),
+                  }),
+                  'required': list([
+                    'type',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'The actions to apply, in order; see the tool description.',
+          }),
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'enabled': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Whether the workflow runs. Switching it on may need confirm.',
+          }),
+          'name': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'A new name, not yet taken.',
+          }),
+          'order': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Workflows run in this order, lowest first.',
+          }),
+          'triggers': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'additionalProperties': False,
+                  'description': 'A trigger as a caller writes it: the type by number or name, taxonomy by name or id.',
+                  'properties': dict({
+                    'custom_field_query': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'A custom field query as JSON text, as in search_documents (ids).',
+                    }),
+                    'filename': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Consumption only: file name filter, e.g. *invoice*.pdf.',
+                    }),
+                    'has_all_tags': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with all of these tags.',
+                    }),
+                    'has_any_correspondents': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with one of these correspondents.',
+                    }),
+                    'has_any_document_types': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with one of these document types.',
+                    }),
+                    'has_any_storage_paths': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with one of these storage paths.',
+                    }),
+                    'has_correspondent': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with this correspondent.',
+                    }),
+                    'has_document_type': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with this document type.',
+                    }),
+                    'has_not_correspondents': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with none of these correspondents.',
+                    }),
+                    'has_not_document_types': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with none of these document types.',
+                    }),
+                    'has_not_storage_paths': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with none of these storage paths.',
+                    }),
+                    'has_not_tags': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with none of these tags.',
+                    }),
+                    'has_storage_path': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with this storage path.',
+                    }),
+                    'has_tags': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'string',
+                              }),
+                              dict({
+                                'type': 'integer',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Documents with any of these tags.',
+                    }),
+                    'is_insensitive': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Ignore case in match.',
+                    }),
+                    'mailrule': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Consumption only: the id of a mail rule (forces mail_fetch).',
+                    }),
+                    'match': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Content filter text (not consumption).',
+                    }),
+                    'matching_algorithm': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'How match applies: none, any, all, exact, regex or fuzzy.',
+                    }),
+                    'path': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Consumption only: file path filter, * is a wildcard.',
+                    }),
+                    'schedule_date_custom_field': dict({
+                      'anyOf': list([
+                        dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Scheduled only: the date custom field, name or id.',
+                    }),
+                    'schedule_date_field': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Scheduled only: the date to count from: added, created, modified or custom_field (then give schedule_date_custom_field).',
+                    }),
+                    'schedule_is_recurring': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'boolean',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Scheduled only: run again and again.',
+                    }),
+                    'schedule_offset_days': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Scheduled only: days after the date (negative: before) to run.',
+                    }),
+                    'schedule_recurring_interval_days': dict({
+                      'anyOf': list([
+                        dict({
+                          'minimum': 1,
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Scheduled only: days between recurring runs.',
+                    }),
+                    'sources': dict({
+                      'anyOf': list([
+                        dict({
+                          'items': dict({
+                            'anyOf': list([
+                              dict({
+                                'type': 'integer',
+                              }),
+                              dict({
+                                'type': 'string',
+                              }),
+                            ]),
+                          }),
+                          'type': 'array',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'default': None,
+                      'description': 'Consumption only: where documents come from, any of consume_folder, api_upload (includes the web UI upload), mail_fetch, web_ui. Default: the first three.',
+                    }),
+                    'type': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'string',
+                        }),
+                      ]),
+                      'description': "The trigger type: 'consumption' (1, before a document is consumed; has sources, path, filename, mailrule), 'added' (2), 'updated' (3) or 'scheduled' (4; has the schedule_ settings).",
+                    }),
+                  }),
+                  'required': list([
+                    'type',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'The triggers that start the workflow; see the tool description.',
+          }),
+          'workflow': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'The workflow: its name or id.',
+          }),
+        }),
+        'required': list([
+          'workflow',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'update_workflow',
+      'outputSchema': dict({
+        'description': 'A workflow as tools show it.',
+        'properties': dict({
+          'actions': dict({
+            'items': dict({
+              'description': 'An action as tools show it.',
+              'properties': dict({
+                'id': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'integer',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'settings': dict({
+                  'additionalProperties': dict({
+                  }),
+                  'description': 'The settings that are not empty, named as create takes them.',
+                  'type': 'object',
+                }),
+                'type': dict({
+                  'type': 'integer',
+                }),
+                'type_name': dict({
+                  'description': "The label of the type, e.g. 'assignment'.",
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'type',
+                'type_name',
+                'settings',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'enabled': dict({
+            'type': 'boolean',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'order': dict({
+            'description': 'Workflows run in this order, lowest first.',
+            'type': 'integer',
+          }),
+          'triggers': dict({
+            'items': dict({
+              'description': 'A trigger as tools show it.',
+              'properties': dict({
+                'id': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'integer',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'settings': dict({
+                  'additionalProperties': dict({
+                  }),
+                  'description': 'The settings that are not at their default, named as create takes them.',
+                  'type': 'object',
+                }),
+                'type': dict({
+                  'type': 'integer',
+                }),
+                'type_name': dict({
+                  'description': "The label of the type, e.g. 'document added'.",
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'type',
+                'type_name',
+                'settings',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'order',
+          'enabled',
+          'triggers',
+          'actions',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Update workflow',
     }),
     dict({
       '_meta': dict({
@@ -21900,6 +25006,152 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'workflows',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get workflow',
+      }),
+      'description': '''
+        Read one workflow with its triggers and actions.
+        
+        The workflow matches by exact name, then ignoring case and accents, or by id; an unknown or
+        ambiguous name is an error that lists the closest names or candidates.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'workflow': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'The workflow: its name or id.',
+          }),
+        }),
+        'required': list([
+          'workflow',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'get_workflow',
+      'outputSchema': dict({
+        'description': 'A workflow as tools show it.',
+        'properties': dict({
+          'actions': dict({
+            'items': dict({
+              'description': 'An action as tools show it.',
+              'properties': dict({
+                'id': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'integer',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'settings': dict({
+                  'additionalProperties': dict({
+                  }),
+                  'description': 'The settings that are not empty, named as create takes them.',
+                  'type': 'object',
+                }),
+                'type': dict({
+                  'type': 'integer',
+                }),
+                'type_name': dict({
+                  'description': "The label of the type, e.g. 'assignment'.",
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'type',
+                'type_name',
+                'settings',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'enabled': dict({
+            'type': 'boolean',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'order': dict({
+            'description': 'Workflows run in this order, lowest first.',
+            'type': 'integer',
+          }),
+          'triggers': dict({
+            'items': dict({
+              'description': 'A trigger as tools show it.',
+              'properties': dict({
+                'id': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'integer',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'settings': dict({
+                  'additionalProperties': dict({
+                  }),
+                  'description': 'The settings that are not at their default, named as create takes them.',
+                  'type': 'object',
+                }),
+                'type': dict({
+                  'type': 'integer',
+                }),
+                'type_name': dict({
+                  'description': "The label of the type, e.g. 'document added'.",
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'type',
+                'type_name',
+                'settings',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'order',
+          'enabled',
+          'triggers',
+          'actions',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get workflow',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'versions',
           ]),
         }),
@@ -23791,6 +27043,155 @@
         'type': 'object',
       }),
       'title': 'List users',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'workflows',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List workflows',
+      }),
+      'description': '''
+        List the workflows of Paperless with their triggers and actions.
+        
+        Settings show names for tags, correspondents and so on, and only what is not at its default;
+        they use the names create_workflow takes. Webhook header values and passwords are never shown.
+        Needs the view permission for workflows in Paperless.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_workflows',
+      'outputSchema': dict({
+        'description': 'The workflows the user may see.',
+        'properties': dict({
+          'count': dict({
+            'type': 'integer',
+          }),
+          'workflows': dict({
+            'items': dict({
+              'description': 'A workflow as tools show it.',
+              'properties': dict({
+                'actions': dict({
+                  'items': dict({
+                    'description': 'An action as tools show it.',
+                    'properties': dict({
+                      'id': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'integer',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'settings': dict({
+                        'additionalProperties': dict({
+                        }),
+                        'description': 'The settings that are not empty, named as create takes them.',
+                        'type': 'object',
+                      }),
+                      'type': dict({
+                        'type': 'integer',
+                      }),
+                      'type_name': dict({
+                        'description': "The label of the type, e.g. 'assignment'.",
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'id',
+                      'type',
+                      'type_name',
+                      'settings',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'type': 'array',
+                }),
+                'enabled': dict({
+                  'type': 'boolean',
+                }),
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'type': 'string',
+                }),
+                'order': dict({
+                  'description': 'Workflows run in this order, lowest first.',
+                  'type': 'integer',
+                }),
+                'triggers': dict({
+                  'items': dict({
+                    'description': 'A trigger as tools show it.',
+                    'properties': dict({
+                      'id': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'integer',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'settings': dict({
+                        'additionalProperties': dict({
+                        }),
+                        'description': 'The settings that are not at their default, named as create takes them.',
+                        'type': 'object',
+                      }),
+                      'type': dict({
+                        'type': 'integer',
+                      }),
+                      'type_name': dict({
+                        'description': "The label of the type, e.g. 'document added'.",
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'id',
+                      'type',
+                      'type_name',
+                      'settings',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'type': 'array',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+                'order',
+                'enabled',
+                'triggers',
+                'actions',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'count',
+          'workflows',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List workflows',
     }),
     dict({
       '_meta': dict({

@@ -39,6 +39,8 @@ from paperless_mcp.domain.ports import (
     TrashWriter,
     ViewReader,
     ViewWriter,
+    WorkflowReader,
+    WorkflowWriter,
 )
 from paperless_mcp.paperless.auth import StaticTokenProvider
 from paperless_mcp.paperless.client import PaperlessClient, RetryPolicy
@@ -194,6 +196,8 @@ def test_ports_are_found_by_introspection() -> None:
         "permission_writes": PermissionWriter,
         "mail": MailReader,
         "mail_writes": MailWriter,
+        "workflows": WorkflowReader,
+        "workflow_writes": WorkflowWriter,
     }
 
 

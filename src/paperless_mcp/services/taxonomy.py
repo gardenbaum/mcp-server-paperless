@@ -29,14 +29,24 @@ def fold(text: str) -> str:
     return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
 
 
-def pick(kind: TaxonomyKind, items: Sequence[TaxonomyItem], value: str | int) -> TaxonomyItem:
+def pick(
+    kind: TaxonomyKind | str,
+    items: Sequence[TaxonomyItem],
+    value: str | int,
+    *,
+    listing: str | None = None,
+) -> TaxonomyItem:
     """The one item of ``items`` that ``value`` names (rules in the module docstring).
+
+    ``kind`` names the sort of object in messages; ``listing`` is the tool call that lists them
+    (default: ``list_taxonomy`` for ``kind``), for objects that taxonomy does not hold.
 
     Raises:
         NotFound: No item has the id or name; the hint lists the closest names.
         Ambiguous: More than one item matches; the message lists them.
     """
     label = kind.replace("_", " ")
+    call = listing or f"list_taxonomy(kind={kind!r})"
     text = str(value).strip()
     numeric = isinstance(value, int) and not isinstance(value, bool)
     if numeric or (text.isascii() and text.isdigit()):
@@ -48,7 +58,7 @@ def pick(kind: TaxonomyKind, items: Sequence[TaxonomyItem], value: str | int) ->
         hint = (
             f"A {label} is named {text!r}; pass its id {named[0].id} instead."
             if named
-            else f"Call list_taxonomy(kind={kind!r}) to see the ids."
+            else f"Call {call} to see the ids."
         )
         message = f"No {label} has id {wanted}."
         raise NotFound(message, hint=hint)
@@ -62,19 +72,18 @@ def pick(kind: TaxonomyKind, items: Sequence[TaxonomyItem], value: str | int) ->
             message = f"{len(matches)} {label}s match {text!r}: {candidates}."
             raise Ambiguous(message, hint="Pass the id of the one you mean.")
     message = f"No {label} is named {text!r}."
-    raise NotFound(message, hint=_suggest(kind, items, text))
+    raise NotFound(message, hint=_suggest(items, text, call))
 
 
-def _suggest(kind: TaxonomyKind, items: Sequence[TaxonomyItem], text: str) -> str:
+def _suggest(items: Sequence[TaxonomyItem], text: str, call: str) -> str:
     names: dict[str, list[str]] = {}
     for item in items:
         names.setdefault(fold(item.name), []).append(item.name)
     close = difflib.get_close_matches(fold(text), names, n=SUGGESTIONS)
     suggestions = [name for key in close for name in names[key]][:SUGGESTIONS]
-    listing = f"list_taxonomy(kind={kind!r})"
     if not suggestions:
-        return f"Call {listing} to see the names."
-    return f"Did you mean {', '.join(map(repr, suggestions))}? Or call {listing} to see all names."
+        return f"Call {call} to see the names."
+    return f"Did you mean {', '.join(map(repr, suggestions))}? Or call {call} to see all names."
 
 
 class TaxonomyResolver:
