@@ -34,6 +34,7 @@ from e2e.helpers import (
     consume_text,
     pdf,
     pdf_pages,
+    rebuild_search_index,
     results,
 )
 from fakes.accounts import ADMIN, BLIND, READER
@@ -300,6 +301,10 @@ class Backend:
     # The Paperless release behind the backend: the fake's, or the one the live stack runs
     # (`just e2e-latest` runs the suite against a newer release than the pinned one).
     expected_version: str
+    # Makes the full-text index hold exactly one entry per current document (live: waits for the
+    # index-writing tasks, then rebuilds it; the fake has no stale entries). Call it right before
+    # a more-like-this search: see `rebuild_search_index` for why the result can be empty without.
+    rebuild_search_index: Callable[[], None]
 
 
 def fake_consume(state: FakeState) -> Consume:
@@ -474,6 +479,7 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
         in_trash=fake_in_trash(state),
         track_document=lambda _document: None,
         expected_version=VERSION,
+        rebuild_search_index=lambda: None,
     )
 
 
@@ -720,6 +726,7 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
                 in_trash=lambda document_id: live_in_trash(stack, document_id),
                 track_document=created.append,
                 expected_version=EXPECTED_VERSION,
+                rebuild_search_index=lambda: rebuild_search_index(stack.admin),
             )
     finally:
         cleanup(stack, created, users)
