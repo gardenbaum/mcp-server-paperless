@@ -6,8 +6,10 @@ object is looked up by its name or title first, so rerunning on a seeded stack c
 
 import base64
 import os
+import subprocess
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import httpx2
@@ -460,3 +462,65 @@ def consume_text(api: httpx2.Client, title: str) -> int:
     _, document = consume(api, title, body, filename=f"{title}.txt", mime_type="text/plain")
     assert document is not None, f"Consuming {title!r} failed"
     return document
+
+
+# Tasks that write the full-text index in the background after the request that started them.
+INDEX_WRITING_TASKS = ("bulk_update", "bulk_delete", "consume_file", "reprocess_document")
+INDEX_SETTLE_TIMEOUT = 120.0
+# Only recent tasks count: a long-lived stack can hold one that was killed and never ended.
+RECENT_TASKS = timedelta(minutes=15)
+
+
+def wait_for_index_writers(api: httpx2.Client) -> None:
+    """Wait until no recent task that writes the search index is still queued or running."""
+    since = (datetime.now(UTC) - RECENT_TASKS).isoformat()
+    deadline = time.monotonic() + INDEX_SETTLE_TIMEOUT
+    while True:
+        running = [
+            task
+            for kind in INDEX_WRITING_TASKS
+            for task in results(
+                api.get(
+                    "/api/tasks/",
+                    params={"task_type": kind, "is_complete": "false", "date_created_after": since},
+                ).raise_for_status()
+            )
+        ]
+        if not running:
+            return
+        if time.monotonic() > deadline:
+            pytest.fail(f"Index writing tasks still running after {INDEX_SETTLE_TIMEOUT:.0f}s.")
+        time.sleep(1)
+
+
+def rebuild_search_index(api: httpx2.Client) -> None:
+    """Rebuild Paperless's full-text index from the database, as `document_index reindex` does.
+
+    Why: Tantivy keeps replaced and deleted documents in their segments until a merge, and counts
+    them in a term's document frequency. A more-like-this query whose terms occur more often than
+    there are live documents makes Tantivy panic, and Paperless 3.4.2 then answers an empty list
+    (`more_like_this_ids` logs "More Like This scoring panicked"). Every update or deletion of a
+    document leaves such an entry, so any test that runs after other writes (a contract suite, a
+    long-lived stack) can hit it; a rebuild leaves exactly one entry per document. Paperless has no
+    API for it, so this runs the management command in the container that publishes `PORT`.
+    Wait for the index-writing tasks first: one that ends after the rebuild leaves new entries.
+    """
+    wait_for_index_writers(api)
+    container = subprocess.run(  # noqa: S603 -- fixed docker arguments, no user input
+        ["docker", "ps", "--quiet", "--filter", f"publish={PORT}"],  # noqa: S607 -- fixed argument list
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert len(container) == 1, f"Expected one container publishing port {PORT}, got {container}"
+    rebuilt = subprocess.run(  # noqa: S603 -- fixed argument list
+        [
+            *("docker", "exec", "--user", "paperless", "--workdir", "/usr/src/paperless/src"),
+            container[0],
+            *("python", "manage.py", "document_index", "reindex", "--no-progress-bar"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rebuilt.returncode == 0, f"document_index reindex failed: {rebuilt.stderr[-500:]}"
