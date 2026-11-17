@@ -105,6 +105,6 @@ async def test_the_environment_selects_the_tools_over_stdio(stack: Stack) -> Non
         *("list_document_versions", "list_trash", "list_share_links", "list_share_bundles"),
         *("list_users", "list_groups", "list_workflows", "get_workflow"),
     }
-    listings |= mail
+    listings |= mail | {"paperless_api_get"}
     assert read_only == (default - writing) | listings | views
     assert trimmed == default - {"get_task", "list_taxonomy"}
