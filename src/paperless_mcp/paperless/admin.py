@@ -64,6 +64,7 @@ if TYPE_CHECKING:
 USERS: Final = "/api/users/"
 GROUPS: Final = "/api/groups/"
 CONFIG: Final = "/api/config/"
+UI_SETTINGS: Final = "/api/ui_settings/"
 LOGS: Final = "/api/logs/"
 TASKS: Final = "/api/tasks/"
 BULK_DOWNLOAD: Final = "/api/documents/bulk_download/"
@@ -207,6 +208,14 @@ class _User(BaseModel):
     user_permissions: list[str]
     date_joined: datetime
     is_mfa_enabled: bool
+
+
+class _Me(BaseModel):
+    id: int
+
+
+class _UiSettings(BaseModel):
+    user: _Me
 
 
 class _Group(BaseModel):
@@ -380,6 +389,10 @@ class PaperlessAdminReader:
                 return _user(await self._client.get(f"{USERS}{user_id}/", _User))
             except NotFound:
                 raise unseen_user(user_id) from None
+
+    async def get_current_user_id(self) -> int:
+        """See ``AdminReader.get_current_user_id``: the ui settings, which carry the user."""
+        return (await self._client.get(UI_SETTINGS, _UiSettings)).user.id
 
     async def get_group(self, group_id: int) -> GroupRecord:
         """See ``AdminReader.get_group``."""

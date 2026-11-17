@@ -1088,6 +1088,15 @@ class AdminReader(Protocol):
         """
         ...
 
+    async def get_current_user_id(self) -> int:
+        """The id of the user the credential belongs to, from one light request that reads only it.
+
+        Raises:
+            PermissionDenied: The user lacks the ``view_uisettings`` permission.
+            PaperlessMcpError: Paperless did not answer (any upstream error).
+        """
+        ...
+
     async def get_group(self, group_id: int) -> GroupRecord:
         """One group with the permission codenames it grants.
 

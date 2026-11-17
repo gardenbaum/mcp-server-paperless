@@ -353,9 +353,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 ),
                 mail=MailService(adapters.mail, adapters.mail_writes, taxonomy, adapters.instance),
                 workflows=WorkflowService(adapters.workflows, adapters.workflow_writes, taxonomy),
-                accounts=AccountAdmin(
-                    adapters.management, adapters.management_writes, taxonomy, adapters.instance
-                ),
+                accounts=AccountAdmin(adapters.management, adapters.management_writes, taxonomy),
                 system=SystemAdmin(
                     adapters.management,
                     adapters.management_writes,

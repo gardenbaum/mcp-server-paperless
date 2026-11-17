@@ -27,6 +27,7 @@ GET_USER, GET_GROUP = "AdminReader.get_user", "AdminReader.get_group"
 GET_CONFIG, LIST_LOGS = "AdminReader.get_config", "AdminReader.list_logs"
 GET_LOG, LIST_TASKS = "AdminReader.get_log", "AdminReader.list_tasks"
 DOWNLOAD = "AdminReader.download_documents"
+CURRENT = "AdminReader.get_current_user_id"
 CREATE_USER, UPDATE_USER = "AdminWriter.create_user", "AdminWriter.update_user"
 DELETE_USER = "AdminWriter.delete_user"
 CREATE_GROUP, UPDATE_GROUP = "AdminWriter.create_group", "AdminWriter.update_group"
@@ -535,3 +536,12 @@ async def test_unknown_or_hidden_documents_are_refused(backend: Backend) -> None
             [hidden], content="archive", compression="none", follow_formatting=False, max_bytes=9
         )
     assert raised.value.hint
+
+
+@pytest.mark.contract(CURRENT)
+async def test_the_account_of_the_credential_is_identified(backend: Backend) -> None:
+    overview = await backend.admin.instance.get_overview()
+    assert overview.current_user is not None
+
+    assert await backend.admin.management.get_current_user_id() == overview.current_user.id
+    assert await backend.reader.management.get_current_user_id() != overview.current_user.id

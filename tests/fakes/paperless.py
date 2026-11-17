@@ -2866,6 +2866,13 @@ class FakePaperless:
         self._need("view_user", VIEW_USER)
         return self._user_record(self._find_user(user_id))
 
+    async def get_current_user_id(self) -> int:
+        """`AdminReader.get_current_user_id` (UiSettingsView: needs `view_uisettings`)."""
+        if not self.user.has("view_uisettings"):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
+        return self.user.id
+
     async def get_group(self, group_id: int) -> GroupRecord:
         """`AdminReader.get_group` (GroupViewSet retrieve)."""
         self._need("view_group", VIEW_GROUP)

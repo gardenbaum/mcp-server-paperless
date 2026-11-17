@@ -1048,3 +1048,17 @@ async def test_a_group_update_sends_only_what_is_set(make_client: ClientFactory)
     _ = await writer.update_group(3, GroupValues(name="x", permissions=None))
 
     assert [sent[2] for sent in server.sent] == [{"name": "x"}, {"name": "x"}]
+
+
+async def test_the_server_account_is_read_from_the_ui_settings(make_client: ClientFactory) -> None:
+    body: Json = {
+        "user": {"id": 2, "username": "admin", "is_staff": True, "is_superuser": True},
+        "settings": {},
+        "permissions": [],
+    }
+    server = Recording(ok(body))
+
+    found = await PaperlessAdminReader(make_client(server)).get_current_user_id()
+
+    assert found == 2
+    assert server.sent == [("GET", "/api/ui_settings/", None, {})]

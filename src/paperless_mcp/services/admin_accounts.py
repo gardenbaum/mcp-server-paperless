@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
     from paperless_mcp.domain.admin import GroupRecord, UserRecord
     from paperless_mcp.domain.documents import NameOrId
-    from paperless_mcp.domain.ports import AdminReader, AdminWriter, InstanceReader
+    from paperless_mcp.domain.ports import AdminReader, AdminWriter
     from paperless_mcp.services.principals import PrincipalKind
     from paperless_mcp.services.taxonomy import TaxonomyResolver
 
@@ -49,6 +49,14 @@ STAFF: Final = "staff status, which allows them to read the logs"
 SELF_MESSAGE: Final = (
     "{name} is the account this server signs in with; {what} would lock this server out of "
     "Paperless."
+)
+CANNOT_TELL: Final = (
+    "Could not find out which account this server signs in with, so nothing that could lock "
+    "it out was done."
+)
+CANNOT_TELL_HINT: Final = (
+    "Try again in a moment; changes that cannot affect the server's own account (names, "
+    "e-mail, groups, permissions) are not held back."
 )
 SELF_HINT: Final = "Ask another administrator to do this in the Paperless web UI."
 NOTHING_GIVEN: Final = "Nothing to change: no field was given."
@@ -66,28 +74,27 @@ class AccountAdmin:
     """Reads and changes users and groups, with the confirmations decision-26 asks for."""
 
     def __init__(
-        self,
-        reader: AdminReader,
-        writer: AdminWriter,
-        taxonomy: TaxonomyResolver,
-        instance: InstanceReader,
+        self, reader: AdminReader, writer: AdminWriter, taxonomy: TaxonomyResolver
     ) -> None:
-        """Read and write through the ports; resolve names with ``taxonomy``.
-
-        ``instance`` tells which Paperless user the server signs in as.
-        """
+        """Read and write through the ports; resolve names with ``taxonomy``."""
         self._reader: AdminReader = reader
         self._writer: AdminWriter = writer
         self._taxonomy: TaxonomyResolver = taxonomy
-        self._instance: InstanceReader = instance
 
-    async def _caller(self) -> int | None:
-        """The id of the Paperless user of the call; None if Paperless does not say."""
+    async def _caller(self) -> int:
+        """The id of the account this server signs in with; it fails closed.
+
+        Called only before a change that could lock that account out. If Paperless does not
+        say who it is, whatever the reason (a timeout, a 5xx, a missing permission), the change
+        is refused: the server could not undo it.
+
+        Raises:
+            Validation: The account cannot be determined.
+        """
         try:
-            current = (await self._instance.get_overview()).current_user
+            return await self._reader.get_current_user_id()
         except PaperlessMcpError:
-            return None
-        return None if current is None else current.id
+            raise Validation(CANNOT_TELL, hint=CANNOT_TELL_HINT) from None
 
     async def _one(self, kind: PrincipalKind, value: NameOrId) -> int:
         found = await resolve_principals(self._taxonomy, kind, [value])
@@ -248,10 +255,7 @@ class AccountAdmin:
             password is None and group_ids is None and permissions is None
         ):
             raise Validation(NOTHING_GIVEN, hint="Pass at least one field to change.")
-        if await self._caller() == number and (
-            (is_superuser is False and current.is_superuser)
-            or (is_active is False and current.is_active)
-        ):
+        if (is_superuser is False or is_active is False) and await self._caller() == number:
             what = "removing its superuser status or deactivating it"
             message = SELF_MESSAGE.format(name=who, what=what)
             raise Validation(message, hint=SELF_HINT)

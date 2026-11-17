@@ -14,7 +14,12 @@ from fakes.paperless import FakePaperless, FakeState, FakeTask, seeded
 from pydantic import SecretStr
 
 from paperless_mcp.domain.admin import GroupValues, NotText, UserValues
-from paperless_mcp.domain.errors import ConfirmationRequired, PaperlessMcpError, Validation
+from paperless_mcp.domain.errors import (
+    ConfirmationRequired,
+    PaperlessMcpError,
+    UpstreamTimeout,
+    Validation,
+)
 from paperless_mcp.paperless.auth import StaticTokenProvider
 from paperless_mcp.services.admin_accounts import AccountAdmin
 from paperless_mcp.services.admin_system import (
@@ -34,7 +39,6 @@ if TYPE_CHECKING:
         Compression,
         UserRecord,
     )
-    from paperless_mcp.domain.instance import InstanceOverview
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-26")]
 READER_ID, GROUP = 3, 1
@@ -52,7 +56,7 @@ class Setup:
         self.taxonomy: TaxonomyResolver = TaxonomyResolver(
             self.fake, StaticTokenProvider("t"), ttl=3600.0
         )
-        self.accounts: AccountAdmin = AccountAdmin(self.fake, self.fake, self.taxonomy, self.fake)
+        self.accounts: AccountAdmin = AccountAdmin(self.fake, self.fake, self.taxonomy)
         self.system: SystemAdmin = SystemAdmin(self.fake, self.fake, max_bytes=10**6)
 
 
@@ -274,27 +278,6 @@ async def test_the_group_refusals_are_exact() -> None:
         )
         + tail
     )
-
-
-class NoCurrentUser(FakePaperless):
-    @override
-    async def get_overview(self) -> InstanceOverview:
-        found = await super().get_overview()
-        return found.model_copy(update={"current_user": None})
-
-
-async def test_an_overview_without_a_current_user_protects_nobody() -> None:
-    setup = Setup()
-    service = AccountAdmin(
-        setup.fake,
-        setup.fake,
-        setup.taxonomy,
-        NoCurrentUser(setup.state, user=ADMIN[0]),
-    )
-
-    outcome = await service.update_user("e2e-reader", is_active=False, confirm=True)
-
-    assert not outcome.user.is_active
 
 
 # --- system: configuration
@@ -568,7 +551,7 @@ async def test_an_empty_email_reaches_the_port_as_no_address() -> None:
         replace(u, email="r@x.org") if u.id == READER_ID else u for u in setup.state.users
     ]
     spy = UserSpy(setup.state, user=ADMIN[0], allow_writes=True)
-    service = AccountAdmin(spy, spy, setup.taxonomy, spy)
+    service = AccountAdmin(spy, spy, setup.taxonomy)
 
     _ = await service.update_user(READER_ID, email="")
 
@@ -609,3 +592,58 @@ async def test_the_oldest_line_that_would_overflow_by_one_is_dropped() -> None:
     found = await setup.system.get_log("mail", lines=MAX_LOG_LINES)
 
     assert (found.returned_lines, found.truncated) == (199, True)
+
+
+# --- fail closed when the server's own account cannot be determined
+
+
+class UnknownCaller(FakePaperless):
+    """A fake that cannot say who the server is: its identity call fails."""
+
+    @override
+    async def get_current_user_id(self) -> int:
+        message = "Paperless did not respond in time."
+        raise UpstreamTimeout(message)
+
+
+CANNOT_TELL = (
+    "Could not find out which account this server signs in with, so nothing that could lock "
+    "it out was done. Hint: Try again in a moment; changes that cannot affect the server's own "
+    "account (names, e-mail, groups, permissions) are not held back."
+)
+
+
+async def test_without_the_identity_a_deletion_or_lockout_is_refused() -> None:
+    setup = Setup()
+    service = AccountAdmin(
+        UnknownCaller(setup.state, user=ADMIN[0], allow_writes=True),
+        setup.fake,
+        setup.taxonomy,
+    )
+
+    assert await failure(service.delete_user("e2e-reader", confirm=True), Validation) == CANNOT_TELL
+    for lockout in ({"is_active": False}, {"is_superuser": False}):
+        assert (
+            await failure(
+                service.update_user("e2e-reader", confirm=True, **lockout),  # pyright: ignore[reportArgumentType] -- flags of the loop
+                Validation,
+            )
+            == CANNOT_TELL
+        )
+    assert [u.username for u in setup.state.users] == ["admin", "e2e-reader", "e2e-blind"]
+    assert next(u for u in setup.state.users if u.id == READER_ID).is_active
+
+
+async def test_without_the_identity_changes_that_cannot_lock_out_still_work() -> None:
+    setup = Setup()
+    service = AccountAdmin(
+        UnknownCaller(setup.state, user=ADMIN[0], allow_writes=True),
+        setup.fake,
+        setup.taxonomy,
+    )
+
+    outcome = await service.update_user(
+        "e2e-reader", first_name="Rita", is_active=True, is_superuser=True, confirm=True
+    )
+
+    assert (outcome.user.first_name, outcome.user.is_superuser) == ("Rita", True)

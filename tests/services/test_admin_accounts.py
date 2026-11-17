@@ -6,7 +6,7 @@ group 1 `e2e-group`.
 """
 
 from dataclasses import replace
-from typing import TYPE_CHECKING, final, override
+from typing import final
 
 import pytest
 from fakes.accounts import ADMIN
@@ -19,7 +19,6 @@ from paperless_mcp.domain.errors import (
     Ambiguous,
     ConfirmationRequired,
     NotFound,
-    PaperlessMcpError,
     PermissionDenied,
     Validation,
 )
@@ -35,10 +34,6 @@ pytestmark = [
 ]
 ADMIN_ID, READER_ID, GROUP = 2, 3, 1
 PASSWORD = "Sup3r-Secret-pw!"
-
-
-if TYPE_CHECKING:
-    from paperless_mcp.domain.instance import InstanceOverview
 
 
 @final
@@ -57,7 +52,7 @@ class Setup:
         self.taxonomy: TaxonomyResolver = TaxonomyResolver(
             self.fake, StaticTokenProvider("t"), ttl=3600.0
         )
-        self.service: AccountAdmin = AccountAdmin(self.fake, self.fake, self.taxonomy, self.fake)
+        self.service: AccountAdmin = AccountAdmin(self.fake, self.fake, self.taxonomy)
 
     def user(self, number: int) -> FakeUser:
         [found] = [u for u in self.state.users if u.id == number]
@@ -508,23 +503,3 @@ async def test_granting_on_top_of_what_a_group_has_names_only_the_new_permission
 
     assert "the permissions add_tag" in message
     assert "away" not in message
-
-
-@final
-class Anonymous(FakePaperless):
-    """A fake whose overview fails: Paperless does not say who the server is."""
-
-    @override
-    async def get_overview(self) -> InstanceOverview:
-        message = "no overview"
-        raise PaperlessMcpError(message)
-
-
-async def test_when_paperless_does_not_say_who_the_server_is_nothing_is_protected() -> None:
-    setup = Setup()
-    blind = Anonymous(setup.state, user=ADMIN[0], allow_writes=True)
-    service = AccountAdmin(setup.fake, setup.fake, setup.taxonomy, blind)
-
-    outcome = await service.update_user("e2e-reader", is_active=False, confirm=True)
-
-    assert not outcome.user.is_active
