@@ -33,6 +33,7 @@ from e2e.helpers import (
     consume,
     consume_text,
     pdf_pages,
+    rebuild_search_index,
     results,
 )
 from fakes.accounts import ADMIN, BLIND, READER
@@ -48,12 +49,19 @@ from fakes.paperless import (
 
 from paperless_mcp.domain.bulk import ObjectPermissions
 from paperless_mcp.domain.ports import (  # noqa: TC001 -- Ports' annotations are introspected
+    AdminReader,
+    AdminWriter,
     AiReader,
     BulkWriter,
     DocumentReader,
     DocumentWriter,
     InstanceReader,
+    MailReader,
+    MailWriter,
     PdfWriter,
+    PermissionReader,
+    PermissionWriter,
+    RawReader,
     SharingReader,
     SharingWriter,
     TaskReader,
@@ -63,19 +71,26 @@ from paperless_mcp.domain.ports import (  # noqa: TC001 -- Ports' annotations ar
     TrashWriter,
     ViewReader,
     ViewWriter,
+    WorkflowReader,
+    WorkflowWriter,
 )
+from paperless_mcp.paperless.admin import PaperlessAdminReader, PaperlessAdminWriter
 from paperless_mcp.paperless.ai import PaperlessAiReader
 from paperless_mcp.paperless.auth import StaticTokenProvider
 from paperless_mcp.paperless.bulk import PaperlessBulkWriter
 from paperless_mcp.paperless.client import PaperlessClient, RetryPolicy
 from paperless_mcp.paperless.documents import PaperlessDocumentReader, PaperlessDocumentWriter
 from paperless_mcp.paperless.instance import PaperlessInstanceReader
+from paperless_mcp.paperless.mail import PaperlessMailReader, PaperlessMailWriter
 from paperless_mcp.paperless.pdf import PaperlessPdfWriter
+from paperless_mcp.paperless.permissions import PaperlessPermissionReader, PaperlessPermissionWriter
+from paperless_mcp.paperless.raw import PaperlessRawReader
 from paperless_mcp.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
 from paperless_mcp.paperless.tasks import PaperlessTaskReader
 from paperless_mcp.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
 from paperless_mcp.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
 from paperless_mcp.paperless.views import PaperlessViewReader, PaperlessViewWriter
+from paperless_mcp.paperless.workflows import PaperlessWorkflowReader, PaperlessWorkflowWriter
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
@@ -91,6 +106,9 @@ SCRATCH_TAG = "contract-tag-"
 SCRATCH_ITEM = "contract-item-"
 # The same for saved views, which Paperless cannot filter by name: the cleanup lists them.
 SCRATCH_VIEW = "contract-view-"
+# The same for workflows. A live workflow acts on documents other tests consume, so the tests make
+# them disabled or with a trigger nothing matches.
+SCRATCH_WORKFLOW = "contract-workflow-"
 SCRATCH_PATHS = (
     "/api/tags/",
     "/api/correspondents/",
@@ -116,9 +134,18 @@ class Ports:
     view_writes: ViewWriter
     trash: TrashReader
     trash_writes: TrashWriter
+    permissions: PermissionReader
+    permission_writes: PermissionWriter
     pdf_writes: PdfWriter
     sharing: SharingReader
     sharing_writes: SharingWriter
+    mail: MailReader
+    mail_writes: MailWriter
+    raw: RawReader
+    workflows: WorkflowReader
+    workflow_writes: WorkflowWriter
+    management: AdminReader
+    management_writes: AdminWriter
 
 
 def fake_ports(state: FakeState, user: str) -> Ports:
@@ -138,9 +165,18 @@ def fake_ports(state: FakeState, user: str) -> Ports:
         view_writes=writer,
         trash=fake,
         trash_writes=writer,
+        permissions=fake,
+        permission_writes=writer,
         pdf_writes=writer,
         sharing=fake,
         sharing_writes=writer,
+        mail=fake,
+        mail_writes=writer,
+        raw=fake,
+        workflows=fake,
+        workflow_writes=writer,
+        management=fake,
+        management_writes=writer,
     )
 
 
@@ -159,9 +195,18 @@ def live_ports(client: PaperlessClient) -> Ports:
         view_writes=PaperlessViewWriter(client),
         trash=PaperlessTrashReader(client),
         trash_writes=PaperlessTrashWriter(client),
+        permissions=PaperlessPermissionReader(client),
+        permission_writes=PaperlessPermissionWriter(client),
         pdf_writes=PaperlessPdfWriter(client),
         sharing=PaperlessSharingReader(client),
         sharing_writes=PaperlessSharingWriter(client),
+        mail=PaperlessMailReader(client),
+        mail_writes=PaperlessMailWriter(client),
+        raw=PaperlessRawReader(client),
+        workflows=PaperlessWorkflowReader(client),
+        workflow_writes=PaperlessWorkflowWriter(client),
+        management=PaperlessAdminReader(client),
+        management_writes=PaperlessAdminWriter(client),
     )
 
 
@@ -186,7 +231,12 @@ class Restricted(Protocol):
     """
 
     def __call__(
-        self, permissions: frozenset[str], *, view: Sequence[int] = (), change: Sequence[int] = ()
+        self,
+        permissions: frozenset[str],
+        *,
+        view: Sequence[int] = (),
+        change: Sequence[int] = (),
+        name: str | None = None,
     ) -> Ports: ...
 
 
@@ -250,6 +300,10 @@ class Backend:
     # The Paperless release behind the backend: the fake's, or the one the live stack runs
     # (`just e2e-latest` runs the suite against a newer release than the pinned one).
     expected_version: str
+    # Makes the full-text index hold exactly one entry per current document (live: waits for the
+    # index-writing tasks, then rebuilds it; the fake has no stale entries). Call it right before
+    # a more-like-this search: see `rebuild_search_index` for why the result can be empty without.
+    rebuild_search_index: Callable[[], None]
 
 
 def fake_consume(state: FakeState) -> Consume:
@@ -314,11 +368,15 @@ def fake_share(state: FakeState) -> Share:
 
 def fake_restricted(state: FakeState) -> Restricted:
     def restricted(
-        permissions: frozenset[str], *, view: Sequence[int] = (), change: Sequence[int] = ()
+        permissions: frozenset[str],
+        *,
+        view: Sequence[int] = (),
+        change: Sequence[int] = (),
+        name: str | None = None,
     ) -> Ports:
         user = FakeUser(
             id=max(u.id for u in state.users) + 1,
-            username=f"contract-user-{uuid.uuid4().hex[:12]}",
+            username=name or f"contract-user-{uuid.uuid4().hex[:12]}",
             permissions=permissions,
         )
         state.users.append(user)
@@ -420,6 +478,7 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
         in_trash=fake_in_trash(state),
         track_document=lambda _document: None,
         expected_version=VERSION,
+        rebuild_search_index=lambda: None,
     )
 
 
@@ -523,9 +582,13 @@ def live_restricted(
     """Live `Restricted`: a temporary user whose id goes on `users` for the finaliser."""
 
     def restricted(
-        permissions: frozenset[str], *, view: Sequence[int] = (), change: Sequence[int] = ()
+        permissions: frozenset[str],
+        *,
+        view: Sequence[int] = (),
+        change: Sequence[int] = (),
+        name: str | None = None,
     ) -> Ports:
-        name = f"contract-user-{uuid.uuid4().hex[:12]}"
+        name = name or f"contract-user-{uuid.uuid4().hex[:12]}"
         password = f"pw-{uuid.uuid4().hex}"
         body = {"username": name, "password": password, "user_permissions": sorted(permissions)}
         created = stack.admin.post("/api/users/", json=body).raise_for_status()
@@ -552,6 +615,37 @@ def live_restricted(
     return restricted
 
 
+def every_row(stack: Stack, path: str) -> list[dict[str, object]]:
+    """Every row of a paged list, over all pages."""
+    rows: list[dict[str, object]] = []
+    page = 1
+    while True:
+        response = stack.admin.get(path, params={"page_size": 100, "page": page})
+        body = cast("dict[str, object]", response.json())
+        rows.extend(results(response))
+        if not body.get("next"):
+            return rows
+        page += 1
+
+
+def drop_orphaned_workflow_parts(stack: Stack) -> None:
+    """Delete the triggers and actions no workflow holds.
+
+    Paperless 3.4.2 keeps them as objects of their own when their workflow is deleted or replaces
+    them, and lists them under /api/workflow_triggers/ and /api/workflow_actions/ for good.
+    """
+    held = every_row(stack, "/api/workflows/")
+    for part in ("triggers", "actions"):
+        used = {
+            cast("dict[str, object]", item)["id"]
+            for row in held
+            for item in cast("list[object]", row[part])
+        }
+        for row in every_row(stack, f"/api/workflow_{part}/"):
+            if row["id"] not in used:
+                _ = stack.admin.delete(f"/api/workflow_{part}/{row['id']}/")
+
+
 def cleanup(stack: Stack, documents: list[int], users: list[int]) -> None:
     """Delete what a live test made: documents, users and scratch objects (SCRATCH_*)."""
     delete_and_empty_trash(stack, documents)
@@ -561,6 +655,11 @@ def cleanup(stack: Stack, documents: list[int], users: list[int]) -> None:
     for row in results(views):
         if str(row["name"]).startswith(SCRATCH_VIEW):
             _ = stack.admin.delete(f"/api/saved_views/{row['id']}/")
+    workflows = stack.admin.get("/api/workflows/", params={"page_size": 100})
+    for row in results(workflows):
+        if str(row["name"]).startswith(SCRATCH_WORKFLOW):
+            _ = stack.admin.delete(f"/api/workflows/{row['id']}/")
+    drop_orphaned_workflow_parts(stack)
     for path in SCRATCH_PATHS:
         for prefix in (SCRATCH_TAG, SCRATCH_ITEM):
             found = stack.admin.get(path, params={"name__istartswith": prefix})
@@ -635,6 +734,7 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
                 in_trash=lambda document_id: live_in_trash(stack, document_id),
                 track_document=created.append,
                 expected_version=EXPECTED_VERSION,
+                rebuild_search_index=lambda: rebuild_search_index(stack.admin),
             )
     finally:
         cleanup(stack, created, users)

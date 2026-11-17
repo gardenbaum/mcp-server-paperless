@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 
     from fastmcp import Context
 
+    from paperless_mcp.services.admin_accounts import AccountAdmin
+    from paperless_mcp.services.admin_system import SystemAdmin
     from paperless_mcp.services.ai import AiService
     from paperless_mcp.services.bulk_documents import BulkDocumentEditor
     from paperless_mcp.services.bulk_taxonomy import BulkTaxonomyEditor
@@ -30,8 +32,11 @@ if TYPE_CHECKING:
     from paperless_mcp.services.documents import DocumentService
     from paperless_mcp.services.files import FileService
     from paperless_mcp.services.instance import InstanceService
+    from paperless_mcp.services.mail import MailService
     from paperless_mcp.services.notes import NoteService
     from paperless_mcp.services.pdf import PdfService
+    from paperless_mcp.services.permissions import PermissionService
+    from paperless_mcp.services.raw import RawApiService
     from paperless_mcp.services.removal import DocumentRemoval
     from paperless_mcp.services.sharing import SharingService
     from paperless_mcp.services.tasks import TaskService
@@ -42,13 +47,30 @@ if TYPE_CHECKING:
     from paperless_mcp.services.version_uploads import VersionUploadService
     from paperless_mcp.services.versions import VersionService
     from paperless_mcp.services.views import ViewService
+    from paperless_mcp.services.workflows import WorkflowService
 
 # Every toolset; each tool carries exactly one of them as its only tag.
-TOOLSETS: Final = frozenset({"core", "ai", "bulk", "versions", "views", "trash", "pdf", "sharing"})
+TOOLSETS: Final = frozenset(
+    {
+        "core",
+        "ai",
+        "bulk",
+        "versions",
+        "views",
+        "trash",
+        "pdf",
+        "sharing",
+        "permissions",
+        "mail",
+        "raw",
+        "workflows",
+        "admin",
+    }
+)
 
 # Tools whose result is an image or a file as MCP content blocks, with no output schema and no
 # structured content (decision-11); every other tool has a typed return model (decision-4).
-MEDIA_TOOLS: Final = frozenset({"get_document_thumbnail", "download_document"})
+MEDIA_TOOLS: Final = frozenset({"get_document_thumbnail", "download_document", "bulk_download"})
 
 # The toolset of every tool, keyed by tool name. It must equal each tool's tag (registry test); the
 # server uses it to refuse a configuration that leaves no tool before it contacts Paperless.
@@ -102,6 +124,44 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "rebuild_share_bundle": "sharing",
     "delete_share_bundle": "sharing",
     "email_documents": "sharing",
+    "set_permissions": "permissions",
+    "list_users": "permissions",
+    "list_groups": "permissions",
+    "list_mail_accounts": "mail",
+    "get_mail_account": "mail",
+    "create_mail_account": "mail",
+    "update_mail_account": "mail",
+    "delete_mail_account": "mail",
+    "test_mail_account": "mail",
+    "process_mail_account": "mail",
+    "list_mail_rules": "mail",
+    "get_mail_rule": "mail",
+    "create_mail_rule": "mail",
+    "update_mail_rule": "mail",
+    "delete_mail_rule": "mail",
+    "list_processed_mail": "mail",
+    "paperless_api_get": "raw",
+    "list_workflows": "workflows",
+    "get_workflow": "workflows",
+    "create_workflow": "workflows",
+    "update_workflow": "workflows",
+    "delete_workflow": "workflows",
+    "get_user": "admin",
+    "create_user": "admin",
+    "update_user": "admin",
+    "delete_user": "admin",
+    "get_group": "admin",
+    "create_group": "admin",
+    "update_group": "admin",
+    "delete_group": "admin",
+    "get_app_config": "admin",
+    "update_app_config": "admin",
+    "list_logs": "admin",
+    "get_log": "admin",
+    "list_tasks": "admin",
+    "acknowledge_tasks": "admin",
+    "run_task": "admin",
+    "bulk_download": "admin",
 }
 
 # Toolsets that need a Paperless capability, mapped to it (only "ai" so far); the startup probe
@@ -406,6 +466,109 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=False,
         open_world_hint=True,
     ),
+    # Raw (decision-25): one GET to the configured Paperless, so the world stays closed.
+    "paperless_api_get": ToolAnnotations(
+        title="Read a Paperless API path",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Mail (decision-18). Passwords are write-only and never returned. Reading is read-only.
+    "list_mail_accounts": ToolAnnotations(
+        title="List mail accounts",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_mail_account": ToolAnnotations(
+        title="Get mail account",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "list_mail_rules": ToolAnnotations(
+        title="List mail rules",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_mail_rule": ToolAnnotations(
+        title="Get mail rule",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "list_processed_mail": ToolAnnotations(
+        title="List processed mail",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Storing an account contacts nobody. Updating one needs confirm only to point it at another
+    # server or turn off encryption, so it stays non-destructive and idempotent.
+    "create_mail_account": ToolAnnotations(
+        title="Create mail account",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+    "update_mail_account": ToolAnnotations(
+        title="Update mail account",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Destructive (decision-6): the rules and their processed-mail records go with an account.
+    "delete_mail_account": ToolAnnotations(
+        title="Delete mail account",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Logs in to the mail server with the saved password and changes nothing, but it is not
+    # read-only: Paperless asks for the change permission, and the tool contacts an outside server.
+    "test_mail_account": ToolAnnotations(
+        title="Test mail account",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=True,
+    ),
+    # Open world and destructive: a fetch imports documents and, depending on the rules, deletes
+    # or moves mail on the server, which cannot be undone from here. Needs confirm (decision-18).
+    "process_mail_account": ToolAnnotations(
+        title="Fetch mail now",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=True,
+    ),
+    # A rule stores what a later fetch will do; the mail server is touched then, not now. Rules
+    # that delete or move mail need confirm all the same (decision-18).
+    "create_mail_rule": ToolAnnotations(
+        title="Create mail rule",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+    "update_mail_rule": ToolAnnotations(
+        title="Update mail rule",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "delete_mail_rule": ToolAnnotations(
+        title="Delete mail rule",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     "list_document_versions": ToolAnnotations(
         title="List document versions",
         read_only_hint=True,
@@ -491,6 +654,178 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=False,
         open_world_hint=False,
     ),
+    "list_users": ToolAnnotations(
+        title="List users",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "list_groups": ToolAnnotations(
+        title="List groups",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Admin (decision-26). Reads change nothing. Creating a user or group adds a record; a
+    # superuser or staff user still needs confirm. Updates, deletions and every change of the
+    # configuration can take access away or redirect document text, so they are destructive
+    # and need confirm; acknowledging only hides a finished task from the new ones.
+    "get_user": ToolAnnotations(
+        title="Get user",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "create_user": ToolAnnotations(
+        title="Create user",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+    "update_user": ToolAnnotations(
+        title="Update user",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "delete_user": ToolAnnotations(
+        title="Delete user",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_group": ToolAnnotations(
+        title="Get group",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "create_group": ToolAnnotations(
+        title="Create group",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+    "update_group": ToolAnnotations(
+        title="Update group",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "delete_group": ToolAnnotations(
+        title="Delete group",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_app_config": ToolAnnotations(
+        title="Get application configuration",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "update_app_config": ToolAnnotations(
+        title="Update application configuration",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=True,
+    ),
+    "list_logs": ToolAnnotations(
+        title="List logs",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_log": ToolAnnotations(
+        title="Get log",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "list_tasks": ToolAnnotations(
+        title="List tasks",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "acknowledge_tasks": ToolAnnotations(
+        title="Acknowledge tasks",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Starts work on the server; not destructive (a sanity check reads, training and indexing
+    # need confirm). llm_index sends document text to the AI service: open world.
+    "run_task": ToolAnnotations(
+        title="Run task",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=True,
+    ),
+    "bulk_download": ToolAnnotations(
+        title="Download documents as a ZIP archive",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Destructive (decision-6, decision-19): granting access cannot be taken back and replacing
+    # grants or changing an owner takes it away, so every change needs confirm. Repeating a call
+    # leaves the same state (idempotent).
+    "set_permissions": ToolAnnotations(
+        title="Set permissions",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "list_workflows": ToolAnnotations(
+        title="List workflows",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_workflow": ToolAnnotations(
+        title="Get workflow",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # A workflow runs unattended on every matching document and can send documents out (e-mail,
+    # webhook): open world. Not destructive in itself (decision-21): trashing, removing and the
+    # outward actions need confirm while the workflow is enabled, plain filing does not. Creating
+    # is not idempotent (every call makes another workflow); replacing the lists is.
+    "create_workflow": ToolAnnotations(
+        title="Create workflow",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=True,
+    ),
+    "update_workflow": ToolAnnotations(
+        title="Update workflow",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=True,
+    ),
+    # Destructive (decision-6): a workflow has no trash. No document is touched. Deleting again
+    # leaves the state as it is (idempotent), though the second call fails.
+    "delete_workflow": ToolAnnotations(
+        title="Delete workflow",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
 }
 
 logger = logging.getLogger(__name__)
@@ -533,6 +868,8 @@ SERVICES: Final = "services"
 class Services:
     """The use cases tools call, one field per service; built by the composition root."""
 
+    workflows: WorkflowService
+
     instance: InstanceService
     taxonomy: TaxonomyResolver
     taxonomy_edits: TaxonomyEditor
@@ -550,8 +887,13 @@ class Services:
     bulk_taxonomy: BulkTaxonomyEditor
     views: ViewService
     trash: TrashService
+    permissions: PermissionService
     pdf: PdfService
     sharing: SharingService
+    mail: MailService
+    accounts: AccountAdmin
+    system: SystemAdmin
+    raw: RawApiService
 
 
 def services(ctx: Context) -> Services:

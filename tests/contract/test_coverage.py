@@ -20,12 +20,19 @@ from fakes.paperless import FakePaperless, is_write, write
 from contract.conftest import Ports, live_ports
 from paperless_mcp.domain import ports
 from paperless_mcp.domain.ports import (
+    AdminReader,
+    AdminWriter,
     AiReader,
     BulkWriter,
     DocumentReader,
     DocumentWriter,
     InstanceReader,
+    MailReader,
+    MailWriter,
     PdfWriter,
+    PermissionReader,
+    PermissionWriter,
+    RawReader,
     SharingReader,
     SharingWriter,
     TaskReader,
@@ -35,6 +42,8 @@ from paperless_mcp.domain.ports import (
     TrashWriter,
     ViewReader,
     ViewWriter,
+    WorkflowReader,
+    WorkflowWriter,
 )
 from paperless_mcp.paperless.auth import StaticTokenProvider
 from paperless_mcp.paperless.client import PaperlessClient, RetryPolicy
@@ -186,6 +195,15 @@ def test_ports_are_found_by_introspection() -> None:
         "pdf_writes": PdfWriter,
         "sharing": SharingReader,
         "sharing_writes": SharingWriter,
+        "permissions": PermissionReader,
+        "permission_writes": PermissionWriter,
+        "mail": MailReader,
+        "mail_writes": MailWriter,
+        "raw": RawReader,
+        "workflows": WorkflowReader,
+        "workflow_writes": WorkflowWriter,
+        "management": AdminReader,
+        "management_writes": AdminWriter,
     }
 
 

@@ -116,11 +116,13 @@ class Download:
     Attributes:
         content: The whole body, or empty if it is ``truncated``.
         headers: The response headers.
+        status: The HTTP status; redirects are not followed, so it can be a 3xx.
         truncated: The body is larger than the limit; the rest was not read.
     """
 
     content: bytes
     headers: httpx2.Headers
+    status: int
     truncated: bool
 
 
@@ -135,6 +137,21 @@ class Streamed:
 
     content: bytes
     truncated: bool
+
+
+# The most bytes of an error answer that are read to describe it (they are only messages).
+ERROR_BODY_LIMIT = 64 * 1024
+
+
+async def _with_capped_body(response: httpx2.Response) -> httpx2.Response:
+    """``response`` with at most ``ERROR_BODY_LIMIT`` bytes of its streamed body read."""
+    body = b""
+    async for chunk in response.aiter_bytes():
+        body += chunk
+        if len(body) >= ERROR_BODY_LIMIT:
+            body = body[:ERROR_BODY_LIMIT]
+            break
+    return httpx2.Response(response.status_code, content=body)
 
 
 class PaperlessClient:
@@ -205,7 +222,7 @@ class PaperlessClient:
         return response
 
     async def download(
-        self, path: str, *, params: Params | None = None, max_bytes: int
+        self, path: str, *, params: Params | None = None, max_bytes: int, retry: bool = True
     ) -> Download:
         """GET ``path`` and read at most ``max_bytes`` bytes of the body.
 
@@ -216,19 +233,20 @@ class PaperlessClient:
             PaperlessMcpError: The matching subclass for an error status or a failed transport.
         """
         outgoing = self._build("GET", path, params=params)
-        response = await self._exchange(outgoing, stream=True)
+        response = await self._exchange(outgoing, stream=True, retry=retry)
         try:
             if response.is_error:
-                _ = await response.aread()
-                raise error_for_status(response)
+                raise error_for_status(await _with_capped_body(response))
             received: list[bytes] = []
             total = 0
             async for chunk in response.aiter_bytes():
                 received.append(chunk)
                 total += len(chunk)
                 if total > max_bytes:
-                    return Download(b"", response.headers, truncated=True)
-            return Download(b"".join(received), response.headers, truncated=False)
+                    return Download(b"", response.headers, response.status_code, truncated=True)
+            return Download(
+                b"".join(received), response.headers, response.status_code, truncated=False
+            )
         except httpx2.TransportError as error:
             # Not retried: the status was fine and the connection broke while the body came in;
             # the caller can ask again, and a retry would read the file from the start.
@@ -236,6 +254,19 @@ class PaperlessClient:
             raise error_for_transport(error) from error
         finally:
             await response.aclose()
+
+    @property
+    def base_url(self) -> httpx2.URL:
+        """The configured Paperless URL every request goes below."""
+        return self._http.base_url
+
+    def target(self, path: str, params: Params | None = None) -> httpx2.URL:
+        """The URL a GET of ``path`` would go to.
+
+        Raises:
+            PaperlessMcpError: The request would not go below the configured Paperless.
+        """
+        return self._build("GET", path, params=params).url
 
     async def stream_post(
         self,
@@ -303,7 +334,7 @@ class PaperlessClient:
     ) -> httpx2.Request:
         name, value = self._credentials.current().header
         limit = self._upload_timeout if files else timeout
-        return self._http.build_request(
+        outgoing = self._http.build_request(
             method,
             path,
             params=params,
@@ -313,6 +344,17 @@ class PaperlessClient:
             headers={"Accept": ACCEPT, name: value},
             timeout=httpx2.USE_CLIENT_DEFAULT if limit is None else limit,
         )
+        # Whatever the path looks like, the request goes to the configured Paperless only and
+        # carries its credential nowhere else (decision-7, decision-25).
+        base = self._http.base_url
+        target = outgoing.url
+        same_origin = (target.scheme, target.host, target.port, target.userinfo) == (
+            (base.scheme, base.host, base.port, base.userinfo)
+        )
+        if not same_origin or not target.raw_path.startswith(base.raw_path):
+            message = "The request would not go to the configured Paperless and was not sent."
+            raise PaperlessMcpError(message)
+        return outgoing
 
     async def _exchange(
         self, outgoing: httpx2.Request, *, stream: bool, retry: bool = True

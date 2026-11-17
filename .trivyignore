@@ -1,0 +1,4 @@
+# Reviewed exceptions to the image vulnerability scan (.github/workflows/image.yml, decision-28).
+# The scan fails on fixed HIGH and CRITICAL findings. An entry here needs the vulnerability id on
+# its own line, a comment above it with the reason it does not apply or cannot be fixed yet, and
+# an expiry so it is reviewed again: `CVE-0000-0000 exp:2027-01-31`. There are none today.

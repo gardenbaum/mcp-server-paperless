@@ -309,7 +309,14 @@ async def search_documents(  # noqa: PLR0913 -- one parameter per filter, descri
         ),
     ] = None,
     more_like_id: Annotated[
-        int | None, Field(description="Find documents similar to this document id.")
+        int | None,
+        Field(
+            description=(
+                "Find documents similar to this document id. On Paperless 3.4.2 an empty "
+                "result can be a search-index fault; the admin fixes it with "
+                "`document_index reindex`."
+            )
+        ),
     ] = None,
     title_contains: Annotated[
         str | None, Field(description="Only titles containing this text, ignoring case.")

@@ -12,9 +12,23 @@ read-only tests of tools, find writes by that name alone.
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
+    from collections.abc import Collection, Mapping, Sequence
     from datetime import datetime
 
+    from paperless_mcp.domain.admin import (
+        AppConfigRecord,
+        ArchiveContent,
+        ArchiveFile,
+        Compression,
+        ConfigValues,
+        GroupRecord,
+        GroupValues,
+        RunnableTask,
+        TaskRowPage,
+        TaskType,
+        UserRecord,
+        UserValues,
+    )
     from paperless_mcp.domain.ai import AiSuggestions, ChatAnswer
     from paperless_mcp.domain.bulk import BulkKind, DocumentChange, PermissionsChange
     from paperless_mcp.domain.documents import (
@@ -32,9 +46,26 @@ if TYPE_CHECKING:
         Suggestions,
     )
     from paperless_mcp.domain.instance import InstanceOverview
+    from paperless_mcp.domain.mail import (
+        MailAccount,
+        MailAccountTestResult,
+        MailAccountValues,
+        MailRule,
+        MailRuleValues,
+        ProcessedMailPage,
+        ProcessedStatus,
+    )
     from paperless_mcp.domain.pdf import Output, PageSlot, StartedTasks
+    from paperless_mcp.domain.permissions import (
+        AccessChange,
+        GroupPage,
+        ObjectAccess,
+        PermissionKind,
+        UserPage,
+    )
+    from paperless_mcp.domain.raw import RawReply
     from paperless_mcp.domain.sharing import FileVersionKind, ShareBundle, ShareLink
-    from paperless_mcp.domain.tasks import TaskStatus
+    from paperless_mcp.domain.tasks import TaskState, TaskStatus
     from paperless_mcp.domain.taxonomy import (
         TaxonomyDetail,
         TaxonomyItem,
@@ -45,6 +76,7 @@ if TYPE_CHECKING:
     from paperless_mcp.domain.trash import TrashPage
     from paperless_mcp.domain.versions import VersionUpload
     from paperless_mcp.domain.views import SavedView, ViewValues
+    from paperless_mcp.domain.workflows import Workflow, WorkflowValues
 
 
 class InstanceReader(Protocol):
@@ -561,6 +593,64 @@ class TrashWriter(Protocol):
         ...
 
 
+class PermissionReader(Protocol):
+    """Owners and grants of documents and taxonomy objects, and the users and groups."""
+
+    async def get_permissions(
+        self, kind: PermissionKind, object_ids: Sequence[int]
+    ) -> list[ObjectAccess]:
+        """The owner and the grants of the objects the user may see, in the order of ``object_ids``.
+
+        An id of an object that does not exist, or that the user may not see, is left out;
+        callers compare. A change grant is listed with its view grant (Paperless stores both).
+        Paperless shows grants of an object to any user who may see it.
+
+        Raises:
+            PermissionDenied: The user lacks the global view permission for ``kind``.
+        """
+        ...
+
+    async def list_users(self, *, name_contains: str | None, page: int, page_size: int) -> UserPage:
+        """One page of users in Paperless order (by username), optionally by part of the name.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the global ``view_user`` permission.
+        """
+        ...
+
+    async def list_groups(
+        self, *, name_contains: str | None, page: int, page_size: int
+    ) -> GroupPage:
+        """One page of groups in Paperless order (by name), optionally by part of the name.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the global ``view_group`` permission.
+        """
+        ...
+
+
+class PermissionWriter(Protocol):
+    """Changes to owners and grants."""
+
+    async def set_permissions(
+        self, kind: PermissionKind, object_id: int, change: AccessChange
+    ) -> ObjectAccess:
+        """Set the owner and/or the whole grants of one object and return how it is now.
+
+        Lists in ``change.permissions`` replace the object's lists, an empty list removes all of
+        them; granting change also grants view. The owner changes only if ``change`` sets it.
+
+        Raises:
+            NotFound: The object does not exist or the user may not see it.
+            PermissionDenied: Only the owner of the object (or anyone, for an object without
+                owner) and a superuser may change its permissions.
+            Validation: A user or group does not exist; nothing is changed.
+        """
+        ...
+
+
 class PdfWriter(Protocol):
     """Server-side PDF operations: Paperless queues them and tasks do the work.
 
@@ -782,5 +872,409 @@ class SharingWriter(Protocol):
                 synchronously and without a mail server answers 500). Whether anyone received
                 the message is unknown; the request is never repeated.
             PermissionDenied: The user may not see a document.
+        """
+        ...
+
+
+class MailReader(Protocol):
+    """Mail accounts, rules and processed mail the current user may see.
+
+    No method returns a password, token or any mask of one: a ``MailAccount`` has no such field.
+    """
+
+    async def list_mail_accounts(self) -> tuple[MailAccount, ...]:
+        """Every mail account the user may see, over all pages, in Paperless order (by id).
+
+        Raises:
+            PermissionDenied: The user lacks the global ``view_mailaccount`` permission.
+            PaperlessMcpError: More accounts than this server reads at most.
+        """
+        ...
+
+    async def get_mail_account(self, account_id: int) -> MailAccount:
+        """One mail account.
+
+        Raises:
+            NotFound: No such account, or the user may not see it.
+            PermissionDenied: The user lacks the global ``view_mailaccount`` permission.
+        """
+        ...
+
+    async def list_mail_rules(self) -> tuple[MailRule, ...]:
+        """Every mail rule the user may see, over all pages, in Paperless order (by ``order``).
+
+        Raises:
+            PermissionDenied: The user lacks the global ``view_mailrule`` permission.
+            PaperlessMcpError: More rules than this server reads at most.
+        """
+        ...
+
+    async def get_mail_rule(self, rule_id: int) -> MailRule:
+        """One mail rule.
+
+        Raises:
+            NotFound: No such rule, or the user may not see it.
+            PermissionDenied: The user lacks the global ``view_mailrule`` permission.
+        """
+        ...
+
+    async def list_processed_mail(
+        self, *, rule_id: int | None, status: ProcessedStatus | None, page: int, page_size: int
+    ) -> ProcessedMailPage:
+        """One page of the processed mail the user may see, newest processed first.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the global ``view_processedmail`` permission.
+        """
+        ...
+
+
+class MailWriter(Protocol):
+    """Changes to mail accounts and rules, and the two actions that contact the mail server."""
+
+    async def create_mail_account(self, values: MailAccountValues) -> MailAccount:
+        """Create an account from ``values`` (name, server, port, username and password are needed).
+
+        Raises:
+            Validation: A missing or rejected value.
+            PermissionDenied: The user may not add mail accounts.
+        """
+        ...
+
+    async def update_mail_account(self, account_id: int, values: MailAccountValues) -> MailAccount:
+        """Change the fields that are set in ``values``; the password stays unless it is set.
+
+        Raises:
+            NotFound: No such account, or the user may not see it.
+            Validation: A rejected value.
+            PermissionDenied: The user may not change this account.
+        """
+        ...
+
+    async def delete_mail_account(self, account_id: int) -> None:
+        """Delete an account; Paperless deletes its rules and their processed mail with it.
+
+        Raises:
+            NotFound: No such account, or the user may not see it.
+            PermissionDenied: The user may not delete this account.
+        """
+        ...
+
+    async def test_mail_account(self, account_id: int) -> MailAccountTestResult:
+        """Connect to the account's mail server and log in with its saved password.
+
+        A failure to connect or to log in is a result with ``success`` false, not an error.
+        Nothing is changed on the mail server or in Paperless.
+
+        Raises:
+            NotFound: No such account, or the user may not see it.
+            PermissionDenied: The user may not change this account (Paperless asks for it).
+        """
+        ...
+
+    async def process_mail_account(self, account_id: int) -> None:
+        """Queue a fetch of the account's mail now, instead of at the next scheduled run.
+
+        Paperless works in the background: documents appear and the rule actions run on the
+        mail server after this returns. The request is never repeated.
+
+        Raises:
+            NotFound: No such account, or the user may not see it.
+            PermissionDenied: The user may not change this account.
+        """
+        ...
+
+    async def create_mail_rule(self, values: MailRuleValues) -> MailRule:
+        """Create a rule from ``values`` (name and account are needed).
+
+        Raises:
+            Validation: A missing or rejected value, or an account or taxonomy id that does
+                not exist.
+            PermissionDenied: The user may not add mail rules.
+        """
+        ...
+
+    async def update_mail_rule(self, rule_id: int, values: MailRuleValues) -> MailRule:
+        """Change the fields that are set in ``values``.
+
+        Raises:
+            NotFound: No such rule, or the user may not see it.
+            Validation: A rejected value.
+            PermissionDenied: The user may not change this rule.
+        """
+        ...
+
+    async def delete_mail_rule(self, rule_id: int) -> None:
+        """Delete a rule; Paperless deletes its processed mail with it.
+
+        Raises:
+            NotFound: No such rule, or the user may not see it.
+            PermissionDenied: The user may not delete this rule.
+        """
+        ...
+
+
+class RawReader(Protocol):
+    """Read-only GET of any path under ``/api/`` of Paperless (the raw toolset, decision-25)."""
+
+    async def get(self, path: str, params: Mapping[str, str], *, max_bytes: int) -> RawReply:
+        """GET ``path`` (already checked by the caller) and read at most ``max_bytes`` of the body.
+
+        The request goes to the configured Paperless only, with the credential of the current
+        user; redirects are not followed. A body longer than ``max_bytes`` is not kept
+        (``truncated``).
+
+        Raises:
+            Validation: The path is not one the adapter may request, or Paperless rejects the
+                request.
+            NotFound: No such endpoint or object, or not visible to the user.
+            PermissionDenied: The user may not read it.
+            PaperlessMcpError: Paperless redirected the request, or answered with an error.
+        """
+        ...
+
+
+class WorkflowReader(Protocol):
+    """Workflows, with their triggers and actions, as the current user sees them."""
+
+    async def list_workflows(self) -> tuple[Workflow, ...]:
+        """Every workflow, over all pages, in Paperless order (by order, then id).
+
+        Raises:
+            PermissionDenied: The user lacks the global ``view_workflow`` permission.
+        """
+        ...
+
+    async def get_workflow(self, workflow_id: int) -> Workflow:
+        """One workflow.
+
+        Raises:
+            NotFound: No such workflow.
+            PermissionDenied: The user lacks the global ``view_workflow`` permission.
+        """
+        ...
+
+
+class WorkflowWriter(Protocol):
+    """Changes to workflows."""
+
+    async def create_workflow(self, name: str, values: WorkflowValues) -> Workflow:
+        """A new workflow named ``name`` with the settings ``values`` sets.
+
+        ``values.name`` is ignored. Paperless needs both lists; none given means empty ones.
+
+        Raises:
+            PermissionDenied: The user may not add workflows.
+            Validation: Paperless rejected a value (a blank or taken name, an unknown type, a
+                trigger or action that does not fit its type).
+        """
+        ...
+
+    async def update_workflow(self, workflow_id: int, values: WorkflowValues) -> Workflow:
+        """Change the settings ``values`` sets and return the workflow as it is afterwards.
+
+        A list that is given replaces the old one as a whole; triggers and actions are sent
+        without their ids, so each is stored as a new object.
+
+        Raises:
+            NotFound: No such workflow.
+            PermissionDenied: The user may not change workflows.
+            Validation: Paperless rejected a value.
+        """
+        ...
+
+    async def delete_workflow(self, workflow_id: int) -> None:
+        """Delete the workflow for good: Paperless has no trash for workflows.
+
+        Raises:
+            NotFound: No such workflow.
+            PermissionDenied: The user may not delete workflows.
+        """
+        ...
+
+
+class AdminReader(Protocol):
+    """Users and groups by id, the application configuration, logs, tasks and bulk download.
+
+    Listing users and groups is ``PermissionReader``'s job; the admin tools resolve names with it.
+    """
+
+    async def get_user(self, user_id: int) -> UserRecord:
+        """One user, never with a password.
+
+        Raises:
+            NotFound: No such user, or the user may not see it.
+            PermissionDenied: The user lacks the global ``view_user`` permission.
+        """
+        ...
+
+    async def get_current_user_id(self) -> int:
+        """The id of the user the credential belongs to, from one light request that reads only it.
+
+        Raises:
+            PermissionDenied: The user lacks the ``view_uisettings`` permission.
+            PaperlessMcpError: Paperless did not answer (any upstream error).
+        """
+        ...
+
+    async def get_group(self, group_id: int) -> GroupRecord:
+        """One group with the permission codenames it grants.
+
+        Raises:
+            NotFound: No such group, or the user may not see it.
+            PermissionDenied: The user lacks the global ``view_group`` permission.
+        """
+        ...
+
+    async def get_config(self) -> AppConfigRecord:
+        """The application configuration: settings with a value, and which API keys are saved.
+
+        Raises:
+            PermissionDenied: The user lacks the ``view_applicationconfiguration`` permission.
+            PaperlessMcpError: Paperless has no configuration row.
+        """
+        ...
+
+    async def list_logs(self) -> tuple[str, ...]:
+        """The names of the log files this instance has.
+
+        Raises:
+            PermissionDenied: The user is not a staff user.
+        """
+        ...
+
+    async def get_log(self, name: str, *, limit: int) -> tuple[str, ...]:
+        """The last ``limit`` lines of a log, oldest first.
+
+        Raises:
+            NotFound: No log of that name.
+            PermissionDenied: The user is not a staff user.
+        """
+        ...
+
+    async def list_tasks(
+        self,
+        *,
+        state: TaskState | None,
+        task_type: TaskType | None,
+        acknowledged: bool | None,
+        page: int,
+        page_size: int,
+    ) -> TaskRowPage:
+        """One page of tasks, newest first, optionally filtered.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the ``view_paperlesstask`` permission.
+        """
+        ...
+
+    async def download_documents(
+        self,
+        document_ids: Sequence[int],
+        *,
+        content: ArchiveContent,
+        compression: Compression,
+        follow_formatting: bool,
+        max_bytes: int,
+    ) -> ArchiveFile:
+        """The files of the documents as one ZIP archive; at most ``max_bytes`` bytes are read.
+
+        Over the limit the archive is ``truncated`` and has no content. Changes nothing.
+
+        Raises:
+            PermissionDenied: A document is hidden from the user (the whole request is refused).
+            Validation: A document does not exist; no archive is made.
+        """
+        ...
+
+
+class AdminWriter(Protocol):
+    """Changes to users, groups, the application configuration and tasks."""
+
+    async def create_user(self, values: UserValues) -> UserRecord:
+        """Create a user from the fields set in ``values`` and return it.
+
+        Raises:
+            Validation: The username is taken or invalid, a group or permission does not exist,
+                or the password is made of asterisks only (nothing is sent).
+            PermissionDenied: The user may not add users (or make superusers or staff).
+        """
+        ...
+
+    async def update_user(self, user_id: int, values: UserValues) -> UserRecord:
+        """Write the fields set in ``values`` and return the user.
+
+        Raises:
+            NotFound: No such user.
+            Validation: As for ``create_user``.
+            PermissionDenied: The user may not change users (or this one, or these flags).
+        """
+        ...
+
+    async def delete_user(self, user_id: int) -> None:
+        """Delete a user for good; what it owned loses its owner. Not retried.
+
+        Raises:
+            NotFound: No such user.
+            PermissionDenied: The user may not delete users.
+        """
+        ...
+
+    async def create_group(self, values: GroupValues) -> GroupRecord:
+        """Create a group from ``values`` and return it.
+
+        Raises:
+            Validation: The name is taken or a permission does not exist.
+            PermissionDenied: The user may not add groups.
+        """
+        ...
+
+    async def update_group(self, group_id: int, values: GroupValues) -> GroupRecord:
+        """Write the fields set in ``values`` and return the group.
+
+        Raises:
+            NotFound: No such group.
+            Validation: As for ``create_group``.
+            PermissionDenied: The user may not change groups.
+        """
+        ...
+
+    async def delete_group(self, group_id: int) -> None:
+        """Delete a group for good; its members lose what it granted. Not retried.
+
+        Raises:
+            NotFound: No such group.
+            PermissionDenied: The user may not delete groups.
+        """
+        ...
+
+    async def update_config(self, values: ConfigValues) -> AppConfigRecord:
+        """Write the settings and keys in ``values`` and return the configuration.
+
+        A setting of ``None`` goes back to the server's environment default.
+
+        Raises:
+            Validation: Paperless rejects a value, or a key is made of asterisks only.
+            PermissionDenied: The user may not view or change the configuration.
+        """
+        ...
+
+    async def acknowledge_tasks(self, task_ids: Sequence[int]) -> int:
+        """Mark tasks (database ids) as seen and return how many were marked.
+
+        Raises:
+            Validation: A task does not exist or is listed twice; nothing is marked.
+            PermissionDenied: The user lacks the ``change_paperlesstask`` permission.
+        """
+        ...
+
+    async def run_task(self, task_type: RunnableTask) -> str:
+        """Start a background task by hand and return its Celery task id. Never retried.
+
+        Raises:
+            Validation: Paperless refuses this task type.
+            PermissionDenied: Only a superuser may start tasks.
         """
         ...

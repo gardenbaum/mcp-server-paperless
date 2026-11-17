@@ -79,6 +79,20 @@ READ_VIEWS = {"list_saved_views", "get_saved_view", "run_saved_view"}
 SHIPPED_TRASH = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "trash"}
 SHARING = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "sharing"}
 READ_SHARING = {"list_share_links", "list_share_bundles"}
+SHIPPED_PERMISSIONS = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "permissions"}
+MAIL = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "mail"}
+ADMIN = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "admin"}
+READ_ADMIN = {
+    *("get_user", "get_group", "get_app_config", "list_logs", "get_log", "list_tasks"),
+    "bulk_download",
+}
+RAW = {"paperless_api_get"}
+READ_MAIL = {
+    *("list_mail_accounts", "get_mail_account", "list_mail_rules", "get_mail_rule"),
+    "list_processed_mail",
+}
+WORKFLOWS = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "workflows"}
+READ_WORKFLOWS = {"list_workflows", "get_workflow"}
 
 
 async def names(server: FastMCP) -> set[str]:
@@ -109,8 +123,20 @@ async def test_several_toolsets_combine() -> None:
 async def test_all_offers_every_toolset_the_server_may_offer() -> None:
     server = serve(with_ai(enabled=True), catalogue=SYNTHETIC, toolsets=["all"])
 
-    shipped = CORE | SHIPPED_AI | SHIPPED_BULK | SHIPPED_VERSIONS | VIEWS | SHIPPED_TRASH | SHARING
-    assert await names(server) == shipped | SHIPPED_PDF | {
+    shipped = (
+        CORE
+        | SHIPPED_AI
+        | SHIPPED_BULK
+        | SHIPPED_VERSIONS
+        | VIEWS
+        | SHIPPED_TRASH
+        | SHARING
+        | MAIL
+        | RAW
+        | WORKFLOWS
+        | ADMIN
+    )
+    assert await names(server) == shipped | SHIPPED_PDF | SHIPPED_PERMISSIONS | {
         "ask_something",
         "scratch_change",
         "scratch_preview",
@@ -143,8 +169,12 @@ async def test_read_only_mode_offers_only_tools_with_the_read_only_hint() -> Non
         (CORE - writing)
         | SHIPPED_AI
         | READ_VIEWS
-        | {"list_document_versions", "list_trash"}
+        | {"list_document_versions", "list_trash", "list_users", "list_groups"}
         | READ_SHARING
+        | READ_MAIL
+        | RAW
+        | READ_WORKFLOWS
+        | READ_ADMIN
         | {"ask_something", "scratch_preview"}
     )
     assert await names(server) == expected

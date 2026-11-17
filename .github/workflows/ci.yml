@@ -95,8 +95,8 @@ jobs:
   e2e:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    # TIMEOUT-COMMENT
-    timeout-minutes: 35
+    # 60, not 35 (PLMCP-43): a hang guard, no quality gate; PLMCP-39 lowers it again.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

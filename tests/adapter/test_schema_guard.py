@@ -460,3 +460,87 @@ def test_the_rest_of_a_saved_view_is_still_checked(body: dict[str, object]) -> N
             get("/api/saved_views/"),
             httpx2.Response(200, json={**VIEW_PAGE, "results": [body]}),
         )
+
+
+def test_a_full_perms_answer_may_lack_user_can_change_only_where_it_is_listed() -> None:
+    row = {k: v for k, v in tag(1, "inbox").items() if k != "user_can_change"}
+    page = {"count": 1, "next": None, "previous": None, "results": [row]}
+    listed = get("/api/tags/", full_perms="true")
+    plain = get("/api/tags/")
+    unlisted = get("/api/tags/1/", full_perms="true")  # GET of one tag is not in the table
+
+    check_response(listed, httpx2.Response(200, json=page))
+    with pytest.raises(SchemaViolationError):
+        check_response(plain, httpx2.Response(200, json=page))  # no full_perms: required
+    with pytest.raises(SchemaViolationError):
+        check_response(unlisted, httpx2.Response(200, json=row))
+
+
+def test_a_full_perms_answer_is_still_checked_for_the_rest() -> None:
+    row = {k: v for k, v in tag(1, "inbox").items() if k not in {"user_can_change", "name"}}
+    page = {"count": 1, "next": None, "previous": None, "results": [row]}
+
+    with pytest.raises(SchemaViolationError):
+        check_response(get("/api/tags/", full_perms="true"), httpx2.Response(200, json=page))
+
+
+WORKFLOW = {
+    "id": 1,
+    "name": "w",
+    "order": 0,
+    "enabled": True,
+    "triggers": [{"id": 1, "type": 2, "sources": [1, 2, 3], "filter_has_tags": [1]}],
+    "actions": [{"id": 1, "type": 1, "assign_title": "x", "email": None, "webhook": None}],
+}
+WORKFLOW_PAGE = {"count": 1, "next": None, "previous": None, "results": [WORKFLOW]}
+
+
+@pytest.mark.parametrize(
+    ("request_", "status", "body"),
+    [
+        (get("/api/workflows/"), 200, WORKFLOW_PAGE),
+        (get("/api/workflows/1/"), 200, WORKFLOW),
+        (
+            httpx2.Request(
+                "POST",
+                BASE_URL + "/api/workflows/",
+                json={"name": "w", "triggers": [], "actions": []},
+                headers=HEADERS,
+            ),
+            201,
+            WORKFLOW,
+        ),
+        (
+            httpx2.Request(
+                "PATCH", BASE_URL + "/api/workflows/1/", json={"name": "v"}, headers=HEADERS
+            ),
+            200,
+            WORKFLOW,
+        ),
+    ],
+    ids=["list", "get", "create", "update"],
+)
+def test_a_workflow_action_with_null_email_and_webhook_passes(
+    request_: httpx2.Request, status: int, body: dict[str, object]
+) -> None:
+    check_response(request_, httpx2.Response(status, json=body))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {**WORKFLOW, "name": 5},
+        {**WORKFLOW, "triggers": [{"id": 1, "type": 99}]},
+        {**WORKFLOW, "actions": [{"id": 1, "type": 3, "email": {"subject": "s"}}]},
+        {key: value for key, value in WORKFLOW.items() if key != "name"},
+    ],
+    ids=["wrong type", "unknown trigger type", "incomplete email", "missing name"],
+)
+def test_the_rest_of_a_workflow_is_still_checked(body: dict[str, object]) -> None:
+    with pytest.raises(SchemaViolationError):
+        check_response(get("/api/workflows/1/"), httpx2.Response(200, json=body))
+    with pytest.raises(SchemaViolationError):
+        check_response(
+            get("/api/workflows/"),
+            httpx2.Response(200, json={**WORKFLOW_PAGE, "results": [body]}),
+        )

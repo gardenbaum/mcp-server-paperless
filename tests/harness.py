@@ -23,16 +23,24 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Generator, Sequence
 
     from fastmcp import FastMCP
+    from fastmcp.server.auth import AuthProvider
 
     from paperless_mcp.domain.errors import PaperlessMcpError
     from paperless_mcp.domain.instance import InstanceOverview
     from paperless_mcp.domain.ports import (
+        AdminReader,
+        AdminWriter,
         AiReader,
         BulkWriter,
         DocumentReader,
         DocumentWriter,
         InstanceReader,
+        MailReader,
+        MailWriter,
         PdfWriter,
+        PermissionReader,
+        PermissionWriter,
+        RawReader,
         SharingReader,
         SharingWriter,
         TaskReader,
@@ -42,6 +50,8 @@ if TYPE_CHECKING:
         TrashWriter,
         ViewReader,
         ViewWriter,
+        WorkflowReader,
+        WorkflowWriter,
     )
 
 URL = "http://paperless.test"
@@ -96,6 +106,15 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     pdf_writes: PdfWriter | None = None,
     sharing: SharingReader | None = None,
     sharing_writes: SharingWriter | None = None,
+    permissions: PermissionReader | None = None,
+    permission_writes: PermissionWriter | None = None,
+    mail: MailReader | None = None,
+    mail_writes: MailWriter | None = None,
+    raw: RawReader | None = None,
+    workflows: WorkflowReader | None = None,
+    workflow_writes: WorkflowWriter | None = None,
+    management: AdminReader | None = None,
+    management_writes: AdminWriter | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     clock: Callable[[], float] = time.monotonic,
     startup_timeout: float = 2.0,
@@ -107,12 +126,13 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     max_upload_bytes: int | None = None,
     upload_dirs: Sequence[str] = (),
     stdio: bool = False,
+    auth: AuthProvider | None = None,
 ) -> FastMCP:
     """The assembled server, with `reader` in place of the Paperless adapter.
 
-    `taxonomy`, `documents`, `tasks`, `ai`, `views`, `trash`, `sharing` and the writers default
-    to `reader` if that is a fake, else to the seeded admin's fake (which refuses writes unless
-    created to allow them).
+    `taxonomy`, `documents`, `tasks`, `ai`, `views`, `trash`, `sharing`, `mail`, `workflows` and the
+    writers default to `reader` if that is a fake, else to the seeded admin's fake (which refuses
+    writes unless created to allow them).
     `sleep` and `clock` replace the real ones the task wait uses. `toolsets`, `read_only` and
     `disabled_tools` go to the server settings; `catalogue` replaces the tools the server
     offers, to try toolsets that do not exist yet. `max_download_bytes` replaces the download
@@ -133,6 +153,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
         ),
         catalogue=catalogue,
         stdio=stdio,
+        auth=auth,
         ports=lambda _client: Ports(
             instance=reader,
             taxonomy=taxonomy or fake,
@@ -149,6 +170,15 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
             pdf_writes=pdf_writes or fake,
             sharing=sharing or fake,
             sharing_writes=sharing_writes or fake,
+            permissions=permissions or fake,
+            permission_writes=permission_writes or fake,
+            mail=mail or fake,
+            mail_writes=mail_writes or fake,
+            raw=raw or fake,
+            workflows=workflows or fake,
+            workflow_writes=workflow_writes or fake,
+            management=management or fake,
+            management_writes=management_writes or fake,
         ),
         sleep=sleep,
         clock=clock,

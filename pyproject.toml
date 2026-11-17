@@ -13,10 +13,12 @@ dependencies = [
     "mcp>=2.3.0,<3",
     "pydantic>=2.14.3",
     "pydantic-settings>=2.16.2",
+    "uvicorn>=0.40",
 ]
 
 [project.scripts]
 paperless-mcp = "paperless_mcp.cli:main"
+paperless-mcp-http = "paperless_mcp.cli:main_http"
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]
@@ -36,6 +38,7 @@ dev = [
     "pre-commit>=4.7.0",
     "pytest>=9.2.0",
     "pytest-cov>=7.1.0",
+    "pyyaml>=6.0.3",
     "ruff>=0.17.4",
     "syrupy>=6.1.1",
 ]
@@ -272,14 +275,18 @@ modules = [
     "paperless_mcp.tools.core",
     "paperless_mcp.tools.ai",
     "paperless_mcp.tools.bulk",
+    "paperless_mcp.tools.mail",
+    "paperless_mcp.tools.prompts",
     "paperless_mcp.tools.sharing",
     "paperless_mcp.tools.upload",
     "paperless_mcp.tools.upload_stdio",
     "paperless_mcp.tools.versions",
     "paperless_mcp.tools.versions_stdio",
     "paperless_mcp.tools.views",
+    "paperless_mcp.tools.workflows",
     "paperless_mcp.tools.trash",
     "paperless_mcp.tools.pdf",
+    "paperless_mcp.tools.permissions",
 ]
 ignore_imports = [
     "paperless_mcp.tools.upload_stdio -> paperless_mcp.tools.upload",

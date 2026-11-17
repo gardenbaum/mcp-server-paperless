@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Concatenate, cast
 
 from pydantic import JsonValue
 
-from fakes import sharing
+from fakes import mail, raw, sharing, workflows
 from fakes.accounts import (
     ADMIN,
     BLIND,
@@ -40,12 +40,39 @@ from fakes.accounts import (
     READER,
     READER_PERMISSIONS,
 )
+from fakes.admin import (
+    apply_settings,
+    archive_of,
+    check_email,
+    check_group_name,
+    check_permissions,
+    check_username,
+)
 from fakes.custom_field_query import compile_query
 from fakes.document_values import coerce, reject, tag_closure
+from fakes.mail import (
+    FakeMailAccount,
+    FakeMailRule,
+    FakeProcessedMail,
+    MailData,
+)
+from fakes.mail import Viewer as MailViewer
+from fakes.permissions import access_of, check_principals, set_grants
 from fakes.sharing import FakeShareBundle, FakeShareLink, SentEmail, SharingData, Viewer
 from fakes.taxonomy_rules import check_colour, check_match, check_name, check_path, with_ids
 from fakes.view_filters import ONLY_ONE_SEARCH, combines, searches, view_filters
 from fakes.view_rules import check_page_size, check_rules
+from fakes.workflows import Actor, WorkflowData
+from paperless_mcp.domain.admin import (
+    CONFIG_SECRETS,
+    AppConfigRecord,
+    ArchiveFile,
+    GroupRecord,
+    TaskRow,
+    TaskRowPage,
+    UserRecord,
+    check_secret,
+)
 from paperless_mcp.domain.ai import AiSuggestions, ChatAnswer, ChatSource
 from paperless_mcp.domain.bulk import (
     FieldsChange,
@@ -77,10 +104,33 @@ from paperless_mcp.domain.instance import (
     SystemStatus,
 )
 from paperless_mcp.domain.pdf import StartedTasks
+from paperless_mcp.domain.permissions import GroupPage, GroupRow, ObjectAccess, UserPage, UserRow
 from paperless_mcp.domain.tasks import TaskState, TaskStatus
 from paperless_mcp.domain.taxonomy import SelectOption, TaxonomyDetail, TaxonomyItem
 from paperless_mcp.domain.trash import TrashedDocument, TrashPage
 from paperless_mcp.domain.views import FilterRule, SavedView
+from paperless_mcp.domain.workflows import Workflow
+from paperless_mcp.paperless.admin import (
+    ACK_TASKS,
+    ADD_GROUP,
+    ADD_USER,
+    CHANGE_CONFIG,
+    CHANGE_GROUP,
+    CHANGE_USER,
+    DELETE_GROUP,
+    DELETE_USER,
+    DOWNLOAD,
+    READ_LOGS,
+    RUN_TASKS,
+    VIEW_GROUP,
+    VIEW_TASKS,
+    VIEW_USER,
+    denied,
+    unseen_group,
+    unseen_log,
+    unseen_user,
+)
+from paperless_mcp.paperless.admin import beyond_last_page as beyond_tasks
 from paperless_mcp.paperless.bulk import documents_refused, objects_refused
 from paperless_mcp.paperless.documents import (
     beyond_last_page,
@@ -96,11 +146,20 @@ from paperless_mcp.paperless.trash import refused as trash_refused
 from paperless_mcp.paperless.views import unseen_view
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Sequence
+    from collections.abc import Callable, Collection, Mapping, Sequence
     from types import CoroutineType
 
     from _typeshed import SupportsRichComparison
 
+    from paperless_mcp.domain.admin import (
+        ArchiveContent,
+        Compression,
+        ConfigValues,
+        GroupValues,
+        RunnableTask,
+        TaskType,
+        UserValues,
+    )
     from paperless_mcp.domain.bulk import (
         BulkKind,
         DocumentChange,
@@ -108,7 +167,18 @@ if TYPE_CHECKING:
         PermissionsChange,
     )
     from paperless_mcp.domain.documents import FileVersion
+    from paperless_mcp.domain.mail import (
+        MailAccount,
+        MailAccountTestResult,
+        MailAccountValues,
+        MailRule,
+        MailRuleValues,
+        ProcessedMailPage,
+        ProcessedStatus,
+    )
     from paperless_mcp.domain.pdf import Output, PageSlot
+    from paperless_mcp.domain.permissions import AccessChange, PermissionKind
+    from paperless_mcp.domain.raw import RawReply
     from paperless_mcp.domain.sharing import FileVersionKind, ShareBundle, ShareLink
     from paperless_mcp.domain.taxonomy import (
         MatchingAlgorithm,
@@ -118,6 +188,7 @@ if TYPE_CHECKING:
     )
     from paperless_mcp.domain.versions import VersionUpload
     from paperless_mcp.domain.views import ViewValues
+    from paperless_mcp.domain.workflows import WorkflowValues
 
 # Paperless's max_length of document titles and tag names.
 MAX_TITLE = 128
@@ -166,6 +237,14 @@ class FakeUser:
     is_superuser: bool = False
     is_staff: bool = False
     permissions: frozenset[str] = frozenset()
+    first_name: str = ""
+    last_name: str = ""
+    is_active: bool = True
+    groups: frozenset[int] = frozenset()
+    email: str = ""
+    # Whether the user has a password; the fake keeps no password, so it cannot sign in.
+    has_password: bool = False
+    date_joined: datetime = datetime(2026, 11, 11, 19, 0, tzinfo=UTC)
 
     def has(self, permission: str) -> bool:
         """Django's `has_perm`: superusers have every permission."""
@@ -263,10 +342,11 @@ class FakeCustomField:
 
 @dataclass(frozen=True, kw_only=True)
 class FakeGroup:
-    """A user group."""
+    """A user group and the permission codenames it grants to its members."""
 
     id: int
     name: str
+    permissions: frozenset[str] = frozenset()
 
 
 SEED_DAY = date(2026, 11, 11)
@@ -395,6 +475,10 @@ class FakeTask:
     finished: datetime | None = None
     message: str | None = None
     document_ids: tuple[int, ...] = ()
+    trigger_source: str = "api_upload"
+    acknowledged: bool = False
+    started: datetime | None = None
+    duration_seconds: float | None = None
 
 
 @dataclass(kw_only=True)
@@ -416,6 +500,21 @@ class FakeState:
     # sets `email_enabled`; a valid message then fails like 3.4.2 does without one.
     outbox: list[SentEmail] = field(default_factory=list[SentEmail])
     email_enabled: bool = False
+    mail_accounts: list[FakeMailAccount] = field(default_factory=list[FakeMailAccount])
+    mail_rules: list[FakeMailRule] = field(default_factory=list[FakeMailRule])
+    processed_mail: list[FakeProcessedMail] = field(default_factory=list[FakeProcessedMail])
+    # The imaginary mail servers (see fakes/mail.py): working logins as (server, port, username,
+    # password), hosts that answer, hosts that accept a connection and never answer, and the ids
+    # of the accounts a fetch was queued for, in order.
+    mail_logins: set[tuple[str, int, str, str]] = field(
+        default_factory=set[tuple[str, int, str, str]]
+    )
+    mail_hosts: set[str] = field(default_factory=set[str])
+    mail_silent_hosts: set[str] = field(default_factory=set[str])
+    mail_fetches: list[int] = field(default_factory=list[int])
+    workflows: list[Workflow] = field(default_factory=list[Workflow])
+    # The last id given to a workflow's trigger or action (a one-item list, shared by reference).
+    workflow_object_id: list[int] = field(default_factory=lambda: [0])
     tasks: list[FakeTask] = field(default_factory=list[FakeTask])
     # Deleted documents, newest last; reads no longer see them, the Paperless trash does.
     trash: list[FakeDocument] = field(default_factory=list[FakeDocument])
@@ -426,6 +525,19 @@ class FakeState:
     system_status: SystemStatus = HEALTHY
     ai_enabled: bool = False
     audit_log_enabled: bool = True
+    # The application configuration (fakes/admin.py): the settings with a value, the API keys
+    # that hold one (their values are not kept), and the environment variables Paperless lists.
+    config: dict[str, JsonValue] = field(default_factory=dict[str, JsonValue])
+    config_keys: set[str] = field(default_factory=set[str])
+    config_external: tuple[str, ...] = ("PAPERLESS_OCR_LANGUAGE",)
+    # The log files and their lines, oldest first.
+    logs: dict[str, list[str]] = field(
+        default_factory=lambda: {
+            "paperless": ["[2026-11-11 19:47:00,001] [INFO] [paperless.management] started"],
+            "mail": [],
+            "celery": [],
+        }
+    )
 
 
 # The seeded custom fields in creation order (tests/e2e/helpers.py `seed`), `select` comes last.
@@ -568,6 +680,11 @@ def seeded() -> FakeState:
             ),
         ],
     )
+
+
+def _label(obj: FakeDocument | FakeTaxonomy) -> str:
+    """The title of a document, else the name."""
+    return obj.title if isinstance(obj, FakeDocument) else obj.name
 
 
 class WriteNotAllowedError(AssertionError):
@@ -2232,6 +2349,131 @@ class FakePaperless:
         item.viewers, item.editors = views, changes
         item.view_groups, item.change_groups = view_groups, change_groups
 
+    # --- PermissionReader and PermissionWriter
+
+    def _permission_objects(self, kind: PermissionKind) -> list[FakeDocument] | list[FakeTaxonomy]:
+        state = self.state
+        return cast(
+            "list[FakeDocument] | list[FakeTaxonomy]",
+            {
+                "document": state.documents,
+                "tag": state.tags,
+                "correspondent": state.correspondents,
+                "document_type": state.document_types,
+                "storage_path": state.storage_paths,
+            }[kind],
+        )
+
+    async def get_permissions(
+        self, kind: PermissionKind, object_ids: Sequence[int]
+    ) -> list[ObjectAccess]:
+        """`PermissionReader.get_permissions` (the list views with `full_perms=true`).
+
+        A hidden object is not listed; the list needs the global view permission (403).
+        """
+        if not self.user.has(f"view_{kind.replace('_', '')}"):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
+        seen = {o.id: o for o in self._permission_objects(kind) if o.visible_to(self.user)}
+        return [
+            access_of(seen[number], _label(seen[number])) for number in object_ids if number in seen
+        ]
+
+    async def list_users(self, *, name_contains: str | None, page: int, page_size: int) -> UserPage:
+        """`PermissionReader.list_users` (UserViewSet list): by username, 403 without view_user."""
+        self._may_list("user")
+        needle = (name_contains or "").casefold()
+        users = sorted(
+            (u for u in self.state.users if needle in u.username.casefold()),
+            key=lambda u: (u.username.casefold(), u.id),
+        )
+        rows = tuple(
+            UserRow(
+                id=u.id,
+                username=u.username,
+                name=f"{u.first_name} {u.last_name}".strip() or None,
+                is_active=u.is_active,
+                is_superuser=u.is_superuser,
+                group_ids=tuple(sorted(u.groups)),
+            )
+            for u in users
+        )
+        shown, more = self._page(rows, page, page_size)
+        return UserPage(count=len(rows), next_page=more, rows=shown)
+
+    async def list_groups(
+        self, *, name_contains: str | None, page: int, page_size: int
+    ) -> GroupPage:
+        """`PermissionReader.list_groups` (GroupViewSet list): by name, 403 without view_group."""
+        self._may_list("group")
+        needle = (name_contains or "").casefold()
+        groups = sorted(
+            (g for g in self.state.groups if needle in g.name.casefold()),
+            key=lambda g: (g.name.casefold(), g.id),
+        )
+        rows = tuple(GroupRow(id=g.id, name=g.name) for g in groups)
+        shown, more = self._page(rows, page, page_size)
+        return GroupPage(count=len(rows), next_page=more, rows=shown)
+
+    def _may_list(self, kind: TaxonomyKind) -> None:
+        if not self.user.has(VIEW_PERMISSION[kind]):
+            message = "You do not have permission to perform this action."
+            raise PermissionDenied(message)
+
+    @staticmethod
+    def _page[R](
+        rows: tuple[R, ...], page: int, page_size: int
+    ) -> tuple[tuple[R, ...], int | None]:
+        """One page of ``rows`` and the next page number; a page past the end is a 404."""
+        first = (page - 1) * page_size
+        if page > 1 and first >= len(rows):
+            message = "Invalid page."
+            raise NotFound(message)
+        more = page + 1 if first + page_size < len(rows) else None
+        return rows[first : first + page_size], more
+
+    @write
+    async def set_permissions(
+        self, kind: PermissionKind, object_id: int, change: AccessChange
+    ) -> ObjectAccess:
+        """`PermissionWriter.set_permissions` (a PATCH with `owner` and `set_permissions`).
+
+        Order: the global change permission (403), the object among those the user may see (404),
+        the values (400: unknown users, groups or owner, and a name another object of the new
+        owner already has, as the serializer validates them), then ownership (403: a change
+        grant is not enough).
+        """
+        if not self.user.has(f"change_{kind.replace('_', '')}"):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
+        found = [o for o in self._permission_objects(kind) if o.id == object_id]
+        if not found or not found[0].visible_to(self.user):
+            message = "The Paperless object does not exist or is not visible to this user."
+            raise NotFound(message)
+        target = found[0]
+        state = self.state
+        given = change.permissions
+        if given is not None:
+            check_principals(given, state.users, state.groups)
+        if "owner" in change.model_fields_set:
+            if change.owner not in {None, *(u.id for u in state.users)}:
+                reject("owner", f'Invalid pk "{change.owner}" - object does not exist.')
+            clash = (
+                o
+                for o in self._permission_objects(kind)
+                if o is not target and o.owner == change.owner and _label(o) == _label(target)
+            )
+            if kind != "document" and any(clash):
+                reject("non_field_errors", "The fields name, owner must make a unique set.")
+        if not (self.user.is_superuser or target.owner in {None, self.user.id}):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
+        if "owner" in change.model_fields_set:
+            target.owner = change.owner
+        if given is not None:
+            set_grants(target, given)
+        return access_of(target, _label(target))
+
     # --- ViewReader and ViewWriter
 
     async def list_saved_views(self) -> tuple[SavedView, ...]:
@@ -2448,6 +2690,482 @@ class FakePaperless:
             use_archive_version=use_archive_version,
         )
 
+    # --- MailReader and MailWriter (the logic is in fakes/mail.py)
+
+    def _mail(self) -> MailData:
+        state = self.state
+        return MailData(
+            state.mail_accounts,
+            state.mail_rules,
+            state.processed_mail,
+            state.mail_logins,
+            state.mail_hosts,
+            state.mail_silent_hosts,
+            state.mail_fetches,
+        )
+
+    def _mail_viewer(self) -> MailViewer:
+        state, user = self.state, self.user
+        return MailViewer(
+            id=user.id,
+            is_superuser=user.is_superuser,
+            has=user.has,
+            users=frozenset(u.id for u in state.users),
+            tags=frozenset(t.id for t in state.tags),
+            correspondents=frozenset(c.id for c in state.correspondents),
+            document_types=frozenset(d.id for d in state.document_types),
+        )
+
+    async def list_mail_accounts(self) -> tuple[MailAccount, ...]:
+        """`MailReader.list_mail_accounts`."""
+        return mail.list_accounts(self._mail(), self._mail_viewer())
+
+    async def get_mail_account(self, account_id: int) -> MailAccount:
+        """`MailReader.get_mail_account`."""
+        return mail.get_account(self._mail(), self._mail_viewer(), account_id)
+
+    async def list_mail_rules(self) -> tuple[MailRule, ...]:
+        """`MailReader.list_mail_rules`."""
+        return mail.list_rules(self._mail(), self._mail_viewer())
+
+    async def get_mail_rule(self, rule_id: int) -> MailRule:
+        """`MailReader.get_mail_rule`."""
+        return mail.get_rule(self._mail(), self._mail_viewer(), rule_id)
+
+    async def list_processed_mail(
+        self, *, rule_id: int | None, status: ProcessedStatus | None, page: int, page_size: int
+    ) -> ProcessedMailPage:
+        """`MailReader.list_processed_mail`."""
+        return mail.list_processed(
+            self._mail(),
+            self._mail_viewer(),
+            rule_id=rule_id,
+            status=status,
+            page=page,
+            page_size=page_size,
+        )
+
+    @write
+    async def create_mail_account(self, values: MailAccountValues) -> MailAccount:
+        """`MailWriter.create_mail_account`."""
+        return mail.create_account(self._mail(), self._mail_viewer(), values)
+
+    @write
+    async def update_mail_account(self, account_id: int, values: MailAccountValues) -> MailAccount:
+        """`MailWriter.update_mail_account`."""
+        return mail.update_account(self._mail(), self._mail_viewer(), account_id, values)
+
+    @write
+    async def delete_mail_account(self, account_id: int) -> None:
+        """`MailWriter.delete_mail_account`."""
+        mail.delete_account(self._mail(), self._mail_viewer(), account_id)
+
+    @write
+    async def test_mail_account(self, account_id: int) -> MailAccountTestResult:
+        """`MailWriter.test_mail_account`."""
+        return mail.test_account(self._mail(), self._mail_viewer(), account_id)
+
+    @write
+    async def process_mail_account(self, account_id: int) -> None:
+        """`MailWriter.process_mail_account`."""
+        mail.process_account(self._mail(), self._mail_viewer(), account_id)
+
+    @write
+    async def create_mail_rule(self, values: MailRuleValues) -> MailRule:
+        """`MailWriter.create_mail_rule`."""
+        return mail.create_rule(self._mail(), self._mail_viewer(), values)
+
+    @write
+    async def update_mail_rule(self, rule_id: int, values: MailRuleValues) -> MailRule:
+        """`MailWriter.update_mail_rule`."""
+        return mail.update_rule(self._mail(), self._mail_viewer(), rule_id, values)
+
+    @write
+    async def delete_mail_rule(self, rule_id: int) -> None:
+        """`MailWriter.delete_mail_rule`."""
+        mail.delete_rule(self._mail(), self._mail_viewer(), rule_id)
+
+    # --- WorkflowReader and WorkflowWriter (the logic is in fakes/workflows.py)
+
+    def _workflows(self) -> tuple[WorkflowData, Actor]:
+        state = self.state
+        user = self.user
+        data = WorkflowData(state.workflows, state.workflow_object_id)
+        return data, Actor(
+            has=user.has, known=lambda kind: frozenset(r.id for r in self._rows(kind))
+        )
+
+    async def list_workflows(self) -> tuple[Workflow, ...]:
+        """`WorkflowReader.list_workflows`."""
+        data, actor = self._workflows()
+        return workflows.list_workflows(data, actor)
+
+    async def get_workflow(self, workflow_id: int) -> Workflow:
+        """`WorkflowReader.get_workflow`."""
+        data, actor = self._workflows()
+        return workflows.get_workflow(data, actor, workflow_id)
+
+    @write
+    async def create_workflow(self, name: str, values: WorkflowValues) -> Workflow:
+        """`WorkflowWriter.create_workflow`."""
+        data, actor = self._workflows()
+        return workflows.create_workflow(data, actor, name, values)
+
+    @write
+    async def update_workflow(self, workflow_id: int, values: WorkflowValues) -> Workflow:
+        """`WorkflowWriter.update_workflow`."""
+        data, actor = self._workflows()
+        return workflows.update_workflow(data, actor, workflow_id, values)
+
+    @write
+    async def delete_workflow(self, workflow_id: int) -> None:
+        """`WorkflowWriter.delete_workflow`."""
+        data, actor = self._workflows()
+        workflows.delete_workflow(data, actor, workflow_id)
+
+    # --- AdminReader and AdminWriter (the input rules are in fakes/admin.py)
+
+    def _need(self, permission: str, action: tuple[str, str]) -> None:
+        if not self.user.has(permission):
+            raise denied(action)
+
+    def _staff(self) -> None:
+        if not (self.user.is_active and (self.user.is_staff or self.user.is_superuser)):
+            raise denied(READ_LOGS)
+
+    def _find_user(self, user_id: int) -> FakeUser:
+        found = [u for u in self.state.users if u.id == user_id]
+        if not found:
+            raise unseen_user(user_id)
+        return found[0]
+
+    def _find_group(self, group_id: int) -> FakeGroup:
+        found = [g for g in self.state.groups if g.id == group_id]
+        if not found:
+            raise unseen_group(group_id)
+        return found[0]
+
+    def _user_record(self, user: FakeUser) -> UserRecord:
+        inherited = (
+            set[str]()
+            if user.is_superuser
+            else {p for g in self.state.groups if g.id in user.groups for p in g.permissions}
+        )
+        return UserRecord(
+            id=user.id,
+            username=user.username,
+            email=user.email or None,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            is_active=user.is_active,
+            is_staff=user.is_staff,
+            is_superuser=user.is_superuser,
+            group_ids=tuple(sorted(user.groups)),
+            permissions=tuple(sorted(user.permissions)),
+            inherited_permissions=tuple(sorted(inherited)),
+            date_joined=user.date_joined,
+            mfa_enabled=False,
+        )
+
+    async def get_user(self, user_id: int) -> UserRecord:
+        """`AdminReader.get_user` (UserViewSet retrieve)."""
+        self._need("view_user", VIEW_USER)
+        return self._user_record(self._find_user(user_id))
+
+    async def get_current_user_id(self) -> int:
+        """`AdminReader.get_current_user_id` (UiSettingsView: needs `view_uisettings`)."""
+        if not self.user.has("view_uisettings"):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
+        return self.user.id
+
+    async def get_group(self, group_id: int) -> GroupRecord:
+        """`AdminReader.get_group` (GroupViewSet retrieve)."""
+        self._need("view_group", VIEW_GROUP)
+        group = self._find_group(group_id)
+        return GroupRecord(
+            id=group.id, name=group.name, permissions=tuple(sorted(group.permissions))
+        )
+
+    def _config_record(self) -> AppConfigRecord:
+        state = self.state
+        return AppConfigRecord(
+            id=1,
+            externally_configured_variables=state.config_external,
+            settings=dict(state.config),
+            keys_configured=tuple(n for n in CONFIG_SECRETS if n in state.config_keys),
+        )
+
+    async def get_config(self) -> AppConfigRecord:
+        """`AdminReader.get_config`: any signed-in user may read it (DRF asks nothing on a GET)."""
+        return self._config_record()
+
+    async def list_logs(self) -> tuple[str, ...]:
+        """`AdminReader.list_logs` (LogViewSet list: staff only)."""
+        self._staff()
+        return tuple(self.state.logs)
+
+    async def get_log(self, name: str, *, limit: int) -> tuple[str, ...]:
+        """`AdminReader.get_log` (LogViewSet retrieve: the last `limit` lines)."""
+        self._staff()
+        if name not in self.state.logs:
+            raise unseen_log(name)
+        return tuple(self.state.logs[name][-limit:])
+
+    async def list_tasks(
+        self,
+        *,
+        state: TaskState | None,
+        task_type: TaskType | None,
+        acknowledged: bool | None,
+        page: int,
+        page_size: int,
+    ) -> TaskRowPage:
+        """`AdminReader.list_tasks` (TasksViewSet list, newest first)."""
+        self._need("view_paperlesstask", VIEW_TASKS)
+        tasks = sorted(self.state.tasks, key=lambda t: (t.created, t.id), reverse=True)
+        rows = tuple(
+            TaskRow(
+                id=t.id,
+                task_id=t.task_id,
+                task_type=t.task_type,
+                trigger_source=t.trigger_source,
+                state=t.status,
+                created=t.created,
+                started=t.started,
+                finished=t.finished,
+                duration_seconds=t.duration_seconds,
+                document_ids=t.document_ids,
+                acknowledged=t.acknowledged,
+                message=t.message,
+            )
+            for t in tasks
+            if (state is None or t.status == state)
+            and (task_type is None or t.task_type == task_type)
+            and (acknowledged is None or t.acknowledged == acknowledged)
+        )
+        try:
+            shown, more = self._page(rows, page, page_size)
+        except NotFound:
+            raise beyond_tasks(page) from None
+        return TaskRowPage(count=len(rows), next_page=more, rows=shown)
+
+    async def download_documents(
+        self,
+        document_ids: Sequence[int],
+        *,
+        content: ArchiveContent,
+        compression: Compression,
+        follow_formatting: bool,
+        max_bytes: int,
+    ) -> ArchiveFile:
+        """`AdminReader.download_documents` (BulkDownloadView): one stored archive."""
+        del compression
+        self._need("view_document", DOWNLOAD)
+        known = {d.id: d for d in self.state.documents}
+        if len(set(document_ids)) != len(document_ids) or not set(document_ids) <= known.keys():
+            reject("documents", "Some documents in documents don't exist or were specified twice.")
+        chosen = [known[number] for number in document_ids]
+        if not all(d.visible_to(self.user) for d in chosen):
+            raise denied(DOWNLOAD)
+        files: list[tuple[str, bytes]] = []
+        for doc in chosen:
+            archived = doc.archive is not None
+            name = (
+                doc.download_filename(archive=False) if follow_formatting else doc.original_filename
+            )
+            if content in {"originals", "both"} or not archived:
+                files.append((name, doc.original))
+            if content in {"archive", "both"} and doc.archive is not None:
+                prefix = "archive/" if content == "both" else ""
+                files.append((f"{prefix}{PurePath(name).stem}.pdf", doc.archive))
+        archive = archive_of(files)
+        if len(archive) > max_bytes:
+            return ArchiveFile(content=b"", truncated=True)
+        return ArchiveFile(content=archive, truncated=False)
+
+    @write
+    async def create_user(self, values: UserValues) -> UserRecord:
+        """`AdminWriter.create_user` (UserViewSet create)."""
+        self._need("add_user", ADD_USER)
+        if not self.user.is_superuser and (values.is_superuser or values.is_staff):
+            raise denied(ADD_USER)
+        user = self._apply_user(None, values)
+        self.state.users.append(user)
+        return self._user_record(user)
+
+    def _apply_user(  # noqa: C901 -- one rule per field
+        self, current: FakeUser | None, values: UserValues
+    ) -> FakeUser:
+        state, sent = self.state, values.model_fields_set
+        others = {u.username for u in state.users if current is None or u.id != current.id}
+        changes: dict[str, object] = {}
+        if "username" in sent or current is None:
+            check_username(values.username or "", others)
+            changes["username"] = values.username
+        if "email" in sent:
+            check_email(values.email or "")
+            changes["email"] = values.email or ""
+        for name in ("first_name", "last_name", "is_active", "is_staff", "is_superuser"):
+            if name in sent and getattr(values, name) is not None:
+                changes[name] = getattr(values, name)
+        if values.group_ids is not None:
+            known = {g.id for g in state.groups}
+            for number in values.group_ids:
+                if number not in known:
+                    reject("groups", f'Invalid pk "{number}" - object does not exist.')
+            changes["groups"] = frozenset(values.group_ids)
+        if values.permissions is not None:
+            check_permissions(values.permissions)
+            changes["permissions"] = frozenset(values.permissions)
+        if values.password is not None:
+            check_secret(values.password.get_secret_value(), "password")
+            changes["has_password"] = True
+        if current is None:
+            number = max((u.id for u in state.users), default=1) + 1
+            return FakeUser(id=number, **changes)  # pyright: ignore[reportArgumentType] -- fields come from a dict of checked changes
+        updated = replace(current, **changes)
+        state.users[state.users.index(current)] = updated
+        return updated
+
+    @write
+    async def update_user(self, user_id: int, values: UserValues) -> UserRecord:
+        """`AdminWriter.update_user` (UserViewSet partial_update)."""
+        self._need("change_user", CHANGE_USER)
+        target = self._find_user(user_id)
+        if not self.user.is_superuser:
+            flags = (values.is_superuser, values.is_staff)
+            if target.is_superuser or (
+                flags != (None, None)
+                and (
+                    values.is_superuser not in {None, target.is_superuser}
+                    or values.is_staff not in {None, target.is_staff}
+                )
+            ):
+                raise denied(CHANGE_USER)
+        return self._user_record(self._apply_user(target, values))
+
+    def _forget(self, *, user: int | None = None, group: int | None = None) -> None:
+        """Take a deleted user or group out of owners and grants, like Paperless."""
+        state = self.state
+        owned: list[Owned] = [
+            *state.documents,
+            *state.trash,
+            *state.tags,
+            *state.correspondents,
+            *state.document_types,
+            *state.storage_paths,
+            *state.saved_views,
+        ]
+        for obj in owned:
+            if user is not None:
+                if obj.owner == user:
+                    obj.owner = None
+                obj.viewers.discard(user)
+                obj.editors.discard(user)
+            if group is not None:
+                obj.view_groups.discard(group)
+                obj.change_groups.discard(group)
+
+    @write
+    async def delete_user(self, user_id: int) -> None:
+        """`AdminWriter.delete_user` (UserViewSet destroy): what the user owned loses its owner."""
+        self._need("delete_user", DELETE_USER)
+        target = self._find_user(user_id)
+        self.state.users.remove(target)
+        self._forget(user=user_id)
+
+    @write
+    async def create_group(self, values: GroupValues) -> GroupRecord:
+        """`AdminWriter.create_group` (GroupViewSet create)."""
+        self._need("add_group", ADD_GROUP)
+        check_group_name(values.name or "", {g.name for g in self.state.groups})
+        check_permissions(values.permissions or ())
+        number = max((g.id for g in self.state.groups), default=0) + 1
+        group = FakeGroup(
+            id=number, name=values.name or "", permissions=frozenset(values.permissions or ())
+        )
+        self.state.groups.append(group)
+        return GroupRecord(
+            id=group.id, name=group.name, permissions=tuple(sorted(group.permissions))
+        )
+
+    @write
+    async def update_group(self, group_id: int, values: GroupValues) -> GroupRecord:
+        """`AdminWriter.update_group` (GroupViewSet partial_update)."""
+        self._need("change_group", CHANGE_GROUP)
+        target = self._find_group(group_id)
+        name, permissions = target.name, target.permissions
+        if "name" in values.model_fields_set:
+            check_group_name(
+                values.name or "", {g.name for g in self.state.groups if g is not target}
+            )
+            name = values.name or ""
+        if values.permissions is not None:
+            check_permissions(values.permissions)
+            permissions = frozenset(values.permissions)
+        updated = replace(target, name=name, permissions=permissions)
+        self.state.groups[self.state.groups.index(target)] = updated
+        return GroupRecord(id=updated.id, name=name, permissions=tuple(sorted(permissions)))
+
+    @write
+    async def delete_group(self, group_id: int) -> None:
+        """`AdminWriter.delete_group` (GroupViewSet destroy): members and grants lose it."""
+        self._need("delete_group", DELETE_GROUP)
+        target = self._find_group(group_id)
+        self.state.groups.remove(target)
+        state = self.state
+        for index, user in enumerate(state.users):
+            if group_id in user.groups:
+                state.users[index] = replace(user, groups=user.groups - {group_id})
+        self._forget(group=group_id)
+
+    @write
+    async def update_config(self, values: ConfigValues) -> AppConfigRecord:
+        """`AdminWriter.update_config`: a PATCH needs the change permission."""
+        self._need("change_applicationconfiguration", CHANGE_CONFIG)
+        state = self.state
+        settings = apply_settings(state.config, values.settings)
+        for secret in values.secrets.values():
+            check_secret(secret.get_secret_value(), "API key")
+        state.config = settings
+        for name, secret in values.secrets.items():
+            if name in CONFIG_SECRETS and secret.get_secret_value():
+                state.config_keys.add(name)
+        for name, setting in values.settings.items():
+            if name in CONFIG_SECRETS and setting is None:
+                state.config_keys.discard(name)
+        return self._config_record()
+
+    @write
+    async def acknowledge_tasks(self, task_ids: Sequence[int]) -> int:
+        """`AdminWriter.acknowledge_tasks` (TasksViewSet acknowledge)."""
+        self._need("change_paperlesstask", ACK_TASKS)
+        known = {t.id: t for t in self.state.tasks}
+        if len(set(task_ids)) != len(task_ids) or not set(task_ids) <= known.keys():
+            reject("tasks", "Some tasks in tasks don't exist or were specified twice.")
+        for number in task_ids:
+            known[number].acknowledged = True
+        return len(task_ids)
+
+    @write
+    async def run_task(self, task_type: RunnableTask) -> str:
+        """`AdminWriter.run_task` (TasksViewSet run): superusers only, three task types."""
+        if not self.user.is_superuser:
+            raise denied(RUN_TASKS)
+        if task_type not in {"train_classifier", "sanity_check", "llm_index"}:
+            reject("task_type", f'"{task_type}" cannot be manually triggered')
+        state = self.state
+        task = FakeTask(
+            id=max((t.id for t in state.tasks), default=0) + 1,
+            task_id=str(uuid.uuid4()),
+            task_type=task_type,
+            trigger_source="manual",
+            created=datetime.now(UTC),
+        )
+        state.tasks.append(task)
+        return task.task_id
+
     async def get_document_content(self, document_id: int) -> str:
         """`DocumentReader.get_document_content` (retrieve with `fields=content`)."""
         return self._seen(document_id).content
@@ -2575,6 +3293,14 @@ class FakePaperless:
             truncated=False,
             sources=tuple(ChatSource(id=d.id, title=d.title) for d in found),
         )
+
+    async def get(self, path: str, params: Mapping[str, str], *, max_bytes: int) -> RawReply:
+        """`RawReader.get`, for the few paths `fakes/raw.py` serves; the rest is a 404."""
+        match = re.fullmatch(r"/api/documents/(\d+)/download/?", path)
+        document = self._sub(int(match[1])) if match else None
+        tags = [(t.id, t.name) for t in self.state.tags if t.visible_to(self.user)]
+        file = (document.original, document.mime_type) if document else None
+        return raw.answer(path, params, tags, file, max_bytes=max_bytes)
 
     async def get_ai_suggestions(self, document_id: int) -> AiSuggestions:
         """`AiReader.get_ai_suggestions` (the `ai_suggestions` action).

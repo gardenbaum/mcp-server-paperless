@@ -159,6 +159,20 @@ secrets:
 # The full local gate; CI's check job runs the same recipes. `audit` needs the network.
 check: lock-check lint format-check typecheck imports deps secrets cov-diff
 
+# Run the HTTP server (Streamable HTTP, PAPERLESS_MCP_HTTP_* settings). It refuses to start without
+# PAPERLESS_MCP_HTTP_AUTH_TOKENS unless bound to loopback with PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK=true.
+serve-http:
+    uv run paperless-mcp-http
+
+# Build the container image (Dockerfile; decision-28). The tag defaults to a local one.
+image tag="paperless-mcp:dev":
+    docker build --build-arg VERSION=dev --build-arg REVISION="$(git rev-parse HEAD)" --tag {{tag}} .
+
+# Build the image and run scripts/image_smoke.sh on it: refuses without tokens, runs read-only as
+# non-root, becomes healthy, answers 401 without a token and an MCP initialize with one.
+image-smoke tag="paperless-mcp:dev": (image tag)
+    scripts/image_smoke.sh {{tag}}
+
 # Start the Paperless 3.4.2 E2E stack (tests/e2e/compose.yaml) on 127.0.0.1:${PAPERLESS_E2E_PORT:-8010}.
 # Readiness and seeding are the test session's job, so this returns as soon as the containers run.
 e2e-up:

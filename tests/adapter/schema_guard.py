@@ -34,6 +34,10 @@ if TYPE_CHECKING:
 
 SCHEMA_PATH = Path(__file__).parents[2] / "docs" / "vendor" / "paperless" / "openapi.json"
 
+FULL_PERMS_REASON = (
+    "the update serializers honour it like the retrieve ones and then answer the grants (PLMCP-28)"
+)
+
 # Query parameters an operation accepts although the generated schema omits them:
 # (method, path template) -> {parameter: reason}.
 UNDECLARED_QUERY_PARAMETERS: Mapping[tuple[str, str], Mapping[str, str]] = {
@@ -46,7 +50,12 @@ UNDECLARED_QUERY_PARAMETERS: Mapping[tuple[str, str], Mapping[str, str]] = {
             "the update serializer honours it like the retrieve one; without it the answer "
             "carries the whole OCR text (PLMCP-16)"
         ),
+        "full_perms": FULL_PERMS_REASON,
     },
+    ("PATCH", "/api/tags/{id}/"): {"full_perms": FULL_PERMS_REASON},
+    ("PATCH", "/api/correspondents/{id}/"): {"full_perms": FULL_PERMS_REASON},
+    ("PATCH", "/api/document_types/{id}/"): {"full_perms": FULL_PERMS_REASON},
+    ("PATCH", "/api/storage_paths/{id}/"): {"full_perms": FULL_PERMS_REASON},
 }
 # Query parameters the schema declares with the wrong type: (method, path template) ->
 # {parameter: reason}. Their value is not type-checked (the name must still be declared).
@@ -199,6 +208,14 @@ WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
         "TrashView answers a document the user may not delete with "
         "HttpResponseForbidden('Insufficient permissions'), text/html (PLMCP-27)"
     ),
+    ("POST", "/api/mail_accounts/test/", 400): (
+        "a failed login is answered with HttpResponseBadRequest('Unable to connect to server'), "
+        "text/html; field errors are DRF JSON as usual (PLMCP-29)"
+    ),
+    ("POST", "/api/mail_accounts/test/", 403): (
+        "a user who may not change the account is answered with "
+        "HttpResponseForbidden('Insufficient permissions'), text/html (PLMCP-29)"
+    ),
     ("GET", "/api/status/", 200): (
         "3.4.2 nests index, classifier and sanity check under `tasks` and sends null errors; "
         "the schema has them top-level and non-nullable (PLMCP-7)"
@@ -229,6 +246,39 @@ _NO_PERMISSIONS = (
 )
 OMITTED_RESPONSE_PROPERTIES: Mapping[tuple[str, str, int], tuple[str, str]] = dict.fromkeys(
     _SAVED_VIEW_ENDPOINTS, _NO_PERMISSIONS
+)
+# Responses to a `full_perms=true` request that carry `permissions` instead of the
+# `user_can_change` the schema requires (PLMCP-28): the lists and the updates of the five objects.
+_PERMISSION_PATHS = (
+    "/api/documents/",
+    "/api/tags/",
+    "/api/correspondents/",
+    "/api/document_types/",
+    "/api/storage_paths/",
+)
+FULL_PERMS_RESPONSES: frozenset[tuple[str, str, int]] = frozenset(
+    {("GET", path, 200) for path in _PERMISSION_PATHS}
+    | {("PATCH", f"{path}{{id}}/", 200) for path in _PERMISSION_PATHS}
+)
+# Responses with a property that is null although the schema allows only an object there: the
+# schema writes a nullable object as `allOf` plus `nullable`, which openapi-core cannot validate.
+# The null is dropped (at any depth) before the body is checked, so the rest of it still is:
+# (method, path template, status) -> (properties, reason).
+_WORKFLOW_ENDPOINTS = (
+    ("GET", "/api/workflows/", 200),
+    ("GET", "/api/workflows/{id}/", 200),
+    ("POST", "/api/workflows/", 201),
+    ("PATCH", "/api/workflows/{id}/", 200),
+)
+_NULL_OBJECTS = (
+    frozenset({"email", "webhook"}),
+    (
+        "3.4.2 answers `email` and `webhook` of an action as null where there is none; the "
+        "schema's nullable `allOf` object cannot be validated (PLMCP-30)"
+    ),
+)
+NULL_OBJECT_PROPERTIES: Mapping[tuple[str, str, int], tuple[frozenset[str], str]] = dict.fromkeys(
+    _WORKFLOW_ENDPOINTS, _NULL_OBJECTS
 )
 # Endpoints that answer a file: (method, path template) -> reason. The schema declares their 200 as
 # application/json (format binary), but Paperless sends the file with its own content type, so
@@ -492,6 +542,28 @@ def _check_file_response(request: httpx2.Request, response: httpx2.Response) -> 
         raise SchemaViolationError(message)
 
 
+def _with_full_perms(
+    request: httpx2.Request, template: str, response: httpx2.Response
+) -> httpx2.Response:
+    """The response of `FULL_PERMS_RESPONSES` to a `full_perms=true` request, completed.
+
+    With ``full_perms=true`` 3.4.2 answers the grants in `permissions` and leaves out
+    `user_can_change`, which the schema requires of every object (PLMCP-28); it is filled in so
+    that the rest of the body is still checked.
+    """
+    listed = (request.method, template, response.status_code) in FULL_PERMS_RESPONSES
+    body = _json_or_none(response)
+    if not listed or request.url.params.get("full_perms") != "true" or not isinstance(body, dict):
+        return response
+    objects = cast("Json", body)
+    rows = objects.get("results")
+    for row in cast("list[Json]", rows) if isinstance(rows, list) else [objects]:
+        _ = row.setdefault("user_can_change", True)
+    return httpx2.Response(
+        response.status_code, json=body, headers={"Content-Type": "application/json"}
+    )
+
+
 def _with_omitted_properties(
     request: httpx2.Request, template: str, response: httpx2.Response
 ) -> httpx2.Response:
@@ -507,6 +579,34 @@ def _with_omitted_properties(
         _ = row.setdefault(name, {})
     return httpx2.Response(
         response.status_code, json=body, headers={"Content-Type": "application/json"}
+    )
+
+
+def _without_nulls(value: object, names: Collection[str]) -> object:
+    """``value`` with every property of ``names`` that is null dropped, at any depth."""
+    if isinstance(value, dict):
+        return {
+            k: _without_nulls(v, names)
+            for k, v in cast("Json", value).items()
+            if not (k in names and v is None)
+        }
+    if isinstance(value, list):
+        return [_without_nulls(v, names) for v in cast("list[object]", value)]
+    return value
+
+
+def _with_nulls_dropped(
+    request: httpx2.Request, template: str, response: httpx2.Response
+) -> httpx2.Response:
+    """The response without the nulls of `NULL_OBJECT_PROPERTIES`."""
+    listed = NULL_OBJECT_PROPERTIES.get((request.method, template, response.status_code))
+    body = _json_or_none(response)
+    if listed is None or body is None:
+        return response
+    return httpx2.Response(
+        response.status_code,
+        json=_without_nulls(body, listed[0]),
+        headers={"Content-Type": "application/json"},
     )
 
 
@@ -528,6 +628,8 @@ def check_response(request: httpx2.Request, response: httpx2.Response) -> None:
             raise SchemaViolationError(message)
         return
     response = _with_omitted_properties(request, template, response)
+    response = _with_full_perms(request, template, response)
+    response = _with_nulls_dropped(request, template, response)
     errors = list(_OPENAPI.iter_response_errors(_Request(request), _Response(response)))
     if errors:
         raise _fail(request, f"{response.status_code} response does not match the schema", errors)
