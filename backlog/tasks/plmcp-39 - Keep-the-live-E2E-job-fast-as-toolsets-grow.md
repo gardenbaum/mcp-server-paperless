@@ -1,11 +1,11 @@
 ---
 id: PLMCP-39
 title: Keep the live E2E job fast as toolsets grow
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-13T07:29:00Z'
-updated_date: '2026-11-17T08:29:00Z'
+updated_date: '2026-11-17T08:31:00Z'
 labels:
   - ci
   - testing
@@ -61,6 +61,8 @@ Changes beyond the WIP: (1) the PR tier no longer runs the whole live contract s
 Shard evidence: shard 2/3 ran end to end on a second compose project (port 8021): 135 passed in 385 s (predicted 396). The PLMCP-40 test (more_like, whose rebuild_search_index does docker exec into the container publishing PORT) passed on that stack with two stacks up, so the lookup by published port works; in CI each shard has its own runner and stack. Throttling of /api/token/ is per stack, so shards do not share it. Second stack removed afterwards.
 
 Estimates, not measured: full run on main = 3 parallel shards, about 390 s of tests each, about 11-12 min hosted plus ~2 min stack start, so ~14 min (AC 3 stays unchecked until a run on main shows it). PR tier 2-10 min hosted.
+
+Controller: accepted decision-23 under the owner's standing delegation (2026-11-17, owner asked to implement PLMCP-39). Added persist-credentials: false to the PR e2e checkout (it only diffs, never pushes). AC #1 and #3 are verified by the first sharded runs on main; shard weights and timeouts get one follow-up adjustment if those runs disagree with the estimates.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -4,7 +4,7 @@ title: >-
   The e2e check is a fast, non-required signal on pull requests; the full suite
   runs after merge
 date: '2026-11-16T23:32:00Z'
-status: proposed
+status: accepted
 ---
 ## Context
 

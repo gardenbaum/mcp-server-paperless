@@ -102,6 +102,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # the diff needs the pull request's base and head commits
+          persist-credentials: false
 
       # The changed paths are those of the pull request's own commits (merge base to head) and of
       # the merge result against the base, so a stale base is covered. --no-renames lists both
