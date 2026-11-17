@@ -20,6 +20,8 @@ from fakes.paperless import FakePaperless, is_write, write
 from contract.conftest import Ports, live_ports
 from paperless_mcp.domain import ports
 from paperless_mcp.domain.ports import (
+    AdminReader,
+    AdminWriter,
     AiReader,
     BulkWriter,
     DocumentReader,
@@ -200,6 +202,8 @@ def test_ports_are_found_by_introspection() -> None:
         "raw": RawReader,
         "workflows": WorkflowReader,
         "workflow_writes": WorkflowWriter,
+        "management": AdminReader,
+        "management_writes": AdminWriter,
     }
 
 
