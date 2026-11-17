@@ -1,0 +1,153 @@
+"""WorkflowReader and WorkflowWriter on ``/api/workflows/``.
+
+A workflow carries its triggers and actions as nested objects. Paperless 3.4.2 stores each of them
+as an object of its own and replaces the nested lists of a workflow as a whole, so a write sends
+them without ids; the settings travel under Paperless's names, the type apart from them.
+"""
+
+from typing import TYPE_CHECKING, ClassVar
+
+from pydantic import BaseModel, ConfigDict, JsonValue
+
+from paperless_mcp.domain.errors import NotFound, PaperlessMcpError
+from paperless_mcp.domain.workflows import Workflow, WorkflowAction, WorkflowTrigger
+from paperless_mcp.paperless.pagination import MAX_ITEMS, Page, collect
+
+if TYPE_CHECKING:
+    from paperless_mcp.domain.workflows import WorkflowValues
+    from paperless_mcp.paperless.client import PaperlessClient
+
+PATH = "/api/workflows/"
+# The nested objects of an action have ids of their own that mean nothing to a caller.
+NESTED = ("email", "webhook")
+
+
+class _Part(BaseModel):
+    """A trigger or action: its id and type, and every other setting as it came."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="allow")
+
+    id: int | None = None
+    type: int | None = None
+
+    def kind(self) -> int:
+        """The type; Paperless always sends one, so its absence is an error, not a guess."""
+        if self.type is None:
+            message = "Paperless sent a workflow trigger or action without a type."
+            raise PaperlessMcpError(message)
+        return self.type
+
+    def settings(self) -> dict[str, JsonValue]:
+        """What the part holds besides its id and type; nested objects lose their id."""
+        settings: dict[str, JsonValue] = dict(self.model_extra or {})
+        for name in NESTED:
+            nested = settings.get(name)
+            if isinstance(nested, dict):
+                settings[name] = {k: v for k, v in nested.items() if k != "id"}
+        return settings
+
+
+class _Row(BaseModel):
+    id: int
+    name: str
+    order: int = 0
+    enabled: bool = True
+    triggers: list[_Part]
+    actions: list[_Part]
+
+
+def _workflow(row: _Row) -> Workflow:
+    return Workflow(
+        id=row.id,
+        name=row.name,
+        order=row.order,
+        enabled=row.enabled,
+        triggers=tuple(
+            WorkflowTrigger(id=t.id, type=t.kind(), settings=t.settings()) for t in row.triggers
+        ),
+        actions=tuple(
+            WorkflowAction(id=a.id, type=a.kind(), settings=a.settings()) for a in row.actions
+        ),
+    )
+
+
+def unseen_workflow(workflow_id: int) -> NotFound:
+    """The error for a workflow that does not exist."""
+    message = f"No workflow {workflow_id} exists."
+    return NotFound(message, hint="Call list_workflows to see the workflows you can use.")
+
+
+def _body(values: WorkflowValues) -> dict[str, object]:
+    """The request body for the settings ``values`` sets, under Paperless's names."""
+    body: dict[str, object] = {}
+    if values.name is not None:
+        body["name"] = values.name
+    if values.order is not None:
+        body["order"] = values.order
+    if values.enabled is not None:
+        body["enabled"] = values.enabled
+    if values.triggers is not None:
+        body["triggers"] = [{"type": t.type, **t.settings} for t in values.triggers]
+    if values.actions is not None:
+        body["actions"] = [{"type": a.type, **a.settings} for a in values.actions]
+    return body
+
+
+class PaperlessWorkflowReader:
+    """``WorkflowReader`` over the Paperless REST API."""
+
+    def __init__(self, client: PaperlessClient) -> None:
+        """Read through ``client``."""
+        self._client: PaperlessClient = client
+
+    async def list_workflows(self) -> tuple[Workflow, ...]:
+        """See ``WorkflowReader.list_workflows``.
+
+        Raises:
+            PaperlessMcpError: More than ``MAX_ITEMS`` workflows; resolving names on a part of
+                them could pick the wrong one.
+        """
+        collected = await collect(self._client, PATH, Page[_Row])
+        if collected.truncated:
+            message = (
+                f"Paperless has more than {MAX_ITEMS} workflows; this server reads up to that."
+            )
+            raise PaperlessMcpError(message)
+        return tuple(_workflow(row) for row in collected.items)
+
+    async def get_workflow(self, workflow_id: int) -> Workflow:
+        """See ``WorkflowReader.get_workflow``."""
+        try:
+            return _workflow(await self._client.get(f"{PATH}{workflow_id}/", _Row))
+        except NotFound:
+            raise unseen_workflow(workflow_id) from None
+
+
+class PaperlessWorkflowWriter:
+    """``WorkflowWriter`` over the Paperless REST API."""
+
+    def __init__(self, client: PaperlessClient) -> None:
+        """Write through ``client``."""
+        self._client: PaperlessClient = client
+
+    async def create_workflow(self, name: str, values: WorkflowValues) -> Workflow:
+        """See ``WorkflowWriter.create_workflow``: Paperless requires both lists, even empty."""
+        body: dict[str, object] = {"triggers": [], "actions": [], **_body(values), "name": name}
+        return _workflow(await self._client.call("POST", PATH, _Row, json=body))
+
+    async def update_workflow(self, workflow_id: int, values: WorkflowValues) -> Workflow:
+        """See ``WorkflowWriter.update_workflow``."""
+        try:
+            row = await self._client.call(
+                "PATCH", f"{PATH}{workflow_id}/", _Row, json=_body(values)
+            )
+        except NotFound:
+            raise unseen_workflow(workflow_id) from None
+        return _workflow(row)
+
+    async def delete_workflow(self, workflow_id: int) -> None:
+        """See ``WorkflowWriter.delete_workflow``."""
+        try:
+            _ = await self._client.request("DELETE", f"{PATH}{workflow_id}/")
+        except NotFound:
+            raise unseen_workflow(workflow_id) from None

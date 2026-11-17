@@ -69,6 +69,8 @@ from paperless_mcp.domain.ports import (  # noqa: TC001 -- Ports' annotations ar
     TrashWriter,
     ViewReader,
     ViewWriter,
+    WorkflowReader,
+    WorkflowWriter,
 )
 from paperless_mcp.paperless.ai import PaperlessAiReader
 from paperless_mcp.paperless.auth import StaticTokenProvider
@@ -85,6 +87,7 @@ from paperless_mcp.paperless.tasks import PaperlessTaskReader
 from paperless_mcp.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
 from paperless_mcp.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
 from paperless_mcp.paperless.views import PaperlessViewReader, PaperlessViewWriter
+from paperless_mcp.paperless.workflows import PaperlessWorkflowReader, PaperlessWorkflowWriter
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
@@ -100,6 +103,9 @@ SCRATCH_TAG = "contract-tag-"
 SCRATCH_ITEM = "contract-item-"
 # The same for saved views, which Paperless cannot filter by name: the cleanup lists them.
 SCRATCH_VIEW = "contract-view-"
+# The same for workflows. A live workflow acts on documents other tests consume, so the tests make
+# them disabled or with a trigger nothing matches.
+SCRATCH_WORKFLOW = "contract-workflow-"
 SCRATCH_PATHS = (
     "/api/tags/",
     "/api/correspondents/",
@@ -133,6 +139,8 @@ class Ports:
     mail: MailReader
     mail_writes: MailWriter
     raw: RawReader
+    workflows: WorkflowReader
+    workflow_writes: WorkflowWriter
 
 
 def fake_ports(state: FakeState, user: str) -> Ports:
@@ -160,6 +168,8 @@ def fake_ports(state: FakeState, user: str) -> Ports:
         mail=fake,
         mail_writes=writer,
         raw=fake,
+        workflows=fake,
+        workflow_writes=writer,
     )
 
 
@@ -186,6 +196,8 @@ def live_ports(client: PaperlessClient) -> Ports:
         mail=PaperlessMailReader(client),
         mail_writes=PaperlessMailWriter(client),
         raw=PaperlessRawReader(client),
+        workflows=PaperlessWorkflowReader(client),
+        workflow_writes=PaperlessWorkflowWriter(client),
     )
 
 
@@ -576,6 +588,37 @@ def live_restricted(
     return restricted
 
 
+def every_row(stack: Stack, path: str) -> list[dict[str, object]]:
+    """Every row of a paged list, over all pages."""
+    rows: list[dict[str, object]] = []
+    page = 1
+    while True:
+        response = stack.admin.get(path, params={"page_size": 100, "page": page})
+        body = cast("dict[str, object]", response.json())
+        rows.extend(results(response))
+        if not body.get("next"):
+            return rows
+        page += 1
+
+
+def drop_orphaned_workflow_parts(stack: Stack) -> None:
+    """Delete the triggers and actions no workflow holds.
+
+    Paperless 3.4.2 keeps them as objects of their own when their workflow is deleted or replaces
+    them, and lists them under /api/workflow_triggers/ and /api/workflow_actions/ for good.
+    """
+    held = every_row(stack, "/api/workflows/")
+    for part in ("triggers", "actions"):
+        used = {
+            cast("dict[str, object]", item)["id"]
+            for row in held
+            for item in cast("list[object]", row[part])
+        }
+        for row in every_row(stack, f"/api/workflow_{part}/"):
+            if row["id"] not in used:
+                _ = stack.admin.delete(f"/api/workflow_{part}/{row['id']}/")
+
+
 def cleanup(stack: Stack, documents: list[int], users: list[int]) -> None:
     """Delete what a live test made: documents, users and scratch objects (SCRATCH_*)."""
     delete_and_empty_trash(stack, documents)
@@ -585,6 +628,11 @@ def cleanup(stack: Stack, documents: list[int], users: list[int]) -> None:
     for row in results(views):
         if str(row["name"]).startswith(SCRATCH_VIEW):
             _ = stack.admin.delete(f"/api/saved_views/{row['id']}/")
+    workflows = stack.admin.get("/api/workflows/", params={"page_size": 100})
+    for row in results(workflows):
+        if str(row["name"]).startswith(SCRATCH_WORKFLOW):
+            _ = stack.admin.delete(f"/api/workflows/{row['id']}/")
+    drop_orphaned_workflow_parts(stack)
     for path in SCRATCH_PATHS:
         for prefix in (SCRATCH_TAG, SCRATCH_ITEM):
             found = stack.admin.get(path, params={"name__istartswith": prefix})

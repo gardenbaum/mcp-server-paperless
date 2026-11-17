@@ -260,6 +260,26 @@ FULL_PERMS_RESPONSES: frozenset[tuple[str, str, int]] = frozenset(
     {("GET", path, 200) for path in _PERMISSION_PATHS}
     | {("PATCH", f"{path}{{id}}/", 200) for path in _PERMISSION_PATHS}
 )
+# Responses with a property that is null although the schema allows only an object there: the
+# schema writes a nullable object as `allOf` plus `nullable`, which openapi-core cannot validate.
+# The null is dropped (at any depth) before the body is checked, so the rest of it still is:
+# (method, path template, status) -> (properties, reason).
+_WORKFLOW_ENDPOINTS = (
+    ("GET", "/api/workflows/", 200),
+    ("GET", "/api/workflows/{id}/", 200),
+    ("POST", "/api/workflows/", 201),
+    ("PATCH", "/api/workflows/{id}/", 200),
+)
+_NULL_OBJECTS = (
+    frozenset({"email", "webhook"}),
+    (
+        "3.4.2 answers `email` and `webhook` of an action as null where there is none; the "
+        "schema's nullable `allOf` object cannot be validated (PLMCP-30)"
+    ),
+)
+NULL_OBJECT_PROPERTIES: Mapping[tuple[str, str, int], tuple[frozenset[str], str]] = dict.fromkeys(
+    _WORKFLOW_ENDPOINTS, _NULL_OBJECTS
+)
 # Endpoints that answer a file: (method, path template) -> reason. The schema declares their 200 as
 # application/json (format binary), but Paperless sends the file with its own content type, so
 # openapi-core cannot match it. Their 200 is checked for what every file response has instead: a
@@ -562,6 +582,34 @@ def _with_omitted_properties(
     )
 
 
+def _without_nulls(value: object, names: Collection[str]) -> object:
+    """``value`` with every property of ``names`` that is null dropped, at any depth."""
+    if isinstance(value, dict):
+        return {
+            k: _without_nulls(v, names)
+            for k, v in cast("Json", value).items()
+            if not (k in names and v is None)
+        }
+    if isinstance(value, list):
+        return [_without_nulls(v, names) for v in cast("list[object]", value)]
+    return value
+
+
+def _with_nulls_dropped(
+    request: httpx2.Request, template: str, response: httpx2.Response
+) -> httpx2.Response:
+    """The response without the nulls of `NULL_OBJECT_PROPERTIES`."""
+    listed = NULL_OBJECT_PROPERTIES.get((request.method, template, response.status_code))
+    body = _json_or_none(response)
+    if listed is None or body is None:
+        return response
+    return httpx2.Response(
+        response.status_code,
+        json=_without_nulls(body, listed[0]),
+        headers={"Content-Type": "application/json"},
+    )
+
+
 def check_response(request: httpx2.Request, response: httpx2.Response) -> None:
     """Raise `SchemaViolationError` unless the response is one the schema allows for the request."""
     template = _template(request)
@@ -579,9 +627,9 @@ def check_response(request: httpx2.Request, response: httpx2.Response) -> None:
             message = f"{request.method} {request.url.path}: not a DRF error body: {response.text}"
             raise SchemaViolationError(message)
         return
-    response = _with_full_perms(
-        request, template, _with_omitted_properties(request, template, response)
-    )
+    response = _with_omitted_properties(request, template, response)
+    response = _with_full_perms(request, template, response)
+    response = _with_nulls_dropped(request, template, response)
     errors = list(_OPENAPI.iter_response_errors(_Request(request), _Response(response)))
     if errors:
         raise _fail(request, f"{response.status_code} response does not match the schema", errors)

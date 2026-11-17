@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from paperless_mcp.services.version_uploads import VersionUploadService
     from paperless_mcp.services.versions import VersionService
     from paperless_mcp.services.views import ViewService
+    from paperless_mcp.services.workflows import WorkflowService
 
 # Every toolset; each tool carries exactly one of them as its only tag.
 TOOLSETS: Final = frozenset(
@@ -60,6 +61,7 @@ TOOLSETS: Final = frozenset(
         "permissions",
         "mail",
         "raw",
+        "workflows",
     }
 )
 
@@ -136,6 +138,11 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "delete_mail_rule": "mail",
     "list_processed_mail": "mail",
     "paperless_api_get": "raw",
+    "list_workflows": "workflows",
+    "get_workflow": "workflows",
+    "create_workflow": "workflows",
+    "update_workflow": "workflows",
+    "delete_workflow": "workflows",
 }
 
 # Toolsets that need a Paperless capability, mapped to it (only "ai" so far); the startup probe
@@ -650,6 +657,45 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    "list_workflows": ToolAnnotations(
+        title="List workflows",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_workflow": ToolAnnotations(
+        title="Get workflow",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # A workflow runs unattended on every matching document and can send documents out (e-mail,
+    # webhook): open world. Not destructive in itself (decision-21): trashing, removing and the
+    # outward actions need confirm while the workflow is enabled, plain filing does not. Creating
+    # is not idempotent (every call makes another workflow); replacing the lists is.
+    "create_workflow": ToolAnnotations(
+        title="Create workflow",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=True,
+    ),
+    "update_workflow": ToolAnnotations(
+        title="Update workflow",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=True,
+    ),
+    # Destructive (decision-6): a workflow has no trash. No document is touched. Deleting again
+    # leaves the state as it is (idempotent), though the second call fails.
+    "delete_workflow": ToolAnnotations(
+        title="Delete workflow",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
 }
 
 logger = logging.getLogger(__name__)
@@ -691,6 +737,8 @@ SERVICES: Final = "services"
 @dataclass(frozen=True, slots=True)
 class Services:
     """The use cases tools call, one field per service; built by the composition root."""
+
+    workflows: WorkflowService
 
     instance: InstanceService
     taxonomy: TaxonomyResolver

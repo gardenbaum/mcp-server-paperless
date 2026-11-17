@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Concatenate, cast
 
 from pydantic import JsonValue
 
-from fakes import mail, raw, sharing
+from fakes import mail, raw, sharing, workflows
 from fakes.accounts import (
     ADMIN,
     BLIND,
@@ -54,6 +54,7 @@ from fakes.sharing import FakeShareBundle, FakeShareLink, SentEmail, SharingData
 from fakes.taxonomy_rules import check_colour, check_match, check_name, check_path, with_ids
 from fakes.view_filters import ONLY_ONE_SEARCH, combines, searches, view_filters
 from fakes.view_rules import check_page_size, check_rules
+from fakes.workflows import Actor, WorkflowData
 from paperless_mcp.domain.ai import AiSuggestions, ChatAnswer, ChatSource
 from paperless_mcp.domain.bulk import (
     FieldsChange,
@@ -90,6 +91,7 @@ from paperless_mcp.domain.tasks import TaskState, TaskStatus
 from paperless_mcp.domain.taxonomy import SelectOption, TaxonomyDetail, TaxonomyItem
 from paperless_mcp.domain.trash import TrashedDocument, TrashPage
 from paperless_mcp.domain.views import FilterRule, SavedView
+from paperless_mcp.domain.workflows import Workflow
 from paperless_mcp.paperless.bulk import documents_refused, objects_refused
 from paperless_mcp.paperless.documents import (
     beyond_last_page,
@@ -138,6 +140,7 @@ if TYPE_CHECKING:
     )
     from paperless_mcp.domain.versions import VersionUpload
     from paperless_mcp.domain.views import ViewValues
+    from paperless_mcp.domain.workflows import WorkflowValues
 
 # Paperless's max_length of document titles and tag names.
 MAX_TITLE = 128
@@ -452,6 +455,9 @@ class FakeState:
     mail_hosts: set[str] = field(default_factory=set[str])
     mail_silent_hosts: set[str] = field(default_factory=set[str])
     mail_fetches: list[int] = field(default_factory=list[int])
+    workflows: list[Workflow] = field(default_factory=list[Workflow])
+    # The last id given to a workflow's trigger or action (a one-item list, shared by reference).
+    workflow_object_id: list[int] = field(default_factory=lambda: [0])
     tasks: list[FakeTask] = field(default_factory=list[FakeTask])
     # Deleted documents, newest last; reads no longer see them, the Paperless trash does.
     trash: list[FakeDocument] = field(default_factory=list[FakeDocument])
@@ -2708,6 +2714,44 @@ class FakePaperless:
     async def delete_mail_rule(self, rule_id: int) -> None:
         """`MailWriter.delete_mail_rule`."""
         mail.delete_rule(self._mail(), self._mail_viewer(), rule_id)
+
+    # --- WorkflowReader and WorkflowWriter (the logic is in fakes/workflows.py)
+
+    def _workflows(self) -> tuple[WorkflowData, Actor]:
+        state = self.state
+        user = self.user
+        data = WorkflowData(state.workflows, state.workflow_object_id)
+        return data, Actor(
+            has=user.has, known=lambda kind: frozenset(r.id for r in self._rows(kind))
+        )
+
+    async def list_workflows(self) -> tuple[Workflow, ...]:
+        """`WorkflowReader.list_workflows`."""
+        data, actor = self._workflows()
+        return workflows.list_workflows(data, actor)
+
+    async def get_workflow(self, workflow_id: int) -> Workflow:
+        """`WorkflowReader.get_workflow`."""
+        data, actor = self._workflows()
+        return workflows.get_workflow(data, actor, workflow_id)
+
+    @write
+    async def create_workflow(self, name: str, values: WorkflowValues) -> Workflow:
+        """`WorkflowWriter.create_workflow`."""
+        data, actor = self._workflows()
+        return workflows.create_workflow(data, actor, name, values)
+
+    @write
+    async def update_workflow(self, workflow_id: int, values: WorkflowValues) -> Workflow:
+        """`WorkflowWriter.update_workflow`."""
+        data, actor = self._workflows()
+        return workflows.update_workflow(data, actor, workflow_id, values)
+
+    @write
+    async def delete_workflow(self, workflow_id: int) -> None:
+        """`WorkflowWriter.delete_workflow`."""
+        data, actor = self._workflows()
+        workflows.delete_workflow(data, actor, workflow_id)
 
     async def get_document_content(self, document_id: int) -> str:
         """`DocumentReader.get_document_content` (retrieve with `fields=content`)."""
