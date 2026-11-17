@@ -12,38 +12,64 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 
 
-E2E = frozenset(
-    f"test_{name}"
-    for name in [
-        "ai",
-        "bulk",
-        "client",
-        "documents",
-        "files",
-        "notes_and_trash",
-        "pdf",
-        "search",
-        "sharing",
-        "stack",
-        "stdio",
-        "tasks",
-        "taxonomy_edits",
-        "trash",
-        "update_document",
-        "upload_document",
-        "versions",
-        "views",
-    ]
+E2E = [
+    "ai",
+    "bulk",
+    "client",
+    "documents",
+    "files",
+    "notes_and_trash",
+    "pdf",
+    "search",
+    "sharing",
+    "stack",
+    "stdio",
+    "tasks",
+    "taxonomy_edits",
+    "trash",
+    "update_document",
+    "upload_document",
+    "versions",
+    "views",
+]
+CONTRACT = [
+    "admin",
+    "ai_reader",
+    "bulk",
+    "document_reader",
+    "document_upload",
+    "document_versions",
+    "document_writer",
+    "instance_reader",
+    "notes_and_trash",
+    "pdf",
+    "sharing",
+    "task_reader",
+    "taxonomy_edits",
+    "taxonomy_reader",
+    "taxonomy_writer",
+    "trash",
+    "view_filters",
+    "views",
+]
+LIVE = frozenset(
+    [f"tests/e2e/test_{name}.py" for name in E2E]
+    + [f"tests/contract/test_{name}.py" for name in CONTRACT]
 )
-BASE = ("tests/contract", "tests/e2e/test_stdio.py")
+STDIO = "tests/e2e/test_stdio.py"
+SMOKE = (STDIO, *sorted(set(e2e_ci.SMOKE_TARGETS) - {STDIO}))
 
 
 def pick(*paths: str) -> e2e_ci.Selection:
-    return e2e_ci.select(paths, e2e_modules=E2E)
+    return e2e_ci.select(paths, live_modules=LIVE)
 
 
-def module(name: str) -> str:
+def e2e(name: str) -> str:
     return f"tests/e2e/{name}.py"
+
+
+def contract(name: str) -> str:
+    return f"tests/contract/{name}.py"
 
 
 def test_a_change_to_backlog_docs_or_markdown_skips_the_live_tests() -> None:
@@ -59,49 +85,83 @@ def test_a_change_to_backlog_docs_or_markdown_skips_the_live_tests() -> None:
     assert selection.targets == ()
 
 
-def test_no_changed_files_runs_everything_rather_than_skipping_on_an_empty_diff() -> None:
-    assert pick() == e2e_ci.Selection(skip=False, targets=("tests/contract", "tests/e2e"))
+def test_no_changed_files_runs_the_smoke_tier_rather_than_skipping_on_an_empty_diff() -> None:
+    assert pick() == e2e_ci.Selection(skip=False, targets=SMOKE)
 
 
-def test_a_toolset_change_runs_the_base_tier_and_that_toolsets_modules() -> None:
+def test_the_smoke_tier_is_small_and_made_of_live_modules_that_exist() -> None:
+    real = {path.relative_to(ROOT).as_posix() for path in (ROOT / "tests").rglob("test_*.py")}
+    assert STDIO in e2e_ci.SMOKE_TARGETS
+    assert set(e2e_ci.SMOKE_TARGETS) <= real
+    assert len(e2e_ci.SMOKE_TARGETS) <= 6  # a pull request signal of minutes, not of the suite
+
+
+def test_a_toolset_change_runs_the_stdio_test_and_that_toolsets_live_modules() -> None:
     selection = pick("src/paperless_mcp/tools/sharing.py", "docs/x.md")
     assert not selection.skip
-    assert selection.targets == (*BASE, module("test_sharing"))
+    assert selection.targets == (STDIO, contract("test_sharing"), e2e("test_sharing"))
 
 
 def test_several_toolsets_run_their_modules_sorted_and_without_duplicates() -> None:
     selection = pick(
-        "src/paperless_mcp/tools/versions.py",
-        "src/paperless_mcp/services/versions.py",
+        "src/paperless_mcp/tools/views.py",
+        "src/paperless_mcp/services/views.py",
         "src/paperless_mcp/paperless/trash.py",
         "tests/adapter/test_trash.py",
     )
-    assert selection.targets == (*BASE, module("test_trash"), module("test_versions"))
+    assert selection.targets == (
+        STDIO,
+        contract("test_trash"),
+        contract("test_view_filters"),
+        contract("test_views"),
+        e2e("test_search"),
+        e2e("test_trash"),
+        e2e("test_views"),
+    )
 
 
-def test_a_stem_without_an_e2e_module_of_its_name_uses_the_alias_table() -> None:
-    selection = pick("src/paperless_mcp/services/uploads.py")
-    assert selection.targets == (*BASE, module("test_upload_document"))
+def test_a_stem_uses_the_alias_table_besides_the_modules_of_its_own_name() -> None:
+    assert pick("src/paperless_mcp/services/uploads.py").targets == (
+        STDIO,
+        contract("test_document_upload"),
+        e2e("test_upload_document"),
+    )
+    assert pick("src/paperless_mcp/tools/versions.py").targets == (
+        STDIO,
+        contract("test_document_versions"),
+        e2e("test_versions"),
+    )
 
 
-def test_every_alias_names_existing_e2e_modules_of_the_real_suite() -> None:
-    real = {path.stem for path in (ROOT / "tests" / "e2e").glob("test_*.py")}
+def test_every_alias_names_existing_live_modules_of_the_real_suite() -> None:
+    real = {
+        path.relative_to(ROOT / "tests").stem
+        for path in (ROOT / "tests").rglob("test_*.py")
+        if path.parent.name in {"e2e", "contract"}
+    }
     for stem, modules in e2e_ci.ALIASES.items():
         assert modules, stem
         assert set(modules) <= real, stem
-        assert stem not in real, f"{stem} maps by name already"
-    assert real >= e2e_ci.BASE_E2E
+    assert e2e_ci.SMOKE_TARGETS
 
 
-def test_a_changed_e2e_module_or_a_unit_test_of_a_toolset_runs_that_toolset() -> None:
-    assert pick("tests/e2e/test_bulk.py").targets == (*BASE, module("test_bulk"))
-    assert pick("tests/tools/test_pdf.py").targets == (*BASE, module("test_pdf"))
-    assert pick("tests/services/test_uploads.py").targets == (*BASE, module("test_upload_document"))
+def test_a_changed_live_module_or_a_unit_test_of_a_toolset_runs_that_toolset() -> None:
+    assert pick("tests/e2e/test_bulk.py").targets == (STDIO, e2e("test_bulk"))
+    assert pick("tests/contract/test_bulk.py").targets == (STDIO, contract("test_bulk"))
+    assert pick("tests/tools/test_pdf.py").targets == (
+        STDIO,
+        contract("test_pdf"),
+        e2e("test_pdf"),
+    )
+    assert pick("tests/services/test_uploads.py").targets == (
+        STDIO,
+        contract("test_document_upload"),
+        e2e("test_upload_document"),
+    )
 
 
-def test_a_contract_or_base_module_change_runs_only_the_base_tier() -> None:
-    assert pick("tests/contract/test_bulk.py", "tests/contract/conftest.py").targets == BASE
-    assert pick("tests/e2e/test_stdio.py").targets == BASE
+def test_a_changed_stdio_test_runs_only_the_stdio_test() -> None:
+    assert pick(STDIO).targets == (STDIO,)
 
 
 @pytest.mark.parametrize(
@@ -116,15 +176,15 @@ def test_a_contract_or_base_module_change_runs_only_the_base_tier() -> None:
         "src/paperless_mcp/domain/documents.py",
         "src/paperless_mcp/domain/ports.py",
         "src/paperless_mcp/paperless/client.py",
-        "src/paperless_mcp/paperless/taxonomy.py",
         "src/paperless_mcp/services/unheard_of.py",
-        "src/paperless_mcp/tools/new_toolset.py",  # no e2e module and no alias yet
+        "src/paperless_mcp/tools/new_toolset.py",  # no live module and no alias yet
         "src/paperless_mcp/prompts/guide.md",  # markdown below src is runtime data
         "tests/e2e/helpers.py",
         "tests/e2e/conftest.py",
         "tests/e2e/compose.yaml",
         "tests/e2e/compose.latest.yaml",
         "tests/e2e/test_deleted.py",  # a module that is gone: its toolset is unknown
+        "tests/contract/conftest.py",
         "tests/conftest.py",
         "tests/harness.py",
         "tests/fakes/paperless.py",
@@ -148,9 +208,12 @@ def test_a_contract_or_base_module_change_runs_only_the_base_tier() -> None:
         "",
     ],
 )
-def test_any_change_outside_the_toolset_map_runs_the_whole_suite(path: str) -> None:
-    whole = e2e_ci.Selection(skip=False, targets=("tests/contract", "tests/e2e"))
-    assert pick("README.md", "src/paperless_mcp/tools/pdf.py", path) == whole
+def test_a_change_outside_the_toolset_map_runs_the_smoke_tier_not_the_suite(path: str) -> None:
+    """Such a change is checked after the merge by the full run (decision-23)."""
+    assert pick("README.md", path) == e2e_ci.Selection(skip=False, targets=SMOKE)
+    mixed = pick("README.md", "src/paperless_mcp/tools/pdf.py", path)
+    extra = {contract("test_pdf"), e2e("test_pdf")} - set(SMOKE)
+    assert mixed.targets == (STDIO, *sorted((set(SMOKE) | extra) - {STDIO}))
 
 
 def test_paths_are_read_from_nul_separated_git_output() -> None:
@@ -171,7 +234,7 @@ def test_the_scope_command_prints_the_job_outputs_for_a_toolset_change() -> None
     assert code == 0
     lines = out.splitlines()
     assert lines[0] == "mode=fast"
-    assert lines[1] == "targets=tests/contract tests/e2e/test_stdio.py tests/e2e/test_pdf.py"
+    assert lines[1] == f"targets={STDIO} {contract('test_pdf')} {e2e('test_pdf')}"
 
 
 def test_the_scope_command_skips_documentation_only_changes() -> None:
@@ -179,16 +242,32 @@ def test_the_scope_command_skips_documentation_only_changes() -> None:
     assert (code, out) == (0, "mode=skip\ntargets=\n")
 
 
-def test_the_scope_command_reads_the_e2e_modules_from_the_given_directory(tmp_path: Path) -> None:
-    (tmp_path / "test_only.py").write_text("", "utf-8")
-    argv = ["scope", "--e2e-dir", str(tmp_path)]
+def test_the_scope_command_reads_the_live_modules_below_the_given_root(tmp_path: Path) -> None:
+    for name in ("e2e/test_only.py", "contract/test_only.py", "contract/conftest.py"):
+        (tmp_path / "tests" / name).parent.mkdir(parents=True, exist_ok=True)
+        _ = (tmp_path / "tests" / name).write_text("", "utf-8")
+    argv = ["scope", "--root", str(tmp_path)]
     _, out, _ = run_main(argv, stdin="src/paperless_mcp/tools/only.py\0")
-    assert f"targets=tests/contract tests/e2e/test_stdio.py {module('test_only')}" in out
+    assert f"targets={STDIO} {contract('test_only')} {e2e('test_only')}\n" in out
     _, out, _ = run_main(argv, stdin="src/paperless_mcp/tools/pdf.py\0")
-    assert "targets=tests/contract tests/e2e\n" in out
+    assert f"targets={' '.join(SMOKE)}\n" in out
 
 
 # Shard assignment ----------------------------------------------------------------------------
+
+
+def test_the_weights_name_the_live_modules_of_the_suite_and_split_it_evenly() -> None:
+    real = {
+        path.relative_to(ROOT).as_posix()
+        for folder in ("e2e", "contract")
+        for path in (ROOT / "tests" / folder).glob("test_*.py")
+    }
+    assert set(e2e_ci.MODULE_SECONDS) <= real, "a weight names a module that is gone"
+    plan = e2e_ci.assign_shards(sorted(real), count=e2e_ci.SHARDS)
+    loads = [0.0] * e2e_ci.SHARDS
+    for module_path in real:
+        loads[plan[module_path] - 1] += e2e_ci.MODULE_SECONDS.get(module_path, 0.0)
+    assert max(loads) <= 1.15 * sum(loads) / len(loads), loads
 
 
 def test_modules_are_split_into_balanced_shards_by_weight() -> None:
@@ -268,6 +347,7 @@ jobs:
   e2e:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - id: scope
         run: python3 scripts/e2e_ci.py scope
@@ -285,6 +365,7 @@ on:
     - cron: "17 3 * * *"
 jobs:
   e2e-shard:
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -323,6 +404,9 @@ def test_the_reference_workflows_have_no_problems() -> None:
             "        if: success()\n        run: docker compose logs",
             "mode",
         ),
+        ("    timeout-minutes: 20\n", "", "timeout-minutes"),
+        ("timeout-minutes: 20", "timeout-minutes: 35", "timeout-minutes"),
+        ("timeout-minutes: 20", "timeout-minutes: 60", "timeout-minutes"),
     ],
 )
 def test_a_pull_request_workflow_that_could_skip_the_live_tests_wrongly_is_reported(
@@ -349,6 +433,8 @@ def test_a_pull_request_workflow_that_could_skip_the_live_tests_wrongly_is_repor
         ("  push:\n    branches: [main]\n", "", "push to main"),
         ("  schedule:\n", "  workflow_dispatch:\n", "schedule"),
         ('just e2e-shard "$SHARD"', "just e2e", "e2e-shard"),
+        ("    timeout-minutes: 25\n", "", "timeout-minutes"),
+        ("timeout-minutes: 25", "timeout-minutes: 60", "timeout-minutes"),
     ],
 )
 def test_a_full_run_workflow_that_could_miss_shards_or_runs_is_reported(

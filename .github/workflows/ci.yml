@@ -86,17 +86,18 @@ jobs:
       - name: Secret scan (gitleaks, whole history)
         run: just secrets
 
-  # The fast tier of the live suite on a pull request (decision-23). Not a required check: the
-  # controller waits for it before merging (doc-2). The full suite runs after the merge and nightly
-  # (e2e-full.yml). The job always runs and reports; a documentation-only change skips its steps.
-  # What the tier is comes from the changed paths (scripts/e2e_ci.py, tested): the live contract
-  # suite, the stdio smoke test and the e2e modules of the toolsets the change touches, or the
-  # whole suite for a change outside that map.
+  # The fast tier of the live suite on a pull request (decision-23): the stdio smoke test and the
+  # live contract and e2e modules of the toolsets the change touches, a small smoke set for a change
+  # outside that map (scripts/e2e_ci.py, tested). A few minutes, never the whole suite. It is not a
+  # required check (decision-24); the controller waits for it (doc-2). The full suite runs after the
+  # merge and nightly in three shards (e2e-full.yml). The job always runs and reports; a change to
+  # documentation or backlog only skips its steps.
   e2e:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    # 60, not 35 (PLMCP-43): a hang guard, no quality gate; PLMCP-39 lowers it again.
-    timeout-minutes: 60
+    # A hang guard, no quality gate: the tier takes 2 to 10 minutes. This replaces the 60 minutes of
+    # PLMCP-43, which guarded the whole suite in one job; that suite now runs in e2e-full.yml.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
