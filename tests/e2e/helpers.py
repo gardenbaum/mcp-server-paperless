@@ -465,7 +465,15 @@ def consume_text(api: httpx2.Client, title: str) -> int:
 
 
 # Tasks that write the full-text index in the background after the request that started them.
-INDEX_WRITING_TASKS = ("bulk_update", "bulk_delete", "consume_file", "reprocess_document")
+INDEX_WRITING_TASKS = (
+    "bulk_update",
+    "bulk_delete",
+    "check_workflows",
+    "consume_file",
+    "reprocess_document",
+)
+# A reindex of the E2E corpus takes seconds; fail fast instead of stalling the job.
+REINDEX_TIMEOUT = 300.0
 INDEX_SETTLE_TIMEOUT = 120.0
 # Only recent tasks count: a long-lived stack can hold one that was killed and never ended.
 RECENT_TASKS = timedelta(minutes=15)
@@ -510,17 +518,21 @@ def rebuild_search_index(api: httpx2.Client) -> None:
         ["docker", "ps", "--quiet", "--filter", f"publish={PORT}"],  # noqa: S607 -- fixed argument list
         capture_output=True,
         text=True,
-        check=True,
-    ).stdout.split()
-    assert len(container) == 1, f"Expected one container publishing port {PORT}, got {container}"
+        check=False,
+        timeout=30,
+    )
+    assert container.returncode == 0, f"docker ps failed (is docker reachable?): {container.stderr}"
+    ids = container.stdout.split()
+    assert len(ids) == 1, f"Expected one container publishing port {PORT}, got {ids}"
     rebuilt = subprocess.run(  # noqa: S603 -- fixed argument list
         [
             *("docker", "exec", "--user", "paperless", "--workdir", "/usr/src/paperless/src"),
-            container[0],
+            ids[0],
             *("python", "manage.py", "document_index", "reindex", "--no-progress-bar"),
         ],
         capture_output=True,
         text=True,
         check=False,
+        timeout=REINDEX_TIMEOUT,
     )
     assert rebuilt.returncode == 0, f"document_index reindex failed: {rebuilt.stderr[-500:]}"
