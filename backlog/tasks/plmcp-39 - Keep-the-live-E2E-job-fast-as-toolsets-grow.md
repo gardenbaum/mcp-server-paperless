@@ -1,11 +1,11 @@
 ---
 id: PLMCP-39
 title: Keep the live E2E job fast as toolsets grow
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-13T07:29:00Z'
-updated_date: '2026-11-17T08:39:00Z'
+updated_date: '2026-11-17T09:24:00Z'
 labels:
   - ci
   - testing
@@ -22,9 +22,9 @@ The e2e CI job runs the live contract suite and the E2E tests against one paperl
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Per-module timings of the e2e job are measured on CI and recorded in the notes, including why worker-bound modules vary 2x between runs
+- [x] #1 Per-module timings of the e2e job are measured on CI and recorded in the notes, including why worker-bound modules vary 2x between runs
 - [x] #2 Consume-heavy live tests use plain text documents where OCR, archives, page counts or thumbnails are not what they test
-- [ ] #3 The e2e job (or its split into parallel jobs with their own stacks, if the owner approves the required-check change) finishes in under 20 minutes on main
+- [x] #3 The e2e job (or its split into parallel jobs with their own stacks, if the owner approves the required-check change) finishes in under 20 minutes on main
 - [x] #4 The job timeout is lowered back once the suite is fast again
 <!-- AC:END -->
 
@@ -65,6 +65,18 @@ Estimates, not measured: full run on main = 3 parallel shards, about 390 s of te
 Controller: accepted decision-23 under the owner's standing delegation (2026-11-17, owner asked to implement PLMCP-39). Added persist-credentials: false to the PR e2e checkout (it only diffs, never pushes). AC #1 and #3 are verified by the first sharded runs on main; shard weights and timeouts get one follow-up adjustment if those runs disagree with the estimates.
 
 Review round (2026-11-17): decision-23 now supersedes decision-24 (decision-24 set to 'superseded by decision-23' via the CLI, one pointer line added to its body); core, domain and entry-point stems map to their live modules; shared stems run smoke plus their own module; a tier over 450 s is split over a 3-part matrix of the e2e job; scripts/ added to mutmut also_copy. AC #1 and #3 are verified by the first sharded runs on main (hosted timings, full run under 20 min); the controller sets Done after that.
+
+First sharded run on main (run 44051242147, commit 147f6b4), all green:
+- shard 1/3: 306 passed, 5 skipped, 745.6 s of tests, job 13:09
+- shard 2/3: 188 passed, 1 skipped, 652.5 s, job 8:23
+- shard 3/3: 135 passed, 458.4 s, job 11:39
+- wall time about 13 min (was about 40 min in one job). AC #3 holds.
+
+Per-module evidence (AC #1, --durations=20):
+- The slowest items wait on Paperless's Celery worker: test_bulk contract calls 19-41 s (bulk_update tasks), e2e test_pdf 20-35 s (rotate, split, merge), test_document_versions and test_sharing rebuilds 18-20 s, test_document_upload 14-15 s.
+- Setups of 25-37 s come from consume-and-wait fixtures.
+- The hosted split is uneven (745/652/458 s, predicted 370/396/396 s): the weight table comes from the sandbox, where worker-bound modules run about 2x faster.
+- Explanation for the 2x variance: these modules are bound by one Celery worker processing tasks serially (PAPERLESS_TASK_WORKERS=1). The cost scales with runner CPU and queue depth, not with test code. That fits the sandbox-versus-hosted ratio but is not proven per module. PLMCP-44 re-weights the shards from hosted timings.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
