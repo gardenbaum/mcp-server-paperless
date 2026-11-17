@@ -1,11 +1,11 @@
 ---
 id: PLMCP-39
 title: Keep the live E2E job fast as toolsets grow
-status: In Progress
+status: To Do
 assignee:
   - '@claude'
 created_date: '2026-11-13T07:29:00Z'
-updated_date: '2026-11-16T23:20:00Z'
+updated_date: '2026-11-17T00:15:00Z'
 labels:
   - ci
   - testing
@@ -35,3 +35,9 @@ The e2e CI job runs the live contract suite and the E2E tests against one paperl
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Paused on 2026-11-17 by the owner's call: PLMCP-32 goes first. WIP is on branch plmcp-39-e2e-speed (fast PR tier, sharded full run after merge, plain-text documents in consume-heavy tests, draft decision-23 building on decision-24); the baseline measurement did not finish. Resume from that branch.
+<!-- SECTION:NOTES:END -->
