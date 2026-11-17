@@ -8,7 +8,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "gardenbaum" }]
 dependencies = [
-    "fastmcp>=4.1.6,<4.2",
+    "fastmcp>=4.2,<4.3",
     "httpx2>=2.16.0",
     "mcp>=2.3.0,<3",
     "pydantic>=2.14.3",
