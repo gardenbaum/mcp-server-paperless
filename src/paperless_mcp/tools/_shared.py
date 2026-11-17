@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from paperless_mcp.services.notes import NoteService
     from paperless_mcp.services.pdf import PdfService
     from paperless_mcp.services.permissions import PermissionService
+    from paperless_mcp.services.raw import RawApiService
     from paperless_mcp.services.removal import DocumentRemoval
     from paperless_mcp.services.sharing import SharingService
     from paperless_mcp.services.tasks import TaskService
@@ -59,6 +60,7 @@ TOOLSETS: Final = frozenset(
         "sharing",
         "permissions",
         "mail",
+        "raw",
         "workflows",
     }
 )
@@ -135,6 +137,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "update_mail_rule": "mail",
     "delete_mail_rule": "mail",
     "list_processed_mail": "mail",
+    "paperless_api_get": "raw",
     "list_workflows": "workflows",
     "get_workflow": "workflows",
     "create_workflow": "workflows",
@@ -444,6 +447,13 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=False,
         open_world_hint=True,
     ),
+    # Raw (decision-25): one GET to the configured Paperless, so the world stays closed.
+    "paperless_api_get": ToolAnnotations(
+        title="Read a Paperless API path",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     # Mail (decision-18). Passwords are write-only and never returned. Reading is read-only.
     "list_mail_accounts": ToolAnnotations(
         title="List mail accounts",
@@ -751,6 +761,7 @@ class Services:
     pdf: PdfService
     sharing: SharingService
     mail: MailService
+    raw: RawApiService
 
 
 def services(ctx: Context) -> Services:
