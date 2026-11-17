@@ -8,7 +8,7 @@ import pytest
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import CONSUME_TIMEOUT, num, obj, parse, pdf, results, seq
+from e2e.helpers import CONSUME_TIMEOUT, num, obj, parse, results, seq
 from paperless_mcp.server import create_server
 
 if TYPE_CHECKING:
@@ -31,7 +31,7 @@ async def get_task(stack: Stack, token: str, **arguments: object) -> Json:
 
 @pytest.fixture
 def upload(stack: Stack) -> Iterator[str]:
-    """The task id of a PDF just posted for consumption.
+    """The task id of a plain text file just posted for consumption (no OCR needed).
 
     Teardown waits for the task to end (also when the test did not), then deletes its document.
     """
@@ -39,7 +39,7 @@ def upload(stack: Stack) -> Iterator[str]:
     posted = stack.admin.post(
         "/api/documents/post_document/",
         data={"title": title},
-        files={"document": (f"{title}.pdf", pdf(title), "application/pdf")},
+        files={"document": (f"{title}.txt", f"{title} for a task".encode(), "text/plain")},
     ).raise_for_status()
     task_id = str(parse(posted))
     yield task_id

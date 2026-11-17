@@ -2,7 +2,7 @@
 id: decision-24
 title: E2E is no longer a required pull request check
 date: '2026-11-16T23:40:00Z'
-status: accepted
+status: superseded by decision-23
 ---
 ## Context
 
@@ -33,3 +33,5 @@ main. The owner decided on 2026-11-16 that the slow suite must not gate pull req
 - `.github/workflows/ci.yml`: the `e2e` job has `if: github.event_name == 'push'`.
 - Branch protection on main lists only `check (3.14)`, `check (3.15)` and `audit`.
 - doc-2 names the required checks and the local e2e evidence.
+
+Superseded by decision-23: the full suite now runs in `e2e-full.yml` after every merge to main, and the ci.yml `e2e` job runs a fast tier on pull requests.

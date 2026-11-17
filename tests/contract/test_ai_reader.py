@@ -12,7 +12,6 @@ import uuid
 from typing import TYPE_CHECKING
 
 import pytest
-from e2e.helpers import pdf
 from fakes.paperless import FakeDocument, FakePaperless, seeded
 
 from paperless_mcp.domain.ai import AiSuggestions
@@ -83,7 +82,7 @@ async def test_ai_suggestions_of_a_missing_or_hidden_document(backend: Backend) 
 @pytest.mark.contract(SUGGEST)
 async def test_ai_suggestions_need_the_right_to_change_the_document(backend: Backend) -> None:
     title = f"ai-shared-{uuid.uuid4().hex[:12]}"
-    shared = backend.upload(title, f"{title}.pdf", pdf(title), "application/pdf")
+    shared = backend.upload(title, f"{title}.txt", title.encode(), "text/plain")
     backend.share_read_only(shared)
 
     # the restricted user sees the document but may not change it: 403 comes before the AI check

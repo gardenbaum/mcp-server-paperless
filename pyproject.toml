@@ -154,7 +154,7 @@ source_paths = ["src/paperless_mcp/services", "src/paperless_mcp/paperless"]
 # deselected through addopts (`-m "not e2e"`), so no Paperless stack is needed. Coverage adds
 # nothing to a mutation run.
 # The rest of the package (domain/, settings, ...) is imported by the code under mutation.
-also_copy = ["src/", "docs/vendor/paperless/", "backlog/decisions/"]
+also_copy = ["src/", "scripts/", "docs/vendor/paperless/", "backlog/decisions/"]
 # tests/quality tests the job scripts, not the code under mutation.
 pytest_add_cli_args = ["--no-cov", "--ignore=tests/quality"]
 pytest_add_cli_args_test_selection = ["tests"]

@@ -32,7 +32,6 @@ from e2e.helpers import (
     EXPECTED_VERSION,
     consume,
     consume_text,
-    pdf,
     pdf_pages,
     rebuild_search_index,
     results,
@@ -540,6 +539,19 @@ def live_pdf(stack: Stack, created: list[int], pages: int) -> int:
     return document
 
 
+def live_task(stack: Stack, *, succeed: bool) -> tuple[str, int | None]:
+    """A consumption task that ends well or badly, and the document it made (None if it failed).
+
+    A plain text file consumes without OCR; a broken PDF is what makes a task fail.
+    """
+    title = f"contract-task-{uuid.uuid4().hex}"
+    if not succeed:
+        return consume(stack.admin, title, b"%PDF-1.4 broken")
+    return consume(
+        stack.admin, title, title.encode(), filename=f"{title}.txt", mime_type="text/plain"
+    )
+
+
 def live_encrypted(stack: Stack, created: list[int], password: str) -> int:
     """The encrypted PDF fixture (Paperless consumes it without text and without page count)."""
     assert password == ENCRYPTED_PASSWORD, "the live fixture is locked with its own password"
@@ -662,9 +674,7 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
     users: list[int] = []
 
     def consume_live(*, succeed: bool) -> str:
-        title = f"contract-task-{uuid.uuid4().hex}"
-        content = pdf(title) if succeed else b"%PDF-1.4 broken"
-        task_id, document = consume(stack.admin, title, content)
+        task_id, document = live_task(stack, succeed=succeed)
         if document is not None:
             created.append(document)
         return task_id
@@ -676,9 +686,7 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
         return document
 
     def new_live_document() -> int:
-        title = f"contract-write-{uuid.uuid4().hex}"
-        _, document = consume(stack.admin, title, pdf(title))
-        assert document is not None
+        document = consume_text(stack.admin, f"contract-write-{uuid.uuid4().hex}")
         created.append(document)
         return document
 
