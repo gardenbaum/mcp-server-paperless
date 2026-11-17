@@ -97,6 +97,7 @@ from paperless_mcp.tools.selection import (
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 
+    from fastmcp.server.auth import AuthProvider
     from fastmcp.server.providers import Provider
     from mcp.types import ToolAnnotations
 
@@ -277,6 +278,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     clock: Callable[[], float] = time.monotonic,
     stdio: bool = False,
+    auth: AuthProvider | None = None,
 ) -> FastMCP:
     """Assemble the MCP server.
 
@@ -290,6 +292,8 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
         stdio: Whether the server runs over stdio. Only then, and only with
             ``settings.upload_dirs``, does ``upload_document`` take a path; in every other
             case that parameter is in no schema (decision-7).
+        auth: Authentication of the HTTP endpoint (the HTTP app's static bearer tokens); ``None``
+            for stdio and for the flagged unauthenticated loopback mode.
 
     Returns:
         The server. Starting it (its lifespan) raises the probe's ``PaperlessMcpError`` when
@@ -428,6 +432,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
         providers=[*catalogue.providers, *variants],
         middleware=[CallLogging()],
         lifespan=start,
+        auth=auth,
         # Only ToolError messages reach the client; any other exception becomes a generic error.
         mask_error_details=True,
     )

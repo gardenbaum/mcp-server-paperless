@@ -1,19 +1,25 @@
-"""Command-line entrypoint (stdio transport): ``paperless-mcp`` and ``python -m paperless_mcp``.
+"""Command-line entrypoints: ``paperless-mcp`` (stdio) and ``paperless-mcp-http`` (HTTP).
 
 Configuration errors and a Paperless that rejects the token or API version end the process
 with exit code 1 and one line on stderr, without a traceback.
 """
 
 import sys
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 from pydantic import ValidationError
 from pydantic_settings import BaseSettings
 
+from paperless_mcp.app import create_app, run_server, uvicorn_server
 from paperless_mcp.domain.errors import PaperlessMcpError
 from paperless_mcp.observability import configure_logging
 from paperless_mcp.server import create_server
-from paperless_mcp.settings import PaperlessSettings, ServerSettings
+from paperless_mcp.settings import HttpSettings, PaperlessSettings, ServerSettings
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    import uvicorn
 
 
 def _fail(message: str) -> NoReturn:
@@ -48,3 +54,24 @@ def main() -> None:
         create_server(paperless, settings, stdio=True).run(transport="stdio", show_banner=False)
     except PaperlessMcpError as error:
         _fail(error.describe())
+
+
+def main_http(run: Callable[[uvicorn.Server], bool] = run_server) -> None:
+    """Run the server over Streamable HTTP; refuses to start without authentication.
+
+    Args:
+        run: Serves the uvicorn server and says whether it came up; tests pass a fake.
+    """
+    problems: list[str] = []
+    paperless = _load(PaperlessSettings, problems)
+    settings = _load(ServerSettings, problems)
+    http = _load(HttpSettings, problems)
+    if paperless is None or settings is None or http is None:
+        _fail("invalid configuration: " + "; ".join(problems))
+    configure_logging(settings.log_level)
+    try:
+        app = create_app(paperless, settings, http)
+    except PaperlessMcpError as error:
+        _fail(error.describe())
+    if not run(uvicorn_server(app, http)):
+        _fail("the HTTP server did not start; see the log above")

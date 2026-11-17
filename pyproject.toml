@@ -13,10 +13,12 @@ dependencies = [
     "mcp>=2.3.0,<3",
     "pydantic>=2.14.3",
     "pydantic-settings>=2.16.2",
+    "uvicorn>=0.40",
 ]
 
 [project.scripts]
 paperless-mcp = "paperless_mcp.cli:main"
+paperless-mcp-http = "paperless_mcp.cli:main_http"
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]
