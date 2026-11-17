@@ -38,6 +38,16 @@ LABEL org.opencontainers.image.title="paperless-mcp" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}"
 
+# Security fixes Debian has shipped since the base image digest was built (the scan fails the
+# image on fixed HIGH findings), and no pip: the server runs from /app/.venv and needs neither pip
+# nor the copies of msgpack and urllib3 vendored in it, which the scan reports. Nothing can
+# install packages into the running container afterwards.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/lib/python3.14/ensurepip \
+        /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.14
+
 # A fixed, unprivileged user without a home or a login shell. The environment belongs to root and
 # is read-only for the server, which writes nothing: the image runs with --read-only.
 RUN groupadd --system --gid 10001 paperless-mcp \

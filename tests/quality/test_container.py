@@ -157,3 +157,15 @@ def test_the_image_workflow_is_separate_from_ci_so_it_never_gates_a_merge() -> N
 
     assert "docker/build-push-action" not in ci
     assert "name: Image" in WORKFLOW.read_text(encoding="utf-8")
+
+
+@pytest.mark.decision("decision-28")
+def test_the_runtime_stage_removes_pip_and_upgrades_os_packages() -> None:
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    runtime = text[text.rindex("AS runtime") :]
+
+    assert "apt-get upgrade -y --no-install-recommends" in runtime
+    assert "rm -rf /var/lib/apt/lists/*" in runtime
+    for leftover in ("site-packages/pip*", "/ensurepip", "/usr/local/bin/pip"):
+        assert leftover in runtime, f"{leftover} is not removed from the runtime image"
+    assert "pip install" not in runtime
