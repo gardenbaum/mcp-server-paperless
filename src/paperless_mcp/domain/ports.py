@@ -15,6 +15,20 @@ if TYPE_CHECKING:
     from collections.abc import Collection, Mapping, Sequence
     from datetime import datetime
 
+    from paperless_mcp.domain.admin import (
+        AppConfigRecord,
+        ArchiveContent,
+        ArchiveFile,
+        Compression,
+        ConfigValues,
+        GroupRecord,
+        GroupValues,
+        RunnableTask,
+        TaskRowPage,
+        TaskType,
+        UserRecord,
+        UserValues,
+    )
     from paperless_mcp.domain.ai import AiSuggestions, ChatAnswer
     from paperless_mcp.domain.bulk import BulkKind, DocumentChange, PermissionsChange
     from paperless_mcp.domain.documents import (
@@ -51,7 +65,7 @@ if TYPE_CHECKING:
     )
     from paperless_mcp.domain.raw import RawReply
     from paperless_mcp.domain.sharing import FileVersionKind, ShareBundle, ShareLink
-    from paperless_mcp.domain.tasks import TaskStatus
+    from paperless_mcp.domain.tasks import TaskState, TaskStatus
     from paperless_mcp.domain.taxonomy import (
         TaxonomyDetail,
         TaxonomyItem,
@@ -1076,5 +1090,191 @@ class WorkflowWriter(Protocol):
         Raises:
             NotFound: No such workflow.
             PermissionDenied: The user may not delete workflows.
+        """
+        ...
+
+
+class AdminReader(Protocol):
+    """Users and groups by id, the application configuration, logs, tasks and bulk download.
+
+    Listing users and groups is ``PermissionReader``'s job; the admin tools resolve names with it.
+    """
+
+    async def get_user(self, user_id: int) -> UserRecord:
+        """One user, never with a password.
+
+        Raises:
+            NotFound: No such user, or the user may not see it.
+            PermissionDenied: The user lacks the global ``view_user`` permission.
+        """
+        ...
+
+    async def get_current_user_id(self) -> int:
+        """The id of the user the credential belongs to, from one light request that reads only it.
+
+        Raises:
+            PermissionDenied: The user lacks the ``view_uisettings`` permission.
+            PaperlessMcpError: Paperless did not answer (any upstream error).
+        """
+        ...
+
+    async def get_group(self, group_id: int) -> GroupRecord:
+        """One group with the permission codenames it grants.
+
+        Raises:
+            NotFound: No such group, or the user may not see it.
+            PermissionDenied: The user lacks the global ``view_group`` permission.
+        """
+        ...
+
+    async def get_config(self) -> AppConfigRecord:
+        """The application configuration: settings with a value, and which API keys are saved.
+
+        Raises:
+            PermissionDenied: The user lacks the ``view_applicationconfiguration`` permission.
+            PaperlessMcpError: Paperless has no configuration row.
+        """
+        ...
+
+    async def list_logs(self) -> tuple[str, ...]:
+        """The names of the log files this instance has.
+
+        Raises:
+            PermissionDenied: The user is not a staff user.
+        """
+        ...
+
+    async def get_log(self, name: str, *, limit: int) -> tuple[str, ...]:
+        """The last ``limit`` lines of a log, oldest first.
+
+        Raises:
+            NotFound: No log of that name.
+            PermissionDenied: The user is not a staff user.
+        """
+        ...
+
+    async def list_tasks(
+        self,
+        *,
+        state: TaskState | None,
+        task_type: TaskType | None,
+        acknowledged: bool | None,
+        page: int,
+        page_size: int,
+    ) -> TaskRowPage:
+        """One page of tasks, newest first, optionally filtered.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the ``view_paperlesstask`` permission.
+        """
+        ...
+
+    async def download_documents(
+        self,
+        document_ids: Sequence[int],
+        *,
+        content: ArchiveContent,
+        compression: Compression,
+        follow_formatting: bool,
+        max_bytes: int,
+    ) -> ArchiveFile:
+        """The files of the documents as one ZIP archive; at most ``max_bytes`` bytes are read.
+
+        Over the limit the archive is ``truncated`` and has no content. Changes nothing.
+
+        Raises:
+            PermissionDenied: A document is hidden from the user (the whole request is refused).
+            Validation: A document does not exist; no archive is made.
+        """
+        ...
+
+
+class AdminWriter(Protocol):
+    """Changes to users, groups, the application configuration and tasks."""
+
+    async def create_user(self, values: UserValues) -> UserRecord:
+        """Create a user from the fields set in ``values`` and return it.
+
+        Raises:
+            Validation: The username is taken or invalid, a group or permission does not exist,
+                or the password is made of asterisks only (nothing is sent).
+            PermissionDenied: The user may not add users (or make superusers or staff).
+        """
+        ...
+
+    async def update_user(self, user_id: int, values: UserValues) -> UserRecord:
+        """Write the fields set in ``values`` and return the user.
+
+        Raises:
+            NotFound: No such user.
+            Validation: As for ``create_user``.
+            PermissionDenied: The user may not change users (or this one, or these flags).
+        """
+        ...
+
+    async def delete_user(self, user_id: int) -> None:
+        """Delete a user for good; what it owned loses its owner. Not retried.
+
+        Raises:
+            NotFound: No such user.
+            PermissionDenied: The user may not delete users.
+        """
+        ...
+
+    async def create_group(self, values: GroupValues) -> GroupRecord:
+        """Create a group from ``values`` and return it.
+
+        Raises:
+            Validation: The name is taken or a permission does not exist.
+            PermissionDenied: The user may not add groups.
+        """
+        ...
+
+    async def update_group(self, group_id: int, values: GroupValues) -> GroupRecord:
+        """Write the fields set in ``values`` and return the group.
+
+        Raises:
+            NotFound: No such group.
+            Validation: As for ``create_group``.
+            PermissionDenied: The user may not change groups.
+        """
+        ...
+
+    async def delete_group(self, group_id: int) -> None:
+        """Delete a group for good; its members lose what it granted. Not retried.
+
+        Raises:
+            NotFound: No such group.
+            PermissionDenied: The user may not delete groups.
+        """
+        ...
+
+    async def update_config(self, values: ConfigValues) -> AppConfigRecord:
+        """Write the settings and keys in ``values`` and return the configuration.
+
+        A setting of ``None`` goes back to the server's environment default.
+
+        Raises:
+            Validation: Paperless rejects a value, or a key is made of asterisks only.
+            PermissionDenied: The user may not view or change the configuration.
+        """
+        ...
+
+    async def acknowledge_tasks(self, task_ids: Sequence[int]) -> int:
+        """Mark tasks (database ids) as seen and return how many were marked.
+
+        Raises:
+            Validation: A task does not exist or is listed twice; nothing is marked.
+            PermissionDenied: The user lacks the ``change_paperlesstask`` permission.
+        """
+        ...
+
+    async def run_task(self, task_type: RunnableTask) -> str:
+        """Start a background task by hand and return its Celery task id. Never retried.
+
+        Raises:
+            Validation: Paperless refuses this task type.
+            PermissionDenied: Only a superuser may start tasks.
         """
         ...

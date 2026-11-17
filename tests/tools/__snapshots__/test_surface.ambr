@@ -518,6 +518,65 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Acknowledge tasks',
+      }),
+      'description': '''
+        Mark tasks as seen, e.g. failed ones after you looked at them.
+        
+        They no longer show as new in the web UI; nothing is deleted and nothing needs confirm. Needs
+        the change_paperlesstask permission.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'task_ids': dict({
+            'description': 'Database ids from list_tasks (the id field, not task_id); each once.',
+            'items': dict({
+              'minimum': 1,
+              'type': 'integer',
+            }),
+            'maxItems': 100,
+            'minItems': 1,
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'task_ids',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'acknowledge_tasks',
+      'outputSchema': dict({
+        'description': 'How many tasks were acknowledged.',
+        'properties': dict({
+          'acknowledged': dict({
+            'type': 'integer',
+          }),
+          'message': dict({
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'acknowledged',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Acknowledge tasks',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'core',
           ]),
         }),
@@ -711,6 +770,77 @@
         'type': 'object',
       }),
       'title': 'Ask Paperless AI',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Download documents as a ZIP archive',
+      }),
+      'description': '''
+        Get the files of several documents as one ZIP archive, attached as an embedded resource.
+        
+        The archive comes as MCP content after a JSON report (file name, size, delivered), never
+        written to disk. An archive over the server's download limit (512 KiB unless the
+        administrator changed it) is not attached: delivered is false and the note says what to do.
+        The whole request fails if one document is hidden from the user. Use download_document for
+        one file.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'compression': dict({
+            'default': 'none',
+            'description': 'ZIP compression.',
+            'enum': list([
+              'none',
+              'deflated',
+              'bzip2',
+              'lzma',
+            ]),
+            'type': 'string',
+          }),
+          'content': dict({
+            'default': 'archive',
+            'description': 'archive: the searchable PDF/A files (the original where there is none); originals: the files as uploaded; both: originals plus the archive files.',
+            'enum': list([
+              'archive',
+              'originals',
+              'both',
+            ]),
+            'type': 'string',
+          }),
+          'document_ids': dict({
+            'description': 'Document ids from search_documents; at most 100, each once.',
+            'items': dict({
+              'minimum': 1,
+              'type': 'integer',
+            }),
+            'maxItems': 100,
+            'minItems': 1,
+            'type': 'array',
+          }),
+          'follow_formatting': dict({
+            'default': False,
+            'description': 'Name the files by the storage path format of each document.',
+            'type': 'boolean',
+          }),
+        }),
+        'required': list([
+          'document_ids',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'bulk_download',
+      'title': 'Download documents as a ZIP archive',
     }),
     dict({
       '_meta': dict({
@@ -1490,6 +1620,108 @@
         'type': 'object',
       }),
       'title': 'Bulk edit taxonomy',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': False,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Create group',
+      }),
+      'description': '''
+        Create a group, optionally with the permissions it grants to its members.
+        
+        A group without permissions needs no confirm. One that grants permissions does, because
+        putting users into it gives them those rights: the first call is an error that names the
+        permissions; describe it to the user and call again with confirm=true. Add users with
+        update_user(groups=). Needs the add_group permission.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'name': dict({
+            'description': 'Unique group name.',
+            'maxLength': 150,
+            'minLength': 1,
+            'type': 'string',
+          }),
+          'permissions': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Permission codenames the group grants, such as view_document.',
+          }),
+        }),
+        'required': list([
+          'name',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'create_group',
+      'outputSchema': dict({
+        'description': 'What a group call did: the group afterwards and whether anything was written.',
+        'properties': dict({
+          'changed': dict({
+            'description': 'false: the group already was as asked.',
+            'type': 'boolean',
+          }),
+          'group': dict({
+            'description': 'A group: its name and the permission codenames it grants to its members.',
+            'properties': dict({
+              'id': dict({
+                'type': 'integer',
+              }),
+              'name': dict({
+                'type': 'string',
+              }),
+              'permissions': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+            }),
+            'required': list([
+              'id',
+              'name',
+              'permissions',
+            ]),
+            'type': 'object',
+          }),
+          'message': dict({
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'group',
+          'changed',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Create group',
     }),
     dict({
       '_meta': dict({
@@ -3359,6 +3591,292 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': False,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Create user',
+      }),
+      'description': '''
+        Create a Paperless user. The password is write-only and never shown again.
+        
+        Creating a superuser or a staff user, or a user with a password, groups or permissions, needs
+        confirm: the first call is an error that says what the account would be allowed to do; describe
+        that to the user and call again with confirm=true. A user with only names and an e-mail
+        address needs none. Groups are names or ids; unknown ones are an error
+        before anything is created. Only a superuser may make superusers or staff users; otherwise
+        the add_user permission is enough.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'email': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'E-mail address.',
+          }),
+          'first_name': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 150,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'First name.',
+          }),
+          'groups': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'integer',
+                    }),
+                  ]),
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': "Names or ids of the groups the user is in; replaces the user's groups.",
+          }),
+          'is_active': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'May sign in (default true).',
+          }),
+          'is_staff': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Staff status: may sign in to the Django admin site and read the logs.',
+          }),
+          'is_superuser': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Superuser: sees and changes everything.',
+          }),
+          'last_name': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 150,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Last name.',
+          }),
+          'password': dict({
+            'anyOf': list([
+              dict({
+                'description': 'The password of the user, as text. Write-only: Paperless stores it and it is never shown again.',
+                'format': 'password',
+                'type': 'string',
+                'writeOnly': True,
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Initial password; omit for none.',
+          }),
+          'permissions': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Permission codenames without the app label, such as view_document or change_tag; replaces the list the user has. Codenames are shown by get_user and get_group.',
+          }),
+          'username': dict({
+            'description': 'Letters, digits and @ . + - _ only, at most 150 characters; unique.',
+            'maxLength': 150,
+            'minLength': 1,
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'username',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'create_user',
+      'outputSchema': dict({
+        'description': 'What a user call did: the user afterwards and whether anything was written.',
+        'properties': dict({
+          'changed': dict({
+            'description': 'false: the user already was as asked.',
+            'type': 'boolean',
+          }),
+          'message': dict({
+            'type': 'string',
+          }),
+          'user': dict({
+            'description': 'A user: names, status flags, groups and permission codenames. Never a password.',
+            'properties': dict({
+              'date_joined': dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              'email': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+              }),
+              'first_name': dict({
+                'type': 'string',
+              }),
+              'groups': dict({
+                'items': dict({
+                  'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                  'properties': dict({
+                    'id': dict({
+                      'type': 'integer',
+                    }),
+                    'name': dict({
+                      'type': 'string',
+                    }),
+                  }),
+                  'required': list([
+                    'id',
+                    'name',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              'id': dict({
+                'type': 'integer',
+              }),
+              'inherited_permissions': dict({
+                'description': 'Codenames the user gets from its groups; empty for a superuser, who has every permission.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'is_active': dict({
+                'type': 'boolean',
+              }),
+              'is_staff': dict({
+                'description': 'Staff users may sign in to the Django admin site and read the logs.',
+                'type': 'boolean',
+              }),
+              'is_superuser': dict({
+                'description': 'Superusers see and change everything, whatever is granted.',
+                'type': 'boolean',
+              }),
+              'last_name': dict({
+                'type': 'string',
+              }),
+              'mfa_enabled': dict({
+                'type': 'boolean',
+              }),
+              'permissions': dict({
+                'description': 'Permission codenames granted to the user directly.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'username': dict({
+                'type': 'string',
+              }),
+            }),
+            'required': list([
+              'id',
+              'username',
+              'email',
+              'first_name',
+              'last_name',
+              'is_active',
+              'is_staff',
+              'is_superuser',
+              'groups',
+              'permissions',
+              'inherited_permissions',
+              'date_joined',
+              'mfa_enabled',
+            ]),
+            'type': 'object',
+          }),
+        }),
+        'required': list([
+          'user',
+          'changed',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Create user',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'workflows',
           ]),
         }),
@@ -4867,6 +5385,75 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': True,
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Delete group',
+      }),
+      'description': '''
+        Delete a group for good; its members lose what it granted them.
+        
+        Needs confirm: the first call is an error that says what follows; describe it to the user and
+        call again with confirm=true. Needs the delete_group permission.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'group': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'Group name or id; the ids are in list_groups (permissions toolset).',
+          }),
+        }),
+        'required': list([
+          'group',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'delete_group',
+      'outputSchema': dict({
+        'description': 'What a deletion removed.',
+        'properties': dict({
+          'id': dict({
+            'type': 'integer',
+          }),
+          'message': dict({
+            'type': 'string',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Delete group',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'mail',
           ]),
         }),
@@ -5588,6 +6175,77 @@
         'type': 'object',
       }),
       'title': 'Delete taxonomy item',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': True,
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Delete user',
+      }),
+      'description': '''
+        Delete a user for good. Objects they own lose their owner, their grants go.
+        
+        Deleting cannot be undone, so it needs confirm: the first call is an error that says what
+        follows; describe it to the user and call again with confirm=true. Deactivating with
+        update_user(is_active=false) keeps the account. The account this server signs in with cannot
+        be deleted. Needs the delete_user permission.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'user': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'Username or id; the ids are in list_users (permissions toolset).',
+          }),
+        }),
+        'required': list([
+          'user',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'delete_user',
+      'outputSchema': dict({
+        'description': 'What a deletion removed.',
+        'properties': dict({
+          'id': dict({
+            'type': 'integer',
+          }),
+          'message': dict({
+            'type': 'string',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Delete user',
     }),
     dict({
       '_meta': dict({
@@ -6369,6 +7027,67 @@
         'type': 'object',
       }),
       'title': 'Get AI suggestions',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get application configuration',
+      }),
+      'description': '''
+        Read the application configuration: the settings that have a value, OCR, barcodes, AI.
+        
+        Settings without a value follow the server's environment and are left out. API keys are
+        never returned; keys_configured names those that hold one. Any signed-in user may read it.
+        Change it with update_app_config.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+        }),
+        'type': 'object',
+      }),
+      'name': 'get_app_config',
+      'outputSchema': dict({
+        'description': 'The application configuration: the settings that have a value, never a key.',
+        'properties': dict({
+          'externally_configured_variables': dict({
+            'description': 'Environment variables of the server that take part in the setup.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'keys_configured': dict({
+            'description': 'Which API key settings hold a value; the keys are never returned.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'settings': dict({
+            'additionalProperties': dict({
+            }),
+            'description': "Settings with a value; the others follow the server's environment.",
+            'type': 'object',
+          }),
+        }),
+        'required': list([
+          'settings',
+          'keys_configured',
+          'externally_configured_variables',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get application configuration',
     }),
     dict({
       '_meta': dict({
@@ -7228,6 +7947,72 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get group',
+      }),
+      'description': '''
+        Read one group: its name and the permission codenames it grants to its members.
+        
+        Needs the view_group permission in Paperless. Find groups with list_groups (permissions
+        toolset).
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'group': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'Group name or id; the ids are in list_groups (permissions toolset).',
+          }),
+        }),
+        'required': list([
+          'group',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'get_group',
+      'outputSchema': dict({
+        'description': 'A group: its name and the permission codenames it grants to its members.',
+        'properties': dict({
+          'id': dict({
+            'type': 'integer',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'permissions': dict({
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'permissions',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get group',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'core',
           ]),
         }),
@@ -7558,6 +8343,77 @@
         'type': 'object',
       }),
       'title': 'Get instance overview',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get log',
+      }),
+      'description': '''
+        Read the newest lines of a log, oldest first, to find out why something failed.
+        
+        The text is cut to about 20 000 characters, dropping the oldest lines (truncated says so).
+        Lines can name documents and mail subjects. Staff users only.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'lines': dict({
+            'default': 100,
+            'description': 'How many of the newest lines, at most 1000.',
+            'maximum': 1000,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'name': dict({
+            'description': 'Log name, from list_logs.',
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'name',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'get_log',
+      'outputSchema': dict({
+        'description': 'The last lines of a log, oldest first.',
+        'properties': dict({
+          'lines': dict({
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'returned_lines': dict({
+            'type': 'integer',
+          }),
+          'truncated': dict({
+            'description': 'true: older lines were left out to stay within the size limit.',
+            'type': 'boolean',
+          }),
+        }),
+        'required': list([
+          'name',
+          'lines',
+          'truncated',
+          'returned_lines',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get log',
     }),
     dict({
       '_meta': dict({
@@ -8291,6 +9147,145 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get user',
+      }),
+      'description': '''
+        Read one user: names, e-mail, active, staff and superuser flags, groups and permissions.
+        
+        Never returns a password or token. Superusers see and change everything, whatever is granted;
+        staff users may sign in to the Django admin site and read the logs. Needs the view_user
+        permission in Paperless. Find users with
+        list_users (permissions toolset).
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'user': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'Username or id; the ids are in list_users (permissions toolset).',
+          }),
+        }),
+        'required': list([
+          'user',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'get_user',
+      'outputSchema': dict({
+        'description': 'A user: names, status flags, groups and permission codenames. Never a password.',
+        'properties': dict({
+          'date_joined': dict({
+            'format': 'date-time',
+            'type': 'string',
+          }),
+          'email': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'first_name': dict({
+            'type': 'string',
+          }),
+          'groups': dict({
+            'items': dict({
+              'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+              'properties': dict({
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'inherited_permissions': dict({
+            'description': 'Codenames the user gets from its groups; empty for a superuser, who has every permission.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'is_active': dict({
+            'type': 'boolean',
+          }),
+          'is_staff': dict({
+            'description': 'Staff users may sign in to the Django admin site and read the logs.',
+            'type': 'boolean',
+          }),
+          'is_superuser': dict({
+            'description': 'Superusers see and change everything, whatever is granted.',
+            'type': 'boolean',
+          }),
+          'last_name': dict({
+            'type': 'string',
+          }),
+          'mfa_enabled': dict({
+            'type': 'boolean',
+          }),
+          'permissions': dict({
+            'description': 'Permission codenames granted to the user directly.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'username': dict({
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'username',
+          'email',
+          'first_name',
+          'last_name',
+          'is_active',
+          'is_staff',
+          'is_superuser',
+          'groups',
+          'permissions',
+          'inherited_permissions',
+          'date_joined',
+          'mfa_enabled',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get user',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'workflows',
           ]),
         }),
@@ -8649,6 +9644,45 @@
         'type': 'object',
       }),
       'title': 'List groups',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List logs',
+      }),
+      'description': 'List the log files this instance keeps (paperless, mail, celery). Staff users only.',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_logs',
+      'outputSchema': dict({
+        'description': 'The logs this instance keeps.',
+        'properties': dict({
+          'logs': dict({
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'logs',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List logs',
     }),
     dict({
       '_meta': dict({
@@ -9885,6 +10919,244 @@
         'type': 'object',
       }),
       'title': 'List share links',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List tasks',
+      }),
+      'description': '''
+        List background tasks, newest first: uploads, mail fetches, sanity checks, training.
+        
+        Each row has the database id acknowledge_tasks takes, the task_id get_task takes, its state
+        and, for a failure, the first line of the error. count is the total; pass next_page as page
+        for more. Needs the view_paperlesstask permission.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'acknowledged': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'false: only tasks nobody acknowledged yet.',
+          }),
+          'page': dict({
+            'default': 1,
+            'description': 'Page number, from 1.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'page_size': dict({
+            'default': 25,
+            'description': 'Rows per page, at most 100.',
+            'maximum': 100,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'state': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'pending',
+                  'started',
+                  'success',
+                  'failure',
+                  'revoked',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only tasks in this state, e.g. failure.',
+          }),
+          'task_type': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'consume_file',
+                  'train_classifier',
+                  'sanity_check',
+                  'index_optimize',
+                  'mail_fetch',
+                  'llm_index',
+                  'empty_trash',
+                  'check_workflows',
+                  'bulk_update',
+                  'reprocess_document',
+                  'build_share_link',
+                  'bulk_delete',
+                  'apply_ai_suggestions',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only this kind, e.g. consume_file or sanity_check.',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_tasks',
+      'outputSchema': dict({
+        'description': 'One page of tasks, newest first.',
+        'properties': dict({
+          'count': dict({
+            'description': 'How many tasks match in total.',
+            'type': 'integer',
+          }),
+          'next_page': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The next page, null on the last one.',
+          }),
+          'page': dict({
+            'type': 'integer',
+          }),
+          'tasks': dict({
+            'items': dict({
+              'description': 'A background task with the database id that acknowledging needs.',
+              'properties': dict({
+                'acknowledged': dict({
+                  'type': 'boolean',
+                }),
+                'created': dict({
+                  'format': 'date-time',
+                  'type': 'string',
+                }),
+                'document_ids': dict({
+                  'description': 'Documents the task touched.',
+                  'items': dict({
+                    'type': 'integer',
+                  }),
+                  'type': 'array',
+                }),
+                'duration_seconds': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'number',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'finished': dict({
+                  'anyOf': list([
+                    dict({
+                      'format': 'date-time',
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Null while the task is running.',
+                }),
+                'id': dict({
+                  'description': 'Database id: what acknowledge_tasks takes.',
+                  'type': 'integer',
+                }),
+                'message': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Why the task failed; null otherwise.',
+                }),
+                'started': dict({
+                  'anyOf': list([
+                    dict({
+                      'format': 'date-time',
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'state': dict({
+                  'description': 'pending, started, success, failure or revoked.',
+                  'enum': list([
+                    'pending',
+                    'started',
+                    'success',
+                    'failure',
+                    'revoked',
+                  ]),
+                  'type': 'string',
+                }),
+                'task_id': dict({
+                  'description': 'Celery UUID: what get_task takes.',
+                  'type': 'string',
+                }),
+                'task_type': dict({
+                  'type': 'string',
+                }),
+                'trigger_source': dict({
+                  'description': 'scheduled, web_ui, api_upload, folder_consume, email_consume, system or manual.',
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'task_id',
+                'task_type',
+                'trigger_source',
+                'state',
+                'created',
+                'started',
+                'finished',
+                'duration_seconds',
+                'document_ids',
+                'acknowledged',
+                'message',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'count',
+          'page',
+          'next_page',
+          'tasks',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List tasks',
     }),
     dict({
       '_meta': dict({
@@ -12253,6 +13525,82 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': False,
+        'openWorldHint': True,
+        'readOnlyHint': False,
+        'title': 'Run task',
+      }),
+      'description': '''
+        Start a background task by hand and return its task_id; follow it with get_task.
+        
+        A sanity check only reads and needs no confirm. Training the classifier replaces the model
+        that tags new documents automatically, and rebuilding the AI index sends the text of every
+        document to the configured AI service at its cost, so both need confirm: the first call is
+        an error that says what happens; describe it to the user and call again with confirm=true.
+        Superusers only.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'task_type': dict({
+            'description': 'sanity_check: check the archive for problems, changes nothing. train_classifier: retrain automatic matching. llm_index: rebuild the AI index.',
+            'enum': list([
+              'train_classifier',
+              'sanity_check',
+              'llm_index',
+            ]),
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'task_type',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'run_task',
+      'outputSchema': dict({
+        'description': 'A task that was started by hand.',
+        'properties': dict({
+          'message': dict({
+            'type': 'string',
+          }),
+          'task_id': dict({
+            'description': 'Follow it with get_task.',
+            'type': 'string',
+          }),
+          'task_type': dict({
+            'enum': list([
+              'train_classifier',
+              'sanity_check',
+              'llm_index',
+            ]),
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'task_id',
+          'task_type',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Run task',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'core',
           ]),
         }),
@@ -13595,6 +14943,197 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': True,
+        'idempotentHint': True,
+        'openWorldHint': True,
+        'readOnlyHint': False,
+        'title': 'Update application configuration',
+      }),
+      'description': '''
+        Change the application configuration: OCR, barcodes, title, AI.
+        
+        It applies to every user and to every document consumed from now on, and the AI settings decide
+        which service gets the document text, so every change needs confirm: the first call is an error
+        that lists each setting with its old and new value (keys are never shown); describe that to the
+        user and call again with confirm=true. Settings you leave out stay. A call that changes nothing
+        says so. Needs the change_applicationconfiguration permission. Settings:
+        - output_type: Output PDF type: pdf, pdfa, pdfa-1, pdfa-2 or pdfa-3.
+        - pages: OCR only pages 1 to this number (at least 1).
+        - language: OCR languages, e.g. 'eng+deu'.
+        - mode: OCR mode: auto, force, redo or off.
+        - archive_file_generation: Archive PDF generation: auto, always or never.
+        - image_dpi: Fallback DPI for images without one (at least 1).
+        - unpaper_clean: Unpaper cleaning: clean, clean-final or none.
+        - deskew: Straighten skewed pages (true or false).
+        - rotate_pages: Rotate pages automatically (true or false).
+        - rotate_pages_threshold: Confidence needed to rotate a page (number, at least 0).
+        - max_image_pixels: Largest image to decompress (number, at least 0).
+        - color_conversion_strategy: Ghostscript colour conversion: LeaveColorUnchanged, RGB, UseDeviceIndependentColor, Gray or CMYK.
+        - app_title: Application title shown in the web UI (at most 48 characters).
+        - barcodes_enabled: Scan barcodes (true or false).
+        - barcode_enable_tiff_support: Scan barcodes in TIFF files (true or false).
+        - barcode_string: Barcode text that splits documents (at most 32 characters).
+        - barcode_retain_split_pages: Keep the pages that carry a split barcode (true or false).
+        - barcode_enable_asn: Read archive serial numbers from barcodes (true or false).
+        - barcode_asn_prefix: Prefix of ASN barcodes (at most 32 characters).
+        - barcode_upscale: Barcode upscale factor (number, at least 1).
+        - barcode_dpi: DPI for barcode scanning (at least 1).
+        - barcode_max_pages: Most pages scanned for barcodes (at least 1).
+        - barcode_enable_tag: Assign tags from barcodes (true or false).
+        - barcode_tag_split: Split on tag barcodes (true or false).
+        - barcode_store_values: Store the values of detected barcodes (true or false).
+        - barcode_tag_mapping: Barcode to tag mapping: an object of regular expression to tag.
+        - user_args: Extra OCRmyPDF arguments: a JSON object.
+        - remote_ocr_engine: Remote OCR engine: azureai.
+        - remote_ocr_endpoint: Remote OCR endpoint URL.
+        - remote_ocr_mode: Which documents go to remote OCR: always or workflow_only.
+        - ai_enabled: Switch the AI features on (true or false).
+        - llm_embedding_backend: Embedding backend: openai-like, huggingface or ollama.
+        - llm_embedding_model: Embedding model name.
+        - llm_embedding_endpoint: Embedding endpoint URL.
+        - llm_embedding_chunk_size: Embedding chunk size (at least 1).
+        - llm_context_size: LLM context size (at least 1).
+        - llm_backend: LLM backend: openai-like or ollama.
+        - llm_model: LLM model name.
+        - llm_endpoint: LLM endpoint URL.
+        - llm_output_language: Language of LLM answers.
+        - llm_request_timeout: LLM timeout in seconds (at least 1).
+  
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'llm_api_key': dict({
+            'anyOf': list([
+              dict({
+                'description': 'The API key of the LLM service. Write-only: Paperless stores it and it is never shown again.',
+                'format': 'password',
+                'type': 'string',
+                'writeOnly': True,
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'A new LLM API key.',
+          }),
+          'llm_embedding_api_key': dict({
+            'anyOf': list([
+              dict({
+                'description': 'The API key of the embedding service. Write-only: Paperless stores it and it is never shown again.',
+                'format': 'password',
+                'type': 'string',
+                'writeOnly': True,
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'A new embedding API key.',
+          }),
+          'remote_ocr_api_key': dict({
+            'anyOf': list([
+              dict({
+                'description': 'The API key of the remote OCR service. Write-only: Paperless stores it and it is never shown again.',
+                'format': 'password',
+                'type': 'string',
+                'writeOnly': True,
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'A new remote OCR API key.',
+          }),
+          'settings': dict({
+            'anyOf': list([
+              dict({
+                'additionalProperties': dict({
+                }),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': "Settings to change, by name; null resets one to the server's environment. Names Paperless does not know are refused.",
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'update_app_config',
+      'outputSchema': dict({
+        'description': 'What update_app_config did: the configuration afterwards and what changed.',
+        'properties': dict({
+          'changed': dict({
+            'description': 'The settings that were written, keys included.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'config': dict({
+            'description': 'The application configuration: the settings that have a value, never a key.',
+            'properties': dict({
+              'externally_configured_variables': dict({
+                'description': 'Environment variables of the server that take part in the setup.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'keys_configured': dict({
+                'description': 'Which API key settings hold a value; the keys are never returned.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'settings': dict({
+                'additionalProperties': dict({
+                }),
+                'description': "Settings with a value; the others follow the server's environment.",
+                'type': 'object',
+              }),
+            }),
+            'required': list([
+              'settings',
+              'keys_configured',
+              'externally_configured_variables',
+            ]),
+            'type': 'object',
+          }),
+          'message': dict({
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'config',
+          'changed',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Update application configuration',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'core',
           ]),
         }),
@@ -14574,6 +16113,126 @@
         'type': 'object',
       }),
       'title': 'Update document',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': True,
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Update group',
+      }),
+      'description': '''
+        Rename a group or replace the permissions it grants to its members.
+        
+        Changing the permissions needs confirm: the first call is an error that names what the
+        members gain and lose; describe it to the user and call again with confirm=true. A rename
+        needs none. A call that changes nothing says so. Needs the change_group permission.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'group': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'Group name or id; the ids are in list_groups (permissions toolset).',
+          }),
+          'name': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 150,
+                'minLength': 1,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New name.',
+          }),
+          'permissions': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Permission codenames; replaces everything the group grants.',
+          }),
+        }),
+        'required': list([
+          'group',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'update_group',
+      'outputSchema': dict({
+        'description': 'What a group call did: the group afterwards and whether anything was written.',
+        'properties': dict({
+          'changed': dict({
+            'description': 'false: the group already was as asked.',
+            'type': 'boolean',
+          }),
+          'group': dict({
+            'description': 'A group: its name and the permission codenames it grants to its members.',
+            'properties': dict({
+              'id': dict({
+                'type': 'integer',
+              }),
+              'name': dict({
+                'type': 'string',
+              }),
+              'permissions': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+            }),
+            'required': list([
+              'id',
+              'name',
+              'permissions',
+            ]),
+            'type': 'object',
+          }),
+          'message': dict({
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'group',
+          'changed',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Update group',
     }),
     dict({
       '_meta': dict({
@@ -16240,6 +17899,313 @@
         'type': 'object',
       }),
       'title': 'Update taxonomy item',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': True,
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Update user',
+      }),
+      'description': '''
+        Change a user; only what you pass changes and the saved password stays.
+        
+        Anything that gives or takes away access or can take the account over needs confirm: a new
+        e-mail address (it resets the password), a rename, superuser or staff status,
+        deactivating, a new password, groups, permissions. The first call is an error that names who
+        is affected; describe it to the user and call again with confirm=true. Renaming and changing
+        names or the e-mail address need none. Lists replace the user's lists. The account this
+        server signs in with cannot be deactivated or stripped of superuser status. A call that
+        changes nothing says so. Only a superuser may change a superuser or the superuser and staff
+        status of anyone; otherwise the change_user permission is enough.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'email': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New address; an empty string removes it.',
+          }),
+          'first_name': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 150,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New first name.',
+          }),
+          'groups': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'integer',
+                    }),
+                  ]),
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': "Names or ids of the groups the user is in; replaces the user's groups.",
+          }),
+          'is_active': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'false: the user can no longer sign in.',
+          }),
+          'is_staff': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Staff status: may sign in to the Django admin site and read the logs.',
+          }),
+          'is_superuser': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Superuser: sees and changes everything.',
+          }),
+          'last_name': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 150,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New last name.',
+          }),
+          'password': dict({
+            'anyOf': list([
+              dict({
+                'description': 'The password of the user, as text. Write-only: Paperless stores it and it is never shown again.',
+                'format': 'password',
+                'type': 'string',
+                'writeOnly': True,
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'A new password; omit to keep it.',
+          }),
+          'permissions': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Permission codenames without the app label, such as view_document or change_tag; replaces the list the user has. Codenames are shown by get_user and get_group.',
+          }),
+          'user': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'Username or id; the ids are in list_users (permissions toolset).',
+          }),
+          'username': dict({
+            'anyOf': list([
+              dict({
+                'maxLength': 150,
+                'minLength': 1,
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'New username.',
+          }),
+        }),
+        'required': list([
+          'user',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'update_user',
+      'outputSchema': dict({
+        'description': 'What a user call did: the user afterwards and whether anything was written.',
+        'properties': dict({
+          'changed': dict({
+            'description': 'false: the user already was as asked.',
+            'type': 'boolean',
+          }),
+          'message': dict({
+            'type': 'string',
+          }),
+          'user': dict({
+            'description': 'A user: names, status flags, groups and permission codenames. Never a password.',
+            'properties': dict({
+              'date_joined': dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              'email': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+              }),
+              'first_name': dict({
+                'type': 'string',
+              }),
+              'groups': dict({
+                'items': dict({
+                  'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                  'properties': dict({
+                    'id': dict({
+                      'type': 'integer',
+                    }),
+                    'name': dict({
+                      'type': 'string',
+                    }),
+                  }),
+                  'required': list([
+                    'id',
+                    'name',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              'id': dict({
+                'type': 'integer',
+              }),
+              'inherited_permissions': dict({
+                'description': 'Codenames the user gets from its groups; empty for a superuser, who has every permission.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'is_active': dict({
+                'type': 'boolean',
+              }),
+              'is_staff': dict({
+                'description': 'Staff users may sign in to the Django admin site and read the logs.',
+                'type': 'boolean',
+              }),
+              'is_superuser': dict({
+                'description': 'Superusers see and change everything, whatever is granted.',
+                'type': 'boolean',
+              }),
+              'last_name': dict({
+                'type': 'string',
+              }),
+              'mfa_enabled': dict({
+                'type': 'boolean',
+              }),
+              'permissions': dict({
+                'description': 'Permission codenames granted to the user directly.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'username': dict({
+                'type': 'string',
+              }),
+            }),
+            'required': list([
+              'id',
+              'username',
+              'email',
+              'first_name',
+              'last_name',
+              'is_active',
+              'is_staff',
+              'is_superuser',
+              'groups',
+              'permissions',
+              'inherited_permissions',
+              'date_joined',
+              'mfa_enabled',
+            ]),
+            'type': 'object',
+          }),
+        }),
+        'required': list([
+          'user',
+          'changed',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Update user',
     }),
     dict({
       '_meta': dict({
@@ -22951,6 +24917,77 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Download documents as a ZIP archive',
+      }),
+      'description': '''
+        Get the files of several documents as one ZIP archive, attached as an embedded resource.
+        
+        The archive comes as MCP content after a JSON report (file name, size, delivered), never
+        written to disk. An archive over the server's download limit (512 KiB unless the
+        administrator changed it) is not attached: delivered is false and the note says what to do.
+        The whole request fails if one document is hidden from the user. Use download_document for
+        one file.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'compression': dict({
+            'default': 'none',
+            'description': 'ZIP compression.',
+            'enum': list([
+              'none',
+              'deflated',
+              'bzip2',
+              'lzma',
+            ]),
+            'type': 'string',
+          }),
+          'content': dict({
+            'default': 'archive',
+            'description': 'archive: the searchable PDF/A files (the original where there is none); originals: the files as uploaded; both: originals plus the archive files.',
+            'enum': list([
+              'archive',
+              'originals',
+              'both',
+            ]),
+            'type': 'string',
+          }),
+          'document_ids': dict({
+            'description': 'Document ids from search_documents; at most 100, each once.',
+            'items': dict({
+              'minimum': 1,
+              'type': 'integer',
+            }),
+            'maxItems': 100,
+            'minItems': 1,
+            'type': 'array',
+          }),
+          'follow_formatting': dict({
+            'default': False,
+            'description': 'Name the files by the storage path format of each document.',
+            'type': 'boolean',
+          }),
+        }),
+        'required': list([
+          'document_ids',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'bulk_download',
+      'title': 'Download documents as a ZIP archive',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'core',
           ]),
         }),
@@ -23205,6 +25242,67 @@
         'type': 'object',
       }),
       'title': 'Get AI suggestions',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get application configuration',
+      }),
+      'description': '''
+        Read the application configuration: the settings that have a value, OCR, barcodes, AI.
+        
+        Settings without a value follow the server's environment and are left out. API keys are
+        never returned; keys_configured names those that hold one. Any signed-in user may read it.
+        Change it with update_app_config.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+        }),
+        'type': 'object',
+      }),
+      'name': 'get_app_config',
+      'outputSchema': dict({
+        'description': 'The application configuration: the settings that have a value, never a key.',
+        'properties': dict({
+          'externally_configured_variables': dict({
+            'description': 'Environment variables of the server that take part in the setup.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'keys_configured': dict({
+            'description': 'Which API key settings hold a value; the keys are never returned.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'settings': dict({
+            'additionalProperties': dict({
+            }),
+            'description': "Settings with a value; the others follow the server's environment.",
+            'type': 'object',
+          }),
+        }),
+        'required': list([
+          'settings',
+          'keys_configured',
+          'externally_configured_variables',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get application configuration',
     }),
     dict({
       '_meta': dict({
@@ -24064,6 +26162,72 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get group',
+      }),
+      'description': '''
+        Read one group: its name and the permission codenames it grants to its members.
+        
+        Needs the view_group permission in Paperless. Find groups with list_groups (permissions
+        toolset).
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'group': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'Group name or id; the ids are in list_groups (permissions toolset).',
+          }),
+        }),
+        'required': list([
+          'group',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'get_group',
+      'outputSchema': dict({
+        'description': 'A group: its name and the permission codenames it grants to its members.',
+        'properties': dict({
+          'id': dict({
+            'type': 'integer',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'permissions': dict({
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'permissions',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get group',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'core',
           ]),
         }),
@@ -24394,6 +26558,77 @@
         'type': 'object',
       }),
       'title': 'Get instance overview',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get log',
+      }),
+      'description': '''
+        Read the newest lines of a log, oldest first, to find out why something failed.
+        
+        The text is cut to about 20 000 characters, dropping the oldest lines (truncated says so).
+        Lines can name documents and mail subjects. Staff users only.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'lines': dict({
+            'default': 100,
+            'description': 'How many of the newest lines, at most 1000.',
+            'maximum': 1000,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'name': dict({
+            'description': 'Log name, from list_logs.',
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'name',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'get_log',
+      'outputSchema': dict({
+        'description': 'The last lines of a log, oldest first.',
+        'properties': dict({
+          'lines': dict({
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'returned_lines': dict({
+            'type': 'integer',
+          }),
+          'truncated': dict({
+            'description': 'true: older lines were left out to stay within the size limit.',
+            'type': 'boolean',
+          }),
+        }),
+        'required': list([
+          'name',
+          'lines',
+          'truncated',
+          'returned_lines',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get log',
     }),
     dict({
       '_meta': dict({
@@ -25127,6 +27362,145 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get user',
+      }),
+      'description': '''
+        Read one user: names, e-mail, active, staff and superuser flags, groups and permissions.
+        
+        Never returns a password or token. Superusers see and change everything, whatever is granted;
+        staff users may sign in to the Django admin site and read the logs. Needs the view_user
+        permission in Paperless. Find users with
+        list_users (permissions toolset).
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'user': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'Username or id; the ids are in list_users (permissions toolset).',
+          }),
+        }),
+        'required': list([
+          'user',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'get_user',
+      'outputSchema': dict({
+        'description': 'A user: names, status flags, groups and permission codenames. Never a password.',
+        'properties': dict({
+          'date_joined': dict({
+            'format': 'date-time',
+            'type': 'string',
+          }),
+          'email': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+          }),
+          'first_name': dict({
+            'type': 'string',
+          }),
+          'groups': dict({
+            'items': dict({
+              'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+              'properties': dict({
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'name': dict({
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'name',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'inherited_permissions': dict({
+            'description': 'Codenames the user gets from its groups; empty for a superuser, who has every permission.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'is_active': dict({
+            'type': 'boolean',
+          }),
+          'is_staff': dict({
+            'description': 'Staff users may sign in to the Django admin site and read the logs.',
+            'type': 'boolean',
+          }),
+          'is_superuser': dict({
+            'description': 'Superusers see and change everything, whatever is granted.',
+            'type': 'boolean',
+          }),
+          'last_name': dict({
+            'type': 'string',
+          }),
+          'mfa_enabled': dict({
+            'type': 'boolean',
+          }),
+          'permissions': dict({
+            'description': 'Permission codenames granted to the user directly.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'username': dict({
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'id',
+          'username',
+          'email',
+          'first_name',
+          'last_name',
+          'is_active',
+          'is_staff',
+          'is_superuser',
+          'groups',
+          'permissions',
+          'inherited_permissions',
+          'date_joined',
+          'mfa_enabled',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get user',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'workflows',
           ]),
         }),
@@ -25485,6 +27859,45 @@
         'type': 'object',
       }),
       'title': 'List groups',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List logs',
+      }),
+      'description': 'List the log files this instance keeps (paperless, mail, celery). Staff users only.',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_logs',
+      'outputSchema': dict({
+        'description': 'The logs this instance keeps.',
+        'properties': dict({
+          'logs': dict({
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'logs',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List logs',
     }),
     dict({
       '_meta': dict({
@@ -26721,6 +29134,244 @@
         'type': 'object',
       }),
       'title': 'List share links',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'admin',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'List tasks',
+      }),
+      'description': '''
+        List background tasks, newest first: uploads, mail fetches, sanity checks, training.
+        
+        Each row has the database id acknowledge_tasks takes, the task_id get_task takes, its state
+        and, for a failure, the first line of the error. count is the total; pass next_page as page
+        for more. Needs the view_paperlesstask permission.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'acknowledged': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'false: only tasks nobody acknowledged yet.',
+          }),
+          'page': dict({
+            'default': 1,
+            'description': 'Page number, from 1.',
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'page_size': dict({
+            'default': 25,
+            'description': 'Rows per page, at most 100.',
+            'maximum': 100,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'state': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'pending',
+                  'started',
+                  'success',
+                  'failure',
+                  'revoked',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only tasks in this state, e.g. failure.',
+          }),
+          'task_type': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'consume_file',
+                  'train_classifier',
+                  'sanity_check',
+                  'index_optimize',
+                  'mail_fetch',
+                  'llm_index',
+                  'empty_trash',
+                  'check_workflows',
+                  'bulk_update',
+                  'reprocess_document',
+                  'build_share_link',
+                  'bulk_delete',
+                  'apply_ai_suggestions',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only this kind, e.g. consume_file or sanity_check.',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'list_tasks',
+      'outputSchema': dict({
+        'description': 'One page of tasks, newest first.',
+        'properties': dict({
+          'count': dict({
+            'description': 'How many tasks match in total.',
+            'type': 'integer',
+          }),
+          'next_page': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The next page, null on the last one.',
+          }),
+          'page': dict({
+            'type': 'integer',
+          }),
+          'tasks': dict({
+            'items': dict({
+              'description': 'A background task with the database id that acknowledging needs.',
+              'properties': dict({
+                'acknowledged': dict({
+                  'type': 'boolean',
+                }),
+                'created': dict({
+                  'format': 'date-time',
+                  'type': 'string',
+                }),
+                'document_ids': dict({
+                  'description': 'Documents the task touched.',
+                  'items': dict({
+                    'type': 'integer',
+                  }),
+                  'type': 'array',
+                }),
+                'duration_seconds': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'number',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'finished': dict({
+                  'anyOf': list([
+                    dict({
+                      'format': 'date-time',
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Null while the task is running.',
+                }),
+                'id': dict({
+                  'description': 'Database id: what acknowledge_tasks takes.',
+                  'type': 'integer',
+                }),
+                'message': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Why the task failed; null otherwise.',
+                }),
+                'started': dict({
+                  'anyOf': list([
+                    dict({
+                      'format': 'date-time',
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                }),
+                'state': dict({
+                  'description': 'pending, started, success, failure or revoked.',
+                  'enum': list([
+                    'pending',
+                    'started',
+                    'success',
+                    'failure',
+                    'revoked',
+                  ]),
+                  'type': 'string',
+                }),
+                'task_id': dict({
+                  'description': 'Celery UUID: what get_task takes.',
+                  'type': 'string',
+                }),
+                'task_type': dict({
+                  'type': 'string',
+                }),
+                'trigger_source': dict({
+                  'description': 'scheduled, web_ui, api_upload, folder_consume, email_consume, system or manual.',
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'task_id',
+                'task_type',
+                'trigger_source',
+                'state',
+                'created',
+                'started',
+                'finished',
+                'duration_seconds',
+                'document_ids',
+                'acknowledged',
+                'message',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'count',
+          'page',
+          'next_page',
+          'tasks',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'List tasks',
     }),
     dict({
       '_meta': dict({
