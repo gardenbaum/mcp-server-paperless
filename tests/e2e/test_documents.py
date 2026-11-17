@@ -11,7 +11,7 @@ from harness import paperless_settings, server_settings
 from mcp.shared.exceptions import MCPError
 from mcp.types import TextResourceContents
 
-from e2e.helpers import ensure_document, obj, parse
+from e2e.helpers import consume_text, obj, parse
 from paperless_mcp.server import create_server
 
 if TYPE_CHECKING:
@@ -175,7 +175,7 @@ async def test_the_document_resources_answer_like_the_tools(stack: Stack) -> Non
 def huge_document(stack: Stack) -> Iterator[int]:
     """A throwaway document whose text is a little over a million characters."""
     title = f"e2e-huge-{uuid.uuid4().hex[:8]}"
-    document_id = ensure_document(stack.admin, title, "huge")
+    document_id = consume_text(stack.admin, title)
     try:
         _ = stack.admin.patch(
             f"/api/documents/{document_id}/",
