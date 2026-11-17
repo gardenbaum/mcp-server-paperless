@@ -888,17 +888,17 @@ reason = "typing.cast returns its second argument unchanged and never looks at t
 
 [[equivalent]]
 mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_trigger__mutmut_6"
-function_hash = "0a9f0426bca9"
+function_hash = "1e5d8d97c0a7"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
 mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_trigger__mutmut_10"
-function_hash = "0a9f0426bca9"
+function_hash = "1e5d8d97c0a7"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
 mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_trigger__mutmut_11"
-function_hash = "0a9f0426bca9"
+function_hash = "1e5d8d97c0a7"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
