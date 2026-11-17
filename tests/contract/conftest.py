@@ -49,6 +49,8 @@ from fakes.paperless import (
 
 from paperless_mcp.domain.bulk import ObjectPermissions
 from paperless_mcp.domain.ports import (  # noqa: TC001 -- Ports' annotations are introspected
+    AdminReader,
+    AdminWriter,
     AiReader,
     BulkWriter,
     DocumentReader,
@@ -72,6 +74,7 @@ from paperless_mcp.domain.ports import (  # noqa: TC001 -- Ports' annotations ar
     WorkflowReader,
     WorkflowWriter,
 )
+from paperless_mcp.paperless.admin import PaperlessAdminReader, PaperlessAdminWriter
 from paperless_mcp.paperless.ai import PaperlessAiReader
 from paperless_mcp.paperless.auth import StaticTokenProvider
 from paperless_mcp.paperless.bulk import PaperlessBulkWriter
@@ -141,6 +144,8 @@ class Ports:
     raw: RawReader
     workflows: WorkflowReader
     workflow_writes: WorkflowWriter
+    management: AdminReader
+    management_writes: AdminWriter
 
 
 def fake_ports(state: FakeState, user: str) -> Ports:
@@ -170,6 +175,8 @@ def fake_ports(state: FakeState, user: str) -> Ports:
         raw=fake,
         workflows=fake,
         workflow_writes=writer,
+        management=fake,
+        management_writes=writer,
     )
 
 
@@ -198,6 +205,8 @@ def live_ports(client: PaperlessClient) -> Ports:
         raw=PaperlessRawReader(client),
         workflows=PaperlessWorkflowReader(client),
         workflow_writes=PaperlessWorkflowWriter(client),
+        management=PaperlessAdminReader(client),
+        management_writes=PaperlessAdminWriter(client),
     )
 
 

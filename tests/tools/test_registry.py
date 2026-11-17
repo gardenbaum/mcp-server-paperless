@@ -123,6 +123,9 @@ def unconfirmed(tools: list[Tool], publishing: frozenset[str] = PUBLISHING | ACT
 # Mail tools that are not destructive but need an optional confirm for the cases decision-18 names:
 # a rule that deletes or moves mail, an account pointed at another server, a rule handed over.
 MAIL_CONFIRMING = frozenset({"update_mail_account", "create_mail_rule", "update_mail_rule"})
+# Admin tools that are not destructive but need an optional confirm for the cases decision-26
+# names: a superuser or staff user, and the tasks that retrain or re-index.
+ADMIN_CONFIRMING = frozenset({"create_user", "create_group", "run_task"})
 # Names that hold a secret. Nothing of the sort may be in a tool's output (decision-18), and an
 # input that takes one must be write-only.
 CREDENTIAL_WORDS = (
@@ -308,6 +311,36 @@ async def test_the_mail_tools_with_conditional_confirmations_take_confirm() -> N
     assert unconfirmed(tools, MAIL_CONFIRMING) == []
 
 
+@pytest.mark.decision("decision-26")
+async def test_the_admin_tools_with_conditional_confirmations_take_confirm() -> None:
+    tools = await server_tools()
+
+    assert {t.name for t in tools} >= ADMIN_CONFIRMING
+    assert unconfirmed(tools, ADMIN_CONFIRMING) == []
+    found = {t.name for t in tools if destructive(t)}
+    assert found >= {"delete_user", "delete_group", "update_user", "update_group"}
+    assert found >= {"update_app_config"}
+    assert found.isdisjoint({"create_group", "acknowledge_tasks", "bulk_download", "get_log"})
+
+
+@pytest.mark.decision("decision-26")
+async def test_the_admin_key_inputs_are_write_only_and_no_output_has_a_key() -> None:
+    tools = {t.name: t for t in await server_tools()}
+    properties = cast(
+        "dict[str, dict[str, object]]", tools["update_app_config"].parameters["properties"]
+    )
+
+    for name in ("llm_api_key", "llm_embedding_api_key", "remote_ocr_api_key"):
+        assert any(
+            part.get("writeOnly") is True
+            for part in [
+                properties[name],
+                *cast("list[dict[str, object]]", properties[name].get("anyOf", [])),
+            ]
+        )
+    assert credentials_in_output(list(tools.values())) == []
+
+
 @pytest.mark.decision("decision-18")
 async def test_the_mail_destructive_tools_are_checked_for_confirm() -> None:
     found = {t.name for t in await server_tools() if destructive(t)}
@@ -322,7 +355,10 @@ async def test_no_tool_returns_a_credential_and_credential_inputs_are_write_only
     assert credentials_in_output(tools) == []
     assert readable_credential_inputs(tools) == []
     taking_one = {t.name for t in tools if "password" in t.parameters.get("properties", {})}
-    assert taking_one == {"create_mail_account", "update_mail_account", "remove_document_password"}
+    assert taking_one == {
+        *("create_mail_account", "update_mail_account", "remove_document_password"),
+        *("create_user", "update_user"),  # decision-26: write-only like the mail passwords
+    }
 
 
 @pytest.mark.decision("decision-18")

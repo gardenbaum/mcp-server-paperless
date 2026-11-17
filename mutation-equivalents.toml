@@ -1199,3 +1199,58 @@ reason = "HTTP header names are case-insensitive in httpx2.Headers: 'Accept' and
 mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_build__mutmut_24"
 function_hash = "0be61ae9addc"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: 'Accept' and 'accept' set the same header."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁcreate_user__mutmut_14"
+function_hash = "d2d0d4e8fab8"
+reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁupdate_user__mutmut_14"
+function_hash = "f2060b6683eb"
+reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁdelete_user__mutmut_5"
+function_hash = "c4a4084b983f"
+reason = "retry=None is as falsy as retry=False: the client reads the flag only as a truth value, so a DELETE is not retried either way."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁdelete_user__mutmut_10"
+function_hash = "c4a4084b983f"
+reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁcreate_group__mutmut_18"
+function_hash = "3fcf82299248"
+reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁupdate_group__mutmut_14"
+function_hash = "4597ec62ffdb"
+reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁdelete_group__mutmut_5"
+function_hash = "b49641196f00"
+reason = "retry=None is as falsy as retry=False: the client reads the flag only as a truth value, so a DELETE is not retried either way."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁdelete_group__mutmut_10"
+function_hash = "b49641196f00"
+reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁupdate_config__mutmut_24"
+function_hash = "adf61db2ee64"
+reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁacknowledge_tasks__mutmut_12"
+function_hash = "f1f27aa9ef68"
+reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁrun_task__mutmut_12"
+function_hash = "0fb4610dbbf7"
+reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
