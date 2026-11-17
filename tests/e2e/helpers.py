@@ -511,6 +511,9 @@ def rebuild_search_index(api: httpx2.Client) -> None:
     document leaves such an entry, so any test that runs after other writes (a contract suite, a
     long-lived stack) can hit it; a rebuild leaves exactly one entry per document. Paperless has no
     API for it, so this runs the management command in the container that publishes `PORT`.
+    Drop this rebuild (and its callers) once the pinned Paperless ships a Tantivy with the fix
+    (upstream tantivy PR 2964); until then the limitation stays documented in the README and in
+    the `more_like_id` description.
     Wait for the index-writing tasks first: one that ends after the rebuild leaves new entries.
     """
     wait_for_index_writers(api)
