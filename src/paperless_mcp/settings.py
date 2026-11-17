@@ -10,6 +10,8 @@ the custom ``__init__`` and the environment applies.
 
 import json
 import os
+import re
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal, cast
 
@@ -156,5 +158,98 @@ class ServerSettings(BaseSettings):
             raise ValueError(message)
         if ALL_TOOLSETS in value and len(value) > 1:
             message = f"{ALL_TOOLSETS} stands alone; do not combine it with toolset names"
+            raise ValueError(message)
+        return value
+
+
+# Tokens travel in an Authorization header: RFC 6750 token68 characters only.
+_TOKEN = re.compile(r"[A-Za-z0-9._~+/=-]+")
+_HOSTNAME = re.compile(r"[a-z0-9]([a-z0-9.-]*[a-z0-9])?")
+MIN_TOKEN_LENGTH = 16
+
+
+def _is_host(entry: str) -> bool:
+    """A host name, an IPv4 address or an IPv6 address (optionally in brackets); no port."""
+    try:
+        _ = ip_address(entry.removeprefix("[").removesuffix("]"))
+    except ValueError:
+        return _HOSTNAME.fullmatch(entry) is not None
+    return True
+
+
+class HttpSettings(BaseSettings):
+    """Settings of the HTTP transport (``paperless-mcp http``).
+
+    Attributes:
+        host: Address to bind (``PAPERLESS_MCP_HTTP_HOST``). Anything but a loopback address
+            counts as remote and needs ``auth_tokens`` and ``allowed_hosts``.
+        port: Port to bind (``PAPERLESS_MCP_HTTP_PORT``).
+        path: Path of the MCP endpoint (``PAPERLESS_MCP_HTTP_PATH``).
+        auth_tokens: Static bearer tokens that may use the endpoint
+            (``PAPERLESS_MCP_HTTP_AUTH_TOKENS``): comma-separated or a JSON array, each at least
+            16 characters of ``A-Za-z0-9._~+/=-``; masked in ``repr`` and ``str``.
+        allowed_hosts: Host names clients use to reach the server
+            (``PAPERLESS_MCP_HTTP_ALLOWED_HOSTS``), plain names without wildcards or ports;
+            the loopback names are always allowed. Required unless bound to loopback.
+        allow_unauthenticated_loopback: Serve without tokens, only while bound to loopback
+            (``PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK``).
+    """
+
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
+        env_prefix="PAPERLESS_MCP_HTTP_", frozen=True
+    )
+
+    host: str = "127.0.0.1"
+    port: int = Field(default=8000, ge=1, le=65535)
+    path: str = "/mcp"
+    auth_tokens: Annotated[tuple[SecretStr, ...], NoDecode] = ()
+    allowed_hosts: Annotated[tuple[str, ...], NoDecode] = ()
+    allow_unauthenticated_loopback: bool = False
+
+    @field_validator("auth_tokens", mode="before")
+    @classmethod
+    def _split_tokens(cls, value: object) -> object:
+        return _names(value, lower=False)
+
+    @field_validator("allowed_hosts", mode="before")
+    @classmethod
+    def _split_hosts(cls, value: object) -> object:
+        return _names(value, lower=True)
+
+    @field_validator("auth_tokens", mode="after")
+    @classmethod
+    def _check_tokens(cls, value: tuple[SecretStr, ...]) -> tuple[SecretStr, ...]:
+        for token in value:
+            secret = token.get_secret_value()
+            # The message never carries the token.
+            if len(secret) < MIN_TOKEN_LENGTH:
+                message = (
+                    f"a token needs at least {MIN_TOKEN_LENGTH} characters (openssl rand -hex 32)"
+                )
+                raise ValueError(message)
+            if _TOKEN.fullmatch(secret) is None:
+                message = "a token may contain only letters, digits and . _ ~ + / = -"
+                raise ValueError(message)
+        return value
+
+    @field_validator("allowed_hosts", mode="after")
+    @classmethod
+    def _check_hosts(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        for entry in value:
+            if not _is_host(entry):
+                message = (
+                    f"{entry!r} is not a plain host name or address (no wildcard, path or port)"
+                )
+                raise ValueError(message)
+        return value
+
+    @field_validator("path")
+    @classmethod
+    def _check_path(cls, value: str) -> str:
+        segments = value.split("/")[1:]
+        if re.fullmatch(r"/[A-Za-z0-9._~/-]+", value) is None or any(
+            segment in {"", ".", ".."} for segment in segments
+        ):
+            message = "use an absolute path below the root such as /mcp"
             raise ValueError(message)
         return value

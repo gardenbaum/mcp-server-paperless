@@ -159,6 +159,11 @@ secrets:
 # The full local gate; CI's check job runs the same recipes. `audit` needs the network.
 check: lock-check lint format-check typecheck imports deps secrets cov-diff
 
+# Run the HTTP server (Streamable HTTP, PAPERLESS_MCP_HTTP_* settings). It refuses to start without
+# PAPERLESS_MCP_HTTP_AUTH_TOKENS unless bound to loopback with PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK=true.
+serve-http:
+    uv run paperless-mcp-http
+
 # Start the Paperless 3.4.2 E2E stack (tests/e2e/compose.yaml) on 127.0.0.1:${PAPERLESS_E2E_PORT:-8010}.
 # Readiness and seeding are the test session's job, so this returns as soon as the containers run.
 e2e-up:
