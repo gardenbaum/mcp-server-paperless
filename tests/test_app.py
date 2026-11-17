@@ -7,6 +7,7 @@ import re
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urlsplit
 
+import fastmcp
 import httpx2
 import pytest
 from fastmcp import Client
@@ -30,7 +31,7 @@ from paperless_mcp.observability import JsonFormatter, RequestContext
 from paperless_mcp.settings import HttpSettings
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, AsyncIterator
+    from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 
     from starlette.types import Message, Receive, Scope, Send
 
@@ -221,8 +222,8 @@ async def test_a_wrong_or_malformed_credential_gets_401(authorization: str) -> N
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("method", ["POST", "GET", "DELETE"])
-async def test_every_method_on_the_endpoint_needs_a_token(method: str) -> None:
+@pytest.mark.parametrize("method", ["POST", "GET", "DELETE", "HEAD"])
+async def test_every_method_the_endpoint_serves_needs_a_token(method: str) -> None:
     async with running(settings(auth_tokens=TOKEN)) as client:
         response = await client.request(method, "/mcp", headers=MCP_HEADERS)
 
@@ -251,7 +252,9 @@ async def test_any_configured_token_opens_the_endpoint(token: str) -> None:
 
 @pytest.mark.anyio
 async def test_without_tokens_the_flagged_loopback_app_is_open() -> None:
-    async with running(settings(allow_unauthenticated_loopback=True)) as client:
+    async with running(
+        settings(allow_unauthenticated_loopback=True), base_url="http://127.0.0.1"
+    ) as client:
         response = await post(client, {})
 
     assert response.status_code == 200
@@ -336,8 +339,8 @@ async def test_the_endpoint_is_the_only_route(path: str, headers: dict[str, str]
     async with running(settings(auth_tokens=TOKEN)) as client:
         response = await client.get(path, headers=headers)
 
-    assert response.status_code in {404, 307}
-    assert response.text == "" or "Not Found" in response.text
+    assert response.status_code == 404  # no redirect either: it would drop the port and scheme
+    assert response.text == "Not Found"
 
 
 @pytest.mark.anyio
@@ -517,7 +520,8 @@ async def test_an_unauthenticated_oversized_body_is_never_read() -> None:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "base_url", ["http://10.0.0.5", "http://[2001:db8::1]", "http://example.org"]
+    "base_url",
+    ["http://10.0.0.5", "http://[2001:db8::1]", "http://example.org", "http://localhost"],
 )
 async def test_the_unauthenticated_app_answers_only_on_a_loopback_address(base_url: str) -> None:
     http = settings(allow_unauthenticated_loopback=True, allowed_hosts=urlsplit(base_url).hostname)
@@ -525,7 +529,7 @@ async def test_the_unauthenticated_app_answers_only_on_a_loopback_address(base_u
         response = await post(client, {})
 
     assert response.status_code == 403
-    assert "loopback" in response.text
+    assert "loopback" in response.text  # a name is never classified per request: no DNS lookup
 
 
 @pytest.mark.anyio
@@ -612,3 +616,139 @@ async def test_a_body_that_passes_the_limit_after_the_response_began_is_not_mask
 
     with pytest.raises(BodyTooLargeError):
         await limited(scope, idle, discard)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "header", ["Forwarded", "X-Forwarded-For", "X-Real-IP", "x-forwarded-host"]
+)
+async def test_the_unauthenticated_app_refuses_requests_that_came_through_a_proxy(
+    header: str,
+) -> None:
+    http = settings(allow_unauthenticated_loopback=True)
+    async with running(http, base_url="http://127.0.0.1") as client:
+        proxied = await post(client, {header: "203.0.113.7"})
+        direct = await post(client, {})
+
+    assert (proxied.status_code, direct.status_code) == (403, 200)
+    assert "proxy" in proxied.text
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("header", ["Forwarded", "X-Forwarded-For", "X-Real-IP"])
+async def test_the_authenticated_app_ignores_proxy_headers(header: str) -> None:
+    async with running(settings(auth_tokens=TOKEN)) as client:
+        response = await post(client, {**BEARER, header: "203.0.113.7"})
+
+    assert response.status_code == 200
+
+
+@pytest.fixture
+def fastmcp_loosened() -> Iterator[None]:
+    """What FASTMCP_* environment variables would set, applied to FastMCP's settings."""
+    live = fastmcp.settings
+    saved = (
+        live.http_allowed_origins,
+        live.debug,
+        live.stateless_http,
+        live.http_session_idle_timeout,
+    )
+    fastmcp.settings.http_allowed_origins = ["*"]
+    fastmcp.settings.debug = True
+    fastmcp.settings.stateless_http = True
+    fastmcp.settings.http_session_idle_timeout = None
+    try:
+        yield
+    finally:
+        (
+            live.http_allowed_origins,
+            live.debug,
+            live.stateless_http,
+            live.http_session_idle_timeout,
+        ) = saved
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("fastmcp_loosened")
+async def test_fastmcp_environment_settings_cannot_loosen_the_app() -> None:
+    http = settings(auth_tokens=TOKEN)
+    server = serve(admin(), auth=authenticator(http))
+    app = build_app(server, http, max_upload_bytes=MAX_UPLOAD)
+    async with (
+        app.router.lifespan_context(app),
+        httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="http://localhost"
+        ) as c,
+    ):
+        foreign = await c.post(
+            "/mcp",
+            json=INITIALIZE,
+            headers={**MCP_HEADERS, **BEARER, "Origin": "https://evil.example"},
+        )
+        null = await c.post(
+            "/mcp", json=INITIALIZE, headers={**MCP_HEADERS, **BEARER, "Origin": "null"}
+        )
+        stream = await c.get("/mcp", headers=MCP_HEADERS)  # a GET route exists only if stateful
+
+    assert [foreign.status_code, null.status_code, stream.status_code] == [403, 403, 401]
+    assert app.debug is False
+
+
+class Exploding:
+    """An ASGI app that fails, before it answers or, if asked, after it began to."""
+
+    def __init__(self, *, after_start: bool = False) -> None:
+        self.after_start: bool = after_start
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        _ = (scope, receive)
+        if self.after_start:
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+        message = "secret internal detail"
+        raise RuntimeError(message)
+
+
+@pytest.mark.anyio
+async def test_an_error_after_the_answer_began_is_not_swallowed() -> None:
+    scope: Scope = {"type": "http", "method": "GET", "path": "/mcp", "headers": []}
+
+    with pytest.raises(RuntimeError, match="secret"):
+        await RequestContext(Exploding(after_start=True))(scope, idle, discard)
+
+
+@pytest.mark.anyio
+async def test_an_unhandled_error_still_answers_500_with_a_request_id_and_no_detail(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO)
+    sent: list[Message] = []
+
+    async def collect(message: Message) -> None:
+        sent.append(message)
+
+    scope: Scope = {"type": "http", "method": "GET", "path": "/mcp", "headers": []}
+    await RequestContext(Exploding())(scope, idle, collect)
+
+    start = sent[0]
+    assert start["status"] == 500
+    assert any(k == b"x-request-id" for k, _ in cast("list[tuple[bytes, bytes]]", start["headers"]))
+    assert b"secret" not in b"".join(cast("bytes", m.get("body", b"")) for m in sent)
+    records = [r for r in caplog.records if r.getMessage() == "http request"]
+    assert [field(r, "status") for r in records] == [500]
+    assert "secret internal detail" not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_the_logged_path_is_cut_to_256_characters(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO)
+    scope: Scope = {"type": "http", "method": "GET", "path": "/" + "a" * 1000, "headers": []}
+
+    await RequestContext(Recorder())(scope, idle, discard)
+
+    logged = [field(r, "path") for r in caplog.records if r.getMessage() == "http request"]
+    assert [len(str(path)) for path in logged] == [256]
+
+
+def test_the_real_resolver_knows_localhost_and_rejects_nonsense() -> None:
+    assert is_loopback("localhost")
+    assert not is_loopback("no-such-host.invalid")

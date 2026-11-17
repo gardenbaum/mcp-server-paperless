@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-09T19:26:00Z'
-updated_date: '2026-11-17T01:47:00Z'
+updated_date: '2026-11-17T02:04:00Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -57,6 +57,8 @@ Strict TDD: each test red first, WIP commits often.
 From PLMCP-18 review: the stdio-only path variant of upload_document (tools/upload_stdio.py) must never be registered for HTTP: create_server(stdio=...) is the only switch and the CLI passes transport="stdio" explicitly (FASTMCP_TRANSPORT is ignored); the tool also refuses a path when ctx.transport is sse/streamable-http. HTTP entrypoints must call create_server with stdio=False. HTTP also needs a request-body size cap in front of the app: base64 content is parsed by FastMCP/pydantic before UploadService checks its size (the service only bounds the decode, not the parse), so an unbounded body costs memory first.
 
 Implemented. HTTP entrypoint paperless-mcp-http (cli.main_http, just serve-http); app.create_app/build_app/check_startup; settings.HttpSettings (PAPERLESS_MCP_HTTP_*); decision-27 records the rules. Design deviations: FastMCP HostOriginGuard (strict) instead of Starlette TrustedHostMiddleware (IPv6 Host parsing, Origin check); starlette and uvicorn became direct dependencies and deptry DEP002 ignores starlette (type-only imports) - a deliberate, reasoned entry in pyproject.toml. No health endpoint (decision-27). Body cap = base64 size of max_upload_bytes + 64 KiB, checked by Content-Length and while streaming. Unauthenticated loopback mode also answers only when the connection's server address is loopback. Not written red first: tests that pin behaviour FastMCP already provides (401 for every method, Host 421, Origin 403, 404 for other routes, no CORS, registry test per transport); they were mutation-checked by hand (host_origin_protection off, stdio=True, body limit removed all fail). Mutation testing: no module under services/ or paperless/ changed, so nothing to run (mutmut covers only those). E2E: tests/e2e/test_http.py run alone under flock, 2 passed. Known limit: a Paperless that rejects the token at startup shows uvicorn's lifespan error as a JSON log line with exit code 1, not the one-line message of stdio.
+
+Review round: FASTMCP_* env can no longer loosen the app (explicit http_app options, debug off), uvicorn ws=none (no query string in logs), proxy headers refused in unauthenticated mode, LoopbackOnly takes IP literals only, redirect_slashes off, unhandled errors answered with a request id, logged path cut to 256, path setting tightened, starlette direct dependency and DEP002 ignore removed (deptry skips TYPE_CHECKING imports), decision-27 and README reworded.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

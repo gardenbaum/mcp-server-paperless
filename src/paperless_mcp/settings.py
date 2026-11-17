@@ -246,7 +246,10 @@ class HttpSettings(BaseSettings):
     @field_validator("path")
     @classmethod
     def _check_path(cls, value: str) -> str:
-        if value == "/" or re.fullmatch(r"/[A-Za-z0-9._~/-]+", value) is None:
+        segments = value.split("/")[1:]
+        if re.fullmatch(r"/[A-Za-z0-9._~/-]+", value) is None or any(
+            segment in {"", ".", ".."} for segment in segments
+        ):
             message = "use an absolute path below the root such as /mcp"
             raise ValueError(message)
         return value

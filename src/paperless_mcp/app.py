@@ -205,11 +205,17 @@ class BodyLimit:
             await _reply(send, 413, "request body too large")
 
 
+PROXY_HEADERS = (b"forwarded", b"x-forwarded-for", b"x-forwarded-host", b"x-real-ip")
+
+
 class LoopbackOnly:
     """ASGI middleware for the unauthenticated mode: answers only on a loopback address.
 
     ``check_startup`` already refuses a configuration that binds elsewhere; this stops an app
     that is started by other means (uvicorn on the command line with another ``--host``).
+    Only an IP literal counts (uvicorn reports one; a name is never looked up per request).
+    A request that carries proxy headers is refused too: behind a local reverse proxy every
+    client would look like loopback, so this mode must never sit behind one.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -220,8 +226,12 @@ class LoopbackOnly:
         """Serve one ASGI connection."""
         if scope["type"] == "http":
             server = cast("tuple[str, int | None] | None", scope.get("server"))
-            if not (server and is_loopback(server[0])):
+            if not (server and _loopback_address(server[0])):
                 message = "no authentication is configured: this app answers on loopback only"
+                await _reply(send, 403, message)
+                return
+            if any(request_header(scope, name) is not None for name in PROXY_HEADERS):
+                message = "no authentication is configured: this app does not sit behind a proxy"
                 await _reply(send, 403, message)
                 return
         await self.app(scope, receive, send)
@@ -237,11 +247,21 @@ def build_app(server: FastMCP, http: HttpSettings, *, max_upload_bytes: int) -> 
     if (server.auth is None) != (not http.auth_tokens):
         message = "the server's authentication does not match the HTTP settings"
         raise InvalidConfiguration(message)
+    # Every option is explicit: FASTMCP_* environment variables must not loosen the app (a
+    # wildcard origin, debug tracebacks, stateless routes, no session expiry).
     app = server.http_app(
         path=http.path,
+        json_response=False,
+        stateless_http=False,
         host_origin_protection=True,
         allowed_hosts=list(http.allowed_hosts),
+        allowed_origins=[],
+        session_idle_timeout="auto",
     )
+    app.debug = False
+    # /mcp/ is not /mcp: a redirect would be answered before authentication, and with the
+    # wrong port and scheme behind a proxy.
+    app.router.redirect_slashes = False
     app.add_middleware(BodyLimit, limit=body_limit(max_upload_bytes))
     if not http.auth_tokens:
         app.add_middleware(LoopbackOnly)
@@ -273,7 +293,8 @@ def uvicorn_server(app: Starlette, http: HttpSettings) -> uvicorn.Server:
     """A uvicorn server for ``app`` bound to ``http.host`` and ``http.port``.
 
     No access log (it prints query strings; ``RequestContext`` logs each request without them),
-    no trust in forwarded headers and no server banner; uvicorn's loggers use the root handler.
+    no trust in forwarded headers, no server banner and no WebSocket support (uvicorn logs a
+    handshake with its query string; there is no WebSocket route); its loggers use the root handler.
     """
     config = uvicorn.Config(
         app,
@@ -283,6 +304,7 @@ def uvicorn_server(app: Starlette, http: HttpSettings) -> uvicorn.Server:
         access_log=False,
         proxy_headers=False,
         server_header=False,
+        ws="none",
     )
     return uvicorn.Server(config)
 

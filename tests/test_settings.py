@@ -402,7 +402,24 @@ def test_the_port_must_be_a_valid_port(monkeypatch: pytest.MonkeyPatch, value: s
     assert invalid_fields(HttpSettings) == [("port",)]
 
 
-@pytest.mark.parametrize("value", ["mcp", "/", "/a b", "/mcp?x=1", "/mcp#x", ""])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "mcp",
+        "/",
+        "/a b",
+        "/mcp?x=1",
+        "/mcp#x",
+        "",
+        "//mcp",
+        "/mcp/",
+        "/a//b",
+        "/.",
+        "/..",
+        "/a/./b",
+        "/a/../b",
+    ],
+)
 def test_the_path_must_be_an_absolute_path_below_the_root(
     monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:

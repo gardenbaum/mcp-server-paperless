@@ -32,6 +32,7 @@ request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
 # A request id of the caller that is kept: short and made of characters that are safe in a log.
 _REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 REQUEST_ID_HEADER: Final = "x-request-id"
+MAX_LOGGED_PATH: Final = 256
 
 logger = logging.getLogger(__name__)
 
@@ -135,10 +136,12 @@ class RequestContext:
         identifier = given if _REQUEST_ID.fullmatch(given) else uuid.uuid4().hex
         scope.setdefault("state", {})["request_id"] = identifier
         status = 500
+        responded = False
 
         async def stamped(message: Message) -> None:
-            nonlocal status
+            nonlocal status, responded
             if message["type"] == "http.response.start":
+                responded = True
                 status = cast("int", message["status"])
                 sent = cast("list[tuple[bytes, bytes]]", message["headers"])
                 headers = [(k, v) for k, v in sent if k.lower() != b"x-request-id"]
@@ -149,13 +152,22 @@ class RequestContext:
         token = request_id.set(identifier)
         started = time.perf_counter()
         try:
-            await self.app(scope, receive, stamped)
+            try:
+                await self.app(scope, receive, stamped)
+            except Exception as error:
+                logger.error(  # noqa: TRY400 -- by type only: a traceback or message may hold content
+                    "unhandled error in a request", extra={"error": type(error).__name__}
+                )
+                if responded:
+                    raise  # the answer began: nothing left to replace
+                await stamped({"type": "http.response.start", "status": 500, "headers": []})
+                await stamped({"type": "http.response.body", "body": b"Internal Server Error"})
         finally:
             logger.info(
                 "http request",
                 extra={
                     "method": scope["method"],
-                    "path": scope["path"],
+                    "path": cast("str", scope["path"])[:MAX_LOGGED_PATH],
                     "status": status,
                     "duration_ms": round((time.perf_counter() - started) * 1000, 1),
                     "request_id": identifier,

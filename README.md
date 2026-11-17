@@ -45,7 +45,7 @@ claude mcp add --transport http paperless http://127.0.0.1:8000/mcp \
     --header "Authorization: Bearer $PAPERLESS_MCP_HTTP_AUTH_TOKENS"
 ```
 
-Requests without a valid token get 401 (every method, on the one route the server has). Tokens
+Requests without a valid token get 401 (GET, POST, DELETE and HEAD on the one route the server has; other methods get 405 before authentication). Tokens
 are compared in constant time, are masked in settings and never logged. For a bind that is not
 loopback (`0.0.0.0`, `::`, a LAN address, any host name that does not resolve to loopback only) also
 name the host names clients use; any other `Host` header gets 421 and any foreign browser
@@ -59,7 +59,7 @@ PAPERLESS_MCP_HTTP_AUTH_TOKENS=... paperless-mcp-http
 
 For local development only, `PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK=true` serves
 without tokens on a loopback bind (and the app then answers on loopback addresses only); any
-process on the machine can use it. The server speaks plain HTTP: put TLS, rate limiting of failed
+process on the machine can use it. Never put this mode behind a reverse proxy, where every client would look like loopback: it refuses requests that carry `Forwarded`, `X-Forwarded-For`, `X-Forwarded-Host` or `X-Real-IP`. The server speaks plain HTTP: with tokens configured, put TLS, rate limiting of failed
 attempts and public exposure in a reverse proxy, and list the host name the proxy forwards in
 `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`.
 
@@ -67,7 +67,7 @@ attempts and public exposure in a reverse proxy, and list the host name the prox
 |---|---|
 | `PAPERLESS_MCP_HTTP_HOST` / `PAPERLESS_MCP_HTTP_PORT` | Address to bind (default `127.0.0.1`, `8000`) |
 | `PAPERLESS_MCP_HTTP_PATH` | Path of the endpoint (default `/mcp`); the only route, no health endpoint |
-| `PAPERLESS_MCP_HTTP_AUTH_TOKENS` | Static bearer tokens, comma-separated or a JSON array, each at least 16 characters of `A-Za-z0-9._~+/=-`; several allow rotation without downtime. Required unless the flag below is set |
+| `PAPERLESS_MCP_HTTP_AUTH_TOKENS` | Static bearer tokens, comma-separated or a JSON array, each at least 16 characters of `A-Za-z0-9._~+/=-`; several let clients switch to a new token before the old one is removed (changing the list needs a restart). Required unless the flag below is set |
 | `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS` | Host names clients use, plain names without wildcards or ports; `localhost`, `127.0.0.1` and `::1` are always allowed. Required unless the bind is loopback |
 | `PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK` | `true` to serve without tokens, only on a loopback bind (default `false`) |
 

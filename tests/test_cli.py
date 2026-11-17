@@ -260,6 +260,8 @@ def test_http_serves_with_the_configured_address_and_tokens(
     # No access log (it would print query strings), no forwarded-header trust, no server banner.
     assert (config.access_log, config.proxy_headers, config.server_header) == (False, False, False)
     assert config.log_config is None
+    # uvicorn logs a WebSocket handshake with its query string; the app has no WebSocket route.
+    assert config.ws == "none"
 
 
 @pytest.mark.usefixtures("isolated_logging", "connection")

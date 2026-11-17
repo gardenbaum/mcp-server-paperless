@@ -13,7 +13,6 @@ dependencies = [
     "mcp>=2.3.0,<3",
     "pydantic>=2.14.3",
     "pydantic-settings>=2.16.2",
-    "starlette>=1.0",
     "uvicorn>=0.40",
 ]
 
@@ -292,10 +291,3 @@ ignore_imports = [
     "paperless_mcp.tools.upload_stdio -> paperless_mcp.tools.upload",
     "paperless_mcp.tools.versions_stdio -> paperless_mcp.tools.versions",
 ]
-
-# --- Dependency hygiene (`just deps`) ----------------------------------------
-
-[tool.deptry.per_rule_ignores]
-# starlette types the ASGI middleware in app.py and observability.py (TYPE_CHECKING imports only,
-# which deptry does not count) and is declared directly because those modules import it.
-DEP002 = ["starlette"]
