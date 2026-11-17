@@ -13748,7 +13748,7 @@
               }),
             ]),
             'default': None,
-            'description': 'Find documents similar to this document id.',
+            'description': 'Find documents similar to this document id. On Paperless 3.4.2 an empty result can be a search-index fault; the admin fixes it with `document_index reindex`.',
           }),
           'ordering': dict({
             'anyOf': list([
@@ -22762,7 +22762,7 @@
               }),
             ]),
             'default': None,
-            'description': 'Find documents similar to this document id.',
+            'description': 'Find documents similar to this document id. On Paperless 3.4.2 an empty result can be a search-index fault; the admin fixes it with `document_index reindex`.',
           }),
           'ordering': dict({
             'anyOf': list([
@@ -30522,7 +30522,7 @@
               }),
             ]),
             'default': None,
-            'description': 'Find documents similar to this document id.',
+            'description': 'Find documents similar to this document id. On Paperless 3.4.2 an empty result can be a search-index fault; the admin fixes it with `document_index reindex`.',
           }),
           'ordering': dict({
             'anyOf': list([
