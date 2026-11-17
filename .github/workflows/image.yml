@@ -70,20 +70,32 @@ jobs:
       - name: Smoke test (refusal without tokens, read-only, non-root, healthy, 401 and initialize)
         run: scripts/image_smoke.sh paperless-mcp:ci
 
-  # Version tags only. Rebuilds from the same inputs (layer cache from the build job), then pushes
-  # with a provenance and an SBOM attestation. Needs the build job (scan and smoke test) to pass.
+  # Version tags only. Pushes the image under its digest alone, scans and smoke-tests exactly that
+  # digest, and only then gives it its version tags, so what is tagged is what was scanned. The
+  # push carries a provenance and an SBOM attestation. A failed scan leaves an untagged digest.
+  # Recommended repository settings (not set here): a tag ruleset limiting who may create `v*`
+  # tags, and a protected environment for this job.
   publish:
     needs: build
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0 # the ancestry check below needs the history of main
           persist-credentials: false
+
+      # A tag on a commit that never reached main (a branch, a fork's pull request) publishes nothing.
+      - name: Require the tagged commit to be on main
+        env:
+          TAGGED_SHA: ${{ github.sha }}
+        run: |
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          git merge-base --is-ancestor "$TAGGED_SHA" origin/main
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -93,8 +105,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # v1.2.3 gives 1.2.3, 1.2 and 1; a pre-release tag (v1.2.3-rc.1) gives only its own version. OCI
-      # labels (source, revision, version, created) come from the tag and the repository.
+      # v1.2.3 gives 1.2.3, 1.2 and 1; a pre-release tag (v1.2.3-rc.1) gives only its own version.
+      # OCI labels (source, revision, version, created) come from the tag and the repository.
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
@@ -104,11 +116,12 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
 
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      # No cache-to: a tag build never writes the cache the pull request builds read.
+      - id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
@@ -116,3 +129,26 @@ jobs:
           provenance: mode=max
           sbom: true
           cache-from: type=gha
+
+      - name: Scan the pushed digest (HIGH and CRITICAL fail the job)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+          scanners: vuln
+          severity: "HIGH,CRITICAL"
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
+          format: table
+
+      - name: Smoke test the pushed digest
+        env:
+          DIGEST_REF: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+        run: scripts/image_smoke.sh "$DIGEST_REF"
+
+      - name: Tag the scanned digest
+        env:
+          DIGEST_REF: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+        run: |
+          # shellcheck disable=SC2046 -- the tag list is word-split on purpose
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") "$DIGEST_REF"

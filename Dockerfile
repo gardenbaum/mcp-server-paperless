@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-#
 # paperless-mcp over Streamable HTTP (decision-28). Two stages: the builder installs the locked
 # dependencies and the project into a virtual environment, the runtime copies only that.
 # Both base images are pinned by digest; Renovate bumps tag and digest together.
@@ -28,15 +26,6 @@ RUN --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
 
 # renovate: datasource=docker depName=python
 FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f AS runtime
-
-ARG VERSION=dev
-ARG REVISION=unknown
-LABEL org.opencontainers.image.title="paperless-mcp" \
-      org.opencontainers.image.description="MCP server for paperless-ngx 3.x over Streamable HTTP" \
-      org.opencontainers.image.source="https://github.com/gardenbaum/paperless-mcp" \
-      org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.revision="${REVISION}"
 
 # Security fixes Debian has shipped since the base image digest was built (the scan fails the
 # image on fixed HIGH findings), and no pip: the server runs from /app/.venv and needs neither pip
@@ -69,5 +58,16 @@ EXPOSE 8000
 # configured port: it says the process is serving, not that Paperless is reachable.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["python", "-c", "import os, socket; socket.create_connection(('127.0.0.1', int(os.environ['PAPERLESS_MCP_HTTP_PORT'])), timeout=3).close()"]
+
+# Last, so that a different version or revision changes only the labels and a tag build reuses every
+# layer that was scanned.
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="paperless-mcp" \
+      org.opencontainers.image.description="MCP server for paperless-ngx 3.x over Streamable HTTP" \
+      org.opencontainers.image.source="https://github.com/gardenbaum/paperless-mcp" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}"
 
 ENTRYPOINT ["paperless-mcp-http"]

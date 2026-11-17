@@ -10,8 +10,10 @@
 .mypy_cache
 .basedpyright
 mutants
-__pycache__
-*.py[cod]
+**/__pycache__
+**/*.py[cod]
+**/.env
+**/.env.*
 .coverage
 coverage.xml
 htmlcov
