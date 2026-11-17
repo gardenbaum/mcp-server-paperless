@@ -2844,8 +2844,12 @@ class FakePaperless:
             raise unseen_group(group_id)
         return found[0]
 
-    @staticmethod
-    def _user_record(user: FakeUser) -> UserRecord:
+    def _user_record(self, user: FakeUser) -> UserRecord:
+        inherited = (
+            set[str]()
+            if user.is_superuser
+            else {p for g in self.state.groups if g.id in user.groups for p in g.permissions}
+        )
         return UserRecord(
             id=user.id,
             username=user.username,
@@ -2857,6 +2861,7 @@ class FakePaperless:
             is_superuser=user.is_superuser,
             group_ids=tuple(sorted(user.groups)),
             permissions=tuple(sorted(user.permissions)),
+            inherited_permissions=tuple(sorted(inherited)),
             date_joined=user.date_joined,
             mfa_enabled=False,
         )

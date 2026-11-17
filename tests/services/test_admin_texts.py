@@ -99,13 +99,13 @@ async def test_superuser_and_staff_are_named_in_one_refusal() -> None:
 
     expected = (
         "Nothing was changed. Confirming would create user 'c' as a superuser, who sees and "
-        "changes everything whatever is granted and with staff status, which allows them to "
-        "read the logs. Hint:"
+        "changes everything whatever is granted; with staff status, which lets them sign in "
+        "to the Django admin site and read the logs. Hint:"
     )
     assert both.startswith(expected)
     expected_staff = (
-        "Nothing was changed. Confirming would create user 'c' with staff status, which allows "
-        "them to read the logs. Hint:"
+        "Nothing was changed. Confirming would create user 'c' with staff status, which lets them "
+        "sign in to the Django admin site and read the logs. Hint:"
     )
     assert staff.startswith(expected_staff)
 
@@ -166,9 +166,9 @@ async def test_the_refusal_of_several_changes_joins_them_with_semicolons() -> No
 
     expected = (
         "Nothing was changed. Confirming would make 'e2e-reader' a superuser, who sees and "
-        "changes everything whatever is granted; give 'e2e-reader' staff status, which allows "
-        "them to read the logs; grant 'e2e-reader' the permissions add_tag, add_note; take the "
-        "permissions "
+        "changes everything whatever is granted; give 'e2e-reader' staff status, which lets them "
+        "sign in to the Django admin site and read the logs; grant 'e2e-reader' the permissions "
+        "add_tag, add_note; take the permissions "
     )
     assert text.startswith(expected)
 
@@ -236,7 +236,7 @@ async def test_group_texts_and_the_cache() -> None:
     setup = Setup()
     _ = await setup.taxonomy.items("group")
 
-    made = await setup.accounts.create_group("books", ["view_tag"])
+    made = await setup.accounts.create_group("books", ["view_tag"], confirm=True)
     assert (await setup.taxonomy.resolve("group", "books")).id == made.group.id
     assert made.message == f"Created group 'books' (id {made.group.id})."
     assert await failure(setup.accounts.update_group("books"), Validation) == (

@@ -1637,14 +1637,21 @@
         'title': 'Create group',
       }),
       'description': '''
-        Create a group, optionally with the permissions it grants.
+        Create a group, optionally with the permissions it grants to its members.
         
-        A new group has no members, so it needs no confirm; add users with update_user(groups=).
-        Needs the add_group permission.
+        A group without permissions needs no confirm. One that grants permissions does, because
+        putting users into it gives them those rights: the first call is an error that names the
+        permissions; describe it to the user and call again with confirm=true. Add users with
+        update_user(groups=). Needs the add_group permission.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
           'name': dict({
             'description': 'Unique group name.',
             'maxLength': 150,
@@ -3598,9 +3605,10 @@
       'description': '''
         Create a Paperless user. The password is write-only and never shown again.
         
-        Creating a superuser or a staff user needs confirm: the first call is an error that says what
-        the account would be allowed to do; describe that to the user and call again with
-        confirm=true. A plain user needs none. Groups are names or ids; unknown ones are an error
+        Creating a superuser or a staff user, or a user with a password, groups or permissions, needs
+        confirm: the first call is an error that says what the account would be allowed to do; describe
+        that to the user and call again with confirm=true. A user with only names and an e-mail
+        address needs none. Groups are names or ids; unknown ones are an error
         before anything is created. Only a superuser may make superusers or staff users; otherwise
         the add_user permission is enough.
       ''',
@@ -3681,7 +3689,7 @@
               }),
             ]),
             'default': None,
-            'description': 'Staff status: may read the logs.',
+            'description': 'Staff status: may sign in to the Django admin site and read the logs.',
           }),
           'is_superuser': dict({
             'anyOf': list([
@@ -3803,11 +3811,18 @@
               'id': dict({
                 'type': 'integer',
               }),
+              'inherited_permissions': dict({
+                'description': 'Codenames the user gets from its groups; empty for a superuser, who has every permission.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
               'is_active': dict({
                 'type': 'boolean',
               }),
               'is_staff': dict({
-                'description': 'Staff users may read the logs.',
+                'description': 'Staff users may sign in to the Django admin site and read the logs.',
                 'type': 'boolean',
               }),
               'is_superuser': dict({
@@ -3842,6 +3857,7 @@
               'is_superuser',
               'groups',
               'permissions',
+              'inherited_permissions',
               'date_joined',
               'mfa_enabled',
             ]),
@@ -9145,7 +9161,8 @@
         Read one user: names, e-mail, active, staff and superuser flags, groups and permissions.
         
         Never returns a password or token. Superusers see and change everything, whatever is granted;
-        staff users may read the logs. Needs the view_user permission in Paperless. Find users with
+        staff users may sign in to the Django admin site and read the logs. Needs the view_user
+        permission in Paperless. Find users with
         list_users (permissions toolset).
       ''',
       'inputSchema': dict({
@@ -9211,11 +9228,18 @@
           'id': dict({
             'type': 'integer',
           }),
+          'inherited_permissions': dict({
+            'description': 'Codenames the user gets from its groups; empty for a superuser, who has every permission.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
           'is_active': dict({
             'type': 'boolean',
           }),
           'is_staff': dict({
-            'description': 'Staff users may read the logs.',
+            'description': 'Staff users may sign in to the Django admin site and read the logs.',
             'type': 'boolean',
           }),
           'is_superuser': dict({
@@ -9250,6 +9274,7 @@
           'is_superuser',
           'groups',
           'permissions',
+          'inherited_permissions',
           'date_joined',
           'mfa_enabled',
         ]),
@@ -17772,7 +17797,8 @@
       'description': '''
         Change a user; only what you pass changes and the saved password stays.
         
-        Anything that gives or takes away access needs confirm: superuser or staff status,
+        Anything that gives or takes away access or can take the account over needs confirm: a new
+        e-mail address (it resets the password), a rename, superuser or staff status,
         deactivating, a new password, groups, permissions. The first call is an error that names who
         is affected; describe it to the user and call again with confirm=true. Renaming and changing
         names or the e-mail address need none. Lists replace the user's lists. The account this
@@ -17857,7 +17883,7 @@
               }),
             ]),
             'default': None,
-            'description': 'Staff status: may read the logs.',
+            'description': 'Staff status: may sign in to the Django admin site and read the logs.',
           }),
           'is_superuser': dict({
             'anyOf': list([
@@ -17998,11 +18024,18 @@
               'id': dict({
                 'type': 'integer',
               }),
+              'inherited_permissions': dict({
+                'description': 'Codenames the user gets from its groups; empty for a superuser, who has every permission.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
               'is_active': dict({
                 'type': 'boolean',
               }),
               'is_staff': dict({
-                'description': 'Staff users may read the logs.',
+                'description': 'Staff users may sign in to the Django admin site and read the logs.',
                 'type': 'boolean',
               }),
               'is_superuser': dict({
@@ -18037,6 +18070,7 @@
               'is_superuser',
               'groups',
               'permissions',
+              'inherited_permissions',
               'date_joined',
               'mfa_enabled',
             ]),
@@ -27221,7 +27255,8 @@
         Read one user: names, e-mail, active, staff and superuser flags, groups and permissions.
         
         Never returns a password or token. Superusers see and change everything, whatever is granted;
-        staff users may read the logs. Needs the view_user permission in Paperless. Find users with
+        staff users may sign in to the Django admin site and read the logs. Needs the view_user
+        permission in Paperless. Find users with
         list_users (permissions toolset).
       ''',
       'inputSchema': dict({
@@ -27287,11 +27322,18 @@
           'id': dict({
             'type': 'integer',
           }),
+          'inherited_permissions': dict({
+            'description': 'Codenames the user gets from its groups; empty for a superuser, who has every permission.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
           'is_active': dict({
             'type': 'boolean',
           }),
           'is_staff': dict({
-            'description': 'Staff users may read the logs.',
+            'description': 'Staff users may sign in to the Django admin site and read the logs.',
             'type': 'boolean',
           }),
           'is_superuser': dict({
@@ -27326,6 +27368,7 @@
           'is_superuser',
           'groups',
           'permissions',
+          'inherited_permissions',
           'date_joined',
           'mfa_enabled',
         ]),

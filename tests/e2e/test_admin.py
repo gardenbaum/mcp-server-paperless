@@ -101,6 +101,7 @@ async def test_a_user_is_created_changed_and_deleted_with_confirmations(
         password=PASSWORD,
         permissions=["view_document"],
         groups=[f"{tag}-team"],
+        confirm=True,
     )
     assert cast("Json", made["user"])["username"] == tag
     assert signs_in(stack, tag) == 200
@@ -139,7 +140,10 @@ async def test_a_superuser_needs_confirm_and_a_password_never_comes_back(
 
 @pytest.mark.usefixtures("cleanup")
 async def test_a_group_is_created_changed_and_deleted(stack: Stack, tag: str) -> None:
-    _ = await run(stack, "create_group", name=tag, permissions=["view_tag"])
+    assert "grants its members the permissions view_tag" in await refused(
+        stack, "create_group", name=tag, permissions=["view_tag"]
+    )
+    _ = await run(stack, "create_group", name=tag, permissions=["view_tag"], confirm=True)
 
     assert "add_tag" in await refused(stack, "update_group", group=tag, permissions=["add_tag"])
     changed = await run(stack, "update_group", group=tag, permissions=["add_tag"], confirm=True)

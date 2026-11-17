@@ -140,6 +140,7 @@ class UserRecord(BaseModel):
     is_superuser: bool
     group_ids: tuple[int, ...]
     permissions: tuple[str, ...]
+    inherited_permissions: tuple[str, ...]
     date_joined: datetime
     mfa_enabled: bool
 
@@ -245,12 +246,16 @@ class TaskRowPage(BaseModel):
 
 
 class ArchiveFile(BaseModel):
-    """A ZIP archive as the port reads it: empty and ``truncated`` if it is over the limit."""
+    """A ZIP archive as the port reads it: empty and ``truncated`` if it is over the limit.
+
+    ``timed_out`` tells a truncation by time (the archive was not finished) from one by size.
+    """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     content: bytes
     truncated: bool
+    timed_out: bool = False
 
 
 # What the tools return.
@@ -267,13 +272,25 @@ class UserDetail(BaseModel):
     first_name: str
     last_name: str
     is_active: bool
-    is_staff: Annotated[bool, Field(description="Staff users may read the logs.")]
+    is_staff: Annotated[
+        bool,
+        Field(description="Staff users may sign in to the Django admin site and read the logs."),
+    ]
     is_superuser: Annotated[
         bool, Field(description="Superusers see and change everything, whatever is granted.")
     ]
     groups: tuple[Principal, ...]
     permissions: Annotated[
         tuple[str, ...], Field(description="Permission codenames granted to the user directly.")
+    ]
+    inherited_permissions: Annotated[
+        tuple[str, ...],
+        Field(
+            description=(
+                "Codenames the user gets from its groups; empty for a superuser, who has every "
+                "permission."
+            )
+        ),
     ]
     date_joined: datetime
     mfa_enabled: bool

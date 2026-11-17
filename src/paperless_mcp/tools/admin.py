@@ -9,6 +9,7 @@ decision-26).
 """
 
 import base64
+import hashlib
 from typing import Annotated
 
 from fastmcp import Context
@@ -120,7 +121,8 @@ async def get_user(ctx: Context, user: UserRef) -> UserDetail:
     """Read one user: names, e-mail, active, staff and superuser flags, groups and permissions.
 
     Never returns a password or token. Superusers see and change everything, whatever is granted;
-    staff users may read the logs. Needs the view_user permission in Paperless. Find users with
+    staff users may sign in to the Django admin site and read the logs. Needs the view_user
+    permission in Paperless. Find users with
     list_users (permissions toolset).
     """
     return await services(ctx).accounts.get_user(user)
@@ -146,7 +148,10 @@ async def create_user(  # noqa: PLR0913 -- one parameter per field, described fo
     first_name: Annotated[str | None, Field(max_length=150, description="First name.")] = None,
     last_name: Annotated[str | None, Field(max_length=150, description="Last name.")] = None,
     is_active: Annotated[bool | None, Field(description="May sign in (default true).")] = None,
-    is_staff: Annotated[bool | None, Field(description="Staff status: may read the logs.")] = None,
+    is_staff: Annotated[
+        bool | None,
+        Field(description="Staff status: may sign in to the Django admin site and read the logs."),
+    ] = None,
     is_superuser: Annotated[
         bool | None, Field(description="Superuser: sees and changes everything.")
     ] = None,
@@ -156,9 +161,10 @@ async def create_user(  # noqa: PLR0913 -- one parameter per field, described fo
 ) -> UserOutcome:
     """Create a Paperless user. The password is write-only and never shown again.
 
-    Creating a superuser or a staff user needs confirm: the first call is an error that says what
-    the account would be allowed to do; describe that to the user and call again with
-    confirm=true. A plain user needs none. Groups are names or ids; unknown ones are an error
+    Creating a superuser or a staff user, or a user with a password, groups or permissions, needs
+    confirm: the first call is an error that says what the account would be allowed to do; describe
+    that to the user and call again with confirm=true. A user with only names and an e-mail
+    address needs none. Groups are names or ids; unknown ones are an error
     before anything is created. Only a superuser may make superusers or staff users; otherwise
     the add_user permission is enough.
     """
@@ -197,7 +203,10 @@ async def update_user(  # noqa: PLR0913 -- one parameter per field, described fo
     is_active: Annotated[
         bool | None, Field(description="false: the user can no longer sign in.")
     ] = None,
-    is_staff: Annotated[bool | None, Field(description="Staff status: may read the logs.")] = None,
+    is_staff: Annotated[
+        bool | None,
+        Field(description="Staff status: may sign in to the Django admin site and read the logs."),
+    ] = None,
     is_superuser: Annotated[
         bool | None, Field(description="Superuser: sees and changes everything.")
     ] = None,
@@ -207,7 +216,8 @@ async def update_user(  # noqa: PLR0913 -- one parameter per field, described fo
 ) -> UserOutcome:
     """Change a user; only what you pass changes and the saved password stays.
 
-    Anything that gives or takes away access needs confirm: superuser or staff status,
+    Anything that gives or takes away access or can take the account over needs confirm: a new
+    e-mail address (it resets the password), a rename, superuser or staff status,
     deactivating, a new password, groups, permissions. The first call is an error that names who
     is affected; describe it to the user and call again with confirm=true. Renaming and changing
     names or the e-mail address need none. Lists replace the user's lists. The account this
@@ -267,13 +277,17 @@ async def create_group(
         list[str] | None,
         Field(description="Permission codenames the group grants, such as view_document."),
     ] = None,
+    *,
+    confirm: Confirm = False,
 ) -> GroupOutcome:
-    """Create a group, optionally with the permissions it grants.
+    """Create a group, optionally with the permissions it grants to its members.
 
-    A new group has no members, so it needs no confirm; add users with update_user(groups=).
-    Needs the add_group permission.
+    A group without permissions needs no confirm. One that grants permissions does, because
+    putting users into it gives them those rights: the first call is an error that names the
+    permissions; describe it to the user and call again with confirm=true. Add users with
+    update_user(groups=). Needs the add_group permission.
     """
-    return await services(ctx).accounts.create_group(name, permissions)
+    return await services(ctx).accounts.create_group(name, permissions, confirm=confirm)
 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["update_group"])
@@ -538,8 +552,11 @@ async def bulk_download(
     report: ArchiveReport = delivery.report
     blocks: list[ContentBlock] = [TextContent(type="text", text=report.model_dump_json())]
     if delivery.data is not None:
+        digest = hashlib.sha256(
+            f"{report.content}:{','.join(map(str, report.document_ids))}".encode()
+        ).hexdigest()[:16]
         blob = BlobResourceContents(
-            uri=f"paperless://documents/archive/{report.filename}",
+            uri=f"paperless://documents/archive/{digest}/{report.filename}",
             mime_type=report.mime_type,
             blob=base64.b64encode(delivery.data).decode(),
             _meta={"filename": report.filename},

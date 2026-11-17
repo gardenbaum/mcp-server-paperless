@@ -44,8 +44,10 @@ if TYPE_CHECKING:
 
 SUPERUSER: Final = "a superuser, who sees and changes everything whatever is granted"
 CREATE_SUPERUSER: Final = "as a superuser, who sees and changes everything whatever is granted"
-CREATE_STAFF: Final = "with staff status, which allows them to read the logs"
-STAFF: Final = "staff status, which allows them to read the logs"
+CREATE_STAFF: Final = (
+    "with staff status, which lets them sign in to the Django admin site and read the logs"
+)
+STAFF: Final = "staff status, which lets them sign in to the Django admin site and read the logs"
 SELF_MESSAGE: Final = (
     "{name} is the account this server signs in with; {what} would lock this server out of "
     "Paperless."
@@ -58,6 +60,8 @@ CANNOT_TELL_HINT: Final = (
     "Try again in a moment; changes that cannot affect the server's own account (names, "
     "e-mail, groups, permissions) are not held back."
 )
+RENAME_TAIL: Final = "they sign in under the new name"
+EMAIL_TAIL: Final = "whoever controls it can reset the password and take the account over"
 SELF_HINT: Final = "Ask another administrator to do this in the Paperless web UI."
 NOTHING_GIVEN: Final = "Nothing to change: no field was given."
 
@@ -96,6 +100,10 @@ class AccountAdmin:
         except PaperlessMcpError:
             raise Validation(CANNOT_TELL, hint=CANNOT_TELL_HINT) from None
 
+    async def _group_names(self, ids: Sequence[int]) -> list[str]:
+        known = await names_of(self._taxonomy, "group", ids)
+        return [known[number] for number in ids]
+
     async def _one(self, kind: PrincipalKind, value: NameOrId) -> int:
         found = await resolve_principals(self._taxonomy, kind, [value])
         return found.ids[0]
@@ -113,6 +121,7 @@ class AccountAdmin:
             is_superuser=record.is_superuser,
             groups=tuple(Principal(id=n, name=groups[n]) for n in record.group_ids),
             permissions=record.permissions,
+            inherited_permissions=record.inherited_permissions,
             date_joined=record.date_joined,
             mfa_enabled=record.mfa_enabled,
         )
@@ -127,7 +136,7 @@ class AccountAdmin:
             message = "The password must be text."
             raise Validation(message, hint="Pass the password as a string.")
         secret = password.get_secret_value()
-        if not secret:
+        if not secret.strip():
             message = "The password must not be empty."
             raise Validation(message, hint="Pass a password, or leave it out.")
         check_secret(secret, "password")
@@ -184,11 +193,16 @@ class AccountAdmin:
             for flag, text in (
                 (is_superuser, CREATE_SUPERUSER),
                 (is_staff, CREATE_STAFF),
+                (password is not None, "with a password, with which whoever knows it signs in"),
             )
             if flag
         ]
+        if group_ids:
+            parts.append(f"in the groups {_quoted(await self._group_names(group_ids))}")
+        if permissions:
+            parts.append(f"with the permissions {_names(permissions)}")
         if parts and not confirm:
-            effect = f"create user {quoted(username)} {' and '.join(parts)}"
+            effect = f"create user {quoted(username)} {'; '.join(parts)}"
             raise ConfirmationRequired.for_effect(effect)
         given = {
             "username": username,
@@ -298,7 +312,7 @@ class AccountAdmin:
         )
         email = given["email"]
         changes: dict[str, object] = {}
-        compared = {**given, "email": None if email is None else (email or None)}
+        compared = {**given, "email": email or None}
         changes.update(
             {
                 name: value
@@ -309,6 +323,13 @@ class AccountAdmin:
         if email == "" and current.email is not None:
             changes["email"] = None
         effects: list[str] = []
+        if "username" in changes:
+            new_name = quoted(str(changes["username"]))
+            effects.append(f"rename user {who} to {new_name}; {RENAME_TAIL}")
+        if "email" in changes and changes["email"] is not None:
+            verb = "change" if current.email else "set"
+            address = quoted(str(changes["email"]))
+            effects.append(f"{verb} the e-mail address of {who} to {address}; {EMAIL_TAIL}")
         if "is_superuser" in changes:
             effects.append(
                 f"make {who} {SUPERUSER}" if is_superuser else f"remove superuser status from {who}"
@@ -369,13 +390,24 @@ class AccountAdmin:
         return Deletion(id=number, name=current.username, message=f"Deleted user {who}.")
 
     async def create_group(
-        self, name: str, permissions: Sequence[str] | None = None
+        self, name: str, permissions: Sequence[str] | None = None, *, confirm: bool = False
     ) -> GroupOutcome:
-        """Create a group, optionally with permissions; it has no members yet, so no ``confirm``.
+        """Create a group; one that grants permissions needs ``confirm``.
+
+        A group without permissions grants nothing, so it needs none; with permissions it is the
+        first step of an escalation (a user is then put into it), so it is confirmed like the
+        change of a group's permissions.
 
         Raises:
+            ConfirmationRequired: The group grants permissions and ``confirm`` is not set.
             Validation: The name is taken or a permission does not exist.
         """
+        if permissions and not confirm:
+            effect = (
+                f"create group {quoted(name)} that grants its members the permissions "
+                f"{_names(permissions)}"
+            )
+            raise ConfirmationRequired.for_effect(effect)
         values = GroupValues(name=name, permissions=tuple(permissions or ()))
         made = await self._writer.create_group(values)
         self._taxonomy.invalidate("group")

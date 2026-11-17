@@ -12,7 +12,7 @@ import zipfile
 from typing import TYPE_CHECKING
 
 import pytest
-from pydantic import SecretStr
+from pydantic import JsonValue, SecretStr
 
 from paperless_mcp.domain.admin import ConfigValues, GroupValues, UserValues
 from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
@@ -36,6 +36,8 @@ ACKNOWLEDGE, RUN = "AdminWriter.acknowledge_tasks", "AdminWriter.run_task"
 UNKNOWN = 999_999
 PASSWORD = "Contract-Passw0rd-4711"
 SETTINGS = ("app_title", "barcode_string")
+KEY_NAME = "llm_api_key"
+KEY = "contract-key-not-a-secret-0451"
 
 
 class People:
@@ -84,11 +86,12 @@ async def people(backend: Backend) -> AsyncIterator[People]:
 
 @pytest.fixture
 async def config(backend: Backend) -> AsyncIterator[None]:
-    before = (await backend.admin.management.get_config()).settings
+    before = await backend.admin.management.get_config()
     yield
-    _ = await backend.admin.management_writes.update_config(
-        ConfigValues(settings={name: before.get(name) for name in SETTINGS})
-    )
+    restore: dict[str, JsonValue] = {name: before.settings.get(name) for name in SETTINGS}
+    if KEY_NAME not in before.keys_configured:
+        restore[KEY_NAME] = None
+    _ = await backend.admin.management_writes.update_config(ConfigValues(settings=restore))
 
 
 # --- users
@@ -388,13 +391,14 @@ async def test_logs_are_listed_and_read_from_the_end(backend: Backend) -> None:
     lines = await management.get_log("paperless", limit=3)
     assert 1 <= len(lines) <= 3
     assert all(isinstance(line, str) for line in lines)
-    assert (await management.get_log("paperless", limit=1))[-1] == lines[-1] or len(lines) > 0
+    assert len(await management.get_log("paperless", limit=1)) == 1
 
 
 @pytest.mark.contract(GET_LOG)
 async def test_a_log_that_does_not_exist_is_not_found(backend: Backend) -> None:
-    with pytest.raises(NotFound):
-        _ = await backend.admin.management.get_log("nope", limit=5)
+    for name in ("nope", "../users"):
+        with pytest.raises(NotFound):
+            _ = await backend.admin.management.get_log(name, limit=5)
 
 
 @pytest.mark.contract(LIST_LOGS)
@@ -545,3 +549,32 @@ async def test_the_account_of_the_credential_is_identified(backend: Backend) -> 
 
     assert await backend.admin.management.get_current_user_id() == overview.current_user.id
     assert await backend.reader.management.get_current_user_id() != overview.current_user.id
+
+
+@pytest.mark.contract(UPDATE_CONFIG)
+@pytest.mark.contract(GET_CONFIG)
+@pytest.mark.usefixtures("config")
+async def test_a_saved_key_shows_only_its_name_and_never_its_value(backend: Backend) -> None:
+    management, writes = backend.admin.management, backend.admin.management_writes
+
+    written = await writes.update_config(ConfigValues(secrets={KEY_NAME: SecretStr(KEY)}))
+    read = await management.get_config()
+
+    for shown in (written, read):
+        assert KEY_NAME in shown.keys_configured
+        assert KEY_NAME not in shown.settings
+        assert KEY not in shown.model_dump_json()
+        assert "*" * 8 not in shown.model_dump_json()
+    cleared = await writes.update_config(ConfigValues(settings={KEY_NAME: None}))
+    assert KEY_NAME not in cleared.keys_configured
+
+
+@pytest.mark.contract(GET_USER)
+async def test_a_user_shows_what_its_groups_grant(backend: Backend, people: People) -> None:
+    group = await people.group(permissions=("view_tag",))
+    number = await people.user(group_ids=(group,), permissions=("add_tag",))
+
+    found = await backend.admin.management.get_user(number)
+
+    assert found.permissions == ("add_tag",)
+    assert "view_tag" in found.inherited_permissions

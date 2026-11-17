@@ -132,7 +132,7 @@ class SystemAdmin:
             if isinstance(secret, NotText):
                 message = f"The {name} must be text."
                 raise Validation(message, hint="Pass the key as a string.")
-            if not secret.get_secret_value():
+            if not secret.get_secret_value().strip():
                 message = f"The {name} must not be empty."
                 raise Validation(message, hint="Pass the key, or leave it out.")
             check_secret(secret.get_secret_value(), name)
@@ -300,6 +300,19 @@ class SystemAdmin:
             message=f"Started {task_type}; follow it with get_task(task_id).",
         )
 
+    def _note(self, *, timed_out: bool) -> str:
+        """Why the archive is not attached, and what to do about it."""
+        if timed_out:
+            return (
+                "Paperless did not finish the archive in time, so it is not attached. Ask for "
+                "fewer documents, or fetch single files with download_document."
+            )
+        return (
+            f"The archive is over the download limit of {self._max_bytes} bytes, so it is not "
+            "attached. Ask for fewer documents, fetch single files with download_document, or "
+            "ask the administrator to raise PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
+        )
+
     async def download(
         self,
         document_ids: Sequence[int],
@@ -336,13 +349,6 @@ class SystemAdmin:
             size_bytes=len(found.content) if delivered else None,
             delivered=delivered,
             max_bytes=self._max_bytes,
-            note=None
-            if delivered
-            else (
-                f"The archive is over the download limit of {self._max_bytes} bytes, so it is "
-                "not attached. Ask for fewer documents, fetch single files with "
-                "download_document, or ask the administrator to raise "
-                "PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
-            ),
+            note=None if delivered else self._note(timed_out=found.timed_out),
         )
         return ArchiveDelivery(report=report, data=found.content if delivered else None)

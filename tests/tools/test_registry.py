@@ -123,7 +123,7 @@ def unconfirmed(tools: list[Tool], publishing: frozenset[str] = PUBLISHING | ACT
 MAIL_CONFIRMING = frozenset({"update_mail_account", "create_mail_rule", "update_mail_rule"})
 # Admin tools that are not destructive but need an optional confirm for the cases decision-26
 # names: a superuser or staff user, and the tasks that retrain or re-index.
-ADMIN_CONFIRMING = frozenset({"create_user", "run_task"})
+ADMIN_CONFIRMING = frozenset({"create_user", "create_group", "run_task"})
 # Names that hold a secret. Nothing of the sort may be in a tool's output (decision-18), and an
 # input that takes one must be write-only.
 CREDENTIAL_WORDS = (

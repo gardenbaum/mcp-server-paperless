@@ -73,6 +73,7 @@ USER = UserRecord(
     is_superuser=False,
     group_ids=(1, 3),
     permissions=("view_document", "add_tag"),
+    inherited_permissions=("view_document", "view_tag"),
     date_joined=datetime(2026, 11, 12, 17, 44, 5, 838953, tzinfo=UTC),
     mfa_enabled=True,
 )
@@ -1062,3 +1063,65 @@ async def test_the_server_account_is_read_from_the_ui_settings(make_client: Clie
 
     assert found == 2
     assert server.sent == [("GET", "/api/ui_settings/", None, {})]
+
+
+async def test_inherited_permissions_are_codenames_without_duplicates_and_empty_for_superusers(
+    make_client: ClientFactory,
+) -> None:
+    wire = {
+        **USER_WIRE,
+        "inherited_permissions": ["auth.view_user", "documents.view_tag", "change_tag"] * 2,
+    }
+    superuser = {**USER_WIRE, "is_superuser": True, "inherited_permissions": ["auth.view_user"]}
+    server = Recording(ok(wire), ok(superuser))
+    reader = PaperlessAdminReader(make_client(server))
+
+    plain = await reader.get_user(5)
+    boss = await reader.get_user(5)
+
+    assert plain.inherited_permissions == ("change_tag", "view_tag", "view_user")
+    assert boss.inherited_permissions == ()
+
+
+@pytest.mark.parametrize("name", ["../users", "a/b", "Paperless", "", "log.txt", "mail "])
+async def test_a_log_name_that_is_not_a_plain_name_is_not_found_and_nothing_is_sent(
+    make_client: ClientFactory, name: str
+) -> None:
+    server = Recording()
+
+    with pytest.raises(NotFound) as raised:
+        _ = await PaperlessAdminReader(make_client(server)).get_log(name, limit=5)
+
+    assert raised.value.message == f"No log '{name}' exists."
+    assert server.sent == []
+
+
+class Slow(PaperlessClient):
+    """A client whose streamed POST ends early, by time or by size."""
+
+    result: Streamed = Streamed(b"", truncated=False)
+
+    @override
+    async def stream_post(
+        self, path: str, *, json: object, max_bytes: int, max_seconds: float
+    ) -> Streamed:
+        return self.result
+
+
+@pytest.mark.parametrize(
+    ("result", "timed_out"),
+    [(Streamed(b"x" * 77, truncated=True), False), (Streamed(b"x" * 5, truncated=True), True)],
+)
+async def test_a_cut_off_archive_says_whether_it_was_size_or_time(
+    result: Streamed, *, timed_out: bool
+) -> None:
+    http = httpx2.AsyncClient(base_url="http://paperless.test")
+    slow = Slow(http, StaticTokenProvider("t"), retry=RetryPolicy(), upload_timeout=1.0)
+    slow.result = result
+
+    found = await PaperlessAdminReader(slow).download_documents(
+        [1], content="archive", compression="none", follow_formatting=False, max_bytes=77
+    )
+
+    assert (found.content, found.truncated, found.timed_out) == (b"", True, timed_out)
+    await http.aclose()

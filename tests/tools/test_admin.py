@@ -106,7 +106,12 @@ async def test_a_user_is_created_read_and_never_shows_a_password() -> None:
     source = fake()
 
     made = await call(
-        source, "create_user", username="carol", password=PASSWORD, groups=["e2e-group"]
+        source,
+        "create_user",
+        username="carol",
+        password=PASSWORD,
+        groups=["e2e-group"],
+        confirm=True,
     )
     shown = await call(source, "get_user", user="carol")
 
@@ -156,7 +161,9 @@ async def test_deleting_a_user_needs_confirm_and_the_deleted_user_is_gone() -> N
 
 async def test_groups_are_created_changed_and_deleted_with_confirmations() -> None:
     state = seeded()
-    made = await call(fake(state), "create_group", name="accounting", permissions=["view_tag"])
+    made = await call(
+        fake(state), "create_group", name="accounting", permissions=["view_tag"], confirm=True
+    )
     number = cast("Json", made["group"])["id"]
     assert "give the members of 'accounting'" in await refusal(
         fake(state, writes=False), "update_group", group="accounting", permissions=["add_tag"]
@@ -273,3 +280,26 @@ async def test_a_user_without_the_permission_gets_a_hint() -> None:
     assert "Only staff users may read the logs." in text
     other = await refusal(fake(user="e2e-reader"), "run_task", task_type="sanity_check")
     assert "Only a superuser may start tasks." in other
+
+
+async def test_a_password_user_and_a_group_with_permissions_are_refused_until_confirmed() -> None:
+    source = fake(writes=False)
+
+    user = await refusal(source, "create_user", username="mallory", password=PASSWORD)
+    group = await refusal(source, "create_group", name="powers", permissions=["add_user"])
+
+    assert "create user 'mallory' with a password" in user
+    assert "create group 'powers' that grants its members the permissions add_user" in group
+
+
+async def test_every_archive_has_a_uri_of_its_own() -> None:
+    uris: list[str] = []
+    for ids in ([1], [1, 2]):
+        async with Client(server(fake())) as client:
+            result = await client.call_tool("bulk_download", {"document_ids": ids})
+        resource = result.content[1]
+        assert isinstance(resource, EmbeddedResource)
+        uris.append(str(resource.resource.uri))
+
+    assert uris[0] != uris[1]
+    assert all(u.endswith("/paperless-documents.zip") for u in uris)

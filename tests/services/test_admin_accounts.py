@@ -33,7 +33,7 @@ pytestmark = [
     pytest.mark.decision("decision-18"),
 ]
 ADMIN_ID, READER_ID, GROUP = 2, 3, 1
-PASSWORD = "Sup3r-Secret-pw!"
+PASSWORD = "plain-words-test-password"
 
 
 @final
@@ -144,6 +144,7 @@ async def test_a_plain_user_is_created_without_confirm_and_the_password_is_never
         email="c@example.com",
         groups=["e2e-group"],
         permissions=["view_document"],
+        confirm=True,
     )
 
     assert outcome.changed
@@ -185,14 +186,19 @@ async def test_a_confirmed_superuser_is_created() -> None:
     assert outcome.user.is_superuser
 
 
-@pytest.mark.parametrize("password", ["", "***"])
-async def test_a_blank_or_asterisk_password_is_refused_without_echoing_it(password: str) -> None:
+@pytest.mark.parametrize(
+    ("password", "reason"), [("", "must not be empty"), ("***", "cannot consist only of asterisks")]
+)
+async def test_a_blank_or_asterisk_password_is_refused_without_echoing_it(
+    password: str, reason: str
+) -> None:
     setup = Setup(writes=False)
 
     with pytest.raises(Validation) as raised:
         _ = await setup.service.create_user(username="carol", password=SecretStr(password))
 
-    assert password not in raised.value.describe() or password == ""
+    assert reason in raised.value.message
+    assert "***" not in raised.value.describe()
 
 
 async def test_a_password_that_is_not_text_is_refused() -> None:
@@ -224,11 +230,11 @@ async def test_a_taken_username_is_a_validation_error() -> None:
 async def test_cosmetic_changes_need_no_confirm_and_a_repeat_changes_nothing() -> None:
     setup = Setup()
 
-    first = await setup.service.update_user("e2e-reader", first_name="Rita", email="r@x.org")
-    again = await setup.service.update_user("e2e-reader", first_name="Rita", email="r@x.org")
+    first = await setup.service.update_user("e2e-reader", first_name="Rita", last_name="Reed")
+    again = await setup.service.update_user("e2e-reader", first_name="Rita", last_name="Reed")
 
     assert first.changed
-    assert (first.user.first_name, first.user.email) == ("Rita", "r@x.org")
+    assert (first.user.first_name, first.user.last_name) == ("Rita", "Reed")
     assert not again.changed
     assert "already" in again.message
 
@@ -392,7 +398,7 @@ async def test_the_server_user_cannot_be_deleted() -> None:
 async def test_a_group_is_created_without_confirm() -> None:
     setup = Setup()
 
-    outcome = await setup.service.create_group("accounting", ["view_document"])
+    outcome = await setup.service.create_group("accounting", ["view_document"], confirm=True)
 
     assert outcome.changed
     assert (outcome.group.name, outcome.group.permissions) == ("accounting", ("view_document",))

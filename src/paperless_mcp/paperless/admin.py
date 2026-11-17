@@ -25,6 +25,7 @@ Probed on 3.4.2 (PLMCP-31):
   an empty list an empty archive.
 """
 
+import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, ClassVar, Final
 
@@ -72,6 +73,8 @@ BULK_DOWNLOAD: Final = "/api/documents/bulk_download/"
 DOWNLOAD_SECONDS: Final = 120.0
 # The first line of a failed task's message: later lines can be a traceback with server paths.
 MAX_MESSAGE: Final = 300
+# A log name is a plain word: anything else would change the path of the request.
+LOG_NAME: Final = re.compile(r"[a-z0-9_]+")
 
 # What each refusal tells the caller: (what the user may not do, what it needs).
 VIEW_USER: Final = ("view users", "It needs the view_user permission, or must be a superuser.")
@@ -206,6 +209,7 @@ class _User(BaseModel):
     is_superuser: bool
     groups: list[int]
     user_permissions: list[str]
+    inherited_permissions: list[str]
     date_joined: datetime
     is_mfa_enabled: bool
 
@@ -274,6 +278,13 @@ class _Started(BaseModel):
     task_id: str
 
 
+def _codenames(row: _User) -> tuple[str, ...]:
+    """What the groups grant, as codenames without the app label; none for a superuser."""
+    if row.is_superuser:
+        return ()
+    return tuple(sorted({entry.rpartition(".")[2] for entry in row.inherited_permissions}))
+
+
 def _user(row: _User) -> UserRecord:
     return UserRecord(
         id=row.id,
@@ -286,6 +297,7 @@ def _user(row: _User) -> UserRecord:
         is_superuser=row.is_superuser,
         group_ids=tuple(row.groups),
         permissions=tuple(row.user_permissions),
+        inherited_permissions=_codenames(row),
         date_joined=row.date_joined,
         mfa_enabled=row.is_mfa_enabled,
     )
@@ -413,6 +425,8 @@ class PaperlessAdminReader:
 
     async def get_log(self, name: str, *, limit: int) -> tuple[str, ...]:
         """See ``AdminReader.get_log``."""
+        if not LOG_NAME.fullmatch(name):
+            raise unseen_log(name)
         with Refused(READ_LOGS):
             try:
                 found = await self._client.get(f"{LOGS}{name}/", _Lines, params={"limit": limit})
@@ -472,8 +486,12 @@ class PaperlessAdminReader:
             found = await self._client.stream_post(
                 BULK_DOWNLOAD, json=body, max_bytes=max_bytes, max_seconds=DOWNLOAD_SECONDS
             )
+        # Streamed keeps exactly ``max_bytes`` bytes when the size limit cut it; fewer: the time.
+        timed_out = found.truncated and len(found.content) < max_bytes
         return ArchiveFile(
-            content=b"" if found.truncated else found.content, truncated=found.truncated
+            content=b"" if found.truncated else found.content,
+            truncated=found.truncated,
+            timed_out=timed_out,
         )
 
 
