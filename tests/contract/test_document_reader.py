@@ -133,6 +133,7 @@ async def test_full_text_finds_words_of_the_content_with_highlights(backend: Bac
 @pytest.mark.contract(CONTRACT)
 async def test_more_like_finds_other_documents(backend: Backend) -> None:
     private = await document(backend.admin, PRIVATE)
+    backend.rebuild_search_index()
 
     found = {hit.title for hit in await search(backend.admin, DocumentQuery(more_like=private.id))}
 
