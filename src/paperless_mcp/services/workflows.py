@@ -491,6 +491,12 @@ class WorkflowService:
                 )
                 raise Validation(message, hint="Use a document added or updated trigger.")
             settings[field.wire] = await self._setting(name, field, value)
+        if settings.get("match") and not settings.get("matching_algorithm"):
+            message = "A match needs a matching_algorithm other than none to restrict anything."
+            raise Validation(
+                message,
+                hint="Use any, all, exact, regex or fuzzy; with none Paperless ignores the match.",
+            )
         return WorkflowTrigger(type=number, settings=settings)
 
     async def _action(

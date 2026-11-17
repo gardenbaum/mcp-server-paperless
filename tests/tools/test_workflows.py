@@ -112,7 +112,14 @@ async def test_a_workflow_is_created_with_nested_triggers_and_actions_by_name() 
         fake(state),
         "create_workflow",
         name="Tag invoices",
-        triggers=[{"type": "added", "has_any_correspondents": ["e2e-acme"], "match": "invoice"}],
+        triggers=[
+            {
+                "type": "added",
+                "has_any_correspondents": ["e2e-acme"],
+                "match": "invoice",
+                "matching_algorithm": "any",
+            }
+        ],
         actions=[
             {"type": "assignment", "assign_tags": ["e2e-finance"], "assign_title": "{{ title }}"}
         ],
@@ -120,7 +127,11 @@ async def test_a_workflow_is_created_with_nested_triggers_and_actions_by_name() 
 
     [trigger] = cast("list[Json]", output["triggers"])
     [action] = cast("list[Json]", output["actions"])
-    assert trigger["settings"] == {"has_any_correspondents": ["e2e-acme"], "match": "invoice"}
+    assert trigger["settings"] == {
+        "has_any_correspondents": ["e2e-acme"],
+        "match": "invoice",
+        "matching_algorithm": "any",
+    }
     assert action["settings"] == {"assign_tags": ["e2e-finance"], "assign_title": "{{ title }}"}
     assert [w.name for w in state.workflows] == ["Tag invoices"]
 

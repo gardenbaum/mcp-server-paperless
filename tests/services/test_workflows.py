@@ -1332,3 +1332,42 @@ async def test_new_triggers_and_actions_are_what_the_refusal_names() -> None:
             WorkflowEdit(triggers=(NEVER,), actions=(ActionInput(type="move to trash"),)),
             confirm=False,
         )
+
+
+@pytest.mark.parametrize("algorithm", [None, "none", 0])
+async def test_a_match_without_a_matching_algorithm_is_refused_on_create_and_update(
+    algorithm: int | str | None,
+) -> None:
+    setup = Setup()
+    _ = setup.seed(
+        "w", triggers=[WorkflowTrigger(type=2, settings={"match": "x", "matching_algorithm": 1})]
+    )
+    trigger = TriggerInput(type="added", match="invoice", matching_algorithm=algorithm)
+    message = "A match needs a matching_algorithm other than none to restrict anything."
+
+    with pytest.raises(Validation, match=message):
+        _ = await setup.workflows.create(
+            WorkflowCreate(name="n", triggers=(trigger,)), confirm=True
+        )
+    with pytest.raises(Validation, match=message):
+        _ = await setup.workflows.update("w", WorkflowEdit(triggers=(trigger,)), confirm=True)
+
+    assert setup.fake.writes == []
+
+
+async def test_a_match_with_an_algorithm_or_an_empty_match_is_accepted() -> None:
+    setup = Setup()
+
+    made = await setup.workflows.create(
+        WorkflowCreate(
+            name="n",
+            triggers=(
+                TriggerInput(type="added", match="a", matching_algorithm="any"),
+                TriggerInput(type="added", match="", matching_algorithm="none"),
+                TriggerInput(type="added", matching_algorithm="none"),
+            ),
+        ),
+        confirm=False,
+    )
+
+    assert len(made.triggers) == 3

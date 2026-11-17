@@ -86,6 +86,9 @@ async def test_workflow_service_errors(snapshot: SnapshotAssertion) -> None:
         "tags on consumption": WorkflowCreate(
             name="n", triggers=(TriggerInput(type=1, filename="f", has_tags=["e2e-finance"]),)
         ),
+        "match without algorithm": WorkflowCreate(
+            name="n", triggers=(TriggerInput(type=2, match="x"),)
+        ),
         "bad algorithm": WorkflowCreate(
             name="n", triggers=(TriggerInput(type=2, matching_algorithm="x"),)
         ),
@@ -119,7 +122,7 @@ async def test_workflow_service_errors(snapshot: SnapshotAssertion) -> None:
         "mail": WorkflowCreate(name="n", triggers=(NEVER,), actions=(MAIL,)),
         "mail with document": WorkflowCreate(
             name="n",
-            triggers=(TriggerInput(type="scheduled", match="x"),),
+            triggers=(TriggerInput(type="scheduled", match="x", matching_algorithm="any"),),
             actions=(
                 ActionInput(
                     type=3,
