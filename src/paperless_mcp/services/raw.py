@@ -9,6 +9,7 @@ denied; the answer must be JSON, has secret-looking values replaced and is cut a
 import json
 import re
 from typing import TYPE_CHECKING, Final, NoReturn, cast
+from urllib.parse import parse_qs, urlsplit
 
 from paperless_mcp.domain.errors import PaperlessMcpError, Validation
 from paperless_mcp.domain.raw import RawApiResult
@@ -32,10 +33,10 @@ MAX_PARAM_NAME: Final = 64
 MAX_PARAM_VALUE: Final = 2000
 REDACTED: Final = "[redacted]"
 
-# /api/ alone, or /api/ and segments of ASCII letters, digits, "_" and "-", slash-separated, with
+# /api/ and segments of ASCII letters, digits, "_" and "-", slash-separated, with
 # an optional trailing slash. No "%": Paperless paths need no percent-encoding, so an encoded
 # character is refused whole instead of being decoded and checked.
-_PATH = re.compile(r"/api/(?:[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*/?)?")
+_PATH = re.compile(r"/api/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*/?")
 _PARAM_NAME = re.compile(rf"[A-Za-z0-9_.-]{{1,{MAX_PARAM_NAME}}}")
 _PLAIN_PATHS: Final = (
     "only /api/ followed by names of letters, digits, _ and - is allowed, with no query, "
@@ -63,13 +64,26 @@ _SECRET_SEGMENTS: Final = {
 }
 # Segments that mark a file download; the curated tools return files with size and content rules.
 _FILE_SEGMENTS: Final = frozenset({"download", "preview", "thumb", "bulk_download"})
+# Segments of endpoints that ask a language model: the ai toolset has the tool, with its cost
+# warning and its switch.
+_AI_SEGMENTS: Final = frozenset({"ai_suggestions"})
+_AI_HINT: Final = (
+    "get_ai_suggestions (ai toolset) does this; each call may cost money and sends the "
+    "document text to the model backend."
+)
 _FILE_HINT: Final = (
     "Files are returned by download_document and get_document_thumbnail, which cap their size."
 )
 # Parts of a JSON key that mark a secret value, and the key of webhook headers (they carry the
 # authorization of the receiving service).
-_SECRET_KEY_PARTS: Final = ("password", "secret", "api_key", "auth_token")
-_SECRET_KEYS: Final = frozenset({"headers"})
+_SECRET_KEY_PARTS: Final = (
+    *("password", "secret", "api_key", "apikey", "auth_token", "token", "private_key"),
+)
+# Keys that hold webhook settings (headers and params carry tokens, the body can).
+_SECRET_KEYS: Final = frozenset({"headers", "params", "body"})
+# Names that contain a secret word but are flags or dates.
+_NOT_SECRET_KEYS: Final = frozenset({"is_token", "has_usable_password", "token_expires"})
+_PAGE_LINKS: Final = frozenset({"next", "previous"})
 
 
 def _refuse(reason: str) -> NoReturn:
@@ -99,6 +113,9 @@ def check_path(path: str) -> str:
         if segment in _SECRET_SEGMENTS:
             message = f"Reading /api/.../{segment}/ is not available: it holds secrets."
             raise Validation(message, hint=_SECRET_SEGMENTS[segment])
+        if segment in _AI_SEGMENTS:
+            message = f"Reading /api/.../{segment}/ is not available: it asks a language model."
+            raise Validation(message, hint=_AI_HINT)
         if segment in _FILE_SEGMENTS:
             message = f"Reading /api/.../{segment}/ is not available: it returns a file."
             raise Validation(message, hint=_FILE_HINT)
@@ -118,6 +135,9 @@ def check_params(params: Mapping[str, str | int | bool] | None) -> dict[str, str
         raise Validation(message, hint="Send fewer filters.")
     checked: dict[str, str] = {}
     for name, value in params.items():
+        if name.lower() == "format":
+            message = "The param format is refused: Paperless answers it with a misleading error."
+            raise Validation(message, hint="Answers are JSON already; leave format out.")
         if _PARAM_NAME.fullmatch(name) is None:
             message = (
                 f"A param name is refused: names have 1 to {MAX_PARAM_NAME} letters, digits, "
@@ -138,16 +158,34 @@ def check_params(params: Mapping[str, str | int | bool] | None) -> dict[str, str
 
 def _is_secret(key: str) -> bool:
     lowered = key.lower()
+    if lowered in _NOT_SECRET_KEYS:
+        return False
     return lowered in _SECRET_KEYS or any(part in lowered for part in _SECRET_KEY_PARTS)
 
 
+def _page_number(link: str) -> int | None:
+    """The page a ``next``/``previous`` link points to, so no host leaks (decision-7)."""
+    pages = parse_qs(urlsplit(link).query).get("page")
+    if pages is None:
+        return 1
+    try:
+        return int(pages[0])
+    except ValueError:
+        return None
+
+
 def redact(value: JsonValue) -> tuple[JsonValue, int]:
-    """``value`` with the values of secret-looking keys replaced, and how many were replaced."""
+    """``value`` with secret values replaced and page links reduced to page numbers.
+
+    Returns the cleaned value and how many secret values were replaced.
+    """
     if isinstance(value, dict):
         cleaned: dict[str, JsonValue] = {}
         count = 0
         for key, item in value.items():
-            if item is not None and _is_secret(key):
+            if key in _PAGE_LINKS and isinstance(item, str):
+                cleaned[key] = _page_number(item)
+            elif item is not None and _is_secret(key):
                 cleaned[key] = REDACTED
                 count += 1
             else:

@@ -21,6 +21,7 @@ BIG = 1_000_000
 
 
 class Row(BaseModel):
+    id: int
     name: str
 
 
@@ -94,4 +95,6 @@ async def test_the_user_sees_what_paperless_shows_that_user(backend: Backend) ->
     reply = await backend.reader.raw.get("/api/tags/", {}, max_bytes=BIG)
 
     everything = await backend.admin.raw.get("/api/tags/", {}, max_bytes=BIG)
-    assert page_of(reply.body).count <= page_of(everything.body).count
+    assert {row.id for row in page_of(reply.body).results} <= {
+        row.id for row in page_of(everything.body).results
+    }

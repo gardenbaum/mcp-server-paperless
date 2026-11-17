@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from paperless_mcp.paperless.client import PaperlessClient
 
-_SAFE_PATH: Final = re.compile(r"/api/(?:[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*/?)?")
+_SAFE_PATH: Final = re.compile(r"/api/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*/?")
 _REDIRECTS: Final = range(300, 400)
 
 
@@ -33,7 +33,12 @@ class PaperlessRawReader:
         if _SAFE_PATH.fullmatch(path) is None:
             message = "The adapter refuses a path that is not plain and under /api/."
             raise Validation(message)
-        found = await self._client.download(path, params=params, max_bytes=max_bytes)
+        expected = self._client.base_url.path.rstrip("/") + path
+        if self._client.target(path, params).path != expected:
+            message = "The built URL is not the configured Paperless base and the path."
+            raise Validation(message)
+        # Never retried: a GET of some endpoints costs money (decision-25).
+        found = await self._client.download(path, params=params, max_bytes=max_bytes, retry=False)
         if found.status in _REDIRECTS:
             message = "Paperless redirected the request; redirects are not followed."
             hint = (

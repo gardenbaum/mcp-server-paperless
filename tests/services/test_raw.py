@@ -60,6 +60,8 @@ def json_reply(value: object, *, status: int = 200, content_type: str = JSON) ->
 # --- Paths that must never reach Paperless ------------------------------------------------------
 
 REJECTED = {
+    # /api/ alone is the schema view that redirects.
+    "api root": "/api/",
     # Not under /api/.
     "empty": "",
     "root": "/",
@@ -186,7 +188,6 @@ REJECTED = {
 
 # Paths of the vendored API that must go through.
 ACCEPTED = (
-    "/api/",
     "/api/tags/",
     "/api/tags",
     "/api/tags/12/",
@@ -329,6 +330,8 @@ DENIED = {
     "bundle download": "/api/share_link_bundles/2/download/",
     "deep profile": "/api/documents/1/profile/",
     "download no slash": "/api/documents/1/download",
+    "ai suggestions": "/api/documents/1/ai_suggestions/",
+    "ai suggestions upper": "/api/documents/1/AI_Suggestions",
 }
 
 
@@ -386,6 +389,8 @@ BAD_PARAMS: dict[str, Mapping[str, str | int | bool]] = {
     "escape in value": {"a": "\x1b[0m"},
     "delete in value": {"a": "\x7f"},
     "line separator in value": {"a": "\u2028"},
+    "format": {"format": "json"},
+    "format upper": {"Format": "json"},
     "long value": {"a": "x" * 2001},
     "too many": {f"p{n}": "x" for n in range(MAX_PARAMS + 1)},
 }
@@ -587,8 +592,10 @@ async def test_a_redacted_answer_says_how_many_values_were_replaced() -> None:
 
 SCHEMA = Path(__file__).parents[2] / "docs" / "vendor" / "paperless" / "openapi.json"
 # Response properties that sound like secrets but are flags.
-FLAGS = frozenset({"is_token", "has_usable_password"})
-SECRET_LOOKING = re.compile(r"password|passwd|secret|api_key|token|headers", re.IGNORECASE)
+FLAGS = frozenset({"is_token", "has_usable_password", "token_expires"})
+SECRET_LOOKING = re.compile(
+    r"password|passwd|secret|api_?key|token|private_key|^(?:headers|params|body)$", re.IGNORECASE
+)
 
 
 def response_properties(node: object, schemas: Mapping[str, object], seen: set[str]) -> set[str]:
@@ -646,7 +653,7 @@ def test_every_readable_endpoint_of_the_schema_has_its_secret_fields_redacted() 
 
 def test_the_schema_check_finds_a_secret_that_nothing_guards() -> None:
     assert _redacted_name("llm_api_key")
-    assert not _redacted_name("signing_token")
+    assert not _redacted_name("signing_key")
 
 
 # --- Exact limits and wording (what a caller reads and relies on) -------------------------------
@@ -811,3 +818,93 @@ async def test_an_answer_that_fits_says_how_many_secrets_were_replaced() -> None
     result = await RawApiService(reader).get("/api/workflows/", {})
 
     assert result.note == f"2 secret value(s) were replaced with {REDACTED}."
+
+
+# --- Review findings: host leak, hidden AI calls, more secret shapes -----------------------------
+
+
+async def test_page_links_become_page_numbers_so_no_host_leaks() -> None:
+    body = {
+        "count": 60,
+        "next": "http://127.0.0.1:8010/api/tasks/?page=3&page_size=25",
+        "previous": "http://127.0.0.1:8010/api/tasks/",
+        "results": [{"id": 1, "next": None, "url": "http://127.0.0.1:8010/api/x/"}],
+    }
+
+    result = await RawApiService(Recording(json_reply(body))).get("/api/tasks/", {})
+
+    assert result.data == {
+        "count": 60,
+        "next": 3,
+        "previous": 1,
+        "results": [{"id": 1, "next": None, "url": "http://127.0.0.1:8010/api/x/"}],
+    }
+    assert "127.0.0.1" not in str(result.data).replace("http://127.0.0.1:8010/api/x/", "")
+    assert result.redacted == 0
+
+
+async def test_a_page_link_that_is_not_a_page_is_dropped() -> None:
+    body = {"next": "http://h/api/tasks/?page=abc", "previous": "http://h/api/tasks/?page=2"}
+
+    result = await RawApiService(Recording(json_reply(body))).get("/api/tasks/", {})
+
+    assert result.data == {"next": None, "previous": 2}
+
+
+def test_the_hint_for_ai_suggestions_names_the_curated_tool() -> None:
+    with pytest.raises(Validation) as refused:
+        _ = check_path("/api/documents/1/ai_suggestions/")
+
+    assert refused.value.message == (
+        "Reading /api/.../ai_suggestions/ is not available: it asks a language model."
+    )
+    assert refused.value.hint is not None
+    assert "get_ai_suggestions" in refused.value.hint
+
+
+def test_more_secret_shapes_are_replaced() -> None:
+    value = cast(
+        "JsonValue",
+        {
+            "webhook": {"url": "http://x", "params": {"token": "t"}, "body": "{{ secret }}"},
+            "access_token": "a",
+            "refresh_token": "r",
+            "token": "t",
+            "apiKey": "k",
+            "api_key": "k",
+            "private_key": "p",
+            "has_usable_password": True,
+            "is_token": True,
+            "token_expires": "2027-01-01",
+            "filter_body": "kept",
+            "params": None,
+        },
+    )
+
+    cleaned, count = redact(value)
+
+    assert cleaned == {
+        "webhook": {"url": "http://x", "params": REDACTED, "body": REDACTED},
+        "access_token": REDACTED,
+        "refresh_token": REDACTED,
+        "token": REDACTED,
+        "apiKey": REDACTED,
+        "api_key": REDACTED,
+        "private_key": REDACTED,
+        "has_usable_password": True,
+        "is_token": True,
+        "token_expires": "2027-01-01",
+        "filter_body": "kept",
+        "params": None,
+    }
+    assert count == 8
+
+
+def test_the_format_param_is_refused_with_exact_words() -> None:
+    with pytest.raises(Validation) as refused:
+        _ = check_params({"format": "json"})
+
+    assert refused.value.message == (
+        "The param format is refused: Paperless answers it with a misleading error."
+    )
+    assert refused.value.hint == "Answers are JSON already; leave format out."

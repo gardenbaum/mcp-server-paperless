@@ -35,6 +35,7 @@ from paperless_mcp.domain.errors import (
 )
 from paperless_mcp.paperless.auth import StaticTokenProvider
 from paperless_mcp.paperless.client import (
+    ERROR_BODY_LIMIT,
     Method,
     PaperlessClient,
     RetryPolicy,
@@ -43,7 +44,7 @@ from paperless_mcp.paperless.client import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Callable
 
 
 pytestmark = pytest.mark.anyio
@@ -975,3 +976,121 @@ async def test_call_retries_by_default(make_client: ClientFactory) -> None:
     _ = await make_client(script).call("GET", "/api/tags/1/", TagStub)
 
     assert len(script.requests) == 2
+
+
+# --- Review findings: userinfo, base path prefix, retry switch, capped error bodies --------------
+
+
+def client_on(
+    base_url: str, handler: Callable[[httpx2.Request], httpx2.Response]
+) -> PaperlessClient:
+    http = httpx2.AsyncClient(base_url=base_url, transport=httpx2.MockTransport(handler))
+    return PaperlessClient(
+        http,
+        StaticTokenProvider(TOKEN),
+        retry=RetryPolicy(),
+        upload_timeout=1.0,
+        sleep=asyncio.sleep,
+    )
+
+
+async def test_a_base_url_with_userinfo_still_works() -> None:
+    seen: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request)
+        return httpx2.Response(200, json={})
+
+    client = client_on("http://user:pw@paperless.test", handler)
+
+    _ = await client.request("GET", "/api/tags/")
+
+    assert [request.url.path for request in seen] == ["/api/tags/"]
+
+
+async def test_userinfo_that_is_not_the_base_urls_is_refused() -> None:
+    client = client_on("http://user:pw@paperless.test", lambda _: httpx2.Response(200, json={}))
+
+    with pytest.raises(PaperlessMcpError, match="configured Paperless"):
+        _ = await client.request("GET", "http://other:x@paperless.test/api/tags/")
+
+
+async def test_a_base_path_prefix_is_kept_and_cannot_be_escaped() -> None:
+    seen: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request)
+        return httpx2.Response(200, json={})
+
+    client = client_on("http://paperless.test/paperless/", handler)
+
+    _ = await client.request("GET", "/api/tags/")
+    for path in ("/api/../../x", "/../x"):
+        with pytest.raises(PaperlessMcpError, match="configured Paperless"):
+            _ = await client.request("GET", path)
+
+    assert [request.url.path for request in seen] == ["/paperless/api/tags/"]
+
+
+async def test_a_download_without_retry_asks_once_on_a_transient_status() -> None:
+    calls = 0
+
+    def handler(_: httpx2.Request) -> httpx2.Response:
+        nonlocal calls
+        calls += 1
+        return httpx2.Response(504)
+
+    client, _ = streaming(handler)
+
+    with pytest.raises(UpstreamUnavailable):
+        _ = await client.download("/api/tags/", max_bytes=10, retry=False)
+    assert calls == 1
+    with pytest.raises(UpstreamUnavailable):
+        _ = await client.download("/api/tags/", max_bytes=10)
+    assert calls == 4
+
+
+async def test_an_error_body_is_read_only_up_to_a_limit() -> None:
+    body = Chunks(*([b"x" * 10_000] * 100))
+    client, _ = streaming(lambda _: httpx2.Response(500, stream=body))
+
+    with pytest.raises(UpstreamUnavailable):
+        _ = await client.download("/api/tags/", max_bytes=10, retry=False)
+
+    assert body.pulled < 10
+    assert body.closed
+
+
+async def test_an_error_body_that_is_read_still_gives_its_details() -> None:
+    client, _ = streaming(lambda _: httpx2.Response(400, json={"name": ["is taken"]}))
+
+    with pytest.raises(Validation, match="name: is taken"):
+        _ = await client.download("/api/tags/", max_bytes=10)
+
+
+async def test_an_error_body_of_exactly_the_limit_stops_the_read() -> None:
+    body = Chunks(b" " * ERROR_BODY_LIMIT, b"more", b"more")
+    client, _ = streaming(lambda _: httpx2.Response(500, stream=body))
+
+    with pytest.raises(UpstreamUnavailable):
+        _ = await client.download("/api/tags/", max_bytes=10, retry=False)
+
+    assert body.pulled == 1
+
+
+async def test_the_details_in_an_error_body_longer_than_the_limit_are_still_read() -> None:
+    text = b'{"name": ["too big"]}' + b" " * (ERROR_BODY_LIMIT + 5000)
+    client, _ = streaming(lambda _: httpx2.Response(400, content=text))
+
+    with pytest.raises(Validation, match="name: too big"):
+        _ = await client.download("/api/tags/", max_bytes=10)
+
+
+async def test_the_target_url_is_the_base_url_with_the_path_and_the_query() -> None:
+    client, _ = streaming(lambda _: httpx2.Response(200))
+
+    assert str(client.target("/api/tags/", {"page_size": 2})) == (
+        "http://paperless.test/api/tags/?page_size=2"
+    )
+    assert str(client.target("/api/tags/")) == "http://paperless.test/api/tags/"
+    assert str(client.base_url) == "http://paperless.test"

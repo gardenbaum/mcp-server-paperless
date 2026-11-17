@@ -124,21 +124,6 @@ function_hash = "5cb966fd0331"
 reason = "stream=None is falsy like stream=False, and httpx2 treats both as 'read the body now'."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁdownload__mutmut_9"
-function_hash = "32853ae7db5a"
-reason = "httpx2.Request upper-cases the method, so 'get' sends the same request as 'GET'."
-
-[[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_build__mutmut_23"
-function_hash = "4e42d80a7bd8"
-reason = "HTTP header names are case-insensitive in httpx2.Headers: 'Accept' and 'accept' set the same header."
-
-[[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_build__mutmut_24"
-function_hash = "4e42d80a7bd8"
-reason = "HTTP header names are case-insensitive in httpx2.Headers: 'Accept' and 'accept' set the same header."
-
-[[equivalent]]
 mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁget__mutmut_15"
 function_hash = "bc9a82a1c3a1"
 reason = "httpx2.Request upper-cases the method, so 'get' sends the same request as 'GET'."
@@ -759,11 +744,58 @@ function_hash = "a5529eb820da"
 reason = "json.dumps treats ensure_ascii=None like False (it only tests truthiness), so the output is the same."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_43"
-function_hash = "05c715f9ee28"
+mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_12"
+function_hash = "0c1a048074ac"
+reason = "rstrip with the characters X and / strips the same trailing slash as rstrip('/') on a URL path that has no X at its end."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_14"
+function_hash = "0c1a048074ac"
+reason = "The check compares only the path of the built URL, which does not depend on the query params."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_16"
+function_hash = "0c1a048074ac"
+reason = "The check compares only the path of the built URL, which does not depend on the query params."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_27"
+function_hash = "0c1a048074ac"
+reason = "download tests retry with a plain truth test, so None and False both switch retrying off."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_61"
+function_hash = "0c1a048074ac"
 reason = "httpx2 headers are case-insensitive, so any spelling of Content-Type finds the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_44"
-function_hash = "05c715f9ee28"
+mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_62"
+function_hash = "0c1a048074ac"
 reason = "httpx2 headers are case-insensitive, so any spelling of Content-Type finds the same header."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁdownload__mutmut_10"
+function_hash = "e11e201d9c53"
+reason = "httpx2.Request upper-cases the method, so 'get' sends the same request as 'GET'."
+
+
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁtarget__mutmut_7"
+function_hash = "2df8cd1baed7"
+reason = "target only reads the URL of the built request, which does not depend on the method."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁtarget__mutmut_8"
+function_hash = "2df8cd1baed7"
+reason = "target only reads the URL of the built request, which does not depend on the method."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_build__mutmut_23"
+function_hash = "0be61ae9addc"
+reason = "HTTP header names are case-insensitive in httpx2.Headers: 'Accept' and 'accept' set the same header."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_build__mutmut_24"
+function_hash = "0be61ae9addc"
+reason = "HTTP header names are case-insensitive in httpx2.Headers: 'Accept' and 'accept' set the same header."
