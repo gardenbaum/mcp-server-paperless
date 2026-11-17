@@ -61,6 +61,7 @@ if TYPE_CHECKING:
     from paperless_mcp.domain.trash import TrashPage
     from paperless_mcp.domain.versions import VersionUpload
     from paperless_mcp.domain.views import SavedView, ViewValues
+    from paperless_mcp.domain.workflows import Workflow, WorkflowValues
 
 
 class InstanceReader(Protocol):
@@ -995,5 +996,64 @@ class MailWriter(Protocol):
         Raises:
             NotFound: No such rule, or the user may not see it.
             PermissionDenied: The user may not delete this rule.
+        """
+        ...
+
+
+class WorkflowReader(Protocol):
+    """Workflows, with their triggers and actions, as the current user sees them."""
+
+    async def list_workflows(self) -> tuple[Workflow, ...]:
+        """Every workflow, over all pages, in Paperless order (by order, then id).
+
+        Raises:
+            PermissionDenied: The user lacks the global ``view_workflow`` permission.
+        """
+        ...
+
+    async def get_workflow(self, workflow_id: int) -> Workflow:
+        """One workflow.
+
+        Raises:
+            NotFound: No such workflow.
+            PermissionDenied: The user lacks the global ``view_workflow`` permission.
+        """
+        ...
+
+
+class WorkflowWriter(Protocol):
+    """Changes to workflows."""
+
+    async def create_workflow(self, name: str, values: WorkflowValues) -> Workflow:
+        """A new workflow named ``name`` with the settings ``values`` sets.
+
+        ``values.name`` is ignored. Paperless needs both lists; none given means empty ones.
+
+        Raises:
+            PermissionDenied: The user may not add workflows.
+            Validation: Paperless rejected a value (a blank or taken name, an unknown type, a
+                trigger or action that does not fit its type).
+        """
+        ...
+
+    async def update_workflow(self, workflow_id: int, values: WorkflowValues) -> Workflow:
+        """Change the settings ``values`` sets and return the workflow as it is afterwards.
+
+        A list that is given replaces the old one as a whole; triggers and actions are sent
+        without their ids, so each is stored as a new object.
+
+        Raises:
+            NotFound: No such workflow.
+            PermissionDenied: The user may not change workflows.
+            Validation: Paperless rejected a value.
+        """
+        ...
+
+    async def delete_workflow(self, workflow_id: int) -> None:
+        """Delete the workflow for good: Paperless has no trash for workflows.
+
+        Raises:
+            NotFound: No such workflow.
+            PermissionDenied: The user may not delete workflows.
         """
         ...

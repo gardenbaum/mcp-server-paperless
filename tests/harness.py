@@ -46,6 +46,8 @@ if TYPE_CHECKING:
         TrashWriter,
         ViewReader,
         ViewWriter,
+        WorkflowReader,
+        WorkflowWriter,
     )
 
 URL = "http://paperless.test"
@@ -104,6 +106,8 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     permission_writes: PermissionWriter | None = None,
     mail: MailReader | None = None,
     mail_writes: MailWriter | None = None,
+    workflows: WorkflowReader | None = None,
+    workflow_writes: WorkflowWriter | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     clock: Callable[[], float] = time.monotonic,
     startup_timeout: float = 2.0,
@@ -118,7 +122,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
 ) -> FastMCP:
     """The assembled server, with `reader` in place of the Paperless adapter.
 
-    `taxonomy`, `documents`, `tasks`, `ai`, `views`, `trash`, `sharing`, `mail` and the
+    `taxonomy`, `documents`, `tasks`, `ai`, `views`, `trash`, `sharing`, `mail`, `workflows` and the
     writers default to `reader` if that is a fake, else to the seeded admin's fake (which refuses
     writes unless created to allow them).
     `sleep` and `clock` replace the real ones the task wait uses. `toolsets`, `read_only` and
@@ -161,6 +165,8 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
             permission_writes=permission_writes or fake,
             mail=mail or fake,
             mail_writes=mail_writes or fake,
+            workflows=workflows or fake,
+            workflow_writes=workflow_writes or fake,
         ),
         sleep=sleep,
         clock=clock,

@@ -732,3 +732,421 @@ reason = "retry is only tested for truth, so None means False; the tests cannot 
 mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_rule__mutmut_9"
 function_hash = "e134741f2674"
 reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
+mutant = "paperless_mcp.services.workflows.x_trigger_type__mutmut_9"
+function_hash = "bf5415fd6775"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x_trigger_type__mutmut_13"
+function_hash = "bf5415fd6775"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x_trigger_type__mutmut_14"
+function_hash = "bf5415fd6775"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__json_text__mutmut_2"
+function_hash = "e72d6adffef9"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__json_text__mutmut_6"
+function_hash = "e72d6adffef9"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__json_text__mutmut_7"
+function_hash = "e72d6adffef9"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__object__mutmut_3"
+function_hash = "65e2545e72f7"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__object__mutmut_7"
+function_hash = "65e2545e72f7"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__object__mutmut_8"
+function_hash = "65e2545e72f7"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__object__mutmut_9"
+function_hash = "65e2545e72f7"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_12"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_16"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_17"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_29"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_33"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_34"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_37"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_41"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_42"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_52"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_56"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_57"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_58"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_64"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_68"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_69"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_70"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_71"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_75"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_76"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_77"
+function_hash = "554908e9b1fc"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_trigger__mutmut_6"
+function_hash = "0a9f0426bca9"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_trigger__mutmut_10"
+function_hash = "0a9f0426bca9"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_trigger__mutmut_11"
+function_hash = "0a9f0426bca9"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_5"
+function_hash = "0e2b573881e6"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_9"
+function_hash = "0e2b573881e6"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_10"
+function_hash = "0e2b573881e6"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_75"
+function_hash = "0e2b573881e6"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_79"
+function_hash = "0e2b573881e6"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_80"
+function_hash = "0e2b573881e6"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_81"
+function_hash = "0e2b573881e6"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_83"
+function_hash = "0e2b573881e6"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_85"
+function_hash = "0e2b573881e6"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_4"
+function_hash = "465ecad4fd8d"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_8"
+function_hash = "465ecad4fd8d"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_9"
+function_hash = "465ecad4fd8d"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_10"
+function_hash = "465ecad4fd8d"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_12"
+function_hash = "465ecad4fd8d"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_13"
+function_hash = "465ecad4fd8d"
+reason = "Every setting of another action type is refused before this runs, so a webhook is only ever present when the setting being converted is the webhook itself: `or` and `and` give the same answer."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_21"
+function_hash = "465ecad4fd8d"
+reason = "dict.get(None) is None, which is what the other branch gives: an action without an id has no stored action to look up."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_42"
+function_hash = "465ecad4fd8d"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_46"
+function_hash = "465ecad4fd8d"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_47"
+function_hash = "465ecad4fd8d"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_48"
+function_hash = "465ecad4fd8d"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_53"
+function_hash = "465ecad4fd8d"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_57"
+function_hash = "465ecad4fd8d"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_58"
+function_hash = "465ecad4fd8d"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_59"
+function_hash = "465ecad4fd8d"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_67"
+function_hash = "465ecad4fd8d"
+reason = "The name only selects the special cases of triggers (sources, matching algorithm, text checks), none of which is a setting of an action, so None and the name take the same path."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_3"
+function_hash = "bfc288784db1"
+reason = "Called only for settings that name objects, and a kind that is not in `names` gives the same empty lookup as no kind."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_5"
+function_hash = "bfc288784db1"
+reason = "`names` always holds every kind of the settings shown (it is built from the same settings), so the default of get() is never used."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_7"
+function_hash = "bfc288784db1"
+reason = "`names` always holds every kind of the settings shown (it is built from the same settings), so the default of get() is never used."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_9"
+function_hash = "bfc288784db1"
+reason = "Only ids are looked up, and dict.get(key, key) returns a key it does not hold unchanged, so a non-integer item comes back as it is either way."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_18"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_20"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_21"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_22"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_23"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_27"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_28"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_29"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_37"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_41"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_42"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_48"
+function_hash = "bfc288784db1"
+reason = "`names` always holds the custom fields when custom field values are shown (that setting names custom fields), so the default of get() is never used."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_50"
+function_hash = "bfc288784db1"
+reason = "`names` always holds the custom fields when custom field values are shown (that setting names custom fields), so the default of get() is never used."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_74"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_78"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_79"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_80"
+function_hash = "bfc288784db1"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.workflows.x__show__mutmut_82"
+function_hash = "bfc288784db1"
+reason = "named() leaves a value alone when the setting names no kind (its lookup is empty), so calling it for those too changes nothing."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.workflows.xǁPaperlessWorkflowWriterǁcreate_workflow__mutmut_19"
+function_hash = "0d8556b6d281"
+reason = "httpx2.Request upper-cases the method, so 'post' is sent as POST."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.workflows.xǁPaperlessWorkflowWriterǁupdate_workflow__mutmut_11"
+function_hash = "668ee878cd0b"
+reason = "httpx2.Request upper-cases the method, so 'patch' is sent as PATCH."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.workflows.xǁPaperlessWorkflowWriterǁdelete_workflow__mutmut_7"
+function_hash = "d91d861ee215"
+reason = "httpx2.Request upper-cases the method, so 'delete' is sent as DELETE."
