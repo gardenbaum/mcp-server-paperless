@@ -75,6 +75,8 @@ class ServerSettings(BaseSettings):
             money (Paperless asks its LLM backend), so clients that auto-approve read-only tools
             will run them unasked: set ``core`` to leave them out, or name them in
             ``PAPERLESS_MCP_DISABLED_TOOLS`` (``ask_paperless_ai,get_ai_suggestions``).
+            ``raw`` (``paperless_api_get``, read-only GET under ``/api/``) is off by default;
+            ``all`` selects it (decision-25).
         read_only: Offer only tools that do not change anything (``PAPERLESS_MCP_READ_ONLY``).
         disabled_tools: Tools never offered, whatever the toolsets say
             (``PAPERLESS_MCP_DISABLED_TOOLS``).

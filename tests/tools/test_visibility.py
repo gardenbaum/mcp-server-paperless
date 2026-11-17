@@ -81,6 +81,7 @@ SHARING = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "sharin
 READ_SHARING = {"list_share_links", "list_share_bundles"}
 SHIPPED_PERMISSIONS = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "permissions"}
 MAIL = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "mail"}
+RAW = {"paperless_api_get"}
 READ_MAIL = {
     *("list_mail_accounts", "get_mail_account", "list_mail_rules", "get_mail_rule"),
     "list_processed_mail",
@@ -116,7 +117,15 @@ async def test_all_offers_every_toolset_the_server_may_offer() -> None:
     server = serve(with_ai(enabled=True), catalogue=SYNTHETIC, toolsets=["all"])
 
     shipped = (
-        CORE | SHIPPED_AI | SHIPPED_BULK | SHIPPED_VERSIONS | VIEWS | SHIPPED_TRASH | SHARING | MAIL
+        CORE
+        | SHIPPED_AI
+        | SHIPPED_BULK
+        | SHIPPED_VERSIONS
+        | VIEWS
+        | SHIPPED_TRASH
+        | SHARING
+        | MAIL
+        | RAW
     )
     assert await names(server) == shipped | SHIPPED_PDF | SHIPPED_PERMISSIONS | {
         "ask_something",
@@ -154,6 +163,7 @@ async def test_read_only_mode_offers_only_tools_with_the_read_only_hint() -> Non
         | {"list_document_versions", "list_trash", "list_users", "list_groups"}
         | READ_SHARING
         | READ_MAIL
+        | RAW
         | {"ask_something", "scratch_preview"}
     )
     assert await names(server) == expected

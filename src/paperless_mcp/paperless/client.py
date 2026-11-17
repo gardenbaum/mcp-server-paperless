@@ -116,11 +116,13 @@ class Download:
     Attributes:
         content: The whole body, or empty if it is ``truncated``.
         headers: The response headers.
+        status: The HTTP status; redirects are not followed, so it can be a 3xx.
         truncated: The body is larger than the limit; the rest was not read.
     """
 
     content: bytes
     headers: httpx2.Headers
+    status: int
     truncated: bool
 
 
@@ -227,8 +229,10 @@ class PaperlessClient:
                 received.append(chunk)
                 total += len(chunk)
                 if total > max_bytes:
-                    return Download(b"", response.headers, truncated=True)
-            return Download(b"".join(received), response.headers, truncated=False)
+                    return Download(b"", response.headers, response.status_code, truncated=True)
+            return Download(
+                b"".join(received), response.headers, response.status_code, truncated=False
+            )
         except httpx2.TransportError as error:
             # Not retried: the status was fine and the connection broke while the body came in;
             # the caller can ask again, and a retry would read the file from the start.
@@ -303,7 +307,7 @@ class PaperlessClient:
     ) -> httpx2.Request:
         name, value = self._credentials.current().header
         limit = self._upload_timeout if files else timeout
-        return self._http.build_request(
+        outgoing = self._http.build_request(
             method,
             path,
             params=params,
@@ -313,6 +317,16 @@ class PaperlessClient:
             headers={"Accept": ACCEPT, name: value},
             timeout=httpx2.USE_CLIENT_DEFAULT if limit is None else limit,
         )
+        # Whatever the path looks like, the request goes to the configured Paperless only and
+        # carries its credential nowhere else (decision-7, decision-25).
+        base = self._http.base_url
+        target = outgoing.url
+        if (target.scheme, target.host, target.port) != (base.scheme, base.host, base.port) or (
+            target.userinfo
+        ):
+            message = "The request would not go to the configured Paperless and was not sent."
+            raise PaperlessMcpError(message)
+        return outgoing
 
     async def _exchange(
         self, outgoing: httpx2.Request, *, stream: bool, retry: bool = True

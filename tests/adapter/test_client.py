@@ -451,6 +451,53 @@ async def test_a_download_within_the_limit_is_returned_whole_with_its_headers() 
     assert body.closed
 
 
+async def test_a_download_reports_its_status_and_does_not_follow_a_redirect() -> None:
+    seen: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request)
+        return httpx2.Response(302, headers={"Location": "http://evil.test/api/tags/"})
+
+    client, _ = streaming(handler)
+
+    found = await client.download("/api/tags", max_bytes=10)
+
+    assert found.status == 302
+    assert [str(request.url) for request in seen] == ["http://paperless.test/api/tags"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "http://evil.test/api/tags/",
+        "https://paperless.test/api/tags/",
+        "http://paperless.test:8000/api/tags/",
+        "http://paperless.test@evil.test/api/tags/",
+    ],
+)
+async def test_a_request_to_another_origin_than_the_base_url_is_refused_unsent(path: str) -> None:
+    seen: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request)
+        return httpx2.Response(200, json={})
+
+    client, _ = streaming(handler)
+
+    with pytest.raises(
+        PaperlessMcpError,
+        match=r"^The request would not go to the configured Paperless and was not sent\.$",
+    ):
+        _ = await client.request("GET", path)
+    with pytest.raises(
+        PaperlessMcpError,
+        match=r"^The request would not go to the configured Paperless and was not sent\.$",
+    ):
+        _ = await client.download(path, max_bytes=10)
+
+    assert seen == []
+
+
 async def test_a_download_stops_reading_once_the_limit_is_passed() -> None:
     body = Chunks(b"abc", b"def", b"ghi", b"jkl")
     client, _ = streaming(lambda _: httpx2.Response(200, stream=body))

@@ -125,17 +125,17 @@ reason = "stream=None is falsy like stream=False, and httpx2 treats both as 'rea
 
 [[equivalent]]
 mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁdownload__mutmut_9"
-function_hash = "2dcbf2a82a73"
+function_hash = "32853ae7db5a"
 reason = "httpx2.Request upper-cases the method, so 'get' sends the same request as 'GET'."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_build__mutmut_22"
-function_hash = "d1da5ac000b5"
+mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_build__mutmut_23"
+function_hash = "4e42d80a7bd8"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: 'Accept' and 'accept' set the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_build__mutmut_23"
-function_hash = "d1da5ac000b5"
+mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_build__mutmut_24"
+function_hash = "4e42d80a7bd8"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: 'Accept' and 'accept' set the same header."
 
 [[equivalent]]
@@ -732,3 +732,38 @@ reason = "retry is only tested for truth, so None means False; the tests cannot 
 mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_rule__mutmut_9"
 function_hash = "e134741f2674"
 reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.raw.x__result__mutmut_31"
+function_hash = "a5529eb820da"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.raw.x__result__mutmut_35"
+function_hash = "a5529eb820da"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.raw.x__result__mutmut_36"
+function_hash = "a5529eb820da"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.raw.x__result__mutmut_37"
+function_hash = "a5529eb820da"
+reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
+
+[[equivalent]]
+mutant = "paperless_mcp.services.raw.x__result__mutmut_46"
+function_hash = "a5529eb820da"
+reason = "json.dumps treats ensure_ascii=None like False (it only tests truthiness), so the output is the same."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_43"
+function_hash = "05c715f9ee28"
+reason = "httpx2 headers are case-insensitive, so any spelling of Content-Type finds the same header."
+
+[[equivalent]]
+mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_44"
+function_hash = "05c715f9ee28"
+reason = "httpx2 headers are case-insensitive, so any spelling of Content-Type finds the same header."
