@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 
     from fastmcp import Context
 
+    from paperless_mcp.services.admin_accounts import AccountAdmin
+    from paperless_mcp.services.admin_system import SystemAdmin
     from paperless_mcp.services.ai import AiService
     from paperless_mcp.services.bulk_documents import BulkDocumentEditor
     from paperless_mcp.services.bulk_taxonomy import BulkTaxonomyEditor
@@ -60,12 +62,13 @@ TOOLSETS: Final = frozenset(
         "permissions",
         "mail",
         "workflows",
+        "admin",
     }
 )
 
 # Tools whose result is an image or a file as MCP content blocks, with no output schema and no
 # structured content (decision-11); every other tool has a typed return model (decision-4).
-MEDIA_TOOLS: Final = frozenset({"get_document_thumbnail", "download_document"})
+MEDIA_TOOLS: Final = frozenset({"get_document_thumbnail", "download_document", "bulk_download"})
 
 # The toolset of every tool, keyed by tool name. It must equal each tool's tag (registry test); the
 # server uses it to refuse a configuration that leaves no tool before it contacts Paperless.
@@ -140,6 +143,22 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "create_workflow": "workflows",
     "update_workflow": "workflows",
     "delete_workflow": "workflows",
+    "get_user": "admin",
+    "create_user": "admin",
+    "update_user": "admin",
+    "delete_user": "admin",
+    "get_group": "admin",
+    "create_group": "admin",
+    "update_group": "admin",
+    "delete_group": "admin",
+    "get_app_config": "admin",
+    "update_app_config": "admin",
+    "list_logs": "admin",
+    "get_log": "admin",
+    "list_tasks": "admin",
+    "acknowledge_tasks": "admin",
+    "run_task": "admin",
+    "bulk_download": "admin",
 }
 
 # Toolsets that need a Paperless capability, mapped to it (only "ai" so far); the startup probe
@@ -637,6 +656,117 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    # Admin (decision-26). Reads change nothing. Creating a user or group adds a record; a
+    # superuser or staff user still needs confirm. Updates, deletions and every change of the
+    # configuration can take access away or redirect document text, so they are destructive
+    # and need confirm; acknowledging only hides a finished task from the new ones.
+    "get_user": ToolAnnotations(
+        title="Get user",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "create_user": ToolAnnotations(
+        title="Create user",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+    "update_user": ToolAnnotations(
+        title="Update user",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "delete_user": ToolAnnotations(
+        title="Delete user",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_group": ToolAnnotations(
+        title="Get group",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "create_group": ToolAnnotations(
+        title="Create group",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+    "update_group": ToolAnnotations(
+        title="Update group",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "delete_group": ToolAnnotations(
+        title="Delete group",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_app_config": ToolAnnotations(
+        title="Get application configuration",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "update_app_config": ToolAnnotations(
+        title="Update application configuration",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=True,
+    ),
+    "list_logs": ToolAnnotations(
+        title="List logs",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_log": ToolAnnotations(
+        title="Get log",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "list_tasks": ToolAnnotations(
+        title="List tasks",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "acknowledge_tasks": ToolAnnotations(
+        title="Acknowledge tasks",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Starts work on the server; not destructive (a sanity check reads, training and indexing
+    # need confirm). llm_index sends document text to the AI service: open world.
+    "run_task": ToolAnnotations(
+        title="Run task",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=True,
+    ),
+    "bulk_download": ToolAnnotations(
+        title="Download documents as a ZIP archive",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     # Destructive (decision-6, decision-19): granting access cannot be taken back and replacing
     # grants or changing an owner takes it away, so every change needs confirm. Repeating a call
     # leaves the same state (idempotent).
@@ -751,6 +881,8 @@ class Services:
     pdf: PdfService
     sharing: SharingService
     mail: MailService
+    accounts: AccountAdmin
+    system: SystemAdmin
 
 
 def services(ctx: Context) -> Services:

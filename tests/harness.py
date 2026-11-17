@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from paperless_mcp.domain.errors import PaperlessMcpError
     from paperless_mcp.domain.instance import InstanceOverview
     from paperless_mcp.domain.ports import (
+        AdminReader,
+        AdminWriter,
         AiReader,
         BulkWriter,
         DocumentReader,
@@ -108,6 +110,8 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     mail_writes: MailWriter | None = None,
     workflows: WorkflowReader | None = None,
     workflow_writes: WorkflowWriter | None = None,
+    management: AdminReader | None = None,
+    management_writes: AdminWriter | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     clock: Callable[[], float] = time.monotonic,
     startup_timeout: float = 2.0,
@@ -167,6 +171,8 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
             mail_writes=mail_writes or fake,
             workflows=workflows or fake,
             workflow_writes=workflow_writes or fake,
+            management=management or fake,
+            management_writes=management_writes or fake,
         ),
         sleep=sleep,
         clock=clock,

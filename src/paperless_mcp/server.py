@@ -18,6 +18,7 @@ from fastmcp.server.transforms.visibility import Visibility
 from paperless_mcp import __version__
 from paperless_mcp.domain.errors import InvalidConfiguration
 from paperless_mcp.observability import CallLogging
+from paperless_mcp.paperless.admin import PaperlessAdminReader, PaperlessAdminWriter
 from paperless_mcp.paperless.ai import PaperlessAiReader
 from paperless_mcp.paperless.auth import StaticTokenProvider
 from paperless_mcp.paperless.bulk import PaperlessBulkWriter
@@ -33,6 +34,8 @@ from paperless_mcp.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessT
 from paperless_mcp.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
 from paperless_mcp.paperless.views import PaperlessViewReader, PaperlessViewWriter
 from paperless_mcp.paperless.workflows import PaperlessWorkflowReader, PaperlessWorkflowWriter
+from paperless_mcp.services.admin_accounts import AccountAdmin
+from paperless_mcp.services.admin_system import SystemAdmin
 from paperless_mcp.services.ai import AiService
 from paperless_mcp.services.bulk_documents import BulkDocumentEditor
 from paperless_mcp.services.bulk_taxonomy import BulkTaxonomyEditor
@@ -56,6 +59,7 @@ from paperless_mcp.services.versions import VersionService
 from paperless_mcp.services.views import ViewService
 from paperless_mcp.services.workflows import WorkflowService
 from paperless_mcp.tools import (
+    admin,
     ai,
     bulk,
     core,
@@ -95,6 +99,8 @@ if TYPE_CHECKING:
 
     from paperless_mcp.domain.instance import InstanceOverview
     from paperless_mcp.domain.ports import (
+        AdminReader,
+        AdminWriter,
         AiReader,
         BulkWriter,
         DocumentReader,
@@ -183,6 +189,7 @@ CATALOGUE: Final = Catalogue(
         sharing.provider,
         permissions.provider,
         mail.provider,
+        admin.provider,
         prompts.provider,
         workflows.provider,
     ),
@@ -221,6 +228,8 @@ class Ports:
     mail_writes: MailWriter
     workflows: WorkflowReader
     workflow_writes: WorkflowWriter
+    management: AdminReader
+    management_writes: AdminWriter
 
 
 def paperless_ports(client: PaperlessClient) -> Ports:
@@ -247,6 +256,8 @@ def paperless_ports(client: PaperlessClient) -> Ports:
         mail_writes=PaperlessMailWriter(client),
         workflows=PaperlessWorkflowReader(client),
         workflow_writes=PaperlessWorkflowWriter(client),
+        management=PaperlessAdminReader(client),
+        management_writes=PaperlessAdminWriter(client),
     )
 
 
@@ -342,6 +353,14 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 ),
                 mail=MailService(adapters.mail, adapters.mail_writes, taxonomy, adapters.instance),
                 workflows=WorkflowService(adapters.workflows, adapters.workflow_writes, taxonomy),
+                accounts=AccountAdmin(
+                    adapters.management, adapters.management_writes, taxonomy, adapters.instance
+                ),
+                system=SystemAdmin(
+                    adapters.management,
+                    adapters.management_writes,
+                    max_bytes=settings.max_download_bytes,
+                ),
                 uploads=UploadService(
                     adapters.documents,
                     adapters.document_writes,
