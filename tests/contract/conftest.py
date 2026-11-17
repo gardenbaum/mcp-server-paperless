@@ -61,6 +61,7 @@ from paperless_mcp.domain.ports import (  # noqa: TC001 -- Ports' annotations ar
     PdfWriter,
     PermissionReader,
     PermissionWriter,
+    RawReader,
     SharingReader,
     SharingWriter,
     TaskReader,
@@ -83,6 +84,7 @@ from paperless_mcp.paperless.instance import PaperlessInstanceReader
 from paperless_mcp.paperless.mail import PaperlessMailReader, PaperlessMailWriter
 from paperless_mcp.paperless.pdf import PaperlessPdfWriter
 from paperless_mcp.paperless.permissions import PaperlessPermissionReader, PaperlessPermissionWriter
+from paperless_mcp.paperless.raw import PaperlessRawReader
 from paperless_mcp.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
 from paperless_mcp.paperless.tasks import PaperlessTaskReader
 from paperless_mcp.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
@@ -139,6 +141,7 @@ class Ports:
     sharing_writes: SharingWriter
     mail: MailReader
     mail_writes: MailWriter
+    raw: RawReader
     workflows: WorkflowReader
     workflow_writes: WorkflowWriter
     management: AdminReader
@@ -169,6 +172,7 @@ def fake_ports(state: FakeState, user: str) -> Ports:
         sharing_writes=writer,
         mail=fake,
         mail_writes=writer,
+        raw=fake,
         workflows=fake,
         workflow_writes=writer,
         management=fake,
@@ -198,6 +202,7 @@ def live_ports(client: PaperlessClient) -> Ports:
         sharing_writes=PaperlessSharingWriter(client),
         mail=PaperlessMailReader(client),
         mail_writes=PaperlessMailWriter(client),
+        raw=PaperlessRawReader(client),
         workflows=PaperlessWorkflowReader(client),
         workflow_writes=PaperlessWorkflowWriter(client),
         management=PaperlessAdminReader(client),

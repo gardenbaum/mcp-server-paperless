@@ -12,7 +12,7 @@ read-only tests of tools, find writes by that name alone.
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
+    from collections.abc import Collection, Mapping, Sequence
     from datetime import datetime
 
     from paperless_mcp.domain.admin import (
@@ -63,6 +63,7 @@ if TYPE_CHECKING:
         PermissionKind,
         UserPage,
     )
+    from paperless_mcp.domain.raw import RawReply
     from paperless_mcp.domain.sharing import FileVersionKind, ShareBundle, ShareLink
     from paperless_mcp.domain.tasks import TaskState, TaskStatus
     from paperless_mcp.domain.taxonomy import (
@@ -1010,6 +1011,26 @@ class MailWriter(Protocol):
         Raises:
             NotFound: No such rule, or the user may not see it.
             PermissionDenied: The user may not delete this rule.
+        """
+        ...
+
+
+class RawReader(Protocol):
+    """Read-only GET of any path under ``/api/`` of Paperless (the raw toolset, decision-25)."""
+
+    async def get(self, path: str, params: Mapping[str, str], *, max_bytes: int) -> RawReply:
+        """GET ``path`` (already checked by the caller) and read at most ``max_bytes`` of the body.
+
+        The request goes to the configured Paperless only, with the credential of the current
+        user; redirects are not followed. A body longer than ``max_bytes`` is not kept
+        (``truncated``).
+
+        Raises:
+            Validation: The path is not one the adapter may request, or Paperless rejects the
+                request.
+            NotFound: No such endpoint or object, or not visible to the user.
+            PermissionDenied: The user may not read it.
+            PaperlessMcpError: Paperless redirected the request, or answered with an error.
         """
         ...
 

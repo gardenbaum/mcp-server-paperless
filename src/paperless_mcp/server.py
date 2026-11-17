@@ -28,6 +28,7 @@ from paperless_mcp.paperless.instance import PaperlessInstanceReader
 from paperless_mcp.paperless.mail import PaperlessMailReader, PaperlessMailWriter
 from paperless_mcp.paperless.pdf import PaperlessPdfWriter
 from paperless_mcp.paperless.permissions import PaperlessPermissionReader, PaperlessPermissionWriter
+from paperless_mcp.paperless.raw import PaperlessRawReader
 from paperless_mcp.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
 from paperless_mcp.paperless.tasks import PaperlessTaskReader
 from paperless_mcp.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
@@ -47,6 +48,7 @@ from paperless_mcp.services.mail import MailService
 from paperless_mcp.services.notes import NoteService
 from paperless_mcp.services.pdf import PdfService
 from paperless_mcp.services.permissions import PermissionService
+from paperless_mcp.services.raw import RawApiService
 from paperless_mcp.services.removal import DocumentRemoval
 from paperless_mcp.services.sharing import SharingService
 from paperless_mcp.services.tasks import TaskService
@@ -67,6 +69,7 @@ from paperless_mcp.tools import (
     pdf,
     permissions,
     prompts,
+    raw,
     sharing,
     trash,
     upload,
@@ -111,6 +114,7 @@ if TYPE_CHECKING:
         PdfWriter,
         PermissionReader,
         PermissionWriter,
+        RawReader,
         SharingReader,
         SharingWriter,
         TaskReader,
@@ -190,6 +194,7 @@ CATALOGUE: Final = Catalogue(
         permissions.provider,
         mail.provider,
         admin.provider,
+        raw.provider,
         prompts.provider,
         workflows.provider,
     ),
@@ -226,6 +231,7 @@ class Ports:
     permission_writes: PermissionWriter
     mail: MailReader
     mail_writes: MailWriter
+    raw: RawReader
     workflows: WorkflowReader
     workflow_writes: WorkflowWriter
     management: AdminReader
@@ -254,6 +260,7 @@ def paperless_ports(client: PaperlessClient) -> Ports:
         permission_writes=PaperlessPermissionWriter(client),
         mail=PaperlessMailReader(client),
         mail_writes=PaperlessMailWriter(client),
+        raw=PaperlessRawReader(client),
         workflows=PaperlessWorkflowReader(client),
         workflow_writes=PaperlessWorkflowWriter(client),
         management=PaperlessAdminReader(client),
@@ -352,6 +359,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.sharing, adapters.sharing_writes, adapters.documents, web_url=web_url
                 ),
                 mail=MailService(adapters.mail, adapters.mail_writes, taxonomy, adapters.instance),
+                raw=RawApiService(adapters.raw),
                 workflows=WorkflowService(adapters.workflows, adapters.workflow_writes, taxonomy),
                 accounts=AccountAdmin(adapters.management, adapters.management_writes, taxonomy),
                 system=SystemAdmin(

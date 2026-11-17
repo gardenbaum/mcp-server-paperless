@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Concatenate, cast
 
 from pydantic import JsonValue
 
-from fakes import mail, sharing, workflows
+from fakes import mail, raw, sharing, workflows
 from fakes.accounts import (
     ADMIN,
     BLIND,
@@ -146,7 +146,7 @@ from paperless_mcp.paperless.trash import refused as trash_refused
 from paperless_mcp.paperless.views import unseen_view
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Sequence
+    from collections.abc import Callable, Collection, Mapping, Sequence
     from types import CoroutineType
 
     from _typeshed import SupportsRichComparison
@@ -178,6 +178,7 @@ if TYPE_CHECKING:
     )
     from paperless_mcp.domain.pdf import Output, PageSlot
     from paperless_mcp.domain.permissions import AccessChange, PermissionKind
+    from paperless_mcp.domain.raw import RawReply
     from paperless_mcp.domain.sharing import FileVersionKind, ShareBundle, ShareLink
     from paperless_mcp.domain.taxonomy import (
         MatchingAlgorithm,
@@ -3292,6 +3293,14 @@ class FakePaperless:
             truncated=False,
             sources=tuple(ChatSource(id=d.id, title=d.title) for d in found),
         )
+
+    async def get(self, path: str, params: Mapping[str, str], *, max_bytes: int) -> RawReply:
+        """`RawReader.get`, for the few paths `fakes/raw.py` serves; the rest is a 404."""
+        match = re.fullmatch(r"/api/documents/(\d+)/download/?", path)
+        document = self._sub(int(match[1])) if match else None
+        tags = [(t.id, t.name) for t in self.state.tags if t.visible_to(self.user)]
+        file = (document.original, document.mime_type) if document else None
+        return raw.answer(path, params, tags, file, max_bytes=max_bytes)
 
     async def get_ai_suggestions(self, document_id: int) -> AiSuggestions:
         """`AiReader.get_ai_suggestions` (the `ai_suggestions` action).
