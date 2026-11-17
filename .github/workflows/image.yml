@@ -1,0 +1,118 @@
+name: Image
+
+# Container image (decision-28). Separate from ci.yml and not a required check: it never slows a
+# merge. Pull requests and main build, scan and smoke-test the image without pushing it. Only a
+# pushed version tag (v*) publishes to GHCR, from the `publish` job, the only one allowed to write
+# packages. Nothing publishes on a branch or a pull request.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .trivyignore
+      - pyproject.toml
+      - uv.lock
+      - src/**
+      - scripts/image_smoke.sh
+      - .github/workflows/image.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  # Builds the image, fails on known HIGH or CRITICAL vulnerabilities and smoke-tests it.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the image (loaded locally, not pushed)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          push: false
+          tags: paperless-mcp:ci
+          build-args: |
+            REVISION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Fixed vulnerabilities only (ignore-unfixed): there is nothing to act on for the rest.
+      # Reviewed exceptions go in .trivyignore, each with a reason and an expiry date.
+      - name: Scan for known vulnerabilities (HIGH and CRITICAL fail the job)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: paperless-mcp:ci
+          scanners: vuln
+          severity: "HIGH,CRITICAL"
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
+          format: table
+
+      - name: Smoke test (refusal without tokens, read-only, non-root, healthy, 401 and initialize)
+        run: scripts/image_smoke.sh paperless-mcp:ci
+
+  # Version tags only. Rebuilds from the same inputs (layer cache from the build job), then pushes
+  # with a provenance and an SBOM attestation. Needs the build job (scan and smoke test) to pass.
+  publish:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # v1.2.3 gives 1.2.3, 1.2 and 1; a pre-release tag (v1.2.3-rc.1) gives only its own version. OCI
+      # labels (source, revision, version, created) come from the tag and the repository.
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            REVISION=${{ github.sha }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha

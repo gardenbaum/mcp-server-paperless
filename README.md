@@ -78,6 +78,50 @@ whatever `PAPERLESS_MCP_UPLOAD_DIRS` says, and request bodies larger than the ba
 (method, path, status, duration) goes to stderr, without query strings, headers or bodies. The
 rules are decision-27.
 
+## Run in a container
+
+Version tags (`v*`) publish an image to `ghcr.io/gardenbaum/paperless-mcp` (nothing is published
+before the first tag; until then build it yourself with `just image`). It runs
+`paperless-mcp-http` as a non-root user (uid 10001) from a read-only filesystem, listens on
+`0.0.0.0:8000` inside the container and, like the plain command, **does not start without
+`PAPERLESS_MCP_HTTP_AUTH_TOKENS` and `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`**. The unauthenticated
+loopback flag has no place in a container, which is never loopback. The image contains no
+credentials: everything comes from the environment.
+
+A compose file next to Paperless (add the service to the compose project that runs Paperless,
+or join its network). The two secrets come from an `.env` file next to it, which is not committed;
+create the Paperless token under "My Profile" and generate the MCP token with `openssl rand -hex 32`:
+
+```yaml
+services:
+  paperless-mcp:
+    image: ghcr.io/gardenbaum/paperless-mcp:0.1.0   # a published version tag; pin the digest too
+    restart: unless-stopped
+    depends_on:
+      - webserver                                      # the paperless-ngx service
+    environment:
+      PAPERLESS_URL: http://webserver:8000             # how this container reaches Paperless
+      PAPERLESS_TOKEN: ${PAPERLESS_API_TOKEN:?set it in .env}
+      PAPERLESS_MCP_HTTP_AUTH_TOKENS: ${MCP_BEARER_TOKEN:?set it in .env}
+      PAPERLESS_MCP_HTTP_ALLOWED_HOSTS: mcp.example.org  # the host name clients use (and your proxy forwards)
+    ports:
+      - "127.0.0.1:8000:8000"                          # a reverse proxy in front adds TLS
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+```
+
+Put TLS, rate limiting and public exposure in a reverse proxy and list the host name it
+forwards in `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`; clients then connect to
+`https://mcp.example.org/mcp` with `Authorization: Bearer <MCP_BEARER_TOKEN>`. The container's
+health check opens a TCP connection to the port (the server has no health route, decision-27), so
+`docker ps` shows `healthy` once the server accepts connections. It does not tell you whether
+Paperless is reachable: the tools report that. All other settings of the tables below work
+unchanged as environment variables. To build the image yourself, `just image` builds it and
+`just image-smoke` also checks that it refuses to start without tokens, runs read-only as
+non-root, becomes healthy and answers 401 without and an MCP initialize with a token. The rules
+are decision-28.
+
 ## Configuration
 
 | Variable | Meaning |
