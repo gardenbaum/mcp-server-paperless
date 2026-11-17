@@ -16,7 +16,9 @@ from paperless_mcp.domain.workflows import (
     TRIGGER_FIELDS,
     TRIGGER_TYPES,
     ActionInput,
+    EmailSettings,
     TriggerInput,
+    WebhookSettings,
     WorkflowValues,
 )
 
@@ -138,3 +140,19 @@ def test_only_the_settings_that_name_objects_have_a_kind() -> None:
 def test_no_field_of_the_values_is_cleared_by_none(name: str) -> None:
     with pytest.raises(ValueError, match=f"{name} cannot be cleared"):
         _ = WorkflowValues.model_validate({name: None})
+
+
+@pytest.mark.parametrize(
+    ("model", "given"),
+    [
+        (TriggerInput, {"type": 2, "filter_has_tags": [1]}),
+        (ActionInput, {"type": 1, "assign_tag": ["x"]}),
+        (EmailSettings, {"subject": "s", "body": "b", "to": "t", "cc": "x"}),
+        (WebhookSettings, {"url": "https://h.example", "header": {"a": "b"}}),
+    ],
+)
+def test_a_misspelt_setting_is_an_error_not_dropped(
+    model: type[object], given: dict[str, object]
+) -> None:
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        _ = cast("type[TriggerInput]", model).model_validate(given)

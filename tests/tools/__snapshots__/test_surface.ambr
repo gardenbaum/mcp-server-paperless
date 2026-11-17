@@ -3404,6 +3404,7 @@
             'anyOf': list([
               dict({
                 'items': dict({
+                  'additionalProperties': False,
                   'description': 'An action as a caller writes it: the type by number or name, taxonomy by name or id.',
                   'properties': dict({
                     'assign_change_groups': dict({
@@ -3643,6 +3644,7 @@
                     'email': dict({
                       'anyOf': list([
                         dict({
+                          'additionalProperties': False,
                           'description': 'What an e-mail action sends.',
                           'properties': dict({
                             'body': dict({
@@ -4011,6 +4013,7 @@
                     'webhook': dict({
                       'anyOf': list([
                         dict({
+                          'additionalProperties': False,
                           'description': 'What a webhook action sends: a POST request.',
                           'properties': dict({
                             'as_json': dict({
@@ -4136,6 +4139,7 @@
             'anyOf': list([
               dict({
                 'items': dict({
+                  'additionalProperties': False,
                   'description': 'A trigger as a caller writes it: the type by number or name, taxonomy by name or id.',
                   'properties': dict({
                     'custom_field_query': dict({
@@ -16136,7 +16140,8 @@
         
         triggers and actions each replace the whole list (pass all that should remain; an empty list
         removes them). To keep a webhook header value, which is never shown, send it as '(hidden)' on an
-        action that carries the id it has in get_workflow. Returns the workflow as stored.
+        action that carries the id it has in get_workflow (only while the URL keeps its scheme, host
+        and port); headers left out of a webhook are removed. Returns the workflow as stored.
         
         Triggers: 'consumption' (before a document is stored; needs a path, filename or mailrule filter),
         'added' (after it is stored), 'updated', 'scheduled' (counts from a date of the document).
@@ -16166,6 +16171,7 @@
             'anyOf': list([
               dict({
                 'items': dict({
+                  'additionalProperties': False,
                   'description': 'An action as a caller writes it: the type by number or name, taxonomy by name or id.',
                   'properties': dict({
                     'assign_change_groups': dict({
@@ -16405,6 +16411,7 @@
                     'email': dict({
                       'anyOf': list([
                         dict({
+                          'additionalProperties': False,
                           'description': 'What an e-mail action sends.',
                           'properties': dict({
                             'body': dict({
@@ -16773,6 +16780,7 @@
                     'webhook': dict({
                       'anyOf': list([
                         dict({
+                          'additionalProperties': False,
                           'description': 'What a webhook action sends: a POST request.',
                           'properties': dict({
                             'as_json': dict({
@@ -16911,6 +16919,7 @@
             'anyOf': list([
               dict({
                 'items': dict({
+                  'additionalProperties': False,
                   'description': 'A trigger as a caller writes it: the type by number or name, taxonomy by name or id.',
                   'properties': dict({
                     'custom_field_query': dict({

@@ -1038,18 +1038,22 @@ async def test_a_hidden_header_on_a_new_action_with_an_id_has_nothing_to_keep() 
         )
 
 
-async def test_a_taxonomy_id_given_as_text_is_sent_as_it_is_and_paperless_checks_it() -> None:
+async def test_a_taxonomy_id_is_looked_up_like_a_name_and_an_unknown_one_is_not_found() -> None:
     setup = Setup()
 
-    with pytest.raises(Validation, match="Invalid pk"):
-        _ = await setup.workflows.create(
-            WorkflowCreate(name="n", triggers=(TriggerInput(type="added", has_tags=["99"]),)),
-            confirm=False,
-        )
+    for given in ("99", 99):
+        with pytest.raises(NotFound, match="No tag has id 99"):
+            _ = await setup.workflows.create(
+                WorkflowCreate(name="n", triggers=(TriggerInput(type="added", has_tags=[given]),)),
+                confirm=False,
+            )
+    made = await setup.workflows.create(
+        WorkflowCreate(name="n", triggers=(TriggerInput(type="added", has_tags=["1", 2]),)),
+        confirm=False,
+    )
 
-    [sent] = setup.fake.values
-    assert sent.triggers is not None
-    assert sent.triggers[0].settings == {"filter_has_tags": [99]}
+    assert made.triggers[0].settings == {"has_tags": ["e2e-finance", "e2e-invoices"]}
+    assert setup.fake.writes == ["create"]
 
 
 async def test_a_user_without_the_add_permission_is_denied_after_the_confirmation_step() -> None:
@@ -1371,3 +1375,91 @@ async def test_a_match_with_an_algorithm_or_an_empty_match_is_accepted() -> None
     )
 
     assert len(made.triggers) == 3
+
+
+@pytest.mark.parametrize(
+    ("kind", "acts"),
+    [
+        (
+            5,
+            "unlock each matching document with stored passwords and add the result",
+        ),
+        (8, "ask the AI backend about every matching document and apply what it suggests"),
+        (77, "run an action of type 77"),
+    ],
+)
+async def test_switching_on_a_workflow_with_an_action_this_server_cannot_write_needs_confirm(
+    kind: int, acts: str
+) -> None:
+    setup = Setup()
+    _ = setup.seed("w", enabled=False, actions=[WorkflowAction(type=kind)])
+
+    with pytest.raises(ConfirmationRequired, match=acts):
+        _ = await setup.workflows.update("w", WorkflowEdit(enabled=True), confirm=False)
+    done = await setup.workflows.update("w", WorkflowEdit(enabled=True), confirm=True)
+
+    assert done.enabled is True
+
+
+async def test_a_stored_header_is_not_kept_for_another_host() -> None:
+    setup = Setup()
+    _ = setup.seed(
+        "w",
+        enabled=False,
+        actions=[
+            WorkflowAction(
+                id=7,
+                type=4,
+                settings={
+                    "webhook": {
+                        "url": "https://hooks.example:8443/a",
+                        "headers": {"X-Token": "real"},
+                    }
+                },
+            )
+        ],
+    )
+
+    def edit(url: str) -> WorkflowEdit:
+        hook = WebhookSettings(url=url, headers={"X-Token": "(hidden)"})
+        return WorkflowEdit(actions=(ActionInput(type=4, id=7, webhook=hook),))
+
+    for moved in (
+        "https://evil.example:8443/a",
+        "http://hooks.example:8443/a",
+        "https://hooks.example/a",
+    ):
+        with pytest.raises(Validation, match="points to another scheme, host or port"):
+            _ = await setup.workflows.update("w", edit(moved), confirm=False)
+    done = await setup.workflows.update(
+        "w", edit("https://HOOKS.example:8443/other?x=1"), confirm=False
+    )
+
+    assert setup.fake.writes == ["update"]
+    assert [a.type for a in done.actions] == [4]
+
+
+async def test_custom_field_values_add_their_fields_and_headers_left_out_are_removed() -> None:
+    setup = Setup()
+
+    made = await setup.workflows.create(
+        WorkflowCreate(
+            name="n",
+            actions=(ActionInput(type=1, assign_custom_fields_values={"e2e-string": "v", "5": 1}),),
+        ),
+        confirm=False,
+    )
+
+    assert made.actions[0].settings["assign_custom_fields"] == ["e2e-string", "e2e-integer"]
+    sent = setup.fake.values[0].actions
+    assert sent is not None
+    assert sent[0].settings["assign_custom_fields"] == [1, 5]
+
+
+async def test_an_unknown_source_number_is_shown_as_the_number() -> None:
+    setup = Setup()
+    _ = setup.seed("w", triggers=[WorkflowTrigger(type=1, settings={"sources": [1, 9]})])
+
+    [workflow] = (await setup.workflows.list()).workflows
+
+    assert workflow.triggers[0].settings == {"sources": ["consume_folder", 9]}

@@ -47,10 +47,11 @@
     'update Filing, new actions': "Nothing was changed. Confirming would change the workflow 'Filing' (id 1), which is enabled and runs by itself on every document that matches its triggers (document added) and will: move the matching documents to the trash. Hint: Describe the effect to the user and call the tool again with the same arguments and confirm=true only once they agree, or if they already asked for exactly this.",
     'update Hook, blank name': 'The workflow name is empty. Hint: Give the workflow a name.',
     'update Hook, nothing': 'Nothing to change: no setting was named. Hint: Name a new name, order, enabled, triggers or actions.',
-    'update Hook, switch on': "Nothing was changed. Confirming would change the workflow 'Hook' (id 3), which is enabled and runs by itself on every document that matches its triggers (no trigger yet: it does nothing until one is added) and will: send a POST request to u. Hint: Describe the effect to the user and call the tool again with the same arguments and confirm=true only once they agree, or if they already asked for exactly this.",
+    'update Hook, switch on': "Nothing was changed. Confirming would change the workflow 'Hook' (id 3), which is enabled and runs by itself on every document that matches its triggers (no trigger yet: it does nothing until one is added) and will: send a POST request to old.example. Hint: Describe the effect to the user and call the tool again with the same arguments and confirm=true only once they agree, or if they already asked for exactly this.",
     'update Hook, taken name': "A workflow is already named 'Filing' (id 1). Hint: Choose another name, or update that workflow.",
     'update Odd, new actions': "The workflow 'Odd' holds actions this server cannot write: password removal (id 3), apply AI suggestions (id 4), unknown type 9 (id 5). Replacing the actions would delete them. Hint: Change the other settings, or edit the actions in the Paperless web UI.",
     'update, hidden header': "Header 'X-Token' is shown as '(hidden)' and has no stored value to keep. Hint: Send the real value, or the id of the action that holds the stored one.",
+    'update, hidden header moved': "Header 'X-A' cannot keep its stored value: the URL now points to another scheme, host or port than the stored one. Hint: Send the real value of the header for the new URL.",
     'update, missing': "No workflow is named 'nope'. Hint: Call list_workflows to see the names.",
   })
 # ---

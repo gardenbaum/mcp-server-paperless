@@ -285,3 +285,25 @@ async def test_the_annotations_mark_workflows_open_world_and_delete_destructive(
     assert hints("create_workflow") == (False, False, True)
     assert hints("update_workflow") == (False, True, True)
     assert hints("delete_workflow") == (True, True, False)
+
+
+@pytest.mark.parametrize(
+    ("argument", "value"),
+    [
+        ("triggers", [{"type": "added", "filter_has_tags": ["e2e-finance"]}]),
+        ("actions", [{"type": "assignment", "assign_tag": ["e2e-finance"]}]),
+        (
+            "actions",
+            [{"type": "webhook", "webhook": {"url": "https://h.example/x", "header": {"a": "b"}}}],
+        ),
+    ],
+)
+async def test_a_misspelt_setting_is_an_error_and_nothing_is_created(
+    argument: str, value: list[Json]
+) -> None:
+    state = seeded()
+
+    text = await refusal(fake(state), "create_workflow", name="typo", **{argument: value})
+
+    assert "Extra inputs are not permitted" in text
+    assert state.workflows == []

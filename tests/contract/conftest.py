@@ -583,21 +583,33 @@ def live_restricted(
     return restricted
 
 
+def every_row(stack: Stack, path: str) -> list[dict[str, object]]:
+    """Every row of a paged list, over all pages."""
+    rows: list[dict[str, object]] = []
+    page = 1
+    while True:
+        response = stack.admin.get(path, params={"page_size": 100, "page": page})
+        body = cast("dict[str, object]", response.json())
+        rows.extend(results(response))
+        if not body.get("next"):
+            return rows
+        page += 1
+
+
 def drop_orphaned_workflow_parts(stack: Stack) -> None:
     """Delete the triggers and actions no workflow holds.
 
     Paperless 3.4.2 keeps them as objects of their own when their workflow is deleted or replaces
     them, and lists them under /api/workflow_triggers/ and /api/workflow_actions/ for good.
     """
-    held = results(stack.admin.get("/api/workflows/", params={"page_size": 100}))
+    held = every_row(stack, "/api/workflows/")
     for part in ("triggers", "actions"):
         used = {
             cast("dict[str, object]", item)["id"]
             for row in held
             for item in cast("list[object]", row[part])
         }
-        listed = stack.admin.get(f"/api/workflow_{part}/", params={"page_size": 100})
-        for row in results(listed):
+        for row in every_row(stack, f"/api/workflow_{part}/"):
             if row["id"] not in used:
                 _ = stack.admin.delete(f"/api/workflow_{part}/{row['id']}/")
 

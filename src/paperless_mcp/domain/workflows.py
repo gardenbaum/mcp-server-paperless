@@ -203,7 +203,7 @@ class WorkflowValues(BaseModel):
 class TriggerInput(BaseModel):
     """A trigger as a caller writes it: the type by number or name, taxonomy by name or id."""
 
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
     type: Annotated[
         int | str,
@@ -308,7 +308,7 @@ class TriggerInput(BaseModel):
 class EmailSettings(BaseModel):
     """What an e-mail action sends."""
 
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
     subject: Annotated[
         str, Field(min_length=1, max_length=256, description="May use placeholders.")
@@ -321,7 +321,7 @@ class EmailSettings(BaseModel):
 class WebhookSettings(BaseModel):
     """What a webhook action sends: a POST request."""
 
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
     url: Annotated[str, Field(min_length=1, max_length=256, description="The URL to POST to.")]
     use_params: Annotated[
@@ -350,7 +350,7 @@ class WebhookSettings(BaseModel):
 class ActionInput(BaseModel):
     """An action as a caller writes it: the type by number or name, taxonomy by name or id."""
 
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
     type: Annotated[
         int | str,

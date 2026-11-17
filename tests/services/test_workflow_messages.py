@@ -71,7 +71,13 @@ async def test_workflow_service_errors(snapshot: SnapshotAssertion) -> None:
     _ = setup.seed(
         "Hook",
         enabled=False,
-        actions=[WorkflowAction(id=6, type=4, settings={"webhook": {"url": "u", "headers": {}}})],
+        actions=[
+            WorkflowAction(
+                id=6,
+                type=4,
+                settings={"webhook": {"url": "https://old.example/x", "headers": {"X-A": "a"}}},
+            )
+        ],
     )
     hook = WebhookSettings(url="https://h.example/x", headers={"X-Token": "(hidden)"})
     created: dict[str, WorkflowCreate] = {
@@ -173,6 +179,23 @@ async def test_workflow_service_errors(snapshot: SnapshotAssertion) -> None:
     found["update, hidden header"] = await said_later(
         lambda: flows.update(
             "Hook", WorkflowEdit(actions=(ActionInput(type=4, id=9, webhook=hook),)), confirm=False
+        )
+    )
+    found["update, hidden header moved"] = await said_later(
+        lambda: flows.update(
+            "Hook",
+            WorkflowEdit(
+                actions=(
+                    ActionInput(
+                        type=4,
+                        id=6,
+                        webhook=WebhookSettings(
+                            url="https://other.example/x", headers={"X-A": "(hidden)"}
+                        ),
+                    ),
+                )
+            ),
+            confirm=False,
         )
     )
     found["update, missing"] = await said_later(

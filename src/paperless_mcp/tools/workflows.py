@@ -78,7 +78,8 @@ UPDATE_DESCRIPTION = (
 
 triggers and actions each replace the whole list (pass all that should remain; an empty list
 removes them). To keep a webhook header value, which is never shown, send it as '(hidden)' on an
-action that carries the id it has in get_workflow. Returns the workflow as stored.
+action that carries the id it has in get_workflow (only while the URL keeps its scheme, host
+and port); headers left out of a webhook are removed. Returns the workflow as stored.
 
 """
     + REFERENCE

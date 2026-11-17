@@ -91,6 +91,13 @@ OWNERSHIP: Final = (
     "assign_change_groups",
 )
 SUGGESTIONS: Final = 5
+# What the actions that need no settings do; password removal and AI suggestions cannot be written
+# here but a workflow made in the web UI can hold them (switching it on needs confirm too).
+FIXED_ACTS: Final[Mapping[int, str]] = {
+    5: "unlock each matching document with stored passwords and add the result as a new version",
+    6: "move the matching documents to the trash",
+    8: "ask the AI backend about every matching document and apply what it suggests",
+}
 
 
 def _key(text: str) -> str:
@@ -228,13 +235,21 @@ def _host(url: JsonValue) -> str:
     return urlsplit(text).hostname or text
 
 
+def _origin(url: JsonValue) -> tuple[str, str | None, int | None]:
+    """Scheme, host and port of a URL, as a webhook's destination."""
+    parts = urlsplit(str(url))
+    return parts.scheme.lower(), parts.hostname, parts.port
+
+
 def _acts(actions: Sequence[WorkflowAction]) -> list[str]:
     """What the actions do that reaches beyond tagging: the reason a workflow needs confirm."""
     found: list[str] = []
     for action in actions:
         settings = action.settings
-        if action.type == 6:  # noqa: PLR2004 -- move to trash
-            found.append("move the matching documents to the trash")
+        if action.type in FIXED_ACTS:
+            found.append(FIXED_ACTS[action.type])
+        elif action.type not in ACTION_TYPES:
+            found.append(f"run an action of type {action.type}")
         elif action.type == EMAIL:
             mail = _object(settings.get("email"))
             attached = " with the document attached" if mail.get("include_document") else ""
@@ -449,10 +464,7 @@ class WorkflowService:
             )
 
     async def _id(self, kind: TaxonomyKind, value: NameOrId) -> int:
-        text = str(value).strip()
-        if isinstance(value, int) or (text.isascii() and text.isdigit()):
-            return int(text)
-        return (await self._taxonomy.resolve(kind, text)).id
+        return (await self._taxonomy.resolve(kind, value)).id
 
     async def _ids(self, kind: TaxonomyKind, values: Sequence[NameOrId]) -> list[JsonValue]:
         return [await self._id(kind, value) for value in values]
@@ -544,8 +556,10 @@ class WorkflowService:
         if name == "webhook" and spec.webhook is not None:
             hook = spec.webhook.model_dump()
             held = stored.get(spec.id) if spec.id is not None else None
-            kept = _object(_object(held.settings.get("webhook") if held else None).get("headers"))
-            hook["headers"] = self._headers(spec.webhook.headers, kept)
+            old = _object(held.settings.get("webhook") if held else None)
+            kept = _object(old.get("headers"))
+            moved = _origin(old.get("url")) != _origin(spec.webhook.url)
+            hook["headers"] = self._headers(spec.webhook.headers, kept, moved=moved)
             return cast("JsonValue", hook)
         if name == "assign_custom_fields_values":
             fields = cast("dict[str, JsonValue]", value)
@@ -554,15 +568,25 @@ class WorkflowService:
 
     @staticmethod
     def _headers(
-        given: Mapping[str, str] | None, kept: Mapping[str, JsonValue]
+        given: Mapping[str, str] | None, kept: Mapping[str, JsonValue], *, moved: bool
     ) -> dict[str, JsonValue] | None:
-        """The headers to store: a hidden value stands for the one already stored."""
+        """The headers to store: a hidden value stands for the one already stored.
+
+        A stored value is never carried to another scheme, host or port (``moved``): it could be
+        a credential, and the change would send it there without anyone seeing it.
+        """
         if given is None:
             return None
         headers: dict[str, JsonValue] = {}
         for header, value in given.items():
             if value != HIDDEN:
                 headers[header] = value
+            elif header in kept and moved:
+                message = (
+                    f"Header {header!r} cannot keep its stored value: the URL now points to "
+                    "another scheme, host or port than the stored one."
+                )
+                raise Validation(message, hint="Send the real value of the header for the new URL.")
             elif header in kept:
                 headers[header] = kept[header]
             else:
