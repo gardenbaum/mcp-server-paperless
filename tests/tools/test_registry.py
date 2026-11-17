@@ -12,10 +12,12 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
-from harness import admin, serve
+from harness import admin, paperless_settings, serve
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, SecretStr
 
+from paperless_mcp.app import create_app
+from paperless_mcp.settings import HttpSettings, ServerSettings
 from paperless_mcp.tools._shared import (
     ANNOTATIONS,
     MEDIA_TOOLS,
@@ -387,6 +389,29 @@ async def test_no_path_parameter_is_in_a_schema_unless_stdio_runs_with_an_allowl
         assert stdio_only_parameters(tools) == [], name
         assert path_parameters(tools, frozenset()) == [], name
         assert {"upload_document", "upload_document_version"} <= {t.name for t in tools}, name
+
+
+@pytest.mark.decision("decision-7")
+@pytest.mark.decision("decision-27")
+async def test_the_http_entrypoint_offers_base64_uploads_and_no_path_even_with_an_allowlist(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        paperless_settings(),
+        ServerSettings.model_validate({"toolsets": "all", "upload_dirs": str(tmp_path)}),
+        HttpSettings.model_validate({"allow_unauthenticated_loopback": True}),
+    )
+    server = cast("FastMCP", app.state.fastmcp_server)
+    tools = list(await server.list_tools())
+
+    assert stdio_only_parameters(tools) == []
+    assert path_parameters(tools, frozenset()) == []
+    uploads = {t.name: t for t in tools if t.name.startswith("upload_document")}
+    assert set(uploads) == {"upload_document", "upload_document_version"}
+    for tool in uploads.values():
+        properties = cast("dict[str, object]", tool.parameters["properties"])
+        assert "content_base64" in properties
+        assert "path" not in properties
 
 
 @pytest.mark.decision("decision-7")

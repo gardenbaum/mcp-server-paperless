@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Generator, Sequence
 
     from fastmcp import FastMCP
+    from fastmcp.server.auth import AuthProvider
 
     from paperless_mcp.domain.errors import PaperlessMcpError
     from paperless_mcp.domain.instance import InstanceOverview
@@ -121,6 +122,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     max_upload_bytes: int | None = None,
     upload_dirs: Sequence[str] = (),
     stdio: bool = False,
+    auth: AuthProvider | None = None,
 ) -> FastMCP:
     """The assembled server, with `reader` in place of the Paperless adapter.
 
@@ -147,6 +149,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
         ),
         catalogue=catalogue,
         stdio=stdio,
+        auth=auth,
         ports=lambda _client: Ports(
             instance=reader,
             taxonomy=taxonomy or fake,

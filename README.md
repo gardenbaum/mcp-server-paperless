@@ -30,6 +30,54 @@ Paperless is back. Logs go to stderr (the server's own records as JSON lines) an
 tokens, document content or query text at INFO or above: tool arguments and error messages are
 not logged, and an internal error is logged by type, with its traceback only at DEBUG.
 
+## Run over HTTP
+
+stdio is the default and needs nothing else. To serve several clients, or a connector, over
+Streamable HTTP, run `paperless-mcp-http` (or `just serve-http` from a clone). It **refuses to
+start without authentication**:
+
+```sh
+export PAPERLESS_URL=https://paperless.example.org
+export PAPERLESS_TOKEN=your-api-token
+export PAPERLESS_MCP_HTTP_AUTH_TOKENS="$(openssl rand -hex 32)"   # what clients send as a bearer token
+paperless-mcp-http                                                 # http://127.0.0.1:8000/mcp
+claude mcp add --transport http paperless http://127.0.0.1:8000/mcp \
+    --header "Authorization: Bearer $PAPERLESS_MCP_HTTP_AUTH_TOKENS"
+```
+
+Requests without a valid token get 401 (every method, on the one route the server has). Tokens
+are compared in constant time, are masked in settings and never logged. For a bind that is not
+loopback (`0.0.0.0`, `::`, a LAN address, any host name that does not resolve to loopback only) also
+name the host names clients use; any other `Host` header gets 421 and any foreign browser
+`Origin` 403, before authentication, and no CORS access is granted:
+
+```sh
+PAPERLESS_MCP_HTTP_HOST=0.0.0.0 \
+PAPERLESS_MCP_HTTP_ALLOWED_HOSTS=mcp.example.org \
+PAPERLESS_MCP_HTTP_AUTH_TOKENS=... paperless-mcp-http
+```
+
+For local development only, `PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK=true` serves
+without tokens on a loopback bind (and the app then answers on loopback addresses only); any
+process on the machine can use it. The server speaks plain HTTP: put TLS, rate limiting of failed
+attempts and public exposure in a reverse proxy, and list the host name the proxy forwards in
+`PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`.
+
+| Variable | Meaning |
+|---|---|
+| `PAPERLESS_MCP_HTTP_HOST` / `PAPERLESS_MCP_HTTP_PORT` | Address to bind (default `127.0.0.1`, `8000`) |
+| `PAPERLESS_MCP_HTTP_PATH` | Path of the endpoint (default `/mcp`); the only route, no health endpoint |
+| `PAPERLESS_MCP_HTTP_AUTH_TOKENS` | Static bearer tokens, comma-separated or a JSON array, each at least 16 characters of `A-Za-z0-9._~+/=-`; several allow rotation without downtime. Required unless the flag below is set |
+| `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS` | Host names clients use, plain names without wildcards or ports; `localhost`, `127.0.0.1` and `::1` are always allowed. Required unless the bind is loopback |
+| `PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK` | `true` to serve without tokens, only on a loopback bind (default `false`) |
+
+Over HTTP callers upload by sending base64 content: no tool takes a server-side file path,
+whatever `PAPERLESS_MCP_UPLOAD_DIRS` says, and request bodies larger than the base64 size of
+`PAPERLESS_MCP_MAX_UPLOAD_BYTES` plus 64 KiB get 413. Every response carries an `X-Request-ID`
+(yours if it is short and made of letters, digits, `.`, `_` or `-`); one JSON log line per request
+(method, path, status, duration) goes to stderr, without query strings, headers or bodies. The
+rules are decision-27.
+
 ## Configuration
 
 | Variable | Meaning |

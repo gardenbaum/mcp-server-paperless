@@ -8,23 +8,30 @@ at INFO) are held at WARNING whatever the configured level.
 
 import json
 import logging
+import re
 import time
 import uuid
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final, cast, override
 
+from fastmcp.server.dependencies import get_http_request
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 
 if TYPE_CHECKING:
     from fastmcp.tools import ToolResult
     from mcp.types import CallToolRequestParams
+    from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 # Loggers that would put request URLs, and with them search text, into INFO records.
 QUIET_LOGGERS: Final = ("httpx2", "httpcore2")
 
 # The id of the tool call being handled; every record logged during the call carries it.
 request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
+
+# A request id of the caller that is kept: short and made of characters that are safe in a log.
+_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
+REQUEST_ID_HEADER: Final = "x-request-id"
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +78,7 @@ class CallLogging(Middleware):
         context: MiddlewareContext[CallToolRequestParams],
         call_next: CallNext[CallToolRequestParams, ToolResult],
     ) -> ToolResult:
-        token = request_id.set(uuid.uuid4().hex)
+        token = request_id.set(_http_request_id() or uuid.uuid4().hex)
         started = time.perf_counter()
         outcome: dict[str, object] = {"outcome": "ok"}
         try:
@@ -87,5 +94,71 @@ class CallLogging(Middleware):
             logger.info(
                 "tool call",
                 extra={"tool": context.message.name, "duration_ms": duration_ms, **outcome},
+            )
+            request_id.reset(token)
+
+
+def _http_request_id() -> str | None:
+    """The id ``RequestContext`` gave the HTTP request this call came in on, if there is one."""
+    try:
+        request = get_http_request()
+    except RuntimeError:
+        return None  # stdio or in-process: no HTTP request
+    state = cast("dict[str, object]", request.scope.get("state", {}))
+    found = state.get("request_id")
+    return found if isinstance(found, str) else None
+
+
+def request_header(scope: Scope, name: bytes) -> bytes | None:
+    """The first value of the (lowercase) request header ``name``, or None."""
+    headers = cast("list[tuple[bytes, bytes]]", scope["headers"])
+    return next((value for key, value in headers if key == name), None)
+
+
+class RequestContext:
+    """ASGI middleware: a request id on every request and response, and one log record each.
+
+    The id is the caller's ``X-Request-ID`` if it is short and log-safe, else a new one. The
+    record carries method, path, status and duration: no query, headers or body.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        """Wrap ``app``."""
+        self.app: ASGIApp = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Serve one ASGI connection."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        given = (request_header(scope, b"x-request-id") or b"").decode("latin-1")
+        identifier = given if _REQUEST_ID.fullmatch(given) else uuid.uuid4().hex
+        scope.setdefault("state", {})["request_id"] = identifier
+        status = 500
+
+        async def stamped(message: Message) -> None:
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = cast("int", message["status"])
+                sent = cast("list[tuple[bytes, bytes]]", message["headers"])
+                headers = [(k, v) for k, v in sent if k.lower() != b"x-request-id"]
+                headers.append((b"x-request-id", identifier.encode()))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        token = request_id.set(identifier)
+        started = time.perf_counter()
+        try:
+            await self.app(scope, receive, stamped)
+        finally:
+            logger.info(
+                "http request",
+                extra={
+                    "method": scope["method"],
+                    "path": scope["path"],
+                    "status": status,
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+                    "request_id": identifier,
+                },
             )
             request_id.reset(token)

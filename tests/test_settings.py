@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import ValidationError
 
-from paperless_mcp.settings import PaperlessSettings, ServerSettings
+from paperless_mcp.settings import HttpSettings, PaperlessSettings, ServerSettings
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -22,7 +22,7 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def invalid_fields(
-    settings: type[PaperlessSettings | ServerSettings],
+    settings: type[PaperlessSettings | ServerSettings | HttpSettings],
 ) -> list[tuple[int | str, ...]]:
     with pytest.raises(ValidationError) as caught:
         _ = settings.model_validate({})
@@ -324,3 +324,105 @@ def test_a_symlink_to_the_home_directory_is_refused_too(
     monkeypatch.setenv("PAPERLESS_MCP_UPLOAD_DIRS", str(tmp_path / "shortcut"))
 
     assert invalid_fields(ServerSettings) == [("upload_dirs",)]
+
+
+# --- HTTP transport (PLMCP-34) ---------------------------------------------------------------
+
+HTTP_TOKEN = "test-token-not-a-secret"
+
+
+def test_http_defaults_bind_loopback_without_tokens_and_allow_nothing_unauthenticated() -> None:
+    settings = HttpSettings.model_validate({})
+
+    assert (settings.host, settings.port, settings.path) == ("127.0.0.1", 8000, "/mcp")
+    assert settings.auth_tokens == ()
+    assert settings.allowed_hosts == ()
+    assert settings.allow_unauthenticated_loopback is False
+
+
+def test_http_settings_use_their_own_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_HOST", "0.0.0.0")  # noqa: S104 -- a value under test
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_PORT", "9000")
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_PATH", "/api/mcp")
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK", "true")
+
+    settings = HttpSettings.model_validate({})
+
+    assert (settings.host, settings.port, settings.path) == ("0.0.0.0", 9000, "/api/mcp")  # noqa: S104 -- a value under test
+    assert settings.allow_unauthenticated_loopback is True
+
+
+@pytest.mark.parametrize(
+    ("value", "count"),
+    [
+        (HTTP_TOKEN, 1),
+        (f"{HTTP_TOKEN}, {HTTP_TOKEN}-2 ,{HTTP_TOKEN}", 2),
+        (f'["{HTTP_TOKEN}","{HTTP_TOKEN}-2"]', 2),
+        ("", 0),
+    ],
+)
+def test_auth_tokens_are_a_comma_separated_list_or_a_json_array(
+    monkeypatch: pytest.MonkeyPatch, value: str, count: int
+) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_AUTH_TOKENS", value)
+
+    tokens = HttpSettings.model_validate({}).auth_tokens
+
+    assert len(tokens) == count
+    assert all(HTTP_TOKEN in token.get_secret_value() for token in tokens)
+
+
+def test_auth_tokens_never_appear_in_repr_or_str(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_AUTH_TOKENS", HTTP_TOKEN)
+
+    settings = HttpSettings.model_validate({})
+
+    assert HTTP_TOKEN not in repr(settings)
+    assert HTTP_TOKEN not in str(settings)
+
+
+@pytest.mark.parametrize("value", ["short", "has space in it 1234567", "ünicode-token-1234567890"])
+def test_weak_or_header_unsafe_tokens_are_rejected_without_echoing_them(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_AUTH_TOKENS", value)
+
+    with pytest.raises(ValidationError) as caught:
+        _ = HttpSettings.model_validate({})
+
+    messages = [error["msg"] for error in caught.value.errors()]
+    assert [error["loc"][0] for error in caught.value.errors()] == ["auth_tokens"]
+    assert not any(value in message for message in messages)
+
+
+@pytest.mark.parametrize("value", ["0", "65536", "http"])
+def test_the_port_must_be_a_valid_port(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_PORT", value)
+
+    assert invalid_fields(HttpSettings) == [("port",)]
+
+
+@pytest.mark.parametrize("value", ["mcp", "/", "/a b", "/mcp?x=1", "/mcp#x", ""])
+def test_the_path_must_be_an_absolute_path_below_the_root(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_PATH", value)
+
+    assert invalid_fields(HttpSettings) == [("path",)]
+
+
+def test_allowed_hosts_are_a_lowercase_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_ALLOWED_HOSTS", "MCP.example.com, 10.0.0.5 ,[::1]")
+
+    assert HttpSettings.model_validate({}).allowed_hosts == ("mcp.example.com", "10.0.0.5", "[::1]")
+
+
+@pytest.mark.parametrize(
+    "value", ["*", "*.example.com", "mcp.example.com/x", "https://mcp.example.com", "a b", "h?st"]
+)
+def test_allowed_hosts_take_plain_host_names_without_wildcards(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_ALLOWED_HOSTS", value)
+
+    assert invalid_fields(HttpSettings) == [("allowed_hosts",)]
