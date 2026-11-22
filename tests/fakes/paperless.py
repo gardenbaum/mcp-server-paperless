@@ -1,4 +1,7 @@
-"""FakePaperless: an in-memory Paperless 3.4.2 that implements the domain ports (design 9.1).
+"""FakePaperless: an in-memory Paperless that implements the domain ports (design 9.1).
+
+It behaves like 3.4.2, the pinned release, and from 3.5 on when `FakeState.release` says so
+(decision-29).
 
 Services and tools are tested against it instead of mocks. The contract suite (tests/contract)
 runs the same tests against it and against the adapter on live Paperless, so it cannot drift.
@@ -120,6 +123,7 @@ from paperless_mcp.paperless.admin import (
     DELETE_GROUP,
     DELETE_USER,
     DOWNLOAD,
+    READ_CONFIG,
     READ_LOGS,
     RUN_TASKS,
     VIEW_GROUP,
@@ -141,6 +145,7 @@ from paperless_mcp.paperless.documents import (
 from paperless_mcp.paperless.errors import ai_disabled
 from paperless_mcp.paperless.pdf import not_editable, wrong_password
 from paperless_mcp.paperless.tasks import not_found
+from paperless_mcp.paperless.taxonomy import TAG_DELETE_HINT
 from paperless_mcp.paperless.trash import beyond_last_page as beyond_trash
 from paperless_mcp.paperless.trash import refused as trash_refused
 from paperless_mcp.paperless.views import unseen_view
@@ -523,6 +528,9 @@ class FakeState:
     # The id of the last note created: note ids are global and never reused.
     last_note_id: int = 1
     system_status: SystemStatus = HEALTHY
+    # The paperless-ngx release the fake behaves like (decision-29): the pinned one, or a 3.5.x
+    # for what 3.5 changed (see `FakePaperless.since_3_5`).
+    release: str = VERSION
     ai_enabled: bool = False
     audit_log_enabled: bool = True
     # The application configuration (fakes/admin.py): the settings with a value, the API keys
@@ -741,7 +749,7 @@ class FakePaperless:
         may_view_status = user.is_staff or user.has("view_system_monitoring")
         may_view_settings = user.has("view_uisettings")
         return InstanceOverview(
-            paperless_version=VERSION,
+            paperless_version=self.state.release,
             api_version=API_VERSION,
             statistics=self._statistics(),
             system_status=self.state.system_status if may_view_status else None,
@@ -752,6 +760,11 @@ class FakePaperless:
             ),
             ai_enabled=self.state.ai_enabled if may_view_settings else None,
         )
+
+    @property
+    def since_3_5(self) -> bool:
+        """Whether the fake behaves like paperless-ngx 3.5 or later (`FakeState.release`)."""
+        return tuple(int(n) for n in self.state.release.split(".")) >= (3, 5, 0)
 
     def _statistics(self) -> InstanceStatistics:
         everything = self.user.has("view_global_statistics")
@@ -1192,8 +1205,11 @@ class FakePaperless:
         Order in Paperless 3.4.2: the global `view_document`, `add_note` and `change_document`
         permissions (403; live: a change grant on the document does not replace the last),
         the document (404), the object view (403 for a hidden document) and the object change
-        permission (403: a viewer may not add notes). Empty and blank text is accepted.
+        permission (403: a viewer may not add notes). Empty and blank text is accepted before
+        3.5 and rejected from it (400 "This field may not be blank.", checked first).
         """
+        if self.since_3_5 and not text.strip():
+            reject("note", "This field may not be blank.")
         document = self._sub(document_id, "add_note", "change_document")
         if not document.changeable_by(self.user):
             message = "The Paperless user may not perform this action."
@@ -2078,7 +2094,22 @@ class FakePaperless:
         """
         self._allowed("delete", kind)
         _ = self._target(kind, item_id)
+        if kind == "tag" and self._takes_tags_of_others(item_id):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message, hint=TAG_DELETE_HINT)
         self._remove(kind, item_id)
+
+    def _takes_tags_of_others(self, tag_id: int) -> bool:
+        """Whether deleting the tag is refused (3.5): a tag below it is not the user's to delete.
+
+        TagViewSet.perform_destroy of 3.5 refuses unless the user may delete the tag and every
+        descendant (owner or unowned, or a superuser); 3.4 deletes them without asking.
+        """
+        user = self.user
+        if not self.since_3_5 or user.is_superuser:
+            return False
+        tree = self._tag_tree(tag_id)
+        return any(t.owner not in {None, user.id} for t in self.state.tags if t.id in tree)
 
     def _remove(self, kind: WritableKind, item_id: int) -> None:
         """Delete the object (if it still exists): documents lose it, a tag takes its children."""
@@ -2291,6 +2322,8 @@ class FakePaperless:
         permission or for an object another user owns (hidden ones included).
         """
         _ = self._bulk_items(kind, item_ids, "delete")
+        if kind == "tag" and any(self._takes_tags_of_others(number) for number in item_ids):
+            raise objects_refused()
         for number in item_ids:
             self._remove(kind, number)
 
@@ -2897,7 +2930,12 @@ class FakePaperless:
         )
 
     async def get_config(self) -> AppConfigRecord:
-        """`AdminReader.get_config`: any signed-in user may read it (DRF asks nothing on a GET)."""
+        """`AdminReader.get_config`: any signed-in user may read it (DRF asks nothing on a GET).
+
+        From 3.5 it needs `view_applicationconfiguration` (403).
+        """
+        if self.since_3_5:
+            self._need("view_applicationconfiguration", READ_CONFIG)
         return self._config_record()
 
     async def list_logs(self) -> tuple[str, ...]:

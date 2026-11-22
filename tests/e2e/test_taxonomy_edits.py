@@ -298,7 +298,10 @@ async def test_deleting_a_tag_takes_child_tags_the_caller_cannot_see_with_it_or_
             "/api/tags/", json={"name": theirs, "parent": parent["id"]}
         ).raise_for_status()
         preview = await error(client_, "delete_taxonomy_item", kind="tag", item=mine)
-        assert "child tags you cannot see (other users') are deleted with it as well" in preview
+        assert (
+            "on Paperless 3.4 child tags you cannot see (other users') are deleted with it as "
+            "well; Paperless 3.5 refuses the deletion if it would take tags of other users"
+        ) in preview
         child_url = f"/api/tags/{obj(parse(child))['id']}/"
         if since("3.5.0"):
             # Paperless 3.5 refuses a deletion that would take tags of others with it.
@@ -306,6 +309,7 @@ async def test_deleting_a_tag_takes_child_tags_the_caller_cannot_see_with_it_or_
                 client_, "delete_taxonomy_item", kind="tag", item=mine, confirm=True
             )
             assert "may not perform this action" in refused
+            assert "refuses a deletion that would take child tags of other users" in refused
             assert stack.admin.get(child_url).status_code == 200
             assert stack.admin.get(f"/api/tags/{parent['id']}/").status_code == 200
             return

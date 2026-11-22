@@ -18,7 +18,8 @@ from fakes.paperless import (
     write,
 )
 from paperless_mcp.domain.documents import DocumentUpload
-from paperless_mcp.domain.errors import FeatureUnavailable, NotFound, PermissionDenied
+from paperless_mcp.domain.errors import FeatureUnavailable, NotFound, PermissionDenied, Validation
+from paperless_mcp.paperless.taxonomy import TAG_DELETE_HINT
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
 
@@ -274,3 +275,117 @@ async def test_an_upload_fails_unless_the_test_opts_in_and_leaves_no_task() -> N
 
     assert state.tasks == []
     assert len(state.documents) == 2
+
+
+# --- the release setting (decision-29): the pinned 3.4.2 by default, 3.5 behaviour on request
+
+
+def state_35(*users: FakeUser) -> FakeState:
+    state = state_with(*users)
+    state.release = "3.5.1"
+    return state
+
+
+def writer(state: FakeState, user: str) -> FakePaperless:
+    return FakePaperless(state, user=user, allow_writes=True)
+
+
+@pytest.mark.decision("decision-29")
+async def test_the_fake_is_the_pinned_release_unless_told_otherwise() -> None:
+    assert seeded().release == "3.4.2"
+    assert (await FakePaperless(seeded(), user="admin").get_overview()).paperless_version == "3.4.2"
+    assert (await FakePaperless(state_35(), user="admin").get_overview()).paperless_version == (
+        "3.5.1"
+    )
+
+
+@pytest.mark.decision("decision-29")
+async def test_reading_the_configuration_needs_its_permission_from_3_5() -> None:
+    nothing = FakeUser(id=10, username="nothing", permissions=frozenset({"view_uisettings"}))
+    allowed = FakeUser(
+        id=11, username="allowed", permissions=frozenset({"view_applicationconfiguration"})
+    )
+    old = state_with(nothing)
+    new = state_35(nothing, allowed)
+
+    assert (await FakePaperless(old, user="nothing").get_config()).id == 1
+    with pytest.raises(PermissionDenied, match="read the application configuration") as denied:
+        _ = await FakePaperless(new, user="nothing").get_config()
+    assert denied.value.hint
+    assert (await FakePaperless(new, user="allowed").get_config()).id == 1
+    assert (await FakePaperless(new, user="admin").get_config()).id == 1
+
+
+@pytest.mark.decision("decision-29")
+async def test_blank_notes_are_accepted_before_3_5_and_rejected_from_it() -> None:
+    old, new = seeded(), state_35()
+
+    for text in ("", "   "):
+        assert (await writer(old, "admin").add_note(1, text)).note == text
+        with pytest.raises(Validation, match="blank"):
+            _ = await writer(new, "admin").add_note(1, text)
+    assert (await writer(new, "admin").add_note(1, "text")).note == "text"
+
+
+def tags_for_deletion(state: FakeState, *, owner_of_child: int | None) -> None:
+    """Tag 20 (owned by the user "owner", id 10) with child 21 and grandchild 22."""
+    state.tags += [
+        FakeTag(id=20, name="parent", owner=10),
+        FakeTag(id=21, name="child", parent=20, owner=owner_of_child),
+        FakeTag(id=22, name="grandchild", parent=21, owner=2),
+    ]
+
+
+OWNER = FakeUser(id=10, username="owner", permissions=frozenset({"view_tag", "delete_tag"}))
+
+
+@pytest.mark.decision("decision-29")
+@pytest.mark.parametrize("bulk", [False, True])
+async def test_a_tag_deletion_that_takes_tags_of_others_is_refused_from_3_5(*, bulk: bool) -> None:
+    async def delete(state: FakeState) -> None:
+        if bulk:
+            await writer(state, "owner").delete_taxonomy_items("tag", (20,))
+        else:
+            await writer(state, "owner").delete_taxonomy_item("tag", 20)
+
+    old, new = state_with(OWNER), state_35(OWNER)
+    for state in (old, new):
+        tags_for_deletion(state, owner_of_child=None)
+    # The grandchild is the admin's: 3.4 deletes it with its parent, 3.5 refuses.
+    await delete(old)
+    with pytest.raises(PermissionDenied) as refused:
+        await delete(new)
+
+    assert {20, 21, 22}.isdisjoint(tag.id for tag in old.tags)
+    assert {20, 21, 22} <= {tag.id for tag in new.tags}
+    # The single deletion gets the hint of the adapter; the bulk one that of its own refusal.
+    assert refused.value.hint
+    assert (refused.value.hint == TAG_DELETE_HINT) is not bulk
+    assert ("nothing was changed" in refused.value.message) is bulk
+
+
+@pytest.mark.decision("decision-29")
+@pytest.mark.parametrize("bulk", [False, True])
+async def test_a_tag_deletion_that_takes_only_own_or_unowned_tags_works_on_3_5(
+    *, bulk: bool
+) -> None:
+    state = state_35(OWNER)
+    tags_for_deletion(state, owner_of_child=10)
+    state.tags[-1].owner = None
+
+    if bulk:
+        await writer(state, "owner").delete_taxonomy_items("tag", (20,))
+    else:
+        await writer(state, "owner").delete_taxonomy_item("tag", 20)
+
+    assert {20, 21, 22}.isdisjoint(tag.id for tag in state.tags)
+
+
+@pytest.mark.decision("decision-29")
+async def test_a_superuser_deletes_any_tree_on_3_5() -> None:
+    state = state_35(OWNER)
+    tags_for_deletion(state, owner_of_child=10)
+
+    await writer(state, "admin").delete_taxonomy_item("tag", 20)
+
+    assert {20, 21, 22}.isdisjoint(tag.id for tag in state.tags)

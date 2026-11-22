@@ -105,8 +105,9 @@ async def bulk_edit_taxonomy(  # noqa: PLR0913 -- one parameter per concept, des
 
     Three steps, like bulk_edit_documents: dry_run=true previews, a call without confirm is an
     error that describes the effect, confirm=true executes. A delete is final (taxonomy has no
-    trash): documents lose the reference, and deleting a tag deletes its child tags too, also
-    ones you cannot see. set_permissions without merge replaces all grants with the lists you
+    trash): documents lose the reference, and deleting a tag deletes its child tags too (on
+    Paperless 3.4 also ones you cannot see; 3.5 refuses the deletion if it would take tags of
+    other users). set_permissions without merge replaces all grants with the lists you
     give (a list left out becomes empty); with merge it adds to them, and merge cannot set an
     owner. A change grant includes view. Users and groups by name or id. Custom fields are not
     supported. Paperless checks every object first: if you may not change one, none changes (you

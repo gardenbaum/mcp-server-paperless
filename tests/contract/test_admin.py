@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import JsonValue, SecretStr
 
-from contract.conftest import since
+from contract.conftest import BOTH_RELEASES, since
 from paperless_mcp.domain.admin import ConfigValues, GroupValues, UserValues
 from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
 
@@ -366,6 +366,8 @@ async def test_a_value_paperless_rejects_is_a_validation_error(backend: Backend)
         _ = await writes.update_config(ConfigValues(secrets={"llm_api_key": SecretStr("****")}))
 
 
+@BOTH_RELEASES
+@pytest.mark.decision("decision-29")
 @pytest.mark.contract(GET_CONFIG)
 @pytest.mark.contract(UPDATE_CONFIG)
 async def test_anyone_reads_the_configuration_but_changing_it_needs_a_permission(
