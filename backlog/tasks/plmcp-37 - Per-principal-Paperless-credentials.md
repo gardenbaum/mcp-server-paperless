@@ -4,7 +4,7 @@ title: Per-principal Paperless credentials
 status: To Do
 assignee: []
 created_date: '2026-11-09T19:26:00Z'
-updated_date: '2026-11-22T19:27:49Z'
+updated_date: '2026-11-22T19:31:09Z'
 labels: []
 milestone: m-6
 dependencies:
@@ -44,4 +44,6 @@ Several people should use one server with their own Paperless permissions. Where
 Deferred from PLMCP-16 (multi-user): update_document reads a document and then PATCHes the merged tag and custom field lists, so with several principals a concurrent change in between is overwritten. Route tag and custom-field list changes through bulk_edit modify_tags / modify_custom_fields (server-side add/remove, validated; verified live in PLMCP-16) to avoid the race; see the PLMCP-16 notes.
 
 Owner, 2026-11-22: deferred. One server per Paperless account is the supported setup for now; multi-user credentials are not worked on until the owner asks.
+
+Options from the other servers for later: per-request Paperless token passthrough (baruchiro) or exchanging the OIDC identity for the user's own Paperless token via Paperless's headless SSO endpoint (OrellBuehler); see PLMCP-36 notes.
 <!-- SECTION:NOTES:END -->
