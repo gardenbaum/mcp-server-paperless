@@ -1,14 +1,19 @@
 ---
+superseded_by: decision-31
+updated_date: '2026-11-22T19:43:20Z'
 id: decision-27
 title: HTTP transport is secure by default
 date: '2026-11-17T01:28:00Z'
-status: accepted
+status: superseded
 ---
 ## Context
+<!-- SECTION:CONTEXT:BEGIN -->
 
 Decision-9 fixed the shape of the HTTP transport (secure by default, static bearer tokens first, a host allowlist and a request id). PLMCP-34 builds it and has to settle what "secure by default" means in detail: what counts as loopback, how tokens are configured and compared, which routes exist, and what bounds a request before the tools see it. An open MCP endpoint is a remote Paperless account for anyone who can reach it.
 
+<!-- SECTION:CONTEXT:END -->
 ## Decision
+<!-- SECTION:DECISION:BEGIN -->
 
 - Entrypoint: `paperless-mcp-http` (`paperless_mcp.cli:main_http`, `just serve-http`); `app.create_app` builds the ASGI app. stdio stays `paperless-mcp` and is unchanged. The HTTP server is always created with `stdio=False`.
 - Startup refusal (`app.check_startup`): without `PAPERLESS_MCP_HTTP_AUTH_TOKENS` the server does not start, unless the bind is loopback and `PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK=true`. Every other bind is remote: 0.0.0.0, `::`, the empty host, any other address, and any host name unless every address it resolves to is loopback (a name that does not resolve is remote). IPv4-mapped IPv6 addresses are judged by the IPv4 address inside. A remote bind also needs `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`.
@@ -21,13 +26,16 @@ Decision-9 fixed the shape of the HTTP transport (secure by default, static bear
 - Body limit: a request body over the base64 size of `PAPERLESS_MCP_MAX_UPLOAD_BYTES` plus 64 KiB gets 413: by declared length without reading, or cut off while streaming.
 - Transport rule of decision-7 holds: the HTTP app registers no tool with a path parameter, whatever `PAPERLESS_MCP_UPLOAD_DIRS` says.
 
+<!-- SECTION:DECISION:END -->
 ## Consequences
+<!-- SECTION:CONSEQUENCES:BEGIN -->
 
 - Running the server remotely means setting tokens and hosts; the error names the variable to set.
 - The unauthenticated mode is for local development behind the loopback interface only; any local process can use it.
 - Tokens are static and shared; rotating means restarting with the new list (several tokens at once let clients switch over before the old one is removed). Rate limiting of failed attempts and TLS belong to a reverse proxy. Per-user identity arrives with PLMCP-36 and PLMCP-37 and replaces the verifier at the composition root.
 - Hosts behind a proxy must list the host name the proxy forwards.
 
+<!-- SECTION:CONSEQUENCES:END -->
 ## Enforcement
 
 - `tests/test_app.py` (marker decision-27): loopback classification (IPv4, IPv6, IPv4-mapped, names, unresolvable), the startup refusals, 401 for missing, wrong and malformed credentials on every served method, loosened FastMCP settings and proxy headers, Host and Origin guards, the single route, request ids and logs without secrets, the body limit and the loopback-only guard.

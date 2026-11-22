@@ -67,7 +67,7 @@ attempts and public exposure in a reverse proxy, and list the host name the prox
 |---|---|
 | `PAPERLESS_MCP_HTTP_HOST` / `PAPERLESS_MCP_HTTP_PORT` | Address to bind (default `127.0.0.1`, `8000`) |
 | `PAPERLESS_MCP_HTTP_PATH` | Path of the endpoint (default `/mcp`); the only route, no health endpoint |
-| `PAPERLESS_MCP_HTTP_AUTH_TOKENS` | Static bearer tokens, comma-separated or a JSON array, each at least 16 characters of `A-Za-z0-9._~+/=-`; several let clients switch to a new token before the old one is removed (changing the list needs a restart). Required unless the flag below is set |
+| `PAPERLESS_MCP_HTTP_AUTH_TOKENS` | Static bearer tokens, comma-separated or a JSON array, each at least 16 characters of `A-Za-z0-9._~+/=-`; several let clients switch to a new token before the old one is removed (changing the list needs a restart). Required unless the flag below is set or the optional OIDC layer (below) is on |
 | `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS` | Host names clients use, plain names without wildcards or ports; `localhost`, `127.0.0.1` and `::1` are always allowed. Required unless the bind is loopback |
 | `PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK` | `true` to serve without tokens, only on a loopback bind (default `false`) |
 
@@ -76,7 +76,86 @@ whatever `PAPERLESS_MCP_UPLOAD_DIRS` says, and request bodies larger than the ba
 `PAPERLESS_MCP_MAX_UPLOAD_BYTES` plus 64 KiB get 413. Every response carries an `X-Request-ID`
 (yours if it is short and made of letters, digits, `.`, `_` or `-`); one JSON log line per request
 (method, path, status, duration) goes to stderr, without query strings, headers or bodies. The
-rules are decision-27.
+rules are decision-27, carried over into decision-31.
+
+### Optional: sign in through your identity provider (claude.ai connectors)
+
+claude.ai custom connectors sign in with OAuth, not with a bearer token. For them the HTTP
+server has an **optional OIDC layer** on top of the bearer tokens: FastMCP's generic OIDC proxy
+in front of any OpenID Connect provider (Authentik, Keycloak, Google, Auth0, ...), configured only
+through environment variables. Without these variables nothing changes. With them, claude.ai
+signs in through your provider while Claude Code keeps using its bearer token on the same server;
+every client still works with the one Paperless token of `PAPERLESS_TOKEN` (per-user Paperless
+credentials are not supported yet). The server shows its own consent page before it sends the
+browser to the provider, forwards PKCE, verifies the provider's signed ID token and issues its own
+tokens to clients. The rules are decision-31.
+
+| Variable | Meaning |
+|---|---|
+| `PAPERLESS_MCP_OIDC_CONFIG_URL` | The provider's discovery document, `https://.../.well-known/openid-configuration` (required; https, plain http only on loopback). It is read at every start: a provider that cannot be reached stops the start |
+| `PAPERLESS_MCP_OIDC_CLIENT_ID` / `PAPERLESS_MCP_OIDC_CLIENT_SECRET` | The confidential client you register for this server at the provider (required; the secret is masked and never logged) |
+| `PAPERLESS_MCP_OIDC_BASE_URL` | The public origin of this server, e.g. `https://mcp.example.org`, without path (required; https, plain http only on loopback). Its host must be in `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`. Register `<base URL>/auth/callback` as the redirect URI at the provider |
+| `PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY` | At least 32 characters (`openssl rand -hex 32`, required): signs the tokens the server issues and encrypts its OAuth state. Changing it signs every OIDC client out |
+| `PAPERLESS_MCP_OIDC_STORAGE_DIR` | Absolute path of a writable directory for client registrations and sessions, encrypted. Unset (default): kept in memory, so after a restart claude.ai has to connect again (bearer clients are not affected) |
+| `PAPERLESS_MCP_OIDC_ALLOWED_REDIRECT_URIS` | Callbacks OAuth clients may register, comma-separated or a JSON array: https URLs or loopback http, a `*` only for the port or in the path. Default `https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback,http://localhost:*,http://127.0.0.1:*` (claude.ai under either domain, since Anthropic has announced its callback may move to claude.com, and clients on your machine) |
+
+If some but not all of the five required variables are set, the server refuses to start and
+names the missing ones (unset all `PAPERLESS_MCP_OIDC_*` variables to go back to bearer tokens
+alone). With the layer on, the server adds the OAuth routes FastMCP needs and nothing else:
+`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/mcp`,
+`/authorize`, `/token`, `/register`, `/consent` and `/auth/callback`. Browsers from other origins
+still get 403, and the server needs TLS from your reverse proxy, which must pass the public
+`Host` through. Anyone the provider lets sign in to this application uses your Paperless token:
+restrict the application to yourself (or a group) at the provider.
+
+`/register` and `/authorize` answer without authentication and each call stores an entry. In
+memory at most 10 000 entries per kind are kept (the oldest are dropped, so a flood can make
+claude.ai register again); in `PAPERLESS_MCP_OIDC_STORAGE_DIR` nothing bounds them. Rate-limit
+`/register` and `/authorize` in your reverse proxy. FastMCP logs the provider's subject (your
+user id there) when it rejects a token, so the log can hold that identifier. The server re-checks
+the provider's ID token on every request; when it expires (often after an hour) it refreshes at
+the provider, and if the provider returns no new ID token on refresh, claude.ai has to sign in
+again.
+
+**Example with Authentik** (any OIDC provider works the same way):
+
+1. In Authentik, under Applications, Providers, create an *OAuth2/OpenID Provider*: client type
+   *Confidential*, redirect URI `https://mcp.example.org/auth/callback` (strict), and a
+   *Signing Key* (for example the self-signed certificate Authentik ships: the server checks ID
+   tokens against the provider's published keys, so they must be signed with RS256, not with the
+   client secret). The default scopes (`openid`, `email`, `profile`) are enough.
+2. Create an *Application* for it (slug `paperless-mcp`) and bind it to the users or the group
+   who may use your Paperless through claude.ai. Note the client id and secret.
+3. Start the server with the OIDC variables next to the HTTP ones:
+
+   ```sh
+   export PAPERLESS_MCP_HTTP_HOST=0.0.0.0
+   export PAPERLESS_MCP_HTTP_ALLOWED_HOSTS=mcp.example.org
+   export PAPERLESS_MCP_HTTP_AUTH_TOKENS="$(openssl rand -hex 32)"          # optional: for Claude Code
+   export PAPERLESS_MCP_OIDC_CONFIG_URL=https://authentik.example.org/application/o/paperless-mcp/.well-known/openid-configuration
+   export PAPERLESS_MCP_OIDC_CLIENT_ID=the-client-id
+   export PAPERLESS_MCP_OIDC_CLIENT_SECRET=the-client-secret
+   export PAPERLESS_MCP_OIDC_BASE_URL=https://mcp.example.org
+   export PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY="$(openssl rand -hex 32)"     # keep it: changing it signs clients out
+   export PAPERLESS_MCP_OIDC_STORAGE_DIR=/var/lib/paperless-mcp            # optional, survives restarts
+   paperless-mcp-http
+   ```
+
+   For Google, Keycloak or Auth0 only the discovery URL and the redirect URI registration
+   differ (Google: `https://accounts.google.com/.well-known/openid-configuration`, a *Web
+   application* OAuth client in the Google Cloud console).
+
+**Connect claude.ai:** in claude.ai open Settings, Connectors, and add a custom connector with the
+URL `https://mcp.example.org/mcp`. Leave the advanced OAuth client id and secret empty: claude.ai
+registers itself with the server. Connect, approve the server's consent page ("Allow Access"),
+then sign in at your provider; claude.ai returns to its callback
+(`https://claude.ai/api/mcp/auth_callback` or `https://claude.com/api/mcp/auth_callback`; either
+may be used and both are allowed by default) and lists the tools. claude.ai registers and
+exchanges the code from its servers, not from your browser, so those requests carry no browser
+`Origin`; a 403 while connecting points to an origin problem (a proxy adding an `Origin`, or a
+base URL that differs from the address you open). Claude Code
+keeps working with `--header "Authorization: Bearer ..."` as above; it may also sign in through
+OIDC instead (its loopback callback is allowed by default).
 
 ## Run in a container
 
@@ -84,7 +163,8 @@ Version tags (`v*`) publish an image to `ghcr.io/gardenbaum/paperless-mcp` (noth
 before the first tag; until then build it yourself with `just image`). It runs
 `paperless-mcp-http` as a non-root user (uid 10001) from a read-only filesystem, listens on
 `0.0.0.0:8000` inside the container and, like the plain command, **does not start without
-`PAPERLESS_MCP_HTTP_AUTH_TOKENS` and `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`**. The unauthenticated
+`PAPERLESS_MCP_HTTP_AUTH_TOKENS` (or the optional OIDC layer) and
+`PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`**. The unauthenticated
 loopback flag has no place in a container, which is never loopback. The image contains no
 credentials: everything comes from the environment.
 
@@ -114,6 +194,28 @@ services:
     security_opt: ["no-new-privileges:true"]
 ```
 
+For the optional OIDC layer add its variables to `environment` (the secrets from `.env` as well)
+and, so that claude.ai stays connected across restarts, a writable directory for its state. The
+container keeps its read-only filesystem: only the mounted directory is written, and it must
+belong to the server's user (uid 10001). Without the mount, leave
+`PAPERLESS_MCP_OIDC_STORAGE_DIR` unset and the state lives in memory:
+
+```yaml
+    environment:
+      # ... as above, plus:
+      PAPERLESS_MCP_OIDC_CONFIG_URL: https://authentik.example.org/application/o/paperless-mcp/.well-known/openid-configuration
+      PAPERLESS_MCP_OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?set it in .env}
+      PAPERLESS_MCP_OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?set it in .env}
+      PAPERLESS_MCP_OIDC_BASE_URL: https://mcp.example.org      # its host is in PAPERLESS_MCP_HTTP_ALLOWED_HOSTS
+      PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY: ${OIDC_SIGNING_KEY:?set it in .env}
+      PAPERLESS_MCP_OIDC_STORAGE_DIR: /var/lib/paperless-mcp
+    volumes:
+      - ./paperless-mcp-oauth:/var/lib/paperless-mcp          # mkdir it, then: sudo chown 10001:10001 paperless-mcp-oauth
+```
+
+With the OIDC layer on, `PAPERLESS_MCP_HTTP_AUTH_TOKENS` becomes optional: keep it for Claude
+Code, drop it to allow sign-in through the provider only.
+
 If the container lives in its own compose project, join Paperless's network instead (drop
 `depends_on`, and use the service name or container name that network resolves):
 
@@ -140,7 +242,7 @@ Paperless is reachable: the tools report that. All other settings of the tables 
 unchanged as environment variables. To build the image yourself, `just image` builds it and
 `just image-smoke` also checks that it refuses to start without tokens, runs read-only as
 non-root, becomes healthy and answers 401 without a token, 421 for a foreign `Host` and an MCP initialize with a token. The rules
-are decision-28.
+are decision-28, carried over into decision-31.
 
 ## Configuration
 
