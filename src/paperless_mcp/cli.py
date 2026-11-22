@@ -14,7 +14,7 @@ from paperless_mcp.app import create_app, run_server, uvicorn_server
 from paperless_mcp.domain.errors import PaperlessMcpError
 from paperless_mcp.observability import configure_logging
 from paperless_mcp.server import create_server
-from paperless_mcp.settings import HttpSettings, PaperlessSettings, ServerSettings
+from paperless_mcp.settings import HttpSettings, OidcSettings, PaperlessSettings, ServerSettings
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -59,6 +59,9 @@ def main() -> None:
 def main_http(run: Callable[[uvicorn.Server], bool] = run_server) -> None:
     """Run the server over Streamable HTTP; refuses to start without authentication.
 
+    Authentication is static bearer tokens, the optional OIDC layer (``PAPERLESS_MCP_OIDC_*``),
+    or both (decision-31).
+
     Args:
         run: Serves the uvicorn server and says whether it came up; tests pass a fake.
     """
@@ -66,11 +69,12 @@ def main_http(run: Callable[[uvicorn.Server], bool] = run_server) -> None:
     paperless = _load(PaperlessSettings, problems)
     settings = _load(ServerSettings, problems)
     http = _load(HttpSettings, problems)
-    if paperless is None or settings is None or http is None:
+    oidc = _load(OidcSettings, problems)
+    if paperless is None or settings is None or http is None or oidc is None:
         _fail("invalid configuration: " + "; ".join(problems))
     configure_logging(settings.log_level)
     try:
-        app = create_app(paperless, settings, http)
+        app = create_app(paperless, settings, http, oidc=oidc)
     except PaperlessMcpError as error:
         _fail(error.describe())
     if not run(uvicorn_server(app, http)):

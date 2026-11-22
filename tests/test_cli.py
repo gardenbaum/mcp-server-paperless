@@ -13,6 +13,7 @@ import httpx2
 import pytest
 import uvicorn
 from harness import TOKEN, paperless_answering, refused_url
+from oidc_issuer import CLIENT_ID, CLIENT_SECRET, stub_issuer
 
 from paperless_mcp.app import run_server
 from paperless_mcp.cli import main, main_http
@@ -262,6 +263,59 @@ def test_http_serves_with_the_configured_address_and_tokens(
     assert config.log_config is None
     # uvicorn logs a WebSocket handshake with its query string; the app has no WebSocket route.
     assert config.ws == "none"
+
+
+OIDC_SECRET = "cli-oidc-secret-not-a-secret"
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("isolated_logging", "connection")
+def test_incomplete_oidc_settings_stop_the_start_naming_the_missing_variables(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_AUTH_TOKENS", HTTP_TOKEN)
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_CLIENT_ID", "paperless-mcp")
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_CLIENT_SECRET", OIDC_SECRET)
+
+    err = http_exit_message(capsys)
+
+    assert "paperless-mcp: the OIDC layer is incomplete" in err
+    for name in ("CONFIG_URL", "BASE_URL", "JWT_SIGNING_KEY"):
+        assert f"PAPERLESS_MCP_OIDC_{name}" in err
+    assert OIDC_SECRET not in err
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("isolated_logging", "connection")
+def test_invalid_oidc_settings_are_named_but_not_echoed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_AUTH_TOKENS", HTTP_TOKEN)
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY", "short-signing-key")
+
+    err = http_exit_message(capsys)
+
+    assert "PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY:" in err
+    assert "short-signing-key" not in err
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("isolated_logging", "connection")
+def test_http_serves_with_the_oidc_layer_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    with stub_issuer() as issuer:
+        for name, value in {
+            "CONFIG_URL": f"{issuer.url}/.well-known/openid-configuration",
+            "CLIENT_ID": CLIENT_ID,
+            "CLIENT_SECRET": CLIENT_SECRET,
+            "BASE_URL": "http://localhost:8000",
+            "JWT_SIGNING_KEY": "cli-signing-key-0123456789abcdefghij",
+        }.items():
+            monkeypatch.setenv(f"PAPERLESS_MCP_OIDC_{name}", value)
+        seen, run = runner()
+
+        main_http(run)
+
+    assert [s.ran for s in seen] == [True]
 
 
 @pytest.mark.usefixtures("isolated_logging", "connection")

@@ -253,3 +253,178 @@ class HttpSettings(BaseSettings):
             message = "use an absolute path below the root such as /mcp"
             raise ValueError(message)
         return value
+
+
+# The callback of claude.ai's custom connectors (docs/vendor/fastmcp oauth-proxy.mdx).
+CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback"
+# Anthropic has said the callback may move to claude.com; both domains are Anthropic's.
+CLAUDE_COM_CALLBACK = "https://claude.com/api/mcp/auth_callback"
+# Clients on this machine (the FastMCP client, Claude Code) call back on a loopback port.
+LOOPBACK_CALLBACKS = ("http://localhost:*", "http://127.0.0.1:*")
+_LOOPBACK_NAMES = frozenset({"localhost", "[::1]"})
+# A callback clients may register: https on a named host, or plain http on loopback; a * only
+# for the port or in the path, never in the host.
+_REDIRECTS = (
+    re.compile(r"https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:(\d+|\*))?(/\S*)?", re.IGNORECASE),
+    re.compile(r"http://(localhost|127\.0\.0\.1|\[::1\])(:(\d+|\*))?(/\S*)?", re.IGNORECASE),
+)
+MIN_SIGNING_KEY_LENGTH = 32
+
+
+def _loopback_url(url: HttpUrl) -> bool:
+    host = (url.host or "").lower()
+    if host in _LOOPBACK_NAMES:
+        return True
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _https_or_loopback(url: HttpUrl) -> HttpUrl:
+    if url.scheme != "https" and not _loopback_url(url):
+        message = "use https (plain http only for a loopback address)"
+        raise ValueError(message)
+    return url
+
+
+class OidcSettings(BaseSettings):
+    """The optional OIDC layer of the HTTP transport (decision-31).
+
+    Off while none of its variables is set; then the HTTP transport authenticates with the static
+    bearer tokens alone. Once any is set, the five required ones must all be set, or the server
+    refuses to start (``app.check_startup`` names the missing ones). Empty values count as unset.
+
+    Attributes:
+        config_url: The identity provider's discovery document, ``.../.well-known/
+            openid-configuration`` (``PAPERLESS_MCP_OIDC_CONFIG_URL``); https unless loopback.
+        client_id: The client id of this server at the identity provider
+            (``PAPERLESS_MCP_OIDC_CLIENT_ID``).
+        client_secret: Its client secret (``PAPERLESS_MCP_OIDC_CLIENT_SECRET``); masked.
+        base_url: The public origin of this server, as clients and browsers reach it
+            (``PAPERLESS_MCP_OIDC_BASE_URL``, e.g. ``https://mcp.example.org``): https unless
+            loopback, no path. The identity provider must allow ``<base_url>/auth/callback``.
+        jwt_signing_key: Secret that signs the tokens this server issues and encrypts its OAuth
+            storage (``PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY``, at least 32 characters,
+            ``openssl rand -hex 32``); masked. Changing it signs every client out.
+        storage_dir: Directory for client registrations and sessions, encrypted
+            (``PAPERLESS_MCP_OIDC_STORAGE_DIR``, absolute, writable). Unset: in memory, so a
+            restart signs every OIDC client out.
+        allowed_redirect_uris: Callbacks OAuth clients may register
+            (``PAPERLESS_MCP_OIDC_ALLOWED_REDIRECT_URIS``): https URLs or loopback http, a
+            ``*`` for a port or in the path; default the claude.ai and claude.com callbacks and
+            loopback ports.
+    """
+
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
+        env_prefix="PAPERLESS_MCP_OIDC_", frozen=True, env_ignore_empty=True
+    )
+
+    REQUIRED: ClassVar[tuple[str, ...]] = (
+        "config_url",
+        "client_id",
+        "client_secret",
+        "base_url",
+        "jwt_signing_key",
+    )
+
+    config_url: HttpUrl | None = None
+    client_id: str | None = None
+    client_secret: SecretStr | None = None
+    base_url: HttpUrl | None = None
+    jwt_signing_key: SecretStr | None = None
+    storage_dir: str | None = None
+    allowed_redirect_uris: Annotated[tuple[str, ...], NoDecode] = (
+        CLAUDE_CALLBACK,
+        CLAUDE_COM_CALLBACK,
+        *LOOPBACK_CALLBACKS,
+    )
+
+    @property
+    def configured(self) -> bool:
+        """Whether any OIDC variable is set: then the layer is on, or the start is refused."""
+        return bool(self.model_fields_set)
+
+    def missing(self) -> list[str]:
+        """The required variables that are not set, by name, while the layer is configured."""
+        if not self.configured:
+            return []
+        prefix = self.model_config.get("env_prefix") or ""
+        return sorted(
+            f"{prefix}{name.upper()}" for name in self.REQUIRED if getattr(self, name) is None
+        )
+
+    @field_validator("allowed_redirect_uris", mode="before")
+    @classmethod
+    def _split_redirects(cls, value: object) -> object:
+        return _names(value, lower=False)
+
+    @field_validator("allowed_redirect_uris", mode="after")
+    @classmethod
+    def _check_redirects(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value:
+            message = f"name at least one callback, such as {CLAUDE_CALLBACK}"
+            raise ValueError(message)
+        for entry in value:
+            if not any(pattern.fullmatch(entry) for pattern in _REDIRECTS):
+                message = (
+                    f"{entry!r} is no https URL or loopback http URL (a * only for a port or "
+                    "in the path)"
+                )
+                raise ValueError(message)
+        return value
+
+    @field_validator("config_url")
+    @classmethod
+    def _check_config_url(cls, value: HttpUrl | None) -> HttpUrl | None:
+        if value is None:
+            return None
+        # Refused, so that no message (the discovery refusal names the URL) ever carries them.
+        if value.username is not None or value.password is not None:
+            message = "the discovery URL may not carry credentials"
+            raise ValueError(message)
+        return _https_or_loopback(value)
+
+    @field_validator("base_url")
+    @classmethod
+    def _check_base_url(cls, value: HttpUrl | None) -> HttpUrl | None:
+        if value is None:
+            return None
+        if (
+            value.path not in {None, "", "/"}
+            or value.query is not None
+            or value.fragment is not None
+            or value.username is not None
+            or value.password is not None
+        ):
+            message = "use the origin only, such as https://mcp.example.org (no path or query)"
+            raise ValueError(message)
+        return _https_or_loopback(value)
+
+    @field_validator("client_id")
+    @classmethod
+    def _check_client_id(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            message = "the client id may not be blank"
+            raise ValueError(message)
+        return value
+
+    @field_validator("jwt_signing_key")
+    @classmethod
+    def _check_signing_key(cls, value: SecretStr | None) -> SecretStr | None:
+        # The message never carries the key.
+        if value is not None and len(value.get_secret_value()) < MIN_SIGNING_KEY_LENGTH:
+            message = (
+                f"the signing key needs at least {MIN_SIGNING_KEY_LENGTH} characters "
+                "(openssl rand -hex 32)"
+            )
+            raise ValueError(message)
+        return value
+
+    @field_validator("storage_dir")
+    @classmethod
+    def _check_storage_dir(cls, value: str | None) -> str | None:
+        if value is not None and not Path(value).is_absolute():
+            message = f"{value!r} is not an absolute path"
+            raise ValueError(message)
+        return value
