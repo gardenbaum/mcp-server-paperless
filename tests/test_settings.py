@@ -4,7 +4,13 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import ValidationError
 
-from paperless_mcp.settings import HttpSettings, PaperlessSettings, ServerSettings
+from paperless_mcp.settings import (
+    CLAUDE_CALLBACK,
+    HttpSettings,
+    OidcSettings,
+    PaperlessSettings,
+    ServerSettings,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -22,7 +28,7 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def invalid_fields(
-    settings: type[PaperlessSettings | ServerSettings | HttpSettings],
+    settings: type[PaperlessSettings | ServerSettings | HttpSettings | OidcSettings],
 ) -> list[tuple[int | str, ...]]:
     with pytest.raises(ValidationError) as caught:
         _ = settings.model_validate({})
@@ -443,3 +449,231 @@ def test_allowed_hosts_take_plain_host_names_without_wildcards(
     monkeypatch.setenv("PAPERLESS_MCP_HTTP_ALLOWED_HOSTS", value)
 
     assert invalid_fields(HttpSettings) == [("allowed_hosts",)]
+
+
+# --- the optional OIDC layer (decision-31) --------------------------------------------------------
+
+OIDC_SECRET = "oidc-client-secret-not-a-secret"
+SIGNING_KEY = "signing-key-not-a-secret-not-a-secret"
+OIDC_ENV = {
+    "PAPERLESS_MCP_OIDC_CONFIG_URL": "https://login.example.com/.well-known/openid-configuration",
+    "PAPERLESS_MCP_OIDC_CLIENT_ID": "paperless-mcp",
+    "PAPERLESS_MCP_OIDC_CLIENT_SECRET": OIDC_SECRET,
+    "PAPERLESS_MCP_OIDC_BASE_URL": "https://mcp.example.com",
+    "PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY": SIGNING_KEY,
+}
+
+
+@pytest.fixture
+def oidc_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in OIDC_ENV.items():
+        monkeypatch.setenv(name, value)
+
+
+@pytest.mark.decision("decision-31")
+def test_without_oidc_variables_the_layer_is_off() -> None:
+    settings = OidcSettings.model_validate({})
+
+    assert not settings.configured
+    assert settings.missing() == []
+    assert settings.allowed_redirect_uris == (
+        CLAUDE_CALLBACK,
+        "http://localhost:*",
+        "http://127.0.0.1:*",
+    )
+    assert CLAUDE_CALLBACK == "https://claude.ai/api/mcp/auth_callback"
+
+
+@pytest.mark.decision("decision-31")
+def test_empty_oidc_variables_count_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in OIDC_ENV:
+        monkeypatch.setenv(name, "")
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_STORAGE_DIR", "")
+
+    assert not OidcSettings.model_validate({}).configured
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("oidc_env")
+def test_the_oidc_layer_is_read_from_its_own_prefix(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_STORAGE_DIR", str(tmp_path))
+    monkeypatch.setenv(
+        "PAPERLESS_MCP_OIDC_ALLOWED_REDIRECT_URIS", f"{CLAUDE_CALLBACK}, https://app.example.com/cb"
+    )
+
+    settings = OidcSettings.model_validate({})
+
+    assert settings.configured
+    assert settings.missing() == []
+    assert str(settings.config_url) == OIDC_ENV["PAPERLESS_MCP_OIDC_CONFIG_URL"]
+    assert settings.client_id == "paperless-mcp"
+    assert settings.client_secret is not None
+    assert settings.client_secret.get_secret_value() == OIDC_SECRET
+    assert str(settings.base_url) == "https://mcp.example.com/"
+    assert settings.jwt_signing_key is not None
+    assert settings.jwt_signing_key.get_secret_value() == SIGNING_KEY
+    assert settings.storage_dir == str(tmp_path)
+    assert settings.allowed_redirect_uris == (CLAUDE_CALLBACK, "https://app.example.com/cb")
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.parametrize("unset", sorted(OIDC_ENV))
+def test_missing_lists_the_required_variables_that_are_not_set(
+    monkeypatch: pytest.MonkeyPatch, unset: str
+) -> None:
+    for name, value in OIDC_ENV.items():
+        if name != unset:
+            monkeypatch.setenv(name, value)
+
+    settings = OidcSettings.model_validate({})
+
+    assert settings.configured
+    assert settings.missing() == [unset]
+
+
+@pytest.mark.decision("decision-31")
+def test_an_optional_oidc_variable_alone_still_configures_the_layer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_ALLOWED_REDIRECT_URIS", CLAUDE_CALLBACK)
+
+    settings = OidcSettings.model_validate({})
+
+    assert settings.configured
+    assert settings.missing() == sorted(OIDC_ENV)
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("oidc_env")
+def test_oidc_secrets_never_appear_in_repr_or_str() -> None:
+    settings = OidcSettings.model_validate({})
+
+    for text in (repr(settings), str(settings)):
+        assert OIDC_SECRET not in text
+        assert SIGNING_KEY not in text
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("oidc_env")
+@pytest.mark.parametrize(
+    "value",
+    [
+        "http://login.example.com/.well-known/openid-configuration",
+        "ftp://login.example.com/x",
+        "not a url",
+    ],
+)
+def test_the_discovery_url_must_be_https_unless_loopback(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_CONFIG_URL", value)
+
+    assert invalid_fields(OidcSettings) == [("config_url",)]
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("oidc_env")
+def test_plain_http_is_refused_with_the_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_BASE_URL", "http://mcp.example.com")
+
+    with pytest.raises(ValidationError) as caught:
+        _ = OidcSettings.model_validate({})
+
+    assert "use https (plain http only for a loopback address)" in caught.value.errors()[0]["msg"]
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("oidc_env")
+@pytest.mark.parametrize(
+    "value",
+    [
+        "http://127.0.0.1:9000/.well-known/openid-configuration",
+        "http://localhost/.well-known/openid-configuration",
+        "http://[::1]:9000/.well-known/openid-configuration",
+    ],
+)
+def test_a_loopback_issuer_may_use_plain_http(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_CONFIG_URL", value)
+
+    assert str(OidcSettings.model_validate({}).config_url) == value
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("oidc_env")
+@pytest.mark.parametrize(
+    "value",
+    [
+        "http://mcp.example.com",
+        "https://mcp.example.com/mcp",
+        "https://mcp.example.com/?x=1",
+        "https://mcp.example.com/#x",
+        "https://user:pw@mcp.example.com",
+        "ftp://mcp.example.com",
+    ],
+)
+def test_the_base_url_is_an_https_origin(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_BASE_URL", value)
+
+    assert invalid_fields(OidcSettings) == [("base_url",)]
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("oidc_env")
+@pytest.mark.parametrize("value", ["http://localhost:8000", "https://mcp.example.com:8443/"])
+def test_a_base_url_may_carry_a_port_and_plain_http_on_loopback(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_BASE_URL", value)
+
+    assert str(OidcSettings.model_validate({}).base_url).rstrip("/") == value.rstrip("/")
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("oidc_env")
+def test_a_short_signing_key_is_refused_without_echoing_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY", "too-short-key")
+
+    with pytest.raises(ValidationError) as caught:
+        _ = OidcSettings.model_validate({})
+
+    assert [error["loc"] for error in caught.value.errors()] == [("jwt_signing_key",)]
+    assert not any("too-short-key" in error["msg"] for error in caught.value.errors())
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("oidc_env")
+def test_the_client_id_may_not_be_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_CLIENT_ID", "   ")
+
+    assert invalid_fields(OidcSettings) == [("client_id",)]
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("oidc_env")
+def test_the_storage_directory_must_be_absolute(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_STORAGE_DIR", "relative/dir")
+
+    assert invalid_fields(OidcSettings) == [("storage_dir",)]
+
+
+@pytest.mark.decision("decision-31")
+@pytest.mark.usefixtures("oidc_env")
+@pytest.mark.parametrize(
+    "value",
+    [
+        "*",
+        "https://*",
+        "http://mcp.example.com/cb",
+        "javascript:alert(1)",
+        "myapp://callback",
+        " , ",
+    ],
+)
+def test_allowed_redirect_uris_are_https_or_loopback_http(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_OIDC_ALLOWED_REDIRECT_URIS", value)
+
+    assert invalid_fields(OidcSettings) == [("allowed_redirect_uris",)]

@@ -1,7 +1,8 @@
-"""ASGI entrypoint for HTTP deployments: secure by default (decision-27).
+"""ASGI entrypoint for HTTP deployments: secure by default (decision-27, decision-31).
 
 ``check_startup`` refuses a configuration that would expose the server without authentication;
-``build_app`` wraps a server in the ASGI app with bearer authentication, the host and origin
+``authenticator`` builds the authentication (static bearer tokens, the optional OIDC layer, or
+both); ``build_app`` wraps a server in the ASGI app with that authentication, the host and origin
 guard, a request id and a body limit.
 """
 
@@ -9,11 +10,19 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import os
 import socket
+from pathlib import Path
 from typing import TYPE_CHECKING, cast, override
 
 import uvicorn
-from fastmcp.server.auth import AccessToken, TokenVerifier
+from cryptography.fernet import Fernet
+from fastmcp.server.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
+from fastmcp.server.auth.jwt_issuer import derive_jwt_key
+from fastmcp.server.auth.oidc_proxy import OIDCProxy
+from key_value.aio.stores.filetree import FileTreeStore
+from key_value.aio.stores.memory import MemoryStore
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 
 from paperless_mcp.domain.errors import InvalidConfiguration
 from paperless_mcp.observability import RequestContext, request_header
@@ -23,11 +32,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from fastmcp import FastMCP
-    from pydantic import SecretStr
+    from key_value.aio.protocols import AsyncKeyValue
+    from pydantic import HttpUrl, SecretStr
     from starlette.applications import Starlette
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-    from paperless_mcp.settings import HttpSettings, PaperlessSettings, ServerSettings
+    from paperless_mcp.settings import HttpSettings, OidcSettings, PaperlessSettings, ServerSettings
 
 type Resolver = Callable[[str], Sequence[str]]
 
@@ -68,26 +78,38 @@ def is_loopback(host: str, resolve: Resolver = resolve_addresses) -> bool:
     return _loopback_address(bare)
 
 
-def check_startup(http: HttpSettings, resolve: Resolver = resolve_addresses) -> None:
+def check_startup(
+    http: HttpSettings, resolve: Resolver = resolve_addresses, *, oidc: OidcSettings | None = None
+) -> None:
     """Refuse to start an HTTP server that would be open to anyone who can reach it.
 
     Raises:
-        InvalidConfiguration: No tokens are configured and the bind is not loopback with the
-            explicit flag, or a remote bind names no allowed hosts.
+        InvalidConfiguration: The OIDC layer is configured but incomplete, its base URL names a
+            host that is not allowed or its storage directory cannot be written; neither tokens
+            nor the OIDC layer are configured and the bind is not loopback with the explicit
+            flag; or a remote bind names no allowed hosts.
     """
     loopback = is_loopback(http.host, resolve)
-    if not http.auth_tokens:
+    with_oidc = oidc is not None and oidc.configured
+    if oidc is not None and (missing := oidc.missing()):
+        message = (
+            f"the OIDC layer is incomplete: set {', '.join(missing)}, or unset every "
+            "PAPERLESS_MCP_OIDC_* variable to serve with bearer tokens alone."
+        )
+        raise InvalidConfiguration(message)
+    if not http.auth_tokens and not with_oidc:
         if not loopback:
             message = (
                 f"refusing to serve {http.host!r} without authentication: set "
-                "PAPERLESS_MCP_HTTP_AUTH_TOKENS. The unauthenticated mode is only for a "
-                "loopback bind, and this bind is not loopback."
+                "PAPERLESS_MCP_HTTP_AUTH_TOKENS or the PAPERLESS_MCP_OIDC_* variables. The "
+                "unauthenticated mode is only for a loopback bind, and this bind is not loopback."
             )
             raise InvalidConfiguration(message, hint="Generate a token with: openssl rand -hex 32")
         if not http.allow_unauthenticated_loopback:
             message = (
-                "refusing to start without authentication: set PAPERLESS_MCP_HTTP_AUTH_TOKENS, "
-                "or PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK=true to serve "
+                "refusing to start without authentication: set PAPERLESS_MCP_HTTP_AUTH_TOKENS or "
+                "the PAPERLESS_MCP_OIDC_* variables, or "
+                "PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK=true to serve "
                 f"{http.host!r} without it (loopback only)."
             )
             raise InvalidConfiguration(message)
@@ -95,6 +117,31 @@ def check_startup(http: HttpSettings, resolve: Resolver = resolve_addresses) -> 
         message = (
             f"{http.host!r} is not a loopback address: name the host names clients use in "
             "PAPERLESS_MCP_HTTP_ALLOWED_HOSTS."
+        )
+        raise InvalidConfiguration(message)
+    if with_oidc:
+        _check_oidc(http, cast("OidcSettings", oidc))
+
+
+# The host names the host and origin guard always lets through (FastMCP's DEFAULT_HOSTS).
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "[::1]", "::1"})
+
+
+def _check_oidc(http: HttpSettings, oidc: OidcSettings) -> None:
+    host = (cast("HttpUrl", oidc.base_url).host or "").lower()
+    if host not in LOOPBACK_HOSTS and host not in http.allowed_hosts:
+        message = (
+            f"the OIDC base URL names {host!r}, which is not an allowed host: add it to "
+            "PAPERLESS_MCP_HTTP_ALLOWED_HOSTS, or browsers and clients get 421 from every route."
+        )
+        raise InvalidConfiguration(message)
+    directory = oidc.storage_dir
+    if directory is not None and not (
+        Path(directory).is_dir() and os.access(directory, os.W_OK | os.X_OK)
+    ):
+        message = (
+            f"PAPERLESS_MCP_OIDC_STORAGE_DIR {directory!r} is not a writable directory: create "
+            "it (a volume in a container) or unset the variable to keep the OAuth state in memory."
         )
         raise InvalidConfiguration(message)
 
@@ -130,9 +177,86 @@ class StaticBearerVerifier(TokenVerifier):
         )
 
 
-def authenticator(http: HttpSettings) -> TokenVerifier | None:
-    """The authentication of the endpoint: static bearer tokens, or None while there are none."""
-    return StaticBearerVerifier(http.auth_tokens) if http.auth_tokens else None
+# The one scope the identity provider is asked for: it returns the ID token this server checks.
+OIDC_SCOPES = ["openid"]
+
+
+def oauth_storage(oidc: OidcSettings) -> AsyncKeyValue:
+    """Where the OIDC layer keeps client registrations, sessions and upstream tokens.
+
+    In memory without ``storage_dir``; else files there, encrypted with a key derived from the
+    signing key (as FastMCP's own default store, which lives in a home directory the container
+    does not have).
+    """
+    if oidc.storage_dir is None:
+        return MemoryStore()
+    signing_key = cast("SecretStr", oidc.jwt_signing_key).get_secret_value()
+    fernet_key = derive_jwt_key(
+        high_entropy_material=signing_key, salt="paperless-mcp-oauth-storage"
+    )
+    return FernetEncryptionWrapper(
+        key_value=FileTreeStore(data_directory=oidc.storage_dir),
+        fernet=Fernet(key=fernet_key),
+        raise_on_decryption_error=False,
+    )
+
+
+def oidc_proxy(oidc: OidcSettings) -> OIDCProxy:
+    """FastMCP's OIDC proxy in front of the configured identity provider (decision-31).
+
+    It reads the discovery document now. The identity is the provider's ID token (audience: the
+    client id), which every OIDC provider issues as a signed JWT, whatever its access tokens are.
+    The consent page stays on, CIMD and dynamic registration are offered, and clients may only
+    register the allowed callbacks.
+
+    Raises:
+        InvalidConfiguration: The discovery document cannot be read or lacks an endpoint.
+    """
+    config_url = str(oidc.config_url)
+    try:
+        return OIDCProxy(
+            config_url=config_url,
+            client_id=cast("str", oidc.client_id),
+            client_secret=cast("SecretStr", oidc.client_secret).get_secret_value(),
+            base_url=str(oidc.base_url).rstrip("/"),
+            jwt_signing_key=cast("SecretStr", oidc.jwt_signing_key).get_secret_value(),
+            verify_id_token=True,
+            required_scopes=OIDC_SCOPES,
+            allowed_client_redirect_uris=list(oidc.allowed_redirect_uris),
+            client_storage=oauth_storage(oidc),
+            require_authorization_consent=True,
+            enable_cimd=True,
+        )
+    # Discovery fails with httpx2's, pydantic's or FastMCP's own errors, and this module may
+    # not import httpx2; the message names the type only (decision-27 logging rules).
+    except Exception as error:  # noqa: BLE001 -- see above
+        message = (
+            f"could not read the OIDC discovery document at {config_url} "
+            f"({type(error).__name__}): check PAPERLESS_MCP_OIDC_CONFIG_URL and that the "
+            "identity provider is reachable from this server."
+        )
+        raise InvalidConfiguration(message) from None
+
+
+def authenticator(http: HttpSettings, oidc: OidcSettings | None = None) -> AuthProvider | None:
+    """The authentication of the endpoint (decision-31).
+
+    Static bearer tokens alone; with the OIDC layer, FastMCP's ``MultiAuth`` with the OIDC proxy
+    first and the bearer tokens, if any, after it; None while neither is configured.
+
+    Raises:
+        InvalidConfiguration: See ``oidc_proxy``.
+    """
+    bearer = StaticBearerVerifier(http.auth_tokens) if http.auth_tokens else None
+    if oidc is None or not oidc.configured:
+        return bearer
+    # required_scopes=[]: the proxy checks the openid scope of its own sessions; the bearer
+    # tokens carry no scopes and must not be asked for one.
+    return MultiAuth(
+        server=oidc_proxy(oidc),
+        verifiers={"static-bearer": bearer} if bearer is not None else {},
+        required_scopes=[],
+    )
 
 
 # Room for the JSON-RPC envelope and the other arguments around base64 content.
@@ -237,16 +361,33 @@ class LoopbackOnly:
         await self.app(scope, receive, send)
 
 
-def build_app(server: FastMCP, http: HttpSettings, *, max_upload_bytes: int) -> Starlette:
-    """The ASGI app of ``server``: bearer authentication, host and origin guard, body limit.
+def _origin(url: HttpUrl) -> str:
+    port = "" if url.port in {None, 80, 443} else f":{url.port}"
+    return f"{url.scheme}://{url.host}{port}"
+
+
+def build_app(
+    server: FastMCP,
+    http: HttpSettings,
+    *,
+    max_upload_bytes: int,
+    oidc: OidcSettings | None = None,
+) -> Starlette:
+    """The ASGI app of ``server``: authentication, host and origin guard, body limit.
+
+    With the OIDC layer the only browser origin allowed is the server's own public origin (its
+    consent form posts there; behind a TLS proxy the request itself arrives as plain http).
 
     Raises:
-        InvalidConfiguration: ``server`` was built without the authentication ``http`` asks
-            for, or with authentication ``http`` does not ask for.
+        InvalidConfiguration: ``server`` was built without the authentication the settings ask
+            for, or with authentication they do not ask for.
     """
-    if (server.auth is None) != (not http.auth_tokens):
+    with_oidc = oidc is not None and oidc.configured
+    authenticated = bool(http.auth_tokens) or with_oidc
+    if (server.auth is None) == authenticated or with_oidc != isinstance(server.auth, MultiAuth):
         message = "the server's authentication does not match the HTTP settings"
         raise InvalidConfiguration(message)
+    origins = [_origin(cast("HttpUrl", cast("OidcSettings", oidc).base_url))] if with_oidc else []
     # Every option is explicit: FASTMCP_* environment variables must not loosen the app (a
     # wildcard origin, debug tracebacks, stateless routes, no session expiry).
     app = server.http_app(
@@ -255,7 +396,7 @@ def build_app(server: FastMCP, http: HttpSettings, *, max_upload_bytes: int) -> 
         stateless_http=False,
         host_origin_protection=True,
         allowed_hosts=list(http.allowed_hosts),
-        allowed_origins=[],
+        allowed_origins=origins,
         session_idle_timeout="auto",
     )
     app.debug = False
@@ -263,7 +404,7 @@ def build_app(server: FastMCP, http: HttpSettings, *, max_upload_bytes: int) -> 
     # wrong port and scheme behind a proxy.
     app.router.redirect_slashes = False
     app.add_middleware(BodyLimit, limit=body_limit(max_upload_bytes))
-    if not http.auth_tokens:
+    if not authenticated:
         app.add_middleware(LoopbackOnly)
     # Outermost, so that a refusal by the host guard or the authentication has an id and a record.
     app.add_middleware(RequestContext)
@@ -275,6 +416,7 @@ def create_app(
     settings: ServerSettings,
     http: HttpSettings,
     *,
+    oidc: OidcSettings | None = None,
     resolve: Resolver = resolve_addresses,
 ) -> Starlette:
     """The ASGI app of the paperless-mcp server (``paperless-mcp-http``).
@@ -282,11 +424,12 @@ def create_app(
     Never offers a path parameter: HTTP callers upload base64 content (decision-7).
 
     Raises:
-        InvalidConfiguration: See ``check_startup``, or the selection leaves no tool.
+        InvalidConfiguration: See ``check_startup`` and ``oidc_proxy``, or the selection leaves
+            no tool.
     """
-    check_startup(http, resolve)
-    server = create_server(paperless, settings, stdio=False, auth=authenticator(http))
-    return build_app(server, http, max_upload_bytes=settings.max_upload_bytes)
+    check_startup(http, resolve, oidc=oidc)
+    server = create_server(paperless, settings, stdio=False, auth=authenticator(http, oidc))
+    return build_app(server, http, max_upload_bytes=settings.max_upload_bytes, oidc=oidc)
 
 
 def uvicorn_server(app: Starlette, http: HttpSettings) -> uvicorn.Server:
