@@ -2,4 +2,5 @@
 
 import importlib.metadata
 
-__version__ = importlib.metadata.version("paperless-mcp")
+# The distribution is mcp-server-paperless on PyPI; paperless-mcp there is another project.
+__version__ = importlib.metadata.version("mcp-server-paperless")
