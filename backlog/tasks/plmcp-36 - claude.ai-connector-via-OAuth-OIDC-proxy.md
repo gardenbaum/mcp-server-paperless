@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T19:26:00Z'
-updated_date: '2026-11-22T20:20:36Z'
+updated_date: '2026-11-22T20:38:08Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -63,6 +63,19 @@ gitleaks flagged a high-entropy test signing key in tests/test_settings.py; repl
 Direct dependencies added: cryptography, py-key-value-aio (already transitive via FastMCP; app.py imports them, deptry DEP003). uv.lock: only the paperless-mcp entry changed (lock revision kept at 5).
 just check green: 4520 passed, 1 skipped (root-only skip above), 23 snapshots passed (tool surface unchanged), import-linter 9 kept, diff coverage 100 %.
 Manual verification of a real claude.ai connector against a real provider is left to the owner (AC3); the README UI labels for claude.ai and Authentik are written from the providers' documentation as remembered, not checked live.
+
+Review round 1 (controller and security review, Codex P2):
+1. Decision-31 now also supersedes decision-28 (carried over except: it writes only to PAPERLESS_MCP_OIDC_STORAGE_DIR when set; decision-31's refusal applies; it starts with tokens or the complete OIDC layer, plus allowed hosts). decision-28 was set superseded by decision-31 via the CLI. The "now reads without authentication" consequence is removed.
+2. The file store uses FastMCP's FileTreeV1 key and collection sanitising. Red: client ids ../../x and a 300-character id gave 500; keys a/b, 300 chars and ../../escape failed on put/get. Green now.
+3. The storage Fernet key is derive_jwt_key(low_entropy_material=..., PBKDF2) instead of HKDF only. Red: a reader with the PBKDF2 key could not decrypt. Green; the rotation test still passes.
+4. MemoryStore(max_entries_per_collection=10_000); red then green. Decision-31 and README say that disk growth is unbounded and that /register and /authorize should be rate-limited at the proxy.
+5. ID-token checks pinned: wrong aud, wrong iss, expired, unknown kid and bad signature all sign nobody in (FastMCP enforces them; the tests passed at once, as pins). An OIDC-only app answers 401 with no token, a bearer-shaped token and an HS256 token with the right claims but another key. A missing sub is accepted by FastMCP; not tested, because the shared Paperless token does not depend on identity.
+6. The claude.com callback is in the default allowlist; red then green.
+7. public_origin drops only the scheme's own default port; https://h:80 and http://localhost:443 were red, now green.
+8. A discovery URL with userinfo is refused; red then green.
+9. Discovery failures are split into unreachable, invalid document (pydantic ValidationError) and a proxy that cannot be built (a document declaring strict:false without a token endpoint); red then green.
+10. README: subject logging, ID-token lifetime and refresh, server-side DCR and token exchange (a 403 points to an origin problem); the owner checks this in AC3.
+just check green: 4593 passed, 1 skipped (root-only), 23 snapshots, 9 contracts kept, diff coverage 100 %; gitleaks found no leaks.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
