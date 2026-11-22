@@ -1,18 +1,23 @@
 ---
+superseded_by: decision-30
+updated_date: '2026-11-22T16:30:06Z'
 id: decision-23
 title: >-
   The e2e check is a fast, non-required signal on pull requests; the full suite
   runs after merge
 date: '2026-11-16T23:32:00Z'
-status: accepted
+status: superseded
 ---
 ## Context
+<!-- SECTION:CONTEXT:BEGIN -->
 
 The live suite (live contract suite and E2E tests against paperless-ngx 3.4.2) took 11 to 12 minutes on `main`; it passed 20 minutes with PLMCP-22 and PLMCP-24, 32 minutes at the last green run and about 40 minutes with every toolset (pytest alone 33:54 on a hosted runner; a run was cancelled at 35 minutes and PLMCP-43 raised the job's `timeout-minutes` to 60 as a stopgap). Every toolset adds live tests, so it only gets slower (PLMCP-39). Measured on a 4-core sandbox, the plain-text documents already in place, the whole suite takes 1163 s of tests (629 tests): 716 s in `tests/contract`, 446 s in `tests/e2e`.
 
 Decision-24 removed `e2e` from the required checks (the owner did that in the branch protection settings) and runs the suite after every merge to `main`. It announced a fast tier for pull requests of about five minutes and a nightly full run for PLMCP-39. This decision is that part. The controller accepted it on 2026-11-17 under the owner's delegation; the owner asked for PLMCP-39 to be implemented and was informed of the decision. Nothing in it makes a check required.
 
+<!-- SECTION:CONTEXT:END -->
 ## Decision
+<!-- SECTION:DECISION:BEGIN -->
 
 **Supersedes decision-24.** Decision-24's Decision and Enforcement put the full suite in the `e2e` job of ci.yml on every push to main; this decision moves it to `e2e-full.yml` and makes the ci.yml `e2e` job pull-request only, so decision-24 cannot stay as written.
 
@@ -24,7 +29,9 @@ Carried over from decision-24: `e2e` stays out of the required checks (`check (3
 - Hang guards (they bound a stuck run, they are no quality gate): each part of the tier's job 20 minutes, a shard 25 minutes. PLMCP-43's 60 minutes for the single full job is gone with that job. The expected times are 2 to 10 minutes for the tier and about 15 for a shard (about 390 s of tests per shard in the sandbox, 1.75 times as long on a hosted runner, plus about 2 minutes to start the stack); the three shards run in parallel, so the full run is under 20 minutes.
 - Live coverage is not reduced and no test is skipped, disabled or quarantined. Consume-heavy tests whose subject is not OCR, archives, page counts or thumbnails upload plain text files instead of PDFs.
 
+<!-- SECTION:DECISION:END -->
 ## Consequences
+<!-- SECTION:CONSEQUENCES:BEGIN -->
 
 - Guarded on a pull request: lint, types, unit, tool and fake-backed contract tests (`check`), and the live tests of the toolsets the change touches. Guarded only after the merge: the live tests of every toolset the change does not map to, and a shared change beyond the smoke set.
 - Risk: a regression that only an untouched toolset's live test would show (a shared behaviour the map does not know about) is found on `main`, not before the merge. It is mitigated by the alias table, the smoke set for everything outside the map, the full run on every push to `main` and the nightly run, and by the controller waiting for the tier. A shared change is the weakest case: the smoke set is small.
@@ -33,6 +40,7 @@ Carried over from decision-24: `e2e` stays out of the required checks (`check (3
 - Each shard has its own stack on its own runner, so the container lookup of `rebuild_search_index` (PLMCP-40: `docker ps --filter publish=<port>`) finds one container per run; locally a second stack needs its own compose project and port.
 - Changing the non-code list, the tier budget, the toolset map, the smoke set, the shard count or the timeouts is a change to this gate and needs a new decision.
 
+<!-- SECTION:CONSEQUENCES:END -->
 ## Enforcement
 
 - `scripts/e2e_ci.py` holds the rules (`select`, `assign_shards`, `workflow_problems`); `tests/quality/test_e2e_ci.py` tests them: a table of paths that run the smoke set, the toolset and alias mapping (every alias names a real live module), the smoke set exists and stays small, every live module is reachable from a source path or the smoke set, an over-budget tier is split without dropping a module, and the skip for non-code paths.
