@@ -49,7 +49,7 @@ class PageSlot(BaseModel):
 
 
 # Why the tasks of a request are not all known: the user may not view tasks, or reading them failed.
-type LookupProblem = Literal["forbidden", "failed"]
+type LookupProblem = Literal["forbidden", "failed", "unconfirmed"]
 
 
 class StartedTasks(BaseModel):
@@ -61,7 +61,10 @@ class StartedTasks(BaseModel):
         sources: The document each task belongs to, parallel to ``ids``; None where Paperless
             does not say (reprocessing). Empty when the caller does not know.
         problem: Why the lookup is incomplete beyond tasks that did not show up: the user may not
-            view tasks (forbidden), or reading them failed after the request was accepted (failed).
+            view tasks (forbidden), reading them failed after the request was accepted (failed),
+            or the queued task of Paperless 3.5 could not be followed to its end (unconfirmed):
+            then ``ids`` holds that task alone.
+        detail: For ``unconfirmed``: why the queued task could not be followed.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
@@ -70,6 +73,7 @@ class StartedTasks(BaseModel):
     expected: int
     sources: tuple[int | None, ...] = ()
     problem: LookupProblem | None = None
+    detail: str | None = None
 
 
 # Output models are tool output schemas: a one-line class docstring each, and field descriptions

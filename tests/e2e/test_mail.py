@@ -18,7 +18,7 @@ import pytest
 from fastmcp import Client
 from harness import server_settings
 
-from e2e.helpers import obj, parse, results
+from e2e.helpers import obj, parse, results, since
 from paperless_mcp.server import create_server
 from paperless_mcp.settings import PaperlessSettings
 
@@ -65,6 +65,11 @@ def clean(text: object) -> None:
     assert "****" not in shown
 
 
+def masked(password: str) -> str:
+    """What Paperless shows instead of a password: one asterisk per character, from 3.5 ten."""
+    return "*" * (10 if since("3.5.0") else len(password))
+
+
 async def call(client: Connected, tool: str, **arguments: object) -> Json:
     result = await client.call_tool(tool, arguments)
     assert result.structured_content is not None
@@ -103,9 +108,10 @@ async def test_an_account_is_created_read_listed_changed_and_never_shows_a_passw
         "starttls",
     )
     assert made["account_type"] == "imap"
-    # Paperless itself masks the password, one asterisk per character; the tools drop even that.
+    # Paperless itself masks the password (3.4: one asterisk per character, 3.5: ten whatever its
+    # length); the tools drop even that.
     raw = obj(parse(stack.admin.get(f"/api/mail_accounts/{made['id']}/")))
-    assert raw["password"] == "*" * len(PASSWORD)
+    assert raw["password"] == masked(PASSWORD)
     read = await call(client, "get_mail_account", account_id=made["id"])
     listed = await call(client, "list_mail_accounts", page_size=100)
     assert read == made
@@ -117,7 +123,7 @@ async def test_an_account_is_created_read_listed_changed_and_never_shows_a_passw
     again = await call(client, "update_mail_account", account_id=made["id"], password=NEW_PASSWORD)
     assert again["id"] == made["id"]
     raw = obj(parse(stack.admin.get(f"/api/mail_accounts/{made['id']}/")))
-    assert raw["password"] == "*" * len(NEW_PASSWORD)
+    assert raw["password"] == masked(NEW_PASSWORD)
 
 
 async def test_a_bad_password_is_refused_without_echoing_it(client: Connected) -> None:

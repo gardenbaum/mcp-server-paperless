@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING
 import pytest
 from fakes.accounts import PUBLIC_NOTE
 
+from contract.conftest import since
 from paperless_mcp.domain.documents import DocumentQuery
-from paperless_mcp.domain.errors import NotFound, PermissionDenied
+from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
 from paperless_mcp.paperless.documents import unseen_note
 
 if TYPE_CHECKING:
@@ -51,10 +52,17 @@ async def test_each_note_is_returned_by_its_own_call_and_ids_grow(backend: Backe
 
 
 @pytest.mark.contract(ADD)
-async def test_paperless_itself_accepts_empty_and_blank_notes(backend: Backend) -> None:
-    # Pinned because the service must not rely on Paperless to reject them (it does not).
+async def test_paperless_itself_accepts_empty_and_blank_notes_before_3_5(backend: Backend) -> None:
+    # Pinned because the service must not rely on Paperless to reject them (3.4 does not); 3.5
+    # rejects both with a 400 ("This field may not be blank."), which the adapter reports as it
+    # reports every refused value.
     ports, document = backend.admin, backend.new_document()
 
+    if since(backend, "3.5.0"):
+        for text in ("", "   "):
+            with pytest.raises(Validation, match="blank"):
+                _ = await ports.document_writes.add_note(document, text)
+        return
     empty = await ports.document_writes.add_note(document, "")
     blank = await ports.document_writes.add_note(document, "   ")
 

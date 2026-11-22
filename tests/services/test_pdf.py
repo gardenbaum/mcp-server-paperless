@@ -65,7 +65,8 @@ class Slow(FakePaperless):
         self.lose_tasks: int = 0
         self.lose_first: bool = False
         self.hide_sources: bool = False
-        self.lookup_problem: Literal["forbidden", "failed"] | None = None
+        self.lookup_problem: Literal["forbidden", "failed", "unconfirmed"] | None = None
+        self.detail: str | None = None
         self.keep_documents: bool = False
 
     @override
@@ -86,7 +87,10 @@ class Slow(FakePaperless):
         )
         if self.lookup_problem:
             return StartedTasks(
-                ids=started.ids, expected=started.expected, problem=self.lookup_problem
+                ids=started.ids,
+                expected=started.expected,
+                problem=self.lookup_problem,
+                detail=self.detail,
             )
         return started
 
@@ -1234,6 +1238,22 @@ async def test_a_lookup_that_failed_is_reported_without_an_error() -> None:
     assert result.state == "unknown"
     assert result.message == "Paperless accepted the request; its tasks could not be read."
     assert len(result.tasks) == 1  # what was found is still reported
+
+
+async def test_a_queued_task_that_was_not_followed_is_reported_as_unconfirmed() -> None:
+    setup = Setup()
+    setup.fake.lookup_problem = "unconfirmed"
+    setup.fake.detail = "it was still running after 60 seconds"
+
+    result = await setup.service.rotate([setup.pdf(1)], 90, wait_seconds=1)
+
+    assert result.state == "unknown"
+    assert result.message == (
+        "Paperless accepted the request, but its queued task could not be followed to the end "
+        "(it was still running after 60 seconds): the files it makes are not known yet. Follow "
+        "the task with get_task."
+    )
+    assert len(result.tasks) == 1
 
 
 async def test_an_incomplete_result_still_names_a_failed_task() -> None:

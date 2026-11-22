@@ -251,7 +251,7 @@ async def test_merged_documents_become_versions_in_order_and_vanish_with_their_n
     note = await ports.document_writes.add_note(first, "belongs to the source")
     root_title = (await ports.documents.get_document(root)).title
 
-    await ports.document_writes.merge_as_versions(root, (first, second), None)
+    assert await ports.document_writes.merge_as_versions(root, (first, second), None) is None
 
     found = await versions(ports, root)
     assert [v.id for v in found] == [second, first, held, root]
@@ -269,7 +269,7 @@ async def test_one_merged_document_may_carry_a_label(backend: Backend) -> None:
     ports, root, source = backend.admin, backend.new_document(), backend.new_document()
     backend.track_document(source)
 
-    await ports.document_writes.merge_as_versions(root, (source,), "from source")
+    _ = await ports.document_writes.merge_as_versions(root, (source,), "from source")
 
     [newest, original] = await versions(ports, root)
     assert (newest.id, newest.version_label, newest.is_root) == (source, "from source", False)
@@ -291,7 +291,7 @@ async def test_a_merge_that_paperless_refuses_changes_nothing(backend: Backend) 
     }
     for name, (target, sources, label) in refused.items():
         with pytest.raises(Validation):
-            await ports.document_writes.merge_as_versions(target, sources, label)
+            _ = await ports.document_writes.merge_as_versions(target, sources, label)
         assert [v.is_root for v in await versions(ports, root)] == [True], name
 
     assert [(await ports.documents.get_document(d)).id for d in (one, two, holder)] == [
@@ -313,9 +313,9 @@ async def test_merging_needs_change_and_delete_rights_and_ownership_of_every_doc
 
     for user in (viewer, half, granted, backend.reader, blind_to_source):
         with pytest.raises(PermissionDenied):
-            await user.document_writes.merge_as_versions(root, (source,), None)
+            _ = await user.document_writes.merge_as_versions(root, (source,), None)
     with pytest.raises(Validation):
-        await blind_to_source.document_writes.merge_as_versions(root, (MISSING,), None)
+        _ = await blind_to_source.document_writes.merge_as_versions(root, (MISSING,), None)
 
     assert [v.is_root for v in await versions(ports, root)] == [True]
     assert (await ports.documents.get_document(source)).id == source
@@ -337,7 +337,7 @@ async def test_an_owner_without_admin_rights_deletes_a_version_and_merges(backen
 
     version = await add_version(backend, root, "plmcp24 owner version", by=user)
     current = await user.document_writes.delete_version(root, version)
-    await user.document_writes.merge_as_versions(root, (source,), "merged")
+    _ = await user.document_writes.merge_as_versions(root, (source,), "merged")
 
     assert current == root
     assert [(v.id, v.version_label) for v in await versions(user, root)] == [

@@ -112,6 +112,13 @@ DELETE_GROUP: Final = (
     "delete this group",
     "It needs the delete_group permission, or must be a superuser.",
 )
+READ_CONFIG: Final = (
+    "read the application configuration",
+    (
+        "Paperless 3.5 and later need the view_applicationconfiguration permission (or a "
+        "superuser); 3.4 lets every signed-in user read it."
+    ),
+)
 CHANGE_CONFIG: Final = (
     "change the application configuration",
     "It needs the change_applicationconfiguration permission, or must be a superuser.",
@@ -496,7 +503,8 @@ class PaperlessAdminReader:
 
 
 async def _read_config(client: PaperlessClient) -> AppConfigRecord:
-    rows = (await client.get(CONFIG, _Configs)).root
+    with Refused(READ_CONFIG):
+        rows = (await client.get(CONFIG, _Configs)).root
     if not rows:
         message = "Paperless has no application configuration."
         raise PaperlessMcpError(message)

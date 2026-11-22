@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import JsonValue, SecretStr
 
+from contract.conftest import since
 from paperless_mcp.domain.admin import ConfigValues, GroupValues, UserValues
 from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
 
@@ -372,7 +373,13 @@ async def test_anyone_reads_the_configuration_but_changing_it_needs_a_permission
 ) -> None:
     nothing = backend.restricted(frozenset({"view_uisettings"}))
 
-    assert (await nothing.management.get_config()).id >= 1
+    if since(backend, "3.5.0"):
+        # Paperless 3.5 asks for view_applicationconfiguration on a read too (3.4: nobody does).
+        with pytest.raises(PermissionDenied) as denied:
+            _ = await nothing.management.get_config()
+        assert denied.value.hint
+    else:
+        assert (await nothing.management.get_config()).id >= 1
     with pytest.raises(PermissionDenied) as raised:
         _ = await nothing.management_writes.update_config(ConfigValues(settings={"app_title": "x"}))
     assert raised.value.hint

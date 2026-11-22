@@ -7,6 +7,7 @@ import httpx2
 import pytest
 
 from adapter.conftest import streaming
+from adapter.test_queued import row as task_row
 from paperless_mcp.domain.bulk import (
     FieldsChange,
     ObjectPermissions,
@@ -25,7 +26,7 @@ from paperless_mcp.domain.errors import (
 from paperless_mcp.paperless.bulk import PaperlessBulkWriter
 
 if TYPE_CHECKING:
-    from adapter.conftest import ClientFactory
+    from adapter.conftest import ClientFactory, RecordingSleep
     from paperless_mcp.domain.bulk import BulkKind, DocumentChange
 
 pytestmark = pytest.mark.anyio
@@ -111,7 +112,7 @@ async def test_a_document_change_is_one_bulk_edit_request(
 ) -> None:
     server = Recorded()
 
-    await PaperlessBulkWriter(make_client(server)).bulk_edit_documents((4, 7), change)
+    _ = await PaperlessBulkWriter(make_client(server)).bulk_edit_documents((4, 7), change)
 
     assert server.sent == [("POST", "/api/documents/bulk_edit/", {}, expected)]
 
@@ -120,7 +121,7 @@ async def test_an_answer_that_is_not_the_result_object_is_unexpected() -> None:
     client, _ = streaming(lambda _: httpx2.Response(200, json={"unexpected": True}))
 
     with pytest.raises(PaperlessMcpError, match="unexpected response"):
-        await PaperlessBulkWriter(client).bulk_edit_documents((4,), TrashDocuments())
+        _ = await PaperlessBulkWriter(client).bulk_edit_documents((4,), TrashDocuments())
 
 
 async def test_a_refused_document_change_says_nothing_was_changed(
@@ -130,7 +131,9 @@ async def test_a_refused_document_change_says_nothing_was_changed(
     server = Recorded("Insufficient permissions", 403)
 
     with pytest.raises(PermissionDenied) as raised:
-        await PaperlessBulkWriter(make_client(server)).bulk_edit_documents((4,), TrashDocuments())
+        _ = await PaperlessBulkWriter(make_client(server)).bulk_edit_documents(
+            (4,), TrashDocuments()
+        )
 
     assert "nothing was changed" in raised.value.message
     assert "change permission" in (raised.value.hint or "")
@@ -146,7 +149,7 @@ async def test_rejected_values_are_a_validation_error_with_the_reason(
     change = FieldsChange(values={111: "abc"})
 
     with pytest.raises(Validation, match="Enter a valid integer"):
-        await PaperlessBulkWriter(make_client(server)).bulk_edit_documents((4,), change)
+        _ = await PaperlessBulkWriter(make_client(server)).bulk_edit_documents((4,), change)
 
 
 async def test_a_failing_bulk_edit_is_never_retried() -> None:
@@ -160,7 +163,7 @@ async def test_a_failing_bulk_edit_is_never_retried() -> None:
     client, _ = streaming(failing)
 
     with pytest.raises(UpstreamUnavailable):
-        await PaperlessBulkWriter(client).bulk_edit_documents((4,), ReprocessChange())
+        _ = await PaperlessBulkWriter(client).bulk_edit_documents((4,), ReprocessChange())
 
     assert calls == ["/api/documents/bulk_edit/"]
 
@@ -247,3 +250,97 @@ async def test_refused_object_changes_say_nothing_was_changed(make_client: Clien
 
     assert "nothing was changed" in raised.value.message
     assert "owner" in (raised.value.hint or "")
+
+
+# --- Paperless 3.5: the document operations queue a bulk_update task (PLMCP-46)
+
+TASK = "5b8f0c2e-0000-4000-8000-000000000001"
+QUEUED: Json = {"result": "OK", "task_id": TASK}
+
+
+class Queue:
+    """3.5.1: the POST answers with a task id and the task list tells how far the task is."""
+
+    def __init__(self, *states: str) -> None:
+        self.states: list[str] = list(states)
+        self.sent: list[tuple[str, str]] = []
+
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        self.sent.append((request.method, request.url.path))
+        if request.method == "POST":
+            return httpx2.Response(200, json=QUEUED)
+        state = self.states.pop(0) if len(self.states) > 1 else self.states[0]
+        row = task_row(state, TASK)
+        return httpx2.Response(
+            200, json={"count": 1, "next": None, "previous": None, "results": [row]}
+        )
+
+
+def queued_writer(
+    make_client: ClientFactory, queue: Queue, sleep: RecordingSleep
+) -> PaperlessBulkWriter:
+    return PaperlessBulkWriter(make_client(queue), sleep=sleep)
+
+
+async def test_a_queued_document_change_returns_when_its_task_has_succeeded(
+    make_client: ClientFactory, sleep: RecordingSleep
+) -> None:
+    queue = Queue("pending", "started", "success")
+
+    _ = await queued_writer(make_client, queue, sleep).bulk_edit_documents((4, 7), TrashDocuments())
+
+    assert queue.sent == [("POST", "/api/documents/bulk_edit/")] + [("GET", "/api/tasks/")] * 3
+    assert sleep.delays == [0.2, 0.2]
+
+
+@pytest.mark.parametrize("ends", ["failure", "revoked"])
+async def test_a_queued_document_change_that_fails_is_reported_as_not_applied(
+    make_client: ClientFactory, sleep: RecordingSleep, ends: str
+) -> None:
+    queue = Queue("pending", ends)
+
+    with pytest.raises(Validation) as raised:
+        _ = await queued_writer(make_client, queue, sleep).bulk_edit_documents(
+            (4,), ReprocessChange()
+        )
+
+    assert raised.value.message == "Paperless could not apply the bulk edit: its task failed."
+    assert "part of it" in (raised.value.hint or "")
+
+
+async def test_the_task_is_not_followed_for_the_object_endpoint(
+    make_client: ClientFactory,
+) -> None:
+    server = Recorded()
+
+    await PaperlessBulkWriter(make_client(server)).delete_taxonomy_items("tag", (3,))
+
+    assert [path for _, path, _, _ in server.sent] == ["/api/bulk_edit_objects/"]
+
+
+async def test_a_queued_change_whose_task_never_shows_up_is_returned_as_unconfirmed(
+    make_client: ClientFactory, sleep: RecordingSleep
+) -> None:
+    def invisible(request: httpx2.Request) -> httpx2.Response:
+        if request.method == "POST":
+            return httpx2.Response(200, json=QUEUED)
+        return httpx2.Response(
+            200, json={"count": 0, "next": None, "previous": None, "results": []}
+        )
+
+    writer = PaperlessBulkWriter(make_client(invisible), sleep=sleep)
+
+    outcome = await writer.bulk_edit_documents((4,), TrashDocuments())
+
+    assert outcome is not None
+    assert (outcome.task_id, outcome.reason) == (TASK, "it did not show up in the task list")
+
+
+async def test_a_confirmed_change_returns_nothing(
+    make_client: ClientFactory, sleep: RecordingSleep
+) -> None:
+    outcome = await queued_writer(make_client, Queue("success"), sleep).bulk_edit_documents(
+        (4,), TrashDocuments()
+    )
+
+    assert outcome is None

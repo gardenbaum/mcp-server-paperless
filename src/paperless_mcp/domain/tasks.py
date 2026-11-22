@@ -17,6 +17,20 @@ FINAL_STATES: Final[frozenset[TaskState]] = frozenset({"success", "failure", "re
 # only where the name does not say enough.
 
 
+class Unconfirmed(BaseModel):
+    """A change Paperless queued as a task whose result could not be observed.
+
+    Attributes:
+        task_id: The queued task; ``get_task`` reads it.
+        reason: Why it could not be followed to its end, as the rest of a sentence.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    task_id: str
+    reason: str
+
+
 class TaskStatus(BaseModel):
     """A Paperless task as it stands."""
 
