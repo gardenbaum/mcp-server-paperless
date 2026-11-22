@@ -126,9 +126,10 @@ async def test_a_dry_run_of_a_delete_names_the_objects_their_documents_and_the_c
     assert report.message == (
         "Dry run, nothing was changed. Confirming would delete 1 tag 'e2e-finance' for good: "
         "it is removed from its documents ('e2e-finance (1 document)'); its child tags "
-        "'e2e-invoices (1 document)' are deleted with it; child tags you cannot see (other "
-        "users') are deleted with it as well. To go ahead, call again without dry_run and "
-        "with confirm=true."
+        "'e2e-invoices (1 document)' are deleted with it; on Paperless 3.4 child tags you "
+        "cannot see (other users') are deleted with it as well; Paperless 3.5 refuses the "
+        "deletion if it would take tags of other users. To go ahead, call again without "
+        "dry_run and with confirm=true."
     )
     assert setup.fake.deleted == []
 
@@ -561,7 +562,8 @@ async def test_child_tags_are_listed_in_name_order_and_plurals_read_right() -> N
         "Dry run, nothing was changed. Confirming would delete 2 tags 'e2e-finance', "
         "'e2e-private' for good: they are removed from their documents ('e2e-finance (1 "
         "document)', 'e2e-private (1 document)'); their child tags 'alpha (0 documents)', "
-        "'e2e-invoices (1 document)', 'zeta (0 documents)' are deleted with them; child tags "
-        "you cannot see (other users') are deleted with them as well. To go ahead, call again "
+        "'e2e-invoices (1 document)', 'zeta (0 documents)' are deleted with them; on Paperless "
+        "3.4 child tags you cannot see (other users') are deleted with them as well; Paperless "
+        "3.5 refuses the deletion if it would take tags of other users. To go ahead, call again "
         "without dry_run and with confirm=true."
     )

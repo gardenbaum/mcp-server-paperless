@@ -9,7 +9,7 @@ import pytest
 from adapter.conftest import tag
 from paperless_mcp.domain.errors import NotFound, PaperlessMcpError, PermissionDenied, Validation
 from paperless_mcp.domain.taxonomy import OptionInput, SelectOption, TaxonomyValues
-from paperless_mcp.paperless.taxonomy import PaperlessTaxonomyWriter
+from paperless_mcp.paperless.taxonomy import TAG_DELETE_HINT, PaperlessTaxonomyWriter
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory
@@ -414,6 +414,29 @@ async def test_paperless_errors_become_domain_errors(
         await PaperlessTaxonomyWriter(
             make_client(Recording(httpx2.Response(status, json=body)))
         ).delete_taxonomy_item("tag", 7)
+
+
+@pytest.mark.decision("decision-29")
+async def test_a_refused_tag_deletion_says_what_helps_and_other_kinds_get_no_such_hint(
+    make_client: ClientFactory,
+) -> None:
+    # Paperless 3.5 answers 403 "Insufficient permissions." when the deletion would take child
+    # tags of other users (3.4 deletes them); the same 403 also means a missing permission.
+    def refused() -> PaperlessTaxonomyWriter:
+        return PaperlessTaxonomyWriter(
+            make_client(
+                Recording(httpx2.Response(403, json={"detail": "Insufficient permissions."}))
+            )
+        )
+
+    with pytest.raises(PermissionDenied) as tag:
+        await refused().delete_taxonomy_item("tag", 7)
+    with pytest.raises(PermissionDenied) as other:
+        await refused().delete_taxonomy_item("correspondent", 7)
+
+    assert tag.value.hint == TAG_DELETE_HINT
+    assert "may not perform" in tag.value.message
+    assert other.value.hint is None
 
 
 async def test_an_unknown_matching_algorithm_in_an_answer_is_an_unexpected_response(

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Final, Literal
 
 from pydantic import AliasChoices, BaseModel, Field
 
-from paperless_mcp.domain.errors import PaperlessMcpError
+from paperless_mcp.domain.errors import PaperlessMcpError, PermissionDenied
 from paperless_mcp.domain.taxonomy import (
     MatchingAlgorithm,
     SelectOption,
@@ -24,6 +24,12 @@ if TYPE_CHECKING:
 
 # MatchingAlgorithm.NONE: the tag is only ever set by hand.
 NO_MATCHING = 0
+TAG_DELETE_HINT: Final = (
+    "Deleting a tag needs the permission to delete it and every child tag below it. Paperless "
+    "3.5 refuses a deletion that would take child tags of other users with it (3.4 deletes "
+    "them); ask their owner or an administrator to delete or move those child tags first, or "
+    "keep the tag."
+)
 ALGORITHMS: Final[dict[MatchingAlgorithm, int]] = {
     "none": NO_MATCHING,
     "any": 1,
@@ -161,8 +167,17 @@ class PaperlessTaxonomyWriter:
         return _detail(kind, row)
 
     async def delete_taxonomy_item(self, kind: WritableKind, item_id: int) -> None:
-        """See ``TaxonomyWriter.delete_taxonomy_item``."""
-        _ = await self._client.request("DELETE", f"{PATHS[kind]}{item_id}/")
+        """See ``TaxonomyWriter.delete_taxonomy_item``.
+
+        A refused tag deletion gets a hint: the 403 means a missing permission, or (from 3.5) a
+        deletion that would take child tags of other users.
+        """
+        try:
+            _ = await self._client.request("DELETE", f"{PATHS[kind]}{item_id}/")
+        except PermissionDenied as error:
+            if kind == "tag":
+                raise PermissionDenied(error.message, hint=TAG_DELETE_HINT) from None
+            raise
 
 
 def _detail(kind: WritableKind, row: _Row) -> TaxonomyDetail:

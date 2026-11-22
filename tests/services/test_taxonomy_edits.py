@@ -563,7 +563,10 @@ async def test_an_option_that_was_just_renamed_elsewhere_is_found_in_the_current
 # -- delete
 
 
-HIDDEN = "child tags you cannot see (other users') are deleted with it as well"
+HIDDEN = (
+    "on Paperless 3.4 child tags you cannot see (other users') are deleted with it as well; "
+    "Paperless 3.5 refuses the deletion if it would take tags of other users"
+)
 EFFECTS = [
     ("tag", "e2e-private", 3, "tag", "it is removed from its documents (1 document); " + HIDDEN),
     (

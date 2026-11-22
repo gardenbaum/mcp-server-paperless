@@ -1344,8 +1344,9 @@
         
         Three steps, like bulk_edit_documents: dry_run=true previews, a call without confirm is an
         error that describes the effect, confirm=true executes. A delete is final (taxonomy has no
-        trash): documents lose the reference, and deleting a tag deletes its child tags too, also
-        ones you cannot see. set_permissions without merge replaces all grants with the lists you
+        trash): documents lose the reference, and deleting a tag deletes its child tags too (on
+        Paperless 3.4 also ones you cannot see; 3.5 refuses the deletion if it would take tags of
+        other users). set_permissions without merge replaces all grants with the lists you
         give (a list left out becomes empty); with merge it adds to them, and merge cannot set an
         owner. A change grant includes view. Users and groups by name or id. Custom fields are not
         supported. Paperless checks every object first: if you may not change one, none changes (you
@@ -6085,7 +6086,8 @@
         Delete a tag, correspondent, document type, storage path or custom field for good.
         
         There is no trash for these: the documents stay but lose the tag, correspondent, type, path
-        or field value, and deleting a tag also deletes its child tags. Without confirm it deletes
+        or field value, and deleting a tag also deletes its child tags (Paperless 3.5 refuses the
+        deletion if that would take child tags of other users). Without confirm it deletes
         nothing and fails with an error that says the effect (documents affected, child tags that go
         with it); describe that to the user and call again with confirm=true once they agree.
       ''',
@@ -6133,7 +6135,7 @@
           'also_deleted': dict({
             'default': list([
             ]),
-            'description': "Tags: the child tags you can see that are deleted with it, with their document counts. Child tags you cannot see (other users') are deleted too.",
+            'description': "Tags: the child tags you can see that are deleted with it, with their document counts. On Paperless 3.4 child tags you cannot see (other users') are deleted too; 3.5 refuses the deletion instead.",
             'items': dict({
               'description': 'A child tag that goes with its parent, and how many documents lose it.',
               'properties': dict({
@@ -20769,7 +20771,8 @@
         Delete a tag, correspondent, document type, storage path or custom field for good.
         
         There is no trash for these: the documents stay but lose the tag, correspondent, type, path
-        or field value, and deleting a tag also deletes its child tags. Without confirm it deletes
+        or field value, and deleting a tag also deletes its child tags (Paperless 3.5 refuses the
+        deletion if that would take child tags of other users). Without confirm it deletes
         nothing and fails with an error that says the effect (documents affected, child tags that go
         with it); describe that to the user and call again with confirm=true once they agree.
       ''',
@@ -20817,7 +20820,7 @@
           'also_deleted': dict({
             'default': list([
             ]),
-            'description': "Tags: the child tags you can see that are deleted with it, with their document counts. Child tags you cannot see (other users') are deleted too.",
+            'description': "Tags: the child tags you can see that are deleted with it, with their document counts. On Paperless 3.4 child tags you cannot see (other users') are deleted too; 3.5 refuses the deletion instead.",
             'items': dict({
               'description': 'A child tag that goes with its parent, and how many documents lose it.',
               'properties': dict({

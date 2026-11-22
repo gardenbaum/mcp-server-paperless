@@ -69,7 +69,10 @@ PATH_HINT = (
 )
 # Paperless prefixes a rejection with the name of the field it concerns.
 PATH_FIELD = "path: "
-HIDDEN_CHILDREN = "child tags you cannot see (other users') are deleted with it as well"
+HIDDEN_CHILDREN = (
+    "on Paperless 3.4 child tags you cannot see (other users') are deleted with it as well; "
+    "Paperless 3.5 refuses the deletion if it would take tags of other users"
+)
 # What deleting an object does to the documents that use it, by kind (a clause of the refusal).
 EFFECTS: Final[dict[WritableKind, str]] = {
     "tag": "it is removed from its documents ({docs})",

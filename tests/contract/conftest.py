@@ -458,10 +458,14 @@ def fake_new_documents(new_document: Callable[[], int]) -> Callable[[int], list[
     return lambda count: [new_document() for _ in range(count)]
 
 
-def fake_backend(*, ai_enabled: bool = False) -> Backend:
-    """The fake's backend; the E2E stack of `just e2e` has AI off, so that is the default."""
+def fake_backend(*, ai_enabled: bool = False, release: str = VERSION) -> Backend:
+    """The fake's backend; the E2E stack of `just e2e` has AI off, so that is the default.
+
+    ``release`` is the Paperless release the fake behaves like: the pinned one, or `FAKE_35`.
+    """
     state = seeded()
     state.ai_enabled = ai_enabled
+    state.release = release
     return Backend(
         admin=fake_ports(state, ADMIN[0]),
         reader=fake_ports(state, READER[0]),
@@ -477,7 +481,7 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
         grants=fake_grants(state),
         in_trash=fake_in_trash(state),
         track_document=lambda _document: None,
-        expected_version=VERSION,
+        expected_version=release,
         rebuild_search_index=lambda: None,
     )
 
@@ -488,7 +492,7 @@ def release(version: str) -> tuple[int, ...]:
 
 
 def since(backend: Backend, minimum: str) -> bool:
-    """Whether the Paperless behind the backend is at least ``minimum`` (the fake is 3.4.2)."""
+    """Whether the Paperless behind the backend is at least ``minimum`` (the fake: its release)."""
     return release(backend.expected_version) >= release(minimum)
 
 
@@ -750,11 +754,23 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
         cleanup(stack, created, users)
 
 
+FAKE_35 = "3.5.1"
+
+# For the tests whose behaviour differs between Paperless 3.4 and 3.5 (they branch with `since`):
+# the fake as the pinned release, the fake as 3.5 and the live stack (whatever release it runs).
+BOTH_RELEASES = pytest.mark.parametrize(
+    "backend", ["fake", "fake-3.5", pytest.param("live", marks=pytest.mark.e2e)], indirect=True
+)
+
+
 @pytest.fixture(params=["fake", pytest.param("live", marks=pytest.mark.e2e)])
 async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
     """The backend under contract (the fixture value is created fresh for every test)."""
     if cast("str", request.param) == "fake":
         yield fake_backend()
+        return
+    if cast("str", request.param) == "fake-3.5":
+        yield fake_backend(release=FAKE_35)
         return
     async with live_backend(cast("Stack", request.getfixturevalue("stack"))) as live:
         yield live
