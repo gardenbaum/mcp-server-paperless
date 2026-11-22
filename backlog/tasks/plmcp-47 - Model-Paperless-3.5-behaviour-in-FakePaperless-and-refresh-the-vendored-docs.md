@@ -1,11 +1,11 @@
 ---
 id: PLMCP-47
 title: Model Paperless 3.5 behaviour in FakePaperless and refresh the vendored docs
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-22T12:40:00Z'
-updated_date: '2026-11-22T15:46:29Z'
+updated_date: '2026-11-22T15:48:49Z'
 labels: []
 dependencies: []
 priority: medium
@@ -29,9 +29,9 @@ PLMCP-46 made the adapter handle paperless-ngx 3.5.1 and made the live tests ver
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
-- [ ] #2 just check passes locally and all required CI checks are green on the PR
+- [x] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -56,6 +56,8 @@ Contract: BOTH_RELEASES mark (fake, fake-3.5, live) on the version-branching tes
 Adapter: a refused tag DELETE carries TAG_DELETE_HINT; other kinds unchanged. Texts: the preview and message of delete_taxonomy_item and the bulk tag delete, the two tool descriptions and the DeletedTag.also_deleted description now say 3.4 deletes other users' child tags and 3.5 refuses. Surface snapshot regenerated deliberately: only those descriptions (delete_taxonomy_item and the bulk taxonomy edit in the all profile, the also_deleted field in both); no tool added, default profile budget untouched.
 Evidence: just check green (4455 passed, diff coverage 100 %). Live, touched modules (contract test_admin, test_notes_and_trash, test_taxonomy_edits, test_bulk, e2e test_taxonomy_edits): 205 passed on the pinned 3.4.2 and 205 passed on 3.5.1 (the e2e test now asserts the new preview text and the 3.5 hint). Mutation: paperless.taxonomy, services.bulk_taxonomy and services.taxonomy_edits: no new survivors; the existing delete_taxonomy_item lowercase-method equivalent got its function_hash refreshed.
 Honest order note: tests were written and run red first at fake, adapter, service and contract level (the e2e assertion was edited together with them but ran only after the code existed, live). The decision body and the tag-deletion rule were checked against the 3.5.1 and 3.4.2 container sources (TagViewSet.perform_destroy, BulkEditObjectsView) before writing the fake.
+
+Controller: reviewed the diff and decision-29; just check green. AC #2 accepted with the mail password mask left to the live tests: no port returns the mask, so the fake has nothing observable to model (recorded in decision-29). DoD #4 checked on this PR's merge.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
