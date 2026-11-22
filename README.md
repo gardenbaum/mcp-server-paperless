@@ -1,266 +1,230 @@
+<div align="center">
+
 # paperless-mcp
 
-An [MCP](https://modelcontextprotocol.io) server for [paperless-ngx](https://docs.paperless-ngx.com)
-3.x, built on FastMCP 4.
+**Let Claude work with your [paperless-ngx](https://docs.paperless-ngx.com) archive:<br>
+find, read, file, upload and organise documents by asking.**
 
-**Status:** early development. One tool so far, `get_instance_overview`; the plan lives in
-`backlog/` (Backlog.md). Requires paperless-ngx 3.x (API version 10); 2.x is not supported.
+[![CI](https://github.com/gardenbaum/paperless-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gardenbaum/paperless-mcp/actions/workflows/ci.yml)
+[![E2E full suite](https://github.com/gardenbaum/paperless-mcp/actions/workflows/e2e-full.yml/badge.svg?branch=main)](https://github.com/gardenbaum/paperless-mcp/actions/workflows/e2e-full.yml)
+[![Release](https://img.shields.io/github/v/tag/gardenbaum/paperless-mcp?label=release&sort=semver)](https://github.com/gardenbaum/paperless-mcp/pkgs/container/paperless-mcp)
+[![paperless-ngx 3.x](https://img.shields.io/badge/paperless--ngx-3.x-17541f)](https://github.com/paperless-ngx/paperless-ngx)
+[![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-3776ab)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-## Use with Claude Code
+[Quick start](#quick-start) · [What you can ask](#what-you-can-ask) · [Toolsets](#toolsets) ·
+[Safety](#how-it-keeps-your-archive-safe) · [Documentation](#documentation)
 
-Create an API token in Paperless (profile menu, "My Profile", API auth token), then register the
-server over stdio from a clone of this repository:
+</div>
+
+paperless-mcp is a [Model Context Protocol](https://modelcontextprotocol.io) server for
+paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai and any
+other MCP client 87 tools in 13 toolsets that cover what the Paperless API can do, from a search
+to mail rules and workflows. It starts small and careful: 18 tools by default, names instead
+of ids, and a confirmation step before anything that cannot be undone.
+
+```mermaid
+flowchart LR
+    A["Claude Code<br>Claude Desktop"] -- stdio --> S
+    B["claude.ai<br>connector"] -- "HTTPS + OIDC" --> S
+    C["Other MCP<br>clients"] -- "HTTP + bearer token" --> S
+    S(["paperless-mcp"]) -- "REST API v10" --> P[("paperless-ngx 3.x")]
+```
+
+## What you can ask
+
+- "What is in my inbox? Suggest a correspondent, type and tags for each document and file them
+  once I agree."
+- "Find last year's electricity bills and add up what I paid."
+- "Upload this PDF as an invoice from ACME and tag it tax-2026."
+- "Which documents mention the rental deposit? Show me the paragraph."
+- "Merge the three scans of the contract into one document and rotate page 2."
+- "Give me a link to my insurance policy that expires in a week."
+- "Set up a mail rule that files the invoices from billing@example.org."
+- "Find duplicate and unused tags and propose how to clean them up."
+
+An example of how that goes (illustrative):
+
+> **You:** What is still in my inbox?
+>
+> **Claude:** Three documents. Here is how I would file them:
+>
+> | Document | Correspondent | Type | Tags |
+> |---|---|---|---|
+> | Electricity bill, March | City Power | Invoice | utilities, tax-2026 |
+> | Policy update | Northwind Insurance | Letter | insurance |
+> | Receipt, hardware store | *new:* Brick & Bolt | Receipt | household |
+>
+> "Brick & Bolt" does not exist yet as a correspondent; I would create it. Shall I apply this?
+>
+> **You:** Yes, and tag the policy update tax-2026 too.
+
+Four built-in prompts start such tasks from the client's prompt menu: `triage_inbox`,
+`find_document`, `annual_review` and `cleanup_taxonomy`. Each one proposes its changes and waits
+for your yes before it writes.
+
+## Why this server
+
+| | |
+|---|---|
+| 🗂️ **All of paperless-ngx 3.x** | Documents, notes, tags, correspondents, types, storage paths, custom fields, saved views, file versions, trash, PDF operations, share links and bundles, mail accounts and rules, workflows, permissions, users, groups, tasks, logs and Paperless AI. |
+| 🏷️ **Names, not ids** | The model says "invoices from ACME tagged tax-2026", not `correspondent=17&tags=4`. An unknown or ambiguous name is an error that lists the candidates, never a guess. |
+| 🛡️ **Careful by default** | Every tool that can lose data or widen access has a confirmation step that first says what would happen. Bulk edits have a dry run. A read-only mode and opt-in toolsets limit what a client is offered at all. |
+| 🪶 **Light on context** | 18 tools by default instead of all 87. Search results are compact rows without document text, and long documents are read in slices. |
+| 🧪 **Tested against the real thing** | More than 600 live tests run against a real paperless-ngx on every merge and every night, on top of 4,500 unit and contract tests, a mutation-testing gate and a weekly run against the latest Paperless release. |
+| 🔐 **Made for remote use** | The HTTP transport refuses to start without authentication. Bearer tokens for Claude Code, OpenID Connect sign-in for claude.ai connectors, and a hardened, non-root container image. |
+
+## Quick start
+
+You need a Paperless API token: in Paperless open your profile menu, "My Profile", and create an
+API auth token. The server acts as that user and sees and changes only what that user may.
+
+### Claude Code
+
+With [uv](https://docs.astral.sh/uv/) installed, one command, no clone:
 
 ```sh
-uv sync
 claude mcp add paperless \
     --env PAPERLESS_URL=https://paperless.example.org \
     --env PAPERLESS_TOKEN=your-api-token \
-    -- "$PWD/.venv/bin/paperless-mcp"
+    -- uvx --from git+https://github.com/gardenbaum/paperless-mcp paperless-mcp
 ```
 
-Add `--scope user` to use it in every project. Check it with `claude mcp list` or `/mcp` in
-Claude Code, then ask for an overview of your Paperless instance. `python -m paperless_mcp` is
-the same entrypoint.
+Add `--scope user` to have it in every project. Then ask Claude for an overview of your Paperless
+instance. To stay on a release, append its tag to the URL (`...paperless-mcp@v0.1.0`).
 
-At startup the server checks the connection: a rejected token or a Paperless that does not speak
-API version 10 stops it with a message on stderr (in Claude Code: `claude --debug` or the `/mcp`
-details). An unreachable Paperless does not stop it; the tools report the problem until
-Paperless is back. Logs go to stderr (the server's own records as JSON lines) and never contain
-tokens, document content or query text at INFO or above: tool arguments and error messages are
-not logged, and an internal error is logged by type, with its traceback only at DEBUG.
+### Claude Desktop
 
-## Run over HTTP
+Add the server to `claude_desktop_config.json` (Settings, Developer, Edit Config) and restart:
 
-stdio is the default and needs nothing else. To serve several clients, or a connector, over
-Streamable HTTP, run `paperless-mcp-http` (or `just serve-http` from a clone). It **refuses to
-start without authentication**:
+```json
+{
+  "mcpServers": {
+    "paperless": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/gardenbaum/paperless-mcp", "paperless-mcp"],
+      "env": {
+        "PAPERLESS_URL": "https://paperless.example.org",
+        "PAPERLESS_TOKEN": "your-api-token"
+      }
+    }
+  }
+}
+```
+
+If Claude Desktop cannot find `uvx`, give its full path (`which uvx`). Other MCP clients that
+start a stdio server take the same command, arguments and environment.
+
+### Container, for remote clients
+
+The image serves MCP over Streamable HTTP and does not start without authentication:
 
 ```sh
-export PAPERLESS_URL=https://paperless.example.org
-export PAPERLESS_TOKEN=your-api-token
-export PAPERLESS_MCP_HTTP_AUTH_TOKENS="$(openssl rand -hex 32)"   # what clients send as a bearer token
-paperless-mcp-http                                                 # http://127.0.0.1:8000/mcp
-claude mcp add --transport http paperless http://127.0.0.1:8000/mcp \
-    --header "Authorization: Bearer $PAPERLESS_MCP_HTTP_AUTH_TOKENS"
+export MCP_TOKEN="$(openssl rand -hex 32)"
+docker run -d --name paperless-mcp -p 127.0.0.1:8001:8000 \
+    -e PAPERLESS_URL=https://paperless.example.org \
+    -e PAPERLESS_TOKEN=your-api-token \
+    -e PAPERLESS_MCP_HTTP_AUTH_TOKENS="$MCP_TOKEN" \
+    -e PAPERLESS_MCP_HTTP_ALLOWED_HOSTS=localhost \
+    ghcr.io/gardenbaum/paperless-mcp:0.1.0
+
+claude mcp add --transport http paperless http://127.0.0.1:8001/mcp \
+    --header "Authorization: Bearer $MCP_TOKEN"
 ```
 
-Requests without a valid token get 401 (GET, POST, DELETE and HEAD on the one route the server has; other methods get 405 before authentication). Tokens
-are compared in constant time, are masked in settings and never logged. For a bind that is not
-loopback (`0.0.0.0`, `::`, a LAN address, any host name that does not resolve to loopback only) also
-name the host names clients use; any other `Host` header gets 421 and any foreign browser
-`Origin` 403, before authentication, and no CORS access is granted:
+[Run in a container](docs/container.md) has the compose file next to Paperless and the reverse
+proxy setup, [Run over HTTP](docs/http.md) the details of the transport.
 
-```sh
-PAPERLESS_MCP_HTTP_HOST=0.0.0.0 \
-PAPERLESS_MCP_HTTP_ALLOWED_HOSTS=mcp.example.org \
-PAPERLESS_MCP_HTTP_AUTH_TOKENS=... paperless-mcp-http
-```
+### claude.ai
 
-For local development only, `PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK=true` serves
-without tokens on a loopback bind (and the app then answers on loopback addresses only); any
-process on the machine can use it. Never put this mode behind a reverse proxy, where every client would look like loopback: it refuses requests that carry `Forwarded`, `X-Forwarded-For`, `X-Forwarded-Host` or `X-Real-IP`. The server speaks plain HTTP: with tokens configured, put TLS, rate limiting of failed
-attempts and public exposure in a reverse proxy, and list the host name the proxy forwards in
-`PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`.
+claude.ai custom connectors sign in with OAuth. Put the HTTP server behind your identity provider
+(Authentik, Keycloak, Google, Auth0 or any other OpenID Connect provider) with five environment
+variables: [Connect claude.ai](docs/claude-ai-connector.md).
 
-| Variable | Meaning |
-|---|---|
-| `PAPERLESS_MCP_HTTP_HOST` / `PAPERLESS_MCP_HTTP_PORT` | Address to bind (default `127.0.0.1`, `8000`) |
-| `PAPERLESS_MCP_HTTP_PATH` | Path of the endpoint (default `/mcp`); the only route, no health endpoint |
-| `PAPERLESS_MCP_HTTP_AUTH_TOKENS` | Static bearer tokens, comma-separated or a JSON array, each at least 16 characters of `A-Za-z0-9._~+/=-`; several let clients switch to a new token before the old one is removed (changing the list needs a restart). Required unless the flag below is set or the optional OIDC layer (below) is on |
-| `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS` | Host names clients use, plain names without wildcards or ports; `localhost`, `127.0.0.1` and `::1` are always allowed. Required unless the bind is loopback |
-| `PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK` | `true` to serve without tokens, only on a loopback bind (default `false`) |
+## Toolsets
 
-Over HTTP callers upload by sending base64 content: no tool takes a server-side file path,
-whatever `PAPERLESS_MCP_UPLOAD_DIRS` says, and request bodies larger than the base64 size of
-`PAPERLESS_MCP_MAX_UPLOAD_BYTES` plus 64 KiB get 413. Every response carries an `X-Request-ID`
-(yours if it is short and made of letters, digits, `.`, `_` or `-`); one JSON log line per request
-(method, path, status, duration) goes to stderr, without query strings, headers or bodies. The
-rules are decision-27, carried over into decision-31.
+The 87 tools are grouped into toolsets, and only two are on by default, so the model is not
+handed tools you never use. Switch more on with `PAPERLESS_MCP_TOOLSETS=core,ai,pdf,trash` or
+`all`.
 
-### Optional: sign in through your identity provider (claude.ai connectors)
+| Toolset | Tools | Default | What it is for |
+|---|---|---|---|
+| `core` | 16 | on | Search, read, download, file and upload documents; notes; tags, correspondents, types, storage paths and custom fields; background tasks |
+| `ai` | 2 | on | Ask Paperless AI about your documents and get its filing suggestions (offered only while Paperless AI is enabled) |
+| `bulk` | 2 | | Change many documents or taxonomy items in one step, with a dry run first |
+| `pdf` | 7 | | Rotate, merge, split, delete pages, edit PDFs, remove passwords, reprocess |
+| `versions` | 5 | | The file versions of a document: list, upload, label, delete, merge documents as versions |
+| `trash` | 3 | | List the trash, restore from it, empty it |
+| `views` | 6 | | Saved views: create, change, delete and run them |
+| `sharing` | 8 | | Public share links and bundles, and sending documents by e-mail |
+| `permissions` | 3 | | Owners and view and change rights of documents and taxonomy; list users and groups |
+| `mail` | 13 | | Mail accounts and rules for the mail import, and what it processed |
+| `workflows` | 5 | | The workflows Paperless runs by itself: triggers and actions |
+| `admin` | 16 | | Users, groups, application configuration, logs, tasks, bulk download |
+| `raw` | 1 | | A read-only escape hatch: GET any path of the Paperless API the other tools do not cover |
 
-claude.ai custom connectors sign in with OAuth, not with a bearer token. For them the HTTP
-server has an **optional OIDC layer** on top of the bearer tokens: FastMCP's generic OIDC proxy
-in front of any OpenID Connect provider (Authentik, Keycloak, Google, Auth0, ...), configured only
-through environment variables. Without these variables nothing changes. With them, claude.ai
-signs in through your provider while Claude Code keeps using its bearer token on the same server;
-every client still works with the one Paperless token of `PAPERLESS_TOKEN` (per-user Paperless
-credentials are not supported yet). The server shows its own consent page before it sends the
-browser to the provider, forwards PKCE, verifies the provider's signed ID token and issues its own
-tokens to clients. The rules are decision-31.
+Every tool with its kind and a one-line description is in the [tool
+reference](docs/tools.md); what to know before switching a toolset on is in
+[Configuration](docs/configuration.md#toolsets).
 
-| Variable | Meaning |
-|---|---|
-| `PAPERLESS_MCP_OIDC_CONFIG_URL` | The provider's discovery document, `https://.../.well-known/openid-configuration` (required; https, plain http only on loopback). It is read at every start: a provider that cannot be reached stops the start |
-| `PAPERLESS_MCP_OIDC_CLIENT_ID` / `PAPERLESS_MCP_OIDC_CLIENT_SECRET` | The confidential client you register for this server at the provider (required; the secret is masked and never logged) |
-| `PAPERLESS_MCP_OIDC_BASE_URL` | The public origin of this server, e.g. `https://mcp.example.org`, without path (required; https, plain http only on loopback). Its host must be in `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`. Register `<base URL>/auth/callback` as the redirect URI at the provider |
-| `PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY` | At least 32 characters (`openssl rand -hex 32`, required): signs the tokens the server issues and encrypts its OAuth state. Changing it signs every OIDC client out |
-| `PAPERLESS_MCP_OIDC_STORAGE_DIR` | Absolute path of a writable directory for client registrations and sessions, encrypted. Unset (default): kept in memory, so after a restart claude.ai has to connect again (bearer clients are not affected) |
-| `PAPERLESS_MCP_OIDC_ALLOWED_REDIRECT_URIS` | Callbacks OAuth clients may register, comma-separated or a JSON array: https URLs or loopback http, a `*` only for the port or in the path. Default `https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback,http://localhost:*,http://127.0.0.1:*` (claude.ai under either domain, since Anthropic has announced its callback may move to claude.com, and clients on your machine) |
+## How it keeps your archive safe
 
-If some but not all of the five required variables are set, the server refuses to start and
-names the missing ones (unset all `PAPERLESS_MCP_OIDC_*` variables to go back to bearer tokens
-alone). With the layer on, the server adds the OAuth routes FastMCP needs and nothing else:
-`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/mcp`,
-`/authorize`, `/token`, `/register`, `/consent` and `/auth/callback`. Browsers from other origins
-still get 403, and the server needs TLS from your reverse proxy, which must pass the public
-`Host` through. Anyone the provider lets sign in to this application uses your Paperless token:
-restrict the application to yourself (or a group) at the provider.
+An assistant that can file your documents can also delete them. The server is built so that this
+takes more than a misunderstanding:
 
-`/register` and `/authorize` answer without authentication and each call stores an entry. In
-memory at most 10 000 entries per kind are kept (the oldest are dropped, so a flood can make
-claude.ai register again); in `PAPERLESS_MCP_OIDC_STORAGE_DIR` nothing bounds them. Rate-limit
-`/register` and `/authorize` in your reverse proxy. FastMCP logs the provider's subject (your
-user id there) when it rejects a token, so the log can hold that identifier. The server re-checks
-the provider's ID token on every request; when it expires (often after an hour) it refreshes at
-the provider, and if the provider returns no new ID token on refresh, claude.ai has to sign in
-again.
-
-**Example with Authentik** (any OIDC provider works the same way):
-
-1. In Authentik, under Applications, Providers, create an *OAuth2/OpenID Provider*: client type
-   *Confidential*, redirect URI `https://mcp.example.org/auth/callback` (strict), and a
-   *Signing Key* (for example the self-signed certificate Authentik ships: the server checks ID
-   tokens against the provider's published keys, so they must be signed with RS256, not with the
-   client secret). The default scopes (`openid`, `email`, `profile`) are enough.
-2. Create an *Application* for it (slug `paperless-mcp`) and bind it to the users or the group
-   who may use your Paperless through claude.ai. Note the client id and secret.
-3. Start the server with the OIDC variables next to the HTTP ones:
-
-   ```sh
-   export PAPERLESS_MCP_HTTP_HOST=0.0.0.0
-   export PAPERLESS_MCP_HTTP_ALLOWED_HOSTS=mcp.example.org
-   export PAPERLESS_MCP_HTTP_AUTH_TOKENS="$(openssl rand -hex 32)"          # optional: for Claude Code
-   export PAPERLESS_MCP_OIDC_CONFIG_URL=https://authentik.example.org/application/o/paperless-mcp/.well-known/openid-configuration
-   export PAPERLESS_MCP_OIDC_CLIENT_ID=the-client-id
-   export PAPERLESS_MCP_OIDC_CLIENT_SECRET=the-client-secret
-   export PAPERLESS_MCP_OIDC_BASE_URL=https://mcp.example.org
-   export PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY="$(openssl rand -hex 32)"     # keep it: changing it signs clients out
-   export PAPERLESS_MCP_OIDC_STORAGE_DIR=/var/lib/paperless-mcp            # optional, survives restarts
-   paperless-mcp-http
-   ```
-
-   For Google, Keycloak or Auth0 only the discovery URL and the redirect URI registration
-   differ (Google: `https://accounts.google.com/.well-known/openid-configuration`, a *Web
-   application* OAuth client in the Google Cloud console).
-
-**Connect claude.ai:** in claude.ai open Settings, Connectors, and add a custom connector with the
-URL `https://mcp.example.org/mcp`. Leave the advanced OAuth client id and secret empty: claude.ai
-registers itself with the server. Connect, approve the server's consent page ("Allow Access"),
-then sign in at your provider; claude.ai returns to its callback
-(`https://claude.ai/api/mcp/auth_callback` or `https://claude.com/api/mcp/auth_callback`; either
-may be used and both are allowed by default) and lists the tools. claude.ai registers and
-exchanges the code from its servers, not from your browser, so those requests carry no browser
-`Origin`; a 403 while connecting points to an origin problem (a proxy adding an `Origin`, or a
-base URL that differs from the address you open). Claude Code
-keeps working with `--header "Authorization: Bearer ..."` as above; it may also sign in through
-OIDC instead (its loopback callback is allowed by default).
-
-## Run in a container
-
-Version tags (`v*`) publish an image to `ghcr.io/gardenbaum/paperless-mcp` (nothing is published
-before the first tag; until then build it yourself with `just image`). It runs
-`paperless-mcp-http` as a non-root user (uid 10001) from a read-only filesystem, listens on
-`0.0.0.0:8000` inside the container and, like the plain command, **does not start without
-`PAPERLESS_MCP_HTTP_AUTH_TOKENS` (or the optional OIDC layer) and
-`PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`**. The unauthenticated
-loopback flag has no place in a container, which is never loopback. The image contains no
-credentials: everything comes from the environment.
-
-A compose file next to Paperless. The two secrets come from an `.env` file next to it, which is
-not committed; create the Paperless token under "My Profile" and generate the MCP token with
-`openssl rand -hex 32`. The service below belongs in the compose project that runs Paperless
-(here the Paperless service is called `webserver`, as in the paperless-ngx example): only there
-does `depends_on: [webserver]` work and the name `webserver` resolve. The stock Paperless
-publishes port 8000 itself, so the server is published on 8001:
-
-```yaml
-services:
-  paperless-mcp:
-    image: ghcr.io/gardenbaum/paperless-mcp:0.1.0   # a published version tag; pin the digest too
-    restart: unless-stopped
-    depends_on:
-      - webserver                                      # the paperless-ngx service
-    environment:
-      PAPERLESS_URL: http://webserver:8000             # how this container reaches Paperless
-      PAPERLESS_TOKEN: ${PAPERLESS_API_TOKEN:?set it in .env}
-      PAPERLESS_MCP_HTTP_AUTH_TOKENS: ${MCP_BEARER_TOKEN:?set it in .env}
-      PAPERLESS_MCP_HTTP_ALLOWED_HOSTS: mcp.example.org  # the host name clients use (and your proxy forwards)
-    ports:
-      - "127.0.0.1:8001:8000"                          # a reverse proxy in front adds TLS
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-```
-
-For the optional OIDC layer add its variables to `environment` (the secrets from `.env` as well)
-and, so that claude.ai stays connected across restarts, a writable directory for its state. The
-container keeps its read-only filesystem: only the mounted directory is written, and it must
-belong to the server's user (uid 10001). Without the mount, leave
-`PAPERLESS_MCP_OIDC_STORAGE_DIR` unset and the state lives in memory:
-
-```yaml
-    environment:
-      # ... as above, plus:
-      PAPERLESS_MCP_OIDC_CONFIG_URL: https://authentik.example.org/application/o/paperless-mcp/.well-known/openid-configuration
-      PAPERLESS_MCP_OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?set it in .env}
-      PAPERLESS_MCP_OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?set it in .env}
-      PAPERLESS_MCP_OIDC_BASE_URL: https://mcp.example.org      # its host is in PAPERLESS_MCP_HTTP_ALLOWED_HOSTS
-      PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY: ${OIDC_SIGNING_KEY:?set it in .env}
-      PAPERLESS_MCP_OIDC_STORAGE_DIR: /var/lib/paperless-mcp
-    volumes:
-      - ./paperless-mcp-oauth:/var/lib/paperless-mcp          # mkdir it, then: sudo chown 10001:10001 paperless-mcp-oauth
-```
-
-With the OIDC layer on, `PAPERLESS_MCP_HTTP_AUTH_TOKENS` becomes optional: keep it for Claude
-Code, drop it to allow sign-in through the provider only.
-
-If the container lives in its own compose project, join Paperless's network instead (drop
-`depends_on`, and use the service name or container name that network resolves):
-
-```yaml
-services:
-  paperless-mcp:
-    # ... as above, with PAPERLESS_URL: http://webserver:8000
-    networks: [paperless]
-networks:
-  paperless:
-    external: true
-    name: paperless_default   # `docker network ls`: the network of the Paperless project
-```
-
-If you set `PAPERLESS_ALLOWED_HOSTS` in Paperless, it must include the name this container uses
-to reach it (`webserver` above), or Paperless answers the server with 400.
-
-Put TLS, rate limiting and public exposure in a reverse proxy and list the host name it
-forwards in `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`; clients then connect to
-`https://mcp.example.org/mcp` with `Authorization: Bearer <MCP_BEARER_TOKEN>`. The container's
-health check opens a TCP connection to the port (the server has no health route, decision-27), so
-`docker ps` shows `healthy` once the server accepts connections. It does not tell you whether
-Paperless is reachable: the tools report that. All other settings of the tables below work
-unchanged as environment variables. To build the image yourself, `just image` builds it and
-`just image-smoke` also checks that it refuses to start without tokens, runs read-only as
-non-root, becomes healthy and answers 401 without a token, 421 for a foreign `Host` and an MCP initialize with a token. The rules
-are decision-28, carried over into decision-31.
+- **Confirmation before anything final.** Tools that delete, overwrite, publish or grant access
+  change nothing when called without `confirm=true`. They answer with what would happen (which
+  documents, who gains access, what cannot be undone), so the client shows it to you first.
+- **Dry runs for bulk edits.** `bulk_edit_documents` and `bulk_edit_taxonomy` preview how many
+  objects would change before they ask for confirmation.
+- **The trash first.** Deleting a document moves it to the Paperless trash, from where it can be
+  restored. Emptying the trash is a separate tool in a toolset that is off by default.
+- **You choose the surface.** Toolsets are opt-in, `PAPERLESS_MCP_READ_ONLY=true` offers only
+  tools that change nothing, and `PAPERLESS_MCP_DISABLED_TOOLS` takes single tools away.
+- **Paperless stays in charge.** The server acts as the user of its API token: the permissions
+  set in Paperless apply to every call.
+- **Secrets stay secret.** Passwords and API keys are write-only, and tokens, document text and
+  search queries are not logged at the default log level.
+- **No reach beyond Paperless.** Callers cannot make the server read local files or reach other
+  hosts. Uploading by file path exists only over stdio and only from directories you name.
 
 ## Configuration
 
+The settings you are most likely to touch; [Configuration](docs/configuration.md) has all of
+them.
+
 | Variable | Meaning |
 |---|---|
-| `PAPERLESS_URL` | Base URL of the Paperless instance (required) |
+| `PAPERLESS_URL` | Base URL of your Paperless instance (required) |
 | `PAPERLESS_TOKEN` | Paperless API token (required) |
-| `PAPERLESS_PUBLIC_URL` | Base URL for links shown to users, if it differs from `PAPERLESS_URL` |
-| `PAPERLESS_MCP_LOG_LEVEL` | `DEBUG`, `INFO` (default), `WARNING`, `ERROR` or `CRITICAL` |
-| `PAPERLESS_MCP_STARTUP_TIMEOUT` | Seconds the startup check may take (default 5) |
-| `PAPERLESS_MCP_MAX_DOWNLOAD_BYTES` | Largest original or archive file `download_document` attaches, in bytes (default 524288, at most 33554432); larger files are reported with their link only. Attached files travel base64-encoded (a third larger) in one MCP message and cost the client context tokens; the FastMCP client reads at most 1 MiB per HTTP event by default, so raise this only if your clients allow it |
-| `PAPERLESS_MCP_MAX_UPLOAD_BYTES` | Largest file `upload_document` and `upload_document_version` take, in bytes (default 10485760 = 10 MiB, at most 104857600). Base64 content is a third larger than the file and must be written out by the caller in one tool call, so real uploads are far smaller; the text, the decoded bytes and the request body are in memory at once (about three times the file), and the size is checked on the text before anything is decoded |
-| `PAPERLESS_MCP_UPLOAD_DIRS` | Directories `upload_document` and `upload_document_version` may read files from by path, absolute, comma-separated or a JSON array (default empty: uploading by path is off; `/`, your home directory itself, `/proc`, `/sys`, `/dev` and `/run` are refused as entries). Only the stdio transport ever offers the `path` parameter, and only when this is set; over HTTP callers send base64 content. Symlinks are resolved and must end inside these directories; only regular files with a single hard link are read, `..` in a path is refused, and files or folders whose name starts with a dot below an entry (`.ssh`, `.env`) are never read. The server runs these tools over stdio only, whatever `FASTMCP_TRANSPORT` says |
-| `PAPERLESS_MCP_TOOLSETS` | Toolsets to offer, comma-separated or `all` (default `core,ai`). `ai` (`ask_paperless_ai`, `get_ai_suggestions`) appears only while Paperless AI is enabled. These tools are read-only, but each call makes Paperless query its LLM backend, which may cost money and sends document text to it: a client that auto-approves read-only tools will run them unasked. Use `core` to leave them out. `versions` (off by default; `list_document_versions`, `upload_document_version`, `set_document_version_label`, `delete_document_version`, `merge_documents_as_versions`) works with the file versions of documents: `delete_document_version` and `merge_documents_as_versions` need `confirm`, and a merge removes the merged documents for good. `views` (off by default; `PAPERLESS_MCP_TOOLSETS=core,ai,views`) adds the saved views: `list_saved_views`, `get_saved_view`, `create_saved_view`, `update_saved_view`, `delete_saved_view` and `run_saved_view`, which finds the documents of a view with the rows and paging of `search_documents`. `trash` (off by default; `list_trash`, `restore_from_trash`, `empty_trash`) lists what was deleted, restores it (a deleted version is re-attached to its document) and empties the trash: `empty_trash` never defaults to everything, it needs `document_ids` or `all=true`, and `confirm` in both cases, because it removes documents for good. `pdf` (off by default; `rotate_documents`, `merge_documents`, `split_document`, `delete_pages`, `edit_pdf`, `remove_document_password`, `reprocess_documents`) runs Paperless's server-side PDF operations; each returns the background tasks Paperless starts (`wait_seconds` waits for them) and page ranges are checked against the page count first. Deleting originals (they move to the Paperless trash), dropping pages from what a document shows and reprocessing need `confirm`. `reprocess_documents` does the same as the `reprocess` operation of `bulk_edit_documents` but returns its tasks. `sharing` (off by default) publishes documents to people outside Paperless: `list_share_links`, `create_share_link`, `delete_share_link`, `list_share_bundles`, `create_share_bundle`, `rebuild_share_bundle`, `delete_share_bundle` and `email_documents`. A share link or bundle is a public URL on `PAPERLESS_PUBLIC_URL` (else `PAPERLESS_URL`) that anyone who has it can open without logging in until it expires (`expires_in_days`) or is deleted; the delete tools and `email_documents` need `confirm`, and `email_documents` names the recipients and documents in its refusal. E-mail needs a mail server set up in Paperless (`PAPERLESS_EMAIL_HOST`); without one the send fails and says so. `permissions` (off by default; `set_permissions`, `list_users`, `list_groups`) shares documents, tags, correspondents, document types and storage paths and hands them over: `set_permissions` sets the owner and the users and groups who may view or change, by name or id. Its default mode `merge` only adds to the grants and mode `replace` makes each list you give exactly that list; granting access cannot be taken back, so every call that changes anything needs `confirm` (also a merge and any change of the owner), and the refusal names who gains and who loses access. `bulk_edit_taxonomy` (bulk toolset) also sets permissions of taxonomy objects, behind `confirm` and with a `dry_run` preview (it empties the lists you leave out, `set_permissions` keeps them), and `update_document` can change a document's owner along with other edits; `list_users` and `list_groups` add to `list_taxonomy` the superuser flag, group memberships and paging. Listing users or groups needs the `view_user` or `view_group` permission in Paperless. `raw` (off by default; `all` selects it) is an escape hatch: `paperless_api_get(path, params)` reads any path under `/api/` of the configured Paperless with GET (for example `/api/documents/12/history/`), as the current user. It is read-only and cannot reach another host: the path must be `/api/` followed by plain names (no absolute URLs, `//host`, backslashes, `@`, query or percent-encoding, `..` or empty segments; filters go in `params`), redirects are not followed, and a path without its trailing slash is answered as a redirect error. Endpoints with secrets (`profile`, `config`, `mail_accounts`, `token`, `oauth`) files (`download`, `preview`, `thumb`, `bulk_download`) and the language-model call `ai_suggestions` (use `get_ai_suggestions`) are refused, the param `format` is refused, `next`/`previous` links become page numbers, requests are never retried, only JSON is returned, values of keys such as `password`, `*token*`, `*_api_key` and the webhook `headers`, `params` and `body` are replaced with `[redacted]`, and an answer over 20 000 characters is cut with `truncated` true (narrow it with `page_size`, `fields` or filters). See decision-25. `mail` (off by default) manages the mail import: `list_mail_accounts`, `get_mail_account`, `create_mail_account`, `update_mail_account`, `delete_mail_account`, `test_mail_account`, `process_mail_account`, `list_mail_rules`, `get_mail_rule`, `create_mail_rule`, `update_mail_rule`, `delete_mail_rule` and `list_processed_mail` (compact rows). Passwords are write-only: they are accepted when an account is created or changed and are never returned, quoted or logged, nor is any OAuth token (Gmail and Outlook accounts are set up in the Paperless web UI). Rules take tags, correspondent, document type and owner by name or id. `confirm` is needed to delete an account or a rule, to fetch an account now with `process_mail_account` (its rules can delete or move mail on the mail server, which cannot be undone), for a rule that is enabled and deletes or moves mail (when it is created, or when a change widens what it reaches), to point an account at another server, port or security without a new password (Paperless would send the saved password there) or to turn encryption off, and to hand a rule to another owner. `test_mail_account` logs in with the saved password and changes nothing; a failed login is a result, not an error. `process_mail_account` only queues the fetch: follow it with `list_processed_mail` and the Paperless task list. `workflows` (off by default; `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow`, `delete_workflow`) manages the workflows Paperless runs by itself, with triggers and actions as nested objects and tags, correspondents, document types, storage paths, custom fields, users and groups given by name. An enabled workflow keeps acting on every matching document, so `create_workflow` and `update_workflow` need `confirm` when it moves documents to the trash, e-mails them, calls a webhook, removes tags or other values, or changes owner or permissions (disabled workflows and plain filing, such as tags and titles, need none), and `delete_workflow` always does. Password removal and applying AI suggestions are not written by these tools (they are shown when read), webhook header values and passwords are never shown, and a setting that does not belong to its trigger or action type is an error |
-| `PAPERLESS_MCP_DISABLED_TOOLS` | Tools never offered, e.g. `ask_paperless_ai,get_ai_suggestions` |
+| `PAPERLESS_PUBLIC_URL` | Base URL for links shown to you, if it differs from `PAPERLESS_URL` |
+| `PAPERLESS_MCP_TOOLSETS` | Toolsets to offer, comma-separated, or `all` (default `core,ai`) |
+| `PAPERLESS_MCP_READ_ONLY` | `true` to offer only tools that change nothing |
+| `PAPERLESS_MCP_DISABLED_TOOLS` | Tools never offered, by name |
+| `PAPERLESS_MCP_UPLOAD_DIRS` | Directories the model may upload files from by path (stdio only; default: none) |
+
+## Compatibility
+
+| | |
+|---|---|
+| **paperless-ngx** | 3.4.2 and later (API version 10). Every change is tested against 3.4.2, the latest 3.x release weekly. 2.x is not supported |
+| **Clients** | Claude Code and Claude Desktop over stdio, claude.ai custom connectors and other MCP clients over Streamable HTTP |
+| **Runtime** | Python 3.14 or later (`uvx` fetches it for you), or the container image |
+
+## Documentation
+
+- [Configuration](docs/configuration.md): every variable, the toolsets, read-only mode, uploads
+- [Tool reference](docs/tools.md): all tools and prompts
+- [Run over HTTP](docs/http.md): bearer tokens, allowed hosts, what the transport refuses
+- [Connect claude.ai](docs/claude-ai-connector.md): sign-in through your identity provider
+- [Run in a container](docs/container.md): the image, compose files, reverse proxy
+- [Development](docs/development.md): architecture, how it is tested, how to contribute
 
 ## Known limitations
 
+- **One Paperless user per server.** Every client of a server acts as the user of its
+  `PAPERLESS_TOKEN`, also when clients sign in through an identity provider. Run one server per
+  Paperless account.
 - **`search_documents` with `more_like_id` can return nothing on Paperless 3.4.2.** Paperless
   3.4.2 (Tantivy 0.26) panics while scoring a more-like-this query once edited or deleted
   documents have left stale entries in the search index. Paperless catches the panic, logs
@@ -270,36 +234,14 @@ are decision-28, carried over into decision-31.
   example `docker compose exec webserver document_index reindex`). The fix is upstream in Tantivy
   (tantivy PR 2964); it needs a Paperless release that ships it.
 
-## Development
+## How this project is built
 
-Requires [uv](https://docs.astral.sh/uv/), [just](https://just.systems) and Go (pre-commit builds
-the pinned gitleaks that `just check` runs over the whole history). Task management uses the
-latest Backlog.md CLI. `just backlog-update` installs it and refreshes the managed block of
-CLAUDE.md and AGENTS.md non-interactively (the CLI's own menu is driven through a pseudo-terminal;
-only that block may change); review and commit the diff. A weekly workflow
-(`.github/workflows/backlog-drift.yml`, also runnable by hand) compares the latest release on npm
-with the `backlog.md-instructions-version` header of both files and keeps one `backlog-drift`
-issue open while they are behind (`just backlog-drift-check` runs the comparison locally).
-
-```sh
-just install                  # create the environment
-just backlog-update           # the latest Backlog.md CLI and its agent instructions
-uv run pre-commit install     # run the gates on every commit
-just check                    # the full local gate, identical to CI
-just --list                   # all recipes
-```
-
-Scheduled quality jobs (weekly GitHub workflows, each also a recipe and a manual dispatch):
-
-```sh
-just mutation                 # mutmut on services/ and paperless/, fails below the 80 % gate, a few minutes
-just e2e-latest               # E2E suite against the latest stable paperless-ngx 3.x image
-just drift-check              # vendored Paperless schema and docs vs. the latest 3.x release
-```
-
-Lint suppressions name a specific code and a reason, e.g. `# noqa: S101 -- reason`
-(see `just hygiene`). Inline `# pragma` comments are banned: coverage exclusions are reviewed
-`exclude_also` patterns in `pyproject.toml`.
+The code is written by AI agents and held to rules that are checked, not remembered: a layered
+architecture enforced by import contracts, every design decision recorded with the test that
+guards it (`backlog/decisions/`), a contract suite that runs the same tests against a fake and a
+real Paperless, and mutation testing with a gate. Plans and task history are in `backlog/`. See
+[Development](docs/development.md) to run the checks yourself; issues and pull requests are
+welcome.
 
 ## Credits
 
@@ -308,7 +250,8 @@ adopts some of their ideas deliberately:
 
 - [pvliesdonk/paperless-mcp](https://github.com/pvliesdonk/paperless-mcp) (MIT): field
   projection in lists, content slicing with a next offset, retries only for idempotent calls,
-  token redaction, errors that name the next call, a central tool-annotation table, `web_url`.
+  token redaction, errors that name the next call, a central tool-annotation table, `web_url`,
+  and the OIDC proxy beside bearer tokens.
 - [baruchiro/paperless-mcp](https://github.com/baruchiro/paperless-mcp) (ISC): names instead of
   IDs in output, `confirm: true` for destructive calls, an upload allowlist, live end-to-end tests
   against a real Paperless, a test over every advertised tool schema.
@@ -317,6 +260,17 @@ adopts some of their ideas deliberately:
   features (versions, AI suggestions, trash, PDF operations), prompts that ask for confirmation,
   a test that every tool named in a prompt exists.
 
+Thanks to the [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) and
+[FastMCP](https://github.com/PrefectHQ/fastmcp) projects, which this server stands on.
+
 ## Licence
 
 MIT, see [LICENSE](LICENSE).
+
+---
+
+<div align="center">
+
+If paperless-mcp saves you time, a ⭐ helps other Paperless users find it.
+
+</div>
