@@ -75,12 +75,16 @@ docs-sync-paperless:
 install:
     uv sync
 
-# Install or update the Backlog.md CLI to its latest release (needs npm). When the version changes,
-# refresh the managed block of CLAUDE.md and AGENTS.md with `backlog agents --update-instructions`
-# (its `backlog.md-instructions-version` header names the release it was written by) and commit it.
+# Install or update the Backlog.md CLI to its latest release (needs npm).
 backlog-install:
     npm install --global backlog.md@latest
     backlog --version
+
+# Install the latest Backlog.md CLI and refresh the managed block of CLAUDE.md and AGENTS.md with it,
+# non-interactively (the CLI's own menu is driven through a pseudo-terminal; only that block may
+# change, see scripts/backlog_instructions.py). Review and commit the diff.
+backlog-update: backlog-install
+    uv run python scripts/backlog_instructions.py refresh CLAUDE.md AGENTS.md
 
 # Lint: ruff, then the suppression and patching rules ruff cannot express.
 lint: && hygiene
@@ -361,6 +365,44 @@ drift-issue report="drift-report.md":
     else
         uv run python scripts/scheduled_jobs.py close-issue --label paperless-drift \
             --comment "Resolved: the vendored Paperless reference matches the latest 3.x release again."
+    fi
+
+# Compare the latest backlog.md release on npm with the `backlog.md-instructions-version` header of
+# CLAUDE.md and AGENTS.md (weekly job; PLMCP-50). Needs npm and the network; changes nothing in the
+# repository. DRIFT_REPORT=path also copies the report there (backlog-drift-issue reads it); the
+# exit code is 0 with or without drift.
+backlog-drift-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    status=0
+    uv run python scripts/backlog_instructions.py check CLAUDE.md AGENTS.md --report "$tmp/report.md" || status=$?
+    # 10 is DRIFT_EXIT_CODE in scripts/scheduled_jobs.py; keep the two in step.
+    if (( status == 10 )); then
+        cat "$tmp/report.md"
+        if [[ -n "${DRIFT_REPORT:-}" ]]; then cp "$tmp/report.md" "$DRIFT_REPORT"; fi
+    elif (( status != 0 )); then
+        exit "$status"
+    elif [[ -n "${DRIFT_REPORT:-}" ]]; then
+        # No drift: drop a report left by an earlier run, so the issue is closed.
+        rm -f -- "$DRIFT_REPORT"
+    fi
+
+# Report the result of `backlog-drift-check` (its DRIFT_REPORT file) as the one GitHub issue labelled
+# backlog-drift, through `gh` (needs GH_TOKEN with issues: write): open it, or refresh it with a
+# comment; with no report file (no drift) close it. Never duplicates an open issue.
+backlog-drift-issue report="backlog-drift-report.md":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -f "{{report}}" ]]; then
+        uv run python scripts/scheduled_jobs.py open-issue \
+            --title "Backlog.md instructions are behind the latest release" \
+            --label backlog-drift --description "Backlog.md release newer than the agent instructions" \
+            --body-file "{{report}}"
+    else
+        uv run python scripts/scheduled_jobs.py close-issue --label backlog-drift \
+            --comment "Resolved: the Backlog.md instructions match the latest release again."
     fi
 
 # Run every pre-commit hook on all files.

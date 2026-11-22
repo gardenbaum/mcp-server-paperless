@@ -1,0 +1,68 @@
+name: Backlog.md drift check
+
+# Weekly and on demand (PLMCP-50): compare the latest backlog.md release on npm with the
+# `backlog.md-instructions-version` header of CLAUDE.md and AGENTS.md and open a GitHub issue
+# when they are behind. At most one issue stays open (label backlog-drift); a later run refreshes
+# it, and a run without drift closes it. Fix: `just backlog-update`, review, commit.
+on:
+  schedule:
+    - cron: "37 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      open_issue:
+        description: "Open or refresh the GitHub issue when drift is found (off: report only)"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backlog-drift
+  cancel-in-progress: false
+
+env:
+  # renovate: datasource=pypi depName=rust-just
+  RUST_JUST_VERSION: "1.59.0"
+
+jobs:
+  backlog-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write # only the issue step has a token (GH_TOKEN)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Install just
+        run: uv tool install "rust-just==${RUST_JUST_VERSION}"
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      - name: Compare the latest backlog.md release with the instructions
+        run: just backlog-drift-check
+        env:
+          DRIFT_REPORT: backlog-drift-report.md
+
+      - name: Publish the drift report
+        run: |
+          if [ -f backlog-drift-report.md ]; then
+            cat backlog-drift-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No drift: the Backlog.md instructions match the latest release." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Open, refresh or close the drift issue
+        if: ${{ github.event_name == 'schedule' || inputs.open_issue }}
+        run: just backlog-drift-issue
+        env:
+          GH_TOKEN: ${{ github.token }}
