@@ -30,7 +30,7 @@ from paperless_mcp.domain.errors import PaperlessMcpError, PermissionDenied, Val
 from paperless_mcp.domain.pdf import StartedTasks
 from paperless_mcp.paperless.errors import REJECTED
 from paperless_mcp.paperless.pagination import Page
-from paperless_mcp.paperless.queued import Queued, TaskWaiter, not_applied
+from paperless_mcp.paperless.queued import Queued, TaskWaiter, not_applied, task_failed
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
@@ -108,8 +108,16 @@ def _merged(document_ids: Sequence[int]) -> Match:
     return _named([f"{joined[:MERGED_NAME_LIMIT]}_merged.pdf"])
 
 
-def _failure(what: str) -> Callable[[], Validation]:
-    return lambda: not_applied(what)
+def _failure(what: str) -> Callable[[str], Validation]:
+    return lambda _: not_applied(what)
+
+
+def _edit_failed(task_id: str) -> Validation:
+    return task_failed(task_id, "a file that is not a PDF or a page that does not exist")
+
+
+def _password_failed(task_id: str) -> Validation:
+    return task_failed(task_id, "a wrong password or a file that is not a PDF")
 
 
 def _refused() -> PermissionDenied:
@@ -207,7 +215,7 @@ class PaperlessPdfWriter:
             match = _pattern(rf"{document_id}_edit_\d+\.pdf")
             expected = len({p.document for p in pages})
         try:
-            return await self._run("edit_pdf", body, CONSUME, match, expected, failed=not_editable)
+            return await self._run("edit_pdf", body, CONSUME, match, expected, failed=_edit_failed)
         except Validation as error:
             raise _plain(error, not_editable()) from None
 
@@ -232,7 +240,7 @@ class PaperlessPdfWriter:
                 CONSUME,
                 _named([f"{document_id}_unprotected.pdf"]),
                 1,
-                failed=wrong_password,
+                failed=_password_failed,
             )
         except Validation as error:
             raise _plain(error, wrong_password()) from None
@@ -259,14 +267,18 @@ class PaperlessPdfWriter:
         match: Match | None,
         expected: int,
         *,
-        failed: Callable[[], Validation],
+        failed: Callable[[str], Validation],
     ) -> StartedTasks:
         """Send the request, then collect the new tasks of ``kind`` that ``match``.
 
-        Serialised, so that two requests cannot share a mark. The mark is the newest task of this
-        user and kind before the request; new tasks are those after it. Nothing that goes wrong
-        in reading the tasks is raised once the request was accepted: it is reported in the
-        result, because an error would invite a repeat of work that is already queued.
+        Serialised, so that two requests cannot share a mark. The lock has to span the wait for a
+        queued task (3.5) and the lookup, not only the mark and the request: another request that
+        posted in between would make file tasks of the same names, which this one would take.
+        The wait is bounded (``WAIT_SECONDS``), and ends in an unconfirmed result, not an error.
+        The mark is the newest task of this user and kind before the request; new tasks are
+        those after it. Nothing that goes wrong in reading the tasks is raised once the request
+        was accepted: it is reported in the result, because an error would invite a repeat of
+        work that is already queued.
         """
         async with self._lock:
             user = await self._user()
@@ -275,10 +287,17 @@ class PaperlessPdfWriter:
                 queued = await self._client.call("POST", f"{BASE}{endpoint}/", Queued, json=body)
             except PermissionDenied:
                 raise _refused() from None
-            if await self._waiter.settled(queued) in {"failure", "revoked"}:
-                raise failed()
+            unconfirmed = await self._waiter.confirmed(queued, failed)
             if problem is not None:
                 return StartedTasks(ids=(), expected=expected, problem=problem)
+            if unconfirmed is not None:
+                # Accepted, but not followed to its end: hand the queued task back, do not raise.
+                return StartedTasks(
+                    ids=(unconfirmed.task_id,),
+                    expected=expected,
+                    problem="unconfirmed",
+                    detail=unconfirmed.reason,
+                )
             found: list[_Task] = []
             deadline = self._clock() + self._settle
             while True:

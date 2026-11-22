@@ -4,6 +4,7 @@ title: Model Paperless 3.5 behaviour in FakePaperless and refresh the vendored d
 status: To Do
 assignee: []
 created_date: '2026-11-22T12:40:00Z'
+updated_date: '2026-11-22T13:30:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -31,3 +32,9 @@ PLMCP-46 made the adapter handle paperless-ngx 3.5.1 and made the live tests ver
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Known and accepted until this task is done: on 3.5 the confirm preview of delete_taxonomy_item (and of the bulk tag edit) says child tags of other users are deleted with the tag, but Paperless 3.5 refuses that deletion (403). tests/e2e/test_taxonomy_edits.py asserts the preview text knowingly.
+<!-- SECTION:NOTES:END -->

@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Collection, Sequence
 
     from paperless_mcp.domain.documents import DocumentQuery, FileVersion
+    from paperless_mcp.domain.tasks import Unconfirmed
     from paperless_mcp.domain.versions import VersionUpload
     from paperless_mcp.paperless.client import PaperlessClient, Params
 
@@ -686,7 +687,7 @@ class PaperlessDocumentWriter:
 
     async def merge_as_versions(
         self, root_id: int, source_ids: Sequence[int], label: str | None
-    ) -> None:
+    ) -> Unconfirmed | None:
         """See ``DocumentWriter.merge_as_versions``.
 
         The body lists the root first and names it again as ``root_document_id``. Paperless
@@ -698,5 +699,4 @@ class PaperlessDocumentWriter:
         if label is not None:
             body["version_label"] = label
         queued = await self._client.call("POST", MERGE_AS_VERSIONS_PATH, Queued, json=body)
-        if await self._waiter.settled(queued) in {"failure", "revoked"}:
-            raise not_applied(MERGE)
+        return await self._waiter.confirmed(queued, lambda _: not_applied(MERGE))

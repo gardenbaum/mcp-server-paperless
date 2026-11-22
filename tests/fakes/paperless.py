@@ -105,7 +105,7 @@ from paperless_mcp.domain.instance import (
 )
 from paperless_mcp.domain.pdf import StartedTasks
 from paperless_mcp.domain.permissions import GroupPage, GroupRow, ObjectAccess, UserPage, UserRow
-from paperless_mcp.domain.tasks import TaskState, TaskStatus
+from paperless_mcp.domain.tasks import TaskState, TaskStatus, Unconfirmed
 from paperless_mcp.domain.taxonomy import SelectOption, TaxonomyDetail, TaxonomyItem
 from paperless_mcp.domain.trash import TrashedDocument, TrashPage
 from paperless_mcp.domain.views import FilterRule, SavedView
@@ -1552,7 +1552,7 @@ class FakePaperless:
     @write
     async def merge_as_versions(
         self, root_id: int, source_ids: Sequence[int], label: str | None
-    ) -> None:
+    ) -> Unconfirmed | None:
         """`DocumentWriter.merge_as_versions`: the sources vanish, their files become versions.
 
         Probed on 3.4.2: it merges at once; the sources are removed for good (no trash) and
@@ -2108,7 +2108,7 @@ class FakePaperless:
     @write
     async def bulk_edit_documents(
         self, document_ids: Sequence[int], change: DocumentChange
-    ) -> None:
+    ) -> Unconfirmed | None:
         """`BulkWriter.bulk_edit_documents` (BulkEditView).
 
         Order in Paperless 3.4.2: the request is validated as a whole (400: unknown or repeated

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-22T12:11:00Z'
-updated_date: '2026-11-22T13:16:00Z'
+updated_date: '2026-11-22T13:30:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -39,7 +39,7 @@ Steps: refresh the vendored Paperless docs and openapi.json to 3.5.x (just docs-
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [x] #1 Tests written first (red, then green) at every test level the change touches
+- [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
@@ -83,6 +83,8 @@ Possible upstream issue, not papered over: the login throttle (429 on /api/token
 Follow-ups: PLMCP-47 (3.5 mode in the fake, vendored docs and pin decision, tag-deletion preview wording and a hint on that 403), PLMCP-48 (unobserved and slow queued tasks).
 
 Controller: AC #2 is split. Adapter handling of both versions is done and wire-tested here; fake-based contract coverage of 3.5 moves to PLMCP-47, which already carries it. AC #3: e2e-latest against 3.5.1 is green (629 passed); the full pinned 3.4.2 suite is verified by the post-merge e2e-full run on main, after which the controller sets this task Done.
+
+DoD #1 (tests first) unchecked on review: queued.py and the admin READ_CONFIG hint were written together with or before their first tests, which doc-2 step 4 does not allow; the wiring tests (bulk, pdf, versions) were red first. For the review round (unconfirmed outcome, PDF writer, neutral failure messages) tests were written first and run red before the code: test_queued (confirmed/Unconfirmed), services bulk_documents/versions/pdf unconfirmed tests, adapter pdf tests for the neutral failure messages and the unconfirmed StartedTasks.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

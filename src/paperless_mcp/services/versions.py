@@ -211,11 +211,24 @@ class VersionService:
         if not confirm:
             raise ConfirmationRequired.for_effect(self._effect(root, sources, text))
         try:
-            await self._writer.merge_as_versions(root_id, tuple(source_ids), text)
+            unconfirmed = await self._writer.merge_as_versions(root_id, tuple(source_ids), text)
         finally:
             for kind in COUNTED:
                 self._taxonomy.invalidate(kind)
         link = document_link(self._web_url, root_id)
+        if unconfirmed is not None:
+            return VersionsMerged(
+                document_id=root_id,
+                merged_document_ids=tuple(source_ids),
+                versions=None,
+                web_url=link,
+                unconfirmed_task_id=unconfirmed.task_id,
+                message=(
+                    f"Not confirmed: Paperless queued the merge as task {unconfirmed.task_id}, "
+                    f"but {unconfirmed.reason}. Read it with get_task, then list the versions "
+                    "with list_document_versions, before repeating the call."
+                ),
+            )
         try:
             versions = (await self._reader.get_document(root_id)).versions
         except PaperlessMcpError:

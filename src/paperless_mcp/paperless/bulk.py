@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from pydantic import JsonValue
 
     from paperless_mcp.domain.bulk import BulkKind, DocumentChange, PermissionsChange
+    from paperless_mcp.domain.tasks import Unconfirmed
     from paperless_mcp.paperless.client import PaperlessClient
 
 BULK_EDIT: Final = "bulk edit"
@@ -111,7 +112,7 @@ class PaperlessBulkWriter:
 
     async def bulk_edit_documents(
         self, document_ids: Sequence[int], change: DocumentChange
-    ) -> None:
+    ) -> Unconfirmed | None:
         """See ``BulkWriter.bulk_edit_documents``.
 
         A 403 means the global change permission is missing, or one document is not changeable
@@ -128,8 +129,7 @@ class PaperlessBulkWriter:
             queued = await self._client.call("POST", DOCUMENTS, Queued, json=body)
         except PermissionDenied:
             raise documents_refused() from None
-        if await self._waiter.settled(queued) in {"failure", "revoked"}:
-            raise not_applied(BULK_EDIT)
+        return await self._waiter.confirmed(queued, lambda _: not_applied(BULK_EDIT))
 
     async def delete_taxonomy_items(self, kind: BulkKind, item_ids: Sequence[int]) -> None:
         """See ``BulkWriter.delete_taxonomy_items``."""

@@ -65,7 +65,7 @@ if TYPE_CHECKING:
     )
     from paperless_mcp.domain.raw import RawReply
     from paperless_mcp.domain.sharing import FileVersionKind, ShareBundle, ShareLink
-    from paperless_mcp.domain.tasks import TaskState, TaskStatus
+    from paperless_mcp.domain.tasks import TaskState, TaskStatus, Unconfirmed
     from paperless_mcp.domain.taxonomy import (
         TaxonomyDetail,
         TaxonomyItem,
@@ -330,13 +330,17 @@ class DocumentWriter(Protocol):
 
     async def merge_as_versions(
         self, root_id: int, source_ids: Sequence[int], label: str | None
-    ) -> None:
+    ) -> Unconfirmed | None:
         """Make the source documents versions of the root document.
 
         The sources stop existing as documents of their own, for good (no trash): their
         metadata, notes and tags are lost, only their files remain, as the root's newest
         versions. ``label`` is only valid with exactly one source. Paperless merges at once. Not
         retried: a repeat would answer 400 for sources that are gone.
+
+        Returns:
+            None when the merge is made, or ``Unconfirmed`` when Paperless 3.5 queued it and the
+            task could not be followed to its end.
 
         Raises:
             PermissionDenied: Unless the user is a superuser: the global change and delete
@@ -416,12 +420,17 @@ class BulkWriter(Protocol):
 
     async def bulk_edit_documents(
         self, document_ids: Sequence[int], change: DocumentChange
-    ) -> None:
+    ) -> Unconfirmed | None:
         """Apply ``change`` to every document of ``document_ids``.
 
         Tags are removed (with their child tags) and then added (with their parent tags); custom
         fields are set one by one and the others stay. A deletion moves to the trash;
         reprocessing is queued and runs in the background.
+
+        Returns:
+            None when the change is made (Paperless 3.5 queues it as a task and the writer
+            waits for it), or ``Unconfirmed`` when the queued task could not be followed to its
+            end: the change was accepted but may not be made yet.
 
         Raises:
             PermissionDenied: The user may not change one of the documents (nothing is changed),

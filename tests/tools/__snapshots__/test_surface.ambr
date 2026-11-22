@@ -1293,6 +1293,18 @@
             'description': 'Selected documents that already are as asked; they are left alone.',
             'type': 'integer',
           }),
+          'unconfirmed_task_id': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Set when Paperless queued the change as a task whose result could not be observed: it may not be made yet or may have failed. Read it with get_task and the documents again before repeating the call; null when the change is made.',
+          }),
         }),
         'required': list([
           'operation',
@@ -12055,7 +12067,19 @@
               }),
             ]),
             'default': None,
-            'description': 'Set when the versions could not be listed after the merge.',
+            'description': 'Set when the versions could not be listed or the merge is unconfirmed.',
+          }),
+          'unconfirmed_task_id': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Set when Paperless queued the merge as a task whose result could not be observed: the merge may not be made yet or may have failed. Read it with get_task, then list_document_versions; null when the merge is made.',
           }),
           'versions': dict({
             'anyOf': list([

@@ -5,7 +5,9 @@ from typing import TYPE_CHECKING
 import httpx2
 import pytest
 
-from paperless_mcp.domain.errors import UpstreamTimeout
+from paperless_mcp.domain.errors import Validation
+from paperless_mcp.domain.tasks import Unconfirmed
+from paperless_mcp.paperless.client import RetryPolicy
 from paperless_mcp.paperless.queued import Queued, TaskWaiter
 
 if TYPE_CHECKING:
@@ -41,19 +43,18 @@ def row(status: str, task_id: str = TASK) -> dict[str, object]:
 
 
 class Tasks:
-    """The task list: one answer per read (the last repeats), or a failing status."""
+    """The task list: one answer per read (the last repeats). An answer is rows or a status."""
 
-    def __init__(self, *answers: list[dict[str, object]], status: int = 200) -> None:
-        self.answers: list[list[dict[str, object]]] = list(answers)
-        self.status: int = status
+    def __init__(self, *answers: list[dict[str, object]] | int) -> None:
+        self.answers: list[list[dict[str, object]] | int] = list(answers)
         self.reads: list[dict[str, str]] = []
 
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
         self.reads.append(dict(request.url.params))
-        if self.status != 200:
-            return httpx2.Response(self.status, json={"detail": "no"})
-        rows = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
-        body = {"count": len(rows), "next": None, "previous": None, "results": rows}
+        answer = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
+        if isinstance(answer, int):
+            return httpx2.Response(answer, json={"detail": "no"})
+        body = {"count": len(answer), "next": None, "previous": None, "results": answer}
         return httpx2.Response(200, json=body)
 
 
@@ -74,7 +75,7 @@ class Clock:
 
 def waiter(make_client: ClientFactory, tasks: Tasks, clock: Clock) -> TaskWaiter:
     return TaskWaiter(
-        make_client(tasks),
+        make_client(tasks, retry=RetryPolicy(attempts=1)),
         wait_seconds=5.0,
         poll_seconds=0.5,
         visible_seconds=1.0,
@@ -84,25 +85,41 @@ def waiter(make_client: ClientFactory, tasks: Tasks, clock: Clock) -> TaskWaiter
     )
 
 
-async def test_an_answer_without_a_task_id_is_done_and_reads_nothing(
+ANSWER = Queued(result="OK", task_id=TASK)
+
+
+async def test_an_answer_without_a_task_id_is_confirmed_and_reads_nothing(
     make_client: ClientFactory,
 ) -> None:
     tasks, clock = Tasks([]), Clock()
 
-    state = await waiter(make_client, tasks, clock).settled(Queued(result="OK"))
+    outcome = await waiter(make_client, tasks, clock).confirmed(Queued(result="OK"), _never)
 
-    assert (state, tasks.reads, clock.sleeps) == (None, [], [])
+    assert (outcome, tasks.reads, clock.sleeps) == (None, [], [])
 
 
-@pytest.mark.parametrize("final", ["success", "failure", "revoked"])
-async def test_the_task_is_followed_until_it_has_ended(
+def _never(_: str) -> Validation:
+    return Validation("failed")
+
+
+@pytest.mark.parametrize("final", ["failure", "revoked"])
+async def test_a_task_that_failed_or_was_revoked_raises_what_the_caller_made_of_it(
     make_client: ClientFactory, final: str
 ) -> None:
-    tasks, clock = Tasks([row("pending")], [row("started")], [row(final)]), Clock()
+    tasks, clock = Tasks([row("pending")], [row(final)]), Clock()
 
-    state = await waiter(make_client, tasks, clock).settled(Queued(result="OK", task_id=TASK))
+    with pytest.raises(Validation, match=TASK):
+        _ = await waiter(make_client, tasks, clock).confirmed(
+            ANSWER, lambda task: Validation(f"task {task}")
+        )
 
-    assert state == final
+
+async def test_the_task_is_followed_until_it_has_succeeded(make_client: ClientFactory) -> None:
+    tasks, clock = Tasks([row("pending")], [row("started")], [row("success")]), Clock()
+
+    outcome = await waiter(make_client, tasks, clock).confirmed(ANSWER, _never)
+
+    assert outcome is None
     assert tasks.reads == [{"task_id": TASK}] * 3
     assert clock.sleeps == [0.5, 0.5]
 
@@ -113,41 +130,67 @@ async def test_other_tasks_in_the_answer_are_not_taken_for_ours(
     other = row("failure", "5b8f0c2e-0000-4000-8000-000000000002")
     tasks, clock = Tasks([other], [other, row("success")]), Clock()
 
-    state = await waiter(make_client, tasks, clock).settled(Queued(result="OK", task_id=TASK))
+    outcome = await waiter(make_client, tasks, clock).confirmed(ANSWER, _never)
 
-    assert state == "success"
+    assert outcome is None
 
 
-async def test_a_task_that_stays_invisible_is_unknown_after_the_grace(
+async def test_a_task_that_stays_invisible_is_unconfirmed_after_the_grace(
     make_client: ClientFactory,
 ) -> None:
     tasks, clock = Tasks([]), Clock()
 
-    state = await waiter(make_client, tasks, clock).settled(Queued(result="OK", task_id=TASK))
+    outcome = await waiter(make_client, tasks, clock).confirmed(ANSWER, _never)
 
-    assert state is None
+    assert isinstance(outcome, Unconfirmed)
+    assert outcome.task_id == TASK
+    assert "did not show up" in outcome.reason
     # The grace the task is given in place of being followed comes after the invisible second.
     assert clock.now == 1.0 + 2.0
 
 
-@pytest.mark.parametrize("status", [403, 500])
-async def test_a_task_list_that_cannot_be_read_leaves_the_outcome_unknown(
-    make_client: ClientFactory, status: int
+async def test_a_user_who_may_not_view_tasks_gets_an_unconfirmed_outcome_after_the_grace(
+    make_client: ClientFactory,
 ) -> None:
-    tasks, clock = Tasks([], status=status), Clock()
+    tasks, clock = Tasks(403), Clock()
 
-    state = await waiter(make_client, tasks, clock).settled(Queued(result="OK", task_id=TASK))
+    outcome = await waiter(make_client, tasks, clock).confirmed(ANSWER, _never)
 
-    assert (state, clock.sleeps) == (None, [2.0])
+    assert outcome == Unconfirmed(
+        task_id=TASK, reason="the Paperless user may not view tasks, so it cannot be followed"
+    )
+    assert clock.sleeps == [2.0]
 
 
-async def test_a_task_still_running_after_the_wait_is_a_timeout_that_names_it(
+async def test_a_transient_error_after_the_task_was_seen_is_waited_out(
+    make_client: ClientFactory,
+) -> None:
+    tasks, clock = Tasks([row("started")], 503, 500, [row("success")]), Clock()
+
+    outcome = await waiter(make_client, tasks, clock).confirmed(ANSWER, _never)
+
+    assert outcome is None
+    assert clock.sleeps == [0.5, 0.5, 0.5]
+
+
+async def test_a_task_list_that_stays_unreadable_is_unconfirmed_at_the_deadline(
+    make_client: ClientFactory,
+) -> None:
+    tasks, clock = Tasks(503), Clock()
+
+    outcome = await waiter(make_client, tasks, clock).confirmed(ANSWER, _never)
+
+    assert isinstance(outcome, Unconfirmed)
+    assert "could not be read" in outcome.reason
+    assert clock.now == 5.0
+
+
+async def test_a_task_still_running_after_the_wait_is_unconfirmed_and_named(
     make_client: ClientFactory,
 ) -> None:
     tasks, clock = Tasks([row("started")]), Clock()
 
-    with pytest.raises(UpstreamTimeout, match=TASK) as raised:
-        _ = await waiter(make_client, tasks, clock).settled(Queued(result="OK", task_id=TASK))
+    outcome = await waiter(make_client, tasks, clock).confirmed(ANSWER, _never)
 
-    assert "get_task" in (raised.value.hint or "")
+    assert outcome == Unconfirmed(task_id=TASK, reason="it was still running after 5 seconds")
     assert clock.now == 5.0

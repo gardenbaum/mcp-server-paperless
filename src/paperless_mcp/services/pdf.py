@@ -45,6 +45,10 @@ FORBIDDEN: Final = (
     "Paperless accepted the request, but the Paperless user may not view tasks, so none can be "
     "followed."
 )
+UNCONFIRMED: Final = (
+    "Paperless accepted the request, but its queued task could not be followed to the end "
+    "({detail}): the files it makes are not known yet. Follow the task with get_task."
+)
 UNREADABLE: Final = "Paperless accepted the request; its tasks could not be read."
 NONE_FOUND: Final = "Paperless accepted the request, but no task showed up for it{reason}."
 SOME_FOUND: Final = (
@@ -537,6 +541,8 @@ class PdfService:
             notes.append(FORBIDDEN)
         elif started.problem == "failed":
             notes.append(UNREADABLE)
+        elif started.problem == "unconfirmed":
+            notes.append(UNCONFIRMED.format(detail=started.detail))
         elif not tasks:
             notes.append(NONE_FOUND.format(reason=no_task))
         elif not complete:

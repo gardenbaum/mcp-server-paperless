@@ -277,6 +277,16 @@ class DocumentBulkReport(BaseModel):
     summary: Annotated[str, Field(description="What the operation does, in words.")]
     dry_run: Annotated[bool, Field(description="true: a preview, nothing was changed.")]
     applied: Annotated[bool, Field(description="true: Paperless was asked to make the change.")]
+    unconfirmed_task_id: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Set when Paperless queued the change as a task whose result could not be "
+                "observed: it may not be made yet or may have failed. Read it with get_task and "
+                "the documents again before repeating the call; null when the change is made."
+            )
+        ),
+    ] = None
     requested: Annotated[int, Field(description="How many documents were selected.")]
     affected_count: Annotated[
         int, Field(description="Documents that change (a preview) or changed (applied).")

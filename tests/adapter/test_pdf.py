@@ -923,7 +923,7 @@ class Queued35(Paperless):
     The consume tasks of the operation exist only once it has ended: `after` is shown from then on.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 -- the few ways the queued task misbehaves
         self,
         before: list[Json],
         after: list[Json],
@@ -931,16 +931,24 @@ class Queued35(Paperless):
         polls: int = 0,
         ends: str = "success",
         hidden: bool = False,
+        tasks_unreadable: bool = False,
+        forbidden: bool = False,
     ) -> None:
-        super().__init__(before, after)
+        super().__init__(before, after, tasks_status=403 if forbidden else 200)
         self.polls_left: int = polls
         self.ends: str = ends
         self.hidden: bool = hidden
+        self.tasks_unreadable: bool = tasks_unreadable
+        self.forbidden: bool = forbidden
 
     @override
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
         if request.url.path == "/api/tasks/" and request.url.params.get("task_id") == BULK_TASK:
             self.requests.append((request.method, request.url.path, dict(request.url.params), None))
+            if self.forbidden:
+                return httpx2.Response(403, json={"detail": "no"})
+            if self.tasks_unreadable:
+                return httpx2.Response(500, json={"detail": "no"})
             state = "started" if self.polls_left > 0 else self.ends
             self.polls_left -= 1
             bulk = {**row(1, "bulk_update"), "task_id": BULK_TASK, "status": state}
@@ -1002,7 +1010,8 @@ async def test_a_queued_task_the_user_cannot_see_is_given_the_grace_by_the_write
 
     tasks = await writer(make_client, server, clock).rotate_documents((7,), 90)
 
-    assert tasks.ids == (task_id(12),)
+    assert (tasks.ids, tasks.problem) == ((BULK_TASK,), "unconfirmed")
+    assert tasks.detail == "it did not show up in the task list"
     # 3 seconds of a missing row, polled every quarter second, then 2 seconds of grace, all on the
     # clock and the sleep the writer was given.
     assert clock.sleeps == [0.25] * 12 + [2.0]
@@ -1013,10 +1022,17 @@ async def test_an_edit_whose_task_fails_says_the_file_may_not_be_a_pdf(
 ) -> None:
     server = Queued35(OLD, OLD, ends="failure")
 
-    with pytest.raises(Validation, match="may not be a PDF"):
+    with pytest.raises(Validation) as raised:
         _ = await writer(make_client, server).edit_pdf(
             7, (PageSlot(page=1),), output="new_document"
         )
+
+    # Paperless names no cause on the queued path: the message says so and offers the likely one.
+    assert raised.value.message == (
+        f"Paperless reported task {BULK_TASK} as failed; the likely causes are a file that is "
+        "not a PDF or a page that does not exist."
+    )
+    assert "part of it" in (raised.value.hint or "")
 
 
 async def test_a_password_removal_whose_task_fails_says_the_password_may_be_wrong(
@@ -1024,8 +1040,14 @@ async def test_a_password_removal_whose_task_fails_says_the_password_may_be_wron
 ) -> None:
     server = Queued35(OLD, OLD, ends="failure")
 
-    with pytest.raises(Validation, match="password"):
+    with pytest.raises(Validation) as raised:
         _ = await writer(make_client, server).remove_password(7, "x", output="new_document")
+
+    assert raised.value.message == (
+        f"Paperless reported task {BULK_TASK} as failed; the likely causes are a wrong password "
+        "or a file that is not a PDF."
+    )
+    assert "part of it" in (raised.value.hint or "")
 
 
 async def test_a_file_without_a_password_still_starts_no_task_on_3_5(
@@ -1036,3 +1058,30 @@ async def test_a_file_without_a_password_still_starts_no_task_on_3_5(
     tasks = await writer(make_client, server).remove_password(7, "x", output="new_document")
 
     assert (tasks.ids, tasks.expected) == ((), 1)
+
+
+@pytest.mark.parametrize("list_status", [200, 500], ids=["running", "unreadable"])
+async def test_a_queued_task_that_cannot_be_followed_returns_its_id_instead_of_raising(
+    make_client: ClientFactory, list_status: int
+) -> None:
+    # The request was accepted: the bulk_update task is handed back, so the agent can follow it.
+    server = Queued35(OLD, OLD, polls=10**6, tasks_unreadable=list_status == 500)
+    clock = Clock()
+
+    tasks = await writer(make_client, server, clock).rotate_documents((7,), 90)
+
+    assert tasks.ids == (BULK_TASK,)
+    assert tasks.problem == "unconfirmed"
+    assert tasks.expected == 1
+    assert tasks.detail is not None
+    assert BULK_TASK not in tasks.detail
+
+
+async def test_a_user_who_may_not_view_tasks_still_gets_the_forbidden_problem_on_3_5(
+    make_client: ClientFactory,
+) -> None:
+    server = Queued35(OLD, OLD, forbidden=True)
+
+    tasks = await writer(make_client, server).rotate_documents((7,), 90)
+
+    assert (tasks.ids, tasks.problem) == ((), "forbidden")
