@@ -1,11 +1,11 @@
 ---
 id: PLMCP-45
 title: Shard the weekly e2e-latest job
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-22T11:25:00Z'
-updated_date: '2026-11-22T11:36:00Z'
+updated_date: '2026-11-22T12:11:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -24,7 +24,7 @@ The weekly E2E run against the latest paperless-ngx 3.x (.github/workflows/e2e-l
 - [x] #1 e2e-latest.yml resolves the paperless-ngx version once and runs every shard 1..SHARDS against it on its own stack, fail-fast off, with a per-shard hang guard like e2e-full
 - [x] #2 just e2e-latest takes an optional shard and still runs the whole suite without one
 - [x] #3 scripts/e2e_ci.py workflow checks (tests/quality/test_e2e_ci.py) cover e2e-latest.yml: matrix, schedule, timeout and that every shard uses the resolved version
-- [ ] #4 A workflow_dispatch run of e2e-latest on main after the merge is green, or its failures are real upstream changes recorded as tasks
+- [x] #4 A workflow_dispatch run of e2e-latest on main after the merge is green, or its failures are real upstream changes recorded as tasks
 <!-- AC:END -->
 
 ## Definition of Done
@@ -49,6 +49,8 @@ The weekly E2E run against the latest paperless-ngx 3.x (.github/workflows/e2e-l
 
 <!-- SECTION:NOTES:BEGIN -->
 Red first: tests/quality/test_e2e_ci.py gained GOOD_LATEST, 21 mutated e2e-latest cases and the real-workflow check (49 red), then scripts/e2e_ci.py (workflow_problems now takes the latest workflow as a third argument; existing callers updated) went green. e2e-latest.yml: resolve job (just e2e-latest-version) plus a 3-shard matrix job, fail-fast off, 25 min guard, per-shard log artifacts. justfile: e2e-latest-version and e2e-latest [shard]. No gate, snapshot or decision weakened. Evidence: just check green (4399 passed, diff coverage 100 %); PAPERLESS_E2E_VERSION=3.4.2 just e2e-latest 3/3 under flock: 188 passed, 1 skipped in 7m51s locally.
+
+AC #4: manual run 45018761656 on main. The resolve job picked 3.5.1 in 14 s and all three shards ran against it (8:53, 8:29, 10:31 wall time, all well inside the 25-minute guard). The shards failed 35 tests in all; these are real upstream changes in paperless-ngx 3.5.1 (the pinned 3.4.2 suite is green nightly), recorded as PLMCP-46.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
