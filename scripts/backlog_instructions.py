@@ -98,7 +98,19 @@ def _read_until_quiet(fd: int, *, wait: float) -> None:
             return
 
 
-def drive_menu(root: Path, index: int, command: Sequence[str] = COMMAND) -> None:
+def _stop(child: subprocess.Popen[bytes], grace: float) -> None:
+    """Terminate the child, kill it when it ignores that, and reap it without waiting forever."""
+    child.terminate()
+    try:
+        _ = child.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        _ = child.wait(timeout=grace)
+
+
+def drive_menu(
+    root: Path, index: int, command: Sequence[str] = COMMAND, *, patience: float = _PATIENCE
+) -> None:
     """Run the interactive menu in ``root`` and select the ``index``-th item with the keyboard."""
     master, slave = pty.openpty()
     try:
@@ -107,13 +119,18 @@ def drive_menu(root: Path, index: int, command: Sequence[str] = COMMAND) -> None
             command, cwd=root, stdin=slave, stdout=slave, stderr=slave, start_new_session=True
         ) as child:
             os.close(slave)
-            _read_until_quiet(master, wait=_PATIENCE)
+            _read_until_quiet(master, wait=patience)
             for key in (_DOWN * index, b" ", b"\r"):
                 if key:
                     _ = os.write(master, key)
-                    _read_until_quiet(master, wait=1.0)
-            _read_until_quiet(master, wait=_PATIENCE)
-            code = child.wait(timeout=_PATIENCE)
+                    _read_until_quiet(master, wait=min(1.0, patience))
+            _read_until_quiet(master, wait=patience)
+            try:
+                code = child.wait(timeout=patience)
+            except subprocess.TimeoutExpired as error:
+                _stop(child, patience)
+                message = f"{command[0]} did not finish within {patience:g} s and was stopped"
+                raise JobError(message) from error
     finally:
         os.close(master)
     if code:
@@ -121,8 +138,21 @@ def drive_menu(root: Path, index: int, command: Sequence[str] = COMMAND) -> None
         raise JobError(message)
 
 
+def _check_refreshed(name: str, before: str, after: str, expected: str) -> None:
+    if outside_block(after) != outside_block(before):
+        message = f"{name} changed outside the managed block"
+        raise JobError(message)
+    version = instructions_version(after)
+    if version != expected:
+        message = f"{name} is still {version}, expected {expected}: the menu did not select it"
+        raise JobError(message)
+
+
 def refresh(root: Path, names: Sequence[str], expected: str, driver: Driver) -> None:
-    """Refresh the managed block of each file; only the block may change."""
+    """Refresh the managed block of each file; only the block may change.
+
+    Whatever goes wrong while a file is being refreshed, its original text is put back.
+    """
     for name in names:
         if name not in MENU:
             message = f"{name} is not offered by the CLI's menu ({', '.join(MENU)})"
@@ -132,16 +162,12 @@ def refresh(root: Path, names: Sequence[str], expected: str, driver: Driver) -> 
         before = path.read_text("utf-8")
         if instructions_version(before) == expected:
             continue
-        driver(root, MENU.index(name))
-        after = path.read_text("utf-8")
-        if outside_block(after) != outside_block(before):
+        try:
+            driver(root, MENU.index(name))
+            _check_refreshed(name, before, path.read_text("utf-8"), expected)
+        except JobError, OSError:
             _ = path.write_text(before, encoding="utf-8")
-            message = f"{name} changed outside the managed block; restored it"
-            raise JobError(message)
-        version = instructions_version(after)
-        if version != expected:
-            message = f"{name} is still {version}, expected {expected}: the menu did not select it"
-            raise JobError(message)
+            raise
 
 
 class _Args(argparse.Namespace):

@@ -2,6 +2,7 @@
 
 import io
 import sys
+import time
 from typing import TYPE_CHECKING
 
 import backlog_instructions
@@ -273,3 +274,59 @@ def test_the_menu_driver_moves_down_toggles_and_confirms_through_a_terminal(
 def test_the_menu_driver_reports_a_failing_cli(tmp_path: Path) -> None:
     with pytest.raises(scheduled_jobs.JobError, match="exited with 3"):
         backlog_instructions.drive_menu(tmp_path, 0, [sys.executable, "-c", "raise SystemExit(3)"])
+
+
+def test_refresh_restores_the_original_when_the_cli_removes_the_markers(tmp_path: Path) -> None:
+    before = write_files(tmp_path, "1.55.3")
+
+    def wipe(root: Path, index: int) -> None:
+        _ = (root / backlog_instructions.MENU[index]).write_text("no markers\n", encoding="utf-8")
+
+    with pytest.raises(scheduled_jobs.JobError, match=r"managed block"):
+        backlog_instructions.refresh(tmp_path, ["CLAUDE.md"], "1.57.4", wipe)
+
+    assert (tmp_path / "CLAUDE.md").read_text("utf-8") == before["CLAUDE.md"]
+
+
+def test_refresh_restores_the_original_when_the_header_is_missing_afterwards(
+    tmp_path: Path,
+) -> None:
+    before = write_files(tmp_path, "1.55.3")
+
+    def drop_header(root: Path, index: int) -> None:
+        path = root / backlog_instructions.MENU[index]
+        text = path.read_text("utf-8")
+        _ = path.write_text(text.replace(text.split("\n")[2] + "\n", ""), encoding="utf-8")
+
+    with pytest.raises(scheduled_jobs.JobError, match=r"header"):
+        backlog_instructions.refresh(tmp_path, ["AGENTS.md"], "1.57.4", drop_header)
+
+    assert (tmp_path / "AGENTS.md").read_text("utf-8") == before["AGENTS.md"]
+
+
+def test_refresh_restores_the_original_when_the_driver_fails(tmp_path: Path) -> None:
+    before = write_files(tmp_path, "1.55.3")
+
+    def fail(root: Path, index: int) -> None:
+        _ = (root / backlog_instructions.MENU[index]).write_text("half\n", encoding="utf-8")
+        message = "boom"
+        raise scheduled_jobs.JobError(message)
+
+    with pytest.raises(scheduled_jobs.JobError, match="boom"):
+        backlog_instructions.refresh(tmp_path, ["CLAUDE.md"], "1.57.4", fail)
+
+    assert (tmp_path / "CLAUDE.md").read_text("utf-8") == before["CLAUDE.md"]
+
+
+HANG = "import time; time.sleep(60)"
+STUBBORN = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"
+
+
+@pytest.mark.parametrize("script", [HANG, STUBBORN])
+def test_the_menu_driver_stops_a_child_that_never_exits(tmp_path: Path, script: str) -> None:
+    started = time.monotonic()
+
+    with pytest.raises(scheduled_jobs.JobError, match="did not finish"):
+        backlog_instructions.drive_menu(tmp_path, 0, [sys.executable, "-c", script], patience=0.3)
+
+    assert time.monotonic() - started < 10
