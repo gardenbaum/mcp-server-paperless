@@ -27,60 +27,62 @@ from typing import TextIO, cast
 # The number of parallel jobs of the full run. Its matrix lists the same shards (a test checks it).
 SHARDS = 3
 
-# Seconds per module on a hosted runner (ubuntu-latest, 4 vCPUs): the mean of the three e2e-full
-# runs on main 45032837175, 45033555760 and 45037907901 (PLMCP-44), a module's time being the gap of
-# the Actions timestamps of its pytest progress lines, 30 s of stack seeding taken off the first
-# module of a shard. The Celery-bound modules (bulk, writer, pdf, sharing, versions) took 2x the
-# time of the 4-core sandbox the first table came from. The weight the split balances; a module
-# not listed counts as the average of the listed ones, so a new module lands in some shard without
-# anyone editing this table; refresh the numbers when the balance drifts (a test checks the split
-# of the current table against the measured seconds). Keys are paths relative to the repository.
+# Seconds per module on a hosted runner (ubuntu-latest, 4 vCPUs): the median of four e2e-full runs,
+# 45032837175, 45033555760 and 45037907901 on main and 45044592721 on the PLMCP-44 branch
+# (PLMCP-44), a module's time being the gap of the Actions timestamps of its pytest progress lines,
+# 30 s of stack seeding taken off the first module of a shard. The Celery-bound modules (bulk,
+# writer, pdf, sharing, versions) took 2x the time of the 4-core sandbox the first table came from
+# and vary 1.5 to 2x between runs (the median ignores one fast or slow runner). The weight the
+# split balances; a module not listed counts as the average of the listed ones, so a new module
+# lands in some shard without anyone editing this table; refresh the numbers when the balance
+# drifts (a test checks the split of the current table against the measured seconds). Keys are
+# paths relative to the repository.
 MODULE_SECONDS: dict[str, float] = {
     "tests/contract/test_bulk.py": 284,
-    "tests/contract/test_document_writer.py": 179,
-    "tests/contract/test_pdf.py": 153,
-    "tests/contract/test_sharing.py": 125,
-    "tests/contract/test_document_versions.py": 108,
-    "tests/e2e/test_pdf.py": 93,
+    "tests/contract/test_document_writer.py": 174,
+    "tests/contract/test_pdf.py": 140,
+    "tests/contract/test_sharing.py": 107,
+    "tests/contract/test_document_versions.py": 103,
+    "tests/e2e/test_pdf.py": 88,
+    "tests/e2e/test_bulk.py": 59,
     "tests/e2e/test_update_document.py": 57,
-    "tests/contract/test_taxonomy_edits.py": 56,
-    "tests/e2e/test_bulk.py": 56,
-    "tests/contract/test_document_upload.py": 53,
-    "tests/contract/test_permissions.py": 47,
-    "tests/e2e/test_versions.py": 45,
-    "tests/contract/test_trash.py": 43,
-    "tests/e2e/test_admin.py": 41,
-    "tests/e2e/test_permissions.py": 39,
-    "tests/contract/test_notes_and_trash.py": 38,
-    "tests/contract/test_admin.py": 31,
+    "tests/contract/test_taxonomy_edits.py": 54,
+    "tests/e2e/test_versions.py": 51,
+    "tests/contract/test_document_upload.py": 48,
+    "tests/contract/test_permissions.py": 43,
+    "tests/contract/test_trash.py": 41,
+    "tests/contract/test_notes_and_trash.py": 40,
+    "tests/e2e/test_permissions.py": 40,
+    "tests/e2e/test_admin.py": 39,
     "tests/contract/test_document_reader.py": 31,
-    "tests/e2e/test_upload_document.py": 29,
+    "tests/contract/test_admin.py": 30,
+    "tests/e2e/test_upload_document.py": 28,
     "tests/e2e/test_raw.py": 21,
     "tests/e2e/test_notes_and_trash.py": 17,
-    "tests/contract/test_task_reader.py": 16,
-    "tests/e2e/test_mail.py": 16,
     "tests/e2e/test_taxonomy_edits.py": 16,
-    "tests/e2e/test_tasks.py": 15,
+    "tests/e2e/test_trash.py": 16,
+    "tests/contract/test_task_reader.py": 15,
+    "tests/e2e/test_mail.py": 15,
     "tests/e2e/test_files.py": 14,
-    "tests/e2e/test_trash.py": 14,
     "tests/e2e/test_stdio.py": 14,
-    "tests/contract/test_ai_reader.py": 12,
+    "tests/e2e/test_tasks.py": 12,
+    "tests/contract/test_ai_reader.py": 10,
     "tests/e2e/test_sharing.py": 10,
-    "tests/e2e/test_documents.py": 8,
     "tests/contract/test_workflows.py": 8,
+    "tests/e2e/test_documents.py": 8,
     "tests/contract/test_views.py": 7,
-    "tests/e2e/test_search.py": 6,
     "tests/e2e/test_http.py": 6,
+    "tests/e2e/test_search.py": 6,
     "tests/e2e/test_views.py": 6,
     "tests/contract/test_mail.py": 5,
     "tests/e2e/test_workflows.py": 5,
     "tests/contract/test_instance_reader.py": 3,
     "tests/contract/test_view_filters.py": 3,
-    "tests/contract/test_taxonomy_reader.py": 2,
-    "tests/e2e/test_stack.py": 2,
     "tests/e2e/test_ai.py": 2,
-    "tests/contract/test_taxonomy_writer.py": 1,
+    "tests/e2e/test_stack.py": 2,
     "tests/contract/test_raw.py": 1,
+    "tests/contract/test_taxonomy_reader.py": 1,
+    "tests/contract/test_taxonomy_writer.py": 1,
     "tests/e2e/test_client.py": 0,
 }
 

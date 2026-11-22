@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T09:24:00Z'
-updated_date: '2026-11-22T16:30:36Z'
+updated_date: '2026-11-22T16:49:02Z'
 labels: []
 dependencies: []
 priority: low
@@ -58,6 +58,10 @@ PAPERLESS_TASK_WORKERS (tests/e2e/compose.yaml is already 1; measured against 2 
 Not done: a per-module timing report in the shard runs (junit artifact); the derivation from the log timestamps works for refreshes, so it was left out of this change.
 
 Controller: the weights' unit changed from sandbox to hosted seconds while decision-23 names the 450 s tier budget, so decision-30 supersedes decision-23 (everything carried over; weights and budget are hosted-runner seconds; budget stays 450, which splits tiers earlier, stricter not weaker; PAPERLESS_TASK_WORKERS stays 1 with the measurements). decision-23 set to superseded by decision-30 with the CLI.
+
+Branch run 45044592721 (e2e-full on the branch with the 3-run mean weights, all green): tests 588/497/444 s (1.32x max/min) against a predicted 580/579/579. Per-module derivation as above (seeding 30 s off the first module): shard 1 552 s (predicted 554), shard 2 463 (554), shard 3 409 (553); the 36 s each to the observed totals is seeding. Shard 1 came out as predicted; shards 2 and 3 were fast because the Celery-bound modules were cheap: writer 91 s (mean of the first three 179), sharing 66 (146), versions 70 (108), pdf 113/65 (159/93), notes_and_trash 82 (38 the other way).
+
+Variance limits AC 1: the same module sets in the three earlier runs (unchanged shard layout) took shard 1 733/834/827 s, shard 2 398/538/476 s, shard 3 637/629/410 s of tests, a spread of up to 1.55x for identical work, so the runner or the queue state decides more than the split. Swapping modules between shards 1 and 3 on run 45044592721 alone would balance that run but fits one sample (it would move about 70 s of Celery-bound work, whose time swings by more than that between runs), so I did not. Weights now = median of the four runs (runs 45032837175, 45033555760, 45037907901 on main, 45044592721 on the branch; the median ignores one fast or slow runner better than the mean): predicted 561/560/560 s, total 1681 s. Evaluated against each of the four runs' measured per-module seconds the new split gives max/min 1.20, 1.07, 1.14 and 1.29 (the mean gave 1.18, 1.14, 1.09, 1.35; the table is no better or worse in sample). So the split is balanced in the median, but one main run lands within 15 percent only about half of the time; reliable 15 percent is not reachable by re-weighting alone. The test keeps the 15 percent on the measured median seconds (it already passed with the old table, the verdict did not change); AC 1 stays open.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
