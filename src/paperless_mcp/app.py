@@ -19,10 +19,15 @@ import uvicorn
 from cryptography.fernet import Fernet
 from fastmcp.server.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
 from fastmcp.server.auth.jwt_issuer import derive_jwt_key
-from fastmcp.server.auth.oidc_proxy import OIDCProxy
-from key_value.aio.stores.filetree import FileTreeStore
+from fastmcp.server.auth.oidc_proxy import OIDCConfiguration, OIDCProxy
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1CollectionSanitizationStrategy,
+    FileTreeV1KeySanitizationStrategy,
+)
 from key_value.aio.stores.memory import MemoryStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from pydantic import AnyHttpUrl, ValidationError
 
 from paperless_mcp.domain.errors import InvalidConfiguration
 from paperless_mcp.observability import RequestContext, request_header
@@ -177,27 +182,40 @@ class StaticBearerVerifier(TokenVerifier):
         )
 
 
+# Seconds the discovery request may take at startup (FastMCP's default).
+DISCOVERY_TIMEOUT = 10
 # The one scope the identity provider is asked for: it returns the ID token this server checks.
 OIDC_SCOPES = ["openid"]
+
+
+# Most entries the in-memory store keeps per collection (registrations, transactions, codes,
+# tokens); beyond it the oldest are dropped. /register and /authorize need no authentication, so
+# without a cap a flood of them would grow memory without bound (decision-31).
+MEMORY_ENTRIES = 10_000
+STORAGE_SALT = "paperless-mcp-oauth-storage"
 
 
 def oauth_storage(oidc: OidcSettings) -> AsyncKeyValue:
     """Where the OIDC layer keeps client registrations, sessions and upstream tokens.
 
-    In memory without ``storage_dir``; else files there, encrypted with a key derived from the
-    signing key (as FastMCP's own default store, which lives in a home directory the container
-    does not have).
+    In memory without ``storage_dir`` (capped per collection); else files there, with FastMCP's
+    file-name sanitising (any key stays inside its collection directory) and encrypted with a
+    Fernet key stretched from the signing key by PBKDF2, as FastMCP stretches a string signing
+    key. FastMCP's own default store lives in a home directory the container does not have.
     """
     if oidc.storage_dir is None:
-        return MemoryStore()
+        return MemoryStore(max_entries_per_collection=MEMORY_ENTRIES)
     signing_key = cast("SecretStr", oidc.jwt_signing_key).get_secret_value()
-    fernet_key = derive_jwt_key(
-        high_entropy_material=signing_key, salt="paperless-mcp-oauth-storage"
+    fernet_key = derive_jwt_key(low_entropy_material=signing_key, salt=STORAGE_SALT)
+    directory = Path(oidc.storage_dir)
+    files = FileTreeStore(
+        data_directory=directory,
+        key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(directory),
+        collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(directory),
     )
+    # A key that no longer decrypts (a new signing key) is a miss: clients register again.
     return FernetEncryptionWrapper(
-        key_value=FileTreeStore(data_directory=oidc.storage_dir),
-        fernet=Fernet(key=fernet_key),
-        raise_on_decryption_error=False,
+        key_value=files, fernet=Fernet(key=fernet_key), raise_on_decryption_error=False
     )
 
 
@@ -213,6 +231,27 @@ def oidc_proxy(oidc: OidcSettings) -> OIDCProxy:
         InvalidConfiguration: The discovery document cannot be read or lacks an endpoint.
     """
     config_url = str(oidc.config_url)
+    # Discovery first, on its own: FastMCP caches the document briefly, so the proxy below
+    # reuses it. It fails with httpx2's errors (this module may not import httpx2) or with
+    # pydantic's for a malformed document; the messages name the type only.
+    try:
+        _ = OIDCConfiguration.get_oidc_configuration(
+            AnyHttpUrl(config_url), strict=None, timeout_seconds=DISCOVERY_TIMEOUT
+        )
+    except ValidationError:
+        message = (
+            f"the document at {config_url} is no valid OpenID Connect discovery document "
+            "(ValidationError): it must name the issuer, an authorization and a token endpoint "
+            "and the signing keys (jwks_uri). Check PAPERLESS_MCP_OIDC_CONFIG_URL."
+        )
+        raise InvalidConfiguration(message) from None
+    except Exception as error:  # noqa: BLE001 -- see above
+        message = (
+            f"could not read the OIDC discovery document at {config_url} "
+            f"({type(error).__name__}): check PAPERLESS_MCP_OIDC_CONFIG_URL and that the "
+            "identity provider is reachable from this server."
+        )
+        raise InvalidConfiguration(message) from None
     try:
         return OIDCProxy(
             config_url=config_url,
@@ -220,6 +259,7 @@ def oidc_proxy(oidc: OidcSettings) -> OIDCProxy:
             client_secret=cast("SecretStr", oidc.client_secret).get_secret_value(),
             base_url=str(oidc.base_url).rstrip("/"),
             jwt_signing_key=cast("SecretStr", oidc.jwt_signing_key).get_secret_value(),
+            timeout_seconds=DISCOVERY_TIMEOUT,
             verify_id_token=True,
             required_scopes=OIDC_SCOPES,
             allowed_client_redirect_uris=list(oidc.allowed_redirect_uris),
@@ -227,13 +267,10 @@ def oidc_proxy(oidc: OidcSettings) -> OIDCProxy:
             require_authorization_consent=True,
             enable_cimd=True,
         )
-    # Discovery fails with httpx2's, pydantic's or FastMCP's own errors, and this module may
-    # not import httpx2; the message names the type only (decision-27 logging rules).
-    except Exception as error:  # noqa: BLE001 -- see above
+    except Exception as error:  # noqa: BLE001 -- FastMCP raises ValueError and others
         message = (
-            f"could not read the OIDC discovery document at {config_url} "
-            f"({type(error).__name__}): check PAPERLESS_MCP_OIDC_CONFIG_URL and that the "
-            "identity provider is reachable from this server."
+            f"could not set up the OIDC proxy from the discovery document at {config_url} "
+            f"({type(error).__name__}): check the client id, secret and signing key."
         )
         raise InvalidConfiguration(message) from None
 
@@ -361,8 +398,13 @@ class LoopbackOnly:
         await self.app(scope, receive, send)
 
 
-def _origin(url: HttpUrl) -> str:
-    port = "" if url.port in {None, 80, 443} else f":{url.port}"
+DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def public_origin(oidc: OidcSettings) -> str:
+    """The browser origin of the OIDC base URL: without a port only when it is the scheme's own."""
+    url = cast("HttpUrl", oidc.base_url)
+    port = "" if url.port in {None, DEFAULT_PORTS[url.scheme]} else f":{url.port}"
     return f"{url.scheme}://{url.host}{port}"
 
 
@@ -387,7 +429,7 @@ def build_app(
     if (server.auth is None) == authenticated or with_oidc != isinstance(server.auth, MultiAuth):
         message = "the server's authentication does not match the HTTP settings"
         raise InvalidConfiguration(message)
-    origins = [_origin(cast("HttpUrl", cast("OidcSettings", oidc).base_url))] if with_oidc else []
+    origins = [public_origin(cast("OidcSettings", oidc))] if with_oidc else []
     # Every option is explicit: FASTMCP_* environment variables must not loosen the app (a
     # wildcard origin, debug tracebacks, stateless routes, no session expiry).
     app = server.http_app(

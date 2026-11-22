@@ -40,9 +40,16 @@ class Issuer:
     token_requests: list[dict[str, str]] = field(default_factory=list)
     codes: dict[str, dict[str, str]] = field(default_factory=dict)
     issued: list[str] = field(default_factory=list)
+    # What a test changes: ID-token claims (None drops a claim), the key that signs it and the
+    # kid it names, and discovery fields left out.
+    claims: dict[str, object] = field(default_factory=dict)
+    signer: jwk.RSAKey | None = None
+    kid: str | None = None
+    left_out: set[str] = field(default_factory=set)
+    extra: dict[str, object] = field(default_factory=dict)
 
     def discovery(self) -> dict[str, object]:
-        return {
+        document: dict[str, object] = {
             "issuer": self.url,
             "authorization_endpoint": f"{self.url}/authorize",
             "token_endpoint": f"{self.url}/token",
@@ -53,6 +60,7 @@ class Issuer:
             "scopes_supported": ["openid", "email"],
             "code_challenge_methods_supported": ["S256"],
         }
+        return {k: v for k, v in document.items() if k not in self.left_out} | self.extra
 
     def id_token(self) -> str:
         now = int(time.time())
@@ -63,8 +71,10 @@ class Issuer:
             "iat": now,
             "exp": now + 3600,
             "email": "alice@example.test",
-        }
-        return jwt.encode({"alg": "RS256", "kid": self.key.kid}, claims, self.key)
+        } | self.claims
+        claims = {k: v for k, v in claims.items() if v is not None}
+        header = {"alg": "RS256", "kid": self.kid or self.key.kid}
+        return jwt.encode(header, claims, self.signer or self.key)
 
 
 def _pkce_matches(verifier: str, challenge: str) -> bool:

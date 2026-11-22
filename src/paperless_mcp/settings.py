@@ -257,6 +257,8 @@ class HttpSettings(BaseSettings):
 
 # The callback of claude.ai's custom connectors (docs/vendor/fastmcp oauth-proxy.mdx).
 CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback"
+# Anthropic has said the callback may move to claude.com; both domains are Anthropic's.
+CLAUDE_COM_CALLBACK = "https://claude.com/api/mcp/auth_callback"
 # Clients on this machine (the FastMCP client, Claude Code) call back on a loopback port.
 LOOPBACK_CALLBACKS = ("http://localhost:*", "http://127.0.0.1:*")
 _LOOPBACK_NAMES = frozenset({"localhost", "[::1]"})
@@ -310,7 +312,8 @@ class OidcSettings(BaseSettings):
             restart signs every OIDC client out.
         allowed_redirect_uris: Callbacks OAuth clients may register
             (``PAPERLESS_MCP_OIDC_ALLOWED_REDIRECT_URIS``): https URLs or loopback http, a
-            ``*`` for a port or in the path; default the claude.ai callback and loopback ports.
+            ``*`` for a port or in the path; default the claude.ai and claude.com callbacks and
+            loopback ports.
     """
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
@@ -333,6 +336,7 @@ class OidcSettings(BaseSettings):
     storage_dir: str | None = None
     allowed_redirect_uris: Annotated[tuple[str, ...], NoDecode] = (
         CLAUDE_CALLBACK,
+        CLAUDE_COM_CALLBACK,
         *LOOPBACK_CALLBACKS,
     )
 
@@ -373,7 +377,13 @@ class OidcSettings(BaseSettings):
     @field_validator("config_url")
     @classmethod
     def _check_config_url(cls, value: HttpUrl | None) -> HttpUrl | None:
-        return None if value is None else _https_or_loopback(value)
+        if value is None:
+            return None
+        # Refused, so that no message (the discovery refusal names the URL) ever carries them.
+        if value.username is not None or value.password is not None:
+            message = "the discovery URL may not carry credentials"
+            raise ValueError(message)
+        return _https_or_loopback(value)
 
     @field_validator("base_url")
     @classmethod
@@ -385,6 +395,7 @@ class OidcSettings(BaseSettings):
             or value.query is not None
             or value.fragment is not None
             or value.username is not None
+            or value.password is not None
         ):
             message = "use the origin only, such as https://mcp.example.org (no path or query)"
             raise ValueError(message)

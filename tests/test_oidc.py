@@ -9,23 +9,37 @@ import contextlib
 import logging
 import os
 import re
+import time
 from typing import TYPE_CHECKING, cast, override
 from urllib.parse import parse_qs, urlsplit
 
+import anyio
 import httpx2
 import pytest
+from cryptography.fernet import Fernet
 from fastmcp import Client
 from fastmcp.client.auth import OAuth
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth import MultiAuth
+from fastmcp.server.auth.jwt_issuer import derive_jwt_key
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from harness import admin, refused_url, serve
+from joserfc import jwk, jwt
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from mcp.shared.auth import AuthorizationCodeResult
 from oidc_issuer import CLIENT_ID, CLIENT_SECRET, Issuer, stub_issuer
 
-from paperless_mcp.app import StaticBearerVerifier, authenticator, build_app, check_startup
+from paperless_mcp.app import (
+    MEMORY_ENTRIES,
+    StaticBearerVerifier,
+    authenticator,
+    build_app,
+    check_startup,
+    oauth_storage,
+    public_origin,
+)
 from paperless_mcp.domain.errors import InvalidConfiguration
-from paperless_mcp.settings import CLAUDE_CALLBACK, HttpSettings, OidcSettings
+from paperless_mcp.settings import CLAUDE_CALLBACK, CLAUDE_COM_CALLBACK, HttpSettings, OidcSettings
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Iterator
@@ -206,6 +220,125 @@ def test_an_unreachable_issuer_refuses_to_start_with_a_clear_message() -> None:
     assert CLIENT_SECRET not in message
 
 
+def test_a_discovery_document_without_a_token_endpoint_is_not_called_unreadable(
+    issuer: Issuer,
+) -> None:
+    issuer.left_out = {"token_endpoint"}
+
+    with pytest.raises(InvalidConfiguration) as caught:
+        _ = authenticator(http_settings(), oidc_settings(issuer.url))
+
+    message = caught.value.describe()
+    assert "could not read" not in message
+    assert "is no valid OpenID Connect discovery document (ValidationError)" in message
+
+
+def test_a_proxy_that_cannot_be_built_from_the_document_says_so(issuer: Issuer) -> None:
+    # A document that declares itself non-strict passes discovery without a token endpoint;
+    # FastMCP's proxy then refuses it.
+    issuer.left_out = {"token_endpoint"}
+    issuer.extra = {"strict": False}
+
+    with pytest.raises(InvalidConfiguration) as caught:
+        _ = authenticator(http_settings(), oidc_settings(issuer.url))
+
+    message = caught.value.describe()
+    assert "could not read" not in message
+    assert "could not set up the OIDC proxy from the discovery document" in message
+    assert "(ValueError)" in message
+    assert CLIENT_SECRET not in message
+
+
+# --- origin and storage --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("base", "origin"),
+    [
+        ("https://h.example", "https://h.example"),
+        ("https://h.example:443", "https://h.example"),
+        ("https://h.example:80", "https://h.example:80"),
+        ("https://h.example:8443", "https://h.example:8443"),
+        ("http://localhost:80", "http://localhost"),
+        ("http://localhost:443", "http://localhost:443"),
+        ("http://localhost:8000", "http://localhost:8000"),
+    ],
+)
+def test_the_public_origin_drops_only_the_default_port_of_its_scheme(
+    base: str, origin: str
+) -> None:
+    oidc = OidcSettings.model_validate({"base_url": base})
+
+    assert public_origin(oidc) == origin
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("client_id", ["../../x", "a/b", "x" * 300, "..", "%2e%2e%2fx"])
+async def test_odd_client_ids_get_a_clean_refusal_with_a_storage_directory(
+    issuer: Issuer, tmp_path: Path, client_id: str
+) -> None:
+    app = make_app(http_settings(), oidc_settings(issuer.url, storage_dir=str(tmp_path)))
+
+    async with running(app) as client:
+        outcome = await authorize(client, client_id, CLAUDE_CALLBACK)
+
+    assert outcome.startswith('400 {"error":"invalid_request"')
+
+
+def names(directory: Path) -> list[str]:
+    return sorted(p.name for p in directory.iterdir())
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("key", ["a/b", "y" * 300, "../../escape", ".."])
+async def test_the_file_store_keeps_any_key_inside_its_collection(
+    issuer: Issuer, tmp_path: Path, key: str
+) -> None:
+    directory = tmp_path / "state"
+    directory.mkdir()
+    store = oauth_storage(oidc_settings(issuer.url, storage_dir=str(directory)))
+
+    await store.put(key=key, value={"v": 1}, collection="clients")
+    found = await store.get(key=key, collection="clients")
+    other = await store.get(key=key, collection="other")
+
+    assert found == {"v": 1}
+    assert other is None
+    assert names(tmp_path) == ["state"]  # nothing was written beside the storage directory
+
+
+@pytest.mark.anyio
+async def test_the_storage_key_is_stretched_from_the_signing_key_like_fastmcp_does(
+    issuer: Issuer, tmp_path: Path
+) -> None:
+    oidc = oidc_settings(issuer.url, storage_dir=str(tmp_path))
+    store = oauth_storage(oidc)
+    await store.put(key="k", value={"v": 1}, collection="c")
+
+    salt = "paperless-mcp-oauth-storage"
+    stretched = derive_jwt_key(low_entropy_material=SIGNING_KEY, salt=salt)
+    hkdf_only = derive_jwt_key(high_entropy_material=SIGNING_KEY, salt=salt)
+
+    assert await store.get(key="k", collection="c") == {"v": 1}
+    assert await reader_like(oidc, stretched).get(key="k", collection="c") == {"v": 1}
+    assert await reader_like(oidc, hkdf_only).get(key="k", collection="c") is None
+
+
+def reader_like(oidc: OidcSettings, key: bytes) -> FernetEncryptionWrapper:
+    """A store over the same directory, with the given Fernet key."""
+    inner = oauth_storage(oidc)
+    assert isinstance(inner, FernetEncryptionWrapper)
+    return FernetEncryptionWrapper(
+        key_value=inner.key_value, fernet=Fernet(key=key), raise_on_decryption_error=False
+    )
+
+
+def test_the_memory_store_is_capped_per_collection(issuer: Issuer) -> None:
+    store = oauth_storage(oidc_settings(issuer.url))
+
+    assert getattr(store, "max_entries_per_collection", None) == MEMORY_ENTRIES
+
+
 def test_a_server_without_the_oidc_layer_the_settings_ask_for_is_refused(issuer: Issuer) -> None:
     oidc = oidc_settings(issuer.url)
     bearer_only = serve(admin(), auth=authenticator(http_settings(auth_tokens=BEARER_TOKEN)))
@@ -338,6 +471,83 @@ async def test_a_fastmcp_client_signs_in_through_the_oidc_issuer(
         assert secret not in logged
 
 
+async def signs_in(app: Starlette) -> bool:
+    """Whether a FastMCP client completes the OAuth flow and lists the tools."""
+    try:
+        with anyio.fail_after(30):
+            return "get_instance_overview" in await tool_names(app, Browser(app), {})
+    except Exception:  # noqa: BLE001 -- any failure of the flow or the call counts as refused
+        return False
+
+
+OTHER_KEY = jwk.RSAKey.generate_key(2048, parameters={"kid": "other-key"})
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("claims", "signer", "kid"),
+    [
+        ({"aud": "another-client"}, None, None),
+        ({"iss": "https://elsewhere.example"}, None, None),
+        ({"exp": 1_000_000_000, "iat": 999_996_400}, None, None),
+        ({}, None, "unknown-key"),
+        ({}, OTHER_KEY, "stub-key"),
+    ],
+    ids=["audience", "issuer", "expired", "unknown-kid", "bad-signature"],
+)
+async def test_an_id_token_that_fails_a_check_signs_nobody_in(
+    issuer: Issuer, claims: dict[str, object], signer: jwk.RSAKey | None, kid: str | None
+) -> None:
+    issuer.claims, issuer.signer, issuer.kid = claims, signer, kid
+    app = make_app(http_settings(), oidc_settings(issuer.url))
+
+    async with app.router.lifespan_context(app):
+        assert not await signs_in(app)
+
+
+@pytest.mark.anyio
+async def test_a_valid_id_token_signs_in(issuer: Issuer) -> None:
+    app = make_app(http_settings(), oidc_settings(issuer.url))
+
+    async with app.router.lifespan_context(app):
+        assert await signs_in(app)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "authorization",
+    [None, f"Bearer {BEARER_TOKEN}", "Bearer forged"],
+    ids=["none", "bearer-shaped", "forged-jwt"],
+)
+async def test_an_oidc_only_app_refuses_anything_but_its_own_tokens(
+    issuer: Issuer, authorization: str | None
+) -> None:
+    oidc = oidc_settings(issuer.url)
+    app = make_app(http_settings(), oidc)
+    if authorization == "Bearer forged":
+        # Shaped like the server's own tokens, with its issuer and audience, but another key.
+        now = int(time.time())
+        claims = {
+            "iss": BASE,
+            "aud": f"{BASE}/mcp",
+            "client_id": "x",
+            "scope": "openid",
+            "exp": now + 600,
+            "iat": now,
+            "jti": "forged",
+        }
+        forged = jwt.encode({"alg": "HS256"}, claims, jwk.OctKey.import_key(b"k" * 32))
+        authorization = f"Bearer {forged}"
+    headers = {"Accept": "application/json, text/event-stream"}
+    if authorization is not None:
+        headers["Authorization"] = authorization
+
+    async with running(app) as client:
+        response = await client.post("/mcp", json={}, headers=headers)
+
+    assert response.status_code == 401
+
+
 @pytest.mark.anyio
 async def test_claude_code_keeps_its_bearer_token_beside_oidc(issuer: Issuer) -> None:
     http = http_settings(auth_tokens=BEARER_TOKEN)
@@ -405,12 +615,14 @@ async def test_the_claude_ai_callback_is_allowed_and_a_foreign_one_is_not(issuer
 
     async with running(app) as client:
         claude = await register(client, CLAUDE_CALLBACK)
+        claude_com = await register(client, CLAUDE_COM_CALLBACK)
         foreign = await register(client, "https://evil.example/callback")
         client_id = cast("str", claude.json()["client_id"])
         consent = await authorize(client, client_id, CLAUDE_CALLBACK)
         elsewhere = await authorize(client, client_id, "https://evil.example/callback")
 
     assert claude.status_code == 201
+    assert claude_com.status_code == 201
     assert foreign.status_code == 400
     # The consent page: the user is asked before anything else happens.
     assert consent.startswith(f"302 {BASE}/consent?txn_id=")

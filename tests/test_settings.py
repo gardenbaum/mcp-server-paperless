@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from paperless_mcp.settings import (
     CLAUDE_CALLBACK,
+    CLAUDE_COM_CALLBACK,
     HttpSettings,
     OidcSettings,
     PaperlessSettings,
@@ -478,10 +479,12 @@ def test_without_oidc_variables_the_layer_is_off() -> None:
     assert settings.missing() == []
     assert settings.allowed_redirect_uris == (
         CLAUDE_CALLBACK,
+        CLAUDE_COM_CALLBACK,
         "http://localhost:*",
         "http://127.0.0.1:*",
     )
     assert CLAUDE_CALLBACK == "https://claude.ai/api/mcp/auth_callback"
+    assert CLAUDE_COM_CALLBACK == "https://claude.com/api/mcp/auth_callback"
 
 
 @pytest.mark.decision("decision-31")
@@ -563,9 +566,11 @@ def test_oidc_secrets_never_appear_in_repr_or_str() -> None:
         "http://login.example.com/.well-known/openid-configuration",
         "ftp://login.example.com/x",
         "not a url",
+        "https://user:pw@login.example.com/.well-known/openid-configuration",
+        "https://user@login.example.com/.well-known/openid-configuration",
     ],
 )
-def test_the_discovery_url_must_be_https_unless_loopback(
+def test_the_discovery_url_must_be_https_unless_loopback_and_carries_no_credentials(
     monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
     monkeypatch.setenv("PAPERLESS_MCP_OIDC_CONFIG_URL", value)
