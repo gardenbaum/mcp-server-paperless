@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-22T23:19:54Z'
-updated_date: '2026-11-22T23:24:55Z'
+updated_date: '2026-11-22T23:31:24Z'
 labels: []
 milestone: m-5
 dependencies: []
@@ -55,4 +55,6 @@ Red first: the new guard test failed (no step named like "version from the tag")
 Tag build simulated on a copy: v0.2.0 gives mcp_server_paperless-0.2.0 reporting 0.2.0; v1.2.3-rc.1 gives 1.2.3rc1 reporting 1.2.3rc1; v1.2.x is refused by uv version (exit 2); uv.lock unchanged each time.
 The guard test was checked against five weakened workflows (if: false, an expression in the command, the step after the build, the step removed, the old check back): each caught.
 Gate: lock, lint, format, basedpyright 0/0/0, 9 contracts kept, deptry, gitleaks green; 4635 tests passed (the two known macOS-only failures deselected), coverage 99.93 %; no src lines changed.
+
+Review fix: the step runs uv version --frozen -- "${TAG#v}"; without -- a tag like v--bump=patch or v--short was read as a uv option and exited 0 with a version the tag never named (the smoke test compared two equal wrong values). Checked: v--bump=patch now exits 2, v1.2.3-rc.1 still gives 1.2.3rc1. The smoke test's version comparison is now guarded (a mutation removing it fails a test). Decision-33 names local versions (+...) as refused by PyPI and lists decision-32's replaced consequence and enforcement.
 <!-- SECTION:NOTES:END -->

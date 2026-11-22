@@ -84,5 +84,5 @@ The tag runs two workflows: `image.yml` publishes the container image to GHCR (d
 carried over by decision-31), and `pypi.yml` sets the package version from the tag (`uv version`,
 PEP 440: `v1.2.3-rc.1` becomes `1.2.3rc1`) and publishes `mcp-server-paperless` to PyPI by Trusted
 Publishing from the `pypi` environment. A tag that is not a valid version, or a commit that is not
-on main, publishes nothing to PyPI. The version in `pyproject.toml` is the development version that
+on main, publishes nothing to PyPI; PyPI also refuses local versions (`+…`). The version in `pyproject.toml` is the development version that
 a clone, a Git URL or the container's package report; raise it now and then.

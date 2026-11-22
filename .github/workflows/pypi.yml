@@ -48,7 +48,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           TAG: ${{ github.ref_name }}
-        run: uv version --frozen "${TAG#v}"
+        run: uv version --frozen -- "${TAG#v}"
 
       - name: Build the sdist and the wheel
         run: uv build --no-sources
