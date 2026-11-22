@@ -27,8 +27,8 @@ jobs:
   e2e-shard:
     name: e2e-shard (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    # A hang guard, no quality gate: a shard takes about 15 minutes on a hosted runner (1163 s of
-    # tests in all, 1.75 times slower than the sandbox they were measured on, split in three).
+    # A hang guard, no quality gate: a shard takes about 12 to 15 minutes on a hosted runner (about
+    # 1740 s of tests in all, weighed on hosted runners in scripts/e2e_ci.py, split in three).
     timeout-minutes: 25
     strategy:
       fail-fast: false
