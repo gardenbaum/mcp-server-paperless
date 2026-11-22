@@ -11,7 +11,7 @@ import pytest
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import consume_text, obj, parse, results, token_for
+from e2e.helpers import consume_text, obj, parse, results, since, token_for
 from paperless_mcp.server import create_server
 
 if TYPE_CHECKING:
@@ -287,7 +287,7 @@ def limited_user(stack: Stack) -> Iterator[tuple[str, int]]:
     _ = stack.admin.delete(f"/api/users/{user_id}/")
 
 
-async def test_deleting_a_tag_also_deletes_child_tags_the_caller_cannot_see(
+async def test_deleting_a_tag_takes_child_tags_the_caller_cannot_see_with_it_or_is_refused(
     stack: Stack, limited_user: tuple[str, int]
 ) -> None:
     token, _ = limited_user
@@ -298,8 +298,18 @@ async def test_deleting_a_tag_also_deletes_child_tags_the_caller_cannot_see(
             "/api/tags/", json={"name": theirs, "parent": parent["id"]}
         ).raise_for_status()
         preview = await error(client_, "delete_taxonomy_item", kind="tag", item=mine)
+        assert "child tags you cannot see (other users') are deleted with it as well" in preview
+        child_url = f"/api/tags/{obj(parse(child))['id']}/"
+        if since("3.5.0"):
+            # Paperless 3.5 refuses a deletion that would take tags of others with it.
+            refused = await error(
+                client_, "delete_taxonomy_item", kind="tag", item=mine, confirm=True
+            )
+            assert "may not perform this action" in refused
+            assert stack.admin.get(child_url).status_code == 200
+            assert stack.admin.get(f"/api/tags/{parent['id']}/").status_code == 200
+            return
         deleted = await call(client_, "delete_taxonomy_item", kind="tag", item=mine, confirm=True)
 
-    assert "child tags you cannot see (other users') are deleted with it as well" in preview
     assert "was deleted" in str(deleted["message"])
-    assert stack.admin.get(f"/api/tags/{obj(parse(child))['id']}/").status_code == 404
+    assert stack.admin.get(child_url).status_code == 404
