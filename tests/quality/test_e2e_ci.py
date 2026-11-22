@@ -460,6 +460,7 @@ def test_the_union_of_the_shards_is_the_whole_live_suite_with_nothing_twice() ->
 
 CI = ROOT / ".github" / "workflows" / "ci.yml"
 FULL = ROOT / ".github" / "workflows" / "e2e-full.yml"
+LATEST = ROOT / ".github" / "workflows" / "e2e-latest.yml"
 
 GOOD_CI = """\
 on:
@@ -498,16 +499,52 @@ jobs:
       - run: just e2e-shard "$SHARD"
 """
 
+GOOD_LATEST = """\
+on:
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+jobs:
+  resolve:
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        run: just e2e-latest-version
+  e2e-latest:
+    needs: resolve
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/3", "2/3", "3/3"]
+    steps:
+      - run: just e2e-latest "$SHARD"
+        env:
+          PAPERLESS_E2E_VERSION: ${{ needs.resolve.outputs.version }}
+          SHARD: ${{ matrix.shard }}
+"""
+
+
+def problems_of(
+    *, ci: str = GOOD_CI, full: str = GOOD_FULL, latest: str = GOOD_LATEST
+) -> list[str]:
+    return e2e_ci.workflow_problems(ci, full, latest, shards=3)
+
 
 def test_the_real_workflows_are_wired_safely() -> None:
     problems = e2e_ci.workflow_problems(
-        CI.read_text("utf-8"), FULL.read_text("utf-8"), shards=e2e_ci.SHARDS
+        CI.read_text("utf-8"),
+        FULL.read_text("utf-8"),
+        LATEST.read_text("utf-8"),
+        shards=e2e_ci.SHARDS,
     )
     assert problems == []
 
 
 def test_the_reference_workflows_have_no_problems() -> None:
-    assert e2e_ci.workflow_problems(GOOD_CI, GOOD_FULL, shards=3) == []
+    assert problems_of() == []
 
 
 @pytest.mark.parametrize(
@@ -540,7 +577,7 @@ def test_a_pull_request_workflow_that_could_skip_the_live_tests_wrongly_is_repor
 ) -> None:
     broken = GOOD_CI.replace(old, new)
     assert broken != GOOD_CI
-    found = e2e_ci.workflow_problems(broken, GOOD_FULL, shards=3)
+    found = problems_of(ci=broken)
     assert any(problem in line for line in found), found
 
 
@@ -568,5 +605,52 @@ def test_a_full_run_workflow_that_could_miss_shards_or_runs_is_reported(
 ) -> None:
     broken = GOOD_FULL.replace(old, new)
     assert broken != GOOD_FULL
-    found = e2e_ci.workflow_problems(GOOD_CI, broken, shards=3)
+    found = problems_of(full=broken)
+    assert any(problem in line for line in found), found
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "problem"),
+    [
+        ('["1/3", "2/3", "3/3"]', '["1/3", "2/3"]', "matrix"),
+        ('["1/3", "2/3", "3/3"]', '["1/3", "2/3", "3/3", "3/3"]', "matrix"),
+        ('["1/3", "2/3", "3/3"]', '["1/2", "2/2"]', "matrix"),
+        ("      fail-fast: false\n", "", "fail-fast"),
+        (
+            "      fail-fast: false\n",
+            "      fail-fast: false\n      continue-on-error: true\n",
+            "continue-on-error",
+        ),
+        (
+            "    needs: resolve\n",
+            "    needs: resolve\n    continue-on-error: ${{ true }}\n",
+            "continue-on-error",
+        ),
+        ("  e2e-latest:\n", "  other:\n", "no job `e2e-latest`"),
+        ("  resolve:\n", "  other:\n", "no job `resolve`"),
+        ("    needs: resolve\n", "", "needs"),
+        ("    needs: resolve\n", "    needs: other\n", "needs"),
+        ("  schedule:\n    - cron:", "  workflow_dispatch:\n    - cron:", "schedule"),
+        ("  schedule:\n", "  pull_request:\n", "schedule"),
+        ("  workflow_dispatch:\n", "", "workflow_dispatch"),
+        ("    timeout-minutes: 25\n", "", "timeout-minutes"),
+        ("timeout-minutes: 25", "timeout-minutes: 30", "timeout-minutes"),
+        ("    timeout-minutes: 10\n", "", "timeout-minutes"),
+        ("      version: ${{ steps.version.outputs.version }}\n", "      other: x\n", "output"),
+        ('just e2e-latest "$SHARD"', "just e2e", "just e2e-latest"),
+        ('just e2e-latest "$SHARD"', "just e2e-latest", "shard"),
+        ("          PAPERLESS_E2E_VERSION: ${{ needs.resolve.outputs.version }}\n", "", "version"),
+        (
+            "${{ needs.resolve.outputs.version }}",
+            "${{ inputs.version }}",
+            "version",
+        ),
+    ],
+)
+def test_a_latest_workflow_that_could_miss_shards_or_the_resolved_version_is_reported(
+    old: str, new: str, problem: str
+) -> None:
+    broken = GOOD_LATEST.replace(old, new)
+    assert broken != GOOD_LATEST
+    found = problems_of(latest=broken)
     assert any(problem in line for line in found), found
