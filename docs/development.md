@@ -75,3 +75,13 @@ commit the diff. A weekly workflow (`.github/workflows/backlog-drift.yml`, also 
 compares the latest release on npm with the `backlog.md-instructions-version` header of both
 files and keeps one `backlog-drift` issue open while they are behind (`just
 backlog-drift-check` runs the comparison locally).
+
+## Releases
+
+A release is a version tag on main, pushed by the owner; nobody publishes by hand. Set the
+version in `pyproject.toml` (`uv version 1.2.3`), merge, then tag that commit on main and push the
+tag (`git tag -a v1.2.3 -m "1.2.3" && git push origin v1.2.3`). The tag runs two workflows:
+`image.yml` publishes the container image to GHCR (decision-28 as carried over by decision-31),
+and `pypi.yml` publishes `mcp-server-paperless` to PyPI by Trusted Publishing from the `pypi`
+environment (decision-32). `pypi.yml` refuses a tag that does not name the version in
+`pyproject.toml` or a commit that is not on main.
