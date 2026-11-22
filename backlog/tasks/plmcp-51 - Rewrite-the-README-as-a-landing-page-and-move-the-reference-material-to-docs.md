@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-22T21:16:39Z'
-updated_date: '2026-11-22T21:28:07Z'
+updated_date: '2026-11-22T21:36:23Z'
 labels:
   - docs
 dependencies: []
@@ -53,6 +53,8 @@ Numbers in the README come from the catalogue and are pinned by tests (87 tools,
 Gaps filled in docs/configuration.md: PAPERLESS_MCP_READ_ONLY, the core, bulk and admin toolsets (from the tool descriptions and decision-26). Wording softened: the claude.com callback is described as Anthropic's other domain, not as an announced move (not verified).
 Found on the way: the update_user description contradicts itself about renames (PLMCP-52). Not done here: the published image is 0.1.0 and lacks the OIDC layer and the 3.5 support; docs/container.md says so. A 0.2.0 release, the repository description, topics and social preview are the owner's (outside the repository files).
 DoD #2 and #4 are checked for the merge of this PR by the controller.
+
+Follow-up after the merge (owner, 2026-11-22): the 'Why this server' table was hard to understand without context. It is now 'Why another paperless-ngx MCP server?': one sentence saying that several such servers exist (without naming or linking them there; the Credits section still does), then the six points as a list in plain language. The two 'all of the Paperless API' phrasings were toned down to 'most of'.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
