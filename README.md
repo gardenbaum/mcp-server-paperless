@@ -172,11 +172,12 @@ are decision-28.
 
 Requires [uv](https://docs.astral.sh/uv/), [just](https://just.systems) and Go (pre-commit builds
 the pinned gitleaks that `just check` runs over the whole history). Task management uses the
-Backlog.md CLI at the version pinned in `just backlog-install` (needs npm).
+latest Backlog.md CLI (`just backlog-install`, needs npm); after an update, refresh the agent
+instructions with `backlog agents --update-instructions`.
 
 ```sh
 just install                  # create the environment
-just backlog-install          # the pinned Backlog.md CLI
+just backlog-install          # the latest Backlog.md CLI
 uv run pre-commit install     # run the gates on every commit
 just check                    # the full local gate, identical to CI
 just --list                   # all recipes
