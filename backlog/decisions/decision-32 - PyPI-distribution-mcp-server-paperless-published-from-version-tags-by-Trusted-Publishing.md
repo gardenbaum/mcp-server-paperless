@@ -1,11 +1,12 @@
 ---
-updated_date: '2026-11-22T21:41:50Z'
+superseded_by: decision-33
+updated_date: '2026-11-22T23:21:22Z'
 id: decision-32
 title: >-
   PyPI distribution: mcp-server-paperless, published from version tags by
   Trusted Publishing
 date: '2026-11-22T21:36:20Z'
-status: accepted
+status: superseded
 ---
 ## Context
 

@@ -1,6 +1,6 @@
 name: PyPI
 
-# Python package mcp-server-paperless on PyPI (decision-32). Separate from ci.yml and not a
+# Python package mcp-server-paperless on PyPI (decision-33). Separate from ci.yml and not a
 # required check: it never slows a merge. Pull requests that touch the package build the sdist and
 # the wheel and smoke-test the wheel without uploading anything. Only a pushed version tag (v*)
 # publishes, from the `publish` job, by Trusted Publishing: PyPI trusts this workflow file in the
@@ -41,11 +41,14 @@ jobs:
           python-version: "3.14"
           enable-cache: false
 
-      - name: Require the tag to name the version being built
+      # The tag is the release version, as in image.yml (decision-33): a tag needs no version bump.
+      # uv refuses a tag that is no valid version and writes the PEP 440 form (1.2.3-rc.1 becomes
+      # 1.2.3rc1); --frozen leaves uv.lock alone, the build does not read it.
+      - name: Set the package version from the tag
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           TAG: ${{ github.ref_name }}
-        run: test "${TAG#v}" = "$(uv version --short)"
+        run: uv version --frozen -- "${TAG#v}"
 
       - name: Build the sdist and the wheel
         run: uv build --no-sources

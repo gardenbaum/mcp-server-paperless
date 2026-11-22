@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@claude'
 created_date: '2026-11-22T21:39:19Z'
-updated_date: '2026-11-22T23:07:45Z'
+updated_date: '2026-11-22T23:21:45Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -26,7 +26,7 @@ Owner, 2026-11-22: after PLMCP-53 the distribution and its console script are `m
 - [ ] #1 The import package is `mcp_server_paperless` everywhere in src, tests, scripts and configuration, and the uv_build `module-name` override is gone
 - [ ] #2 The import-linter contracts, the coverage and mutmut configuration and the recorded mutant equivalents name the new package and still pass unchanged in strength
 - [ ] #3 README and docs name the new module (`python -m mcp_server_paperless`) and the changed logger names; the console scripts keep their names
-- [ ] #4 This is the release pull request: it sets the first PyPI version, switches README and docs/http.md to `uvx mcp-server-paperless@latest` with a warning that the PyPI project `paperless-mcp` is a different server, and its `v*` tag is pushed right after the merge so the name is claimed within minutes
+- [ ] #4 This is the release pull request: it switches README and docs/http.md to `uvx mcp-server-paperless@latest` with a warning that the PyPI project `paperless-mcp` is a different server, and a new `v*` tag (above v0.1.1, whose image is already published; the version comes from the tag, decision-33) is pushed right after the merge so the name is claimed within minutes
 <!-- AC:END -->
 
 ## Definition of Done
