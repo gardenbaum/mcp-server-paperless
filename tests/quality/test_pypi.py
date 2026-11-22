@@ -150,13 +150,16 @@ def test_a_tag_publishes_only_a_commit_on_main() -> None:
     assert position("publish", "on main") < position("publish", "gh-action-pypi-publish@")
 
 
-def test_a_tag_publishes_only_the_version_it_names() -> None:
-    check = named("build", "name the version")
+@pytest.mark.decision("decision-33")
+def test_a_tag_build_takes_its_version_from_the_tag() -> None:
+    step = named("build", "version from the tag")
 
-    assert check["if"] == "startsWith(github.ref, 'refs/tags/v')"
-    assert mapping(check["env"]) == {"TAG": "${{ github.ref_name }}"}
-    assert check["run"] == 'test "${TAG#v}" = "$(uv version --short)"'
-    assert position("build", "name the version") < position("build", "Build the sdist")
+    assert step["if"] == "startsWith(github.ref, 'refs/tags/v')"
+    assert mapping(step["env"]) == {"TAG": "${{ github.ref_name }}"}
+    # uv rejects a tag that is no valid version and writes PEP 440 (1.2.3-rc.1 -> 1.2.3rc1).
+    assert step["run"] == 'uv version --frozen "${TAG#v}"'
+    assert position("build", "version from the tag") < position("build", "Build the sdist")
+    assert not any("name the version" in str(s.get("name", "")) for s in steps("build"))
 
 
 def test_publish_uploads_the_built_files_by_trusted_publishing_with_attestations() -> None:

@@ -78,12 +78,11 @@ backlog-drift-check` runs the comparison locally).
 
 ## Releases
 
-A release is a version tag on main, pushed by the owner; nobody publishes by hand. Set the
-version in `pyproject.toml` (`uv version 1.2.3`), merge, then tag that commit on main and push the
-tag (`git tag -a v1.2.3 -m "1.2.3" && git push origin v1.2.3`). The tag runs two workflows:
-`image.yml` publishes the container image to GHCR (decision-28 as carried over by decision-31),
-and `pypi.yml` publishes `mcp-server-paperless` to PyPI by Trusted Publishing from the `pypi`
-environment (decision-32). `pypi.yml` refuses a tag that does not name the version in
-`pyproject.toml` or a commit that is not on main. Use plain versions: the tag must be `v` plus the
-version exactly as `uv version --short` prints it (PEP 440), so a semver pre-release tag such as
-`v1.2.3-rc.1` would publish the image but no PyPI release.
+A release is a version tag on a commit on main, pushed by the owner; nobody publishes by hand and
+no version bump is needed (decision-33): `git tag -a v1.2.3 -m "1.2.3" && git push origin v1.2.3`.
+The tag runs two workflows: `image.yml` publishes the container image to GHCR (decision-28 as
+carried over by decision-31), and `pypi.yml` sets the package version from the tag (`uv version`,
+PEP 440: `v1.2.3-rc.1` becomes `1.2.3rc1`) and publishes `mcp-server-paperless` to PyPI by Trusted
+Publishing from the `pypi` environment. A tag that is not a valid version, or a commit that is not
+on main, publishes nothing to PyPI. The version in `pyproject.toml` is the development version that
+a clone, a Git URL or the container's package report; raise it now and then.
