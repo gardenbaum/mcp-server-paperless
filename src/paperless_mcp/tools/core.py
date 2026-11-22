@@ -286,7 +286,8 @@ async def delete_taxonomy_item(
     """Delete a tag, correspondent, document type, storage path or custom field for good.
 
     There is no trash for these: the documents stay but lose the tag, correspondent, type, path
-    or field value, and deleting a tag also deletes its child tags. Without confirm it deletes
+    or field value, and deleting a tag also deletes its child tags (Paperless 3.5 refuses the
+    deletion if that would take child tags of other users). Without confirm it deletes
     nothing and fails with an error that says the effect (documents affected, child tags that go
     with it); describe that to the user and call again with confirm=true once they agree.
     """

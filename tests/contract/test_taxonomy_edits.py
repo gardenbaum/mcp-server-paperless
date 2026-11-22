@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from contract.conftest import SCRATCH_ITEM
+from contract.conftest import BOTH_RELEASES, SCRATCH_ITEM, since
 from paperless_mcp.domain.documents import CustomFieldValue, DocumentPatch
 from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
 from paperless_mcp.domain.taxonomy import OptionInput, TaxonomyValues
@@ -567,6 +567,29 @@ async def test_a_deleted_tag_takes_its_child_tags_and_leaves_the_documents(
     record = await backend.admin.documents.get_document(document)
     assert other.id in record.tags
     assert {parent.id, child.id, grandchild.id}.isdisjoint(record.tags)
+
+
+@BOTH_RELEASES
+@pytest.mark.decision("decision-29")
+@pytest.mark.contract(DELETE)
+async def test_deleting_a_tag_takes_child_tags_of_others_on_3_4_and_is_refused_on_3_5(
+    backend: Backend,
+) -> None:
+    mine = backend.restricted(frozenset({"add_tag", "view_tag", "delete_tag"}))
+    parent = await make(mine, "tag")
+    # Made by the admin, so it is another user's tag that the restricted user cannot see.
+    child = await make(backend.admin, "tag", parent=parent.id)
+
+    if since(backend, "3.5.0"):
+        with pytest.raises(PermissionDenied) as refused:
+            await mine.taxonomy_writes.delete_taxonomy_item("tag", parent.id)
+        assert refused.value.hint
+        assert "child tags" in refused.value.hint
+        assert {parent.id, child.id} <= set(await listed(backend.admin, "tag"))
+        return
+    await mine.taxonomy_writes.delete_taxonomy_item("tag", parent.id)
+
+    assert {parent.id, child.id}.isdisjoint(await listed(backend.admin, "tag"))
 
 
 @pytest.mark.contract(DELETE)

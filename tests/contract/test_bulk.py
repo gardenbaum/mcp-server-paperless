@@ -13,7 +13,7 @@ import anyio
 import pytest
 from fakes.accounts import READER
 
-from contract.conftest import SCRATCH_ITEM, SCRATCH_TAG
+from contract.conftest import BOTH_RELEASES, SCRATCH_ITEM, SCRATCH_TAG, since
 from paperless_mcp.domain.bulk import (
     FieldsChange,
     ObjectPermissions,
@@ -466,6 +466,31 @@ async def test_items_are_deleted_together_and_the_others_stay(
     left = {item.id for item in await ports.taxonomy.list_taxonomy(kind)}
     assert not {first, second} & left
     assert kept in left
+
+
+@BOTH_RELEASES
+@pytest.mark.decision("decision-29")
+@pytest.mark.contract(DELETE_ITEMS)
+async def test_bulk_deleting_a_tag_takes_child_tags_of_others_on_3_4_and_is_refused_on_3_5(
+    backend: Backend,
+) -> None:
+    mine = backend.restricted(frozenset({"add_tag", "view_tag", "delete_tag"}))
+    parent = await make(mine, "tag")
+    # Made by the admin, so it is another user's tag that the restricted user cannot see.
+    child = await make(backend.admin, "tag", parent=parent)
+
+    async def tags() -> set[int]:
+        return {row.id for row in await backend.admin.taxonomy.list_taxonomy("tag")}
+
+    if since(backend, "3.5.0"):
+        with pytest.raises(PermissionDenied) as refused:
+            await mine.bulk_writes.delete_taxonomy_items("tag", (parent,))
+        assert refused.value.hint
+        assert {parent, child} <= await tags()
+        return
+    await mine.bulk_writes.delete_taxonomy_items("tag", (parent,))
+
+    assert {parent, child}.isdisjoint(await tags())
 
 
 @pytest.mark.contract(DELETE_ITEMS)
