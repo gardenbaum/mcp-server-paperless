@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-22T12:11:00Z'
-updated_date: '2026-11-22T13:14:00Z'
+updated_date: '2026-11-22T13:16:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -81,6 +81,8 @@ Vendored docs proposal (not done, the pin is untouched): moving docs/vendor/pape
 
 Possible upstream issue, not papered over: the login throttle (429 on /api/token/) hit a long-lived 3.5.1 stack after many test sessions; a fresh stack does not hit it, as in CI.
 Follow-ups: PLMCP-47 (3.5 mode in the fake, vendored docs and pin decision, tag-deletion preview wording and a hint on that 403), PLMCP-48 (unobserved and slow queued tasks).
+
+Controller: AC #2 is split. Adapter handling of both versions is done and wire-tested here; fake-based contract coverage of 3.5 moves to PLMCP-47, which already carries it. AC #3: e2e-latest against 3.5.1 is green (629 passed); the full pinned 3.4.2 suite is verified by the post-merge e2e-full run on main, after which the controller sets this task Done.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
