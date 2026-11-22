@@ -18,13 +18,19 @@ if TYPE_CHECKING:
 
 
 def pytest_addoption(parser: Parser) -> None:
-    """`--e2e-shard K/N`: run only shard K of N (the CI job `e2e-shard`; see scripts/e2e_ci.py)."""
+    """`--e2e-shard K/N` runs one shard of the live suite; `--write-docs` writes docs/tools.md."""
     parser.addoption(
         "--e2e-shard",
         default=None,
         type=e2e_ci.parse_shard,
         metavar="K/N",
         help="keep only the test modules of shard K out of N (balanced by measured duration)",
+    )
+    parser.addoption(
+        "--write-docs",
+        action="store_true",
+        default=False,
+        help="write docs/tools.md from the tool surface, not only compare (just docs-tools)",
     )
 
 
