@@ -194,21 +194,31 @@ e2e-paths *paths: e2e-up
 e2e-shard shard: e2e-up
     uv run pytest -m e2e --no-cov --durations=20 --e2e-shard {{shard}}
 
-# Run the E2E tests against the latest stable paperless-ngx 3.x image (weekly job; design 9.2),
-# not the pinned one. Own compose project and port (8011), so a stack from `e2e-up` is untouched.
-# PAPERLESS_E2E_VERSION pins a release instead of resolving the highest 3.x.y tag; the tests read
-# the expected version from it. Container logs of a failed run land in e2e-containers.log.
-e2e-latest:
+# Print the paperless-ngx release `e2e-latest` tests: PAPERLESS_E2E_VERSION when set (checked to be
+# a plain 3.x.y release), else the highest stable 3.x.y tag whose image is already published (a tag
+# can precede its image). The weekly workflow resolves it once with this recipe, so every shard
+# tests the same release. Prints only the version on stdout.
+e2e-latest-version:
     #!/usr/bin/env bash
     set -euo pipefail
     repo="${PAPERLESS_REPO:-https://github.com/paperless-ngx/paperless-ngx}"
     image="ghcr.io/paperless-ngx/paperless-ngx"
     if [[ -n "${PAPERLESS_E2E_VERSION:-}" ]]; then
-        PAPERLESS_E2E_VERSION="$(uv run python scripts/scheduled_jobs.py release "$PAPERLESS_E2E_VERSION" --major 3)"
+        uv run python scripts/scheduled_jobs.py release "$PAPERLESS_E2E_VERSION" --major 3
     else
-        # Highest 3.x.y tag whose image is already published (a tag can precede its image).
-        PAPERLESS_E2E_VERSION="$(git ls-remote --tags --refs "$repo" | uv run python scripts/scheduled_jobs.py latest --major 3 --image "$image")"
+        git ls-remote --tags --refs "$repo" | uv run python scripts/scheduled_jobs.py latest --major 3 --image "$image"
     fi
+
+# Run the E2E tests against the latest stable paperless-ngx 3.x image (weekly job; design 9.2),
+# not the pinned one. Own compose project and port (8011), so a stack from `e2e-up` is untouched.
+# PAPERLESS_E2E_VERSION pins a release instead of resolving the highest 3.x.y tag (see
+# `e2e-latest-version`); the tests read the expected version from it. An optional shard K/N, e.g.
+# `just e2e-latest 2/3`, runs only that part of the suite (as `e2e-shard`; CI runs one stack per
+# shard); without it the whole suite runs. Container logs of a failed run land in e2e-containers.log.
+e2e-latest shard='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PAPERLESS_E2E_VERSION="$(just --justfile "{{justfile()}}" e2e-latest-version)"
     export PAPERLESS_E2E_VERSION
     export PAPERLESS_E2E_PORT="${PAPERLESS_E2E_PORT:-8011}"
     compose=(docker compose -p paperless-mcp-e2e-latest -f tests/e2e/compose.yaml -f tests/e2e/compose.latest.yaml)
@@ -220,7 +230,9 @@ e2e-latest:
     trap cleanup EXIT
     echo "E2E against paperless-ngx $PAPERLESS_E2E_VERSION on port $PAPERLESS_E2E_PORT"
     "${compose[@]}" up -d
-    uv run pytest -m e2e --no-cov
+    pytest_args=(-m e2e --no-cov)
+    if [[ -n "{{shard}}" ]]; then pytest_args+=(--durations=20 --e2e-shard "{{shard}}"); fi
+    uv run pytest "${pytest_args[@]}"
 
 # Run the AI E2E tests (marker `ai_e2e`) against a Paperless with AI enabled and an LLM backend the
 # developer provides through the environment (variables in tests/e2e/compose.ai.yaml); CI has no
