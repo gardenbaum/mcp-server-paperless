@@ -1,11 +1,11 @@
 ---
 id: PLMCP-55
 title: Derive the PyPI release version from the version tag
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-22T23:19:54Z'
-updated_date: '2026-11-22T23:31:24Z'
+updated_date: '2026-11-22T23:40:10Z'
 labels: []
 milestone: m-5
 dependencies: []
@@ -22,18 +22,18 @@ Owner, 2026-11-23: a release should need nothing but a version tag. The tag v0.1
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 On a `v*` tag the build job sets the package version from the tag before building (`uv version --frozen`), so the built files carry the tag version in PEP 440 form; a tag that is not a valid version fails the build and publishes nothing
-- [ ] #2 The wheel smoke test proves the built wheel reports the version the tag names, and pull request builds keep the version in pyproject.toml
-- [ ] #3 A new decision supersedes decision-32, carrying everything over except the tag-equals-version rule; guard tests enforce the new step and its order
-- [ ] #4 docs/development.md describes a release as pushing a version tag on main, without a version bump
+- [x] #1 On a `v*` tag the build job sets the package version from the tag before building (`uv version --frozen`), so the built files carry the tag version in PEP 440 form; a tag that is not a valid version fails the build and publishes nothing
+- [x] #2 The wheel smoke test proves the built wheel reports the version the tag names, and pull request builds keep the version in pyproject.toml
+- [x] #3 A new decision supersedes decision-32, carrying everything over except the tag-equals-version rule; guard tests enforce the new step and its order
+- [x] #4 docs/development.md describes a release as pushing a version tag on main, without a version bump
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
-- [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #2 just check passes locally and all required CI checks are green on the PR
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -57,4 +57,12 @@ The guard test was checked against five weakened workflows (if: false, an expres
 Gate: lock, lint, format, basedpyright 0/0/0, 9 contracts kept, deptry, gitleaks green; 4635 tests passed (the two known macOS-only failures deselected), coverage 99.93 %; no src lines changed.
 
 Review fix: the step runs uv version --frozen -- "${TAG#v}"; without -- a tag like v--bump=patch or v--short was read as a uv option and exited 0 with a version the tag never named (the smoke test compared two equal wrong values). Checked: v--bump=patch now exits 2, v1.2.3-rc.1 still gives 1.2.3rc1. The smoke test's version comparison is now guarded (a mutation removing it fails a test). Decision-33 names local versions (+...) as refused by PyPI and lists decision-32's replaced consequence and enforcement.
+
+Merged as ca38b6d (#72): required checks, CodeQL and all e2e shards green; Codex review of the head commit e6533ea completed with no findings. The task was finalized in a follow-up PR because it was not set Done on its branch before the merge (doc-2 step 4 missed).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+pypi.yml now takes the PyPI version from the v* tag: on a tag the build job runs uv version --frozen -- "${TAG#v}" (tag via env) before building, replacing decision-32's tag-equals-version check that refused v0.1.1 while image.yml published it. uv refuses invalid versions and writes PEP 440 (v1.2.3-rc.1 -> 1.2.3rc1); the -- stops tags like v--bump=patch being read as options. Decision-33 supersedes decision-32; docs/development.md describes a release as one tag push on main; PLMCP-54's release criterion no longer bumps the version. Verified: guard tests red then green and mutation-checked, tag builds simulated on a copy, just check green (two known macOS-only tests deselected), CI green, Codex clean. Not verified: image.yml tagging for non-semver PEP 440 tags such as v1.0; PyPI's live refusal of local versions. The tag v0.1.1 stays (image only); the first PyPI release needs a new tag after PLMCP-54.
+<!-- SECTION:FINAL_SUMMARY:END -->
