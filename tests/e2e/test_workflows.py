@@ -13,7 +13,7 @@ from fastmcp import Client
 from harness import paperless_settings, server_settings
 
 from e2e.helpers import results
-from paperless_mcp.server import create_server
+from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

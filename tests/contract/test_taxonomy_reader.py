@@ -4,11 +4,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from paperless_mcp.domain.errors import PermissionDenied
+from mcp_server_paperless.domain.errors import PermissionDenied
 
 if TYPE_CHECKING:
     from contract.conftest import Backend
-    from paperless_mcp.domain.taxonomy import TaxonomyItem, TaxonomyKind
+    from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
 

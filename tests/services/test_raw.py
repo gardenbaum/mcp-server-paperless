@@ -14,9 +14,9 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from paperless_mcp.domain.errors import PaperlessMcpError, Validation
-from paperless_mcp.domain.raw import RawReply
-from paperless_mcp.services.raw import (
+from mcp_server_paperless.domain.errors import PaperlessMcpError, Validation
+from mcp_server_paperless.domain.raw import RawReply
+from mcp_server_paperless.services.raw import (
     MAX_OUTPUT,
     MAX_PARAMS,
     MAX_PATH,

@@ -12,10 +12,10 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from pydantic import JsonValue
 
-from paperless_mcp.domain.errors import Validation
+from mcp_server_paperless.domain.errors import Validation
 
 if TYPE_CHECKING:
-    from paperless_mcp.domain.taxonomy import SelectOption
+    from mcp_server_paperless.domain.taxonomy import SelectOption
 
 type Values = dict[int, JsonValue]
 type Match = Callable[[Values], bool]

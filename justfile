@@ -316,7 +316,7 @@ audit:
 # tests only, takes about five minutes. Fails (exit 3) below the 80 % gate (MUTATION_GATE in
 # scripts/scheduled_jobs.py) after printing the summary, and (exit 4) while an entry of
 # mutation-equivalents.toml (the reviewed survivors no test can kill) is stale. Extra arguments select mutants, e.g.
-# `just mutation 'paperless_mcp.services.instance*'`, which also scores earlier results of
+# `just mutation 'mcp_server_paperless.services.instance*'`, which also scores earlier results of
 # mutants/, so a selection can fail the gate. Delete mutants/ to start from scratch. Writes
 # mutants/summary.md (the score as Markdown) and mutants/survivors.txt.
 [positional-arguments]

@@ -1,6 +1,6 @@
 import pytest
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     ConfirmationRequired,
     NotFound,

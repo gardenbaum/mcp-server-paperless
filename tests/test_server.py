@@ -13,12 +13,12 @@ from harness import (
     server_settings,
 )
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     AuthenticationFailed,
     PaperlessMcpError,
     UnsupportedVersion,
 )
-from paperless_mcp.server import create_server
+from mcp_server_paperless.server import create_server
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-2")]
 

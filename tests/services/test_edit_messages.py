@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING
 import pytest
 from fakes.paperless import FakeTag
 
-from paperless_mcp.domain.errors import PaperlessMcpError
-from paperless_mcp.domain.taxonomy import SelectOption, TaxonomyItem
-from paperless_mcp.services.custom_values import normalise
+from mcp_server_paperless.domain.errors import PaperlessMcpError
+from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyItem
+from mcp_server_paperless.services.custom_values import normalise
 from services.test_document_edits import Setup, as_editor
 
 if TYPE_CHECKING:

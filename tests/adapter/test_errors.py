@@ -3,7 +3,7 @@
 import httpx2
 import pytest
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     Conflict,
     FeatureUnavailable,
     NotFound,
@@ -13,7 +13,7 @@ from paperless_mcp.domain.errors import (
     UpstreamUnreachable,
     Validation,
 )
-from paperless_mcp.paperless.errors import (
+from mcp_server_paperless.paperless.errors import (
     MAX_MESSAGE_LENGTH,
     error_for_status,
     error_for_transport,

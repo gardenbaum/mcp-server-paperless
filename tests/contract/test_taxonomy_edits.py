@@ -12,13 +12,13 @@ from typing import TYPE_CHECKING
 import pytest
 
 from contract.conftest import BOTH_RELEASES, SCRATCH_ITEM, since
-from paperless_mcp.domain.documents import CustomFieldValue, DocumentPatch
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
-from paperless_mcp.domain.taxonomy import OptionInput, TaxonomyValues
+from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.taxonomy import OptionInput, TaxonomyValues
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
-    from paperless_mcp.domain.taxonomy import TaxonomyDetail, TaxonomyItem, WritableKind
+    from mcp_server_paperless.domain.taxonomy import TaxonomyDetail, TaxonomyItem, WritableKind
 
 pytestmark = [
     pytest.mark.anyio,

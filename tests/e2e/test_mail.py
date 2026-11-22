@@ -19,8 +19,8 @@ from fastmcp import Client
 from harness import server_settings
 
 from e2e.helpers import obj, parse, results, since
-from paperless_mcp.server import create_server
-from paperless_mcp.settings import PaperlessSettings
+from mcp_server_paperless.server import create_server
+from mcp_server_paperless.settings import PaperlessSettings
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

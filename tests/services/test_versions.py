@@ -10,7 +10,7 @@ import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     ConfirmationRequired,
     NotFound,
@@ -18,16 +18,16 @@ from paperless_mcp.domain.errors import (
     UpstreamTimeout,
     Validation,
 )
-from paperless_mcp.domain.tasks import Unconfirmed
-from paperless_mcp.domain.versions import VersionUpload
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.taxonomy import TaxonomyResolver
-from paperless_mcp.services.versions import MAX_LABEL, MAX_SOURCES, VersionService
+from mcp_server_paperless.domain.tasks import Unconfirmed
+from mcp_server_paperless.domain.versions import VersionUpload
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.versions import MAX_LABEL, MAX_SOURCES, VersionService
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from paperless_mcp.domain.documents import DocumentRecord
+    from mcp_server_paperless.domain.documents import DocumentRecord
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 

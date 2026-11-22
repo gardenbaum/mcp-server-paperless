@@ -14,7 +14,7 @@ import pytest
 from fakes.accounts import READER
 
 from contract.conftest import BOTH_RELEASES, SCRATCH_ITEM, SCRATCH_TAG, since
-from paperless_mcp.domain.bulk import (
+from mcp_server_paperless.domain.bulk import (
     FieldsChange,
     ObjectPermissions,
     PermissionsChange,
@@ -23,18 +23,18 @@ from paperless_mcp.domain.bulk import (
     TagsChange,
     TrashDocuments,
 )
-from paperless_mcp.domain.documents import DocumentQuery
-from paperless_mcp.domain.errors import PermissionDenied, Validation
-from paperless_mcp.domain.taxonomy import OptionInput, TaxonomyValues
+from mcp_server_paperless.domain.documents import DocumentQuery
+from mcp_server_paperless.domain.errors import PermissionDenied, Validation
+from mcp_server_paperless.domain.taxonomy import OptionInput, TaxonomyValues
 
 if TYPE_CHECKING:
     from pydantic import JsonValue
 
     from contract.conftest import Backend, Ports
-    from paperless_mcp.domain.bulk import BulkKind
-    from paperless_mcp.domain.documents import DocumentRecord
-    from paperless_mcp.domain.tasks import Unconfirmed
-    from paperless_mcp.domain.taxonomy import WritableKind
+    from mcp_server_paperless.domain.bulk import BulkKind
+    from mcp_server_paperless.domain.documents import DocumentRecord
+    from mcp_server_paperless.domain.tasks import Unconfirmed
+    from mcp_server_paperless.domain.taxonomy import WritableKind
 
 pytestmark = [
     pytest.mark.anyio,

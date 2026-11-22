@@ -8,7 +8,7 @@ import pytest
 from e2e.helpers import BASE_URL, Stack, client, seed, token_for, wait_ready
 from fakes.accounts import BLIND, READER
 
-from paperless_mcp.observability import QUIET_LOGGERS
+from mcp_server_paperless.observability import QUIET_LOGGERS
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

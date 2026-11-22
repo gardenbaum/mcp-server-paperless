@@ -4,7 +4,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from paperless_mcp.services.tag_hierarchy import (
+from mcp_server_paperless.services.tag_hierarchy import (
     ancestors,
     blocked_removals,
     close_over_ancestors,

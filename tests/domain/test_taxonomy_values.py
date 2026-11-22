@@ -2,7 +2,7 @@
 
 import pytest
 
-from paperless_mcp.domain.taxonomy import TaxonomyValues
+from mcp_server_paperless.domain.taxonomy import TaxonomyValues
 
 
 def test_only_the_parent_can_be_given_as_none() -> None:

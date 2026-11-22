@@ -6,11 +6,11 @@ import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakeDocument, FakePaperless, seeded
 
-from paperless_mcp.domain.errors import NotFound, PaperlessMcpError, PermissionDenied
-from paperless_mcp.services.files import FileService
+from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError, PermissionDenied
+from mcp_server_paperless.services.files import FileService
 
 if TYPE_CHECKING:
-    from paperless_mcp.domain.documents import DocumentFile, FileMetadata, FileVersion
+    from mcp_server_paperless.domain.documents import DocumentFile, FileMetadata, FileVersion
 
 pytestmark = pytest.mark.anyio
 

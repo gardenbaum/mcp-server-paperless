@@ -29,7 +29,7 @@ from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from mcp.shared.auth import AuthorizationCodeResult
 from oidc_issuer import CLIENT_ID, CLIENT_SECRET, Issuer, stub_issuer
 
-from paperless_mcp.app import (
+from mcp_server_paperless.app import (
     MEMORY_ENTRIES,
     StaticBearerVerifier,
     authenticator,
@@ -38,8 +38,13 @@ from paperless_mcp.app import (
     oauth_storage,
     public_origin,
 )
-from paperless_mcp.domain.errors import InvalidConfiguration
-from paperless_mcp.settings import CLAUDE_CALLBACK, CLAUDE_COM_CALLBACK, HttpSettings, OidcSettings
+from mcp_server_paperless.domain.errors import InvalidConfiguration
+from mcp_server_paperless.settings import (
+    CLAUDE_CALLBACK,
+    CLAUDE_COM_CALLBACK,
+    HttpSettings,
+    OidcSettings,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Iterator

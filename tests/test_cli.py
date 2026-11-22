@@ -15,9 +15,9 @@ import uvicorn
 from harness import TOKEN, paperless_answering, refused_url
 from oidc_issuer import CLIENT_ID, CLIENT_SECRET, stub_issuer
 
-from paperless_mcp.app import run_server
-from paperless_mcp.cli import main, main_http
-from paperless_mcp.tools._shared import ANNOTATIONS
+from mcp_server_paperless.app import run_server
+from mcp_server_paperless.cli import main, main_http
+from mcp_server_paperless.tools._shared import ANNOTATIONS
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
@@ -126,7 +126,7 @@ def test_filters_that_leave_no_tool_stop_the_start_before_any_request(
 @pytest.mark.usefixtures("isolated_logging")
 def test_python_dash_m_runs_the_same_entrypoint(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as caught:
-        _ = runpy.run_module("paperless_mcp", run_name="__main__")
+        _ = runpy.run_module("mcp_server_paperless", run_name="__main__")
 
     assert caught.value.code == 1
     assert "invalid configuration" in capsys.readouterr().err
@@ -142,7 +142,7 @@ def test_the_transport_is_stdio_whatever_the_environment_says(
     monkeypatch.setenv("PYTHONUNBUFFERED", "1")
 
     finished = subprocess.run(
-        [sys.executable, "-m", "paperless_mcp"],
+        [sys.executable, "-m", "mcp_server_paperless"],
         env=env,
         stdin=subprocess.DEVNULL,  # stdio ends at once; a web server would keep running
         capture_output=True,
@@ -342,7 +342,7 @@ def test_run_server_returns_whether_the_server_came_up() -> None:
 def http_process(env: dict[str, str], port: int) -> Generator[subprocess.Popen[str]]:
     """The real HTTP entrypoint in a process, once it answers on `port`."""
     process = subprocess.Popen(
-        [sys.executable, "-c", "from paperless_mcp.cli import main_http; main_http()"],
+        [sys.executable, "-c", "from mcp_server_paperless.cli import main_http; main_http()"],
         env={**os.environ, **env},
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,

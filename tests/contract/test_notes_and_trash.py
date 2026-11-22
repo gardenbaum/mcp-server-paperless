@@ -10,9 +10,9 @@ import pytest
 from fakes.accounts import PUBLIC_NOTE
 
 from contract.conftest import BOTH_RELEASES, since
-from paperless_mcp.domain.documents import DocumentQuery
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
-from paperless_mcp.paperless.documents import unseen_note
+from mcp_server_paperless.domain.documents import DocumentQuery
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.paperless.documents import unseen_note
 
 if TYPE_CHECKING:
     from contract.conftest import Backend

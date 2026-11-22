@@ -10,15 +10,15 @@ from typing import TYPE_CHECKING
 import pytest
 from fakes.accounts import ADMIN, PUBLIC_ASN
 
-from paperless_mcp.domain.documents import CustomFieldValue, DocumentPatch, DocumentQuery
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch, DocumentQuery
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 
 if TYPE_CHECKING:
     from pydantic import JsonValue
 
     from contract.conftest import Backend, Ports
-    from paperless_mcp.domain.documents import DocumentRecord
-    from paperless_mcp.domain.taxonomy import TaxonomyKind
+    from mcp_server_paperless.domain.documents import DocumentRecord
+    from mcp_server_paperless.domain.taxonomy import TaxonomyKind
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 

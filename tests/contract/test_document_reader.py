@@ -11,13 +11,13 @@ import pytest
 from e2e.helpers import pdf
 from fakes.accounts import PRIVATE_CONTENT, PUBLIC_ASN, PUBLIC_NOTE
 
-from paperless_mcp.domain.documents import DocumentQuery
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.documents import DocumentQuery
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
-    from paperless_mcp.domain.documents import DocumentHit, FileVersion
-    from paperless_mcp.domain.taxonomy import TaxonomyKind
+    from mcp_server_paperless.domain.documents import DocumentHit, FileVersion
+    from mcp_server_paperless.domain.taxonomy import TaxonomyKind
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
 

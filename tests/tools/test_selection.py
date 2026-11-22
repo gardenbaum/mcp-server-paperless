@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING
 import pytest
 from mcp.types import ToolAnnotations
 
-from paperless_mcp.domain.errors import InvalidConfiguration
-from paperless_mcp.tools.selection import (
+from mcp_server_paperless.domain.errors import InvalidConfiguration
+from mcp_server_paperless.tools.selection import (
     hidden_tools,
     selected_toolsets,
     unavailable_toolsets,

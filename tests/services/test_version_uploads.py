@@ -13,21 +13,21 @@ from e2e.helpers import pdf
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakePaperless, FakeState, seeded
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
     UpstreamTimeout,
     Validation,
 )
-from paperless_mcp.services.tasks import TaskService
-from paperless_mcp.services.version_uploads import VersionUploadService
+from mcp_server_paperless.services.tasks import TaskService
+from mcp_server_paperless.services.version_uploads import VersionUploadService
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from paperless_mcp.domain.tasks import TaskStatus
-    from paperless_mcp.domain.versions import VersionUpload, VersionUploadResult
+    from mcp_server_paperless.domain.tasks import TaskStatus
+    from mcp_server_paperless.domain.versions import VersionUpload, VersionUploadResult
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-7")]
 

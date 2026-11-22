@@ -15,9 +15,14 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import SecretStr
 
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
-from paperless_mcp.domain.mail import MailAccount, MailAccountValues, MailRule, MailRuleValues
-from paperless_mcp.paperless.mail import unreachable_server
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.mail import (
+    MailAccount,
+    MailAccountValues,
+    MailRule,
+    MailRuleValues,
+)
+from mcp_server_paperless.paperless.mail import unreachable_server
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

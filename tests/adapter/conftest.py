@@ -7,8 +7,8 @@ import httpx2
 import pytest
 
 from adapter.schema_guard import Handler, SchemaGuardedTransport
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.paperless.client import Jitter, PaperlessClient, RetryPolicy
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.client import Jitter, PaperlessClient, RetryPolicy
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

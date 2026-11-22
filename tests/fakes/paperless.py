@@ -66,7 +66,7 @@ from fakes.taxonomy_rules import check_colour, check_match, check_name, check_pa
 from fakes.view_filters import ONLY_ONE_SEARCH, combines, searches, view_filters
 from fakes.view_rules import check_page_size, check_rules
 from fakes.workflows import Actor, WorkflowData
-from paperless_mcp.domain.admin import (
+from mcp_server_paperless.domain.admin import (
     CONFIG_SECRETS,
     AppConfigRecord,
     ArchiveFile,
@@ -76,14 +76,14 @@ from paperless_mcp.domain.admin import (
     UserRecord,
     check_secret,
 )
-from paperless_mcp.domain.ai import AiSuggestions, ChatAnswer, ChatSource
-from paperless_mcp.domain.bulk import (
+from mcp_server_paperless.domain.ai import AiSuggestions, ChatAnswer, ChatSource
+from mcp_server_paperless.domain.bulk import (
     FieldsChange,
     ReferenceChange,
     TagsChange,
     TrashDocuments,
 )
-from paperless_mcp.domain.documents import (
+from mcp_server_paperless.domain.documents import (
     CustomFieldValue,
     DocumentFile,
     DocumentHit,
@@ -98,22 +98,33 @@ from paperless_mcp.domain.documents import (
     Note,
     Suggestions,
 )
-from paperless_mcp.domain.errors import FeatureUnavailable, NotFound, PermissionDenied, Validation
-from paperless_mcp.domain.instance import (
+from mcp_server_paperless.domain.errors import (
+    FeatureUnavailable,
+    NotFound,
+    PermissionDenied,
+    Validation,
+)
+from mcp_server_paperless.domain.instance import (
     ComponentStatus,
     CurrentUser,
     InstanceOverview,
     InstanceStatistics,
     SystemStatus,
 )
-from paperless_mcp.domain.pdf import StartedTasks
-from paperless_mcp.domain.permissions import GroupPage, GroupRow, ObjectAccess, UserPage, UserRow
-from paperless_mcp.domain.tasks import TaskState, TaskStatus, Unconfirmed
-from paperless_mcp.domain.taxonomy import SelectOption, TaxonomyDetail, TaxonomyItem
-from paperless_mcp.domain.trash import TrashedDocument, TrashPage
-from paperless_mcp.domain.views import FilterRule, SavedView
-from paperless_mcp.domain.workflows import Workflow
-from paperless_mcp.paperless.admin import (
+from mcp_server_paperless.domain.pdf import StartedTasks
+from mcp_server_paperless.domain.permissions import (
+    GroupPage,
+    GroupRow,
+    ObjectAccess,
+    UserPage,
+    UserRow,
+)
+from mcp_server_paperless.domain.tasks import TaskState, TaskStatus, Unconfirmed
+from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyDetail, TaxonomyItem
+from mcp_server_paperless.domain.trash import TrashedDocument, TrashPage
+from mcp_server_paperless.domain.views import FilterRule, SavedView
+from mcp_server_paperless.domain.workflows import Workflow
+from mcp_server_paperless.paperless.admin import (
     ACK_TASKS,
     ADD_GROUP,
     ADD_USER,
@@ -134,21 +145,21 @@ from paperless_mcp.paperless.admin import (
     unseen_log,
     unseen_user,
 )
-from paperless_mcp.paperless.admin import beyond_last_page as beyond_tasks
-from paperless_mcp.paperless.bulk import documents_refused, objects_refused
-from paperless_mcp.paperless.documents import (
+from mcp_server_paperless.paperless.admin import beyond_last_page as beyond_tasks
+from mcp_server_paperless.paperless.bulk import documents_refused, objects_refused
+from mcp_server_paperless.paperless.documents import (
     beyond_last_page,
     unseen_document,
     unseen_note,
     unseen_version,
 )
-from paperless_mcp.paperless.errors import ai_disabled
-from paperless_mcp.paperless.pdf import not_editable, wrong_password
-from paperless_mcp.paperless.tasks import not_found
-from paperless_mcp.paperless.taxonomy import TAG_DELETE_HINT
-from paperless_mcp.paperless.trash import beyond_last_page as beyond_trash
-from paperless_mcp.paperless.trash import refused as trash_refused
-from paperless_mcp.paperless.views import unseen_view
+from mcp_server_paperless.paperless.errors import ai_disabled
+from mcp_server_paperless.paperless.pdf import not_editable, wrong_password
+from mcp_server_paperless.paperless.tasks import not_found
+from mcp_server_paperless.paperless.taxonomy import TAG_DELETE_HINT
+from mcp_server_paperless.paperless.trash import beyond_last_page as beyond_trash
+from mcp_server_paperless.paperless.trash import refused as trash_refused
+from mcp_server_paperless.paperless.views import unseen_view
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Mapping, Sequence
@@ -156,7 +167,7 @@ if TYPE_CHECKING:
 
     from _typeshed import SupportsRichComparison
 
-    from paperless_mcp.domain.admin import (
+    from mcp_server_paperless.domain.admin import (
         ArchiveContent,
         Compression,
         ConfigValues,
@@ -165,14 +176,14 @@ if TYPE_CHECKING:
         TaskType,
         UserValues,
     )
-    from paperless_mcp.domain.bulk import (
+    from mcp_server_paperless.domain.bulk import (
         BulkKind,
         DocumentChange,
         ObjectPermissions,
         PermissionsChange,
     )
-    from paperless_mcp.domain.documents import FileVersion
-    from paperless_mcp.domain.mail import (
+    from mcp_server_paperless.domain.documents import FileVersion
+    from mcp_server_paperless.domain.mail import (
         MailAccount,
         MailAccountTestResult,
         MailAccountValues,
@@ -181,19 +192,19 @@ if TYPE_CHECKING:
         ProcessedMailPage,
         ProcessedStatus,
     )
-    from paperless_mcp.domain.pdf import Output, PageSlot
-    from paperless_mcp.domain.permissions import AccessChange, PermissionKind
-    from paperless_mcp.domain.raw import RawReply
-    from paperless_mcp.domain.sharing import FileVersionKind, ShareBundle, ShareLink
-    from paperless_mcp.domain.taxonomy import (
+    from mcp_server_paperless.domain.pdf import Output, PageSlot
+    from mcp_server_paperless.domain.permissions import AccessChange, PermissionKind
+    from mcp_server_paperless.domain.raw import RawReply
+    from mcp_server_paperless.domain.sharing import FileVersionKind, ShareBundle, ShareLink
+    from mcp_server_paperless.domain.taxonomy import (
         MatchingAlgorithm,
         TaxonomyKind,
         TaxonomyValues,
         WritableKind,
     )
-    from paperless_mcp.domain.versions import VersionUpload
-    from paperless_mcp.domain.views import ViewValues
-    from paperless_mcp.domain.workflows import WorkflowValues
+    from mcp_server_paperless.domain.versions import VersionUpload
+    from mcp_server_paperless.domain.views import ViewValues
+    from mcp_server_paperless.domain.workflows import WorkflowValues
 
 # Paperless's max_length of document titles and tag names.
 MAX_TITLE = 128

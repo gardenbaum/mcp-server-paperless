@@ -192,7 +192,7 @@ _ENTRY_STEMS = frozenset({"app", "cli", "server"})
 _NON_CODE_PREFIXES = ("backlog/", "docs/", ".github/ISSUE_TEMPLATE/")
 _CODE_PREFIXES = ("docs/vendor/",)
 _SOURCE = re.compile(
-    r"src/paperless_mcp/(?:(?:tools|services|paperless|domain)/)?([a-z][a-z0-9_]*)\.py"
+    r"src/mcp_server_paperless/(?:(?:tools|services|paperless|domain)/)?([a-z][a-z0-9_]*)\.py"
 )
 _UNIT_TEST = re.compile(r"tests/(?:adapter|services|tools)/test_([a-z][a-z0-9_]*)\.py")
 _LIVE_TEST = re.compile(r"tests/(?:e2e|contract)/test_[a-z][a-z0-9_]*\.py")

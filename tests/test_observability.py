@@ -9,10 +9,10 @@ import pytest
 from fastmcp import Client
 from harness import FailsAfterProbe, admin, serve
 
-from paperless_mcp.domain.errors import UpstreamUnavailable
-from paperless_mcp.observability import configure_logging, request_id
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.paperless.client import PaperlessClient, RetryPolicy
+from mcp_server_paperless.domain.errors import UpstreamUnavailable
+from mcp_server_paperless.observability import configure_logging, request_id
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -44,10 +44,12 @@ def test_records_are_json_lines_on_stderr_with_the_request_id(
     configure_logging("INFO")
     token = request_id.set("req-1")
     try:
-        logging.getLogger("paperless_mcp.test").info("hello %s", "world", extra={"tool": "t"})
+        logging.getLogger("mcp_server_paperless.test").info(
+            "hello %s", "world", extra={"tool": "t"}
+        )
     finally:
         request_id.reset(token)
-    logging.getLogger("paperless_mcp.test").debug("below the level")
+    logging.getLogger("mcp_server_paperless.test").debug("below the level")
 
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -55,7 +57,7 @@ def test_records_are_json_lines_on_stderr_with_the_request_id(
     assert record["message"] == "hello world"
     assert (record["level"], record["logger"], record["tool"]) == (
         "INFO",
-        "paperless_mcp.test",
+        "mcp_server_paperless.test",
         "t",
     )
     assert record["request_id"] == "req-1"
@@ -68,7 +70,7 @@ def test_exceptions_are_rendered_into_the_record(capsys: pytest.CaptureFixture[s
         message = "boom"
         raise ValueError(message)  # noqa: TRY301 -- the exception to log
     except ValueError:
-        logging.getLogger("paperless_mcp.test").exception("failed")
+        logging.getLogger("mcp_server_paperless.test").exception("failed")
 
     [record] = lines(capsys.readouterr().err)
     assert "ValueError: boom" in str(record["exc_info"])
@@ -168,7 +170,7 @@ async def test_a_failing_bug_logs_its_type_but_never_its_message_above_debug(
 async def test_the_traceback_of_a_bug_is_logged_at_debug(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    caplog.set_level(logging.DEBUG, logger="paperless_mcp.tools._shared")
+    caplog.set_level(logging.DEBUG, logger="mcp_server_paperless.tools._shared")
 
     async with Client(serve(FailsAfterProbe(KeyError(CONTENT)))) as client:
         _ = await client.call_tool("get_instance_overview", raise_on_error=False)

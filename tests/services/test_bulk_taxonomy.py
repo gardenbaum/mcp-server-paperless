@@ -11,14 +11,14 @@ import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakePaperless, FakeState, FakeTaxonomy, seeded
 
-from paperless_mcp.domain.bulk import (
+from mcp_server_paperless.domain.bulk import (
     MAX_DOCUMENTS,
     DeleteItems,
     ObjectPermissions,
     PermissionsChange,
     SetPermissions,
 )
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     Ambiguous,
     ConfirmationRequired,
@@ -26,15 +26,15 @@ from paperless_mcp.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.bulk_taxonomy import BulkTaxonomyEditor
-from paperless_mcp.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from paperless_mcp.domain.bulk import BulkKind, TaxonomyBulkReport, TaxonomyOperation
-    from paperless_mcp.domain.documents import NameOrId
+    from mcp_server_paperless.domain.bulk import BulkKind, TaxonomyBulkReport, TaxonomyOperation
+    from mcp_server_paperless.domain.documents import NameOrId
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 

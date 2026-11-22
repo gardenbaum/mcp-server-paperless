@@ -15,8 +15,8 @@ import pytest
 from pydantic import JsonValue, SecretStr
 
 from contract.conftest import BOTH_RELEASES, since
-from paperless_mcp.domain.admin import ConfigValues, GroupValues, UserValues
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.admin import ConfigValues, GroupValues, UserValues
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

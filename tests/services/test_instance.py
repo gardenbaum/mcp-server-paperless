@@ -5,7 +5,7 @@ import time
 import pytest
 from harness import FailingReader, HangingReader, admin
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     AuthenticationFailed,
     NotFound,
     PaperlessMcpError,
@@ -13,7 +13,7 @@ from paperless_mcp.domain.errors import (
     UpstreamTimeout,
     UpstreamUnreachable,
 )
-from paperless_mcp.services.instance import InstanceService
+from mcp_server_paperless.services.instance import InstanceService
 
 pytestmark = pytest.mark.anyio
 

@@ -15,14 +15,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from paperless_mcp.domain.documents import DocumentUpload
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
-from paperless_mcp.domain.versions import VersionUpload
-from paperless_mcp.paperless.documents import unseen_document, unseen_version
+from mcp_server_paperless.domain.documents import DocumentUpload
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.versions import VersionUpload
+from mcp_server_paperless.paperless.documents import unseen_document, unseen_version
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
-    from paperless_mcp.domain.documents import DocumentVersion
+    from mcp_server_paperless.domain.documents import DocumentVersion
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 

@@ -17,14 +17,14 @@ from typing import TYPE_CHECKING
 import pytest
 from fakes.accounts import ADMIN, BLIND, READER
 
-from paperless_mcp.domain.bulk import ObjectPermissions
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
-from paperless_mcp.domain.permissions import AccessChange
-from paperless_mcp.domain.taxonomy import TaxonomyValues
+from mcp_server_paperless.domain.bulk import ObjectPermissions
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.permissions import AccessChange
+from mcp_server_paperless.domain.taxonomy import TaxonomyValues
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
-    from paperless_mcp.domain.bulk import BulkKind
+    from mcp_server_paperless.domain.bulk import BulkKind
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-12")]
 

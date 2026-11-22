@@ -7,7 +7,7 @@ import zipfile
 import pytest
 from e2e.helpers import pdf
 
-from paperless_mcp.services.upload_types import CONSUMABLE, sniff
+from mcp_server_paperless.services.upload_types import CONSUMABLE, sniff
 
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

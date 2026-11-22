@@ -13,8 +13,8 @@ from fakes.accounts import ADMIN
 from fakes.paperless import FakePaperless, FakeState, FakeUser, seeded
 from pydantic import SecretStr
 
-from paperless_mcp.domain.admin import NotText
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.admin import NotText
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     Ambiguous,
     ConfirmationRequired,
@@ -22,9 +22,9 @@ from paperless_mcp.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.admin_accounts import AccountAdmin
-from paperless_mcp.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.admin_accounts import AccountAdmin
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 pytestmark = [
     pytest.mark.anyio,

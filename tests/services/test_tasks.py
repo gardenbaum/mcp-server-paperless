@@ -6,9 +6,9 @@ import pytest
 from fakes.accounts import ADMIN
 from fakes.paperless import FakePaperless, FakeTask, seeded
 
-from paperless_mcp.domain.errors import NotFound
-from paperless_mcp.domain.tasks import TaskStatus  # noqa: TC001 -- return annotation
-from paperless_mcp.services.tasks import MAX_WAIT_SECONDS, POLL_SECONDS, TaskService
+from mcp_server_paperless.domain.errors import NotFound
+from mcp_server_paperless.domain.tasks import TaskStatus  # noqa: TC001 -- return annotation
+from mcp_server_paperless.services.tasks import MAX_WAIT_SECONDS, POLL_SECONDS, TaskService
 
 pytestmark = pytest.mark.anyio
 

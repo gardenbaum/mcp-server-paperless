@@ -7,14 +7,14 @@ import pytest
 
 from adapter.conftest import tag
 from adapter.test_pagination import TagServer
-from paperless_mcp.domain.errors import PaperlessMcpError, PermissionDenied
-from paperless_mcp.domain.taxonomy import SelectOption, TaxonomyItem
-from paperless_mcp.paperless.pagination import MAX_ITEMS
-from paperless_mcp.paperless.taxonomy import PaperlessTaxonomyReader
+from mcp_server_paperless.domain.errors import PaperlessMcpError, PermissionDenied
+from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyItem
+from mcp_server_paperless.paperless.pagination import MAX_ITEMS
+from mcp_server_paperless.paperless.taxonomy import PaperlessTaxonomyReader
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory
-    from paperless_mcp.domain.taxonomy import TaxonomyKind
+    from mcp_server_paperless.domain.taxonomy import TaxonomyKind
 
 pytestmark = pytest.mark.anyio
 

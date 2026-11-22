@@ -10,13 +10,13 @@ from fakes.paperless import FakePaperless, FakeTag, FakeTaxonomy, seeded
 from hypothesis import assume, example, given
 from hypothesis import strategies as st
 
-from paperless_mcp.domain.credentials import PaperlessCredential
-from paperless_mcp.domain.errors import Ambiguous, NotFound, PermissionDenied
-from paperless_mcp.domain.taxonomy import TaxonomyItem
-from paperless_mcp.services.taxonomy import TaxonomyResolver, fold, pick
+from mcp_server_paperless.domain.credentials import PaperlessCredential
+from mcp_server_paperless.domain.errors import Ambiguous, NotFound, PermissionDenied
+from mcp_server_paperless.domain.taxonomy import TaxonomyItem
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver, fold, pick
 
 if TYPE_CHECKING:
-    from paperless_mcp.domain.taxonomy import TaxonomyKind
+    from mcp_server_paperless.domain.taxonomy import TaxonomyKind
 
 pytestmark = pytest.mark.decision("decision-5")
 

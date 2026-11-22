@@ -11,8 +11,8 @@ import json
 import re
 from typing import TYPE_CHECKING
 
-from paperless_mcp.domain.errors import PaperlessMcpError
-from paperless_mcp.domain.raw import RawReply
+from mcp_server_paperless.domain.errors import PaperlessMcpError
+from mcp_server_paperless.domain.raw import RawReply
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

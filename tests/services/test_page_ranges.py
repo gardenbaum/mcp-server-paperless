@@ -2,8 +2,8 @@
 
 import pytest
 
-from paperless_mcp.domain.errors import Validation
-from paperless_mcp.services.page_ranges import describe, parse_pages
+from mcp_server_paperless.domain.errors import Validation
+from mcp_server_paperless.services.page_ranges import describe, parse_pages
 
 
 @pytest.mark.parametrize(

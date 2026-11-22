@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING
 import httpx2
 import pytest
 
-from paperless_mcp.domain.errors import NotFound, PermissionDenied
-from paperless_mcp.domain.tasks import TaskStatus
-from paperless_mcp.paperless.tasks import PaperlessTaskReader
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied
+from mcp_server_paperless.domain.tasks import TaskStatus
+from mcp_server_paperless.paperless.tasks import PaperlessTaskReader
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory

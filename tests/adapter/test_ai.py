@@ -11,15 +11,15 @@ from typing import TYPE_CHECKING, cast, override
 import httpx2
 import pytest
 
-from paperless_mcp.domain.ai import AiSuggestions, ChatAnswer, ChatSource
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.ai import AiSuggestions, ChatAnswer, ChatSource
+from mcp_server_paperless.domain.errors import (
     FeatureUnavailable,
     NotFound,
     PermissionDenied,
     UpstreamUnavailable,
     Validation,
 )
-from paperless_mcp.paperless.ai import (
+from mcp_server_paperless.paperless.ai import (
     AI_TIMEOUT,
     CHAT_ERROR,
     CHAT_MAX_BYTES,

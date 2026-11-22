@@ -10,7 +10,7 @@ import pytest
 from pydantic import SecretStr
 
 from adapter.conftest import streaming
-from paperless_mcp.domain.admin import (
+from mcp_server_paperless.domain.admin import (
     AppConfigRecord,
     ConfigValues,
     GroupRecord,
@@ -19,7 +19,7 @@ from paperless_mcp.domain.admin import (
     UserRecord,
     UserValues,
 )
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
@@ -27,13 +27,13 @@ from paperless_mcp.domain.errors import (
     UpstreamUnavailable,
     Validation,
 )
-from paperless_mcp.paperless.admin import (
+from mcp_server_paperless.paperless.admin import (
     DOWNLOAD_SECONDS,
     PaperlessAdminReader,
     PaperlessAdminWriter,
 )
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.paperless.client import PaperlessClient, RetryPolicy, Streamed
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy, Streamed
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory

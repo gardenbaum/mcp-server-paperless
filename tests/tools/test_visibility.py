@@ -15,9 +15,9 @@ from fastmcp.server.providers import LocalProvider
 from harness import admin, paperless_settings, refused_url, serve, server_settings
 from mcp.types import ToolAnnotations
 
-from paperless_mcp.domain.errors import InvalidConfiguration
-from paperless_mcp.server import CATALOGUE, create_server
-from paperless_mcp.tools._shared import ANNOTATIONS, TOOL_TOOLSETS, boundary
+from mcp_server_paperless.domain.errors import InvalidConfiguration
+from mcp_server_paperless.server import CATALOGUE, create_server
+from mcp_server_paperless.tools._shared import ANNOTATIONS, TOOL_TOOLSETS, boundary
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP

@@ -6,10 +6,10 @@ import httpx2
 import pytest
 from pydantic import BaseModel
 
-from paperless_mcp.domain.errors import AuthenticationFailed
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.paperless.client import PaperlessClient, RetryPolicy
-from paperless_mcp.paperless.pagination import Page, collect
+from mcp_server_paperless.domain.errors import AuthenticationFailed
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
+from mcp_server_paperless.paperless.pagination import Page, collect
 
 if TYPE_CHECKING:
     from e2e.helpers import Stack

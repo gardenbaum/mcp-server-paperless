@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from fakes.document_values import reject
-from paperless_mcp.domain.errors import PermissionDenied
-from paperless_mcp.domain.workflows import (
+from mcp_server_paperless.domain.errors import PermissionDenied
+from mcp_server_paperless.domain.workflows import (
     ACTION_FIELDS,
     ACTION_TYPES,
     MATCHING_ALGORITHMS,
@@ -31,15 +31,15 @@ from paperless_mcp.domain.workflows import (
     WorkflowAction,
     WorkflowTrigger,
 )
-from paperless_mcp.paperless.workflows import unseen_workflow
+from mcp_server_paperless.paperless.workflows import unseen_workflow
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
     from pydantic import JsonValue
 
-    from paperless_mcp.domain.taxonomy import TaxonomyKind
-    from paperless_mcp.domain.workflows import WorkflowValues
+    from mcp_server_paperless.domain.taxonomy import TaxonomyKind
+    from mcp_server_paperless.domain.workflows import WorkflowValues
 
 # What 3.4.2 fills in for a trigger and an action that leave a setting out.
 TRIGGER_DEFAULTS: dict[str, JsonValue] = {

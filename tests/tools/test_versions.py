@@ -12,7 +12,7 @@ from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
 from fastmcp import Client
 from harness import serve
 
-from paperless_mcp.domain.versions import VersionUpload
+from mcp_server_paperless.domain.versions import VersionUpload
 
 if TYPE_CHECKING:
     from pathlib import Path

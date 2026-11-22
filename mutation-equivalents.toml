@@ -9,1248 +9,1248 @@
 # add an entry here only after `mutmut show <mutant>` proved the change has no effect.
 
 [[equivalent]]
-mutant = "paperless_mcp.services.documents.xǁDocumentServiceǁ_ids__mutmut_22"
+mutant = "mcp_server_paperless.services.documents.xǁDocumentServiceǁ_ids__mutmut_22"
 function_hash = "2dc98e42ddf9"
 reason = "zip() always gets two sequences of equal length here (one result per input), so strict= can never raise."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.documents.xǁDocumentServiceǁ_ids__mutmut_25"
+mutant = "mcp_server_paperless.services.documents.xǁDocumentServiceǁ_ids__mutmut_25"
 function_hash = "2dc98e42ddf9"
 reason = "zip() always gets two sequences of equal length here (one result per input), so strict= can never raise."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.documents.xǁDocumentServiceǁ_ids__mutmut_26"
+mutant = "mcp_server_paperless.services.documents.xǁDocumentServiceǁ_ids__mutmut_26"
 function_hash = "2dc98e42ddf9"
 reason = "zip() always gets two sequences of equal length here (one result per input), so strict= can never raise."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.documents.xǁDocumentServiceǁ_linked_titles__mutmut_6"
+mutant = "mcp_server_paperless.services.documents.xǁDocumentServiceǁ_linked_titles__mutmut_6"
 function_hash = "b9bafd7fbd51"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.documents.xǁDocumentServiceǁ_linked_titles__mutmut_10"
+mutant = "mcp_server_paperless.services.documents.xǁDocumentServiceǁ_linked_titles__mutmut_10"
 function_hash = "b9bafd7fbd51"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.documents.xǁDocumentServiceǁ_linked_titles__mutmut_11"
+mutant = "mcp_server_paperless.services.documents.xǁDocumentServiceǁ_linked_titles__mutmut_11"
 function_hash = "b9bafd7fbd51"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.documents.x__fields__mutmut_15"
+mutant = "mcp_server_paperless.services.documents.x__fields__mutmut_15"
 function_hash = "b09d5523b3c9"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.documents.x__fields__mutmut_19"
+mutant = "mcp_server_paperless.services.documents.x__fields__mutmut_19"
 function_hash = "b09d5523b3c9"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.documents.x__fields__mutmut_20"
+mutant = "mcp_server_paperless.services.documents.x__fields__mutmut_20"
 function_hash = "b09d5523b3c9"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.errors.x__messages__mutmut_3"
+mutant = "mcp_server_paperless.paperless.errors.x__messages__mutmut_3"
 function_hash = "e19025773131"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.errors.x__messages__mutmut_7"
+mutant = "mcp_server_paperless.paperless.errors.x__messages__mutmut_7"
 function_hash = "e19025773131"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.errors.x__messages__mutmut_8"
+mutant = "mcp_server_paperless.paperless.errors.x__messages__mutmut_8"
 function_hash = "e19025773131"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.errors.x__messages__mutmut_17"
+mutant = "mcp_server_paperless.paperless.errors.x__messages__mutmut_17"
 function_hash = "e19025773131"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.errors.x__messages__mutmut_21"
+mutant = "mcp_server_paperless.paperless.errors.x__messages__mutmut_21"
 function_hash = "e19025773131"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.errors.x__messages__mutmut_22"
+mutant = "mcp_server_paperless.paperless.errors.x__messages__mutmut_22"
 function_hash = "e19025773131"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.errors.x__details__mutmut_2"
+mutant = "mcp_server_paperless.paperless.errors.x__details__mutmut_2"
 function_hash = "e79e18bb0b87"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.errors.x__details__mutmut_6"
+mutant = "mcp_server_paperless.paperless.errors.x__details__mutmut_6"
 function_hash = "e79e18bb0b87"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.errors.x__details__mutmut_7"
+mutant = "mcp_server_paperless.paperless.errors.x__details__mutmut_7"
 function_hash = "e79e18bb0b87"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentReaderǁ_file__mutmut_22"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentReaderǁ_file__mutmut_22"
 function_hash = "5b94a1da0677"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: the mutated spelling of Content-Type or Content-Disposition reads the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentReaderǁ_file__mutmut_23"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentReaderǁ_file__mutmut_23"
 function_hash = "5b94a1da0677"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: the mutated spelling of Content-Type or Content-Disposition reads the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentReaderǁ_file__mutmut_29"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentReaderǁ_file__mutmut_29"
 function_hash = "5b94a1da0677"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: the mutated spelling of Content-Type or Content-Disposition reads the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentReaderǁ_file__mutmut_30"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentReaderǁ_file__mutmut_30"
 function_hash = "5b94a1da0677"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: the mutated spelling of Content-Type or Content-Disposition reads the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁrequest__mutmut_19"
+mutant = "mcp_server_paperless.paperless.client.xǁPaperlessClientǁrequest__mutmut_19"
 function_hash = "5cb966fd0331"
 reason = "stream=None is falsy like stream=False, and httpx2 treats both as 'read the body now'."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁget__mutmut_15"
+mutant = "mcp_server_paperless.paperless.client.xǁPaperlessClientǁget__mutmut_15"
 function_hash = "bc9a82a1c3a1"
 reason = "httpx2.Request upper-cases the method, so 'get' sends the same request as 'GET'."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_retry_delay__mutmut_16"
+mutant = "mcp_server_paperless.paperless.client.xǁPaperlessClientǁ_retry_delay__mutmut_16"
 function_hash = "8de6e3debb89"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: 'Retry-After' and 'retry-after' read the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_retry_delay__mutmut_17"
+mutant = "mcp_server_paperless.paperless.client.xǁPaperlessClientǁ_retry_delay__mutmut_17"
 function_hash = "8de6e3debb89"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: 'Retry-After' and 'retry-after' read the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_retry_delay__mutmut_18"
+mutant = "mcp_server_paperless.paperless.client.xǁPaperlessClientǁ_retry_delay__mutmut_18"
 function_hash = "8de6e3debb89"
 reason = "Retry-After defaulting to 'XXXX' is as unparsable as the empty default, so both fall back to the jittered backoff."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.pagination.x_collect__mutmut_16"
+mutant = "mcp_server_paperless.paperless.pagination.x_collect__mutmut_16"
 function_hash = "22d810c9e441"
 reason = "count is assigned in the first loop iteration (cap >= 1 guarantees one), so its initial value is never read."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.pagination.x_collect__mutmut_17"
+mutant = "mcp_server_paperless.paperless.pagination.x_collect__mutmut_17"
 function_hash = "22d810c9e441"
 reason = "count is assigned in the first loop iteration (cap >= 1 guarantees one), so its initial value is never read."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.instance.xǁPaperlessInstanceReaderǁget_overview__mutmut_7"
+mutant = "mcp_server_paperless.paperless.instance.xǁPaperlessInstanceReaderǁget_overview__mutmut_7"
 function_hash = "15f1a08b9427"
 reason = "httpx2.Request upper-cases the method, so 'get' sends the same request as 'GET'."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.instance.xǁPaperlessInstanceReaderǁget_overview__mutmut_17"
+mutant = "mcp_server_paperless.paperless.instance.xǁPaperlessInstanceReaderǁget_overview__mutmut_17"
 function_hash = "15f1a08b9427"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: the mutated key reads the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.instance.xǁPaperlessInstanceReaderǁget_overview__mutmut_18"
+mutant = "mcp_server_paperless.paperless.instance.xǁPaperlessInstanceReaderǁget_overview__mutmut_18"
 function_hash = "15f1a08b9427"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: the mutated key reads the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.instance.xǁPaperlessInstanceReaderǁget_overview__mutmut_22"
+mutant = "mcp_server_paperless.paperless.instance.xǁPaperlessInstanceReaderǁget_overview__mutmut_22"
 function_hash = "15f1a08b9427"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: the mutated key reads the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.instance.xǁPaperlessInstanceReaderǁget_overview__mutmut_23"
+mutant = "mcp_server_paperless.paperless.instance.xǁPaperlessInstanceReaderǁget_overview__mutmut_23"
 function_hash = "15f1a08b9427"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: the mutated key reads the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.disposition.x__plain__mutmut_4"
+mutant = "mcp_server_paperless.paperless.disposition.x__plain__mutmut_4"
 function_hash = "c6e884e7a0b8"
 reason = "A value of one quote character gives the empty name either way: value[1:-1] and removeprefix of the quote are both empty."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.documents.xǁDocumentServiceǁdetail__mutmut_10"
+mutant = "mcp_server_paperless.services.documents.xǁDocumentServiceǁdetail__mutmut_10"
 function_hash = "baefb80609d3"
 reason = "zip() always gets two sequences of equal length here (one result per input), so strict= can never raise."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.documents.xǁDocumentServiceǁdetail__mutmut_13"
+mutant = "mcp_server_paperless.services.documents.xǁDocumentServiceǁdetail__mutmut_13"
 function_hash = "baefb80609d3"
 reason = "zip() always gets two sequences of equal length here (one result per input), so strict= can never raise."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.documents.xǁDocumentServiceǁdetail__mutmut_14"
+mutant = "mcp_server_paperless.services.documents.xǁDocumentServiceǁdetail__mutmut_14"
 function_hash = "baefb80609d3"
 reason = "zip() always gets two sequences of equal length here (one result per input), so strict= can never raise."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.custom_values.x__select__mutmut_4"
+mutant = "mcp_server_paperless.services.custom_values.x__select__mutmut_4"
 function_hash = "4af3b2796255"
 reason = "The field only names the field in the error text _text raises for a non-string; this call is guarded by isinstance(value, str), so _text never raises and the field is never read."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.custom_values.x__url__mutmut_4"
+mutant = "mcp_server_paperless.services.custom_values.x__url__mutmut_4"
 function_hash = "745262ecf844"
 reason = "Only a non-string value reaches the replacement; both \"\" and \"XXXX\" fail the URL scheme pattern, so the same error is raised either way."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.custom_values.x_normalise__mutmut_14"
+mutant = "mcp_server_paperless.services.custom_values.x_normalise__mutmut_14"
 function_hash = "da97df5c1f02"
 reason = "A field without a data type and one with the data type \"XXXX\" both find no check in the table and raise the same unsupported-type error (the message reads field.data_type, not the lookup key)."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.document_edits.xǁDocumentEditorǁ_tags__mutmut_35"
+mutant = "mcp_server_paperless.services.document_edits.xǁDocumentEditorǁ_tags__mutmut_35"
 function_hash = "177ecdf13c3c"
 reason = "create is only read in the branch for names that do not exist when adding; with adding=False the error is re-raised first, so None and False behave alike."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.document_edits.xǁDocumentEditorǁ_tags__mutmut_36"
+mutant = "mcp_server_paperless.services.document_edits.xǁDocumentEditorǁ_tags__mutmut_36"
 function_hash = "177ecdf13c3c"
 reason = "With adding=None, `not adding` is true exactly as with adding=False, so removal lookups re-raise unknown names the same way."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.document_edits.xǁDocumentEditorǁ_tags__mutmut_40"
+mutant = "mcp_server_paperless.services.document_edits.xǁDocumentEditorǁ_tags__mutmut_40"
 function_hash = "177ecdf13c3c"
 reason = "With adding=False an unknown tag is re-raised before create is read, so create=True changes nothing for removals."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.document_edits.xǁDocumentEditorǁ_tags__mutmut_55"
+mutant = "mcp_server_paperless.services.document_edits.xǁDocumentEditorǁ_tags__mutmut_55"
 function_hash = "177ecdf13c3c"
 reason = "For tags_set the plan reads only replace and parents; the remove list is used solely when merging add/remove, which tags_set excludes."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentWriterǁupdate_document__mutmut_21"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁupdate_document__mutmut_21"
 function_hash = "d04cd501472a"
 reason = "httpx upper-cases the method when it builds the request, so \"patch\" is sent as PATCH."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁcreate_tag__mutmut_16"
+mutant = "mcp_server_paperless.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁcreate_tag__mutmut_16"
 function_hash = "a19efbc1c607"
 reason = "httpx upper-cases the method when it builds the request, so \"post\" is sent as POST."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.document_edits.xǁDocumentEditorǁ_create__mutmut_11"
+mutant = "mcp_server_paperless.services.document_edits.xǁDocumentEditorǁ_create__mutmut_11"
 function_hash = "ede9da9c5a8e"
 reason = "linked is only read in a truth test (`linked and isinstance(...)`), so None and False behave alike."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁstream_post__mutmut_11"
+mutant = "mcp_server_paperless.paperless.client.xǁPaperlessClientǁstream_post__mutmut_11"
 function_hash = "afcc90128759"
 reason = "httpx2.Request upper-cases the method, so 'post' sends the same request as 'POST'."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.ai.x__without_delimiter_stub__mutmut_7"
+mutant = "mcp_server_paperless.paperless.ai.x__without_delimiter_stub__mutmut_7"
 function_hash = "89442233199e"
 reason = "A length of the whole delimiter is never reached: partition() already removed every complete delimiter, so no answer can end with it."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.ai.xǁPaperlessAiReaderǁget_ai_suggestions__mutmut_6"
+mutant = "mcp_server_paperless.paperless.ai.xǁPaperlessAiReaderǁget_ai_suggestions__mutmut_6"
 function_hash = "0b79ab9c6026"
 reason = "retry=None is falsy like retry=False, so the request is not retried either way."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentWriterǁadd_note__mutmut_11"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁadd_note__mutmut_11"
 function_hash = "4b4ad4f40f16"
 reason = "httpx2 upper-cases the method when it builds the request, so 'post' sends exactly what 'POST' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentWriterǁdelete_note__mutmut_5"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁdelete_note__mutmut_5"
 function_hash = "f3d927e26557"
 reason = "request() only tests retry for truth (`if retry`), so None and False both switch retries off."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentWriterǁdelete_note__mutmut_11"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁdelete_note__mutmut_11"
 function_hash = "f3d927e26557"
 reason = "httpx2 upper-cases the method when it builds the request, so 'delete' sends exactly what 'DELETE' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentWriterǁdelete_document__mutmut_4"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁdelete_document__mutmut_4"
 function_hash = "5d60b85a9db1"
 reason = "request() only tests retry for truth (`if retry`), so None and False both switch retries off."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentWriterǁdelete_document__mutmut_9"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁdelete_document__mutmut_9"
 function_hash = "5d60b85a9db1"
 reason = "httpx2 upper-cases the method when it builds the request, so 'delete' sends exactly what 'DELETE' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.taxonomy_edits.xǁTaxonomyEditorǁdelete__mutmut_16"
+mutant = "mcp_server_paperless.services.taxonomy_edits.xǁTaxonomyEditorǁdelete__mutmut_16"
 function_hash = "5fe9ec283ed8"
 reason = "Only tags have a parent, so the parent map built from the rows of any other kind has no children and descendants() returns the empty set whether or not the kind is checked."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁcreate_taxonomy_item__mutmut_21"
+mutant = "mcp_server_paperless.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁcreate_taxonomy_item__mutmut_21"
 function_hash = "f1693232a782"
 reason = "httpx2 upper-cases the method when it builds the request, so 'post' is sent as 'POST'."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁupdate_taxonomy_item__mutmut_3"
+mutant = "mcp_server_paperless.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁupdate_taxonomy_item__mutmut_3"
 function_hash = "9e402a3c722c"
 reason = "_body() reads its kind only when create is true (the default matching rule of a new object); an update passes create=False, so None for the kind changes nothing."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁupdate_taxonomy_item__mutmut_5"
+mutant = "mcp_server_paperless.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁupdate_taxonomy_item__mutmut_5"
 function_hash = "9e402a3c722c"
 reason = "_body() tests create only for truth and an update means false; None is false too."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁupdate_taxonomy_item__mutmut_33"
+mutant = "mcp_server_paperless.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁupdate_taxonomy_item__mutmut_33"
 function_hash = "9e402a3c722c"
 reason = "httpx2 upper-cases the method when it builds the request, so 'patch' is sent as 'PATCH'."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁdelete_taxonomy_item__mutmut_7"
+mutant = "mcp_server_paperless.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁdelete_taxonomy_item__mutmut_7"
 function_hash = "00e012f88109"
 reason = "httpx2 upper-cases the method when it builds the request, so 'delete' is sent as 'DELETE'."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x_clean_filename__mutmut_5"
+mutant = "mcp_server_paperless.services.upload_source.x_clean_filename__mutmut_5"
 function_hash = "c37bbeb7ca2c"
 reason = "rsplit with another maxsplit and `problem = ''` instead of None: [-1] is the same last component, and an empty problem is falsy like None."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x_clean_filename__mutmut_14"
+mutant = "mcp_server_paperless.services.upload_source.x_clean_filename__mutmut_14"
 function_hash = "c37bbeb7ca2c"
 reason = "rsplit with another maxsplit and `problem = ''` instead of None: [-1] is the same last component, and an empty problem is falsy like None."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x_clean_filename__mutmut_17"
+mutant = "mcp_server_paperless.services.upload_source.x_clean_filename__mutmut_17"
 function_hash = "c37bbeb7ca2c"
 reason = "rsplit with another maxsplit and `problem = ''` instead of None: [-1] is the same last component, and an empty problem is falsy like None."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x__read__mutmut_14"
+mutant = "mcp_server_paperless.services.upload_source.x__read__mutmut_14"
 function_hash = "5725f000efe4"
 reason = "Same outcome for every file: a file over the limit is read on (further or whole) until it is longer than the limit and then refused; only how many bytes are read before refusing differs."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x__read__mutmut_16"
+mutant = "mcp_server_paperless.services.upload_source.x__read__mutmut_16"
 function_hash = "5725f000efe4"
 reason = "Same outcome for every file: a file over the limit is read on (further or whole) until it is longer than the limit and then refused; only how many bytes are read before refusing differs."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x__read__mutmut_20"
+mutant = "mcp_server_paperless.services.upload_source.x__read__mutmut_20"
 function_hash = "5725f000efe4"
 reason = "Same outcome for every file: a file over the limit is read on (further or whole) until it is longer than the limit and then refused; only how many bytes are read before refusing differs."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x__read__mutmut_21"
+mutant = "mcp_server_paperless.services.upload_source.x__read__mutmut_21"
 function_hash = "5725f000efe4"
 reason = "Same outcome for every file: a file over the limit is read on (further or whole) until it is longer than the limit and then refused; only how many bytes are read before refusing differs."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x__open_regular__mutmut_3"
+mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_3"
 function_hash = "c8879a989362"
 reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x__open_regular__mutmut_9"
+mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_9"
 function_hash = "c8879a989362"
 reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x__open_regular__mutmut_10"
+mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_10"
 function_hash = "c8879a989362"
 reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x__open_regular__mutmut_30"
+mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_30"
 function_hash = "c8879a989362"
 reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x__open_regular__mutmut_33"
+mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_33"
 function_hash = "c8879a989362"
 reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x__open_regular__mutmut_34"
+mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_34"
 function_hash = "c8879a989362"
 reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_source.x__open_regular__mutmut_63"
+mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_63"
 function_hash = "c8879a989362"
 reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_types.x__zipped__mutmut_22"
+mutant = "mcp_server_paperless.services.upload_types.x__zipped__mutmut_22"
 function_hash = "4d43e564fff2"
 reason = "Decoding the first 100 bytes of the mimetype member as ASCII with another spelling, encoding default or one byte more, or reading all of it: the result is compared with the exact type name, which is 49 characters or fewer, so any longer or damaged content is a mismatch either way."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_types.x__zipped__mutmut_23"
+mutant = "mcp_server_paperless.services.upload_types.x__zipped__mutmut_23"
 function_hash = "4d43e564fff2"
 reason = "Decoding the first 100 bytes of the mimetype member as ASCII with another spelling, encoding default or one byte more, or reading all of it: the result is compared with the exact type name, which is 49 characters or fewer, so any longer or damaged content is a mismatch either way."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_types.x__zipped__mutmut_24"
+mutant = "mcp_server_paperless.services.upload_types.x__zipped__mutmut_24"
 function_hash = "4d43e564fff2"
 reason = "Decoding the first 100 bytes of the mimetype member as ASCII with another spelling, encoding default or one byte more, or reading all of it: the result is compared with the exact type name, which is 49 characters or fewer, so any longer or damaged content is a mismatch either way."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_types.x__zipped__mutmut_25"
+mutant = "mcp_server_paperless.services.upload_types.x__zipped__mutmut_25"
 function_hash = "4d43e564fff2"
 reason = "Decoding the first 100 bytes of the mimetype member as ASCII with another spelling, encoding default or one byte more, or reading all of it: the result is compared with the exact type name, which is 49 characters or fewer, so any longer or damaged content is a mismatch either way."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_types.x__zipped__mutmut_27"
+mutant = "mcp_server_paperless.services.upload_types.x__zipped__mutmut_27"
 function_hash = "4d43e564fff2"
 reason = "Decoding the first 100 bytes of the mimetype member as ASCII with another spelling, encoding default or one byte more, or reading all of it: the result is compared with the exact type name, which is 49 characters or fewer, so any longer or damaged content is a mismatch either way."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_types.x__zipped__mutmut_28"
+mutant = "mcp_server_paperless.services.upload_types.x__zipped__mutmut_28"
 function_hash = "4d43e564fff2"
 reason = "Decoding the first 100 bytes of the mimetype member as ASCII with another spelling, encoding default or one byte more, or reading all of it: the result is compared with the exact type name, which is 49 characters or fewer, so any longer or damaged content is a mismatch either way."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_types.x__zipped__mutmut_29"
+mutant = "mcp_server_paperless.services.upload_types.x__zipped__mutmut_29"
 function_hash = "4d43e564fff2"
 reason = "Decoding the first 100 bytes of the mimetype member as ASCII with another spelling, encoding default or one byte more, or reading all of it: the result is compared with the exact type name, which is 49 characters or fewer, so any longer or damaged content is a mismatch either way."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.upload_types.x__text__mutmut_9"
+mutant = "mcp_server_paperless.services.upload_types.x__text__mutmut_9"
 function_hash = "f7fbf0e405e6"
 reason = "'UTF-8' and 'utf-8' name the same codec."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentWriterǁupload_document__mutmut_49"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁupload_document__mutmut_49"
 function_hash = "ee09c21864dc"
 reason = "httpx2 upper-cases the method; 'post' sends the same POST."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentWriterǁupload_document_version__mutmut_19"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁupload_document_version__mutmut_19"
 function_hash = "905e807da5b1"
 reason = "httpx2 upper-cases the method when it builds the request, so 'post' sends exactly what 'POST' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentWriterǁset_version_label__mutmut_11"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁset_version_label__mutmut_11"
 function_hash = "6e96e54caf36"
 reason = "httpx2 upper-cases the method when it builds the request, so 'patch' sends exactly what 'PATCH' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentWriterǁdelete_version__mutmut_5"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁdelete_version__mutmut_5"
 function_hash = "ef2ece8f2e84"
 reason = "request() only tests retry for truth (`if retry`), so None and False both switch retries off."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentWriterǁdelete_version__mutmut_11"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁdelete_version__mutmut_11"
 function_hash = "ef2ece8f2e84"
 reason = "httpx2 upper-cases the method when it builds the request, so 'delete' sends exactly what 'DELETE' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentWriterǁmerge_as_versions__mutmut_20"
+mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁmerge_as_versions__mutmut_20"
 function_hash = "ffa9b505dd24"
 reason = "httpx2 upper-cases the method when it builds the request, so 'post' sends exactly what 'POST' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.bulk.xǁPaperlessBulkWriterǁbulk_edit_documents__mutmut_21"
+mutant = "mcp_server_paperless.paperless.bulk.xǁPaperlessBulkWriterǁbulk_edit_documents__mutmut_21"
 function_hash = "17bd5caa6988"
 reason = "httpx2 upper-cases the method when it builds the request, so \"post\" goes out as POST; the client reads only the built request's method."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.bulk.xǁPaperlessBulkWriterǁ_objects__mutmut_11"
+mutant = "mcp_server_paperless.paperless.bulk.xǁPaperlessBulkWriterǁ_objects__mutmut_11"
 function_hash = "3421113ae662"
 reason = "httpx2 upper-cases the method when it builds the request, so \"post\" goes out as POST; the client reads only the built request's method."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.filter_rules.x__json__mutmut_11"
+mutant = "mcp_server_paperless.services.filter_rules.x__json__mutmut_11"
 function_hash = "40d2ee714ca0"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.filter_rules.x__json__mutmut_15"
+mutant = "mcp_server_paperless.services.filter_rules.x__json__mutmut_15"
 function_hash = "40d2ee714ca0"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.filter_rules.x__json__mutmut_16"
+mutant = "mcp_server_paperless.services.filter_rules.x__json__mutmut_16"
 function_hash = "40d2ee714ca0"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.filter_rules.x__json__mutmut_17"
+mutant = "mcp_server_paperless.services.filter_rules.x__json__mutmut_17"
 function_hash = "40d2ee714ca0"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.views.xǁPaperlessViewWriterǁcreate_saved_view__mutmut_17"
+mutant = "mcp_server_paperless.paperless.views.xǁPaperlessViewWriterǁcreate_saved_view__mutmut_17"
 function_hash = "0b5180c429e0"
 reason = "httpx2 upper-cases the method; 'post' sends the same POST."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.views.xǁPaperlessViewWriterǁupdate_saved_view__mutmut_11"
+mutant = "mcp_server_paperless.paperless.views.xǁPaperlessViewWriterǁupdate_saved_view__mutmut_11"
 function_hash = "aec3cb61ec0a"
 reason = "httpx2 upper-cases the method; 'patch' sends the same PATCH."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.views.xǁPaperlessViewWriterǁdelete_saved_view__mutmut_7"
+mutant = "mcp_server_paperless.paperless.views.xǁPaperlessViewWriterǁdelete_saved_view__mutmut_7"
 function_hash = "bd33043b4adc"
 reason = "httpx2 upper-cases the method; 'delete' sends the same DELETE."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.filter_rules.x__apply__mutmut_10"
+mutant = "mcp_server_paperless.services.filter_rules.x__apply__mutmut_10"
 function_hash = "8df11c6d7b62"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.filter_rules.x__apply__mutmut_14"
+mutant = "mcp_server_paperless.services.filter_rules.x__apply__mutmut_14"
 function_hash = "8df11c6d7b62"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.filter_rules.x__apply__mutmut_15"
+mutant = "mcp_server_paperless.services.filter_rules.x__apply__mutmut_15"
 function_hash = "8df11c6d7b62"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.trash.xǁTrashServiceǁrestore__mutmut_24"
+mutant = "mcp_server_paperless.services.trash.xǁTrashServiceǁrestore__mutmut_24"
 function_hash = "c52f682f4e53"
 reason = "deleted=None instead of False: _described only tests the flag for truthiness, and both are falsy."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.trash.xǁTrashServiceǁempty__mutmut_72"
+mutant = "mcp_server_paperless.services.trash.xǁTrashServiceǁempty__mutmut_72"
 function_hash = "b5c85ce89154"
 reason = "deleted=None instead of False: _described only tests the flag for truthiness, and both are falsy."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.trash.xǁPaperlessTrashWriterǁ_post__mutmut_26"
+mutant = "mcp_server_paperless.paperless.trash.xǁPaperlessTrashWriterǁ_post__mutmut_26"
 function_hash = "2d408d05e432"
 reason = "httpx2 upper-cases the method when it builds the request, so \"post\" goes out as POST; the client reads only the built request's method."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.pdf.xǁPdfServiceǁreprocess__mutmut_6"
+mutant = "mcp_server_paperless.services.pdf.xǁPdfServiceǁreprocess__mutmut_6"
 function_hash = "93c62a1f2bbe"
 reason = "pdf=None is falsy like pdf=False: reprocessing takes any file type, and `_documents` only tests `pdf` for truth."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.pdf.xǁPdfServiceǁ_result__mutmut_154"
+mutant = "mcp_server_paperless.services.pdf.xǁPdfServiceǁ_result__mutmut_154"
 function_hash = "c8ab448344c4"
 reason = "waited is a sum of values that TaskService already rounded to a tenth, so its float error is far below a hundredth: rounding to two decimals gives the same value as rounding to one."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.pdf.xǁPaperlessPdfWriterǁ_run__mutmut_17"
+mutant = "mcp_server_paperless.paperless.pdf.xǁPaperlessPdfWriterǁ_run__mutmut_17"
 function_hash = "be55d8b24430"
 reason = "httpx2 upper-cases the method when it builds the request, so 'post' sends exactly what 'POST' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁcreate_share_link__mutmut_26"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁcreate_share_link__mutmut_26"
 function_hash = "0b788f0a75ba"
 reason = "httpx2 upper-cases the method when it builds the request, so 'post' sends exactly what 'POST' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁdelete_share_link__mutmut_4"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁdelete_share_link__mutmut_4"
 function_hash = "e6d1d251f440"
 reason = "retry is only tested for truth (`if retry`), so None behaves like False: no retry."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁdelete_share_link__mutmut_9"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁdelete_share_link__mutmut_9"
 function_hash = "e6d1d251f440"
 reason = "httpx2 upper-cases the method when it builds the request, so 'delete' sends exactly what 'DELETE' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁcreate_share_bundle__mutmut_21"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁcreate_share_bundle__mutmut_21"
 function_hash = "78c50f31ef3b"
 reason = "httpx2 upper-cases the method when it builds the request, so 'post' sends exactly what 'POST' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁrebuild_share_bundle__mutmut_11"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁrebuild_share_bundle__mutmut_11"
 function_hash = "9b08f9fbfd91"
 reason = "retry is only tested for truth (`if retry`), so None behaves like False; and a POST is never retried anyway."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁrebuild_share_bundle__mutmut_16"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁrebuild_share_bundle__mutmut_16"
 function_hash = "9b08f9fbfd91"
 reason = "A POST is never retried (IDEMPOTENT_METHODS), so leaving retry at its default True changes nothing for it; retry=False documents the intent."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁrebuild_share_bundle__mutmut_18"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁrebuild_share_bundle__mutmut_18"
 function_hash = "9b08f9fbfd91"
 reason = "httpx2 upper-cases the method when it builds the request, so 'post' sends exactly what 'POST' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁrebuild_share_bundle__mutmut_21"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁrebuild_share_bundle__mutmut_21"
 function_hash = "9b08f9fbfd91"
 reason = "A POST is never retried (IDEMPOTENT_METHODS), so retry=True changes nothing for it; retry=False documents the intent."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁdelete_share_bundle__mutmut_4"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁdelete_share_bundle__mutmut_4"
 function_hash = "95e4f395f135"
 reason = "retry is only tested for truth (`if retry`), so None behaves like False: no retry."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁdelete_share_bundle__mutmut_9"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁdelete_share_bundle__mutmut_9"
 function_hash = "95e4f395f135"
 reason = "httpx2 upper-cases the method when it builds the request, so 'delete' sends exactly what 'DELETE' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁemail_documents__mutmut_21"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁemail_documents__mutmut_21"
 function_hash = "94ea53e47cb7"
 reason = "retry is only tested for truth (`if retry`), so None behaves like False; and a POST is never retried anyway."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁemail_documents__mutmut_27"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁemail_documents__mutmut_27"
 function_hash = "94ea53e47cb7"
 reason = "A POST is never retried (IDEMPOTENT_METHODS), so leaving retry at its default True changes nothing for it; retry=False documents the intent."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁemail_documents__mutmut_29"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁemail_documents__mutmut_29"
 function_hash = "94ea53e47cb7"
 reason = "httpx2 upper-cases the method when it builds the request, so 'post' sends exactly what 'POST' sends."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.sharing.xǁPaperlessSharingWriterǁemail_documents__mutmut_30"
+mutant = "mcp_server_paperless.paperless.sharing.xǁPaperlessSharingWriterǁemail_documents__mutmut_30"
 function_hash = "94ea53e47cb7"
 reason = "A POST is never retried (IDEMPOTENT_METHODS), so retry=True changes nothing for it; retry=False documents the intent."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.permissions.xǁPaperlessPermissionWriterǁset_permissions__mutmut_14"
+mutant = "mcp_server_paperless.paperless.permissions.xǁPaperlessPermissionWriterǁset_permissions__mutmut_14"
 function_hash = "ce495ff48d00"
 reason = "httpx2 upper-cases the method when it builds the request, so \"patch\" goes out as PATCH; the client reads only the built request's method."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.mail.x_attribute__mutmut_1"
+mutant = "mcp_server_paperless.services.mail.x_attribute__mutmut_1"
 function_hash = "39c8e004a210"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.mail.x_attribute__mutmut_5"
+mutant = "mcp_server_paperless.services.mail.x_attribute__mutmut_5"
 function_hash = "39c8e004a210"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.mail.x_attribute__mutmut_6"
+mutant = "mcp_server_paperless.services.mail.x_attribute__mutmut_6"
 function_hash = "39c8e004a210"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁcreate_mail_account__mutmut_13"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁcreate_mail_account__mutmut_13"
 function_hash = "26356be43bcf"
 reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁupdate_mail_account__mutmut_13"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁupdate_mail_account__mutmut_13"
 function_hash = "db48a08b9286"
 reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_account__mutmut_4"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_account__mutmut_4"
 function_hash = "f3d0a26cf1d3"
 reason = "retry is only tested for truth, so None means False; the tests cannot tell them apart."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_account__mutmut_9"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_account__mutmut_9"
 function_hash = "f3d0a26cf1d3"
 reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁtest_mail_account__mutmut_12"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁtest_mail_account__mutmut_12"
 function_hash = "b37220e2ac2e"
 reason = "retry is only tested for truth, so None means False; the tests cannot tell them apart."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁtest_mail_account__mutmut_18"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁtest_mail_account__mutmut_18"
 function_hash = "b37220e2ac2e"
 reason = "POST is not in IDEMPOTENT_METHODS, so the client never retries it whatever retry says; dropping or flipping retry changes nothing for a POST."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁtest_mail_account__mutmut_20"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁtest_mail_account__mutmut_20"
 function_hash = "b37220e2ac2e"
 reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁtest_mail_account__mutmut_21"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁtest_mail_account__mutmut_21"
 function_hash = "b37220e2ac2e"
 reason = "POST is not in IDEMPOTENT_METHODS, so the client never retries it whatever retry says; dropping or flipping retry changes nothing for a POST."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁprocess_mail_account__mutmut_8"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁprocess_mail_account__mutmut_8"
 function_hash = "fd1c78202cae"
 reason = "retry is only tested for truth, so None means False; the tests cannot tell them apart."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁprocess_mail_account__mutmut_13"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁprocess_mail_account__mutmut_13"
 function_hash = "fd1c78202cae"
 reason = "POST is not in IDEMPOTENT_METHODS, so the client never retries it whatever retry says; dropping or flipping retry changes nothing for a POST."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁprocess_mail_account__mutmut_15"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁprocess_mail_account__mutmut_15"
 function_hash = "fd1c78202cae"
 reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁprocess_mail_account__mutmut_16"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁprocess_mail_account__mutmut_16"
 function_hash = "fd1c78202cae"
 reason = "POST is not in IDEMPOTENT_METHODS, so the client never retries it whatever retry says; dropping or flipping retry changes nothing for a POST."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁcreate_mail_rule__mutmut_13"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁcreate_mail_rule__mutmut_13"
 function_hash = "88c4a41a2568"
 reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁupdate_mail_rule__mutmut_13"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁupdate_mail_rule__mutmut_13"
 function_hash = "e7982c7c39e3"
 reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_rule__mutmut_4"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_rule__mutmut_4"
 function_hash = "e134741f2674"
 reason = "retry is only tested for truth, so None means False; the tests cannot tell them apart."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_rule__mutmut_9"
+mutant = "mcp_server_paperless.paperless.mail.xǁPaperlessMailWriterǁdelete_mail_rule__mutmut_9"
 function_hash = "e134741f2674"
 reason = "httpx2 upper-cases the method it is given, so the request on the wire is the same as with the upper-case spelling."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x_trigger_type__mutmut_9"
+mutant = "mcp_server_paperless.services.workflows.x_trigger_type__mutmut_9"
 function_hash = "bf5415fd6775"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x_trigger_type__mutmut_13"
+mutant = "mcp_server_paperless.services.workflows.x_trigger_type__mutmut_13"
 function_hash = "bf5415fd6775"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x_trigger_type__mutmut_14"
+mutant = "mcp_server_paperless.services.workflows.x_trigger_type__mutmut_14"
 function_hash = "bf5415fd6775"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__json_text__mutmut_2"
+mutant = "mcp_server_paperless.services.workflows.x__json_text__mutmut_2"
 function_hash = "e72d6adffef9"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__json_text__mutmut_6"
+mutant = "mcp_server_paperless.services.workflows.x__json_text__mutmut_6"
 function_hash = "e72d6adffef9"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__json_text__mutmut_7"
+mutant = "mcp_server_paperless.services.workflows.x__json_text__mutmut_7"
 function_hash = "e72d6adffef9"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__object__mutmut_3"
+mutant = "mcp_server_paperless.services.workflows.x__object__mutmut_3"
 function_hash = "65e2545e72f7"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__object__mutmut_7"
+mutant = "mcp_server_paperless.services.workflows.x__object__mutmut_7"
 function_hash = "65e2545e72f7"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__object__mutmut_8"
+mutant = "mcp_server_paperless.services.workflows.x__object__mutmut_8"
 function_hash = "65e2545e72f7"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__object__mutmut_9"
+mutant = "mcp_server_paperless.services.workflows.x__object__mutmut_9"
 function_hash = "65e2545e72f7"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__origin__mutmut_4"
+mutant = "mcp_server_paperless.services.workflows.x__origin__mutmut_4"
 function_hash = "afdd83f752ca"
 reason = "Both URLs are compared with the same folding, so upper-case and lower-case schemes compare alike."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_12"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_12"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_16"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_16"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_17"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_17"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_29"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_29"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_33"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_33"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_34"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_34"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_37"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_37"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_41"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_41"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_42"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_42"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_52"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_52"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_56"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_56"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_57"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_57"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_58"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_58"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_64"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_64"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_68"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_68"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_69"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_69"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_70"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_70"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_71"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_71"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_75"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_75"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_76"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_76"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_77"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_77"
 function_hash = "554908e9b1fc"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_trigger__mutmut_6"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_trigger__mutmut_6"
 function_hash = "1e5d8d97c0a7"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_trigger__mutmut_10"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_trigger__mutmut_10"
 function_hash = "1e5d8d97c0a7"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_trigger__mutmut_11"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_trigger__mutmut_11"
 function_hash = "1e5d8d97c0a7"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_5"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action__mutmut_5"
 function_hash = "0e2b573881e6"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_9"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action__mutmut_9"
 function_hash = "0e2b573881e6"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_10"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action__mutmut_10"
 function_hash = "0e2b573881e6"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_75"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action__mutmut_75"
 function_hash = "0e2b573881e6"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_79"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action__mutmut_79"
 function_hash = "0e2b573881e6"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_80"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action__mutmut_80"
 function_hash = "0e2b573881e6"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action__mutmut_81"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action__mutmut_81"
 function_hash = "0e2b573881e6"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_4"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_4"
 function_hash = "c35d2c618042"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_8"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_8"
 function_hash = "c35d2c618042"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_9"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_9"
 function_hash = "c35d2c618042"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_10"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_10"
 function_hash = "c35d2c618042"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_12"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_12"
 function_hash = "c35d2c618042"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_13"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_13"
 function_hash = "c35d2c618042"
 reason = "Every setting of another action type is refused before this runs, so a webhook is only ever present when the setting being converted is the webhook itself: `or` and `and` give the same answer."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_21"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_21"
 function_hash = "c35d2c618042"
 reason = "dict.get(None) is None, which is what the other branch gives: an action without an id has no stored action to look up."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_52"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_52"
 function_hash = "c35d2c618042"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_56"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_56"
 function_hash = "c35d2c618042"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_57"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_57"
 function_hash = "c35d2c618042"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_58"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_58"
 function_hash = "c35d2c618042"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_63"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_63"
 function_hash = "c35d2c618042"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_67"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_67"
 function_hash = "c35d2c618042"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_68"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_68"
 function_hash = "c35d2c618042"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_69"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_69"
 function_hash = "c35d2c618042"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_77"
+mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_action_setting__mutmut_77"
 function_hash = "c35d2c618042"
 reason = "The name only selects the special cases of triggers (sources, matching algorithm, text checks), none of which is a setting of an action, so None and the name take the same path."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_3"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_3"
 function_hash = "bfc288784db1"
 reason = "Called only for settings that name objects, and a kind that is not in `names` gives the same empty lookup as no kind."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_5"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_5"
 function_hash = "bfc288784db1"
 reason = "`names` always holds every kind of the settings shown (it is built from the same settings), so the default of get() is never used."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_7"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_7"
 function_hash = "bfc288784db1"
 reason = "`names` always holds every kind of the settings shown (it is built from the same settings), so the default of get() is never used."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_9"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_9"
 function_hash = "bfc288784db1"
 reason = "Only ids are looked up, and dict.get(key, key) returns a key it does not hold unchanged, so a non-integer item comes back as it is either way."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_18"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_18"
 function_hash = "bfc288784db1"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_23"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_23"
 function_hash = "bfc288784db1"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_27"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_27"
 function_hash = "bfc288784db1"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_28"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_28"
 function_hash = "bfc288784db1"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_29"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_29"
 function_hash = "bfc288784db1"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_37"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_37"
 function_hash = "bfc288784db1"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_41"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_41"
 function_hash = "bfc288784db1"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_42"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_42"
 function_hash = "bfc288784db1"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_48"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_48"
 function_hash = "bfc288784db1"
 reason = "`names` always holds the custom fields when custom field values are shown (that setting names custom fields), so the default of get() is never used."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_50"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_50"
 function_hash = "bfc288784db1"
 reason = "`names` always holds the custom fields when custom field values are shown (that setting names custom fields), so the default of get() is never used."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_74"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_74"
 function_hash = "bfc288784db1"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_78"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_78"
 function_hash = "bfc288784db1"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_79"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_79"
 function_hash = "bfc288784db1"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_80"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_80"
 function_hash = "bfc288784db1"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.workflows.x__show__mutmut_82"
+mutant = "mcp_server_paperless.services.workflows.x__show__mutmut_82"
 function_hash = "bfc288784db1"
 reason = "named() leaves a value alone when the setting names no kind (its lookup is empty), so calling it for those too changes nothing."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.workflows.xǁPaperlessWorkflowWriterǁcreate_workflow__mutmut_19"
+mutant = "mcp_server_paperless.paperless.workflows.xǁPaperlessWorkflowWriterǁcreate_workflow__mutmut_19"
 function_hash = "0d8556b6d281"
 reason = "httpx2.Request upper-cases the method, so 'post' is sent as POST."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.workflows.xǁPaperlessWorkflowWriterǁupdate_workflow__mutmut_11"
+mutant = "mcp_server_paperless.paperless.workflows.xǁPaperlessWorkflowWriterǁupdate_workflow__mutmut_11"
 function_hash = "668ee878cd0b"
 reason = "httpx2.Request upper-cases the method, so 'patch' is sent as PATCH."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.workflows.xǁPaperlessWorkflowWriterǁdelete_workflow__mutmut_7"
+mutant = "mcp_server_paperless.paperless.workflows.xǁPaperlessWorkflowWriterǁdelete_workflow__mutmut_7"
 function_hash = "d91d861ee215"
 reason = "httpx2.Request upper-cases the method, so 'delete' is sent as DELETE."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.raw.x__result__mutmut_31"
+mutant = "mcp_server_paperless.services.raw.x__result__mutmut_31"
 function_hash = "a5529eb820da"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.raw.x__result__mutmut_35"
+mutant = "mcp_server_paperless.services.raw.x__result__mutmut_35"
 function_hash = "a5529eb820da"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.raw.x__result__mutmut_36"
+mutant = "mcp_server_paperless.services.raw.x__result__mutmut_36"
 function_hash = "a5529eb820da"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.raw.x__result__mutmut_37"
+mutant = "mcp_server_paperless.services.raw.x__result__mutmut_37"
 function_hash = "a5529eb820da"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
 
 [[equivalent]]
-mutant = "paperless_mcp.services.raw.x__result__mutmut_46"
+mutant = "mcp_server_paperless.services.raw.x__result__mutmut_46"
 function_hash = "a5529eb820da"
 reason = "json.dumps treats ensure_ascii=None like False (it only tests truthiness), so the output is the same."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_12"
+mutant = "mcp_server_paperless.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_12"
 function_hash = "0c1a048074ac"
 reason = "rstrip with the characters X and / strips the same trailing slash as rstrip('/') on a URL path that has no X at its end."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_14"
+mutant = "mcp_server_paperless.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_14"
 function_hash = "0c1a048074ac"
 reason = "The check compares only the path of the built URL, which does not depend on the query params."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_16"
+mutant = "mcp_server_paperless.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_16"
 function_hash = "0c1a048074ac"
 reason = "The check compares only the path of the built URL, which does not depend on the query params."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_27"
+mutant = "mcp_server_paperless.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_27"
 function_hash = "0c1a048074ac"
 reason = "download tests retry with a plain truth test, so None and False both switch retrying off."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_61"
+mutant = "mcp_server_paperless.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_61"
 function_hash = "0c1a048074ac"
 reason = "httpx2 headers are case-insensitive, so any spelling of Content-Type finds the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_62"
+mutant = "mcp_server_paperless.paperless.raw.xǁPaperlessRawReaderǁget__mutmut_62"
 function_hash = "0c1a048074ac"
 reason = "httpx2 headers are case-insensitive, so any spelling of Content-Type finds the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁdownload__mutmut_10"
+mutant = "mcp_server_paperless.paperless.client.xǁPaperlessClientǁdownload__mutmut_10"
 function_hash = "e11e201d9c53"
 reason = "httpx2.Request upper-cases the method, so 'get' sends the same request as 'GET'."
 
 
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁtarget__mutmut_7"
+mutant = "mcp_server_paperless.paperless.client.xǁPaperlessClientǁtarget__mutmut_7"
 function_hash = "2df8cd1baed7"
 reason = "target only reads the URL of the built request, which does not depend on the method."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁtarget__mutmut_8"
+mutant = "mcp_server_paperless.paperless.client.xǁPaperlessClientǁtarget__mutmut_8"
 function_hash = "2df8cd1baed7"
 reason = "target only reads the URL of the built request, which does not depend on the method."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_build__mutmut_23"
+mutant = "mcp_server_paperless.paperless.client.xǁPaperlessClientǁ_build__mutmut_23"
 function_hash = "0be61ae9addc"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: 'Accept' and 'accept' set the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.client.xǁPaperlessClientǁ_build__mutmut_24"
+mutant = "mcp_server_paperless.paperless.client.xǁPaperlessClientǁ_build__mutmut_24"
 function_hash = "0be61ae9addc"
 reason = "HTTP header names are case-insensitive in httpx2.Headers: 'Accept' and 'accept' set the same header."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁcreate_user__mutmut_14"
+mutant = "mcp_server_paperless.paperless.admin.xǁPaperlessAdminWriterǁcreate_user__mutmut_14"
 function_hash = "d2d0d4e8fab8"
 reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁupdate_user__mutmut_14"
+mutant = "mcp_server_paperless.paperless.admin.xǁPaperlessAdminWriterǁupdate_user__mutmut_14"
 function_hash = "f2060b6683eb"
 reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁdelete_user__mutmut_5"
+mutant = "mcp_server_paperless.paperless.admin.xǁPaperlessAdminWriterǁdelete_user__mutmut_5"
 function_hash = "c4a4084b983f"
 reason = "retry=None is as falsy as retry=False: the client reads the flag only as a truth value, so a DELETE is not retried either way."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁdelete_user__mutmut_10"
+mutant = "mcp_server_paperless.paperless.admin.xǁPaperlessAdminWriterǁdelete_user__mutmut_10"
 function_hash = "c4a4084b983f"
 reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁcreate_group__mutmut_18"
+mutant = "mcp_server_paperless.paperless.admin.xǁPaperlessAdminWriterǁcreate_group__mutmut_18"
 function_hash = "3fcf82299248"
 reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁupdate_group__mutmut_14"
+mutant = "mcp_server_paperless.paperless.admin.xǁPaperlessAdminWriterǁupdate_group__mutmut_14"
 function_hash = "4597ec62ffdb"
 reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁdelete_group__mutmut_5"
+mutant = "mcp_server_paperless.paperless.admin.xǁPaperlessAdminWriterǁdelete_group__mutmut_5"
 function_hash = "b49641196f00"
 reason = "retry=None is as falsy as retry=False: the client reads the flag only as a truth value, so a DELETE is not retried either way."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁdelete_group__mutmut_10"
+mutant = "mcp_server_paperless.paperless.admin.xǁPaperlessAdminWriterǁdelete_group__mutmut_10"
 function_hash = "b49641196f00"
 reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁupdate_config__mutmut_24"
+mutant = "mcp_server_paperless.paperless.admin.xǁPaperlessAdminWriterǁupdate_config__mutmut_24"
 function_hash = "adf61db2ee64"
 reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁacknowledge_tasks__mutmut_12"
+mutant = "mcp_server_paperless.paperless.admin.xǁPaperlessAdminWriterǁacknowledge_tasks__mutmut_12"
 function_hash = "f1f27aa9ef68"
 reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
 
 [[equivalent]]
-mutant = "paperless_mcp.paperless.admin.xǁPaperlessAdminWriterǁrun_task__mutmut_12"
+mutant = "mcp_server_paperless.paperless.admin.xǁPaperlessAdminWriterǁrun_task__mutmut_12"
 function_hash = "0fb4610dbbf7"
 reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."

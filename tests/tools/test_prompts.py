@@ -15,9 +15,9 @@ from fastmcp import Client, FastMCP
 from fastmcp.server.providers import LocalProvider
 from harness import admin, serve
 
-from paperless_mcp.server import CATALOGUE
-from paperless_mcp.tools._shared import ANNOTATIONS, TOOL_TOOLSETS, TOOLSETS
-from paperless_mcp.tools.prompts import CONFIRMATION, SPECS, PromptSpec, mentioned_tools
+from mcp_server_paperless.server import CATALOGUE
+from mcp_server_paperless.tools._shared import ANNOTATIONS, TOOL_TOOLSETS, TOOLSETS
+from mcp_server_paperless.tools.prompts import CONFIRMATION, SPECS, PromptSpec, mentioned_tools
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

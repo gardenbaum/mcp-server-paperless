@@ -17,8 +17,8 @@ from fakes.paperless import (
 from hypothesis import given
 from hypothesis import strategies as st
 
-from paperless_mcp.domain.documents import CustomFieldValue, DocumentEdit, DocumentPatch
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentEdit, DocumentPatch
+from mcp_server_paperless.domain.errors import (
     Ambiguous,
     ConfirmationRequired,
     NotFound,
@@ -26,21 +26,21 @@ from paperless_mcp.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.document_edits import (
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.document_edits import (
     DocumentEditor,
     merged_fields,
     merged_tags,
     same_value,
 )
-from paperless_mcp.services.documents import DocumentService
-from paperless_mcp.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.documents import DocumentService
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
     from pydantic import JsonValue
 
-    from paperless_mcp.domain.documents import DocumentDetail, DocumentRecord, DocumentUpdate
-    from paperless_mcp.domain.taxonomy import TaxonomyItem, TaxonomyKind
+    from mcp_server_paperless.domain.documents import DocumentDetail, DocumentRecord, DocumentUpdate
+    from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 
