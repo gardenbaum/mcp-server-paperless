@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-22T12:11:00Z'
-updated_date: '2026-11-22T13:50:00Z'
+updated_date: '2026-11-22T15:01:37Z'
 labels: []
 dependencies: []
 priority: high
@@ -87,6 +87,8 @@ Controller: AC #2 is split. Adapter handling of both versions is done and wire-t
 DoD #1 (tests first) unchecked on review: queued.py and the admin READ_CONFIG hint were written together with or before their first tests, which doc-2 step 4 does not allow; the wiring tests (bulk, pdf, versions) were red first. For the review round (unconfirmed outcome, PDF writer, neutral failure messages) tests were written first and run red before the code: test_queued (confirmed/Unconfirmed), services bulk_documents/versions/pdf unconfirmed tests, adapter pdf tests for the neutral failure messages and the unconfirmed StartedTasks.
 
 Review round: (1) TaskWaiter.confirmed returns Unconfirmed(task_id, reason) instead of None for 403, never-visible row, unreadable list at the deadline and a task still running at the deadline; transient read errors are waited out. BulkWriter and merge_as_versions return it; DocumentBulkReport and VersionsMerged carry unconfirmed_task_id and a message that does not claim success (surface snapshot: exactly these two fields and one description changed, deliberately). (2) PdfWriter returns the bulk_update task id with problem=unconfirmed and a reason instead of raising; the lock stays over wait and lookup because a concurrent request would make file tasks with the same names. (3) failed queued edit_pdf and remove_password name no single cause. (5) the waiter reuses PaperlessTaskReader. Evidence: unit 4439 passed, cov-diff 100 %, lint/format/basedpyright/imports/deps/secrets green, live touched modules 152 passed on 3.4.2 and 152 on 3.5.1, mutation: no new survivors (equivalents re-hashed).
+
+Controller, after merge: e2e-full on main (3.4.2) green in 3 shards. The post-merge e2e-latest dispatch on 3.5.1 (run 45034059493) failed 3 contract tests in test_bulk: a restricted user without view_paperlesstask gets Unconfirmed after the 2 s grace (intended, PLMCP-48), and the tests read the document as the admin before the queued task had run on the slower hosted runner. Test assumption, not an adapter bug: the tests now wait for that task as the admin (settled()) before asserting, with the assertions unchanged; on 3.4.2 the writer returns None and nothing waits. Verified locally: tests/contract/test_bulk.py live on 3.5.1, 42 passed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
