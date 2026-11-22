@@ -3,11 +3,11 @@ id: PLMCP-50
 title: >-
   Keep the Backlog.md CLI and agent instructions current without relying on
   memory
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-22T19:28:05Z'
-updated_date: '2026-11-22T19:47:02Z'
+updated_date: '2026-11-22T19:49:06Z'
 labels:
   - tooling
 dependencies: []
@@ -31,10 +31,10 @@ Owner, 2026-11-22: always use the latest Backlog.md release, enforced by scripts
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
-- [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #2 just check passes locally and all required CI checks are green on the PR
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -49,6 +49,8 @@ Owner, 2026-11-22: always use the latest Backlog.md release, enforced by scripts
 
 <!-- SECTION:NOTES:BEGIN -->
 Non-interactive refresh: `backlog agents --update-instructions` (1.57.4) has no flag, so scripts/backlog_instructions.py drives its multi-select menu through a pseudo-terminal (waits for the menu to settle, sends the down arrows, space, enter; once per file, CLAUDE.md index 0, AGENTS.md index 1) and then verifies that the text outside the managed block is byte-identical (restores the file otherwise) and that the header reached the installed version. Tested: unit tests with a fake driver on temp copies, the pty driver against a fake interactive menu, and by hand with the real CLI on a scratch copy (1.55.3 -> 1.57.4, only the header lines changed). Recipes: just backlog-update (install + refresh), backlog-drift-check, backlog-drift-issue; workflow .github/workflows/backlog-drift.yml (Mondays, plus dispatch with open_issue switch), guard tests in tests/quality/test_backlog_workflow.py. open-issue gained an optional --description for the label. mutmut covers only src/ services and paperless, so no mutation run. README Development and doc-2 (standing rulings, via backlog doc update) describe the routine. The owner's cloud setup script already runs npm install -g backlog.md. Not run: the workflow itself (cannot dispatch).
+
+Controller: reviewed; just check green. The workflow is dispatched once after the merge (workflow_dispatch needs the file on main).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
