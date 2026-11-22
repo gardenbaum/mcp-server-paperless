@@ -1,8 +1,9 @@
 """Helpers behind the e2e CI check (PLMCP-39, decision-23): here, not in shell, to be tested.
 
-Two workflows run the live suite. On a pull request the `e2e` job (ci.yml, not a required check:
+Three workflows run the live suite. On a pull request the `e2e` job (ci.yml, not a required check:
 decision-24) runs a fast tier chosen from the changed paths; after a merge and nightly,
-`e2e-full.yml` runs everything in parallel shards.
+`e2e-full.yml` runs everything in parallel shards; weekly, `e2e-latest.yml` runs the same shards
+against the latest paperless-ngx 3.x, resolved once by its `resolve` job (PLMCP-45).
 
 * ``scope``: reads the NUL-separated changed paths on stdin and prints ``mode=skip|fast`` and
   ``targets=<pytest paths>``. Skip only when every path is documentation or project management.
@@ -11,7 +12,7 @@ decision-24) runs a fast tier chosen from the changed paths; after a merge and n
   the whole suite, which the full run covers after the merge.
 * The shards: `just e2e-shard K/N` runs the part of the live suite that ``assign_shards`` gives
   shard K; the pytest option ``--e2e-shard K/N`` (tests/conftest.py) applies it.
-* ``workflow_problems`` guards the wiring and the hang guards (timeouts) of both workflows.
+* ``workflow_problems`` guards the wiring and the hang guards (timeouts) of the three workflows.
 """
 
 import argparse
@@ -398,9 +399,57 @@ def _full_run_problems(workflow: str, shards: int) -> list[str]:
     return problems
 
 
-def workflow_problems(ci: str, full: str, *, shards: int) -> list[str]:
-    """Ways the e2e wiring of ci.yml and e2e-full.yml could skip live tests unseen."""
-    return _pull_request_problems(ci) + _full_run_problems(full, shards)
+_RESOLVED_VERSION = "PAPERLESS_E2E_VERSION: ${{ needs.resolve.outputs.version }}"
+
+
+def _latest_trigger_problems(workflow: str) -> list[str]:
+    problems: list[str] = []
+    if "continue-on-error" in workflow:
+        problems.append("e2e-latest.yml sets continue-on-error: a red shard would not fail the run")
+    if not re.search(r"^  schedule:\s*\n\s+- cron:", workflow, re.MULTILINE):
+        problems.append("e2e-latest.yml must run on a schedule")
+    if not re.search(r"^  workflow_dispatch:", workflow, re.MULTILINE):
+        problems.append("e2e-latest.yml must offer workflow_dispatch")
+    return problems
+
+
+def _latest_run_problems(workflow: str, shards: int) -> list[str]:
+    jobs = _jobs(workflow)
+    problems = _latest_trigger_problems(workflow)
+    resolve = jobs.get("resolve")
+    if resolve is None:
+        problems.append("no job `resolve` in e2e-latest.yml: the shards would not share a version")
+    else:
+        problems += _timeout_problems("resolve", _keys(resolve), SHARD_TIMEOUT_MINUTES)
+        if not re.search(r"^    outputs:\s*\n\s+version:", resolve, re.MULTILINE):
+            problems.append("`resolve` must have the output `version`")
+    job = jobs.get("e2e-latest")
+    if job is None:
+        return [*problems, "no job `e2e-latest` in e2e-latest.yml"]
+    keys = _keys(job)
+    if keys.get("needs") not in {"resolve", "[resolve]"}:
+        problems.append("`e2e-latest` needs `resolve`: every shard must wait for the version")
+    problems += _timeout_problems("e2e-latest", keys, SHARD_TIMEOUT_MINUTES)
+    if not re.search(r"^      fail-fast:\s*false\s*$", job, re.MULTILINE):
+        problems.append("`e2e-latest` needs `fail-fast: false`: every shard must report")
+    if not re.search(r"just e2e-latest \"\$SHARD\"", job):
+        problems.append('`e2e-latest` must run `just e2e-latest "$SHARD"`: a shard of the suite')
+    if _RESOLVED_VERSION not in job:
+        problems.append(f"`e2e-latest` must set `{_RESOLVED_VERSION}`: one version for all shards")
+    listed = _SHARD_LIST.search(job)
+    found = [item.strip().strip("\"'") for item in listed[1].split(",")] if listed else []
+    if found != [f"{n}/{shards}" for n in range(1, shards + 1)]:
+        problems.append(f"the matrix of `e2e-latest` must list 1/{shards} to {shards}/{shards}")
+    return problems
+
+
+def workflow_problems(ci: str, full: str, latest: str, *, shards: int) -> list[str]:
+    """Ways the e2e wiring of the three workflows could skip live tests unseen."""
+    return (
+        _pull_request_problems(ci)
+        + _full_run_problems(full, shards)
+        + _latest_run_problems(latest, shards)
+    )
 
 
 class _Args(argparse.Namespace):
