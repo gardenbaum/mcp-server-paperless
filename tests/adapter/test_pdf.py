@@ -933,8 +933,11 @@ class Queued35(Paperless):
         hidden: bool = False,
         tasks_unreadable: bool = False,
         forbidden: bool = False,
+        baseline_status: int = 200,
     ) -> None:
-        super().__init__(before, after, tasks_status=403 if forbidden else 200)
+        super().__init__(
+            before, after, tasks_status=403 if forbidden else 200, baseline_status=baseline_status
+        )
         self.polls_left: int = polls
         self.ends: str = ends
         self.hidden: bool = hidden
@@ -1085,3 +1088,24 @@ async def test_a_user_who_may_not_view_tasks_still_gets_the_forbidden_problem_on
     tasks = await writer(make_client, server).rotate_documents((7,), 90)
 
     assert (tasks.ids, tasks.problem) == ((), "forbidden")
+
+
+async def test_a_failed_mark_does_not_lose_the_queued_task_that_cannot_be_followed(
+    make_client: ClientFactory,
+) -> None:
+    # The task list could not be read before the request, and the queued task never ends: the
+    # bulk_update task the POST named is still the one thing the agent can follow.
+    server = Queued35(OLD, OLD, polls=10**6, baseline_status=503)
+    clock = Clock()
+    pdf_writer = PaperlessPdfWriter(
+        make_client(server, retry=RetryPolicy(attempts=1)),
+        settle_seconds=1.0,
+        poll_seconds=0.25,
+        sleep=clock.sleep,
+        clock=clock.time,
+    )
+
+    tasks = await pdf_writer.rotate_documents((7,), 90)
+
+    assert (tasks.ids, tasks.problem) == ((BULK_TASK,), "unconfirmed")
+    assert len(server.posts) == 1

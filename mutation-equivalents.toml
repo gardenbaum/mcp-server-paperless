@@ -545,7 +545,7 @@ reason = "waited is a sum of values that TaskService already rounded to a tenth,
 
 [[equivalent]]
 mutant = "paperless_mcp.paperless.pdf.xǁPaperlessPdfWriterǁ_run__mutmut_17"
-function_hash = "2e4a383e733a"
+function_hash = "be55d8b24430"
 reason = "httpx2 upper-cases the method when it builds the request, so 'post' sends exactly what 'POST' sends."
 
 [[equivalent]]

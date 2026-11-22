@@ -288,16 +288,18 @@ class PaperlessPdfWriter:
             except PermissionDenied:
                 raise _refused() from None
             unconfirmed = await self._waiter.confirmed(queued, failed)
-            if problem is not None:
-                return StartedTasks(ids=(), expected=expected, problem=problem)
-            if unconfirmed is not None:
-                # Accepted, but not followed to its end: hand the queued task back, do not raise.
+            if unconfirmed is not None and problem != "forbidden":
+                # Accepted, but not followed to its end: hand the queued task back, do not raise,
+                # even when the mark failed, because the queued task is still the one to follow.
+                # A user who may not view tasks cannot follow it: that stays "forbidden".
                 return StartedTasks(
                     ids=(unconfirmed.task_id,),
                     expected=expected,
                     problem="unconfirmed",
                     detail=unconfirmed.reason,
                 )
+            if problem is not None:
+                return StartedTasks(ids=(), expected=expected, problem=problem)
             found: list[_Task] = []
             deadline = self._clock() + self._settle
             while True:
