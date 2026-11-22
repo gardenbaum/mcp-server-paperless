@@ -70,6 +70,7 @@ if TYPE_CHECKING:
     from paperless_mcp.domain.bulk import BulkOperation, DocumentChange, Reference
     from paperless_mcp.domain.documents import DocumentHit, NameOrId
     from paperless_mcp.domain.ports import BulkWriter, DocumentReader
+    from paperless_mcp.domain.tasks import Unconfirmed
     from paperless_mcp.domain.taxonomy import TaxonomyItem, TaxonomyKind
     from paperless_mcp.services.taxonomy import TaxonomyResolver
 
@@ -199,9 +200,12 @@ class BulkDocumentEditor:
         if not (dry_run or not changing or confirm):
             raise ConfirmationRequired.for_effect(self._effect(resolved, changing, others))
         applied = bool(changing) and not dry_run
+        unconfirmed: Unconfirmed | None = None
         if applied:
             try:
-                await self._writer.bulk_edit_documents([h.id for h in changing], resolved.change)
+                unconfirmed = await self._writer.bulk_edit_documents(
+                    [h.id for h in changing], resolved.change
+                )
             finally:
                 for kind in resolved.dirty:
                     self._taxonomy.invalidate(kind)
@@ -209,6 +213,7 @@ class BulkDocumentEditor:
             _Outcome(resolved, changing, effects, unchanged, others, blocked),
             dry_run=dry_run,
             applied=applied,
+            unconfirmed=unconfirmed,
         )
 
     async def _others(self, ids: set[int], selected: set[int]) -> list[tuple[int, str]]:
@@ -266,7 +271,14 @@ class BulkDocumentEditor:
             for number, title in rows[:SAMPLE_SIZE]
         )
 
-    def _report(self, outcome: _Outcome, *, dry_run: bool, applied: bool) -> DocumentBulkReport:
+    def _report(
+        self,
+        outcome: _Outcome,
+        *,
+        dry_run: bool,
+        applied: bool,
+        unconfirmed: Unconfirmed | None = None,
+    ) -> DocumentBulkReport:
         resolved, changing, others = outcome.resolved, outcome.changing, outcome.others
         total = len(changing) + outcome.unchanged
         if outcome.blocked:
@@ -290,18 +302,26 @@ class BulkDocumentEditor:
                 rest = f"; {count_documents(outcome.unchanged)} already {verb} {AS_ASKED}"
             effect = self._effect(resolved, changing, others)
             message = f"{DRY_RUN} Confirming would {effect}{rest}. {TO_GO_AHEAD}"
+        elif unconfirmed is not None:
+            message = (
+                f"Asked Paperless to apply to {count_documents(len(changing))}: "
+                f"{resolved.summary}. Not confirmed: Paperless queued task {unconfirmed.task_id}, "
+                f"but {unconfirmed.reason}. Read it with get_task and read the documents again "
+                "before repeating the call."
+            )
         else:
             message = f"Applied to {count_documents(len(changing))}: {resolved.summary}."
-            if others:
-                noun = "document" if len(others) == 1 else "documents"
-                titles = listed([title for _, title in others], 3)
-                message += f" Mirrored on {len(others)} other {noun} ({titles})."
+        if applied and others and unconfirmed is None:
+            noun = "document" if len(others) == 1 else "documents"
+            titles = listed([title for _, title in others], 3)
+            message += f" Mirrored on {len(others)} other {noun} ({titles})."
         rows = [(hit.id, hit.title) for hit in changing]
         return DocumentBulkReport(
             operation=resolved.name,
             summary=resolved.summary,
             dry_run=dry_run,
             applied=applied,
+            unconfirmed_task_id=None if unconfirmed is None else unconfirmed.task_id,
             requested=total,
             affected_count=len(changing),
             unchanged_count=outcome.unchanged,

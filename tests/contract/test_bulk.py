@@ -94,17 +94,20 @@ async def test_tags_are_added_with_their_parents_and_removed_with_their_children
     first, second = backend.new_documents(2)
     before = {d: set((await read(ports, d)).tags) for d in (first, second)}
 
-    await ports.bulk_writes.bulk_edit_documents((first, second), TagsChange(add=(child, other)))
+    _ = await ports.bulk_writes.bulk_edit_documents((first, second), TagsChange(add=(child, other)))
 
     for document in (first, second):
         assert set((await read(ports, document)).tags) == before[document] | {parent, child, other}
 
-    await ports.bulk_writes.bulk_edit_documents((first,), TagsChange(remove=(other,)))
+    # The admin may view tasks: the change is confirmed, not merely asked for.
+    assert (
+        await ports.bulk_writes.bulk_edit_documents((first,), TagsChange(remove=(other,))) is None
+    )
 
     assert set((await read(ports, first)).tags) == before[first] | {parent, child}
     assert other in (await read(ports, second)).tags
 
-    await ports.bulk_writes.bulk_edit_documents((first, second), TagsChange(remove=(parent,)))
+    _ = await ports.bulk_writes.bulk_edit_documents((first, second), TagsChange(remove=(parent,)))
 
     for document in (first, second):
         assert not {parent, child} & set((await read(ports, document)).tags)
@@ -118,7 +121,9 @@ async def test_a_tag_in_both_lists_ends_up_added(backend: Backend) -> None:
     (document,) = backend.new_documents(1)
     tag = await make(ports, "tag")
 
-    await ports.bulk_writes.bulk_edit_documents((document,), TagsChange(add=(tag,), remove=(tag,)))
+    _ = await ports.bulk_writes.bulk_edit_documents(
+        (document,), TagsChange(add=(tag,), remove=(tag,))
+    )
 
     assert tag in (await read(ports, document)).tags
 
@@ -134,7 +139,7 @@ async def test_a_reference_is_set_on_the_selected_documents_only_and_can_be_clea
     for field in REFERENCES:
         target = await make(ports, field)
 
-        await ports.bulk_writes.bulk_edit_documents(
+        _ = await ports.bulk_writes.bulk_edit_documents(
             (first, second), change({"field": field, "value": target})
         )
 
@@ -142,7 +147,7 @@ async def test_a_reference_is_set_on_the_selected_documents_only_and_can_be_clea
         assert getattr(await read(ports, second), field) == target
         assert getattr(await read(ports, untouched), field) is None
 
-        await ports.bulk_writes.bulk_edit_documents(
+        _ = await ports.bulk_writes.bulk_edit_documents(
             (first,), change({"field": field, "value": None})
         )
 
@@ -160,21 +165,21 @@ async def test_custom_fields_are_set_and_removed_one_by_one_and_the_others_stay(
     first, second = backend.new_documents(2)
     writer = ports.bulk_writes
 
-    await writer.bulk_edit_documents((first, second), FieldsChange(values={text: "a"}))
-    await writer.bulk_edit_documents((first,), FieldsChange(values={number: 5}))
+    _ = await writer.bulk_edit_documents((first, second), FieldsChange(values={text: "a"}))
+    _ = await writer.bulk_edit_documents((first,), FieldsChange(values={number: 5}))
 
     assert await fields_of(ports, first) == {text: "a", number: 5}
     assert await fields_of(ports, second) == {text: "a"}
 
-    await writer.bulk_edit_documents((first, second), FieldsChange(values={text: "b"}))
+    _ = await writer.bulk_edit_documents((first, second), FieldsChange(values={text: "b"}))
     assert await fields_of(ports, first) == {text: "b", number: 5}
 
-    await writer.bulk_edit_documents((first, second), FieldsChange(remove=(text,)))
+    _ = await writer.bulk_edit_documents((first, second), FieldsChange(remove=(text,)))
     assert await fields_of(ports, first) == {number: 5}
     assert await fields_of(ports, second) == {}
 
     # Removing a field that a document does not have is fine.
-    await writer.bulk_edit_documents((second,), FieldsChange(remove=(number,)))
+    _ = await writer.bulk_edit_documents((second,), FieldsChange(remove=(number,)))
     assert await fields_of(ports, first) == {number: 5}
 
 
@@ -190,7 +195,7 @@ async def test_a_select_value_is_the_option_id(backend: Backend) -> None:
     )
     [blue] = [o for o in created.select_options or () if o.label == "blue"]
 
-    await ports.bulk_writes.bulk_edit_documents(
+    _ = await ports.bulk_writes.bulk_edit_documents(
         (document,), FieldsChange(values={created.id: blue.id})
     )
 
@@ -203,7 +208,7 @@ async def test_document_links_are_mirrored_like_in_an_update(backend: Backend) -
     link = await make(ports, "custom_field", data_type="documentlink")
     first, second = backend.new_documents(2)
 
-    await ports.bulk_writes.bulk_edit_documents((first,), FieldsChange(values={link: [second]}))
+    _ = await ports.bulk_writes.bulk_edit_documents((first,), FieldsChange(values={link: [second]}))
 
     assert await fields_of(ports, first) == {link: [second]}
     assert await fields_of(ports, second) == {link: [first]}
@@ -215,7 +220,7 @@ async def test_a_document_that_the_link_names_itself_is_skipped(backend: Backend
     link = await make(ports, "custom_field", data_type="documentlink")
     first, second = backend.new_documents(2)
 
-    await ports.bulk_writes.bulk_edit_documents(
+    _ = await ports.bulk_writes.bulk_edit_documents(
         (first, second), FieldsChange(values={link: [first]})
     )
 
@@ -234,11 +239,15 @@ async def test_a_link_needs_change_permission_on_the_linked_document_too(
     user = backend.restricted(allowed, change=[mine, changeable], view=[viewed])
 
     with pytest.raises(PermissionDenied):
-        await user.bulk_writes.bulk_edit_documents((mine,), FieldsChange(values={link: [viewed]}))
+        _ = await user.bulk_writes.bulk_edit_documents(
+            (mine,), FieldsChange(values={link: [viewed]})
+        )
     assert await fields_of(backend.admin, mine) == {}
     assert await fields_of(backend.admin, viewed) == {}
 
-    await user.bulk_writes.bulk_edit_documents((mine,), FieldsChange(values={link: [changeable]}))
+    _ = await user.bulk_writes.bulk_edit_documents(
+        (mine,), FieldsChange(values={link: [changeable]})
+    )
     assert await fields_of(backend.admin, changeable) == {link: [mine]}
 
 
@@ -252,14 +261,14 @@ async def test_a_moved_link_keeps_the_old_reverse_link_but_a_removed_field_takes
     link = await make(ports, "custom_field", data_type="documentlink")
     first, old, new = backend.new_documents(3)
     writer = ports.bulk_writes
-    await writer.bulk_edit_documents((first,), FieldsChange(values={link: [old]}))
+    _ = await writer.bulk_edit_documents((first,), FieldsChange(values={link: [old]}))
 
-    await writer.bulk_edit_documents((first,), FieldsChange(values={link: [new]}))
+    _ = await writer.bulk_edit_documents((first,), FieldsChange(values={link: [new]}))
 
     assert await fields_of(ports, first) == {link: [new]}
     assert await fields_of(ports, new) == {link: [first]}
     assert await fields_of(ports, old) == {link: [first]}
-    await writer.bulk_edit_documents((first,), FieldsChange(remove=(link,)))
+    _ = await writer.bulk_edit_documents((first,), FieldsChange(remove=(link,)))
     assert await fields_of(ports, new) == {link: []}
     assert await fields_of(ports, first) == {}
 
@@ -286,15 +295,15 @@ async def test_a_wrong_value_or_an_unknown_field_is_rejected_and_nothing_changes
     first, second = backend.new_documents(2)
 
     with pytest.raises(Validation, match=r"(?i)valid integer"):
-        await ports.bulk_writes.bulk_edit_documents(
+        _ = await ports.bulk_writes.bulk_edit_documents(
             (first, second), FieldsChange(values={number: "abc"})
         )
     with pytest.raises(Validation, match=r"(?i)custom field"):
-        await ports.bulk_writes.bulk_edit_documents(
+        _ = await ports.bulk_writes.bulk_edit_documents(
             (first, second), FieldsChange(values={MISSING: "x"})
         )
     with pytest.raises(Validation, match=r"(?i)custom field"):
-        await ports.bulk_writes.bulk_edit_documents(
+        _ = await ports.bulk_writes.bulk_edit_documents(
             (first, second), FieldsChange(remove=(MISSING,))
         )
 
@@ -316,7 +325,7 @@ async def test_a_missing_object_is_rejected_and_nothing_changes(backend: Backend
 
     for change in changes:
         with pytest.raises(Validation, match=r"(?i)(does not exist|don't exist)"):
-            await ports.bulk_writes.bulk_edit_documents((document,), change)
+            _ = await ports.bulk_writes.bulk_edit_documents((document,), change)
 
     assert await read(ports, document) == before
 
@@ -329,7 +338,7 @@ async def test_an_unknown_or_repeated_document_rejects_the_whole_batch(backend: 
 
     for selection in ((document, MISSING), (document, document)):
         with pytest.raises(Validation, match=r"(?i)don't exist or were specified twice"):
-            await ports.bulk_writes.bulk_edit_documents(selection, TagsChange(add=(tag,)))
+            _ = await ports.bulk_writes.bulk_edit_documents(selection, TagsChange(add=(tag,)))
 
     assert tag not in (await read(ports, document)).tags
 
@@ -337,7 +346,7 @@ async def test_an_unknown_or_repeated_document_rejects_the_whole_batch(backend: 
 @pytest.mark.contract(DOCUMENTS)
 async def test_an_empty_selection_is_accepted_and_changes_nothing(backend: Backend) -> None:
     # Pinned because the service must refuse it itself: Paperless answers OK.
-    await backend.admin.bulk_writes.bulk_edit_documents((), TagsChange(add=(1,)))
+    _ = await backend.admin.bulk_writes.bulk_edit_documents((), TagsChange(add=(1,)))
 
 
 @pytest.mark.contract(DOCUMENTS)
@@ -347,14 +356,14 @@ async def test_deleted_documents_go_to_the_trash_and_cannot_be_changed_there(
     ports = backend.admin
     first, second, kept = backend.new_documents(3)
 
-    await ports.bulk_writes.bulk_edit_documents((first, second), TrashDocuments())
+    _ = await ports.bulk_writes.bulk_edit_documents((first, second), TrashDocuments())
 
     assert backend.in_trash(first)
     assert backend.in_trash(second)
     assert not backend.in_trash(kept)
     assert (await read(ports, kept)).id == kept
     with pytest.raises(Validation, match=r"(?i)don't exist"):
-        await ports.bulk_writes.bulk_edit_documents((first,), TrashDocuments())
+        _ = await ports.bulk_writes.bulk_edit_documents((first,), TrashDocuments())
 
 
 @pytest.mark.contract(DOCUMENTS)
@@ -362,7 +371,7 @@ async def test_reprocessing_is_accepted_and_the_documents_stay(backend: Backend)
     ports = backend.admin
     (document,) = backend.new_documents(1)
 
-    await ports.bulk_writes.bulk_edit_documents((document,), ReprocessChange())
+    _ = await ports.bulk_writes.bulk_edit_documents((document,), ReprocessChange())
 
     assert (await read(ports, document)).id == document
 
@@ -373,9 +382,11 @@ async def test_a_user_without_the_change_permission_is_denied(backend: Backend) 
     tag = await make(backend.admin, "tag")
 
     with pytest.raises(PermissionDenied):
-        await backend.reader.bulk_writes.bulk_edit_documents((document,), TagsChange(add=(tag,)))
+        _ = await backend.reader.bulk_writes.bulk_edit_documents(
+            (document,), TagsChange(add=(tag,))
+        )
     with pytest.raises(PermissionDenied):
-        await backend.reader.bulk_writes.bulk_edit_documents((document,), ReprocessChange())
+        _ = await backend.reader.bulk_writes.bulk_edit_documents((document,), ReprocessChange())
 
     assert tag not in (await read(backend.admin, document)).tags
 
@@ -390,10 +401,10 @@ async def test_one_document_the_user_may_not_change_refuses_the_whole_batch(
     user = backend.restricted(allowed, change=[mine], view=[only_viewed])
 
     with pytest.raises(PermissionDenied):
-        await user.bulk_writes.bulk_edit_documents((mine, only_viewed), TagsChange(add=(tag,)))
+        _ = await user.bulk_writes.bulk_edit_documents((mine, only_viewed), TagsChange(add=(tag,)))
 
     assert tag not in (await read(backend.admin, mine)).tags
-    await user.bulk_writes.bulk_edit_documents((mine,), TagsChange(add=(tag,)))
+    _ = await user.bulk_writes.bulk_edit_documents((mine,), TagsChange(add=(tag,)))
     assert tag in (await read(backend.admin, mine)).tags
 
 
@@ -405,10 +416,10 @@ async def test_deleting_needs_ownership_not_only_change_permission(backend: Back
     user = backend.restricted(allowed, change=[document])
 
     with pytest.raises(PermissionDenied):
-        await user.bulk_writes.bulk_edit_documents((document,), TrashDocuments())
+        _ = await user.bulk_writes.bulk_edit_documents((document,), TrashDocuments())
 
     assert not backend.in_trash(document)
-    await user.bulk_writes.bulk_edit_documents((document,), TagsChange(add=(tag,)))
+    _ = await user.bulk_writes.bulk_edit_documents((document,), TagsChange(add=(tag,)))
     assert tag in (await read(backend.admin, document)).tags
 
 
@@ -439,8 +450,8 @@ async def test_deleted_tags_take_their_children_and_documents_lose_references(
     child = await make(ports, "tag", parent=parent)
     correspondent = await make(ports, "correspondent")
     (document,) = backend.new_documents(1)
-    await ports.bulk_writes.bulk_edit_documents((document,), TagsChange(add=(child,)))
-    await ports.bulk_writes.bulk_edit_documents(
+    _ = await ports.bulk_writes.bulk_edit_documents((document,), TagsChange(add=(child,)))
+    _ = await ports.bulk_writes.bulk_edit_documents(
         (document,), ReferenceChange(field="correspondent", value=correspondent)
     )
 

@@ -6,7 +6,7 @@ the task list. The rows below are shaped like the ones recorded from 3.4.2.
 
 import asyncio
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 import httpx2
 import pytest
@@ -910,3 +910,202 @@ async def test_a_merge_names_no_source_because_its_result_is_a_document_of_its_o
     )
 
     assert (tasks.ids, tasks.sources) == ((task_id(12),), ())
+
+
+# --- Paperless 3.5: every PDF operation queues a bulk_update task first (PLMCP-46)
+
+BULK_TASK = "5b8f0c2e-0000-4000-8000-0000000000aa"
+
+
+class Queued35(Paperless):
+    """3.5.1: the POST names a `bulk_update` task that works for `polls` reads and then ends.
+
+    The consume tasks of the operation exist only once it has ended: `after` is shown from then on.
+    """
+
+    def __init__(  # noqa: PLR0913 -- the few ways the queued task misbehaves
+        self,
+        before: list[Json],
+        after: list[Json],
+        *,
+        polls: int = 0,
+        ends: str = "success",
+        hidden: bool = False,
+        tasks_unreadable: bool = False,
+        forbidden: bool = False,
+        baseline_status: int = 200,
+    ) -> None:
+        super().__init__(
+            before, after, tasks_status=403 if forbidden else 200, baseline_status=baseline_status
+        )
+        self.polls_left: int = polls
+        self.ends: str = ends
+        self.hidden: bool = hidden
+        self.tasks_unreadable: bool = tasks_unreadable
+        self.forbidden: bool = forbidden
+
+    @override
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        if request.url.path == "/api/tasks/" and request.url.params.get("task_id") == BULK_TASK:
+            self.requests.append((request.method, request.url.path, dict(request.url.params), None))
+            if self.forbidden:
+                return httpx2.Response(403, json={"detail": "no"})
+            if self.tasks_unreadable:
+                return httpx2.Response(500, json={"detail": "no"})
+            state = "started" if self.polls_left > 0 else self.ends
+            self.polls_left -= 1
+            bulk = {**row(1, "bulk_update"), "task_id": BULK_TASK, "status": state}
+            rows = [] if self.hidden else [bulk]
+            return httpx2.Response(
+                200, json={"count": len(rows), "next": None, "previous": None, "results": rows}
+            )
+        response = super().__call__(request)
+        if request.method == "POST" and response.status_code == 200:
+            return httpx2.Response(200, json={"result": "OK", "task_id": BULK_TASK})
+        return response
+
+
+async def test_the_tasks_are_looked_for_only_after_the_queued_operation_has_ended(
+    make_client: ClientFactory,
+) -> None:
+    # The operation takes 5 seconds, far beyond the 1-second window for the tasks to show up.
+    server = Queued35(OLD, [*OLD, row(12, "consume_file", "7_rotated.pdf")], polls=20)
+    clock = Clock()
+
+    tasks = await writer(make_client, server, clock).rotate_documents((7,), 90)
+
+    assert tasks.ids == (task_id(12),)
+    assert tasks.problem is None
+    assert clock.now >= 5.0
+
+
+FAILING: list[tuple[str, Call, str]] = [
+    ("rotate", lambda w: w.rotate_documents((7,), 90), "rotation"),
+    (
+        "merge",
+        lambda w: w.merge_documents((7, 9), metadata_document_id=None, delete_originals=False),
+        "merge",
+    ),
+    ("reprocess", lambda w: w.reprocess_documents((7,), remote_ocr=False), "reprocessing"),
+]
+
+
+@pytest.mark.parametrize("ends", ["failure", "revoked"])
+@pytest.mark.parametrize(
+    ("call", "what"), [pytest.param(call, what, id=name) for name, call, what in FAILING]
+)
+async def test_an_operation_whose_task_fails_is_an_error_not_an_empty_result(
+    make_client: ClientFactory, ends: str, call: Call, what: str
+) -> None:
+    server = Queued35(OLD, OLD, ends=ends)
+
+    with pytest.raises(Validation) as raised:
+        _ = await call(writer(make_client, server))
+
+    assert raised.value.message == f"Paperless could not apply the {what}: its task failed."
+
+
+async def test_a_queued_task_the_user_cannot_see_is_given_the_grace_by_the_writers_clock(
+    make_client: ClientFactory,
+) -> None:
+    server = Queued35(OLD, [*OLD, row(12, "consume_file", "7_rotated.pdf")], hidden=True)
+    clock = Clock()
+
+    tasks = await writer(make_client, server, clock).rotate_documents((7,), 90)
+
+    assert (tasks.ids, tasks.problem) == ((BULK_TASK,), "unconfirmed")
+    assert tasks.detail == "it did not show up in the task list"
+    # 3 seconds of a missing row, polled every quarter second, then 2 seconds of grace, all on the
+    # clock and the sleep the writer was given.
+    assert clock.sleeps == [0.25] * 12 + [2.0]
+
+
+async def test_an_edit_whose_task_fails_says_the_file_may_not_be_a_pdf(
+    make_client: ClientFactory,
+) -> None:
+    server = Queued35(OLD, OLD, ends="failure")
+
+    with pytest.raises(Validation) as raised:
+        _ = await writer(make_client, server).edit_pdf(
+            7, (PageSlot(page=1),), output="new_document"
+        )
+
+    # Paperless names no cause on the queued path: the message says so and offers the likely one.
+    assert raised.value.message == (
+        f"Paperless reported task {BULK_TASK} as failed; the likely causes are a file that is "
+        "not a PDF or a page that does not exist."
+    )
+    assert "part of it" in (raised.value.hint or "")
+
+
+async def test_a_password_removal_whose_task_fails_says_the_password_may_be_wrong(
+    make_client: ClientFactory,
+) -> None:
+    server = Queued35(OLD, OLD, ends="failure")
+
+    with pytest.raises(Validation) as raised:
+        _ = await writer(make_client, server).remove_password(7, "x", output="new_document")
+
+    assert raised.value.message == (
+        f"Paperless reported task {BULK_TASK} as failed; the likely causes are a wrong password "
+        "or a file that is not a PDF."
+    )
+    assert "part of it" in (raised.value.hint or "")
+
+
+async def test_a_file_without_a_password_still_starts_no_task_on_3_5(
+    make_client: ClientFactory,
+) -> None:
+    server = Queued35(OLD, OLD)
+
+    tasks = await writer(make_client, server).remove_password(7, "x", output="new_document")
+
+    assert (tasks.ids, tasks.expected) == ((), 1)
+
+
+@pytest.mark.parametrize("list_status", [200, 500], ids=["running", "unreadable"])
+async def test_a_queued_task_that_cannot_be_followed_returns_its_id_instead_of_raising(
+    make_client: ClientFactory, list_status: int
+) -> None:
+    # The request was accepted: the bulk_update task is handed back, so the agent can follow it.
+    server = Queued35(OLD, OLD, polls=10**6, tasks_unreadable=list_status == 500)
+    clock = Clock()
+
+    tasks = await writer(make_client, server, clock).rotate_documents((7,), 90)
+
+    assert tasks.ids == (BULK_TASK,)
+    assert tasks.problem == "unconfirmed"
+    assert tasks.expected == 1
+    assert tasks.detail is not None
+    assert BULK_TASK not in tasks.detail
+
+
+async def test_a_user_who_may_not_view_tasks_still_gets_the_forbidden_problem_on_3_5(
+    make_client: ClientFactory,
+) -> None:
+    server = Queued35(OLD, OLD, forbidden=True)
+
+    tasks = await writer(make_client, server).rotate_documents((7,), 90)
+
+    assert (tasks.ids, tasks.problem) == ((), "forbidden")
+
+
+async def test_a_failed_mark_does_not_lose_the_queued_task_that_cannot_be_followed(
+    make_client: ClientFactory,
+) -> None:
+    # The task list could not be read before the request, and the queued task never ends: the
+    # bulk_update task the POST named is still the one thing the agent can follow.
+    server = Queued35(OLD, OLD, polls=10**6, baseline_status=503)
+    clock = Clock()
+    pdf_writer = PaperlessPdfWriter(
+        make_client(server, retry=RetryPolicy(attempts=1)),
+        settle_seconds=1.0,
+        poll_seconds=0.25,
+        sleep=clock.sleep,
+        clock=clock.time,
+    )
+
+    tasks = await pdf_writer.rotate_documents((7,), 90)
+
+    assert (tasks.ids, tasks.problem) == ((BULK_TASK,), "unconfirmed")
+    assert len(server.posts) == 1

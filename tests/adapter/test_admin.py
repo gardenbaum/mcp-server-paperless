@@ -613,6 +613,35 @@ async def test_changing_the_config_without_the_permission_says_what_is_needed(
     )
 
 
+async def test_reading_the_config_without_the_permission_says_what_is_needed(
+    make_client: ClientFactory,
+) -> None:
+    # Paperless 3.4 lets every signed-in user read it; 3.5 asks for view_applicationconfiguration.
+    server = Recording(forbidden())
+
+    with pytest.raises(PermissionDenied) as raised:
+        _ = await PaperlessAdminReader(make_client(server)).get_config()
+
+    assert raised.value.describe() == (
+        "The Paperless user may not read the application configuration. "
+        "Hint: Paperless 3.5 and later need the view_applicationconfiguration permission "
+        "(or a superuser); 3.4 lets every signed-in user read it."
+    )
+
+
+async def test_changing_the_config_needs_to_read_it_first_and_says_so_when_that_is_refused(
+    make_client: ClientFactory,
+) -> None:
+    server = Recording(forbidden())
+
+    with pytest.raises(PermissionDenied, match="read the application configuration"):
+        _ = await PaperlessAdminWriter(make_client(server)).update_config(
+            ConfigValues(settings={"pages": 2})
+        )
+
+    assert server.sent == [("GET", "/api/config/", None, {})]
+
+
 # --- logs
 
 

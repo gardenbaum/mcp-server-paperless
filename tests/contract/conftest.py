@@ -482,6 +482,16 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
     )
 
 
+def release(version: str) -> tuple[int, ...]:
+    """A release as a tuple to compare: "3.5.1" is (3, 5, 1)."""
+    return tuple(int(part) for part in version.split("."))
+
+
+def since(backend: Backend, minimum: str) -> bool:
+    """Whether the Paperless behind the backend is at least ``minimum`` (the fake is 3.4.2)."""
+    return release(backend.expected_version) >= release(minimum)
+
+
 def trashed(stack: Stack) -> set[int]:
     """The ids of every document in the live trash, over all its pages."""
     found: set[int] = set()

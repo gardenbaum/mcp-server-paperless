@@ -39,6 +39,7 @@ from paperless_mcp.domain.errors import (
     UpstreamTimeout,
     Validation,
 )
+from paperless_mcp.domain.tasks import Unconfirmed
 from paperless_mcp.paperless.auth import StaticTokenProvider
 from paperless_mcp.services.bulk_documents import BulkDocumentEditor
 from paperless_mcp.services.taxonomy import TaxonomyResolver
@@ -76,9 +77,20 @@ class Recording(FakePaperless):
     @override
     async def bulk_edit_documents(
         self, document_ids: Sequence[int], change: DocumentChange
-    ) -> None:
+    ) -> Unconfirmed | None:
         self.calls.append((tuple(document_ids), change))
-        await super().bulk_edit_documents(document_ids, change)
+        return await super().bulk_edit_documents(document_ids, change)
+
+
+class Unconfirming(Recording):
+    """The fake with a Paperless 3.5 whose queued task could not be followed to its end."""
+
+    @override
+    async def bulk_edit_documents(
+        self, document_ids: Sequence[int], change: DocumentChange
+    ) -> Unconfirmed | None:
+        _ = await super().bulk_edit_documents(document_ids, change)
+        return Unconfirmed(task_id="task-7", reason="it was still running after 60 seconds")
 
 
 @final
@@ -719,7 +731,7 @@ class Flaky(Recording):
     async def bulk_edit_documents(
         self, document_ids: Sequence[int], change: DocumentChange
     ) -> None:
-        await super().bulk_edit_documents(document_ids, change)
+        _ = await super().bulk_edit_documents(document_ids, change)
         message = "Paperless did not respond in time."
         raise UpstreamTimeout(message)
 
@@ -1196,3 +1208,29 @@ async def test_removing_a_link_field_from_a_document_that_lacks_it_reports_the_o
     )
 
     assert [row.id for row in report.also_changed] == [10]
+
+
+async def test_a_change_whose_queued_task_cannot_be_followed_is_reported_as_unconfirmed() -> None:
+    setup = Setup()
+    setup.fake = Unconfirming(setup.state, user=ADMIN[0], writes=True)
+    setup.editor = BulkDocumentEditor(setup.fake, setup.fake, setup.taxonomy, web_url=WEB)
+
+    report = await setup.run([THIRD], RemoveTags(op="remove_tags", tags=["e2e-inbox"]))
+
+    # Paperless was asked, but nothing says the change is made: no confident "Applied".
+    assert (report.applied, report.unconfirmed_task_id) == (True, "task-7")
+    assert report.message == (
+        "Asked Paperless to apply to 1 document: remove the tags 'e2e-inbox' from the selected "
+        "documents. Not confirmed: Paperless "
+        "queued task task-7, but it was still running after 60 seconds. Read it with get_task "
+        "and read the documents again before repeating the call."
+    )
+
+
+async def test_a_confirmed_change_names_no_task() -> None:
+    setup = Setup()
+
+    report = await setup.run([THIRD], RemoveTags(op="remove_tags", tags=["e2e-inbox"]))
+
+    assert report.unconfirmed_task_id is None
+    assert (report.message or "").startswith("Applied to 1 document")

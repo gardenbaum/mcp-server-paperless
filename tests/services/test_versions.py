@@ -18,6 +18,7 @@ from paperless_mcp.domain.errors import (
     UpstreamTimeout,
     Validation,
 )
+from paperless_mcp.domain.tasks import Unconfirmed
 from paperless_mcp.domain.versions import VersionUpload
 from paperless_mcp.paperless.auth import StaticTokenProvider
 from paperless_mcp.services.taxonomy import TaxonomyResolver
@@ -533,7 +534,7 @@ class Unreadable(FakePaperless):
     async def merge_as_versions(
         self, root_id: int, source_ids: Sequence[int], label: str | None
     ) -> None:
-        await super().merge_as_versions(root_id, source_ids, label)
+        _ = await super().merge_as_versions(root_id, source_ids, label)
         self.merged = True
 
     @override
@@ -564,3 +565,31 @@ async def test_a_merge_that_went_through_is_reported_even_if_the_root_cannot_be_
         "list them with list_document_versions."
     )
     assert {d.id for d in setup.state.documents}.isdisjoint({source})
+
+
+class Unconfirming(FakePaperless):
+    """The fake with a Paperless 3.5 whose queued merge could not be followed to its end."""
+
+    @override
+    async def merge_as_versions(
+        self, root_id: int, source_ids: Sequence[int], label: str | None
+    ) -> Unconfirmed | None:
+        _ = await super().merge_as_versions(root_id, source_ids, label)
+        return Unconfirmed(task_id="task-9", reason="the task list could not be read")
+
+
+async def test_a_merge_whose_queued_task_cannot_be_followed_is_not_reported_as_made() -> None:
+    setup = Setup()
+    source = setup.document(owner=None)
+    fake = Unconfirming(setup.state, user=ADMIN[0], allow_writes=True)
+    service = VersionService(fake, fake, setup.taxonomy, web_url=WEB)
+
+    result = await service.merge(PUBLIC, [source], None, confirm=True)
+
+    assert result.unconfirmed_task_id == "task-9"
+    assert result.versions is None
+    assert result.message == (
+        "Not confirmed: Paperless queued the merge as task task-9, but the task list could not "
+        "be read. Read it with get_task, then list the versions with list_document_versions, "
+        "before repeating the call."
+    )
