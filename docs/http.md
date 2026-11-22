@@ -9,7 +9,7 @@ Streamable HTTP, run `paperless-mcp-http`. It **refuses to start without authent
 export PAPERLESS_URL=https://paperless.example.org
 export PAPERLESS_TOKEN=your-api-token
 export PAPERLESS_MCP_HTTP_AUTH_TOKENS="$(openssl rand -hex 32)"   # what clients send as a bearer token
-uvx --from mcp-server-paperless@latest paperless-mcp-http   # http://127.0.0.1:8000/mcp
+uvx --from git+https://github.com/gardenbaum/paperless-mcp paperless-mcp-http   # http://127.0.0.1:8000/mcp
 claude mcp add --transport http paperless http://127.0.0.1:8000/mcp \
     --header "Authorization: Bearer $PAPERLESS_MCP_HTTP_AUTH_TOKENS"
 ```

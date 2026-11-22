@@ -18,6 +18,11 @@ dependencies = [
     "uvicorn>=0.40",
 ]
 
+[project.urls]
+Repository = "https://github.com/gardenbaum/paperless-mcp"
+Documentation = "https://github.com/gardenbaum/paperless-mcp/tree/main/docs"
+Issues = "https://github.com/gardenbaum/paperless-mcp/issues"
+
 [project.scripts]
 mcp-server-paperless = "paperless_mcp.cli:main"
 paperless-mcp = "paperless_mcp.cli:main"

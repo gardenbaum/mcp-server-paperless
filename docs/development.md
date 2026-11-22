@@ -84,4 +84,6 @@ tag (`git tag -a v1.2.3 -m "1.2.3" && git push origin v1.2.3`). The tag runs two
 `image.yml` publishes the container image to GHCR (decision-28 as carried over by decision-31),
 and `pypi.yml` publishes `mcp-server-paperless` to PyPI by Trusted Publishing from the `pypi`
 environment (decision-32). `pypi.yml` refuses a tag that does not name the version in
-`pyproject.toml` or a commit that is not on main.
+`pyproject.toml` or a commit that is not on main. Use plain versions: the tag must be `v` plus the
+version exactly as `uv version --short` prints it (PEP 440), so a semver pre-release tag such as
+`v1.2.3-rc.1` would publish the image but no PyPI release.

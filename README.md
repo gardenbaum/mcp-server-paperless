@@ -95,20 +95,17 @@ API auth token. The server acts as that user and sees and changes only what that
 
 ### Claude Code
 
-With [uv](https://docs.astral.sh/uv/) installed, one command, no clone. The server is on PyPI as
-[`mcp-server-paperless`](https://pypi.org/project/mcp-server-paperless/); the PyPI project
-`paperless-mcp` is a different server by someone else, so do not run `uvx paperless-mcp`.
+With [uv](https://docs.astral.sh/uv/) installed, one command, no clone:
 
 ```sh
 claude mcp add paperless \
     --env PAPERLESS_URL=https://paperless.example.org \
     --env PAPERLESS_TOKEN=your-api-token \
-    -- uvx mcp-server-paperless@latest
+    -- uvx --from git+https://github.com/gardenbaum/paperless-mcp paperless-mcp
 ```
 
 Add `--scope user` to have it in every project. Then ask Claude for an overview of your Paperless
-instance. `@latest` checks PyPI at every start; to stay on a release, name its version instead
-(`mcp-server-paperless@1.2.3` for version 1.2.3).
+instance. To stay on a release, append its tag to the URL (`...paperless-mcp@v0.1.0`).
 
 ### Claude Desktop
 
@@ -119,7 +116,7 @@ Add the server to `claude_desktop_config.json` (Settings, Developer, Edit Config
   "mcpServers": {
     "paperless": {
       "command": "uvx",
-      "args": ["mcp-server-paperless@latest"],
+      "args": ["--from", "git+https://github.com/gardenbaum/paperless-mcp", "paperless-mcp"],
       "env": {
         "PAPERLESS_URL": "https://paperless.example.org",
         "PAPERLESS_TOKEN": "your-api-token"

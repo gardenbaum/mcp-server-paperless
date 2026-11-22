@@ -1,11 +1,11 @@
 ---
 id: PLMCP-53
 title: Publish to PyPI as mcp-server-paperless
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-22T21:34:40Z'
-updated_date: '2026-11-22T21:47:57Z'
+updated_date: '2026-11-22T23:10:33Z'
 labels: []
 milestone: m-5
 dependencies: []
@@ -22,17 +22,17 @@ Owner, 2026-11-22: publish the server to PyPI so clients run it with `uvx mcp-se
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The distribution is named `mcp-server-paperless` and installs a console script of the same name that starts the stdio server, so `uvx mcp-server-paperless@latest` works; `paperless-mcp` and `paperless-mcp-http` keep working
-- [ ] #2 `.github/workflows/pypi.yml` builds the sdist and wheel on pull requests that touch packaging and on `v*` tags, and on a tag publishes them to PyPI by Trusted Publishing from the `pypi` environment, only for a commit on main whose version equals the tag; only the publish job gets `id-token: write`, and every action is pinned to a commit
-- [ ] #3 Guard tests keep the distribution name, the console script and the workflow rules from eroding, and a decision records the PyPI name and the publishing path
-- [ ] #4 The README tells users to run the server with uvx from PyPI and warns that the PyPI project `paperless-mcp` is a different one
+- [x] #1 The distribution is named `mcp-server-paperless` and installs a console script of the same name that starts the stdio server, so `uvx mcp-server-paperless@latest` works; `paperless-mcp` and `paperless-mcp-http` keep working
+- [x] #2 `.github/workflows/pypi.yml` builds the sdist and wheel on pull requests that touch packaging and on `v*` tags, and on a tag publishes them to PyPI by Trusted Publishing from the `pypi` environment, only for a commit on main whose version equals the tag; only the publish job gets `id-token: write`, and every action is pinned to a commit
+- [x] #3 Guard tests keep the distribution name, the console script and the workflow rules from eroding, and a decision records the PyPI name and the publishing path
+- [x] #4 README and docs/http.md keep the Git URL command until the first PyPI release (owner, 2026-11-22: an unclaimed PyPI name must not be advertised), and docs/development.md describes how a release is made
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -56,4 +56,13 @@ The build job ran locally step by step: tag check passes for v0.1.0 and refuses 
 just check: lock, lint, format, basedpyright 0/0/0, 9 contracts kept, deptry, gitleaks green; 4632 tests passed, coverage 99.93 %, diff coverage 100 %. Two tests fail on this macOS machine also on unchanged main 052dffa (test_a_socket_is_not_a_file: AF_UNIX path too long; test_the_menu_driver_reports_a_failing_cli: EIO writing to the pty after the child exited), unrelated to this change; CI runs on Linux.
 No live e2e run locally: the shared Paperless stack may be in use by a concurrent session; the stdio e2e test keeps using the unchanged paperless-mcp script, and the PR e2e tier runs it.
 The publish job cannot be verified before the first version tag (owner).
+
+Independent review (opus, diff only): no Critical. Important: (1) the guard tests passed against four weakened workflows (third job with id-token, wider publish condition, continue-on-error on the ancestor check, if: false on the version check); fixed by checking every job and step, the exact job set and conditions, the check steps by name, id-token exactly once and the publish steps exactly; verified against nine weakened copies of the workflow, each caught. (2) The README advertised a PyPI name nobody holds yet; owner, 2026-11-22: README and docs/http.md keep the Git URL until the first release, the release PR (PLMCP-54) switches them; AC #4 rewritten accordingly. Minor fixed: project URLs (verified repository link on PyPI), the PEP 440 tag form documented (a semver pre-release tag publishes the image but no PyPI release). Minor deferred to PLMCP-54: relative README links on the PyPI page, the "paperless-mcp:" prefix of error messages.
+After the fixes: lock, lint, format, basedpyright 0/0/0, 9 contracts kept, deptry, gitleaks green; 4635 tests passed (the two known macOS-only failures deselected), coverage 99.93 %, diff coverage 100 %.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The distribution is now mcp-server-paperless (PyPI's paperless-mcp is an unrelated server, so uvx paperless-mcp@latest would run foreign code with the user's token) with a console script of the same name beside the unchanged paperless-mcp and paperless-mcp-http; uv_build's module-name keeps the import package paperless_mcp until PLMCP-54, and [project.urls] names the repository. .github/workflows/pypi.yml builds the sdist and wheel and smoke-tests the wheel on package pull requests and v* tags; only a v* tag on a commit on main whose PEP 440 version equals the tag publishes, from the publish job in the pypi environment, by Trusted Publishing with attestations, the built files exactly, no API token, no cache. Decision-32 records name and path; tests/quality/test_pypi.py enforces it and was checked against nine weakened workflows. README and docs/http.md keep the Git URL until the first release (owner); docs/development.md describes a release. Not verifiable before the first tag: the publish job itself (owner's call, after PLMCP-54). DoD #2 and #4 stay unchecked in this commit: required CI checks and the merge happen after it, on the PR.
+<!-- SECTION:FINAL_SUMMARY:END -->
