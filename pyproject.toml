@@ -1,5 +1,5 @@
 [project]
-name = "paperless-mcp"
+name = "mcp-server-paperless"
 version = "0.1.0"
 description = "MCP server for paperless-ngx 3.x."
 readme = "README.md"
@@ -18,13 +18,23 @@ dependencies = [
     "uvicorn>=0.40",
 ]
 
+[project.urls]
+Repository = "https://github.com/gardenbaum/paperless-mcp"
+Documentation = "https://github.com/gardenbaum/paperless-mcp/tree/main/docs"
+Issues = "https://github.com/gardenbaum/paperless-mcp/issues"
+
 [project.scripts]
+mcp-server-paperless = "paperless_mcp.cli:main"
 paperless-mcp = "paperless_mcp.cli:main"
 paperless-mcp-http = "paperless_mcp.cli:main_http"
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]
 build-backend = "uv_build"
+
+# The import package keeps its name; uv_build would derive mcp_server_paperless from the project.
+[tool.uv.build-backend]
+module-name = "paperless_mcp"
 
 [dependency-groups]
 dev = [

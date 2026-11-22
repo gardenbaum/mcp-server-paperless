@@ -1,0 +1,107 @@
+name: PyPI
+
+# Python package mcp-server-paperless on PyPI (decision-32). Separate from ci.yml and not a
+# required check: it never slows a merge. Pull requests that touch the package build the sdist and
+# the wheel and smoke-test the wheel without uploading anything. Only a pushed version tag (v*)
+# publishes, from the `publish` job, by Trusted Publishing: PyPI trusts this workflow file in the
+# `pypi` environment through GitHub's OIDC token, so no API token exists anywhere.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - README.md
+      - LICENSE
+      - src/**
+      - .github/workflows/pypi.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  # Builds once; the publish job uploads exactly these files.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No cache: a cache a pull request wrote must never feed a release build.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.14"
+          enable-cache: false
+
+      - name: Require the tag to name the version being built
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: test "${TAG#v}" = "$(uv version --short)"
+
+      - name: Build the sdist and the wheel
+        run: uv build --no-sources
+
+      # The wheel alone, outside the project: it installs, reports its version, and its console
+      # script (the one `uvx mcp-server-paperless` runs) starts and refuses without configuration.
+      - name: Smoke test the wheel
+        run: |
+          uv venv --quiet .smoke
+          uv pip install --quiet --python .smoke dist/*.whl
+          test "$(.smoke/bin/python -c 'import paperless_mcp; print(paperless_mcp.__version__)')" = "$(uv version --short)"
+          if .smoke/bin/mcp-server-paperless 2> smoke.err; then
+            echo "the server started without any configuration" >&2
+            exit 1
+          fi
+          grep -q "invalid configuration" smoke.err
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Version tags only, and only for a commit on main. Uploads the built files with PEP 740
+  # attestations (the action's default). Recommended repository settings (not set here): a tag
+  # ruleset limiting who may create `v*` tags, and deployment protection on the `pypi`
+  # environment (tags `v*` only, optionally a required reviewer).
+  publish:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/project/mcp-server-paperless/
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the ancestry check below needs the history of main
+          persist-credentials: false
+
+      # A tag on a commit that never reached main (a branch, a fork's pull request) publishes nothing.
+      - name: Require the tagged commit to be on main
+        env:
+          TAGGED_SHA: ${{ github.sha }}
+        run: |
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          git merge-base --is-ancestor "$TAGGED_SHA" origin/main
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
