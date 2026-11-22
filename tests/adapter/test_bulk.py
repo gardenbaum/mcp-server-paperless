@@ -26,7 +26,7 @@ from paperless_mcp.domain.errors import (
 from paperless_mcp.paperless.bulk import PaperlessBulkWriter
 
 if TYPE_CHECKING:
-    from adapter.conftest import ClientFactory
+    from adapter.conftest import ClientFactory, RecordingSleep
     from paperless_mcp.domain.bulk import BulkKind, DocumentChange
 
 pytestmark = pytest.mark.anyio
@@ -274,41 +274,34 @@ class Queue:
         )
 
 
-def queued_writer(make_client: ClientFactory, queue: Queue) -> PaperlessBulkWriter:
-    async def no_sleep(_: float) -> None:
-        return None
-
-    return PaperlessBulkWriter(make_client(queue), sleep=no_sleep)
+def queued_writer(
+    make_client: ClientFactory, queue: Queue, sleep: RecordingSleep
+) -> PaperlessBulkWriter:
+    return PaperlessBulkWriter(make_client(queue), sleep=sleep)
 
 
 async def test_a_queued_document_change_returns_when_its_task_has_succeeded(
-    make_client: ClientFactory,
+    make_client: ClientFactory, sleep: RecordingSleep
 ) -> None:
     queue = Queue("pending", "started", "success")
 
-    await queued_writer(make_client, queue).bulk_edit_documents((4, 7), TrashDocuments())
+    await queued_writer(make_client, queue, sleep).bulk_edit_documents((4, 7), TrashDocuments())
 
     assert queue.sent == [("POST", "/api/documents/bulk_edit/")] + [("GET", "/api/tasks/")] * 3
+    assert sleep.delays == [0.2, 0.2]
 
 
+@pytest.mark.parametrize("ends", ["failure", "revoked"])
 async def test_a_queued_document_change_that_fails_is_reported_as_not_applied(
-    make_client: ClientFactory,
+    make_client: ClientFactory, sleep: RecordingSleep, ends: str
 ) -> None:
-    queue = Queue("pending", "failure")
+    queue = Queue("pending", ends)
 
-    with pytest.raises(Validation, match="could not apply") as raised:
-        await queued_writer(make_client, queue).bulk_edit_documents((4,), ReprocessChange())
+    with pytest.raises(Validation) as raised:
+        await queued_writer(make_client, queue, sleep).bulk_edit_documents((4,), ReprocessChange())
 
+    assert raised.value.message == "Paperless could not apply the bulk edit: its task failed."
     assert "part of it" in (raised.value.hint or "")
-
-
-async def test_a_queued_document_change_that_is_revoked_is_reported_too(
-    make_client: ClientFactory,
-) -> None:
-    with pytest.raises(Validation, match="could not apply"):
-        await queued_writer(make_client, Queue("revoked")).bulk_edit_documents(
-            (4,), ReprocessChange()
-        )
 
 
 async def test_the_task_is_not_followed_for_the_object_endpoint(

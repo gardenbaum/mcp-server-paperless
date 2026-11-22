@@ -455,12 +455,12 @@ reason = "httpx2 upper-cases the method when it builds the request, so 'delete' 
 
 [[equivalent]]
 mutant = "paperless_mcp.paperless.documents.xǁPaperlessDocumentWriterǁmerge_as_versions__mutmut_20"
-function_hash = "bafdc9f7327b"
+function_hash = "2e30bf20ca37"
 reason = "httpx2 upper-cases the method when it builds the request, so 'post' sends exactly what 'POST' sends."
 
 [[equivalent]]
 mutant = "paperless_mcp.paperless.bulk.xǁPaperlessBulkWriterǁbulk_edit_documents__mutmut_21"
-function_hash = "e01711da5b0e"
+function_hash = "c122abcedcd0"
 reason = "httpx2 upper-cases the method when it builds the request, so \"post\" goes out as POST; the client reads only the built request's method."
 
 [[equivalent]]
@@ -545,7 +545,7 @@ reason = "waited is a sum of values that TaskService already rounded to a tenth,
 
 [[equivalent]]
 mutant = "paperless_mcp.paperless.pdf.xǁPaperlessPdfWriterǁ_run__mutmut_17"
-function_hash = "8f86cafa4e37"
+function_hash = "321219948225"
 reason = "httpx2 upper-cases the method when it builds the request, so 'post' sends exactly what 'POST' sends."
 
 [[equivalent]]

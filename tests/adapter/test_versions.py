@@ -330,10 +330,13 @@ async def test_a_queued_merge_returns_when_its_task_has_succeeded(
     assert sleep.delays == [0.2]
 
 
+@pytest.mark.parametrize("ends", ["failure", "revoked"])
 async def test_a_queued_merge_whose_task_failed_is_an_error(
-    make_client: ClientFactory, sleep: RecordingSleep
+    make_client: ClientFactory, sleep: RecordingSleep, ends: str
 ) -> None:
-    writer = PaperlessDocumentWriter(make_client(merge_server("failure")), sleep=sleep)
+    writer = PaperlessDocumentWriter(make_client(merge_server(ends)), sleep=sleep)
 
-    with pytest.raises(Validation, match="could not apply the merge"):
+    with pytest.raises(Validation) as raised:
         await writer.merge_as_versions(5, (8,), None)
+
+    assert raised.value.message == "Paperless could not apply the merge: its task failed."

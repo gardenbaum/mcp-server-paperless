@@ -924,11 +924,18 @@ class Queued35(Paperless):
     """
 
     def __init__(
-        self, before: list[Json], after: list[Json], *, polls: int = 0, ends: str = "success"
+        self,
+        before: list[Json],
+        after: list[Json],
+        *,
+        polls: int = 0,
+        ends: str = "success",
+        hidden: bool = False,
     ) -> None:
         super().__init__(before, after)
         self.polls_left: int = polls
         self.ends: str = ends
+        self.hidden: bool = hidden
 
     @override
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
@@ -937,8 +944,9 @@ class Queued35(Paperless):
             state = "started" if self.polls_left > 0 else self.ends
             self.polls_left -= 1
             bulk = {**row(1, "bulk_update"), "task_id": BULK_TASK, "status": state}
+            rows = [] if self.hidden else [bulk]
             return httpx2.Response(
-                200, json={"count": 1, "next": None, "previous": None, "results": [bulk]}
+                200, json={"count": len(rows), "next": None, "previous": None, "results": rows}
             )
         response = super().__call__(request)
         if request.method == "POST" and response.status_code == 200:
@@ -960,14 +968,44 @@ async def test_the_tasks_are_looked_for_only_after_the_queued_operation_has_ende
     assert clock.now >= 5.0
 
 
+FAILING: list[tuple[str, Call, str]] = [
+    ("rotate", lambda w: w.rotate_documents((7,), 90), "rotation"),
+    (
+        "merge",
+        lambda w: w.merge_documents((7, 9), metadata_document_id=None, delete_originals=False),
+        "merge",
+    ),
+    ("reprocess", lambda w: w.reprocess_documents((7,), remote_ocr=False), "reprocessing"),
+]
+
+
 @pytest.mark.parametrize("ends", ["failure", "revoked"])
+@pytest.mark.parametrize(
+    ("call", "what"), [pytest.param(call, what, id=name) for name, call, what in FAILING]
+)
 async def test_an_operation_whose_task_fails_is_an_error_not_an_empty_result(
-    make_client: ClientFactory, ends: str
+    make_client: ClientFactory, ends: str, call: Call, what: str
 ) -> None:
     server = Queued35(OLD, OLD, ends=ends)
 
-    with pytest.raises(Validation, match="could not apply the rotation"):
-        _ = await writer(make_client, server).rotate_documents((7,), 90)
+    with pytest.raises(Validation) as raised:
+        _ = await call(writer(make_client, server))
+
+    assert raised.value.message == f"Paperless could not apply the {what}: its task failed."
+
+
+async def test_a_queued_task_the_user_cannot_see_is_given_the_grace_by_the_writers_clock(
+    make_client: ClientFactory,
+) -> None:
+    server = Queued35(OLD, [*OLD, row(12, "consume_file", "7_rotated.pdf")], hidden=True)
+    clock = Clock()
+
+    tasks = await writer(make_client, server, clock).rotate_documents((7,), 90)
+
+    assert tasks.ids == (task_id(12),)
+    # 3 seconds of a missing row, polled every quarter second, then 2 seconds of grace, all on the
+    # clock and the sleep the writer was given.
+    assert clock.sleeps == [0.25] * 12 + [2.0]
 
 
 async def test_an_edit_whose_task_fails_says_the_file_may_not_be_a_pdf(
