@@ -120,28 +120,27 @@ class TaskWaiter:
         errors, also after the row was seen, are waited out until the deadline.
         """
         started = self._clock()
-        readable = True
         while True:
             row = None
+            unreadable: PaperlessMcpError | None = None
             try:
                 row = await self._tasks.get_task(task_id)
-                readable = True
             except PermissionDenied:
                 return await self._unobserved_for(task_id, FORBIDDEN_REASON)
             except NotFound:
-                readable = True
-            except PaperlessMcpError:
-                readable = False
+                row = None
+            except PaperlessMcpError as error:
+                unreadable = error
             elapsed = self._clock() - started
             if row is not None and row.is_final:
                 return row.state
-            if row is None and readable and elapsed >= self._visible:
+            if row is None and unreadable is None and elapsed >= self._visible:
                 return await self._unobserved_for(task_id, INVISIBLE_REASON)
             if elapsed >= self._wait:
                 reason = (
-                    f"it was still running after {self._wait:.0f} seconds"
-                    if readable
-                    else UNREADABLE_REASON
+                    UNREADABLE_REASON
+                    if unreadable is not None
+                    else f"it was still running after {self._wait:.0f} seconds"
                 )
                 return Unconfirmed(task_id=task_id, reason=reason)
             await self._sleep(self._poll)

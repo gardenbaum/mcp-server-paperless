@@ -588,7 +588,8 @@ async def test_a_merge_whose_queued_task_cannot_be_followed_is_not_reported_as_m
 
     assert result.unconfirmed_task_id == "task-9"
     assert result.versions is None
-    assert result.message is not None
-    assert "task-9" in result.message
-    assert "the task list could not be read" in result.message
-    assert "get_task" in result.message
+    assert result.message == (
+        "Not confirmed: Paperless queued the merge as task task-9, but the task list could not "
+        "be read. Read it with get_task, then list the versions with list_document_versions, "
+        "before repeating the call."
+    )

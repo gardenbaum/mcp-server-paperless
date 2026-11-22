@@ -1219,11 +1219,12 @@ async def test_a_change_whose_queued_task_cannot_be_followed_is_reported_as_unco
 
     # Paperless was asked, but nothing says the change is made: no confident "Applied".
     assert (report.applied, report.unconfirmed_task_id) == (True, "task-7")
-    assert report.message is not None
-    assert not report.message.startswith("Applied")
-    assert "task-7" in report.message
-    assert "it was still running after 60 seconds" in report.message
-    assert "get_task" in report.message
+    assert report.message == (
+        "Asked Paperless to apply to 1 document: remove the tags 'e2e-inbox' from the selected "
+        "documents. Not confirmed: Paperless "
+        "queued task task-7, but it was still running after 60 seconds. Read it with get_task "
+        "and read the documents again before repeating the call."
+    )
 
 
 async def test_a_confirmed_change_names_no_task() -> None:
