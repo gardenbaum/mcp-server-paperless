@@ -19,8 +19,8 @@ find, read, file, upload and organise documents by asking.**
 
 paperless-mcp is a [Model Context Protocol](https://modelcontextprotocol.io) server for
 paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai and any
-other MCP client 87 tools in 13 toolsets that cover what the Paperless API can do, from a search
-to mail rules and workflows. It starts small and careful: 18 tools by default, names instead
+other MCP client 87 tools in 13 toolsets that cover most of what the Paperless API can do, from a
+search to mail rules and workflows. It starts small and careful: 18 tools by default, names instead
 of ids, and a confirmation step before anything that cannot be undone.
 
 ```mermaid
@@ -63,16 +63,30 @@ Four built-in prompts start such tasks from the client's prompt menu: `triage_in
 `find_document`, `annual_review` and `cleanup_taxonomy`. Each one proposes its changes and waits
 for your yes before it writes.
 
-## Why this server
+## Why another paperless-ngx MCP server?
 
-| | |
-|---|---|
-| 🗂️ **All of paperless-ngx 3.x** | Documents, notes, tags, correspondents, types, storage paths, custom fields, saved views, file versions, trash, PDF operations, share links and bundles, mail accounts and rules, workflows, permissions, users, groups, tasks, logs and Paperless AI. |
-| 🏷️ **Names, not ids** | The model says "invoices from ACME tagged tax-2026", not `correspondent=17&tags=4`. An unknown or ambiguous name is an error that lists the candidates, never a guess. |
-| 🛡️ **Careful by default** | Every tool that can lose data or widen access has a confirmation step that first says what would happen. Bulk edits have a dry run. A read-only mode and opt-in toolsets limit what a client is offered at all. |
-| 🪶 **Light on context** | 18 tools by default instead of all 87. Search results are compact rows without document text, and long documents are read in slices. |
-| 🧪 **Tested against the real thing** | More than 600 live tests run against a real paperless-ngx on every merge and every night, on top of 4,500 unit and contract tests, a mutation-testing gate and a weekly run against the latest Paperless release. |
-| 🔐 **Made for remote use** | The HTTP transport refuses to start without authentication. Bearer tokens for Claude Code, OpenID Connect sign-in for claude.ai connectors, and a hardened, non-root container image. |
+There are already several MCP servers for paperless-ngx. This one is a new build, made for
+people who want all of the following in one server:
+
+- 🗂️ **Much more than search.** Besides finding, reading and filing documents it handles notes,
+  custom fields, saved views, file versions, the trash, PDF operations, share links, mail rules,
+  workflows, permissions and user administration: most of what paperless-ngx 3.x can do.
+- 🏷️ **Names instead of numbers.** You say "invoices from ACME tagged tax-2026" and the server
+  finds the matching ids itself. If a name does not exist or fits more than one entry, it says so
+  and lists the candidates instead of guessing.
+- 🛡️ **Nothing final without your yes.** Before a tool deletes, overwrites, publishes or shares
+  anything, it reports what would happen and waits for your confirmation. Changes to many
+  documents at once can be previewed first.
+- 🪶 **Small to start with.** Only 18 tools by default out of the 87, so the assistant starts
+  with the essentials and you decide what else it may do. Search results are short lists and long
+  documents are read piece by piece, so a conversation does not fill up with text it does not
+  need.
+- 🧪 **Tested against a real Paperless.** More than 600 tests run against a real paperless-ngx
+  after every change and every night, on top of more than 4,500 faster tests. Every week the
+  whole suite also runs against the newest Paperless release.
+- 🔐 **Safe to reach from outside.** Over the network the server does not start without
+  authentication. Claude Code signs in with a token, claude.ai through your own identity
+  provider, and the container image runs without root rights.
 
 ## Quick start
 
