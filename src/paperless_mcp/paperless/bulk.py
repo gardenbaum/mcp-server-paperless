@@ -2,10 +2,13 @@
 
 Both endpoints answer ``{"result": "OK"}`` once the change is made (probed on 3.4.2: tag, field
 and reference changes are visible on return; a reprocess is queued and its task is not
-returned). They validate the whole request first, so a refused batch changes nothing. Posts are
-never retried by the client.
+returned). From 3.5 the document endpoint only queues a ``bulk_update`` task and names it
+(``task_id``); the writer follows that task, so a change is made when the call returns on both
+versions (``queued.py``). Both endpoints validate the whole request first, so a refused batch
+changes nothing. Posts are never retried by the client.
 """
 
+import asyncio
 from typing import TYPE_CHECKING, Final
 
 from pydantic import BaseModel
@@ -17,15 +20,17 @@ from paperless_mcp.domain.bulk import (
     TrashDocuments,
 )
 from paperless_mcp.domain.errors import PermissionDenied
+from paperless_mcp.paperless.queued import Queued, TaskWaiter, not_applied
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Awaitable, Callable, Sequence
 
     from pydantic import JsonValue
 
     from paperless_mcp.domain.bulk import BulkKind, DocumentChange, PermissionsChange
     from paperless_mcp.paperless.client import PaperlessClient
 
+BULK_EDIT: Final = "bulk edit"
 DOCUMENTS = "/api/documents/bulk_edit/"
 OBJECTS = "/api/bulk_edit_objects/"
 OBJECT_TYPES: Final[dict[BulkKind, str]] = {
@@ -94,9 +99,15 @@ def objects_refused() -> PermissionDenied:
 class PaperlessBulkWriter:
     """``BulkWriter`` over the Paperless REST API."""
 
-    def __init__(self, client: PaperlessClient) -> None:
-        """Write through ``client``."""
+    def __init__(
+        self,
+        client: PaperlessClient,
+        *,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
+        """Write through ``client``; ``sleep`` paces the wait for a queued task."""
         self._client: PaperlessClient = client
+        self._waiter: TaskWaiter = TaskWaiter(client, sleep=sleep)
 
     async def bulk_edit_documents(
         self, document_ids: Sequence[int], change: DocumentChange
@@ -114,9 +125,11 @@ class PaperlessBulkWriter:
             "parameters": parameters,
         }
         try:
-            _ = await self._client.call("POST", DOCUMENTS, _Result, json=body)
+            queued = await self._client.call("POST", DOCUMENTS, Queued, json=body)
         except PermissionDenied:
             raise documents_refused() from None
+        if await self._waiter.settled(queued) in {"failure", "revoked"}:
+            raise not_applied(BULK_EDIT)
 
     async def delete_taxonomy_items(self, kind: BulkKind, item_ids: Sequence[int]) -> None:
         """See ``BulkWriter.delete_taxonomy_items``."""

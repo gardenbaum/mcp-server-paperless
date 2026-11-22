@@ -4,9 +4,10 @@ Every search names its ``fields``, so Paperless never sends the OCR content, not
 permissions. Full-text and more-like searches add ``__search_hit__`` to each row.
 """
 
+import asyncio
 import json
 from datetime import date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from pydantic import BaseModel, Field, JsonValue, RootModel
 
@@ -33,9 +34,10 @@ from paperless_mcp.domain.errors import (
 )
 from paperless_mcp.paperless.disposition import filename
 from paperless_mcp.paperless.pagination import Page
+from paperless_mcp.paperless.queued import Queued, TaskWaiter, not_applied
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
+    from collections.abc import Awaitable, Callable, Collection, Sequence
 
     from paperless_mcp.domain.documents import DocumentQuery, FileVersion
     from paperless_mcp.domain.versions import VersionUpload
@@ -43,6 +45,7 @@ if TYPE_CHECKING:
 
 PATH = "/api/documents/"
 UPLOAD_PATH = "/api/documents/post_document/"
+MERGE: Final = "merge"
 MERGE_AS_VERSIONS_PATH = "/api/documents/merge_as_versions/"
 # Most bytes of a thumbnail read; real ones are 2 KB to 30 KB WebP, so this is generous.
 THUMBNAIL_LIMIT = 4 * 1024 * 1024
@@ -94,10 +97,6 @@ class _VersionDeleted(BaseModel):
     """What deleting a version answers: ``current_version_id`` is the newest one left."""
 
     current_version_id: int
-
-
-class _Merged(BaseModel):
-    result: str
 
 
 class _User(BaseModel):
@@ -516,9 +515,15 @@ class PaperlessDocumentReader:
 class PaperlessDocumentWriter:
     """``DocumentWriter`` over the Paperless REST API."""
 
-    def __init__(self, client: PaperlessClient) -> None:
-        """Write through ``client``."""
+    def __init__(
+        self,
+        client: PaperlessClient,
+        *,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
+        """Write through ``client``; ``sleep`` paces the wait for a queued merge."""
         self._client: PaperlessClient = client
+        self._waiter: TaskWaiter = TaskWaiter(client, sleep=sleep)
 
     async def update_document(self, document_id: int, patch: DocumentPatch) -> DocumentRecord:
         """See ``DocumentWriter.update_document``.
@@ -685,10 +690,13 @@ class PaperlessDocumentWriter:
         """See ``DocumentWriter.merge_as_versions``.
 
         The body lists the root first and names it again as ``root_document_id``. Paperless
-        merges within the request and answers ``{"result": "OK"}``; a user who may not change
-        one of the documents gets 403 with an HTML body.
+        merges within the request and answers ``{"result": "OK"}`` (3.5: it queues a task and
+        names it, which is awaited); a user who may not change one of the documents gets 403
+        with an HTML body.
         """
         body: dict[str, object] = {"documents": [root_id, *source_ids], "root_document_id": root_id}
         if label is not None:
             body["version_label"] = label
-        _ = await self._client.call("POST", MERGE_AS_VERSIONS_PATH, _Merged, json=body)
+        queued = await self._client.call("POST", MERGE_AS_VERSIONS_PATH, Queued, json=body)
+        if await self._waiter.settled(queued) in {"failure", "revoked"}:
+            raise not_applied(MERGE)

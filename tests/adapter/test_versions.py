@@ -8,12 +8,15 @@ import pytest
 
 from adapter.test_document_writes import TASK_ID, Form, Uploaded
 from adapter.test_documents import DETAIL
+from adapter.test_queued import row as task_row
 from paperless_mcp.domain.errors import NotFound, PermissionDenied, UpstreamUnavailable, Validation
 from paperless_mcp.domain.versions import VersionUpload
 from paperless_mcp.paperless.documents import PaperlessDocumentReader, PaperlessDocumentWriter
 
 if TYPE_CHECKING:
-    from adapter.conftest import ClientFactory
+    from collections.abc import Callable
+
+    from adapter.conftest import ClientFactory, RecordingSleep
 
 pytestmark = pytest.mark.anyio
 
@@ -294,3 +297,43 @@ async def test_a_version_without_a_checksum_is_read_as_none(make_client: ClientF
     record = await PaperlessDocumentReader(make_client(Answers(detail))).get_document(1)
 
     assert [v.checksum for v in record.versions] == [None]
+
+
+# --- Paperless 3.5 queues the merge as a bulk_update task (PLMCP-46)
+
+MERGE_TASK = "5b8f0c2e-0000-4000-8000-000000000001"
+
+
+def merge_server(*states: str) -> Callable[[httpx2.Request], httpx2.Response]:
+    """3.5.1: the POST names a task, and the task list shows it in each given state in turn."""
+    remaining = list(states)
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        if request.method == "POST":
+            return httpx2.Response(200, json={"result": "OK", "task_id": MERGE_TASK})
+        state = remaining.pop(0) if len(remaining) > 1 else remaining[0]
+        row = task_row(state, MERGE_TASK)
+        return httpx2.Response(
+            200, json={"count": 1, "next": None, "previous": None, "results": [row]}
+        )
+
+    return handler
+
+
+async def test_a_queued_merge_returns_when_its_task_has_succeeded(
+    make_client: ClientFactory, sleep: RecordingSleep
+) -> None:
+    writer = PaperlessDocumentWriter(make_client(merge_server("pending", "success")), sleep=sleep)
+
+    await writer.merge_as_versions(5, (8,), None)
+
+    assert sleep.delays == [0.2]
+
+
+async def test_a_queued_merge_whose_task_failed_is_an_error(
+    make_client: ClientFactory, sleep: RecordingSleep
+) -> None:
+    writer = PaperlessDocumentWriter(make_client(merge_server("failure")), sleep=sleep)
+
+    with pytest.raises(Validation, match="could not apply the merge"):
+        await writer.merge_as_versions(5, (8,), None)

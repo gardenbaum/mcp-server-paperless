@@ -12,6 +12,11 @@ as tasks that appear in ``GET /api/tasks/`` within milliseconds:
 
 So the writer notes the newest task before the request and afterwards looks for newer tasks of
 the operation's kind, for a short bounded time. A user who may not view tasks gets none back.
+
+From 3.5 the endpoints queue a ``bulk_update`` task first and answer its ``task_id``; that task
+makes the files and fails for what 3.4 refused with a 400 (a file that is not a PDF, a wrong
+password). The writer waits for it (``queued.py``), turns a failure into the error 3.4 raised, and
+only then looks for the file tasks, with a fresh window.
 """
 
 import asyncio
@@ -25,6 +30,7 @@ from paperless_mcp.domain.errors import PaperlessMcpError, PermissionDenied, Val
 from paperless_mcp.domain.pdf import StartedTasks
 from paperless_mcp.paperless.errors import REJECTED
 from paperless_mcp.paperless.pagination import Page
+from paperless_mcp.paperless.queued import Queued, TaskWaiter, not_applied
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
@@ -48,10 +54,6 @@ REFUSED_HINT = (
     "enough. Merging and reprocessing accept a change grant. A new document needs the permission "
     "to add documents, and deleting an original also needs ownership and the permission to delete."
 )
-
-
-class _Result(BaseModel):
-    result: str
 
 
 class _Task(BaseModel):
@@ -106,6 +108,10 @@ def _merged(document_ids: Sequence[int]) -> Match:
     return _named([f"{joined[:MERGED_NAME_LIMIT]}_merged.pdf"])
 
 
+def _failure(what: str) -> Callable[[], Validation]:
+    return lambda: not_applied(what)
+
+
 def _refused() -> PermissionDenied:
     return PermissionDenied(REFUSED, hint=REFUSED_HINT)
 
@@ -149,13 +155,18 @@ class PaperlessPdfWriter:
         self._poll: float = poll_seconds
         self._sleep: Callable[[float], Awaitable[None]] = sleep
         self._clock: Callable[[], float] = clock
+        self._waiter: TaskWaiter = TaskWaiter(
+            client, poll_seconds=poll_seconds, sleep=sleep, clock=clock
+        )
         self._lock: asyncio.Lock = asyncio.Lock()
 
     async def rotate_documents(self, document_ids: Sequence[int], degrees: int) -> StartedTasks:
         """See ``PdfWriter.rotate_documents``: one ``{id}_rotated.pdf`` task per document."""
         body: dict[str, JsonValue] = {"documents": list(document_ids), "degrees": degrees}
         match = _named([f"{n}_rotated.pdf" for n in document_ids])
-        return await self._run("rotate", body, CONSUME, match, len(document_ids))
+        return await self._run(
+            "rotate", body, CONSUME, match, len(document_ids), failed=_failure("rotation")
+        )
 
     async def merge_documents(
         self,
@@ -170,7 +181,9 @@ class PaperlessPdfWriter:
             "metadata_document_id": metadata_document_id,
             "delete_originals": delete_originals,
         }
-        started = await self._run("merge", body, CONSUME, _merged(document_ids), 1)
+        started = await self._run(
+            "merge", body, CONSUME, _merged(document_ids), 1, failed=_failure("merge")
+        )
         # The file name starts with the first document, but the result is a document of its own.
         return started.model_copy(update={"sources": ()})
 
@@ -194,7 +207,7 @@ class PaperlessPdfWriter:
             match = _pattern(rf"{document_id}_edit_\d+\.pdf")
             expected = len({p.document for p in pages})
         try:
-            return await self._run("edit_pdf", body, CONSUME, match, expected)
+            return await self._run("edit_pdf", body, CONSUME, match, expected, failed=not_editable)
         except Validation as error:
             raise _plain(error, not_editable()) from None
 
@@ -214,7 +227,12 @@ class PaperlessPdfWriter:
         }
         try:
             return await self._run(
-                "remove_password", body, CONSUME, _named([f"{document_id}_unprotected.pdf"]), 1
+                "remove_password",
+                body,
+                CONSUME,
+                _named([f"{document_id}_unprotected.pdf"]),
+                1,
+                failed=wrong_password,
             )
         except Validation as error:
             raise _plain(error, wrong_password()) from None
@@ -224,15 +242,24 @@ class PaperlessPdfWriter:
     ) -> StartedTasks:
         """See ``PdfWriter.reprocess_documents``: one ``reprocess_document`` task per document."""
         body: dict[str, JsonValue] = {"documents": list(document_ids), "remote_ocr": remote_ocr}
-        return await self._run("reprocess", body, REPROCESS, None, len(document_ids))
+        return await self._run(
+            "reprocess",
+            body,
+            REPROCESS,
+            None,
+            len(document_ids),
+            failed=_failure("reprocessing"),
+        )
 
-    async def _run(
+    async def _run(  # noqa: PLR0913 -- the request, the tasks it starts and the failure it may be
         self,
         endpoint: str,
         body: dict[str, JsonValue],
         kind: str,
         match: Match | None,
         expected: int,
+        *,
+        failed: Callable[[], Validation],
     ) -> StartedTasks:
         """Send the request, then collect the new tasks of ``kind`` that ``match``.
 
@@ -245,9 +272,11 @@ class PaperlessPdfWriter:
             user = await self._user()
             mark, problem = await self._mark(kind, user)
             try:
-                _ = await self._client.call("POST", f"{BASE}{endpoint}/", _Result, json=body)
+                queued = await self._client.call("POST", f"{BASE}{endpoint}/", Queued, json=body)
             except PermissionDenied:
                 raise _refused() from None
+            if await self._waiter.settled(queued) in {"failure", "revoked"}:
+                raise failed()
             if problem is not None:
                 return StartedTasks(ids=(), expected=expected, problem=problem)
             found: list[_Task] = []

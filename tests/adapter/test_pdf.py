@@ -6,7 +6,7 @@ the task list. The rows below are shaped like the ones recorded from 3.4.2.
 
 import asyncio
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 import httpx2
 import pytest
@@ -910,3 +910,91 @@ async def test_a_merge_names_no_source_because_its_result_is_a_document_of_its_o
     )
 
     assert (tasks.ids, tasks.sources) == ((task_id(12),), ())
+
+
+# --- Paperless 3.5: every PDF operation queues a bulk_update task first (PLMCP-46)
+
+BULK_TASK = "5b8f0c2e-0000-4000-8000-0000000000aa"
+
+
+class Queued35(Paperless):
+    """3.5.1: the POST names a `bulk_update` task that works for `polls` reads and then ends.
+
+    The consume tasks of the operation exist only once it has ended: `after` is shown from then on.
+    """
+
+    def __init__(
+        self, before: list[Json], after: list[Json], *, polls: int = 0, ends: str = "success"
+    ) -> None:
+        super().__init__(before, after)
+        self.polls_left: int = polls
+        self.ends: str = ends
+
+    @override
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        if request.url.path == "/api/tasks/" and request.url.params.get("task_id") == BULK_TASK:
+            self.requests.append((request.method, request.url.path, dict(request.url.params), None))
+            state = "started" if self.polls_left > 0 else self.ends
+            self.polls_left -= 1
+            bulk = {**row(1, "bulk_update"), "task_id": BULK_TASK, "status": state}
+            return httpx2.Response(
+                200, json={"count": 1, "next": None, "previous": None, "results": [bulk]}
+            )
+        response = super().__call__(request)
+        if request.method == "POST" and response.status_code == 200:
+            return httpx2.Response(200, json={"result": "OK", "task_id": BULK_TASK})
+        return response
+
+
+async def test_the_tasks_are_looked_for_only_after_the_queued_operation_has_ended(
+    make_client: ClientFactory,
+) -> None:
+    # The operation takes 5 seconds, far beyond the 1-second window for the tasks to show up.
+    server = Queued35(OLD, [*OLD, row(12, "consume_file", "7_rotated.pdf")], polls=20)
+    clock = Clock()
+
+    tasks = await writer(make_client, server, clock).rotate_documents((7,), 90)
+
+    assert tasks.ids == (task_id(12),)
+    assert tasks.problem is None
+    assert clock.now >= 5.0
+
+
+@pytest.mark.parametrize("ends", ["failure", "revoked"])
+async def test_an_operation_whose_task_fails_is_an_error_not_an_empty_result(
+    make_client: ClientFactory, ends: str
+) -> None:
+    server = Queued35(OLD, OLD, ends=ends)
+
+    with pytest.raises(Validation, match="could not apply the rotation"):
+        _ = await writer(make_client, server).rotate_documents((7,), 90)
+
+
+async def test_an_edit_whose_task_fails_says_the_file_may_not_be_a_pdf(
+    make_client: ClientFactory,
+) -> None:
+    server = Queued35(OLD, OLD, ends="failure")
+
+    with pytest.raises(Validation, match="may not be a PDF"):
+        _ = await writer(make_client, server).edit_pdf(
+            7, (PageSlot(page=1),), output="new_document"
+        )
+
+
+async def test_a_password_removal_whose_task_fails_says_the_password_may_be_wrong(
+    make_client: ClientFactory,
+) -> None:
+    server = Queued35(OLD, OLD, ends="failure")
+
+    with pytest.raises(Validation, match="password"):
+        _ = await writer(make_client, server).remove_password(7, "x", output="new_document")
+
+
+async def test_a_file_without_a_password_still_starts_no_task_on_3_5(
+    make_client: ClientFactory,
+) -> None:
+    server = Queued35(OLD, OLD)
+
+    tasks = await writer(make_client, server).remove_password(7, "x", output="new_document")
+
+    assert (tasks.ids, tasks.expected) == ((), 1)
