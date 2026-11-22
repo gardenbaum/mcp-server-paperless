@@ -1,4 +1,4 @@
-"""Helpers behind the e2e CI check (PLMCP-39, decision-23): here, not in shell, to be tested.
+"""Helpers behind the e2e CI check (PLMCP-39, decision-30): here, not in shell, to be tested.
 
 Three workflows run the live suite. On a pull request the `e2e` job (ci.yml, not a required check:
 decision-24) runs a fast tier chosen from the changed paths; after a merge and nightly,
@@ -93,8 +93,8 @@ SHARD_TIMEOUT_MINUTES = 25
 # A tier heavier than this (recorded seconds) is split over up to TIER_PARTS parallel jobs of the
 # `e2e` matrix (a cross-cutting change would pass the 20-minute guard on a hosted runner: 450 s was
 # about 13 minutes with the stack's start while the weights were sandbox seconds). The weights are
-# hosted-runner seconds since PLMCP-44, so the same number now splits tiers earlier (decision-23
-# names 450 s; it is left as it is, a smaller tier only runs in more parallel jobs). The full run
+# hosted-runner seconds since PLMCP-44, so the same number now splits tiers earlier (decision-30,
+# which supersedes decision-23: a smaller tier only runs in more parallel jobs). The full run
 # covers everything after the merge.
 TIER_BUDGET_SECONDS = 450.0
 TIER_PARTS = 3

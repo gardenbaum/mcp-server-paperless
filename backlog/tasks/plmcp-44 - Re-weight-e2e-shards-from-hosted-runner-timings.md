@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T09:24:00Z'
-updated_date: '2026-11-22T16:29:29Z'
+updated_date: '2026-11-22T16:30:36Z'
 labels: []
 dependencies: []
 priority: low
@@ -56,6 +56,8 @@ TIER_BUDGET_SECONDS stays 450 (decision-23 names it) although the weights are no
 PAPERLESS_TASK_WORKERS (tests/e2e/compose.yaml is already 1; measured against 2 in a second compose project plmcp44-w on port 8031 with an override file, under the e2e flock, sandbox 4 cores, same as a hosted ubuntu-latest, runs interleaved 1,2,1,2): tests/contract/test_bulk.py, test_document_writer.py, test_document_versions.py, test_sharing.py and tests/e2e/test_pdf.py, 123 tests, all green in all four runs. Wall time workers=1: 420 s and 393 s; workers=2: 368 s and 364 s (about 10 percent less: bulk 163/151 s to 122/123 s, pdf 81/83 s to 67/69 s, versions, writer and sharing unchanged). Decision: keep 1. The gain is about 10 percent of the worker-bound modules (under 5 percent of a shard), from two runs each on a different disk and CPU than a hosted runner; a second worker adds writers on the SQLite database and lets queued tasks overtake each other, which the suite assumes not to happen, and four green runs do not show absence of flakiness. If wanted, dispatch e2e-full on a branch with 2 workers three times against main runs of the same shards to decide on hosted numbers (not done: workflows cannot be dispatched from here).
 
 Not done: a per-module timing report in the shard runs (junit artifact); the derivation from the log timestamps works for refreshes, so it was left out of this change.
+
+Controller: the weights' unit changed from sandbox to hosted seconds while decision-23 names the 450 s tier budget, so decision-30 supersedes decision-23 (everything carried over; weights and budget are hosted-runner seconds; budget stays 450, which splits tiers earlier, stricter not weaker; PAPERLESS_TASK_WORKERS stays 1 with the measurements). decision-23 set to superseded by decision-30 with the CLI.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
