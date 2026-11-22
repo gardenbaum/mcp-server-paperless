@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-22T12:11:00Z'
-updated_date: '2026-11-22T13:30:00Z'
+updated_date: '2026-11-22T13:50:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -85,6 +85,8 @@ Follow-ups: PLMCP-47 (3.5 mode in the fake, vendored docs and pin decision, tag-
 Controller: AC #2 is split. Adapter handling of both versions is done and wire-tested here; fake-based contract coverage of 3.5 moves to PLMCP-47, which already carries it. AC #3: e2e-latest against 3.5.1 is green (629 passed); the full pinned 3.4.2 suite is verified by the post-merge e2e-full run on main, after which the controller sets this task Done.
 
 DoD #1 (tests first) unchecked on review: queued.py and the admin READ_CONFIG hint were written together with or before their first tests, which doc-2 step 4 does not allow; the wiring tests (bulk, pdf, versions) were red first. For the review round (unconfirmed outcome, PDF writer, neutral failure messages) tests were written first and run red before the code: test_queued (confirmed/Unconfirmed), services bulk_documents/versions/pdf unconfirmed tests, adapter pdf tests for the neutral failure messages and the unconfirmed StartedTasks.
+
+Review round: (1) TaskWaiter.confirmed returns Unconfirmed(task_id, reason) instead of None for 403, never-visible row, unreadable list at the deadline and a task still running at the deadline; transient read errors are waited out. BulkWriter and merge_as_versions return it; DocumentBulkReport and VersionsMerged carry unconfirmed_task_id and a message that does not claim success (surface snapshot: exactly these two fields and one description changed, deliberately). (2) PdfWriter returns the bulk_update task id with problem=unconfirmed and a reason instead of raising; the lock stays over wait and lookup because a concurrent request would make file tasks with the same names. (3) failed queued edit_pdf and remove_password name no single cause. (5) the waiter reuses PaperlessTaskReader. Evidence: unit 4439 passed, cov-diff 100 %, lint/format/basedpyright/imports/deps/secrets green, live touched modules 152 passed on 3.4.2 and 152 on 3.5.1, mutation: no new survivors (equivalents re-hashed).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
