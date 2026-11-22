@@ -759,3 +759,27 @@ def test_main_stats_that_are_not_mutmuts_are_a_clear_error(tmp_path: Path) -> No
 
     assert (code, out) == (1, "")
     assert "not mutmut's CI/CD stats" in err
+
+
+def test_main_open_issue_labels_a_new_label_with_the_given_description(tmp_path: Path) -> None:
+    body = tmp_path / "body.md"
+    _ = body.write_text("Headline\n", encoding="utf-8")
+
+    code, _, gh = run_main(
+        [
+            "open-issue",
+            "--title",
+            "T",
+            "--label",
+            "backlog-drift",
+            "--description",
+            "Backlog.md instructions behind the release",
+            "--body-file",
+            str(body),
+        ],
+        gh=FakeGh([]),
+    )
+
+    assert code == 0
+    label = ("gh", "label", "create", "backlog-drift", "--force", "--description")
+    assert gh.calls[1] == (*label, "Backlog.md instructions behind the release")

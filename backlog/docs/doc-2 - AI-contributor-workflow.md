@@ -3,7 +3,7 @@ id: doc-2
 title: AI contributor workflow
 type: guide
 created_date: '2026-11-12T16:23:00Z'
-updated_date: '2026-11-17T08:28:00Z'
+updated_date: '2026-11-22T19:40:38Z'
 ---
 # AI contributor workflow
 
@@ -48,6 +48,7 @@ At most two tasks at a time, chosen for independent dependencies and little file
 - Verification against the owner's own Paperless instance is the owner's job; automated tests use the E2E stack (3.4.2).
 - The tool error boundary re-raises ToolError unchanged; any other exception is logged by type only and masked.
 - Split FakePaperless into per-port mixins once it grows further.
+- Always use the latest Backlog.md CLI (owner, 2026-11-22), enforced by scripts rather than memory: `just backlog-update` installs `backlog.md@latest` and refreshes the managed block of CLAUDE.md and AGENTS.md non-interactively (`scripts/backlog_instructions.py`; only that block may change), and the weekly `backlog-drift.yml` workflow keeps one `backlog-drift` issue open while the `backlog.md-instructions-version` header of either file is behind the latest npm release. Cloud sessions install the latest release in the environment's setup script (`npm install -g backlog.md`); run `just backlog-update` when the issue appears, review and commit the diff.
 
 ## Global constraints (summary of doc-1)
 
