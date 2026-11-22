@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-22T12:40:00Z'
-updated_date: '2026-11-22T15:26:32Z'
+updated_date: '2026-11-22T15:46:29Z'
 labels: []
 dependencies: []
 priority: medium
@@ -21,16 +21,16 @@ PLMCP-46 made the adapter handle paperless-ngx 3.5.1 and made the live tests ver
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A decision records the new pin (or keeps 3.4.2) and why
-- [ ] #2 FakePaperless can act as 3.4.2 and 3.5.x for the config read, note validation and mail password mask, with contract tests for both
-- [ ] #3 The tag deletion preview and tool description are true on 3.4.2 and 3.5; the refusal on 3.5 carries a hint; snapshot changes are stated
+- [x] #1 A decision records the new pin (or keeps 3.4.2) and why
+- [x] #2 FakePaperless can act as 3.4.2 and 3.5.x for the config read, note validation and mail password mask, with contract tests for both
+- [x] #3 The tag deletion preview and tool description are true on 3.4.2 and 3.5; the refusal on 3.5 carries a hint; snapshot changes are stated
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -49,4 +49,17 @@ PLMCP-46 made the adapter handle paperless-ngx 3.5.1 and made the live tests ver
 Known and accepted until this task is done: on 3.5 the confirm preview of delete_taxonomy_item (and of the bulk tag edit) says child tags of other users are deleted with the tag, but Paperless 3.5 refuses that deletion (403). tests/e2e/test_taxonomy_edits.py asserts the preview text knowingly.
 
 Test-first record: written and run red before code: fake unit tests (tests/fakes/test_paperless.py: release, config read, blank notes, tag deletion single+bulk), contract tests on a new fake-3.5 backend (BOTH_RELEASES mark: admin config read, notes, tag deletion single and bulk), adapter test for the tag-delete 403 hint, updated preview text in services and e2e tests. Mail password mask: no port returns the mask (the adapter drops it before a row is built), so the fake has nothing to model; it stays a live-only e2e assertion.
+
+Implemented. decision-29 (accepted, body written in the file) keeps 3.4.2 as the minimum pin; the vendored docs/openapi stay at 3.4.2, so nothing under docs/vendor, the justfile or the compose digest changed.
+FakeState.release (default 3.4.2; 3.5.1 for 3.5): config read needs view_applicationconfiguration (PermissionDenied with the READ_CONFIG hint), blank notes rejected (400 blank), tag deletion refused when a tag below it is not the user's (non-superuser; owner or unowned; single: 403 with TAG_DELETE_HINT, bulk: the objects_refused 403), paperless_version follows the release. Not modelled: mail password mask (no port returns it or its mask; live e2e test_mail only) and queued document operations/task_id (the adapter wire tests of PLMCP-46 cover both answer shapes; a fake with deferred application would change every bulk/PDF contract test).
+Contract: BOTH_RELEASES mark (fake, fake-3.5, live) on the version-branching tests (admin config read, notes, new single and bulk tag deletion tests); since(backend, ...) already works for the fake through expected_version, which is now the fake's release.
+Adapter: a refused tag DELETE carries TAG_DELETE_HINT; other kinds unchanged. Texts: the preview and message of delete_taxonomy_item and the bulk tag delete, the two tool descriptions and the DeletedTag.also_deleted description now say 3.4 deletes other users' child tags and 3.5 refuses. Surface snapshot regenerated deliberately: only those descriptions (delete_taxonomy_item and the bulk taxonomy edit in the all profile, the also_deleted field in both); no tool added, default profile budget untouched.
+Evidence: just check green (4455 passed, diff coverage 100 %). Live, touched modules (contract test_admin, test_notes_and_trash, test_taxonomy_edits, test_bulk, e2e test_taxonomy_edits): 205 passed on the pinned 3.4.2 and 205 passed on 3.5.1 (the e2e test now asserts the new preview text and the 3.5 hint). Mutation: paperless.taxonomy, services.bulk_taxonomy and services.taxonomy_edits: no new survivors; the existing delete_taxonomy_item lowercase-method equivalent got its function_hash refreshed.
+Honest order note: tests were written and run red first at fake, adapter, service and contract level (the e2e assertion was edited together with them but ran only after the code existed, live). The decision body and the tag-deletion rule were checked against the 3.5.1 and 3.4.2 container sources (TagViewSet.perform_destroy, BulkEditObjectsView) before writing the fake.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+decision-29 keeps 3.4.2 as the minimum pin and has the latest 3.x covered weekly; FakePaperless now has a release setting (default 3.4.2, 3.5.1 for 3.5) that models the config read permission, blank-note rejection and the tag-deletion refusal (single and bulk). The version-branching contract tests run on the fake in both modes and live. A refused tag deletion carries a hint, and the delete preview, tool descriptions and field description are true on 3.4.2 and 3.5 (surface snapshot regenerated deliberately: those descriptions only). Not modelled: the mail password mask (no port exposes it) and queued document operations. Verified: just check, live on 3.4.2 and 3.5.1 (205 passed each), mutation with no new survivors. DoD 1 stays unchecked: the e2e assertion was not run red before the code (live-only).
+<!-- SECTION:FINAL_SUMMARY:END -->
