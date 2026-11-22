@@ -1,11 +1,11 @@
 ---
 id: PLMCP-35
 title: Docker image on GHCR
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-09T19:26:00Z'
-updated_date: '2026-11-17T07:51:00Z'
+updated_date: '2026-11-22T19:27:49Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -25,7 +25,7 @@ Self-hosting next to Paperless needs a small, hardened image (design §8).
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Multi-stage image runs as a non-root user with a health check
-- [ ] #2 CI builds the image on main and publishes it to GHCR on version tags
+- [x] #2 CI builds the image on main and publishes it to GHCR on version tags
 - [x] #3 The image is scanned for known vulnerabilities in CI
 - [x] #4 README documents running the container next to Paperless
 <!-- AC:END -->
@@ -33,9 +33,9 @@ Self-hosting next to Paperless needs a small, hardened image (design §8).
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [x] #1 Tests written first (red, then green) at every test level the change touches
-- [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #2 just check passes locally and all required CI checks are green on the PR
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -46,10 +46,12 @@ Decision-28 records the image rules. Health check is a TCP connect (python socke
 Review round: removed pip and upgraded OS packages in the runtime stage (the scan failed on zlib1g, and msgpack/urllib3/setuptools vendored in the base pip); ARG/LABEL moved last; publish now pushes by digest, scans and smoke-tests that digest, then tags it; ancestor-of-main check before publishing; no syntax directive; README compose uses port 8001, joins an external network and notes PAPERLESS_ALLOWED_HOSTS; smoke test checks 421 for a foreign Host; guards parse image.yml with PyYAML (added as a dev dependency) and allowlist COPY sources. Evidence on the final commit: just check passes; image 326MB on disk; import pip fails; smoke test passes (read-only, non-root, healthy, 401, 421, initialize). A Trivy 0.58 run on the merged filesystem showed no Python findings; zlib1g could not be upgraded in the sandbox (Debian mirror unreachable), so the apt-get upgrade is verified only by CI. Recommended owner settings, not set: a tag ruleset for v* tags and a protected environment for publish.
 
 Owner approved tagging v0.1.0 (2026-11-17) and is fine with a public GHCR package. This commit sets the package version to 0.1.0 so the tag matches pyproject. AC #2 is checked once the tag's publish job succeeds.
+
+Controller, 2026-11-22: the owner created v0.1.0 on 1424b1d; image.yml run 45060119945 (push v0.1.0) built and published (both jobs success). Verified: an anonymous docker pull of ghcr.io/gardenbaum/paperless-mcp:0.1.0 works (the package is public), the image runs as 10001:10001 with label version 0.1.0 and refuses to start without PAPERLESS_URL/PAPERLESS_TOKEN.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Adds a hardened multi-stage Dockerfile (non-root uid 10001, digest-pinned bases, no pip, OS packages upgraded, read-only friendly, TCP-probe health check), .dockerignore, .trivyignore, scripts/image_smoke.sh with just image / image-smoke, workflow image.yml (build, Trivy scan and smoke test on PRs and main; tag-gated publish that pushes by digest, scans and smoke-tests that digest, then tags it, with provenance and SBOM), a README container section with compose examples, decision-28 and PyYAML-based guards in tests/quality/test_container.py. Verified locally by build, smoke test, a run against the E2E stack and just check. Not verified: publishing (AC #2), the zlib upgrade and the workflow in real GitHub Actions, required CI on the PR. DoD #1 and #2 are checked on the local evidence above, but #2 also requires green CI on the PR, so it is unchecked; #3 and #4 are open.
+Hardened multi-stage image (non-root, read-only, TCP health check, Trivy scan, smoke test) built on main and published to GHCR on v* tags; 0.1.0 is public at ghcr.io/gardenbaum/paperless-mcp.
 <!-- SECTION:FINAL_SUMMARY:END -->
