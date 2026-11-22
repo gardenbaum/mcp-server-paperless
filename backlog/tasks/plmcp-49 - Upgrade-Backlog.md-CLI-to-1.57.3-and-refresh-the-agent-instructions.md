@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-22T14:27:00Z'
-updated_date: '2026-11-22T14:30:00Z'
+updated_date: '2026-11-22T18:38:15Z'
 labels:
   - tooling
 dependencies: []
@@ -41,6 +41,8 @@ The environment ships Backlog.md 1.55.3 (CLAUDE.md and AGENTS.md carry the 1.55.
 Upgraded the CLI with npm to 1.57.3 and regenerated the managed block of CLAUDE.md and AGENTS.md with `backlog agents --update-instructions` (interactive; only the version header changed). Verified AC #2: task edit, list and view with 1.57.3 changed no other task file (git status showed only the intended files). AC #3: `just backlog-install` pins the version and README's Development section names it; a cloud environment setup script would call it, which is an environment setting outside the repository, offered to the owner rather than changed.
 
 DoD #1 left unchecked deliberately: the change is a tool version pin and docs, with no behaviour a test could pin first. DoD #4 checked on the PR's own merge.
+
+Owner, 2026-11-22: always use the latest Backlog.md release, not a pin. just backlog-install now installs backlog.md@latest; after a version change the managed block of CLAUDE.md and AGENTS.md is refreshed with backlog agents --update-instructions.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -75,10 +75,12 @@ docs-sync-paperless:
 install:
     uv sync
 
-# Install the Backlog.md CLI this repository's agent instructions were generated with (needs npm).
-# Keep the version in step with the `backlog.md-instructions-version` header of CLAUDE.md and AGENTS.md.
+# Install or update the Backlog.md CLI to its latest release (needs npm). When the version changes,
+# refresh the managed block of CLAUDE.md and AGENTS.md with `backlog agents --update-instructions`
+# (its `backlog.md-instructions-version` header names the release it was written by) and commit it.
 backlog-install:
-    npm install --global backlog.md@1.57.3
+    npm install --global backlog.md@latest
+    backlog --version
 
 # Lint: ruff, then the suppression and patching rules ruff cannot express.
 lint: && hygiene
