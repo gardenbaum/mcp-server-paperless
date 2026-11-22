@@ -5,9 +5,11 @@ Every test creates the documents and taxonomy objects it changes (names with `SC
 one; the live backend deletes what is left when the test ends.
 """
 
+import time
 import uuid
 from typing import TYPE_CHECKING
 
+import anyio
 import pytest
 from fakes.accounts import READER
 
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
     from paperless_mcp.domain.bulk import BulkKind
     from paperless_mcp.domain.documents import DocumentRecord
+    from paperless_mcp.domain.tasks import Unconfirmed
     from paperless_mcp.domain.taxonomy import WritableKind
 
 pytestmark = [
@@ -60,6 +63,25 @@ async def make(ports: Ports, kind: WritableKind, **fields: object) -> int:
         kind, f"{prefix}{uuid.uuid4().hex}", values
     )
     return created.id
+
+
+SETTLE_SECONDS = 60.0
+
+
+async def settled(backend: Backend, result: Unconfirmed | None) -> None:
+    """Wait, as the admin, for a change a restricted user could not follow to its end.
+
+    Paperless 3.5 queues the change as a task; a user without ``view_paperlesstask`` cannot see
+    it, so the writer returns ``Unconfirmed`` after a short grace (PLMCP-48). Reading the result
+    right away would race the task, so the admin, who can see it, waits for it to succeed.
+    """
+    if result is None:
+        return
+    deadline = time.monotonic() + SETTLE_SECONDS
+    while not (task := await backend.admin.tasks.get_task(result.task_id)).is_final:
+        assert time.monotonic() < deadline, f"task {result.task_id} still {task.state}"
+        await anyio.sleep(0.5)
+    assert task.state == "success", task
 
 
 async def read(ports: Ports, document: int) -> DocumentRecord:
@@ -245,9 +267,10 @@ async def test_a_link_needs_change_permission_on_the_linked_document_too(
     assert await fields_of(backend.admin, mine) == {}
     assert await fields_of(backend.admin, viewed) == {}
 
-    _ = await user.bulk_writes.bulk_edit_documents(
+    result = await user.bulk_writes.bulk_edit_documents(
         (mine,), FieldsChange(values={link: [changeable]})
     )
+    await settled(backend, result)
     assert await fields_of(backend.admin, changeable) == {link: [mine]}
 
 
@@ -404,7 +427,9 @@ async def test_one_document_the_user_may_not_change_refuses_the_whole_batch(
         _ = await user.bulk_writes.bulk_edit_documents((mine, only_viewed), TagsChange(add=(tag,)))
 
     assert tag not in (await read(backend.admin, mine)).tags
-    _ = await user.bulk_writes.bulk_edit_documents((mine,), TagsChange(add=(tag,)))
+    await settled(
+        backend, await user.bulk_writes.bulk_edit_documents((mine,), TagsChange(add=(tag,)))
+    )
     assert tag in (await read(backend.admin, mine)).tags
 
 
@@ -419,7 +444,9 @@ async def test_deleting_needs_ownership_not_only_change_permission(backend: Back
         _ = await user.bulk_writes.bulk_edit_documents((document,), TrashDocuments())
 
     assert not backend.in_trash(document)
-    _ = await user.bulk_writes.bulk_edit_documents((document,), TagsChange(add=(tag,)))
+    await settled(
+        backend, await user.bulk_writes.bulk_edit_documents((document,), TagsChange(add=(tag,)))
+    )
     assert tag in (await read(backend.admin, document)).tags
 
 
