@@ -1,4 +1,4 @@
-"""Guards for the PyPI distribution and its workflow (decision-32).
+"""Guards for the PyPI distribution and its workflow (decision-32, decision-33).
 
 The files are read as text: nothing here builds or uploads a package (the ``pypi`` workflow
 does), these tests only keep the name and the publishing rules from eroding unnoticed.
@@ -150,13 +150,17 @@ def test_a_tag_publishes_only_a_commit_on_main() -> None:
     assert position("publish", "on main") < position("publish", "gh-action-pypi-publish@")
 
 
-def test_a_tag_publishes_only_the_version_it_names() -> None:
-    check = named("build", "name the version")
+@pytest.mark.decision("decision-33")
+def test_a_tag_build_takes_its_version_from_the_tag() -> None:
+    step = named("build", "version from the tag")
 
-    assert check["if"] == "startsWith(github.ref, 'refs/tags/v')"
-    assert mapping(check["env"]) == {"TAG": "${{ github.ref_name }}"}
-    assert check["run"] == 'test "${TAG#v}" = "$(uv version --short)"'
-    assert position("build", "name the version") < position("build", "Build the sdist")
+    assert step["if"] == "startsWith(github.ref, 'refs/tags/v')"
+    assert mapping(step["env"]) == {"TAG": "${{ github.ref_name }}"}
+    # uv rejects a tag that is no valid version and writes PEP 440 (1.2.3-rc.1 -> 1.2.3rc1);
+    # `--` keeps a tag like `v--bump=patch` from being read as an option.
+    assert step["run"] == 'uv version --frozen -- "${TAG#v}"'
+    assert position("build", "version from the tag") < position("build", "Build the sdist")
+    assert not any("name the version" in str(s.get("name", "")) for s in steps("build"))
 
 
 def test_publish_uploads_the_built_files_by_trusted_publishing_with_attestations() -> None:
@@ -200,6 +204,8 @@ def test_the_build_smoke_tests_the_console_script_of_the_built_wheel() -> None:
     assert "uv pip install --quiet --python .smoke dist/*.whl" in smoke
     assert ".smoke/bin/mcp-server-paperless" in smoke
     assert 'grep -q "invalid configuration"' in smoke
+    # On a tag this is the version just taken from it (decision-33).
+    assert 'print(paperless_mcp.__version__)\')" = "$(uv version --short)"' in smoke
     order = [position("build", name) for name in ("Build the sdist", "Smoke", "upload-artifact")]
     assert order == sorted(order)
 
