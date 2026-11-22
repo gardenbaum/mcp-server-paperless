@@ -86,6 +86,10 @@ backlog-install:
 backlog-update: backlog-install
     uv run python scripts/backlog_instructions.py refresh CLAUDE.md AGENTS.md
 
+# Write docs/tools.md, the tool reference, from the tool surface (a test fails when it is stale).
+docs-tools:
+    uv run pytest tests/tools/test_tools_doc.py --write-docs --no-cov -q
+
 # Lint: ruff, then the suppression and patching rules ruff cannot express.
 lint: && hygiene
     uv run ruff check .
