@@ -172,12 +172,16 @@ are decision-28.
 
 Requires [uv](https://docs.astral.sh/uv/), [just](https://just.systems) and Go (pre-commit builds
 the pinned gitleaks that `just check` runs over the whole history). Task management uses the
-latest Backlog.md CLI (`just backlog-install`, needs npm); after an update, refresh the agent
-instructions with `backlog agents --update-instructions`.
+latest Backlog.md CLI. `just backlog-update` installs it and refreshes the managed block of
+CLAUDE.md and AGENTS.md non-interactively (the CLI's own menu is driven through a pseudo-terminal;
+only that block may change); review and commit the diff. A weekly workflow
+(`.github/workflows/backlog-drift.yml`, also runnable by hand) compares the latest release on npm
+with the `backlog.md-instructions-version` header of both files and keeps one `backlog-drift`
+issue open while they are behind (`just backlog-drift-check` runs the comparison locally).
 
 ```sh
 just install                  # create the environment
-just backlog-install          # the latest Backlog.md CLI
+just backlog-update           # the latest Backlog.md CLI and its agent instructions
 uv run pre-commit install     # run the gates on every commit
 just check                    # the full local gate, identical to CI
 just --list                   # all recipes

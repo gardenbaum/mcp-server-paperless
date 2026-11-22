@@ -246,7 +246,14 @@ def _open_numbers(runner: Runner, label: str) -> list[str]:
     return [str(issue["number"]) for issue in _ISSUES.validate_json(listing)]
 
 
-def open_issue(runner: Runner, *, title: str, label: str, body: str) -> str:
+def open_issue(
+    runner: Runner,
+    *,
+    title: str,
+    label: str,
+    body: str,
+    description: str = "Upstream Paperless drift",
+) -> str:
     """Open the one issue labelled ``label``, or refresh the already open one (no duplicates)."""
     open_ones = _open_numbers(runner, label)
     if open_ones:
@@ -256,9 +263,7 @@ def open_issue(runner: Runner, *, title: str, label: str, body: str) -> str:
         headline = body.splitlines()[0] if body else ""
         _ = runner(["gh", "issue", "comment", number, "--body", f"Drift still present. {headline}"])
         return f"updated issue #{number}"
-    _ = runner(
-        ["gh", "label", "create", label, "--force", "--description", "Upstream Paperless drift"]
-    )
+    _ = runner(["gh", "label", "create", label, "--force", "--description", description])
     _ = runner(["gh", "issue", "create", "--title", title, "--label", label, "--body", body])
     return "opened a new issue"
 
@@ -457,6 +462,7 @@ class _Args(argparse.Namespace):
     title: str = ""
     label: str = ""
     body_file: Path = Path()
+    description: str = "Upstream Paperless drift"
     stats: Path = Path()
     results: Path | None = None
     equivalents: Path | None = None
@@ -480,6 +486,7 @@ def _parser() -> argparse.ArgumentParser:
     _ = issue.add_argument("--title", required=True)
     _ = issue.add_argument("--label", required=True)
     _ = issue.add_argument("--body-file", type=Path, required=True)
+    _ = issue.add_argument("--description", default="Upstream Paperless drift", help="label text")
     close = commands.add_parser("close-issue", help="close the drift issue: drift is gone")
     _ = close.add_argument("--label", required=True)
     _ = close.add_argument("--comment", required=True)
@@ -558,7 +565,14 @@ def main(
                 return DRIFT_EXIT_CODE
             case "open-issue":
                 body = args.body_file.read_text(encoding="utf-8")
-                _say(out, open_issue(runner, title=args.title, label=args.label, body=body))
+                message = open_issue(
+                    runner,
+                    title=args.title,
+                    label=args.label,
+                    body=body,
+                    description=args.description,
+                )
+                _say(out, message)
             case _:  # mutation-score
                 return _mutation_score(args, out, err)
     except JobError as error:
