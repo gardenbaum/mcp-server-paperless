@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 from fakes.accounts import PUBLIC_NOTE
 
-from contract.conftest import since
+from contract.conftest import BOTH_RELEASES, since
 from paperless_mcp.domain.documents import DocumentQuery
 from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
 from paperless_mcp.paperless.documents import unseen_note
@@ -51,6 +51,8 @@ async def test_each_note_is_returned_by_its_own_call_and_ids_grow(backend: Backe
     assert [n.note for n in await ports.documents.list_document_notes(document)] == ["one", "two"]
 
 
+@BOTH_RELEASES
+@pytest.mark.decision("decision-29")
 @pytest.mark.contract(ADD)
 async def test_paperless_itself_accepts_empty_and_blank_notes_before_3_5(backend: Backend) -> None:
     # Pinned because the service must not rely on Paperless to reject them (3.4 does not); 3.5
