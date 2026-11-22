@@ -315,7 +315,7 @@ reason = "httpx2 upper-cases the method when it builds the request, so 'patch' i
 
 [[equivalent]]
 mutant = "paperless_mcp.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁdelete_taxonomy_item__mutmut_7"
-function_hash = "aaa315a74701"
+function_hash = "00e012f88109"
 reason = "httpx2 upper-cases the method when it builds the request, so 'delete' is sent as 'DELETE'."
 
 [[equivalent]]
