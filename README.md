@@ -97,7 +97,7 @@ tokens to clients. The rules are decision-31.
 | `PAPERLESS_MCP_OIDC_BASE_URL` | The public origin of this server, e.g. `https://mcp.example.org`, without path (required; https, plain http only on loopback). Its host must be in `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`. Register `<base URL>/auth/callback` as the redirect URI at the provider |
 | `PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY` | At least 32 characters (`openssl rand -hex 32`, required): signs the tokens the server issues and encrypts its OAuth state. Changing it signs every OIDC client out |
 | `PAPERLESS_MCP_OIDC_STORAGE_DIR` | Absolute path of a writable directory for client registrations and sessions, encrypted. Unset (default): kept in memory, so after a restart claude.ai has to connect again (bearer clients are not affected) |
-| `PAPERLESS_MCP_OIDC_ALLOWED_REDIRECT_URIS` | Callbacks OAuth clients may register, comma-separated or a JSON array: https URLs or loopback http, a `*` only for the port or in the path. Default `https://claude.ai/api/mcp/auth_callback,http://localhost:*,http://127.0.0.1:*` (claude.ai and clients on your machine) |
+| `PAPERLESS_MCP_OIDC_ALLOWED_REDIRECT_URIS` | Callbacks OAuth clients may register, comma-separated or a JSON array: https URLs or loopback http, a `*` only for the port or in the path. Default `https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback,http://localhost:*,http://127.0.0.1:*` (claude.ai under either domain, since Anthropic has announced its callback may move to claude.com, and clients on your machine) |
 
 If some but not all of the five required variables are set, the server refuses to start and
 names the missing ones (unset all `PAPERLESS_MCP_OIDC_*` variables to go back to bearer tokens
@@ -107,6 +107,15 @@ alone). With the layer on, the server adds the OAuth routes FastMCP needs and no
 still get 403, and the server needs TLS from your reverse proxy, which must pass the public
 `Host` through. Anyone the provider lets sign in to this application uses your Paperless token:
 restrict the application to yourself (or a group) at the provider.
+
+`/register` and `/authorize` answer without authentication and each call stores an entry. In
+memory at most 10 000 entries per kind are kept (the oldest are dropped, so a flood can make
+claude.ai register again); in `PAPERLESS_MCP_OIDC_STORAGE_DIR` nothing bounds them. Rate-limit
+`/register` and `/authorize` in your reverse proxy. FastMCP logs the provider's subject (your
+user id there) when it rejects a token, so the log can hold that identifier. The server re-checks
+the provider's ID token on every request; when it expires (often after an hour) it refreshes at
+the provider, and if the provider returns no new ID token on refresh, claude.ai has to sign in
+again.
 
 **Example with Authentik** (any OIDC provider works the same way):
 
@@ -140,7 +149,11 @@ restrict the application to yourself (or a group) at the provider.
 URL `https://mcp.example.org/mcp`. Leave the advanced OAuth client id and secret empty: claude.ai
 registers itself with the server. Connect, approve the server's consent page ("Allow Access"),
 then sign in at your provider; claude.ai returns to its callback
-(`https://claude.ai/api/mcp/auth_callback`, allowed by default) and lists the tools. Claude Code
+(`https://claude.ai/api/mcp/auth_callback` or `https://claude.com/api/mcp/auth_callback`; either
+may be used and both are allowed by default) and lists the tools. claude.ai registers and
+exchanges the code from its servers, not from your browser, so those requests carry no browser
+`Origin`; a 403 while connecting points to an origin problem (a proxy adding an `Origin`, or a
+base URL that differs from the address you open). Claude Code
 keeps working with `--header "Authorization: Bearer ..."` as above; it may also sign in through
 OIDC instead (its loopback callback is allowed by default).
 
@@ -229,7 +242,7 @@ Paperless is reachable: the tools report that. All other settings of the tables 
 unchanged as environment variables. To build the image yourself, `just image` builds it and
 `just image-smoke` also checks that it refuses to start without tokens, runs read-only as
 non-root, becomes healthy and answers 401 without a token, 421 for a foreign `Host` and an MCP initialize with a token. The rules
-are decision-28.
+are decision-28, carried over into decision-31.
 
 ## Configuration
 
