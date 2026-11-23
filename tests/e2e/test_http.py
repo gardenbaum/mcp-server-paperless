@@ -1,4 +1,4 @@
-"""Smoke test of `mcp-server-paperless-http` over Streamable HTTP against Paperless 3.4.2.
+"""Smoke test of the installed `mcp-server-paperless-http` script over HTTP against Paperless 3.4.2.
 
 The real process, a real socket and FastMCP's HTTP client with a bearer token: what a remote
 client does.
@@ -6,9 +6,9 @@ client does.
 
 import contextlib
 import os
+import shutil
 import socket
 import subprocess
-import sys
 import time
 from typing import TYPE_CHECKING
 
@@ -24,9 +24,15 @@ if TYPE_CHECKING:
 
     from e2e.helpers import Stack
 
-pytestmark = [pytest.mark.e2e, pytest.mark.anyio]
+pytestmark = [pytest.mark.e2e, pytest.mark.anyio, pytest.mark.decision("decision-37")]
 
 MCP_TOKEN = "test-token-not-a-secret"
+
+
+def console_script() -> str:
+    path = shutil.which("mcp-server-paperless-http")
+    assert path, "the mcp-server-paperless-http console script is not installed (uv sync)"
+    return path
 
 
 @pytest.fixture
@@ -41,8 +47,8 @@ def endpoint(stack: Stack) -> Generator[str]:
         "PAPERLESS_MCP_HTTP_PORT": str(port),
         "PAPERLESS_MCP_HTTP_AUTH_TOKENS": MCP_TOKEN,
     }
-    process = subprocess.Popen(
-        [sys.executable, "-c", "from mcp_server_paperless.cli import main_http; main_http()"],
+    process = subprocess.Popen(  # noqa: S603 -- our own console script, no shell
+        [console_script()],
         env=env,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,

@@ -1,9 +1,10 @@
 ---
-updated_date: '2026-11-22T23:21:21Z'
+superseded_by: decision-37
+updated_date: '2026-11-23T11:11:39Z'
 id: decision-33
 title: PyPI release version comes from the version tag
 date: '2026-11-22T23:20:08Z'
-status: accepted
+status: superseded
 ---
 ## Context
 

@@ -28,6 +28,13 @@ DOCS = ROOT / "docs"
 # The pages written for users; the reading guides for contributors are checked for links too.
 PAGES = (README, *sorted(DOCS.glob("*.md")))
 NAMES = [page.name for page in PAGES]
+# Every current doc and the Dockerfile; decisions and tasks keep the names of their time.
+NAMED = (
+    *sorted(ROOT.glob("*.md")),
+    *sorted(DOCS.glob("*.md")),
+    *sorted((ROOT / "backlog" / "docs").rglob("*.md")),
+    ROOT / "Dockerfile",
+)
 # The defaults of the server settings, without reading the environment.
 DEFAULT_TOOLSETS = ServerSettings.model_construct().toolsets
 
@@ -41,9 +48,10 @@ FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 # PyPI renders the README on its own page, where a relative link leads nowhere, so the README
 # links files of the repository by their URL on main; they are checked like relative links.
 BLOB = "https://github.com/gardenbaum/mcp-server-paperless/blob/main/"
-# The repository and image names before the rename to mcp-server-paperless (PLMCP-59).
+# The repository and image names before the rename to mcp-server-paperless (PLMCP-59), whatever
+# the host or scheme (web, SSH, API, raw, badge, image), also URL-encoded inside a badge's query.
 OLD_NAMES = re.compile(
-    r"github\.com/gardenbaum/paperless-mcp\b|ghcr\.io/gardenbaum/paperless-mcp(?!\w)"
+    r"gardenbaum(?:/|%2F)(?:packages/container/(?:package/)?)?paperless-mcp(?!\w)", re.IGNORECASE
 )
 
 
@@ -137,7 +145,57 @@ def test_the_readme_links_every_page_written_for_users() -> None:
     assert [name for name in pages if f"({BLOB}docs/{name}" not in text] == []
 
 
-@pytest.mark.parametrize("page", PAGES, ids=NAMES)
+@pytest.mark.parametrize(
+    "name",
+    [
+        "https://github.com/gardenbaum/paperless-mcp",
+        "https://github.com/gardenbaum/paperless-mcp/actions",
+        "ghcr.io/gardenbaum/paperless-mcp:0.2.0",
+        "https://img.shields.io/github/v/release/gardenbaum/paperless-mcp?logo=github",
+        "https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Frepos%2Fgardenbaum%2Fpaperless-mcp",
+        "https://raw.githubusercontent.com/gardenbaum/paperless-mcp/main/README.md",
+        "git@github.com:gardenbaum/paperless-mcp.git",
+        "ssh://git@github.com/gardenbaum/paperless-mcp.git",
+        "https://api.github.com/repos/gardenbaum/paperless-mcp/pulls",
+        "gh api -X PUT repos/gardenbaum/paperless-mcp/pulls/{n}/merge",
+        "https://github.com/users/gardenbaum/packages/container/package/paperless-mcp",
+        "https://api.github.com/users/gardenbaum/packages/container/paperless-mcp",
+        "gh pr list -R Gardenbaum/Paperless-MCP",
+    ],
+)
+def test_the_guard_finds_the_old_name_in_every_form(name: str) -> None:
+    assert OLD_NAMES.search(name)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "https://github.com/gardenbaum/mcp-server-paperless",
+        "git@github.com:gardenbaum/mcp-server-paperless.git",
+        "ghcr.io/gardenbaum/mcp-server-paperless:0.3.0",
+        "https://pypi.org/project/paperless-mcp/",  # an unrelated project the docs warn about
+        "https://github.com/baruchiro/paperless-mcp",
+        "`paperless-mcp` and `paperless-mcp-http`",  # the old command names still work
+        "backlog/docs/doc-1 - paperless-mcp-design.md",
+        "/var/lib/paperless-mcp",
+    ],
+)
+def test_the_guard_leaves_other_projects_and_the_old_command_names_alone(name: str) -> None:
+    assert not OLD_NAMES.search(name)
+
+
+def test_the_guard_covers_the_design_the_workflow_guide_and_the_dockerfile() -> None:
+    names = [path.name for path in NAMED]
+
+    assert {"README.md", "CLAUDE.md", "AGENTS.md", "http.md", "Dockerfile"} <= set(names)
+    assert [name for name in names if name.startswith(("doc-1 ", "doc-2 "))] == [
+        "doc-1 - paperless-mcp-design.md",
+        "doc-2 - AI-contributor-workflow.md",
+    ]
+
+
+@pytest.mark.decision("decision-37")
+@pytest.mark.parametrize("page", NAMED, ids=[page.name for page in NAMED])
 def test_no_page_uses_the_old_repository_name(page: Path) -> None:
     lines = page.read_text(encoding="utf-8").splitlines()
     stale = [line for line in lines if OLD_NAMES.search(line)]

@@ -79,6 +79,7 @@ def position(job_name: str, needle: str) -> int:
     return next(i for i, step in enumerate(steps(job_name)) if needle in label(step))
 
 
+@pytest.mark.decision("decision-37")
 def test_the_distribution_has_a_console_script_of_its_own_name_beside_the_old_ones() -> None:
     meta = project()
     scripts = mapping(meta["scripts"])
@@ -124,6 +125,13 @@ def test_the_docs_start_the_released_server_and_warn_about_the_other_project(pag
     assert "mcp-server-paperless@latest" in text
     assert "git+https://" not in text
     assert "https://pypi.org/project/paperless-mcp/" in text, "warn about the unrelated project"
+
+
+@pytest.mark.decision("decision-37")
+def test_the_http_page_says_the_old_command_names_must_not_be_run_through_uvx() -> None:
+    text = " ".join((ROOT / "docs" / "http.md").read_text(encoding="utf-8").split())
+
+    assert "Do not run `uvx paperless-mcp`" in text
 
 
 def test_every_action_in_the_pypi_workflow_is_pinned_to_a_commit() -> None:
