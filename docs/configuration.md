@@ -319,6 +319,10 @@ and not to the assistant:
 | Renderer | 30 seconds and 1 GiB, one document at a time |
 | Waiting | a call waits up to 30 seconds for the one before it, which can take 150 seconds (download and rendering), and is then told to try again |
 
+Two kinds of image near 100 megapixels can end at the memory limit instead, with a message that says
+so: on macOS a lossless WebP with a large file, and on Windows any WebP of roughly 60 megapixels or
+more (estimated).
+
 A page that does not fit alone is shown at a lower quality or smaller, and the report says so. Every
 call downloads the file again. Text whose font is not embedded can look different where the system
 has no such font, as in the container image. What the renderer may and may not do is in
