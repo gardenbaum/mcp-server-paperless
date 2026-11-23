@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:57:04Z'
-updated_date: '2026-11-23T12:39:44Z'
+updated_date: '2026-11-23T15:33:40Z'
 labels: []
 dependencies: []
 priority: medium
@@ -32,7 +32,7 @@ The plugin installs the server only. Skills for the four built-in prompts (triag
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
