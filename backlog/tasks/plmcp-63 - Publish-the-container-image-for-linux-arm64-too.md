@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T09:00:10Z'
-updated_date: '2026-11-23T09:32:43Z'
+updated_date: '2026-11-23T09:37:14Z'
 labels: []
 dependencies: []
 type: feature
@@ -39,3 +39,9 @@ The 0.3.0 image has no linux/arm64 manifest, so it does not start natively on a 
 <!-- SECTION:PLAN:BEGIN -->
 1. Guards first (tests/quality/test_container.py). 2. image.yml: one native runner per platform for build and publish; a tag job merges the scanned digests. 3. Decision-36 and docs. 4. just check, opus review, Codex, CI builds both platforms.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+decision-36 supersedes decision-31 (carry-over). Guard changes deliberate: tagging moved to the tag job. arm64 image built and smoke-tested locally on Apple Silicon.
+<!-- SECTION:NOTES:END -->
