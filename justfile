@@ -90,6 +90,10 @@ backlog-update: backlog-install
 docs-tools:
     uv run pytest tests/tools/test_tools_doc.py --write-docs --no-cov -q
 
+# Write docs/api-coverage.md, the endpoint-by-endpoint coverage of the Paperless API (a test fails when it is stale).
+docs-coverage:
+    uv run pytest tests/quality/test_api_coverage.py --write-docs --no-cov -q
+
 # Record the demo of the README (docs/demo/demo.gif): the released server against a throwaway
 # Paperless with invented documents, in containers only. Own compose project and port (8013), so a
 # stack from `e2e-up` is untouched: `-p` beats COMPOSE_PROJECT_NAME, which must not choose what

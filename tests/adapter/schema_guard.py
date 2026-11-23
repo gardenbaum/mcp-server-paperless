@@ -9,6 +9,7 @@ declare are rejected, so a misspelt filter cannot pass silently.
 Deliberate deviations from the schema are listed below, each with its reason.
 """
 
+import contextlib
 import json
 import re
 from collections.abc import Callable, Collection, Mapping
@@ -21,6 +22,7 @@ from typing import TYPE_CHECKING, cast
 from urllib.parse import parse_qs
 
 import httpx2
+from observation import RESPONSES, Operation, record
 from openapi_core import Config, OpenAPI
 from openapi_core.datatypes import RequestParameters
 from openapi_core.templating.paths.exceptions import PathError
@@ -635,6 +637,35 @@ def check_response(request: httpx2.Request, response: httpx2.Response) -> None:
         raise _fail(request, f"{response.status_code} response does not match the schema", errors)
 
 
+def operation_of(request: httpx2.Request) -> Operation | None:
+    """The operation of the schema a request is for, or None for a path the schema lacks."""
+    try:
+        return (request.method, _template(request))
+    except PathError:  # a raw read of a made-up path
+        return None
+
+
+def _note(request: httpx2.Request) -> None:
+    """Record the request for the coverage table."""
+    if (operation := operation_of(request)) is not None:
+        record(request, operation)
+
+
+def _keep(request: httpx2.Request, response: httpx2.Response) -> None:
+    """Keep the fullest good answer per operation, for the replay of the tools' calls."""
+    operation = operation_of(request)
+    if operation is None or response.status_code >= HTTPStatus.MULTIPLE_CHOICES:
+        return
+    with contextlib.suppress(httpx2.ResponseNotRead):  # a streamed answer is no model
+        kept = RESPONSES.get(operation)
+        if kept is None or len(response.content) > len(
+            kept[2]
+        ):  # the fullest one is the best model
+            skip = {"content-length", "content-encoding", "transfer-encoding"}
+            headers = {k: v for k, v in response.headers.items() if k.lower() not in skip}
+            RESPONSES[operation] = (response.status_code, headers, response.content)
+
+
 class SchemaGuardedTransport(httpx2.MockTransport):
     """A MockTransport that passes only schema-conforming requests and responses.
 
@@ -648,6 +679,27 @@ class SchemaGuardedTransport(httpx2.MockTransport):
 
     def _guarded(self, request: httpx2.Request) -> httpx2.Response:
         check_request(request)
+        _note(request)
         response = self._handler(request)
         check_response(request, response)
+        _keep(request, response)
+        return response
+
+
+class RecordingTransport(httpx2.MockTransport):
+    """A MockTransport for streamed requests: it records them for the coverage, checks nothing.
+
+    The guard reads whole bodies, so a streamed download or upload cannot pass through it; its
+    path and fields are still matched with the schema's operations when recorded.
+    """
+
+    def __init__(self, handler: Handler) -> None:
+        """Wrap `handler` in the recording."""
+        super().__init__(self._recorded)
+        self._handler: Handler = handler
+
+    def _recorded(self, request: httpx2.Request) -> httpx2.Response:
+        _note(request)
+        response = self._handler(request)
+        _keep(request, response)
         return response

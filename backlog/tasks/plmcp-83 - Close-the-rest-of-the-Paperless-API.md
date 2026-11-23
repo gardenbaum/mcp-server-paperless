@@ -4,7 +4,7 @@ title: Close the rest of the Paperless API
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:53Z'
-updated_date: '2026-11-23T12:25:16Z'
+updated_date: '2026-11-23T17:23:23Z'
 labels: []
 dependencies:
   - PLMCP-91
@@ -48,3 +48,9 @@ The guard (PLMCP-91) shows endpoint by endpoint what is covered. After the other
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+From PLMCP-91 (coverage table): POST /api/ui_settings/ is listed open under PLMCP-88 for the saved-view part; the part of /api/ui_settings/ beyond saved views (the other settings of the user) belongs to this task.
+<!-- SECTION:NOTES:END -->
