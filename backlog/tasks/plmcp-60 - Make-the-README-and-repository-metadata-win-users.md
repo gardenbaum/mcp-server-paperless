@@ -1,12 +1,14 @@
 ---
 id: PLMCP-60
 title: Make the README and repository metadata win users
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T00:52:45Z'
+updated_date: '2026-11-23T01:23:26Z'
 labels: []
 dependencies:
-  - PLMCP-59
+  - PLMCP-58
 type: chore
 ordinal: 57000
 ---
@@ -33,3 +35,14 @@ The owner wants the project presented so that as many paperless-ngx users as pos
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Research the other paperless-ngx MCP servers from their sources (tool counts, toolsets, confirmation, saved views, auth, tests) for a factual comparison.
+2. README hero: value proposition, PyPI/downloads/CI/versions/licence/stars badges, VS Code and Cursor install links, the Claude Code command up front, mcp-name marker for the MCP Registry.
+3. Comparison table; VS Code and Cursor quick-start sections.
+4. pyproject description, keywords, classifiers, Changelog URL; a PyPI test guards keywords and the Python classifier.
+5. GitHub description, homepage and topics via gh repo edit.
+6. Merge after PLMCP-58: the table claims the full-text notice.
+<!-- SECTION:PLAN:END -->
