@@ -77,14 +77,17 @@ Only you can: the assistant cannot change the selection, neither for the server 
 (decision-41), and is told to ask you. It is told which toolsets are off and what each adds, so
 that it can say what to set instead of calling a feature missing. The instructions give the
 setting first, as `PAPERLESS_MCP_TOOLSETS=core,ai,<name>` (what is on now plus the toolset needed,
-not `all`, which offers every tool), then the list of toolsets that are off. Nothing is listed
+never `all`, which offers every tool), then the list of toolsets that are off. Nothing is listed
 that read-only mode, disabled tools or a Paperless without the capability (Paperless AI for `ai`)
 leaves out, and a toolset that read-only mode or disabled tools cut down is said to offer "some of
 its tools" (the overview names them). When Paperless did not say whether AI is on (the user may
 not view the UI settings, or it did not answer at startup), `ai` is marked "needs Paperless AI,
 not checked", whether it is on or off. The overview is built on each call from what Paperless
-says then, so it never promises more than a restart delivers; what is on stays as the start
-found it. The selection is read at startup, so the server must restart:
+says then: a toolset that Paperless now says it lacks is not offered, and one it cannot say
+about is marked "not checked", on or off, by the current answer; what is on stays as the start
+found it. A toolset that is selected but was hidden at the start (Paperless AI was off) and is
+available now is listed as "selected, offered after a restart", so it is in neither list of
+toolsets to switch on. The selection is read at startup, so the server must restart:
 
 | How you run it | Where to set `PAPERLESS_MCP_TOOLSETS` | What to restart |
 |---|---|---|

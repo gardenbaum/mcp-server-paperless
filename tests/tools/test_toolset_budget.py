@@ -11,7 +11,7 @@ from the real catalogue and searched, not sampled:
   tool cuts it down; Paperless AI is unknown (its gap is named); the overview tool is on or off.
   The instructions name no tool, so the count of tools does not matter.
 - Guide of the overview: its text lists the tools of every toolset that is off, so the worst case
-  is ``core`` alone with nothing cut down and Paperless AI unknown (the overview needs ``core``).
+  is ``core`` alone with nothing cut down, Paperless AI unknown or on (the overview needs ``core``).
 - Definition: the output schema of the overview tool in tools/list.
 
 The default tool budget counts tools only.
@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from fakes.paperless import FakePaperless, FakeUser, seeded
 from fastmcp import Client
-from harness import serve
+from harness import admin, serve
 
 from mcp_server_paperless.server import CATALOGUE
 from mcp_server_paperless.tools._shared import TOOL_TOOLSETS
@@ -42,9 +42,9 @@ BASE_OVERVIEW_DEFINITION = 4442
 # The limits, in bytes: the instructions as a whole (so the guide adds at most the difference to
 # BASE_INSTRUCTIONS), the guide in a call of the overview, and the growth of the overview's
 # definition in tools/list (its output schema).
-INSTRUCTIONS_LIMIT = 1450  # measured 1431 at most (core alone, a cut-down toolset each)
-OVERVIEW_GUIDE_LIMIT = 2750  # measured 2712 at most (core alone, nothing cut down)
-DEFINITION_ADDED_LIMIT = 660  # measured 650
+INSTRUCTIONS_LIMIT = 1450  # measured 1447 at most (core alone, AI unknown, cut down)
+OVERVIEW_GUIDE_LIMIT = 2750  # measured 2744 at most (core alone, AI unknown, nothing cut)
+DEFINITION_ADDED_LIMIT = 730  # measured 719
 # The limit of every instructions text (test_registry.py TEXT_LIMIT): Claude Code cuts at 4,096.
 TEXT_LIMIT = 2048
 # Anything near a limit is a reason to look; a limit this far above the worst case is not tight.
@@ -74,9 +74,12 @@ def cut_down() -> list[str]:
     ]
 
 
-async def measure(toolsets: Sequence[str], disabled: Sequence[str]) -> tuple[int, int | None]:
+async def measure(
+    toolsets: Sequence[str], disabled: Sequence[str], reader: FakePaperless | None = None
+) -> tuple[int, int | None]:
     """Bytes of the instructions, and of the overview's guide if the overview tool is offered."""
-    async with Client(serve(unknown_ai(), toolsets=toolsets, disabled_tools=disabled)) as client:
+    server = serve(reader or unknown_ai(), toolsets=toolsets, disabled_tools=disabled)
+    async with Client(server) as client:
         guide = None
         if OVERVIEW in {tool.name for tool in await client.list_tools()}:
             result = await client.call_tool(OVERVIEW)
@@ -87,9 +90,12 @@ async def measure(toolsets: Sequence[str], disabled: Sequence[str]) -> tuple[int
 async def worst() -> tuple[int, int]:
     """The longest instructions over every single-toolset selection, and the longest guide."""
     instructions = guide = 0
-    for name, cut, overview in itertools.product(TOOLSETS, (False, True), (True, False)):
+    readers = (unknown_ai, lambda: admin(ai_enabled=True))
+    for name, cut, overview, reader in itertools.product(
+        TOOLSETS, (False, True), (True, False), readers
+    ):
         disabled = [*(cut_down() if cut else []), *([] if overview else [OVERVIEW])]
-        text, listed = await measure([name], disabled)
+        text, listed = await measure([name], disabled, reader())
         instructions = max(instructions, text)
         guide = max(guide, listed or 0)
     return instructions, guide

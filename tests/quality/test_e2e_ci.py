@@ -407,7 +407,8 @@ def test_the_weights_name_the_live_modules_of_the_suite_and_split_it_evenly() ->
 # Actions timestamp of each module's progress line; the first module of a shard has the 30 s of the
 # stack's seeding taken off. Runs before dc88a62 are left out (the live suite changed there). This
 # is the measured reality the weights in scripts/e2e_ci.py must split evenly; refresh it together
-# with the weights.
+# with the weights. Exception (PLMCP-82): test_toolset_guide 62, test_http 15 and
+# test_instance_reader 16 are one pull-request-tier run, 45223357290, not a median.
 HOSTED_SECONDS = {
     "tests/contract/test_bulk.py": 284,
     "tests/contract/test_document_writer.py": 174,
@@ -436,19 +437,19 @@ HOSTED_SECONDS = {
     "tests/e2e/test_mail.py": 15,
     "tests/e2e/test_files.py": 14,
     "tests/e2e/test_stdio.py": 14,
-    "tests/e2e/test_toolset_guide.py": 45,
+    "tests/e2e/test_toolset_guide.py": 62,
     "tests/e2e/test_tasks.py": 12,
     "tests/contract/test_ai_reader.py": 10,
     "tests/e2e/test_sharing.py": 10,
     "tests/contract/test_workflows.py": 8,
     "tests/e2e/test_documents.py": 8,
     "tests/contract/test_views.py": 7,
-    "tests/e2e/test_http.py": 20,
+    "tests/e2e/test_http.py": 15,
     "tests/e2e/test_search.py": 6,
     "tests/e2e/test_views.py": 6,
     "tests/contract/test_mail.py": 5,
     "tests/e2e/test_workflows.py": 5,
-    "tests/contract/test_instance_reader.py": 20,
+    "tests/contract/test_instance_reader.py": 16,
     "tests/contract/test_view_filters.py": 3,
     "tests/e2e/test_ai.py": 2,
     "tests/e2e/test_stack.py": 2,

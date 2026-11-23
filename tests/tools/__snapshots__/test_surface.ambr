@@ -8489,6 +8489,12 @@
                 }),
                 'type': 'array',
               }),
+              'pending': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
               'switch_on': dict({
                 'anyOf': list([
                   dict({
@@ -8508,6 +8514,7 @@
             }),
             'required': list([
               'on',
+              'pending',
               'off',
               'switch_on',
               'unchecked',
@@ -22615,6 +22622,12 @@
                 }),
                 'type': 'array',
               }),
+              'pending': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
               'switch_on': dict({
                 'anyOf': list([
                   dict({
@@ -22634,6 +22647,7 @@
             }),
             'required': list([
               'on',
+              'pending',
               'off',
               'switch_on',
               'unchecked',
@@ -27314,6 +27328,12 @@
                 }),
                 'type': 'array',
               }),
+              'pending': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
               'switch_on': dict({
                 'anyOf': list([
                   dict({
@@ -27333,6 +27353,7 @@
             }),
             'required': list([
               'on',
+              'pending',
               'off',
               'switch_on',
               'unchecked',

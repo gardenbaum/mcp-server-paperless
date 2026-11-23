@@ -242,20 +242,27 @@ def test_the_enable_text_says_who_acts_and_does_not_make_all_look_like_the_defau
 
     assert "The operator, not you, switches one on: ask the user" in text
     assert "do not edit the configuration yourself" in text
-    assert "not all" in text
+    assert "never `all`, which offers every tool" in text
     assert "or all" not in text
+    # After "do not edit the configuration yourself" no instruction follows: the operator acts.
+    assert "yourself. The operator sets PAPERLESS_MCP_TOOLSETS=core,<name>" in text
+    assert "Set PAPERLESS" not in text
 
 
 def test_the_enable_text_names_the_restart_of_every_way_to_run_the_server() -> None:
     text = ENABLE.format(value="core,<name>")
 
     for channel in (
-        "Claude Code plugin: option Toolsets, restart Claude Code",
-        "Cursor plugin: no such option",
-        "stdio: env of the server entry in the MCP client's config",
-        "docker run -i: -e",
-        "HTTP and image: environment of the process or container",
-        "recreate the container",
+        "Claude Code plugin: option Toolsets, restart Claude Code.",
+        "Cursor plugin: no such option, add the server by hand.",
+        (
+            "stdio: env of the server entry in the MCP client's config (docker run -i: -e), "
+            "restart the client."
+        ),
+        (
+            "HTTP and image: environment of the process or container, "
+            "restart the process or recreate the container."
+        ),
     ):
         assert channel in text
 
@@ -325,3 +332,21 @@ def test_a_toolset_without_a_summary_is_described_by_its_name() -> None:
         ("trash", "trash"),
         ("ai", "ai"),
     ]
+
+
+def test_a_selected_toolset_hidden_at_the_start_and_available_now_is_said_to_need_a_restart() -> (
+    None
+):
+    result = guide(selected={"core", "ai"}, unavailable={"ai"}, missing_now=set())
+
+    assert (result.on, result.pending) == (("core",), ("ai",))
+    assert "ai" not in [t.toolset for t in result.off]
+    assert guide_text(result, overview=True).startswith(
+        "Toolsets on: core. Selected, offered after a restart: ai."
+    )
+
+
+def test_a_selected_toolset_still_missing_or_without_tools_is_not_pending() -> None:
+    assert guide(selected={"core", "ai"}, unavailable={"ai"}).pending == ()
+    assert guide(selected={"core", "ai"}, unavailable={"ai"}, missing_now={"ai"}).pending == ()
+    assert guide(selected={"core", "ai"}, hidden={"ask_ai"}, unavailable={"ai"}).pending == ()

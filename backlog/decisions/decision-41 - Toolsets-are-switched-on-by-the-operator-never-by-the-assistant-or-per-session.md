@@ -25,7 +25,11 @@ Evidence from the vendored FastMCP 4 docs:
 Toolsets are switched on by the operator only. The controller accepted this on 2026-11-23 under the owner's delegation of the choice; the owner did not approve the wording.
 
 - `PAPERLESS_MCP_TOOLSETS`, `PAPERLESS_MCP_READ_ONLY` and `PAPERLESS_MCP_DISABLED_TOOLS` are read at startup and stay the ceiling. No tool and no session rule widens the selection: the server never calls `enable_components`, `disable_components` or `reset_visibility` for a client, and offers no tool that changes the selection.
-- The server tells the assistant, and tells it to ask the user and not to edit the configuration itself, what is off, what each toolset adds (the overview names exactly the tools that remain after read-only mode and disabled tools; the instructions name no tool and say "some of its tools" where one is cut down) and the setting and restart for each way of running it, so that the assistant can ask the user to change it. It does not advertise a toolset that read-only mode, disabled tools or a missing Paperless capability exclude, and shows a capability it could not check as a gap.
+- The server tells the assistant, in the instructions and in `get_instance_overview`:
+  - to ask the user, and not to edit the configuration itself;
+  - which toolsets are on and which are off, and what each toolset that is off adds: the overview names exactly the tools that remain after read-only mode and disabled tools, the instructions name no tool and say "some of its tools" where one is cut down;
+  - the setting and the restart for each way of running the server, so that the assistant can ask the user to change it.
+- It does not advertise a toolset that read-only mode, disabled tools or a missing Paperless capability exclude. It shows a capability it could not check as a gap, and says that a selected toolset that was hidden at the start and is available now is offered after a restart.
 - If per-session switching is wanted later, it needs a new decision that supersedes this one and at least: off by default; a separate operator allowlist of the toolsets a session may add (never `admin`, `raw`, `permissions`, `mail`, `sharing` by default); read-only mode and disabled tools always win; a tool annotated as changing the surface so clients ask the user; behaviour defined for the sessionless era (user-scoped rules that outlive the conversation) and for unauthenticated HTTP (refuse); and a place in the tool budget.
 <!-- SECTION:DECISION:END -->
 
@@ -35,7 +39,7 @@ Toolsets are switched on by the operator only. The controller accepted this on 2
 - The user has to change a setting and restart for each new toolset. That is the cost of keeping the operator in control; the guide makes it one sentence for the assistant to say.
 - The guide text is per channel (Claude Code plugin option Toolsets, Cursor plugin none, stdio client config, HTTP process environment, image environment and recreate) and is kept in line with the plugin manifests and the Dockerfile by tests.
 - The default profile keeps 19 tools; the guide adds text to the instructions and the overview, bounded by a byte limit a test enforces.
-- When per-principal credentials arrive (PLMCP-34 to 37), the capability that decides whether `ai` is listed can differ per request; the guide is built once per start from the startup probe and the text says "not checked" where that probe could not tell. A later task can build it per request.
+- The instructions are built at the start from the startup probe. The guide in the overview is built on each call from the AI flag that call fetched: what is off follows what a restart would deliver, what is on stays as the start found it, and the "not checked" gap follows the current answer. With per-principal credentials (PLMCP-34 to 37) the instructions, which are fixed at the start, can still name a capability that differs per user; the overview already follows the caller.
 <!-- SECTION:CONSEQUENCES:END -->
 
 ## Alternatives

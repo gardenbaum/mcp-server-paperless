@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T09:24:00Z'
-updated_date: '2026-11-22T16:49:21Z'
+updated_date: '2026-11-23T17:18:42Z'
 labels: []
 dependencies: []
 priority: low
@@ -64,6 +64,8 @@ Branch run 45044592721 (e2e-full on the branch with the 3-run mean weights, all 
 Variance limits AC 1: the same module sets in the three earlier runs (unchanged shard layout) took shard 1 733/834/827 s, shard 2 398/538/476 s, shard 3 637/629/410 s of tests, a spread of up to 1.55x for identical work, so the runner or the queue state decides more than the split. Swapping modules between shards 1 and 3 on run 45044592721 alone would balance that run but fits one sample (it would move about 70 s of Celery-bound work, whose time swings by more than that between runs), so I did not. Weights now = median of the four runs (runs 45032837175, 45033555760, 45037907901 on main, 45044592721 on the branch; the median ignores one fast or slow runner better than the mean): predicted 561/560/560 s, total 1681 s. Evaluated against each of the four runs' measured per-module seconds the new split gives max/min 1.20, 1.07, 1.14 and 1.29 (the mean gave 1.18, 1.14, 1.09, 1.35; the table is no better or worse in sample). So the split is balanced in the median, but one main run lands within 15 percent only about half of the time; reliable 15 percent is not reachable by re-weighting alone. The test keeps the 15 percent on the measured median seconds (it already passed with the old table, the verdict did not change); AC 1 stays open.
 
 Controller: the shard balance of a single run varies up to 1.55x for identical module sets (Celery-bound modules depend on what ran before), so AC #1 cannot be met reliably by one run. Decision: merge the median weights (clear improvement: the branch run gave 588/497/444 s against 733/398/637 s before) and keep PLMCP-44 In Progress; AC #1 is judged on the median shard ratio of the next three e2e-full runs on main after the merge, stated here openly rather than by rewording the criterion. If the median ratio is above 1.15, the follow-up is cutting the variance (not re-weighting).
+
+After the merge of PLMCP-82 (2026-11-23): refresh the weights of tests/e2e/test_toolset_guide.py (62 s), tests/e2e/test_http.py (15 s) and tests/contract/test_instance_reader.py (16 s) from the median of several e2e-full runs. They are now ONE pull-request-tier run, 45223357290, in scripts/e2e_ci.py MODULE_SECONDS and in HOSTED_SECONDS of tests/quality/test_e2e_ci.py (both say so); the shards of the first post-merge e2e-full run took 548 s and 492 s with shard 3 empty on the first version of the module.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

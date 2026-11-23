@@ -126,7 +126,7 @@ def test_every_toolset_has_a_summary_and_only_toolsets_do() -> None:
 
 # A word each summary must carry, so that a summary under the wrong toolset is noticed.
 KEYWORDS = {
-    "core": "documents",
+    "core": "taxonomy",
     "ai": "AI",
     "bulk": "many",
     "versions": "versions",
@@ -135,17 +135,19 @@ KEYWORDS = {
     "pdf": "PDF",
     "sharing": "share",
     "permissions": "permissions",
-    "mail": "mail",
+    "mail": "accounts",
     "raw": "endpoints",
     "workflows": "workflows",
-    "admin": "users",
+    "admin": "logs",
 }
 
 
-def test_every_summary_says_what_its_own_toolset_is_for() -> None:
+def test_every_summary_says_what_its_own_toolset_is_for_and_no_other() -> None:
     assert set(KEYWORDS) == TOOLSETS
     for toolset, word in KEYWORDS.items():
         assert word in CATALOGUE.summaries[toolset], toolset
+        others = [t for t, summary in CATALOGUE.summaries.items() if word in summary]
+        assert others == [toolset], (word, others)
 
 
 def offered(seen: Seen) -> list[str]:
@@ -195,6 +197,7 @@ async def test_what_is_on_stays_as_the_start_found_it() -> None:
         seen = await look(client)
 
     assert (seen.guide or {})["on"] == ["core"]  # ai is selected but was hidden at the start
+    assert (seen.guide or {})["pending"] == ["ai"]  # and a restart would offer it
     assert "ai" not in offered(seen)
 
 
@@ -221,3 +224,17 @@ async def test_a_paperless_that_does_not_answer_is_a_gap_with_the_real_adapter(
     assert current is not None
     assert wide is not None
     verify(current, wide, capability="silent", selected=resolved(SELECTIONS[selection]))
+
+
+async def test_the_gap_of_a_toolset_that_is_on_follows_the_current_answer() -> None:
+    paperless = Says(ai_enabled=True)
+
+    async with Client(serve(paperless)) as client:
+        first = await look(client)
+        paperless.ai_enabled = None
+        second = await look(client)
+
+    assert (first.guide or {})["unchecked"] == {}
+    assert (second.guide or {})["unchecked"] == {"ai": "Paperless AI"}
+    assert (second.guide or {})["on"] == ["core", "ai"]
+    assert first.tools == second.tools

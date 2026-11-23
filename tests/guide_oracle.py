@@ -132,6 +132,7 @@ def verify(  # noqa: C901 -- one check per statement of the guide
     assert (gap in listed) is (unchecked and "ai" in off)
     if current.guide is not None:
         assert current.guide["on"] == on
+        assert current.guide["pending"] == []  # the start and the answer now are the same here
         offered = cast("list[dict[str, object]]", current.guide["off"])
         assert [entry["toolset"] for entry in offered] == off
         for entry in offered:

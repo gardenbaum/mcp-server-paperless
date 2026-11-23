@@ -21,13 +21,13 @@ if TYPE_CHECKING:
 # What the operator is told to change, for every way of running the server (PLMCP-82). The new
 # toolset is a placeholder, so that the text is no example to follow, and `all` is not offered.
 ENABLE = (
-    "The operator, not you, switches one on: ask the user, and do not edit the configuration "
-    "yourself. Set PAPERLESS_MCP_TOOLSETS={value} (the current ones plus the one needed; not all, "
-    "which offers every tool) in the server's environment, then restart. Claude Code plugin: "
-    "option Toolsets, restart Claude Code. Cursor plugin: no such option, add the server by hand. "
-    "stdio: env of the server entry in the MCP client's config (docker run -i: -e), restart the "
-    "client. HTTP and image: environment of the process or container, restart the process or "
-    "recreate the container."
+    "The operator, not you, switches one on: ask the user; do not edit the configuration "
+    "yourself. The operator sets PAPERLESS_MCP_TOOLSETS={value} (the current ones plus the one "
+    "needed, never `all`, which offers every tool) in the server's environment and "
+    "restarts it. Claude Code plugin: option Toolsets, restart Claude Code. Cursor plugin: no "
+    "such option, add the server by hand. stdio: env of the server entry in the MCP client's "
+    "config (docker run -i: -e), restart the client. HTTP and image: environment of the process "
+    "or container, restart the process or recreate the container."
 )
 # What a toolset is said to be when read-only mode or disabled tools cut it down: its summary
 # would promise tools that are not there, and the instructions name no tool (the overview does).
@@ -110,12 +110,12 @@ def toolset_guide(  # noqa: PLR0913 -- the tables and the states a toolset can b
 ) -> ToolsetGuide:
     """The toolsets on and the ones the operator could switch on, as far as that adds a tool.
 
-    A toolset that read-only mode, disabled tools or a missing capability leave without a tool
-    is in neither list. One that is cut down is described as such (``PARTIAL``), never by what it
-    is for. A toolset whose capability could not be checked, on or off, is listed in
-    ``unchecked``. ``unavailable`` is what the start found missing and decides what is on;
-    ``missing_now`` (default: the same) is what Paperless says now and decides what a restart
-    would deliver, so what is off.
+    A toolset that read-only mode, disabled tools or a missing capability leave without a tool is
+    in neither list (a selected one that a restart would offer is ``pending``). One that is cut
+    down is described as such (``PARTIAL``), never by what it is for. A toolset whose capability
+    could not be checked, on or off, is listed in ``unchecked``. ``unavailable`` is what the start
+    found missing and decides what is on; ``missing_now`` (default: the same) is what Paperless
+    says now and decides what a restart would deliver, so what is off.
     """
     now = unavailable if missing_now is None else missing_now
     order = list(dict.fromkeys(tool_toolsets.values()))
@@ -135,6 +135,9 @@ def toolset_guide(  # noqa: PLR0913 -- the tables and the states a toolset can b
     shown = {*on, *(t.toolset for t in off)}
     return ToolsetGuide(
         on=on,
+        pending=tuple(
+            name for name in chosen if left[name] and name in unavailable and name not in now
+        ),
         off=off,
         switch_on=ENABLE.format(value=",".join((*chosen, "<name>"))) if off else None,
         unchecked={
@@ -151,7 +154,7 @@ def guide_text(guide: ToolsetGuide, *, overview: bool) -> str:
     The setting comes before the list of toolsets, so that a cut text loses the list. No tool is
     named, so nothing that is excluded can be: the overview lists the tools.
     """
-    if not guide.off and not guide.unchecked:
+    if not guide.off and not guide.unchecked and not guide.pending:
         return ""
 
     def gap(name: str) -> str:
@@ -159,6 +162,8 @@ def guide_text(guide: ToolsetGuide, *, overview: bool) -> str:
 
     on = ", ".join(f"{name} ({gap(name)})" if gap(name) else name for name in guide.on)
     parts = [f"Toolsets on: {on}."]
+    if guide.pending:
+        parts.append(f"Selected, offered after a restart: {', '.join(guide.pending)}.")
     if guide.switch_on:
         parts.append(guide.switch_on)
         parts.append(

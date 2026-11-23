@@ -65,7 +65,6 @@ async def test_every_combination_where_paperless_ai_is_off(stack: Stack) -> None
     await run_every_combination(overviews, ai=False)
 
 
-@pytest.mark.ai_e2e
 async def test_every_combination_where_paperless_ai_is_on(stack: Stack) -> None:
     config = cast("list[dict[str, object]]", stack.admin.get("/api/config/").json())[0]
     path = f"/api/config/{config['id']}/"
