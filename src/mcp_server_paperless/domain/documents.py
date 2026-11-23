@@ -317,7 +317,7 @@ class DocumentSearchResult(BaseModel):
         tuple[str, ...],
         Field(
             description=(
-                "Query syntax the search index does not support, with the working alternative; "
+                "Query syntax the search index reads as plain text, with the working alternative; "
                 "empty for a clean query. Paperless itself reports no error for these."
             )
         ),

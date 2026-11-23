@@ -19,6 +19,7 @@ from mcp_server_paperless.domain.documents import (
     SuggestionNames,
 )
 from mcp_server_paperless.domain.errors import FeatureUnavailable, PermissionDenied, Validation
+from mcp_server_paperless.services.search_syntax import query_notices
 
 if TYPE_CHECKING:
     from collections.abc import Collection
@@ -67,41 +68,6 @@ def _check_range(name: str, start: date | None, end: date | None) -> None:
     if start and end and start > end:
         message = f"{name}_from is after {name}_to."
         raise Validation(message, hint=f"Swap them, or leave one out for an open {name} range.")
-
-
-_OPAQUE = re.compile(
-    r'(?P<phrase>"[^"]*")|\[[^\]]*\]'
-)  # phrases and ranges ([-2 weeks to -1 week])
-_PRESENCE = re.compile(r"[\w.]+:\*(?![^\s)])")
-_LOWERCASE = re.compile(r"(?<![^\s(])(and|or|not)(?![^\s)])")
-_MINUS = re.compile(r"(?<!\S)-(\S+)")
-_NO_PRESENCE = "does not work in the search index and matches nothing."
-_USE_HAS = "To find documents without a value use has_correspondent, has_document_type,"
-_USE_HAS_MORE = "has_storage_path or has_tags."
-
-
-def query_notices(query: str) -> tuple[str, ...]:
-    """Say what a full-text query uses that the search index silently misreads (PLMCP-58).
-
-    Paperless answers these constructs with 0 hits or with the opposite of what they say, and
-    never with an error. Quoted phrases are left alone.
-    """
-    # Same length as the query, so a match position is also one in the query.
-    plain = _OPAQUE.sub(lambda m: ("x" if m["phrase"] else " ") * len(m[0]), query)
-    notices: list[str] = []
-    if presence := _PRESENCE.search(plain):
-        notices.append(f"'{presence.group()}' {_NO_PRESENCE} {_USE_HAS} {_USE_HAS_MORE}")
-    words = dict.fromkeys(match.group() for match in _LOWERCASE.finditer(plain))
-    notices.extend(
-        f"Lowercase '{word}' is searched as a word, not as an operator; write {word.upper()}."
-        for word in words
-    )
-    if minus := _MINUS.search(plain):
-        term = query[minus.start(1) : minus.end(1)]
-        notices.append(
-            f"A leading minus does not exclude: '-{term}' includes '{term}'; write NOT {term}."
-        )
-    return tuple(notices)
 
 
 def _check_absent(names: NameFilters, query: DocumentQuery) -> None:
