@@ -10,7 +10,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import httpx2
 import pytest
@@ -25,6 +25,9 @@ from fakes.accounts import (
     READER,
     READER_PERMISSIONS,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 PORT = os.environ.get("PAPERLESS_E2E_PORT", "8010")
 BASE_URL = f"http://127.0.0.1:{PORT}"
@@ -510,6 +513,36 @@ def wait_for_index_writers(api: httpx2.Client) -> None:
         time.sleep(1)
 
 
+# Tantivy's reader polls the index every 0.5 s for a commit of another process.
+INDEX_RELOAD = 1.0
+# A word of the seeded public document, so a search for it answers as soon as it is indexed.
+INDEXED_WORD = "ACME"
+
+
+def wait_for_index_reload(
+    api: httpx2.Client,
+    *,
+    pause: Callable[[float], None] = time.sleep,
+    timeout: float = INDEX_SETTLE_TIMEOUT,
+) -> None:
+    """Wait until the web process searches the index another process has just rebuilt.
+
+    Why: `document_index reindex` wipes the index before it fills it, and the web process notices
+    both only when its reader polls. Until then it searches an empty index, in which a
+    more-like-this query does not find its own document and answers an empty list.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        pause(INDEX_RELOAD)
+        found = obj(
+            parse(api.get("/api/documents/", params={"query": INDEXED_WORD}).raise_for_status())
+        )
+        if found["count"]:
+            return
+        if time.monotonic() > deadline:
+            pytest.fail(f"The rebuilt index is still empty after {timeout:.0f}s.")
+
+
 def rebuild_search_index(api: httpx2.Client) -> None:
     """Rebuild Paperless's full-text index from the database, as `document_index reindex` does.
 
@@ -548,3 +581,4 @@ def rebuild_search_index(api: httpx2.Client) -> None:
         timeout=REINDEX_TIMEOUT,
     )
     assert rebuilt.returncode == 0, f"document_index reindex failed: {rebuilt.stderr[-500:]}"
+    wait_for_index_reload(api)
