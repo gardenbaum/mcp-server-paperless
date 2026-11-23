@@ -18,7 +18,12 @@ ROOT = Path(__file__).parents[2]
 DOCKERFILE = ROOT / "Dockerfile"
 WORKFLOW = ROOT / ".github" / "workflows" / "image.yml"
 
-FROM = re.compile(r"^FROM\s+(?P<ref>\S+)(?:\s+AS\s+(?P<name>\S+))?\s*$", re.MULTILINE)
+# Docker reads instructions in any case, with flags, and the last of two stages of one name.
+FROM = re.compile(
+    r"^FROM(?:[ \t]+--\S+)*[ \t]+(?P<ref>[^\s-]\S*)(?:[ \t]+AS[ \t]+(?P<name>\S+))?[ \t]*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+ANY_FROM = re.compile(r"^\s*FROM\b", re.MULTILINE | re.IGNORECASE)
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
 SHA_PIN = re.compile(r"^[\w./-]+@[0-9a-f]{40}$")
 JOBS = ("build", "publish", "tag")
@@ -60,12 +65,31 @@ def steps(name: str) -> list[dict[str, object]]:
     return [mapping(step) for step in sequence(job(name)["steps"])]
 
 
+def stage(name: str) -> str:
+    """The instructions of one Dockerfile stage, without comments; fails when it is missing."""
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    found = list(FROM.finditer(text))
+    names = [str(match["name"]).lower() for match in found]
+    assert len(found) == len(ANY_FROM.findall(text)), "a FROM line these guards cannot read"
+    assert len(set(names)) == len(names), "two stages of one name"
+    assert name in names, f"the Dockerfile has no stage {name}"
+    number = names.index(name)
+    end = found[number + 1].start() if number + 1 < len(found) else len(text)
+    return re.sub(r"^#.*\n", "", text[found[number].end() + 1 : end], flags=re.MULTILINE)
+
+
+def instructions(text: str) -> list[str]:
+    """Each instruction as one line, with its continuation lines joined."""
+    return re.sub(r"\s*\\\n\s*", " ", text).split("\n")
+
+
 @pytest.mark.decision("decision-28")
 def test_every_base_image_is_pinned_by_digest_with_a_renovate_comment() -> None:
     text = DOCKERFILE.read_text(encoding="utf-8")
     stages = {found["name"] for found in FROM.finditer(text) if found["name"]}
     external = [found for found in FROM.finditer(text) if found["ref"] not in stages]
 
+    assert len(list(FROM.finditer(text))) == len(ANY_FROM.findall(text))
     assert len(external) >= 2  # the uv stage and the python base
     for found in external:
         assert DIGEST.search(found["ref"]), f"{found['ref']} is not pinned by digest"
@@ -99,6 +123,71 @@ def test_the_image_runs_the_http_entrypoint_and_probes_the_port_without_a_route(
     # decision-27: no health route. The probe is a TCP connect, not an HTTP request.
     assert "socket.create_connection" in health[0]
     assert "http" not in health[0].lower().replace("paperless_mcp_http_port", "")
+
+
+@pytest.mark.decision("decision-38")
+def test_the_http_runtime_is_the_default_target() -> None:
+    stages = list(FROM.finditer(DOCKERFILE.read_text(encoding="utf-8")))
+
+    assert [found["name"] for found in stages] == ["uv", "builder", "base", "stdio", "runtime"]
+    assert [found["ref"] for found in stages[-2:]] == ["base", "base"]
+    assert [line for line in instructions(stage("runtime")) if line.startswith("ENTRYPOINT")] == [
+        'ENTRYPOINT ["mcp-server-paperless-http"]'
+    ]
+
+
+@pytest.mark.decision("decision-38")
+def test_the_stdio_target_is_the_scanned_filesystem_without_the_http_settings() -> None:
+    """Only metadata on top of `base`, in both: no layer the scan of the HTTP image has not seen."""
+    assert {line.split()[0] for line in instructions(stage("runtime")) if line} == {
+        "ENV",
+        "USER",
+        "EXPOSE",
+        "HEALTHCHECK",
+        "ARG",
+        "LABEL",
+        "ENTRYPOINT",
+    }
+    assert {line.split()[0] for line in instructions(stage("base")) if line} == {"RUN", "COPY"}
+    stdio = [line for line in instructions(stage("stdio")) if line]
+
+    assert stdio == [
+        'ENV PATH="/app/.venv/bin:${PATH}" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1',
+        "USER 10001:10001",
+        'ENTRYPOINT ["mcp-server-paperless"]',
+    ]
+    runtime = instructions(stage("runtime"))
+    assert stdio[1] in runtime
+    assert any(line.startswith(stdio[0]) for line in runtime)
+
+
+@pytest.mark.decision("decision-38")
+def test_the_stdio_target_is_built_and_smoke_tested_but_never_published() -> None:
+    build = steps("build")
+    target = next(step for step in build if mapping(step.get("with", {})).get("target") == "stdio")
+    smoke = next(step for step in build if "image_stdio_smoke.sh" in str(step.get("run")))
+
+    assert build.index(target) < build.index(smoke)
+    assert mapping(target["with"])["push"] is False
+    assert mapping(target["with"])["load"] is True
+    assert "cache-to" not in mapping(target["with"]), "it would replace the cache of the full build"
+    assert smoke["run"] == f"scripts/image_stdio_smoke.sh {mapping(target['with'])['tags']}"
+    compare = next(step for step in build if "RootFS" in str(step.get("run")))
+    assert build.index(target) < build.index(compare)
+    layers = "\"$(docker image inspect --format '{{json .RootFS.Layers}}' mcp-server-paperless%s)\""
+    assert str(compare["run"]).splitlines() == [
+        f"http={layers % ':ci'}",
+        f"stdio={layers % '-stdio:ci'}",
+        '[[ "$http" == "$stdio" ]]',
+    ]
+    for step in (target, compare, smoke):
+        assert "if" not in step
+        assert "continue-on-error" not in step
+    for name in ("publish", "tag"):
+        assert "stdio" not in yaml.safe_dump(job(name))
+        assert not any("target" in mapping(step.get("with", {})) for step in steps(name))
+    paths = sequence(mapping(mapping(workflow()["on"])["pull_request"])["paths"])
+    assert "scripts/image_stdio_smoke.sh" in paths
 
 
 @pytest.mark.decision("decision-28")
@@ -210,11 +299,14 @@ def test_each_platform_is_built_scanned_and_smoke_tested_on_a_runner_of_its_own(
             for step in steps(name)
             if str(step.get("uses", "")).startswith("docker/build-push-action@")
         ]
-        assert [build["platforms"] for build in builds] == ["linux/${{ matrix.arch }}"]
+        assert len(builds) == (2 if name == "build" else 1)  # the stdio target is not published
+        assert {str(build["platforms"]) for build in builds} == {"linux/${{ matrix.arch }}"}
         scan = next(s for s in steps(name) if "trivy-action@" in str(s.get("uses")))
         # Trivy takes linux/amd64 from an image index unless told otherwise, on any runner.
         assert mapping(scan["env"]) == {"TRIVY_PLATFORM": "linux/${{ matrix.arch }}"}
-        assert builds[0]["cache-from"] == "type=gha,scope=${{ matrix.arch }}"
+        assert {str(build["cache-from"]) for build in builds} == {
+            "type=gha,scope=${{ matrix.arch }}"
+        }
     assert "qemu" not in WORKFLOW.read_text(encoding="utf-8").lower()
 
 
@@ -302,9 +394,8 @@ def test_the_image_workflow_is_separate_from_ci_so_it_never_gates_a_merge() -> N
 
 
 @pytest.mark.decision("decision-28")
-def test_the_runtime_stage_removes_pip_and_upgrades_os_packages() -> None:
-    text = DOCKERFILE.read_text(encoding="utf-8")
-    runtime = text[text.rindex("AS runtime") :]
+def test_the_base_stage_removes_pip_and_upgrades_os_packages() -> None:
+    runtime = stage("base")
 
     assert "apt-get upgrade -y --no-install-recommends" in runtime
     assert "rm -rf /var/lib/apt/lists/*" in runtime
@@ -315,8 +406,7 @@ def test_the_runtime_stage_removes_pip_and_upgrades_os_packages() -> None:
 
 @pytest.mark.decision("decision-28")
 def test_build_arguments_come_last_so_a_tag_build_reuses_the_scanned_layers() -> None:
-    text = DOCKERFILE.read_text(encoding="utf-8")
-    runtime = text[text.rindex("AS runtime") :]
+    runtime = stage("base") + stage("runtime")
     first_arg = runtime.index("\nARG ")
 
     assert "RUN" not in runtime[first_arg:], "an ARG before a RUN changes that layer's cache key"
