@@ -3,7 +3,7 @@ id: doc-2
 title: AI contributor workflow
 type: guide
 created_date: '2026-11-12T16:23:00Z'
-updated_date: '2026-11-23T18:31:13Z'
+updated_date: '2026-11-23T19:33:11Z'
 ---
 # AI contributor workflow
 
@@ -52,7 +52,7 @@ At most two tasks at a time, chosen for independent dependencies and little file
 
 ## Global constraints (summary of doc-1)
 
-- paperless-ngx 3.x only, API version 10; reference version 3.5.1 (3.4.2 stays supported). FastMCP 4.1.x. httpx2 is the only HTTP library.
+- paperless-ngx 3.x only, API version 10; reference version and minimum 3.5.1 (decision-43). FastMCP 4.1.x. httpx2 is the only HTTP library.
 - Python 3.14 baseline; CI also runs 3.15.
 - Layers: entrypoints → server.py (composition root, the only module importing both tools/ and paperless/) → tools/ and paperless/ → services/ → domain/. domain imports nothing from the package and no I/O or MCP library; services import domain only; paperless imports domain, never fastmcp/mcp/services/tools; tools import services and domain, never httpx2/paperless; only paperless imports httpx2. Toolset modules in tools/ are independent.
 - Every request sends `Accept: application/json; version=10` and the auth header of the current credential.

@@ -36,13 +36,6 @@ API_VERSION = 10
 EXPECTED_VERSION = os.environ.get("PAPERLESS_E2E_VERSION", "3.5.1")
 
 
-def since(minimum: str) -> bool:
-    """Whether the stack runs at least this release ("3.5.0": the 3.5 behaviour changes)."""
-    return tuple(int(n) for n in EXPECTED_VERSION.split(".")) >= tuple(
-        int(n) for n in minimum.split(".")
-    )
-
-
 READY_TIMEOUT = 300.0
 CONSUME_TIMEOUT = 180.0
 # Every custom field data type of 3.4.2 except `select`, which needs options (see seed()).

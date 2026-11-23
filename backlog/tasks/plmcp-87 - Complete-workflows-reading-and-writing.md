@@ -4,7 +4,7 @@ title: Complete workflows, reading and writing
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:22:01Z'
-updated_date: '2026-11-23T18:30:57Z'
+updated_date: '2026-11-23T19:32:27Z'
 labels: []
 dependencies:
   - PLMCP-91
@@ -16,7 +16,7 @@ ordinal: 70100
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The toolset workflows (off by default) already reads, creates, changes, switches on and off (enabled), reorders (order) and deletes workflows; the owner's agent did not see it. An update replaces the whole list of triggers or actions, and the single-object endpoints know no owning workflow, so a write there would bypass decision-21. Split from PLMCP-81. Requested by the owner on 2026-11-23. Paperless 3.5.1 (PLMCP-97) added the trigger type manual (5): the workflows tools read it and refuse to write it (3.4.2 refuses type 5), and an update that replaces triggers refuses to delete one this server cannot write. Whether manual triggers can be written, and running a workflow by hand (the bulk_edit method run_workflow, PLMCP-80), is decided here. GET /api/workflows/ also filters by enabled, id, id__in and trigger_type.
+The toolset workflows (off by default) already reads, creates, changes, switches on and off (enabled), reorders (order) and deletes workflows; the owner's agent did not see it. An update replaces the whole list of triggers or actions, and the single-object endpoints know no owning workflow, so a write there would bypass decision-21. Split from PLMCP-81. Requested by the owner on 2026-11-23. Paperless 3.5.1 (PLMCP-97) added the trigger type manual (5): the workflows tools read it and refuse to write it, and an update that replaces triggers refuses to delete one this server cannot write. Whether manual triggers can be written (a workflow with one is run by hand from the web UI), and running a workflow by hand (the bulk_edit method run_workflow, PLMCP-80), is decided here. GET /api/workflows/ also filters by enabled, id, id__in and trigger_type.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

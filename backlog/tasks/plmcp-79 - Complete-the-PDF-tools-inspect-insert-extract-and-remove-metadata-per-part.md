@@ -4,7 +4,7 @@ title: 'Complete the PDF tools: inspect, insert, extract and remove, metadata pe
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:50Z'
-updated_date: '2026-11-23T18:30:56Z'
+updated_date: '2026-11-23T19:32:26Z'
 labels: []
 dependencies:
   - PLMCP-74
@@ -17,7 +17,7 @@ ordinal: 68000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The toolset pdf (off by default) already rotates, merges, splits, deletes pages, removes passwords and reprocesses; edit_pdf already picks, reorders, rotates single pages and groups pages into several outputs. Example need: one scan holds a contract and two payment slips. Limits of the 3.4 API: page_count is the only page information, a merge always makes a new document, a split into several files cannot be a version, edit_pdf has one source document, and a split takes no metadata per part. Requested by the owner on 2026-11-23.
+The toolset pdf (off by default) already rotates, merges, splits, deletes pages, removes passwords and reprocesses; edit_pdf already picks, reorders, rotates single pages and groups pages into several outputs. Example need: one scan holds a contract and two payment slips. Limits of the API: page_count is the only page information, a merge always makes a new document, a split into several files cannot be a version, edit_pdf has one source document, and a split takes no metadata per part. Requested by the owner on 2026-11-23.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

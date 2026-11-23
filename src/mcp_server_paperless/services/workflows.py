@@ -71,7 +71,7 @@ HIDDEN: Final = "(hidden)"
 # The settings that only a consumption trigger has, and that only a scheduled one has.
 CONSUMPTION_ONLY: Final = frozenset({"sources", "path", "filename", "mailrule"})
 SCHEDULED_ONLY: Final = frozenset(n for n in TRIGGER_FIELDS if n.startswith("schedule_"))
-CONSUMPTION, SCHEDULED, EMAIL, WEBHOOK = 1, 4, 3, 4
+CONSUMPTION, SCHEDULED, EMAIL, WEBHOOK, MANUAL = 1, 4, 3, 4, 5
 # Short names for the types, besides their labels.
 TRIGGER_ALIASES: Final[Mapping[int, tuple[str, ...]]] = {
     1: ("consumption",),
@@ -81,7 +81,7 @@ TRIGGER_ALIASES: Final[Mapping[int, tuple[str, ...]]] = {
 ACTION_ALIASES: Final[Mapping[int, tuple[str, ...]]] = {6: ("trash",), 7: ("ocr",)}
 # Why a tool may not write a trigger type that Paperless has.
 UNWRITABLE_TRIGGERS: Final[Mapping[int, str]] = {
-    5: "it exists only from Paperless 3.5 on, and a workflow is run by hand from its web UI",
+    5: "a workflow with it is run by hand from the Paperless web UI",
 }
 # Why a tool may not write an action type that Paperless has.
 UNWRITABLE: Final[Mapping[int, str]] = {
@@ -302,12 +302,26 @@ def _trigger_text(trigger: WorkflowTrigger) -> str:
 
 
 def _effect(lead: str, triggers: Sequence[WorkflowTrigger], acts: Sequence[str]) -> str:
-    when = "; ".join(_trigger_text(t) for t in triggers)
+    """What an enabled workflow does: by itself, or only when a user runs it (manual triggers)."""
+    automatic = "; ".join(_trigger_text(t) for t in triggers if t.type != MANUAL)
+    by_hand = "; ".join(_trigger_text(t) for t in triggers if t.type == MANUAL)
+    will = "; ".join(acts)
     if not triggers:
-        when = "no trigger yet: it does nothing until one is added"
+        automatic = "no trigger yet: it does nothing until one is added"
+    if not by_hand:
+        return (
+            f"{lead}, which is enabled and runs by itself on every document that matches its "
+            f"triggers ({automatic}) and will: {will}"
+        )
+    if not automatic:
+        return (
+            f"{lead}, which is enabled and runs only when a user runs it by hand ({by_hand}), "
+            f"possibly on documents its trigger filters do not match, and will: {will}"
+        )
     return (
         f"{lead}, which is enabled and runs by itself on every document that matches its "
-        f"triggers ({when}) and will: {'; '.join(acts)}"
+        f"triggers ({automatic}); when a user runs it by hand ({by_hand}) it may also run on "
+        f"documents its filters do not match; it will: {will}"
     )
 
 
@@ -386,7 +400,8 @@ class WorkflowService:
                 takes things away (by new triggers or actions, or by switching it on), and
                 ``confirm`` is false. Nothing was changed.
             Validation: Nothing to change, a name that is empty or taken, a setting or value that
-                is unusable, or new actions that would drop actions this server cannot write.
+                is unusable, a trigger of a type this server does not write (manual), or new
+                triggers or actions that would drop ones this server cannot write.
             NotFound: No such workflow, or a name matches nothing.
             Ambiguous: A name matches several workflows or objects.
             PermissionDenied: The user may not change workflows.

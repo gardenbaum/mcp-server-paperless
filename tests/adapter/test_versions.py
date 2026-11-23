@@ -52,6 +52,15 @@ class Answers:
         self.requests: list[httpx2.Request] = []
 
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        if request.url.path == "/api/tasks/":
+            # The task a queued merge names has succeeded; waiting for it is not logged.
+            done = {
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [task_row("success", MERGE_TASK)],
+            }
+            return httpx2.Response(200, json=done)
         self.requests.append(request)
         if self.headers:
             return httpx2.Response(self.status, text=str(self.body), headers=self.headers)
@@ -234,7 +243,7 @@ async def test_a_delete_is_sent_once(make_client: ClientFactory) -> None:
 async def test_a_merge_names_the_root_first_among_the_documents(
     make_client: ClientFactory,
 ) -> None:
-    server = Answers({"result": "OK"})
+    server = Answers({"result": "OK", "task_id": MERGE_TASK})
 
     _ = await PaperlessDocumentWriter(make_client(server)).merge_as_versions(5, (8, 9), None)
 
@@ -244,7 +253,7 @@ async def test_a_merge_names_the_root_first_among_the_documents(
 
 
 async def test_a_merge_of_one_document_may_carry_a_label(make_client: ClientFactory) -> None:
-    server = Answers({"result": "OK"})
+    server = Answers({"result": "OK", "task_id": MERGE_TASK})
 
     _ = await PaperlessDocumentWriter(make_client(server)).merge_as_versions(5, (8,), "scan")
 

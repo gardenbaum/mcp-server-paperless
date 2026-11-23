@@ -2,7 +2,7 @@
 
 Adapter tests build their httpx2 client on `SchemaGuardedTransport(handler)`. Each request the
 adapter sends and each response the handler returns is validated with openapi-core against
-docs/vendor/paperless/openapi.json (Paperless 3.4.2); any mismatch raises `SchemaViolationError`,
+docs/vendor/paperless/openapi.json (Paperless 3.5.1); any mismatch raises `SchemaViolationError`,
 which fails the test. On top of what openapi-core checks, query parameters the operation does not
 declare are rejected, so a misspelt filter cannot pass silently.
 
@@ -246,31 +246,9 @@ _NO_PERMISSIONS = (
         "list asks for `full_perms` (PLMCP-25)"
     ),
 )
-# The document operations that queue a task: 3.5 names it (`task_id`, which the 3.5.1 schema
-# requires), 3.4.2 answers only {"result": "OK"} and the adapter supports both (decision-29).
-_QUEUED_ENDPOINTS = tuple(
-    ("POST", f"/api/documents/{name}/", 200)
-    for name in (
-        "bulk_edit",
-        "delete",
-        "edit_pdf",
-        "merge",
-        "merge_as_versions",
-        "remove_password",
-        "reprocess",
-        "rotate",
-    )
+OMITTED_RESPONSE_PROPERTIES: Mapping[tuple[str, str, int], tuple[str, str]] = dict.fromkeys(
+    _SAVED_VIEW_ENDPOINTS, _NO_PERMISSIONS
 )
-_NO_TASK_ID = (
-    "task_id",
-    "3.4.2 answers a queued document operation without the `task_id` the 3.5.1 schema requires",
-)
-OMITTED_RESPONSE_PROPERTIES: Mapping[tuple[str, str, int], tuple[str, str]] = {
-    **dict.fromkeys(_SAVED_VIEW_ENDPOINTS, _NO_PERMISSIONS),
-    **dict.fromkeys(_QUEUED_ENDPOINTS, _NO_TASK_ID),
-}
-# What an omitted property is filled in with (an empty object unless listed): the type it has.
-FILLED_IN: Mapping[str, object] = {"task_id": "filled-in"}
 # Responses to a `full_perms=true` request that carry `permissions` instead of the
 # `user_can_change` the schema requires (PLMCP-28): the lists and the updates of the five objects.
 _PERMISSION_PATHS = (
@@ -600,7 +578,7 @@ def _with_omitted_properties(
     objects = cast("Json", body)
     rows = objects.get("results")
     for row in cast("list[Json]", rows) if isinstance(rows, list) else [objects]:
-        _ = row.setdefault(name, FILLED_IN.get(name, {}))
+        _ = row.setdefault(name, {})
     return httpx2.Response(
         response.status_code, json=body, headers={"Content-Type": "application/json"}
     )

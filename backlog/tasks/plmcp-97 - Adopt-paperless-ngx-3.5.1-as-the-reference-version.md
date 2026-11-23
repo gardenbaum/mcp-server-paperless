@@ -4,7 +4,7 @@ title: Adopt paperless-ngx 3.5.1 as the reference version
 status: In Progress
 assignee: []
 created_date: '2026-11-23T18:13:36Z'
-updated_date: '2026-11-23T19:17:05Z'
+updated_date: '2026-11-23T19:43:48Z'
 labels: []
 dependencies: []
 references:
@@ -17,14 +17,14 @@ ordinal: 74000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The weekly drift workflow reports that the vendored reference (3.4.2) differs from the latest 3.x release, 3.5.1 (issue #103: api.md, openapi.json, usage.md). The feedback tasks after it should build on the current API, and the coverage guard (PLMCP-91) shows what 3.5.1 adds. The controller put it before PLMCP-74 under the owner's delegation of 2026-11-23.
+The weekly drift workflow reports that the vendored reference (3.4.2) differs from the latest 3.x release, 3.5.1 (issue #103: api.md, openapi.json, usage.md). The feedback tasks after it should build on the current API, and the coverage guard (PLMCP-91) shows what 3.5.1 adds. The controller put it before PLMCP-74 under the owner's delegation of 2026-11-23. The owner changed the scope on 2026-11-23: 3.5.1 is not only the reference but the minimum, 3.4.2 and 3.5.0 are dropped, and this task removes what existed only for them (decision-43).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The vendored reference, the E2E stack and every mention of the reference version are 3.5.1, with the image pinned by digest, and the drift check passes
 - [x] #2 What changed between 3.4.2 and 3.5.1 is listed in the task notes from the release notes and the schema diff, with its effect on every tool
-- [x] #3 Tools keep working on 3.4.2 as well, or a change of the supported versions is put to the owner before the merge
+- [ ] #3 Changed by the owner on 2026-11-23: 3.5.1 is the minimum and 3.4.x and 3.5.0 are no longer supported; the code, tests and docs for them are removed and decision-43 supersedes decision-29
 - [x] #4 Every new or changed endpoint, field and value of 3.5.1 is in the coverage table under a task that includes it, and the task text is extended where none does
 - [x] #5 A plumbing row cannot hide an unsent field or value below it (left over from the PLMCP-91 review)
 - [x] #6 The full E2E suite is green on 3.5.1
@@ -70,4 +70,23 @@ Coverage counts: endpoints 163 (105 covered, 58 open) unchanged; open-field rows
 Tasks: descriptions of PLMCP-80, 83, 87 extended; acceptance criteria of the To Do tasks that said "Paperless 3.4.2" or "the 3.4 schema" now say 3.5.1 and "the vendored 3.5.1 schema".
 Evidence: unit suite 5494 passed (one known macOS failure, test_the_menu_driver_reports_a_failing_cli), diff coverage 100 %; live contract suite on 3.5.1 498 passed, 5 skipped (AI); touched and 3.5-sensitive contract and E2E modules (workflows, pdf, bulk, versions, notes_and_trash, taxonomy_edits, admin, stdio, stack) on 3.4.2: 289 passed; the whole E2E suite on fresh 3.5.1: 652 passed, 6 skipped (AI, needs a backend); just drift-check: no drift. Hand mutations of the new code in a scratch copy were all killed.
 Open for the owner: decision-29 says the pin stays 3.4.2 and moves only by a superseding decision; this task moves it. Not verified: AI chat on 3.5.1 (needs an LLM backend), the weekly mutation gate (the changed functions have no equivalents entry).
+
+Owner change of 2026-11-23: 3.5.1 is the minimum, 3.4.x and 3.5.0 are no longer supported (decision-43 supersedes decision-29; AC 3 and the description were changed accordingly). The note above that says 3.4.2 stays supported is history.
+
+Removed because it existed only for releases before 3.5.1:
+- paperless/queued.py: the optional task_id (Queued.task_id is required; an answer without it is an unexpected response) and the branch "no task id, nothing to wait for"; its 3.4 prose. paperless/pdf.py and paperless/bulk.py module texts no longer say the endpoints name no task.
+- Schema guard: _QUEUED_ENDPOINTS, _NO_TASK_ID, FILLED_IN and the test that accepted the 3.4.2 answer; a queued answer must carry task_id.
+- Fake: FakeState.release, FakePaperless.since_3_5, WorkflowData.manual_triggers and the 3.4 branches (blank notes accepted, config readable by anyone, tag deletion without refusal); VERSION is 3.5.1.
+- Contract suite: since(), release(), BOTH_RELEASES, FAKE_35 and the "fake-3.5" backend; e2e helper since(); the 3.4 branches of the contract and E2E tests (notes, config, bulk and single tag deletion, manual trigger, mail mask) now assert the 3.5.1 behaviour only. Tests of 3.4-only behaviour were deleted (blank notes accepted, release setting default, the answer without task_id).
+- Texts: the 3.4/3.5 sentences about tag deletion (tool descriptions of delete_taxonomy_item and bulk taxonomy, the also_deleted field, the confirmation preview, the refusal hint), the configuration read hint, the "3.4.2" in the filter rule error. Snapshots changed deliberately: tool surface (profiles default and all: also_deleted description, bulk taxonomy description, manual trigger sentence and "run by hand" sentence in the workflows reference text) and test_view_messages (two messages).
+- Docs: README compatibility row, docs/configuration.md, docs/development.md (the 3.4.2 e2e-latest line and the "fake runs as both"), docs/paperless-reading-guide.md, plugin/README.md, doc-1 and doc-2, the To Do task texts.
+
+Kept, and why:
+- Statements "probed on 3.4.2" (module docstrings, decisions 14, 16, 18, 21, 26, tests): history of what was observed; the live suite passes on 3.5.1 with them.
+- The wire deviations of 3.4.2 from the schema in tests/adapter/schema_guard.py (WRONG_RESPONSE_SCHEMAS, OMITTED, NULL_OBJECT_PROPERTIES, UNDECLARED_QUERY_PARAMETERS): not re-probed one by one; the live contract suite is green on 3.5.1, but whether each deviation still exists on 3.5.1 is not shown. Kept, to be checked in a follow-up.
+- The PDF writer's search for the consumption tasks of an operation: 3.5.1 still starts them after the bulk_update task.
+- README "more_like_id can return nothing on 3.4.2" and the tool description: see the probe below.
+- decision-2, 8, 23, 24: their 3.4.2 statements are replaced by decision-43; their text is not edited.
+
+Behaviour against 3.4 today: the server has no version gate. X-Version is read only for get_instance_overview. Against 3.4.x the document operations answer without a task_id, which the adapter now reports as an unexpected response; blank notes, the config read and tag deletion behave as 3.4 does. Proposal, not done: refuse at startup or in get_instance_overview when X-Version is below 3.5.1.
 <!-- SECTION:NOTES:END -->

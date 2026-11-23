@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import JsonValue, SecretStr
 
-from contract.conftest import BOTH_RELEASES, since
 from mcp_server_paperless.domain.admin import ConfigValues, GroupValues, UserValues
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 
@@ -366,22 +365,18 @@ async def test_a_value_paperless_rejects_is_a_validation_error(backend: Backend)
         _ = await writes.update_config(ConfigValues(secrets={"llm_api_key": SecretStr("****")}))
 
 
-@BOTH_RELEASES
-@pytest.mark.decision("decision-29")
+@pytest.mark.decision("decision-43")
 @pytest.mark.contract(GET_CONFIG)
 @pytest.mark.contract(UPDATE_CONFIG)
-async def test_anyone_reads_the_configuration_but_changing_it_needs_a_permission(
+async def test_reading_and_changing_the_configuration_needs_a_permission(
     backend: Backend,
 ) -> None:
     nothing = backend.restricted(frozenset({"view_uisettings"}))
 
-    if since(backend, "3.5.0"):
-        # Paperless 3.5 asks for view_applicationconfiguration on a read too (3.4: nobody does).
-        with pytest.raises(PermissionDenied) as denied:
-            _ = await nothing.management.get_config()
-        assert denied.value.hint
-    else:
-        assert (await nothing.management.get_config()).id >= 1
+    # Paperless asks for view_applicationconfiguration on a read too.
+    with pytest.raises(PermissionDenied) as denied:
+        _ = await nothing.management.get_config()
+    assert denied.value.hint
     with pytest.raises(PermissionDenied) as raised:
         _ = await nothing.management_writes.update_config(ConfigValues(settings={"app_title": "x"}))
     assert raised.value.hint

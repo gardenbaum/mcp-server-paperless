@@ -22,7 +22,7 @@ TRIGGER_TYPES: Final[Mapping[int, str]] = {
     2: "document added",
     3: "document updated",
     4: "scheduled",
-    5: "manual",  # Paperless 3.5 and later
+    5: "manual",
 }
 ACTION_TYPES: Final[Mapping[int, str]] = {
     1: "assignment",
@@ -53,8 +53,8 @@ SCHEDULE_DATE_FIELDS: Final = ("added", "created", "modified", "custom_field")
 
 # The types a tool may write. Password removal stores passwords this server must never echo, so it
 # could neither show nor keep them; applying AI suggestions makes Paperless query its AI backend
-# for every document that matches. A manual trigger exists only from Paperless 3.5 on, which
-# this server supports besides 3.4.2. All three stay with the Paperless web UI.
+# for every document that matches. A manual trigger is run by hand from the web UI. All three
+# stay with the Paperless web UI.
 WRITABLE_TRIGGER_TYPES: Final = frozenset({1, 2, 3, 4})
 WRITABLE_ACTION_TYPES: Final = frozenset({1, 2, 3, 4, 6, 7})
 

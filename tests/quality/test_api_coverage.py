@@ -416,6 +416,23 @@ def test_a_named_value_that_no_plumbing_field_holds_is_still_a_problem() -> None
     assert any("query:flag=false is listed as plumbing, but no tool sends it" in f for f in found)
 
 
+def test_an_unsent_child_field_below_a_plumbing_field_cannot_be_named_away() -> None:
+    nested = {PATCH_ONE: Fields(query=NONE, body=frozenset({"stored", "stored.secret"}))}
+    sent = {PATCH_ONE: used("body:stored", tool="update_thing")}
+    bare = {PATCH_ONE: Plumbing(names("body:stored"), "the stored object is sent back")}
+    named = {PATCH_ONE: Plumbing(names("body:stored", "body:stored.secret"), "x")}
+
+    assert check(sent, [], schema=nested, plumbing=bare) == [
+        (
+            "PATCH /api/things/{id}/: body:stored.secret hangs under a plumbing field, is sent "
+            "by no tool and is not named in the plumbing row"
+        )
+    ]
+    assert check(sent, [], schema=nested, plumbing=named) == [
+        "PATCH /api/things/{id}/: body:stored.secret is listed as plumbing, but no tool sends it"
+    ]
+
+
 def test_plumbing_that_no_tool_sends_is_a_problem() -> None:
     partly = {**FULL, GET_ONE: used("query:fields")}
     plumbing = {GET_ONE: Plumbing(names("query:page"), "x")}

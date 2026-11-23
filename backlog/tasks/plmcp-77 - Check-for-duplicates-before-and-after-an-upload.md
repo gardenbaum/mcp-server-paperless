@@ -4,7 +4,7 @@ title: Check for duplicates before and after an upload
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:48Z'
-updated_date: '2026-11-23T18:30:55Z'
+updated_date: '2026-11-23T19:32:26Z'
 labels: []
 dependencies: []
 priority: high
@@ -15,7 +15,7 @@ ordinal: 64000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-By default Paperless 3.4 keeps duplicates (with PAPERLESS_CONSUMER_DELETE_DUPLICATES=true it rejects them and the task fails); the upload tools do not check. A document reports duplicate_documents, and the list filter has_duplicates (today only in saved views) finds them. Uploads by path exist over stdio (PAPERLESS_MCP_UPLOAD_DIRS) but are off by default and the model is not told how to get them. Uploading several files or a directory, and finding and resolving duplicates, are tasks of their own. Requested by the owner on 2026-11-23.
+By default Paperless keeps duplicates (with PAPERLESS_CONSUMER_DELETE_DUPLICATES=true it rejects them and the task fails); the upload tools do not check. A document reports duplicate_documents, and the list filter has_duplicates (today only in saved views) finds them. Uploads by path exist over stdio (PAPERLESS_MCP_UPLOAD_DIRS) but are off by default and the model is not told how to get them. Uploading several files or a directory, and finding and resolving duplicates, are tasks of their own. Requested by the owner on 2026-11-23.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

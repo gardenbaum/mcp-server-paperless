@@ -176,7 +176,7 @@ class DocumentReader(Protocol):
         ...
 
     async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
-        """The thumbnail image of a document (WebP in Paperless 3.4).
+        """The thumbnail image of a document (WebP).
 
         Raises:
             NotFound: No such document.

@@ -36,7 +36,7 @@ or lint rule that holds it.
 | Level | What it proves |
 |---|---|
 | Unit, adapter and tool tests | Services against fakes, the adapter against the vendored Paperless OpenAPI schema, every tool through an in-process MCP client |
-| Contract suite | The same tests run against `FakePaperless` and against a real Paperless, so the fake cannot drift from the real thing; where 3.4 and 3.5 differ, the fake runs as both |
+| Contract suite | The same tests run against `FakePaperless` and against a real Paperless, so the fake cannot drift from the real thing; the fake models 3.5.1 |
 | Live end-to-end tests | The server against a real paperless-ngx in Docker: the touched toolsets on every pull request, the whole suite after every merge and nightly |
 | Surface snapshot | Tool names, schemas, descriptions and annotations as clients see them; a change is reviewed |
 | Mutation testing | mutmut on `services/` and `paperless/` with an 80 % gate, weekly |
@@ -53,9 +53,6 @@ just drift-check              # vendored Paperless schema and docs vs. the lates
 ```
 
 The last three also run as weekly GitHub workflows and by manual dispatch.
-
-`PAPERLESS_E2E_VERSION=3.4.2 just e2e-latest` runs the suite against 3.4.2, the oldest supported
-release (the reference stack of `just e2e-up` is 3.5.1).
 
 ## Documentation
 

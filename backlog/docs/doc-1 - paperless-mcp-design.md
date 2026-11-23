@@ -3,7 +3,7 @@ id: doc-1
 title: paperless-mcp design
 type: specification
 created_date: '2026-11-09T19:21:00Z'
-updated_date: '2026-11-23T18:31:12Z'
+updated_date: '2026-11-23T19:33:11Z'
 ---
 # mcp-server-paperless — Design
 
@@ -55,7 +55,7 @@ convention or memory.
 ## 3. Constraints
 
 - paperless-ngx **3.x only**, API version **10** (current default; available in every 3.x
-  release, 2.x stops at 9). Reference version for development and E2E: **3.5.1** (since PLMCP-97; 3.4.2 stays supported).
+  release, 2.x stops at 9). Reference version for development and E2E: **3.5.1**, also the minimum (decision-43).
 - FastMCP **4.1.x** (latest stable 4.1.6; Provider model, MCP SDK v2). Its HTTP stack is
   **httpx2**; this project uses httpx2 too (no `httpx`, no second HTTP library).
 - Python **3.14** baseline (`requires-python >=3.14`); CI also runs 3.15.

@@ -114,10 +114,7 @@ DELETE_GROUP: Final = (
 )
 READ_CONFIG: Final = (
     "read the application configuration",
-    (
-        "Paperless 3.5 and later need the view_applicationconfiguration permission (or a "
-        "superuser); 3.4 lets every signed-in user read it."
-    ),
+    ("Paperless needs the view_applicationconfiguration permission (or a superuser) to read it."),
 )
 CHANGE_CONFIG: Final = (
     "change the application configuration",

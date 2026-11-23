@@ -572,16 +572,16 @@ def queued(operation: str) -> httpx2.Request:
 
 
 @pytest.mark.parametrize("operation", QUEUED_OPERATIONS)
-@pytest.mark.parametrize("body", [{"result": "OK"}, {"result": "OK", "task_id": "t-1"}])
-def test_a_queued_operation_answers_with_or_without_a_task_id(
-    operation: str, body: dict[str, object]
+def test_a_queued_operation_answers_with_the_task_it_queued(operation: str) -> None:
+    check_response(queued(operation), httpx2.Response(200, json={"result": "OK", "task_id": "t-1"}))
+
+
+@pytest.mark.parametrize(
+    "body", [{"result": "OK"}, {"task_id": "t-1"}, {"result": "OK", "task_id": 5}]
+)
+def test_a_queued_answer_without_its_task_or_with_a_wrong_one_is_refused(
+    body: dict[str, object],
 ) -> None:
-    """3.5 names the task it queued; 3.4.2 (still supported) answers only "OK"."""
-    check_response(queued(operation), httpx2.Response(200, json=body))
-
-
-@pytest.mark.parametrize("body", [{"task_id": "t-1"}, {"result": "OK", "task_id": 5}])
-def test_the_rest_of_a_queued_answer_is_still_checked(body: dict[str, object]) -> None:
     with pytest.raises(SchemaViolationError):
         check_response(queued("rotate"), httpx2.Response(200, json=body))
 

@@ -8,7 +8,7 @@ that is not affiliated with paperless-ngx.
 
 ## What you need
 
-- paperless-ngx 3.4.2 or later that your computer can reach
+- paperless-ngx 3.5.1 or later that your computer can reach
 - A Paperless API token: in Paperless open your profile menu, "My Profile", and create an API auth
   token. The server acts as that user and sees and changes only what that user may
 - [uv](https://docs.astral.sh/uv/) on your computer; it fetches Python 3.14 by itself

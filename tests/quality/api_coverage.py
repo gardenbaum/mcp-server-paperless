@@ -365,15 +365,17 @@ def problems(  # noqa: PLR0913 -- the inputs of the check
         ]
         sent_by_tools = set(covered[operation].used)
         # What hangs under a plumbing field (a value, a child) is no plumbing by itself: unsent,
-        # it may be named in the row (then it is accepted), else it is work that the row would hide.
+        # it is work that the row would hide. Only a value (`name=value`) may be named in the row
+        # and so accepted; a child field has to be sent by a tool, or be open under a task.
         below = {
             key
             for key in field_keys(fields)
             if any(parent in piping.fields for parent in _ancestors(key))
         }
+        values = {key for key in below if "=" in key}
         found += [
             f"{_text(operation)}: {name} is listed as plumbing, but no tool sends it"
-            for name in sorted(piping.fields & field_keys(fields) - sent_by_tools - below)
+            for name in sorted(piping.fields & field_keys(fields) - sent_by_tools - values)
         ]
         found += [
             (

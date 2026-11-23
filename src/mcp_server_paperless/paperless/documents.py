@@ -450,7 +450,7 @@ class PaperlessDocumentReader:
     async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
         """See ``DocumentReader.get_document_thumbnail``.
 
-        Paperless 3.4 sends WebP. A document the user may not see is answered 403 (text/html),
+        Paperless sends WebP. A document the user may not see is answered 403 (text/html),
         a missing one 404, as for the other sub-resources.
         """
         found = await self._file(document_id, "thumb/", THUMBNAIL_LIMIT)

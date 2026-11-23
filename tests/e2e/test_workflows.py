@@ -12,7 +12,7 @@ from contract.conftest import drop_orphaned_workflow_parts
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import results, since
+from e2e.helpers import results
 from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
@@ -219,13 +219,11 @@ async def test_an_unsupported_type_and_a_misplaced_setting_are_refused_with_an_e
 async def test_a_manual_trigger_is_read_and_kept_and_only_the_web_ui_writes_it(
     client: Connected, stack: Stack
 ) -> None:
-    """Paperless 3.5 has manual triggers (type 5); 3.4.2 does not, so there the tool refuses it."""
+    """A workflow with a manual trigger (type 5, run by hand from the web UI) is read and kept."""
     name = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
     refusal = await refused(client, "create_workflow", name=name, triggers=[{"type": "manual"}])
     assert "cannot be written by this server" in refusal
     assert stored(stack, name) == []
-    if not since("3.5.0"):
-        return
     made = stack.admin.post(
         "/api/workflows/",
         json={"name": name, "enabled": False, "triggers": [{"type": 5}], "actions": []},

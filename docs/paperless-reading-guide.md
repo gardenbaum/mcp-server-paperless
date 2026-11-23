@@ -26,10 +26,9 @@ image the schema was generated from):
   `all` is deprecated, tasks were redesigned (paginated, `task_type`, `trigger_source`,
   `summary`, `status_counts`, `active`, `run`), saved views lost `show_on_dashboard` and
   `show_in_sidebar`, and `created` is a date (v9).
-- Paperless 3.5 (the vendored reference is 3.5.1; this server also supports 3.4.2) changed the API
-  without a new API version: every document operation is queued and answers `task_id` (absent on
-  3.4.2), notes have a `format` (`plain`, `markdown`), workflow triggers have the type `manual`
-  (5) and `bulk_edit` the method `run_workflow`, the requests of delete, reprocess and
+- Paperless 3.5 (the vendored reference and minimum is 3.5.1) changed the API without a new API
+  version: every document operation is queued and answers `task_id`, notes have a `format` (`plain`, `markdown`), workflow triggers have the
+  type `manual` (5) and `bulk_edit` the method `run_workflow`, the requests of delete, reprocess and
   merge_as_versions take `from_webui`, and `GET /api/workflows/` filters by `enabled`, `id`,
   `id__in` and `trigger_type`.
 - `api.md` section "Authorization": `Authorization: Token <token>` for API tokens (also basic,

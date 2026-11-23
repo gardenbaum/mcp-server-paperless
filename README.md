@@ -318,7 +318,7 @@ them.
 
 | | |
 |---|---|
-| **paperless-ngx** | 3.4.2 and later (API version 10). Every change is tested against 3.5.1, the latest 3.x release weekly; the 3.4.2 behaviour is tested through the fake in its 3.4 mode and, on demand, against the 3.4.2 image. 2.x is not supported |
+| **paperless-ngx** | 3.5.1 or later (API version 10). Every change is tested against 3.5.1, the latest 3.x release weekly. 3.4.x, 3.5.0 and 2.x are not supported |
 | **Clients** | Claude Code and Claude Desktop over stdio, claude.ai custom connectors and other MCP clients over Streamable HTTP |
 | **Runtime** | Python 3.14 or later (`uvx` fetches it for you), or the container image |
 

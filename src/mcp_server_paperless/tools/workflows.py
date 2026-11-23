@@ -56,9 +56,10 @@ remove_* lists), 'email' (email: subject, body, to, include_document), 'webhook'
 webhook: url, headers, params or body, include_document), 'move to trash' and 'remote OCR'
 (consumption triggers only). Settings of another action type than the one given are an error.
 Password removal and applying AI suggestions cannot be written here; use the Paperless web UI.
-A 'manual' trigger (Paperless 3.5 and later) is listed but cannot be written here either.
+A 'manual' trigger (run by hand) is listed but cannot be written here either.
 
-A workflow runs by itself on every matching document once it is enabled. Without confirm, an
+A workflow runs by itself on every matching document once it is enabled (one with only manual
+triggers runs when a user runs it by hand). Without confirm, an
 enabled workflow that moves to trash, e-mails, calls a webhook, removes things or changes owner or
 permissions is refused with an error that says what it would do; describe that to the user and
 call again with confirm=true once they agree. Disabled workflows and plain filing (tags, title,

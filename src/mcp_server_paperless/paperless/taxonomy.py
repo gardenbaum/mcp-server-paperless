@@ -26,9 +26,8 @@ if TYPE_CHECKING:
 NO_MATCHING = 0
 TAG_DELETE_HINT: Final = (
     "Deleting a tag needs the permission to delete it and every child tag below it. Paperless "
-    "3.5 refuses a deletion that would take child tags of other users with it (3.4 deletes "
-    "them); ask their owner or an administrator to delete or move those child tags first, or "
-    "keep the tag."
+    "refuses a deletion that would take child tags of other users with it; ask their owner or "
+    "an administrator to delete or move those child tags first, or keep the tag."
 )
 ALGORITHMS: Final[dict[MatchingAlgorithm, int]] = {
     "none": NO_MATCHING,

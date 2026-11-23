@@ -4,7 +4,7 @@ title: Find and resolve duplicate documents
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:21:59Z'
-updated_date: '2026-11-23T18:30:57Z'
+updated_date: '2026-11-23T19:32:27Z'
 labels: []
 dependencies:
   - PLMCP-77
@@ -16,7 +16,7 @@ ordinal: 64200
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Paperless 3.4 keeps duplicates and knows them (duplicate_documents, filter has_duplicates), but no tool lists or resolves them; only a saved view can filter on them (rule 50). Split from PLMCP-77. Requested by the owner on 2026-11-23.
+Paperless keeps duplicates and knows them (duplicate_documents, filter has_duplicates), but no tool lists or resolves them; only a saved view can filter on them (rule 50). Split from PLMCP-77. Requested by the owner on 2026-11-23.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

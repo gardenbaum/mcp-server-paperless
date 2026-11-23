@@ -168,8 +168,7 @@ class TaxonomyDeletion(BaseModel):
         Field(
             description=(
                 "Tags: the child tags you can see that are deleted with it, with their document "
-                "counts. On Paperless 3.4 child tags you cannot see (other users') are deleted "
-                "too; 3.5 refuses the deletion instead."
+                "counts. Paperless refuses the deletion if it would take child tags of other users."
             )
         ),
     ] = ()

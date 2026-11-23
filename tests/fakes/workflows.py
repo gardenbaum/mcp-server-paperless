@@ -115,7 +115,7 @@ WEBHOOK_DEFAULTS: dict[str, JsonValue] = {
     "headers": None,
     "include_document": False,
 }
-CONSUMPTION, SCHEDULED, EMAIL, WEBHOOK, REMOTE_OCR, MANUAL = 1, 4, 3, 4, 7, 5
+CONSUMPTION, SCHEDULED, EMAIL, WEBHOOK, REMOTE_OCR = 1, 4, 3, 4, 7
 MAX_NAME = 256
 
 
@@ -126,8 +126,6 @@ class WorkflowData:
     workflows: list[Workflow]
     # The last id given to a trigger or action; Paperless numbers them apart, the fake together.
     last_object_id: list[int] = field(default_factory=lambda: [0])
-    # Paperless 3.5 and later have the manual trigger type; 3.4.2 refuses it.
-    manual_triggers: bool = False
 
 
 @dataclass(frozen=True)
@@ -249,9 +247,7 @@ def _triggers(
     kinds = _kinds(TRIGGER_FIELDS.values())
     made: list[WorkflowTrigger] = []
     for trigger in given:
-        if trigger.type not in TRIGGER_TYPES or (
-            trigger.type == MANUAL and not data.manual_triggers
-        ):
+        if trigger.type not in TRIGGER_TYPES:
             reject("triggers.type", f'"{trigger.type}" is not a valid choice.')
         settings = {**TRIGGER_DEFAULTS, **trigger.settings}
         for source in settings["sources"] if isinstance(settings["sources"], list) else []:

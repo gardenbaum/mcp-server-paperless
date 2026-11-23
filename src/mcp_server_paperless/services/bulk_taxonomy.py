@@ -229,9 +229,5 @@ def _uses(kind: BulkKind, chosen: list[TaxonomyItem], below: list[TaxonomyItem])
             effect += (
                 f"; {words['their']} child tags {_counted(below)} are deleted with {words['them']}"
             )
-        effect += (
-            f"; on Paperless 3.4 child tags you cannot see (other users') are deleted with "
-            f"{words['them']} as well; Paperless 3.5 refuses the deletion if it would take tags "
-            "of other users"
-        )
+        effect += "; Paperless refuses the deletion if it would take child tags of other users"
     return effect
