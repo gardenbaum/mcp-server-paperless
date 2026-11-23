@@ -80,7 +80,9 @@ async def test_the_query_description_states_the_operator_rules() -> None:
 
     properties = cast("dict[str, Json]", tool.input_schema["properties"])
     text = str(properties["query"]["description"])
-    assert all(rule in text for rule in ("uppercase", "leading minus does not exclude", "field:*"))
+    rules = ("uppercase", "leading minus or ! does not exclude", "'type:*' is presence")
+    assert all(rule in text for rule in rules)
+    assert "does not work" not in text
 
 
 async def test_the_default_page_holds_25_documents() -> None:

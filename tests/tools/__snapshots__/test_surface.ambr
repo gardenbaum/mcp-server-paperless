@@ -13537,7 +13537,7 @@
           'notices': dict({
             'default': list([
             ]),
-            'description': 'Query syntax the search index does not support, with the working alternative; empty for a clean query. Paperless itself reports no error for these.',
+            'description': 'Query syntax the search index reads as plain text, with the working alternative; empty for a clean query. Paperless itself reports no error for these.',
             'items': dict({
               'type': 'string',
             }),
@@ -13655,7 +13655,7 @@
         ids, names, dates, custom field values and web_url, never the document text. count is the
         total; pass next_page as page to see more. To find documents without a correspondent, document
         type, storage path or tags use has_correspondent, has_document_type, has_storage_path or
-        has_tags set to false; a full-text query like 'NOT type:*' cannot do it.
+        has_tags set to false.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -13902,7 +13902,7 @@
               }),
             ]),
             'default': None,
-            'description': "Full-text query in Paperless syntax over title, content, notes and fields, e.g. 'invoice AND acme', 'created:[2024 to 2025]', 'notes.note:paid'. NOT, AND and OR must be uppercase (lowercase are plain search terms); a leading minus does not exclude, write NOT term; field:* (presence) does not work, use the has_* filters. Unsupported syntax is named in notices. Results are ranked by relevance and carry highlights.",
+            'description': "Full-text query in Paperless syntax over title, content, correspondent, type and tags; notes and custom fields by prefix, e.g. 'invoice AND acme', 'created:[2024 to 2025]', 'notes.note:paid'. NOT, AND and OR must be uppercase (lowercase are plain search terms); a leading minus or ! does not exclude, write NOT term; 'type:*' is presence; an unknown field is searched as plain text. Misread syntax is named in notices. Results are ranked by relevance and carry highlights.",
           }),
           'storage_path': dict({
             'anyOf': list([
@@ -14222,7 +14222,7 @@
           'notices': dict({
             'default': list([
             ]),
-            'description': 'Query syntax the search index does not support, with the working alternative; empty for a clean query. Paperless itself reports no error for these.',
+            'description': 'Query syntax the search index reads as plain text, with the working alternative; empty for a clean query. Paperless itself reports no error for these.',
             'items': dict({
               'type': 'string',
             }),
@@ -22982,7 +22982,7 @@
           'notices': dict({
             'default': list([
             ]),
-            'description': 'Query syntax the search index does not support, with the working alternative; empty for a clean query. Paperless itself reports no error for these.',
+            'description': 'Query syntax the search index reads as plain text, with the working alternative; empty for a clean query. Paperless itself reports no error for these.',
             'items': dict({
               'type': 'string',
             }),
@@ -23024,7 +23024,7 @@
         ids, names, dates, custom field values and web_url, never the document text. count is the
         total; pass next_page as page to see more. To find documents without a correspondent, document
         type, storage path or tags use has_correspondent, has_document_type, has_storage_path or
-        has_tags set to false; a full-text query like 'NOT type:*' cannot do it.
+        has_tags set to false.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -23271,7 +23271,7 @@
               }),
             ]),
             'default': None,
-            'description': "Full-text query in Paperless syntax over title, content, notes and fields, e.g. 'invoice AND acme', 'created:[2024 to 2025]', 'notes.note:paid'. NOT, AND and OR must be uppercase (lowercase are plain search terms); a leading minus does not exclude, write NOT term; field:* (presence) does not work, use the has_* filters. Unsupported syntax is named in notices. Results are ranked by relevance and carry highlights.",
+            'description': "Full-text query in Paperless syntax over title, content, correspondent, type and tags; notes and custom fields by prefix, e.g. 'invoice AND acme', 'created:[2024 to 2025]', 'notes.note:paid'. NOT, AND and OR must be uppercase (lowercase are plain search terms); a leading minus or ! does not exclude, write NOT term; 'type:*' is presence; an unknown field is searched as plain text. Misread syntax is named in notices. Results are ranked by relevance and carry highlights.",
           }),
           'storage_path': dict({
             'anyOf': list([
@@ -23591,7 +23591,7 @@
           'notices': dict({
             'default': list([
             ]),
-            'description': 'Query syntax the search index does not support, with the working alternative; empty for a clean query. Paperless itself reports no error for these.',
+            'description': 'Query syntax the search index reads as plain text, with the working alternative; empty for a clean query. Paperless itself reports no error for these.',
             'items': dict({
               'type': 'string',
             }),
@@ -30811,7 +30811,7 @@
           'notices': dict({
             'default': list([
             ]),
-            'description': 'Query syntax the search index does not support, with the working alternative; empty for a clean query. Paperless itself reports no error for these.',
+            'description': 'Query syntax the search index reads as plain text, with the working alternative; empty for a clean query. Paperless itself reports no error for these.',
             'items': dict({
               'type': 'string',
             }),
@@ -30853,7 +30853,7 @@
         ids, names, dates, custom field values and web_url, never the document text. count is the
         total; pass next_page as page to see more. To find documents without a correspondent, document
         type, storage path or tags use has_correspondent, has_document_type, has_storage_path or
-        has_tags set to false; a full-text query like 'NOT type:*' cannot do it.
+        has_tags set to false.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -31100,7 +31100,7 @@
               }),
             ]),
             'default': None,
-            'description': "Full-text query in Paperless syntax over title, content, notes and fields, e.g. 'invoice AND acme', 'created:[2024 to 2025]', 'notes.note:paid'. NOT, AND and OR must be uppercase (lowercase are plain search terms); a leading minus does not exclude, write NOT term; field:* (presence) does not work, use the has_* filters. Unsupported syntax is named in notices. Results are ranked by relevance and carry highlights.",
+            'description': "Full-text query in Paperless syntax over title, content, correspondent, type and tags; notes and custom fields by prefix, e.g. 'invoice AND acme', 'created:[2024 to 2025]', 'notes.note:paid'. NOT, AND and OR must be uppercase (lowercase are plain search terms); a leading minus or ! does not exclude, write NOT term; 'type:*' is presence; an unknown field is searched as plain text. Misread syntax is named in notices. Results are ranked by relevance and carry highlights.",
           }),
           'storage_path': dict({
             'anyOf': list([
@@ -31420,7 +31420,7 @@
           'notices': dict({
             'default': list([
             ]),
-            'description': 'Query syntax the search index does not support, with the working alternative; empty for a clean query. Paperless itself reports no error for these.',
+            'description': 'Query syntax the search index reads as plain text, with the working alternative; empty for a clean query. Paperless itself reports no error for these.',
             'items': dict({
               'type': 'string',
             }),

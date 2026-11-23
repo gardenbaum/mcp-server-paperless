@@ -1,7 +1,7 @@
 # Run in a container
 
 Version tags (`v*`) publish an image to `ghcr.io/gardenbaum/mcp-server-paperless`, with a provenance and
-an SBOM attestation (releases up to 0.2.0 kept the old name `ghcr.io/gardenbaum/paperless-mcp`). It runs
+an SBOM attestation (the first image is 0.3.0; the images of earlier releases were removed). It runs
 `mcp-server-paperless-http` as a non-root user (uid 10001) from a read-only filesystem, listens on
 `0.0.0.0:8000` inside the container and, like the plain command, **does not start without
 `PAPERLESS_MCP_HTTP_AUTH_TOKENS` (or the [optional OIDC layer](claude-ai-connector.md)) and

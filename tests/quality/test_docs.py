@@ -139,9 +139,8 @@ def test_the_readme_links_every_page_written_for_users() -> None:
 
 @pytest.mark.parametrize("page", PAGES, ids=NAMES)
 def test_no_page_uses_the_old_repository_name(page: Path) -> None:
-    # The one allowed mention says which image name the releases up to 0.2.0 kept.
     lines = page.read_text(encoding="utf-8").splitlines()
-    stale = [line for line in lines if OLD_NAMES.search(line) and "up to 0.2.0" not in line]
+    stale = [line for line in lines if OLD_NAMES.search(line)]
 
     assert stale == []
 

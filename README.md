@@ -105,20 +105,23 @@ people who want all of the following in one server:
 
 ## How it compares
 
-The other paperless-ngx MCP servers, as their code stood in November 2026 (counted from their
-sources; open an issue if something has changed):
+Some other paperless-ngx MCP servers, as their code stood on 23 November 2026 (read from their
+sources, not run; ❌ means not found; open an issue if something is wrong or has changed):
 
-| | **mcp-server-paperless** | [OrellBuehler](https://github.com/OrellBuehler/paperless-mcp) | [freeformz](https://github.com/freeformz/paperless-ngx-mcp) | [baruchiro](https://github.com/baruchiro/paperless-mcp) | [nloui](https://github.com/nloui/paperless-mcp) |
-|---|---|---|---|---|---|
-| Tools offered by default / in total | 19 / 87 | 126 / 126 | 120 / 120 | 47 / 47 | 16 / 16 |
-| Opt-in toolsets and a read-only mode | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Names instead of ids everywhere | ✅ | ❌ | partly | partly | ❌ |
-| Confirmation before anything final | ✅ with a preview of the effect | hints only | not found | ✅ | ❌ |
-| Runs saved views | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Says when a full-text query cannot work | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Versions, trash, share links, mail, workflows, users | ✅ | ✅ | mostly | mail only | ❌ |
-| HTTP with bearer token and OIDC (claude.ai) | ✅ | ✅ | stdio only | bearer | no auth |
-| Tested against a real Paperless | 3.4.2 on every change, newest 3.x weekly | ❌ | ❌ | 2.14 | ❌ |
+| | Tools by default / in total | Toolsets and read-only mode | Names instead of ids | Confirms what is final | Runs saved views | Notices misread full-text syntax | HTTP | Tested on a real Paperless |
+|---|---|---|---|---|---|---|---|---|
+| **mcp-server-paperless** | 19 / 87 | ✅ opt-in | ✅ tags, types, people, views | ✅ with a preview | ✅ | ✅ | bearer, OIDC | 3.4.2 after every merge, newest 3.x weekly |
+| [OrellBuehler/paperless-mcp](https://github.com/OrellBuehler/paperless-mcp) | 123 / 126 | ✅ all on by default | ❌ | hints only | ❌ | ❌ | bearer, OAuth | ❌ |
+| [freeformz/paperless-ngx-mcp](https://github.com/freeformz/paperless-ngx-mcp) | 123 / 123 | ❌ | ❌ | ❌ | ❌ | ❌ | stdio only | ❌ |
+| [cubinet-code/paperless-ngx-mcp](https://github.com/cubinet-code/paperless-ngx-mcp) | 109 / 109 | ❌ | in results | ✅ | ❌ | ❌ | no auth | 3.2.1 on every change |
+| [tobee89/mcp-paperless-ngx](https://github.com/tobee89/mcp-paperless-ngx) | 85 / 99 | ✅ 7 of 9 on by default | ❌ | hints only | ❌ | ❌ | stdio only | by hand |
+| [pvliesdonk/paperless-mcp](https://github.com/pvliesdonk/paperless-mcp) | 50 / 52 | tool allow list | ❌ | hints only | ❌ | ❌ | bearer, OIDC | not in CI |
+| [baruchiro/paperless-mcp](https://github.com/baruchiro/paperless-mcp) | 47 / 47 | ❌ | in results | ✅ | ❌ | ❌ | bearer | 2.20 and newest on every change |
+| [barryw/PaperlessMCP](https://github.com/barryw/PaperlessMCP) | 44 / 44 | ❌ | ❌ | ✅ with a preview | ❌ | ❌ | no auth | ❌ |
+| [nloui/paperless-mcp](https://github.com/nloui/paperless-mcp) | 16 / 16 | ❌ | ❌ | ❌ | ❌ | ❌ | no auth | ❌ |
+
+Others exist; [tb1337](https://github.com/tb1337/paperless-mcp) and
+[chaosbit-dev](https://github.com/chaosbit-dev/paperless-mcp) also run saved views.
 
 More tools is not better by itself: every tool a client loads costs context in every
 conversation. This server keeps the default small and lets you switch on the rest.
