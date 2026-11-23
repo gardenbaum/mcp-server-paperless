@@ -90,6 +90,7 @@ from mcp_server_paperless.tools import (
 )
 from mcp_server_paperless.tools._shared import (
     ANNOTATIONS,
+    DOCUMENT_TEXT,
     SERVICES,
     TOOL_TOOLSETS,
     TOOLSET_REQUIRES,
@@ -149,7 +150,7 @@ TAXONOMY_TTL = 300.0
 INSTRUCTIONS = (
     "Tools for a paperless-ngx document archive: find, read and organise documents and their "
     "tags, correspondents, document types and storage paths. Start with get_instance_overview "
-    "to learn the instance and what the current user may do."
+    f"to learn the instance and what the current user may do. {DOCUMENT_TEXT}"
 )
 
 NO_TOOLS = (
