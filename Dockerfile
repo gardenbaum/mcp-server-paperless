@@ -1,5 +1,6 @@
-# mcp-server-paperless over Streamable HTTP (decision-28). Two stages: the builder installs the locked
-# dependencies and the project into a virtual environment, the runtime copies only that.
+# mcp-server-paperless over Streamable HTTP (decision-28): the builder installs the locked
+# dependencies and the project into a virtual environment, the base copies only that. The last stage,
+# runtime, is the default target and the published image; stdio is built by name (decision-38).
 # Both base images are pinned by digest; Renovate bumps tag and digest together.
 
 # renovate: datasource=docker depName=ghcr.io/astral-sh/uv
@@ -25,7 +26,7 @@ RUN --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
     uv sync --locked --no-dev --no-editable
 
 # renovate: datasource=docker depName=python
-FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f AS runtime
+FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f AS base
 
 # Security fixes Debian has shipped since the base image digest was built (the scan fails the
 # image on fixed HIGH findings), and no pip: the server runs from /app/.venv and needs neither pip
@@ -42,6 +43,19 @@ RUN apt-get update \
 RUN groupadd --system --gid 10001 mcp-server-paperless \
     && useradd --system --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin mcp-server-paperless
 COPY --from=builder /app/.venv /app/.venv
+
+# The Docker MCP Catalog builds this target and runs it over stdio: `docker build --target stdio`.
+# Only metadata, so within one build its filesystem is the one the workflow scans (a later build, like
+# the catalog's, gets newer packages from apt-get upgrade). No HTTP settings, port or health check,
+# for nothing listens. Never published from here.
+FROM base AS stdio
+ENV PATH="/app/.venv/bin:${PATH}" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+USER 10001:10001
+ENTRYPOINT ["mcp-server-paperless"]
+
+FROM base AS runtime
 
 # 0.0.0.0 is a remote bind, so the server refuses to start until PAPERLESS_MCP_HTTP_AUTH_TOKENS and
 # PAPERLESS_MCP_HTTP_ALLOWED_HOSTS are set. No credentials and no unauthenticated mode are baked in.

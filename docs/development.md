@@ -61,6 +61,26 @@ description or its annotations changed. Tests fail when it is stale, when the RE
 tool or toolset count the catalogue does not have, when a setting is documented nowhere under
 `docs/`, or when a relative link leads nowhere.
 
+### Demo recording
+
+`just demo` records `docs/demo/demo.gif`, the recording at the top of the README. It needs only
+Docker and network access: `docs/demo/compose.yaml` starts the pinned Paperless of the live tests
+as a throwaway stack, and the recorder container (vhs and uv, pinned in `docs/demo/Dockerfile`)
+fills it with the invented documents of `docs/demo/demo.py` and records `docs/demo/demo.tape`. The
+stack and its volumes are removed afterwards. The script runs the released server from PyPI
+(`SERVER` in `demo.py`) as an MCP client. Questions and tool calls are scripted and no model takes
+part; the answers come from the server and are only shortened. `demo.gif` is replaced only when the
+script reached its end. Keep the caption and the alt text in
+the README true, look at every scene before committing, and stay within 30 seconds and 500 kB (a
+test checks both; the large-file hook stops more). To show another release, change `SERVER` and
+raise `UV_EXCLUDE_NEWER` in the Dockerfile, run `just demo` and update the caption; a test compares
+the caption with `SERVER`. The caption names the Paperless of the recording, so it stays true when
+the live tests move to a newer one.
+
+Known limits: PyPI's page of an older release embeds the GIF of main, so it shows the newest
+recording, not the one of its time. The recorder image stays behind after a run; remove it with
+`docker rmi mcp-server-paperless-demo-recorder`.
+
 ## Conventions
 
 Lint suppressions name a specific code and a reason, e.g. `# noqa: S101 -- reason`
@@ -79,9 +99,9 @@ backlog-drift-check` runs the comparison locally).
 ## Releases
 
 A release is a version tag on a commit on main, pushed by the owner; nobody publishes by hand and
-no version bump is needed (decision-33, carried over by decision-37): `git tag -a v1.2.3 -m "1.2.3" && git push origin v1.2.3`.
+no version bump is needed (decision-33, carried over by decision-38): `git tag -a v1.2.3 -m "1.2.3" && git push origin v1.2.3`.
 The tag runs two workflows: `image.yml` publishes the container image to GHCR (decision-28 as
-carried over by decision-37), and `pypi.yml` sets the package version from the tag (`uv version`,
+carried over by decision-38), and `pypi.yml` sets the package version from the tag (`uv version`,
 PEP 440: `v1.2.3-rc.1` becomes `1.2.3rc1`) and publishes `mcp-server-paperless` to PyPI by Trusted
 Publishing from the `pypi` environment. A tag that is not a valid version, or a commit that is not
 on main, publishes nothing to PyPI; PyPI also refuses local versions (`+…`). The version in `pyproject.toml` is the development version that

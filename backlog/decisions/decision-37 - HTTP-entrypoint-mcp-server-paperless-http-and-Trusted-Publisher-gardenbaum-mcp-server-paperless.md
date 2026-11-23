@@ -1,10 +1,12 @@
 ---
+superseded_by: decision-38
+updated_date: '2026-11-23T11:43:48Z'
 id: decision-37
 title: >-
   HTTP entrypoint mcp-server-paperless-http and Trusted Publisher
   gardenbaum/mcp-server-paperless
 date: '2026-11-23T11:11:38Z'
-status: accepted
+status: superseded
 ---
 ## Context
 
