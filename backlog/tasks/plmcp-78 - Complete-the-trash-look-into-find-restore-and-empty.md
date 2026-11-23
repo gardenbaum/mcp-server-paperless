@@ -4,7 +4,7 @@ title: 'Complete the trash: look into, find, restore and empty'
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:49Z'
-updated_date: '2026-11-23T12:22:11Z'
+updated_date: '2026-11-23T18:30:55Z'
 labels: []
 dependencies: []
 priority: medium
@@ -25,7 +25,7 @@ The toolset trash (off by default) already lists, restores (up to 100 ids, no co
 - [ ] #3 Restore and delete for good also accept a narrowed list, which is resolved to ids and shown first, and only those ids are acted on; deleting needs confirm, restoring does not (or a decision changes that)
 - [ ] #4 The result lists each entry; that Paperless restores or deletes all or none is stated, and an id that blocks the call is named
 - [ ] #5 Whether reading and restoring belong in the default profile is decided; if a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
-- [ ] #6 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover each filter, the cap, trashed content, restore and delete by narrowed list, all-or-none refusals and a restricted user
+- [ ] #6 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover each filter, the cap, trashed content, restore and delete by narrowed list, all-or-none refusals and a restricted user
 - [ ] #7 Every tool that trashes something (documents, versions, pdf, bulk, resolving duplicates) says how to restore it and which toolset that needs, as delete_document does
 <!-- AC:END -->
 

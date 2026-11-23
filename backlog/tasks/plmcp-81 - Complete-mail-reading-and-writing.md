@@ -4,7 +4,7 @@ title: Complete mail, reading and writing
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:51Z'
-updated_date: '2026-11-23T12:25:16Z'
+updated_date: '2026-11-23T18:30:56Z'
 labels: []
 dependencies:
   - PLMCP-91
@@ -26,8 +26,8 @@ The toolset mail (off by default) already reads and writes accounts and rules, l
 - [ ] #3 Why a mail was not imported is explained from rule settings, processed mail and logs, without a connection from this server; the tool says it is not a dry run and names the closest way
 - [ ] #4 Testing an unsaved account (Paperless would connect to any host the model names) and creating an OAuth account or writing its token happen only after a decision that supplements or supersedes decision-18; until then the tools say that OAuth accounts are set up in the web UI and that a saved account can be tested
 - [ ] #5 OAuth accounts are read (type, token expiry), and their settings other than tokens are changed as far as /api/mail_accounts/ allows, without showing a token
-- [ ] #6 Every endpoint of mail_accounts, mail_rules, processed_mail and oauth in the 3.4 schema is covered; a proposed omission is put to the owner, and only an owner-approved exclusion, quoted with its date, is recorded (in the coverage table of PLMCP-91)
-- [ ] #7 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover each new read and write, the refusals, that no credential appears in a result, error or log, and the refetch
+- [ ] #6 Every endpoint of mail_accounts, mail_rules, processed_mail and oauth in the vendored 3.5.1 schema is covered; a proposed omission is put to the owner, and only an owner-approved exclusion, quoted with its date, is recorded (in the coverage table of PLMCP-91)
+- [ ] #7 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover each new read and write, the refusals, that no credential appears in a result, error or log, and the refetch
 <!-- AC:END -->
 
 ## Definition of Done

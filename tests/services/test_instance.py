@@ -28,7 +28,7 @@ async def test_the_probe_returns_the_overview_of_a_reachable_paperless() -> None
     overview = await InstanceService(admin()).probe(timeout=1.0)
 
     assert overview is not None
-    assert overview.paperless_version == "3.4.2"
+    assert overview.paperless_version == "3.5.1"
 
 
 @pytest.mark.decision("decision-2")

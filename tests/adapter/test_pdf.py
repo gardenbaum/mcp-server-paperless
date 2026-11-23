@@ -1,7 +1,8 @@
-"""PaperlessPdfWriter on the Paperless 3.4.2 wire format (schema-guarded, PLMCP-23).
+"""PaperlessPdfWriter on the Paperless wire format (schema-guarded, PLMCP-23).
 
-Every PDF endpoint answers `{"result": "OK"}` and names no task; the adapter finds the tasks in
-the task list. The rows below are shaped like the ones recorded from 3.4.2.
+Every PDF endpoint answers `{"result": "OK", "task_id": ...}` for the `bulk_update` task it
+queued, and the adapter finds the tasks of the files it makes in the task list. The rows below
+are shaped like the ones recorded from Paperless.
 """
 
 import asyncio
@@ -11,8 +12,14 @@ from typing import TYPE_CHECKING, override
 import httpx2
 import pytest
 
+from adapter.conftest import streaming
 from adapter.test_instance import UI_SETTINGS
-from mcp_server_paperless.domain.errors import PermissionDenied, UpstreamUnavailable, Validation
+from mcp_server_paperless.domain.errors import (
+    PaperlessMcpError,
+    PermissionDenied,
+    UpstreamUnavailable,
+    Validation,
+)
 from mcp_server_paperless.domain.pdf import PageSlot, StartedTasks
 from mcp_server_paperless.paperless.client import RetryPolicy
 from mcp_server_paperless.paperless.pdf import PaperlessPdfWriter
@@ -26,7 +33,8 @@ pytestmark = pytest.mark.anyio
 
 type Json = dict[str, object]
 
-OK: Json = {"result": "OK"}
+DONE_TASK = "5b8f0c2e-0000-4000-8000-0000000000dd"
+OK: Json = {"result": "OK", "task_id": DONE_TASK}
 
 
 def row(
@@ -98,6 +106,12 @@ class Paperless:
         self._posted: bool = False
 
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        if request.url.path == "/api/tasks/" and request.url.params.get("task_id") == DONE_TASK:
+            # The queued task of the operation has succeeded; looking at it is not logged.
+            done = {**row(1, "bulk_update"), "task_id": DONE_TASK}
+            return httpx2.Response(
+                200, json={"count": 1, "next": None, "previous": None, "results": [done]}
+            )
         payload: object = json.loads(request.content) if request.content else None
         self.requests.append((request.method, request.url.path, dict(request.url.params), payload))
         if request.method == "POST":
@@ -898,6 +912,19 @@ async def test_tasks_of_other_operations_know_their_one_document_and_reprocess_n
 
     assert edited.sources == (8,)
     assert again.sources == (None,)
+
+
+async def test_an_operation_answered_without_its_task_may_have_been_applied() -> None:
+    class NoTask(Paperless):
+        @override
+        def __call__(self, request: httpx2.Request) -> httpx2.Response:
+            seen = super().__call__(request)
+            return httpx2.Response(200, json={"result": "OK"}) if request.method == "POST" else seen
+
+    with pytest.raises(PaperlessMcpError, match="unexpected response") as raised:
+        _ = await PaperlessPdfWriter(streaming(NoTask(OLD, OLD))[0]).rotate_documents((7,), 90)
+
+    assert "may have been applied" in (raised.value.hint or "")
 
 
 async def test_a_merge_names_no_source_because_its_result_is_a_document_of_its_own(

@@ -10,7 +10,7 @@ than a wish.
 Paperless answers an upload with the id of a consumption task, and consumes later. A caller who
 wants the new document waits a bounded time (``TaskService``). Problems only consumption finds,
 such as an archive serial number that is taken, fail the task and come back as ``failure``.
-Uploading the same content twice makes two documents on Paperless 3.4.2; nothing here prevents
+Uploading the same content twice makes two documents on Paperless; nothing here prevents
 or detects that.
 """
 

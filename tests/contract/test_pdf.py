@@ -1,4 +1,4 @@
-"""Contract of PdfWriter: the same assertions on the fake and on Paperless 3.4.2.
+"""Contract of PdfWriter: the same assertions on the fake and on a live Paperless.
 
 Probed on 3.4.2: every PDF endpoint answers "OK" and names no task (the adapter finds the tasks);
 rotating, and editing or unlocking as a new version, add a version to the same document and keep

@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-# Every rule type of Paperless 3.4.2 (SavedViewFilterRule.RULE_TYPES) with the label the web UI
+# Every rule type of Paperless (SavedViewFilterRule.RULE_TYPES) with the label the web UI
 # uses. A test compares the table with the vendored OpenAPI schema.
 RULE_TYPES: Final[Mapping[int, str]] = {
     0: "title contains",

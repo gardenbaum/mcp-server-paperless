@@ -29,6 +29,7 @@ from mcp_server_paperless.domain.workflows import (
     TRIGGER_FIELDS,
     TRIGGER_TYPES,
     WRITABLE_ACTION_TYPES,
+    WRITABLE_TRIGGER_TYPES,
     ActionInfo,
     Field_,
     TriggerInfo,
@@ -70,7 +71,7 @@ HIDDEN: Final = "(hidden)"
 # The settings that only a consumption trigger has, and that only a scheduled one has.
 CONSUMPTION_ONLY: Final = frozenset({"sources", "path", "filename", "mailrule"})
 SCHEDULED_ONLY: Final = frozenset(n for n in TRIGGER_FIELDS if n.startswith("schedule_"))
-CONSUMPTION, SCHEDULED, EMAIL, WEBHOOK = 1, 4, 3, 4
+CONSUMPTION, SCHEDULED, EMAIL, WEBHOOK, MANUAL = 1, 4, 3, 4, 5
 # Short names for the types, besides their labels.
 TRIGGER_ALIASES: Final[Mapping[int, tuple[str, ...]]] = {
     1: ("consumption",),
@@ -78,6 +79,10 @@ TRIGGER_ALIASES: Final[Mapping[int, tuple[str, ...]]] = {
     3: ("updated",),
 }
 ACTION_ALIASES: Final[Mapping[int, tuple[str, ...]]] = {6: ("trash",), 7: ("ocr",)}
+# Why a tool may not write a trigger type that Paperless has.
+UNWRITABLE_TRIGGERS: Final[Mapping[int, str]] = {
+    5: "a workflow with it is run by hand from the Paperless web UI",
+}
 # Why a tool may not write an action type that Paperless has.
 UNWRITABLE: Final[Mapping[int, str]] = {
     5: "it holds passwords, which this server never shows and so could not keep",
@@ -135,6 +140,22 @@ def trigger_type(value: int | str) -> int:
             "or a label such as 'document added'."
         ),
     )
+
+
+def _writable_triggers(specs: Sequence[TriggerInput]) -> None:
+    """Refuse a trigger type that Paperless has and this server does not write.
+
+    Raises:
+        Validation: A type has no such number or name, or is one that stays with the web UI.
+    """
+    for spec in specs:
+        number = trigger_type(spec.type)
+        if number not in WRITABLE_TRIGGER_TYPES:
+            message = (
+                f"The workflow trigger type {TRIGGER_TYPES[number]!r} ({number}) cannot be "
+                f"written by this server: {UNWRITABLE_TRIGGERS[number]}."
+            )
+            raise Validation(message, hint="Set it up in the Paperless web UI.")
 
 
 def action_type(value: int | str) -> int:
@@ -281,12 +302,26 @@ def _trigger_text(trigger: WorkflowTrigger) -> str:
 
 
 def _effect(lead: str, triggers: Sequence[WorkflowTrigger], acts: Sequence[str]) -> str:
-    when = "; ".join(_trigger_text(t) for t in triggers)
+    """What an enabled workflow does: by itself, or only when a user runs it (manual triggers)."""
+    automatic = "; ".join(_trigger_text(t) for t in triggers if t.type != MANUAL)
+    by_hand = "; ".join(_trigger_text(t) for t in triggers if t.type == MANUAL)
+    will = "; ".join(acts)
     if not triggers:
-        when = "no trigger yet: it does nothing until one is added"
+        automatic = "no trigger yet: it does nothing until one is added"
+    if not by_hand:
+        return (
+            f"{lead}, which is enabled and runs by itself on every document that matches its "
+            f"triggers ({automatic}) and will: {will}"
+        )
+    if not automatic:
+        return (
+            f"{lead}, which is enabled and runs only when a user runs it by hand ({by_hand}), "
+            f"possibly on documents its trigger filters do not match, and will: {will}"
+        )
     return (
         f"{lead}, which is enabled and runs by itself on every document that matches its "
-        f"triggers ({when}) and will: {'; '.join(acts)}"
+        f"triggers ({automatic}); when a user runs it by hand ({by_hand}) it may also run on "
+        f"documents its filters do not match; it will: {will}"
     )
 
 
@@ -337,6 +372,7 @@ class WorkflowService:
         """
         name = self._name(spec.name)
         await self._free(name, except_id=None)
+        _writable_triggers(spec.triggers)
         triggers = tuple([await self._trigger(t) for t in spec.triggers])
         actions = tuple([await self._action(a, {}) for a in spec.actions])
         acts = _acts(actions)
@@ -364,7 +400,8 @@ class WorkflowService:
                 takes things away (by new triggers or actions, or by switching it on), and
                 ``confirm`` is false. Nothing was changed.
             Validation: Nothing to change, a name that is empty or taken, a setting or value that
-                is unusable, or new actions that would drop actions this server cannot write.
+                is unusable, a trigger of a type this server does not write (manual), or new
+                triggers or actions that would drop ones this server cannot write.
             NotFound: No such workflow, or a name matches nothing.
             Ambiguous: A name matches several workflows or objects.
             PermissionDenied: The user may not change workflows.
@@ -379,6 +416,8 @@ class WorkflowService:
         if edit.enabled is not None:
             changes["enabled"] = edit.enabled
         if edit.triggers is not None:
+            _writable_triggers(edit.triggers)
+            self._keeps_unwritable_triggers(found)
             changes["triggers"] = tuple([await self._trigger(t) for t in edit.triggers])
         if edit.actions is not None:
             self._keeps_unwritable(found)
@@ -445,6 +484,23 @@ class WorkflowService:
             if workflow.id != except_id and fold(workflow.name) == fold(name):
                 message = f"A workflow is already named {quoted(workflow.name)} (id {workflow.id})."
                 raise Validation(message, hint="Choose another name, or update that workflow.")
+
+    @staticmethod
+    def _keeps_unwritable_triggers(found: Workflow) -> None:
+        """Refuse to replace triggers when that would delete one this server cannot write."""
+        kept = [t for t in found.triggers if t.type not in WRITABLE_TRIGGER_TYPES]
+        if kept:
+            names = ", ".join(
+                f"{TRIGGER_TYPES.get(t.type, f'unknown type {t.type}')} (id {t.id})" for t in kept
+            )
+            message = (
+                f"The workflow {quoted(found.name)} holds triggers this server cannot write: "
+                f"{names}. Replacing the triggers would delete them."
+            )
+            raise Validation(
+                message,
+                hint="Change the other settings, or edit the triggers in the Paperless web UI.",
+            )
 
     @staticmethod
     def _keeps_unwritable(found: Workflow) -> None:

@@ -4,7 +4,7 @@ title: 'Complete the PDF tools: inspect, insert, extract and remove, metadata pe
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:50Z'
-updated_date: '2026-11-23T12:25:16Z'
+updated_date: '2026-11-23T19:32:26Z'
 labels: []
 dependencies:
   - PLMCP-74
@@ -17,7 +17,7 @@ ordinal: 68000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The toolset pdf (off by default) already rotates, merges, splits, deletes pages, removes passwords and reprocesses; edit_pdf already picks, reorders, rotates single pages and groups pages into several outputs. Example need: one scan holds a contract and two payment slips. Limits of the 3.4 API: page_count is the only page information, a merge always makes a new document, a split into several files cannot be a version, edit_pdf has one source document, and a split takes no metadata per part. Requested by the owner on 2026-11-23.
+The toolset pdf (off by default) already rotates, merges, splits, deletes pages, removes passwords and reprocesses; edit_pdf already picks, reorders, rotates single pages and groups pages into several outputs. Example need: one scan holds a contract and two payment slips. Limits of the API: page_count is the only page information, a merge always makes a new document, a split into several files cannot be a version, edit_pdf has one source document, and a split takes no metadata per part. Requested by the owner on 2026-11-23.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -28,8 +28,8 @@ The toolset pdf (off by default) already rotates, merges, splits, deletes pages,
 - [ ] #4 Every operation says before it runs what it produces and what is lost, and needs confirm where decision-6 requires it
 - [ ] #5 Operations with exactly one output file for one document can create a version instead of replacing; merge and multi-part split say why they cannot and name the closest way (new documents; merging the result as a version, which is final)
 - [ ] #6 After a split, title, type, correspondent, date and tags can be set per part; parts whose task is unfinished, failed or not visible are named with how to continue, and nothing is trashed before all parts exist
-- [ ] #7 Every endpoint of PDF operations, with their options (for example source_mode and archive_fallback) in the 3.4 schema is covered; a proposed omission is put to the owner, and only an owner-approved exclusion, quoted with its date, is recorded (in the coverage table of PLMCP-91)
-- [ ] #8 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover each new operation, its preview and refusal, failed steps and tasks the user may not see
+- [ ] #7 Every endpoint of PDF operations, with their options (for example source_mode and archive_fallback) in the vendored 3.5.1 schema is covered; a proposed omission is put to the owner, and only an owner-approved exclusion, quoted with its date, is recorded (in the coverage table of PLMCP-91)
+- [ ] #8 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover each new operation, its preview and refusal, failed steps and tasks the user may not see
 <!-- AC:END -->
 
 ## Definition of Done

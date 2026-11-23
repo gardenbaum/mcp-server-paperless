@@ -2961,17 +2961,17 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NoteCreateRequestRequest"
+                "$ref": "#/components/schemas/NoteCreateRequest"
               }
             },
             "application/x-www-form-urlencoded": {
               "schema": {
-                "$ref": "#/components/schemas/NoteCreateRequestRequest"
+                "$ref": "#/components/schemas/NoteCreateRequest"
               }
             },
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/NoteCreateRequestRequest"
+                "$ref": "#/components/schemas/NoteCreateRequest"
               }
             }
           },
@@ -9890,6 +9890,33 @@
         "operationId": "workflows_list",
         "parameters": [
           {
+            "in": "query",
+            "name": "enabled",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "id__in",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "description": "Multiple values may be separated by commas.",
+            "explode": false,
+            "style": "form"
+          },
+          {
             "name": "page",
             "required": false,
             "in": "query",
@@ -9903,6 +9930,13 @@
             "required": false,
             "in": "query",
             "description": "Number of results to return per page.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "trigger_type",
             "schema": {
               "type": "integer"
             }
@@ -11292,10 +11326,14 @@
         "properties": {
           "result": {
             "type": "string"
+          },
+          "task_id": {
+            "type": "string"
           }
         },
         "required": [
-          "result"
+          "result",
+          "task_id"
         ]
       },
       "BulkEditObjectsRequest": {
@@ -11865,6 +11903,10 @@
               "type": "integer"
             },
             "writeOnly": true
+          },
+          "from_webui": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -11873,10 +11915,14 @@
         "properties": {
           "result": {
             "type": "string"
+          },
+          "task_id": {
+            "type": "string"
           }
         },
         "required": [
-          "result"
+          "result",
+          "task_id"
         ]
       },
       "DisplayModeEnum": {
@@ -12486,10 +12532,14 @@
         "properties": {
           "result": {
             "type": "string"
+          },
+          "task_id": {
+            "type": "string"
           }
         },
         "required": [
-          "result"
+          "result",
+          "task_id"
         ]
       },
       "EmailDocumentRequestRequest": {
@@ -13322,6 +13372,10 @@
           "root_document_id": {
             "type": "integer"
           },
+          "from_webui": {
+            "type": "boolean",
+            "default": false
+          },
           "version_label": {
             "type": "string",
             "nullable": true,
@@ -13338,10 +13392,14 @@
         "properties": {
           "result": {
             "type": "string"
+          },
+          "task_id": {
+            "type": "string"
           }
         },
         "required": [
-          "result"
+          "result",
+          "task_id"
         ]
       },
       "MergeDocumentsRequest": {
@@ -13385,10 +13443,14 @@
         "properties": {
           "result": {
             "type": "string"
+          },
+          "task_id": {
+            "type": "string"
           }
         },
         "required": [
-          "result"
+          "result",
+          "task_id"
         ]
       },
       "Metadata": {
@@ -13469,6 +13531,7 @@
           "modify_tags",
           "modify_custom_fields",
           "set_permissions",
+          "run_workflow",
           "delete",
           "reprocess",
           "rotate",
@@ -13479,7 +13542,7 @@
           "delete_pages"
         ],
         "type": "string",
-        "description": "* `set_correspondent` - set_correspondent\n* `set_document_type` - set_document_type\n* `set_storage_path` - set_storage_path\n* `add_tag` - add_tag\n* `remove_tag` - remove_tag\n* `modify_tags` - modify_tags\n* `modify_custom_fields` - modify_custom_fields\n* `set_permissions` - set_permissions\n* `delete` - delete\n* `reprocess` - reprocess\n* `rotate` - rotate\n* `merge` - merge\n* `edit_pdf` - edit_pdf\n* `remove_password` - remove_password\n* `split` - split\n* `delete_pages` - delete_pages"
+        "description": "* `set_correspondent` - set_correspondent\n* `set_document_type` - set_document_type\n* `set_storage_path` - set_storage_path\n* `add_tag` - add_tag\n* `remove_tag` - remove_tag\n* `modify_tags` - modify_tags\n* `modify_custom_fields` - modify_custom_fields\n* `set_permissions` - set_permissions\n* `run_workflow` - run_workflow\n* `delete` - delete\n* `reprocess` - reprocess\n* `rotate` - rotate\n* `merge` - merge\n* `edit_pdf` - edit_pdf\n* `remove_password` - remove_password\n* `split` - split\n* `delete_pages` - delete_pages"
       },
       "MigrationStatus": {
         "type": "object",
@@ -13510,17 +13573,33 @@
         "type": "string",
         "description": "* `auto` - auto\n* `force` - force\n* `redo` - redo\n* `off` - off"
       },
-      "NoteCreateRequestRequest": {
+      "NoteCreateRequest": {
         "type": "object",
         "properties": {
           "note": {
             "type": "string",
             "minLength": 1
+          },
+          "format": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NoteFormatEnum"
+              }
+            ],
+            "default": "plain"
           }
         },
         "required": [
           "note"
         ]
+      },
+      "NoteFormatEnum": {
+        "enum": [
+          "plain",
+          "markdown"
+        ],
+        "type": "string",
+        "description": "* `plain` - Plain\n* `markdown` - Markdown"
       },
       "Notes": {
         "type": "object",
@@ -13533,6 +13612,9 @@
             "type": "string",
             "title": "Content",
             "description": "Note for the document"
+          },
+          "format": {
+            "$ref": "#/components/schemas/NoteFormatEnum"
           },
           "created": {
             "type": "string",
@@ -13559,6 +13641,9 @@
             "type": "string",
             "title": "Content",
             "description": "Note for the document"
+          },
+          "format": {
+            "$ref": "#/components/schemas/NoteFormatEnum"
           },
           "created": {
             "type": "string",
@@ -16051,10 +16136,14 @@
         "properties": {
           "result": {
             "type": "string"
+          },
+          "task_id": {
+            "type": "string"
           }
         },
         "required": [
-          "result"
+          "result",
+          "task_id"
         ]
       },
       "ReprocessDocumentsRequest": {
@@ -16087,6 +16176,10 @@
           "remote_ocr": {
             "type": "boolean",
             "default": false
+          },
+          "from_webui": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -16095,10 +16188,14 @@
         "properties": {
           "result": {
             "type": "string"
+          },
+          "task_id": {
+            "type": "string"
           }
         },
         "required": [
-          "result"
+          "result",
+          "task_id"
         ]
       },
       "RotateDocumentsRequest": {
@@ -16150,10 +16247,14 @@
         "properties": {
           "result": {
             "type": "string"
+          },
+          "task_id": {
+            "type": "string"
           }
         },
         "required": [
-          "result"
+          "result",
+          "task_id"
         ]
       },
       "RuleTypeEnum": {
@@ -18922,10 +19023,11 @@
           1,
           2,
           3,
-          4
+          4,
+          5
         ],
         "type": "integer",
-        "description": "* `1` - Consumption Started\n* `2` - Document Added\n* `3` - Document Updated\n* `4` - Scheduled"
+        "description": "* `1` - Consumption Started\n* `2` - Document Added\n* `3` - Document Updated\n* `4` - Scheduled\n* `5` - Manual"
       }
     },
     "securitySchemes": {

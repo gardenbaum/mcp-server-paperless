@@ -1,4 +1,4 @@
-"""Contract of PermissionReader and PermissionWriter: the same assertions on the fake and on 3.4.2.
+"""Contract of PermissionReader and PermissionWriter: the same assertions on the fake and live.
 
 Facts probed on Paperless 3.4.2 (PLMCP-28):
 

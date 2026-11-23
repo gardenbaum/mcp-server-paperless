@@ -1,4 +1,4 @@
-"""Smoke tests of the Paperless client against the real 3.4.2 stack."""
+"""Smoke tests of the Paperless client against the real Paperless stack."""
 
 from typing import TYPE_CHECKING
 

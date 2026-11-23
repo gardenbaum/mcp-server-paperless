@@ -1,4 +1,4 @@
-"""The bulk toolset through the assembled server on Paperless 3.4.2, on objects of its own.
+"""The bulk toolset through the assembled server on the E2E Paperless, on objects of its own.
 
 Documents and taxonomy are created by the tests and removed again (documents with their trash
 entries), so nothing is left behind and no seeded object is changed.

@@ -2,7 +2,7 @@
 
 Adapter tests build their httpx2 client on `SchemaGuardedTransport(handler)`. Each request the
 adapter sends and each response the handler returns is validated with openapi-core against
-docs/vendor/paperless/openapi.json (Paperless 3.4.2); any mismatch raises `SchemaViolationError`,
+docs/vendor/paperless/openapi.json (Paperless 3.5.1); any mismatch raises `SchemaViolationError`,
 which fails the test. On top of what openapi-core checks, query parameters the operation does not
 declare are rejected, so a misspelt filter cannot pass silently.
 

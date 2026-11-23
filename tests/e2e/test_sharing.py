@@ -1,4 +1,4 @@
-"""The sharing toolset through the assembled server against the seeded Paperless 3.4.2 stack.
+"""The sharing toolset through the assembled server against the seeded Paperless stack.
 
 The stack has no mail server (tests/e2e/compose.yaml sets none), so the e-mail tests cover the
 confirmation, the validation and the refusal that says the send failed; a successful send is

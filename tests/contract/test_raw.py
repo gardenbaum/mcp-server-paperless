@@ -1,4 +1,4 @@
-"""Contract of RawReader against the fake and live Paperless 3.4.2 (decision-25).
+"""Contract of RawReader against the fake and a live Paperless (decision-25).
 
 Only paths both backends serve: the tag list, a document's file and what is no endpoint. The
 live stack is the authority for what Django does to a path without its trailing slash.

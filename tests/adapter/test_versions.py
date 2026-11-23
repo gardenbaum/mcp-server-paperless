@@ -6,11 +6,13 @@ from typing import TYPE_CHECKING, cast
 import httpx2
 import pytest
 
+from adapter.conftest import streaming
 from adapter.test_document_writes import TASK_ID, Form, Uploaded
 from adapter.test_documents import DETAIL
 from adapter.test_queued import row as task_row
 from mcp_server_paperless.domain.errors import (
     NotFound,
+    PaperlessMcpError,
     PermissionDenied,
     UpstreamUnavailable,
     Validation,
@@ -52,6 +54,15 @@ class Answers:
         self.requests: list[httpx2.Request] = []
 
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        if request.url.path == "/api/tasks/":
+            # The task a queued merge names has succeeded; waiting for it is not logged.
+            done = {
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [task_row("success", MERGE_TASK)],
+            }
+            return httpx2.Response(200, json=done)
         self.requests.append(request)
         if self.headers:
             return httpx2.Response(self.status, text=str(self.body), headers=self.headers)
@@ -234,7 +245,7 @@ async def test_a_delete_is_sent_once(make_client: ClientFactory) -> None:
 async def test_a_merge_names_the_root_first_among_the_documents(
     make_client: ClientFactory,
 ) -> None:
-    server = Answers({"result": "OK"})
+    server = Answers({"result": "OK", "task_id": MERGE_TASK})
 
     _ = await PaperlessDocumentWriter(make_client(server)).merge_as_versions(5, (8, 9), None)
 
@@ -243,8 +254,17 @@ async def test_a_merge_names_the_root_first_among_the_documents(
     assert server.sent() == {"documents": [5, 8, 9], "root_document_id": 5}
 
 
+async def test_a_merge_answered_without_its_task_may_have_been_applied() -> None:
+    client, _ = streaming(lambda _: httpx2.Response(200, json={"result": "OK"}))
+
+    with pytest.raises(PaperlessMcpError, match="unexpected response") as raised:
+        _ = await PaperlessDocumentWriter(client).merge_as_versions(5, (8,), None)
+
+    assert "may have been applied" in (raised.value.hint or "")
+
+
 async def test_a_merge_of_one_document_may_carry_a_label(make_client: ClientFactory) -> None:
-    server = Answers({"result": "OK"})
+    server = Answers({"result": "OK", "task_id": MERGE_TASK})
 
     _ = await PaperlessDocumentWriter(make_client(server)).merge_as_versions(5, (8,), "scan")
 

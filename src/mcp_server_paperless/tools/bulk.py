@@ -67,7 +67,7 @@ async def bulk_edit_documents(
     adds its parent, and removing a parent whose child tags stay is refused (list the children
     too). Custom fields are merged: only the fields you name change. Document links are mirrored:
     linking A to B also changes B (you need change permission there), so also_changed lists
-    those documents; a shorter list does not unlink the old target (Paperless 3.4.2), removing
+    those documents; a shorter list does not unlink the old target, removing
     the field does. delete moves documents to the Paperless trash; reprocess runs OCR again in
     the background (the pdf toolset's reprocess_documents does the same, also with remote OCR).
     Paperless checks every document first: if you may not change one of them
@@ -105,13 +105,13 @@ async def bulk_edit_taxonomy(  # noqa: PLR0913 -- one parameter per concept, des
 
     Three steps, like bulk_edit_documents: dry_run=true previews, a call without confirm is an
     error that describes the effect, confirm=true executes. A delete is final (taxonomy has no
-    trash): documents lose the reference, and deleting a tag deletes its child tags too (on
-    Paperless 3.4 also ones you cannot see; 3.5 refuses the deletion if it would take tags of
-    other users). set_permissions without merge replaces all grants with the lists you
-    give (a list left out becomes empty); with merge it adds to them, and merge cannot set an
-    owner. A change grant includes view. Users and groups by name or id. Custom fields are not
-    supported. Paperless checks every object first: if you may not change one, none changes (you
-    need the permission and must own it, or it must have no owner). The permissions toolset's
+    trash): documents lose the reference, and deleting a tag deletes its child tags too
+    (Paperless refuses the deletion if it would take child tags of other users).
+    set_permissions without merge replaces all grants with the lists you give (a list left
+    out becomes empty); with merge it adds to them, and merge cannot set an owner. A change
+    grant includes view. Users and groups by name or id. Custom fields are not supported.
+    Paperless checks every object first: if you may not change one, none changes (you need the
+    permission and must own it, or it must have no owner). The permissions toolset's
     set_permissions also sets permissions and covers documents too; this tool's
     set_permissions operation empties the lists you leave out, that tool keeps them.
     """  # noqa: D205 -- the summary is one sentence; FastMCP sends the docstring as is

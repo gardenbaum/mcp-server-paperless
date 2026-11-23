@@ -1,4 +1,4 @@
-"""Contract of TaxonomyWriter's create, update and delete: fake and live Paperless 3.4.2.
+"""Contract of TaxonomyWriter's create, update and delete: fake and a live Paperless.
 
 Every object is named with `SCRATCH_ITEM` and a uuid; the live backend deletes what is left when
 the test ends. Documents are the test's own (`backend.new_document`), never a seeded one.
@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from contract.conftest import BOTH_RELEASES, SCRATCH_ITEM, since
+from contract.conftest import SCRATCH_ITEM
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 from mcp_server_paperless.domain.taxonomy import OptionInput, TaxonomyValues
@@ -569,10 +569,9 @@ async def test_a_deleted_tag_takes_its_child_tags_and_leaves_the_documents(
     assert {parent.id, child.id, grandchild.id}.isdisjoint(record.tags)
 
 
-@BOTH_RELEASES
-@pytest.mark.decision("decision-29")
+@pytest.mark.decision("decision-43")
 @pytest.mark.contract(DELETE)
-async def test_deleting_a_tag_takes_child_tags_of_others_on_3_4_and_is_refused_on_3_5(
+async def test_deleting_a_tag_that_would_take_child_tags_of_others_is_refused(
     backend: Backend,
 ) -> None:
     mine = backend.restricted(frozenset({"add_tag", "view_tag", "delete_tag"}))
@@ -580,16 +579,12 @@ async def test_deleting_a_tag_takes_child_tags_of_others_on_3_4_and_is_refused_o
     # Made by the admin, so it is another user's tag that the restricted user cannot see.
     child = await make(backend.admin, "tag", parent=parent.id)
 
-    if since(backend, "3.5.0"):
-        with pytest.raises(PermissionDenied) as refused:
-            await mine.taxonomy_writes.delete_taxonomy_item("tag", parent.id)
-        assert refused.value.hint
-        assert "child tags" in refused.value.hint
-        assert {parent.id, child.id} <= set(await listed(backend.admin, "tag"))
-        return
-    await mine.taxonomy_writes.delete_taxonomy_item("tag", parent.id)
+    with pytest.raises(PermissionDenied) as refused:
+        await mine.taxonomy_writes.delete_taxonomy_item("tag", parent.id)
 
-    assert {parent.id, child.id}.isdisjoint(await listed(backend.admin, "tag"))
+    assert refused.value.hint
+    assert "child tags" in refused.value.hint
+    assert {parent.id, child.id} <= set(await listed(backend.admin, "tag"))
 
 
 @pytest.mark.contract(DELETE)

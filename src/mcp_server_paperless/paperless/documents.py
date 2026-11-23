@@ -450,7 +450,7 @@ class PaperlessDocumentReader:
     async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
         """See ``DocumentReader.get_document_thumbnail``.
 
-        Paperless 3.4 sends WebP. A document the user may not see is answered 403 (text/html),
+        Paperless sends WebP. A document the user may not see is answered 403 (text/html),
         a missing one 404, as for the other sub-resources.
         """
         found = await self._file(document_id, "thumb/", THUMBNAIL_LIMIT)
@@ -691,9 +691,8 @@ class PaperlessDocumentWriter:
         """See ``DocumentWriter.merge_as_versions``.
 
         The body lists the root first and names it again as ``root_document_id``. Paperless
-        merges within the request and answers ``{"result": "OK"}`` (3.5: it queues a task and
-        names it, which is awaited); a user who may not change one of the documents gets 403
-        with an HTML body.
+        queues a task and names it in the answer (``task_id``), which is awaited; a user who may not
+        change one of the documents gets 403 with an HTML body.
         """
         body: dict[str, object] = {"documents": [root_id, *source_ids], "root_document_id": root_id}
         if label is not None:

@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 import pytest
 from fakes.accounts import PUBLIC_NOTE
 
-from contract.conftest import BOTH_RELEASES, since
 from mcp_server_paperless.domain.documents import DocumentQuery
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 from mcp_server_paperless.paperless.documents import unseen_note
@@ -51,24 +50,16 @@ async def test_each_note_is_returned_by_its_own_call_and_ids_grow(backend: Backe
     assert [n.note for n in await ports.documents.list_document_notes(document)] == ["one", "two"]
 
 
-@BOTH_RELEASES
-@pytest.mark.decision("decision-29")
+@pytest.mark.decision("decision-43")
 @pytest.mark.contract(ADD)
-async def test_paperless_itself_accepts_empty_and_blank_notes_before_3_5(backend: Backend) -> None:
-    # Pinned because the service must not rely on Paperless to reject them (3.4 does not); 3.5
-    # rejects both with a 400 ("This field may not be blank."), which the adapter reports as it
+async def test_paperless_itself_rejects_empty_and_blank_notes(backend: Backend) -> None:
+    # Paperless answers 400 ("This field may not be blank."), which the adapter reports as it
     # reports every refused value.
     ports, document = backend.admin, backend.new_document()
 
-    if since(backend, "3.5.0"):
-        for text in ("", "   "):
-            with pytest.raises(Validation, match="blank"):
-                _ = await ports.document_writes.add_note(document, text)
-        return
-    empty = await ports.document_writes.add_note(document, "")
-    blank = await ports.document_writes.add_note(document, "   ")
-
-    assert (empty.note, blank.note) == ("", "   ")
+    for text in ("", "   "):
+        with pytest.raises(Validation, match="blank"):
+            _ = await ports.document_writes.add_note(document, text)
 
 
 @pytest.mark.contract(ADD)

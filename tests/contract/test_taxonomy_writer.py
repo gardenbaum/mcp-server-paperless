@@ -1,4 +1,4 @@
-"""Contract of TaxonomyWriter: the same assertions against the fake and live Paperless 3.4.2.
+"""Contract of TaxonomyWriter: the same assertions against the fake and a live Paperless.
 
 The live backend deletes every tag whose name starts with `SCRATCH_TAG` when the test ends.
 """

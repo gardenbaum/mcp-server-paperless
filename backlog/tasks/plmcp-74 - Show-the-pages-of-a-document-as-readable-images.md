@@ -4,7 +4,7 @@ title: Show the pages of a document as readable images
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:45Z'
-updated_date: '2026-11-23T12:21:58Z'
+updated_date: '2026-11-23T18:30:54Z'
 labels: []
 dependencies: []
 priority: high
@@ -28,7 +28,7 @@ get_document_thumbnail shows only a small image of page 1, and download_document
 - [ ] #6 Permissions are those of the token user; stdio and HTTP both work
 - [ ] #7 The tool is added to MEDIA_TOOLS (decision-11) with a reason in the task notes
 - [ ] #8 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
-- [ ] #9 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover every source type, page ranges, regions, each limit and broken or encrypted files; docs and tool reference are updated
+- [ ] #9 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover every source type, page ranges, regions, each limit and broken or encrypted files; docs and tool reference are updated
 <!-- AC:END -->
 
 ## Definition of Done

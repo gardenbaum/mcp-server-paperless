@@ -1,13 +1,13 @@
-"""Waiting for the work Paperless 3.5 queues behind the document operations.
+"""Waiting for the work Paperless queues behind the document operations.
 
-Paperless 3.4 changed tags, fields, references, deletions and merges of versions within the
-request and answered ``{"result": "OK"}``. From 3.5 the document operations (``bulk_edit``,
-``delete``, ``reprocess``, ``rotate``, ``merge``, ``merge_as_versions``, ``edit_pdf`` and
-``remove_password``) only queue a ``bulk_update`` task and answer ``{"result": "OK", "task_id":
-...}``: the change is made some milliseconds later, and a failure shows only in the task.
+The document operations (``bulk_edit``, ``delete``, ``reprocess``, ``rotate``, ``merge``,
+``merge_as_versions``, ``edit_pdf`` and ``remove_password``) only queue a ``bulk_update`` task and
+answer ``{"result": "OK", "task_id": ...}``: the change is made some milliseconds later, and a
+failure shows only in the task.
 
-``TaskWaiter`` makes the adapter keep its 3.4 meaning, "done when the call returns": it follows
-the task named in the answer until it ends. An answer without a task id (3.4) needs no wait.
+``TaskWaiter`` makes the adapter keep the meaning "done when the call returns": it follows the
+task named in the answer until it ends. An answer without a task id does not match the schema
+and is refused as an unexpected answer.
 
 Where the end cannot be observed the outcome is ``Unconfirmed`` (the task id and why), never a
 silent success: a user who may not view tasks (``view_paperlesstask``), a task that never shows
@@ -48,10 +48,10 @@ UNOBSERVED_SECONDS: Final = 2.0
 
 
 class Queued(BaseModel):
-    """The answer of a document operation: ``task_id`` is named from Paperless 3.5 on."""
+    """The answer of a document operation: the task it queued."""
 
     result: str
-    task_id: str | None = None
+    task_id: str
 
 
 FAILED_HINT: Final = (
@@ -64,7 +64,7 @@ UNREADABLE_REASON: Final = "the task list could not be read"
 
 
 def not_applied(what: str) -> Validation:
-    """The error for a queued ``what`` whose task failed (3.4 answered with a 400)."""
+    """The error for a queued ``what`` whose task failed."""
     return Validation(f"Paperless could not apply the {what}: its task failed.", hint=FAILED_HINT)
 
 
@@ -104,13 +104,9 @@ class TaskWaiter:
     ) -> Unconfirmed | None:
         """None when the change is made, ``Unconfirmed`` when that cannot be told.
 
-        An answer without a task id (Paperless 3.4 did the work in the request) is made.
-
         Raises:
             Validation: ``failed(task_id)``, when the task failed or was revoked.
         """
-        if answer.task_id is None:
-            return None
         outcome = await self._settled(answer.task_id)
         if isinstance(outcome, Unconfirmed):
             return outcome

@@ -3,7 +3,7 @@ id: doc-1
 title: paperless-mcp design
 type: specification
 created_date: '2026-11-09T19:21:00Z'
-updated_date: '2026-11-23T11:11:37Z'
+updated_date: '2026-11-23T19:33:11Z'
 ---
 # mcp-server-paperless — Design
 
@@ -55,7 +55,7 @@ convention or memory.
 ## 3. Constraints
 
 - paperless-ngx **3.x only**, API version **10** (current default; available in every 3.x
-  release, 2.x stops at 9). Reference version for development and E2E: **3.4.2**.
+  release, 2.x stops at 9). Reference version for development and E2E: **3.5.1**, also the minimum (decision-43).
 - FastMCP **4.1.x** (latest stable 4.1.6; Provider model, MCP SDK v2). Its HTTP stack is
   **httpx2**; this project uses httpx2 too (no `httpx`, no second HTTP library).
 - Python **3.14** baseline (`requires-python >=3.14`); CI also runs 3.15.
@@ -313,7 +313,7 @@ Vendored reference docs (committed, refreshed by just recipes, each with an `UPS
 | Adapter | `paperless/` against `MockTransport`; **every request and every recorded response is validated against the vendored OpenAPI schema** by a schema-guard transport | openapi-core | every commit |
 | Tool | tools via FastMCP in-memory `Client` + FakePaperless; structured output, errors, confirm flow, visibility per toolset/read-only | fastmcp Client | every commit |
 | Contract | snapshot of the full MCP surface (names, titles, descriptions, input/output schemas, annotations, tags) per profile; schema-compatibility checks (object root, no `$schema`, every parameter described, no unsupported keywords) | syrupy | every commit |
-| E2E | real paperless-ngx 3.4.2 (+ Redis) via docker compose, seeded through the API; runs the shared contract suite and key tool flows | docker compose, pytest marker `e2e` | every PR; weekly against `latest` 3.x |
+| E2E | real paperless-ngx 3.5.1 (+ Redis) via docker compose, seeded through the API; runs the shared contract suite and key tool flows | docker compose, pytest marker `e2e` | every PR; weekly against `latest` 3.x |
 | Mutation | `services/` and `paperless/`; surviving mutants become Backlog tasks | mutmut | weekly + on demand |
 
 Gates: branch coverage ≥ 95 % overall and 100 % on changed lines (diff-cover); mutation score

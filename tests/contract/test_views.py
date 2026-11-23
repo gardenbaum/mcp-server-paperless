@@ -1,4 +1,4 @@
-"""Contract of ViewReader and ViewWriter: the same assertions against the fake and live 3.4.2.
+"""Contract of ViewReader and ViewWriter: the same assertions against the fake and a live Paperless.
 
 Views a test creates carry the scratch prefix (SCRATCH_VIEW); the live backend deletes them.
 """

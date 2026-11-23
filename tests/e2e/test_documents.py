@@ -1,4 +1,4 @@
-"""get_document and get_document_content through the assembled server on Paperless 3.4.2."""
+"""get_document and get_document_content through the assembled server on the E2E Paperless."""
 
 import json
 import uuid

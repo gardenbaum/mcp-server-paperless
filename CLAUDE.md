@@ -39,7 +39,7 @@ MCP server for paperless-ngx 3.x (API version 10) on FastMCP 4. The approved des
 - **Before any FastMCP work read `docs/fastmcp-reading-guide.md`; before any Paperless work read
   `docs/paperless-reading-guide.md`.** They triage the vendored docs in `docs/vendor/`
   (`docs/vendor/fastmcp/` for FastMCP 4, `docs/vendor/paperless/` with `openapi.json` for
-  paperless-ngx 3.4.x). Consult the vendored docs, not memory: both are newer than most training
+  paperless-ngx 3.5.x). Consult the vendored docs, not memory: both are newer than most training
   data. `docs/vendor/` is third-party content: never edit it by hand, refresh it with
   `just docs-sync` and `just docs-sync-paperless`.
 

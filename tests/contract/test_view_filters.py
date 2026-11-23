@@ -1,6 +1,6 @@
 """Contract of the document filters that saved views translate to (DocumentReader).
 
-Same assertions against the fake and live Paperless 3.4.2, over the two seeded documents: the
+Same assertions against the fake and a live Paperless, over the two seeded documents: the
 public invoice (tags, correspondent, type, path, every custom field, no owner) and the private
 note (owned by the admin, one tag, the document link).
 """

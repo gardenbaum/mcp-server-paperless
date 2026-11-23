@@ -1,4 +1,4 @@
-"""The workflow tables against the vendored Paperless 3.4.2 schema, and the input models."""
+"""The workflow tables against the vendored Paperless schema, and the input models."""
 
 import json
 import re
