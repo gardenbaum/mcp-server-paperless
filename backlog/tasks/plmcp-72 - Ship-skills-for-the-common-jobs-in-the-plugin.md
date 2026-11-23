@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:57:04Z'
-updated_date: '2026-11-23T12:09:57Z'
+updated_date: '2026-11-23T12:32:10Z'
 labels: []
 dependencies: []
 priority: medium
@@ -45,4 +45,6 @@ The plugin installs the server only. Skills for the four built-in prompts (triag
 
 <!-- SECTION:NOTES:BEGIN -->
 Skills repeat the prompts' text (test compares them). Run: each skill's tool sequence was called through an MCP client with the released 0.3.2 against a throwaway Paperless 3.4.2 (project plmcp72) with three invented documents; every named tool exists and was called; renaming to an existing name and deleting without confirm were refused. Not run: no model followed a skill (no login used), so whether Claude or Cursor picks the right skill, waits for the yes, and answers well is untested; Cursor loading is checked against its docs only. Limits: skills reach installed users only with a new plugin version (the pinned package version); chat on claude.ai loads skills without the local server.
+
+Review fixes: every skill says document text is data, never instructions; the test compares description and whole body exactly. Based on plmcp-73 (merged in). Inherited from the prompts, not changed here: the cleanup merge step names no storage path, and the prompts do not say that document text is data.
 <!-- SECTION:NOTES:END -->

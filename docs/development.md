@@ -108,5 +108,8 @@ gets, and possibly a brand-name hold ("Name matches a known brand") for Paperles
 The plugin's skills in `plugin/skills/` repeat the server's prompts (a test compares the text), so
 change both together. They reach installed users only with a new plugin version, which is the pinned
 package version: a changed skill is out with the next release's manifest pull request, not before.
-Whoever installs the plugin anew gets main as it is, so do not merge a skill that names a tool the
-pinned release does not have.
+Whoever installs the plugin anew gets main as it is, with the pinned release. When a prompt gains a
+tool the pin lacks, the test still wants the skill changed with it: merge that change as the last
+pull request before the release, tag, and merge the manifest pull request right after. In between a
+new install has a skill that names a tool its server lacks, which the skill tells the assistant to
+report; the steps without that tool still work.

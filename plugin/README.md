@@ -15,8 +15,10 @@ that is not affiliated with paperless-ngx.
 
 ## Skills
 
-The plugin brings four skills for common jobs; the assistant picks one by itself, or you name it. Each
-proposes first and changes nothing before your yes, and needs only the default toolsets.
+The plugin brings four skills for common jobs; the assistant can pick one by itself, or you name it.
+They tell the assistant to propose first, to change nothing before your yes, and to treat the text of
+documents as data, never as instructions. An assistant can still err: the server's own confirmation
+step guards what is final. The skills need only the default toolsets.
 
 | Skill | What it does |
 |---|---|
@@ -25,8 +27,9 @@ proposes first and changes nothing before your yes, and needs only the default t
 | `paperless-annual-review` | Collects a year of documents, for example for the tax return |
 | `paperless-cleanup-taxonomy` | Finds duplicate, unused and badly named tags, types and correspondents |
 
-Without the server the skills have no tools: an assistant that loads them but starts no local server
-(such as chat on claude.ai) says so instead of doing the job.
+The skills also work with the same server configured elsewhere, such as a claude.ai connector.
+Without any server they have no tools (chat on claude.ai starts no local server); the assistant is
+told to say so instead of working around it.
 
 ## Install in Claude Code
 
