@@ -4,7 +4,7 @@ import json
 
 import httpx2
 import pytest
-from observation import OBSERVED, RESPONSES, Observation
+from observation import OBSERVED, RESPONSES, Observation, method_name
 
 from adapter.conftest import BASE_URL, ClientFactory, streaming, tag
 from adapter.schema_guard import SchemaViolationError, check_request, check_response
@@ -588,6 +588,11 @@ def test_a_queued_answer_without_its_task_or_with_a_wrong_one_is_refused(
 
 # The guard records what each adapter method sends, for the coverage table (PLMCP-91).
 TRASH_PAGE: dict[str, object] = {"count": 0, "next": None, "previous": None, "results": []}
+
+
+@pytest.mark.parametrize("name", ["list_trash", "xǁPaperlessTrashReaderǁlist_trash__mutmut_orig"])
+def test_the_recorded_method_is_the_one_of_the_source_in_a_mutation_run_too(name: str) -> None:
+    assert method_name(name) == "list_trash"
 
 
 @pytest.mark.anyio

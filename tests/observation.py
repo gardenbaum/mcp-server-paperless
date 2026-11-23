@@ -9,6 +9,7 @@ import contextvars
 import dataclasses
 import inspect
 import json
+import re
 from email.parser import BytesParser
 from email.policy import default
 from typing import TYPE_CHECKING, NamedTuple, cast, override
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
 type Operation = tuple[str, str]  # ("GET", "/api/tags/{id}/")
 type Call = tuple[str, str]  # (port, method)
 
+# What mutmut calls a method it changes, e.g. `xǁPaperlessTrashReaderǁlist_trash__mutmut_orig`.
+MUTATED = re.compile(r"xǁ\w+?ǁ(\w+)__mutmut_\w+")
 MAX_VALUE = 80  # longer text is no enum value; it may be a title or a document's text
 
 
@@ -62,6 +65,12 @@ TOOL_ARGUMENTS: dict[str, frozenset[str]] = {}  # the arguments each tool has
 RECORDING = False  # the tool tests record port calls only while the coverage test runs them
 
 
+def method_name(code_name: str) -> str:
+    """The name of a method as it is in the source, also in a mutation run."""
+    mutated = MUTATED.fullmatch(code_name)
+    return mutated[1] if mutated else code_name
+
+
 def port_method() -> Call | None:
     """The adapter method (as `(port, method)`) the test called, found on the stack.
 
@@ -78,7 +87,8 @@ def port_method() -> Call | None:
             and not module.endswith(".client")
             and owner is not None
         ):
-            found = (type(owner).__name__.removeprefix("Paperless"), frame.f_code.co_name)
+            port = type(owner).__name__.removeprefix("Paperless")
+            found = (port, method_name(frame.f_code.co_name))
         frame = frame.f_back
     return found
 
