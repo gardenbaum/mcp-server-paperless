@@ -53,7 +53,7 @@ from mcp_server_paperless.settings import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Iterator
+    from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 
     from starlette.applications import Starlette
     from starlette.types import Message, Receive, Scope, Send
@@ -850,6 +850,7 @@ async def test_the_sign_in_pages_load_nothing_and_show_the_embedded_icon(
     icon = f"data:image/svg+xml;base64,{base64.b64encode(ICON.read_bytes()).decode()}"
     assert response.status_code == status
     assert shown.images == [icon]
+    assert f'<img src="{icon}" alt="' in response.text  # the tag stays well formed
     assert shown.loads == [icon]
     # A Link header could make the browser load, too: it names nothing but this server.
     links = cast("list[str]", re.findall(r"<([^>]*)>", response.headers.get("link", "")))
@@ -928,7 +929,7 @@ async def test_the_error_of_the_identity_provider_is_shown_unchanged(issuer: Iss
 @pytest.mark.anyio
 async def test_a_name_full_of_logos_does_not_inflate_the_page(issuer: Issuer) -> None:
     app = make_app(http_settings(), oidc_settings(issuer.url))
-    name = LOGO * 20_000
+    name = LOGO * 1_200  # as long as the registration may be (decision-39)
 
     async with running(app) as client:
         response = await consent_page(client, CLAUDE_CALLBACK, name)
@@ -995,3 +996,157 @@ async def test_only_html_is_held_back_and_changed(media: str) -> None:
         assert body.startswith(b'<img src="data:image/svg+xml;base64,')
         assert body.endswith(b'"><img src="' + logo + b'">')  # only the first: FastMCP's one logo
         assert start["headers"] == [*headers[:3], (b"content-length", str(len(body)).encode())]
+
+
+# --- the body limit of every route but the MCP endpoint (decision-39) ----------------------------
+
+SMALL = 64 * 1024
+FORM = {"Content-Type": "application/x-www-form-urlencoded", "Origin": BASE}
+
+
+class Upload:
+    """A body without a declared length, counting what the server pulls of it."""
+
+    def __init__(self, size: int) -> None:
+        self.size: int = size
+        self.pulled: int = 0
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        while self.pulled < self.size:
+            chunk = min(8192, self.size - self.pulled)
+            self.pulled += chunk
+            yield b"x" * chunk
+
+
+def served(app: Starlette) -> list[tuple[str, str]]:
+    """Every method and path of the app, except the MCP endpoint."""
+    return sorted(
+        (method, cast("str", getattr(route, "path", "")))
+        for route in app.routes
+        for method in cast("set[str]", getattr(route, "methods", None) or {"POST"})
+        if getattr(route, "path", "") != "/mcp"
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.decision("decision-39")
+async def test_every_oauth_route_refuses_a_declared_body_over_64_kib(issuer: Issuer) -> None:
+    app = make_app(http_settings(), oidc_settings(issuer.url))
+    routes = served(app)
+
+    async with running(app) as client:
+        over = {
+            route: (await client.request(*route, content=b"x" * (SMALL + 1), headers=FORM))
+            for route in routes
+        }
+        exact = {
+            route: (await client.request(*route, content=b"x" * SMALL, headers=FORM))
+            for route in routes
+        }
+
+    assert {("POST", "/register"), ("POST", "/token"), ("POST", "/consent")} <= set(routes)
+    assert {route: r.status_code for route, r in over.items()} == dict.fromkeys(routes, 413)
+    assert 413 not in {r.status_code for r in exact.values()}
+
+
+@pytest.mark.anyio
+@pytest.mark.decision("decision-39")
+async def test_every_oauth_route_cuts_off_a_chunked_body_at_64_kib(
+    issuer: Issuer, caplog: pytest.LogCaptureFixture
+) -> None:
+    app = make_app(http_settings(), oidc_settings(issuer.url))
+    routes = served(app)
+    over: dict[tuple[str, str], int] = {}
+    exact: set[int] = set()
+
+    async with running(app) as client:
+        for route in routes:
+            upload = Upload(1024 * 1024)
+            response = await client.request(*route, content=upload, headers=FORM)
+            over[route] = response.status_code
+            assert upload.pulled <= SMALL + 2 * 8192, route
+        # Refused before any handler: none can catch the refusal or log a traceback of it.
+        assert not [record for record in caplog.records if record.exc_info]
+        for route in routes:
+            response = await client.request(*route, content=Upload(SMALL), headers=FORM)
+            exact.add(response.status_code)
+
+    assert over == dict.fromkeys(routes, 413)
+    assert 413 not in exact
+
+
+@pytest.mark.anyio
+@pytest.mark.decision("decision-39")
+@pytest.mark.parametrize(
+    "path", ["/revoke", "/register/", "//register", "/mcp/", "/MCP", "/%6dcp/x", "/mcp%0A"]
+)
+async def test_any_path_but_the_mcp_endpoint_has_the_small_limit(issuer: Issuer, path: str) -> None:
+    app = make_app(http_settings(), oidc_settings(issuer.url))
+
+    async with running(app) as client:
+        # As raw paths: a client that joins URLs would tidy them up.
+        url = httpx2.URL(BASE).copy_with(raw_path=path.encode())
+        response = await client.post(url, content=b"x" * (SMALL + 1))
+
+    assert response.status_code == 413
+
+
+@pytest.mark.anyio
+@pytest.mark.decision("decision-39")
+async def test_an_mcp_path_that_collides_with_an_oauth_route_does_not_raise_its_limit(
+    issuer: Issuer,
+) -> None:
+    app = make_app(http_settings(path="/register"), oidc_settings(issuer.url))
+
+    async with running(app) as client:
+        response = await register(client, CLAUDE_CALLBACK, "x" * SMALL)
+
+    assert response.status_code == 413
+
+
+@pytest.mark.anyio
+@pytest.mark.decision("decision-39")
+@pytest.mark.parametrize("path", ["/mcp", "/paperless/mcp"])
+async def test_the_mcp_endpoint_keeps_the_upload_limit(issuer: Issuer, path: str) -> None:
+    http = http_settings(auth_tokens=BEARER_TOKEN, path=path)
+    app = make_app(http, oidc_settings(issuer.url))
+    headers = {
+        "Authorization": f"Bearer {BEARER_TOKEN}",
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+    }
+
+    async with running(app) as client:
+        fits = await client.post(path, content=b"x" * body_limit(MAX_UPLOAD), headers=headers)
+        over = await client.post(path, content=b"x" * (body_limit(MAX_UPLOAD) + 1), headers=headers)
+
+    assert fits.status_code == 400  # read, and no JSON
+    assert over.status_code == 413
+
+
+@pytest.mark.anyio
+@pytest.mark.decision("decision-39")
+async def test_a_registration_with_many_redirect_uris_passes(issuer: Issuer) -> None:
+    app = make_app(http_settings(), oidc_settings(issuer.url))
+    uris = [f"http://localhost:{port}/oauth/callback/of/one/client" for port in range(8000, 9000)]
+    metadata = {
+        "redirect_uris": uris,
+        "client_name": "A client with a long name " * 4,
+        "client_uri": "https://client.example.test/",
+        "logo_uri": "https://client.example.test/logo.png",
+        "contacts": ["someone@example.test"],
+        "tos_uri": "https://client.example.test/terms",
+        "policy_uri": "https://client.example.test/privacy",
+        "token_endpoint_auth_method": "none",
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+        "software_id": "client",
+        "software_version": "1.2.3",
+    }
+
+    async with running(app) as client:
+        response = await client.post("/register", json=metadata)
+
+    assert len(response.request.content) > SMALL * 3 // 4  # close to the limit, yet within it
+    assert response.status_code == 201
+    assert response.json()["redirect_uris"] == uris

@@ -8,7 +8,7 @@ signs in through your provider while Claude Code keeps using its bearer token on
 every client still works with the one Paperless token of `PAPERLESS_TOKEN` (per-user Paperless
 credentials are not supported yet). The server shows its own consent page before it sends the
 browser to the provider, forwards PKCE, verifies the provider's signed ID token and issues its own
-tokens to clients. The rules are decision-31, carried over into decision-38 (`backlog/decisions/`).
+tokens to clients. The rules are decision-31, carried over into decision-39 (`backlog/decisions/`).
 
 ## Variables
 
@@ -32,7 +32,8 @@ still get 403, and the server needs TLS from your reverse proxy, which must pass
 `Host` through. Anyone the provider lets sign in to this application uses your Paperless token:
 restrict the application to yourself (or a group) at the provider.
 
-`/register` and `/authorize` answer without authentication and each call stores an entry. In
+`/register` and `/authorize` answer without authentication and each call stores an entry. A request
+body over 64 KiB gets 413 on these routes, as on every route but the MCP endpoint. In
 memory at most 10 000 entries per kind are kept (the oldest are dropped, so a flood can make
 claude.ai register again); in `PAPERLESS_MCP_OIDC_STORAGE_DIR` nothing bounds them. Rate-limit
 `/register` and `/authorize` in your reverse proxy. FastMCP logs the provider's subject (your

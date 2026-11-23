@@ -19,6 +19,7 @@ from mcp_server_paperless.app import (
     BodyLimit,
     BodyTooLargeError,
     LoopbackOnly,
+    SmallBodies,
     StaticBearerVerifier,
     authenticator,
     body_limit,
@@ -604,6 +605,7 @@ async def test_the_middleware_leave_other_connection_kinds_alone(scope_type: str
         (first := Recorder(), BodyLimit(first, limit=1)),
         (second := Recorder(), RequestContext(second)),
         (third := Recorder(), LoopbackOnly(third)),
+        (fourth := Recorder(), SmallBodies(fourth, mcp_path="/mcp")),
     ]:
         await wrapped({"type": scope_type}, idle, discard)
         assert inner.scopes == [scope_type]

@@ -29,6 +29,7 @@ from key_value.aio.stores.filetree import (
 )
 from key_value.aio.stores.memory import MemoryStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from mcp.server.transport_security import RequestBodyLimitMiddleware
 from pydantic import AnyHttpUrl, ValidationError
 
 from mcp_server_paperless.domain.errors import InvalidConfiguration
@@ -303,6 +304,9 @@ def authenticator(http: HttpSettings, oidc: OidcSettings | None = None) -> AuthP
     )
 
 
+# Most bytes of a request body anywhere but at the MCP endpoint: the OAuth routes need no
+# authentication, and what is registered there is stored and shown (decision-39).
+OTHER_BODY_LIMIT = 64 * 1024
 # Room for the JSON-RPC envelope and the other arguments around base64 content.
 ENVELOPE_BYTES = 64 * 1024
 
@@ -371,6 +375,26 @@ class BodyLimit:
             if started:
                 raise
             await _reply(send, 413, "request body too large")
+
+
+class SmallBodies:
+    """ASGI middleware: 413 for a body over ``OTHER_BODY_LIMIT`` anywhere but at ``mcp_path``.
+
+    Only that exact path is let through: a route nobody thought of is limited, too. The SDK's
+    middleware reads the body, at most the limit, before the app is called, so that no handler
+    can catch the refusal.
+    """
+
+    def __init__(self, app: ASGIApp, mcp_path: str | None) -> None:
+        """Wrap ``app``; ``mcp_path`` is the MCP endpoint, None to limit every path."""
+        self.app: ASGIApp = app
+        self.limited: ASGIApp = RequestBodyLimitMiddleware(app, OTHER_BODY_LIMIT)
+        self.mcp_path: str | None = mcp_path
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Serve one ASGI connection."""
+        app = self.app if scope.get("path") == self.mcp_path else self.limited
+        await app(scope, receive, send)
 
 
 ICON = base64.b64encode(Path(__file__).with_name("icon.svg").read_bytes())
@@ -501,7 +525,10 @@ def build_app(
     # /mcp/ is not /mcp: a redirect would be answered before authentication, and with the
     # wrong port and scheme behind a proxy.
     app.router.redirect_slashes = False
+    # An MCP path that is also an OAuth route's path would raise that route's limit.
+    alone = [getattr(route, "path", None) for route in app.routes].count(http.path) == 1
     app.add_middleware(BodyLimit, limit=body_limit(max_upload_bytes))
+    app.add_middleware(SmallBodies, mcp_path=http.path if alone else None)
     if with_oidc:
         app.add_middleware(OwnIcon)
     if not authenticated:
