@@ -59,6 +59,29 @@ async def test_unsupported_query_syntax_is_named_on_live_paperless(stack: Stack)
     assert clean.structured_content["count"] == 1
 
 
+@pytest.mark.parametrize("field", ["type", "document_type", "correspondent"])
+async def test_field_presence_works_on_documents_with_and_without_a_value(
+    stack: Stack, field: str
+) -> None:
+    assert await titles(stack, query=f"{field}:*") == {"e2e-public-invoice"}
+    assert await titles(stack, query=f"NOT {field}:*") == {"e2e-private-note"}
+
+
+async def test_the_constructs_named_in_notices_are_misread_by_live_paperless(stack: Stack) -> None:
+    both = {"e2e-public-invoice", "e2e-private-note"}
+
+    assert await titles(stack, query="title:invoice OR title:note") == both
+    assert await titles(stack, query="title:invoice || title:note") == set()
+    assert await titles(stack, query="!acme") == await titles(stack, query="acme")
+    unknown = await titles(stack, query="nosuchfield:acme")
+    assert unknown == await titles(stack, query="nosuchfield OR acme") == {"e2e-public-invoice"}
+    assert await titles(stack, query="NOT nosuchfield:*") == both
+    for misread in ("acme Not zebra", "NOT(zebra)", "acme AND", "acme &&  Not"):
+        assert await titles(stack, query=misread) == set()
+    assert await titles(stack, query="NOT zebra") == both
+    assert await titles(stack, query="acme NOT -zebra") == {"e2e-public-invoice"}
+
+
 async def test_date_ranges_on_live_paperless(stack: Stack) -> None:
     [row] = await search(stack, stack.admin_token, title_contains="e2e-public-invoice")
     created = date.fromisoformat(str(row["created"]))

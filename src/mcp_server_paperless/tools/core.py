@@ -309,11 +309,12 @@ async def search_documents(  # noqa: PLR0913 -- one parameter per filter, descri
         str | None,
         Field(
             description=(
-                "Full-text query in Paperless syntax over title, content, notes and fields, "
+                "Full-text query in Paperless syntax over title, content, correspondent, type and "
+                "tags; notes and custom fields by prefix, "
                 "e.g. 'invoice AND acme', 'created:[2024 to 2025]', 'notes.note:paid'. "
                 "NOT, AND and OR must be uppercase (lowercase are plain search terms); a leading "
-                "minus does not exclude, write NOT term; field:* (presence) does not work, use "
-                "the has_* filters. Unsupported syntax is named in notices. "
+                "minus or ! does not exclude, write NOT term; 'type:*' is presence; an unknown "
+                "field is searched as plain text. Misread syntax is named in notices. "
                 "Results are ranked by relevance and carry highlights."
             )
         ),
@@ -395,7 +396,7 @@ async def search_documents(  # noqa: PLR0913 -- one parameter per filter, descri
     ids, names, dates, custom field values and web_url, never the document text. count is the
     total; pass next_page as page to see more. To find documents without a correspondent, document
     type, storage path or tags use has_correspondent, has_document_type, has_storage_path or
-    has_tags set to false; a full-text query like 'NOT type:*' cannot do it.
+    has_tags set to false.
     """
     names = NameFilters(
         correspondent=correspondent,
