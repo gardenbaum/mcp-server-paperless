@@ -9,14 +9,15 @@
 # [[internal]]    fields the adapter chooses itself although a task wants them as a tool argument
 #                 (tasks owner, ordering, date_created_after; processed_mail ordering; the body
 #                 of mail_accounts/test, for testing an unsaved account; the documents `fields`
-#                 projection, PLMCP-80 AC 3; the documents of a bundle rebuild, PLMCP-83). They stay open under
-#                 that task although they are sent.
+#                 projection, PLMCP-80 AC 3; the documents of a bundle rebuild, PLMCP-83). They
+#                 stay open under that task although they are sent.
 # [[plumbing]]    fields the adapter chooses itself and no task is known to want as an argument
 #                 (applied where it was noticed, not a census of every constant): full_perms,
 #                 projections, constants of helpers that read every page, the stored object sent
 #                 back. No feature, no open work; shown apart, checked against the schema. A value
 #                 or id a tool argument decides (id__in, task_type) is neither.
 # [[exclusion]]   an owner-approved exclusion: quote, date and a Markdown file under backlog/
+#                 (an excluded value of a field that is sent also needs a `reason`)
 # [[undeclared]]  query parameters the generated schema omits (listed by hand)
 
 [[open]]

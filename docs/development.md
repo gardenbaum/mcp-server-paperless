@@ -71,7 +71,7 @@ derivation runs inside the coverage test (about 20 s), so the test works alone a
 Only `docs/api-coverage.toml` is written by hand: the open tasks, owner-approved exclusions (a
 quote and its date, found in a paragraph of a Markdown file under `backlog/` that says the owner
 approved it), the fields the adapter chooses for itself that a task wants as an argument
-(`[[internal]]`) and those nobody wants (`[[plumbing]]`, shown apart).
+(`[[internal]]`) and those no task is known to want (`[[plumbing]]`, shown apart).
 
 Run `just docs-coverage` after a tool, a scenario or the schema changed. Give a new tool argument
 a scenario in `tests/tools/test_arguments.py`, or its field shows up as open. The tests fail

@@ -25,9 +25,9 @@ Limits.
   although no tool chose it.
 - Fields the adapter chooses itself are `[[internal]]` in the TOML file when a task wants them as
   a tool argument (a fixed `ordering`, a filter the adapter adds, the saved account that is sent
-  back to test it): they stay open although a tool causes the request. Those nobody wants are
-  `[[plumbing]]` (a projection, a flag that reads the grants, a constant of a list helper): they
-  are shown apart, below, as no feature.
+  back to test it): they stay open although a tool causes the request. Those no task is known
+  to want are `[[plumbing]]` (a projection, a flag that reads the grants, a constant of a list
+  helper): they are shown apart, below, as no feature.
 - A covered GET does not mean that the whole answer is shown: a tool may read an answer and show
   only part of it (for example the view visibility in `GET /api/ui_settings/`, PLMCP-88).
 - Requests of streamed bodies are recorded but not checked against the schema; the adapter tests

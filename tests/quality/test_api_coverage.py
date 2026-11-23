@@ -791,6 +791,24 @@ def test_entries_are_read_from_their_file(tmp_path: Path) -> None:
     assert found.duplicate_rows == []
 
 
+def test_the_reason_of_an_excluded_value_is_read(tmp_path: Path) -> None:
+    path = tmp_path / "entries.toml"
+    _ = path.write_text(
+        """
+[[exclusion]]
+operation = "GET /api/things/{id}/"
+fields = ["query:flag=false"]
+quote = "approved leaving it out"
+date = "2026-11-23"
+source = "backlog/decisions/d.md"
+reason = "false is the default"
+""",
+        encoding="utf-8",
+    )
+
+    assert [e.reason for e in load_entries(path).entries] == ["false is the default"]
+
+
 def test_two_rows_of_plumbing_or_internal_for_one_operation_are_reported(tmp_path: Path) -> None:
     path = tmp_path / "entries.toml"
     twice = (
