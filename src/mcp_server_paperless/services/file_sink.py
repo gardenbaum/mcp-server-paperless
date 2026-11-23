@@ -5,7 +5,8 @@ the server write nothing but one new plain file, or replace one that was confirm
 
 - The directory is found as in ``upload_source``: absolute, without ``..``, resolved inside an
   allowed directory, nothing below it starting with a dot or holding unseen characters, then opened
-  component by component without following a link. Every other path gets the same answer. No directory is created.
+  component by component without following a link. Every other path gets the same answer. No
+  directory is created.
 - The name has the ending of the type Paperless detected, from a fixed table (``.bin`` for any other
   type), so no title, upload or text of a document makes the server write a script, a program or an
   instruction file; and it never starts with a dot.
