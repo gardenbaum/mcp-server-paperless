@@ -24,6 +24,18 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s+\\w+: \"(?<currentValue>[^\"]+)\""
       ]
+    },
+    {
+      "customType": "regex",
+      "description": "The released package the plugin runs: the plugin version and the pin move together",
+      "managerFilePatterns": ["/^plugin/\\.(claude|cursor)-plugin/plugin\\.json$/"],
+      "matchStrings": [
+        "\"version\": \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\"",
+        "\"mcp-server-paperless==(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "mcp-server-paperless",
+      "datasourceTemplate": "pypi",
+      "versioningTemplate": "pep440"
     }
   ],
   "packageRules": [
@@ -41,6 +53,12 @@
       "description": "gitleaks pre-commit rev and the golang hook in .pre-commit-config.yaml move together (golang hook version is a manual follow-up)",
       "matchPackageNames": ["gitleaks/gitleaks"],
       "groupName": "gitleaks"
+    },
+    {
+      "description": "A release of this package reaches plugin users only after a review; the bot's own configuration automerges. Keep this rule last",
+      "matchPackageNames": ["mcp-server-paperless"],
+      "automerge": false,
+      "allowedVersions": "/^\\d+\\.\\d+\\.\\d+$/"
     }
   ]
 }
