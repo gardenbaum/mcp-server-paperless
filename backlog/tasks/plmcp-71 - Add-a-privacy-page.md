@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:57:03Z'
-updated_date: '2026-11-23T12:05:53Z'
+updated_date: '2026-11-23T12:13:16Z'
 labels: []
 dependencies: []
 priority: medium
@@ -61,4 +61,6 @@ Evidence per statement of PRIVACY.md:
 
 docs/configuration.md claimed no error messages are logged; corrected to the observed behaviour (tools only). Code unchanged.
 AC #2 manifest part open: plugin/.claude-plugin/plugin.json exists only on plmcp-68-plugin; after its merge add privacyPolicyUrl https://github.com/gardenbaum/mcp-server-paperless/blob/main/PRIVACY.md. PAGES in test_docs.py conflicts trivially with that branch.
+
+Manifest links the policy (privacyPolicyUrl) after the merge of PLMCP-68; test red first. Two open questions for the owner: a task for the four log findings, and private vulnerability reporting.
 <!-- SECTION:NOTES:END -->
