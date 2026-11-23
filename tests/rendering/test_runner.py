@@ -13,7 +13,7 @@ from PIL import Image
 
 from mcp_server_paperless.domain.rendering import PageRenderer, RenderFailed, RenderRequest
 from mcp_server_paperless.rendering.runner import ChildRenderer, child_environment
-from rendering.files import ENCRYPTED_PDF, QUADRANTS, corners, opened, pdf_of, saved
+from rendering.files import ENCRYPTED_PDF, QUADRANTS, corners, filled_form, opened, pdf_of, saved
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -280,3 +280,50 @@ async def test_an_image_near_the_pixel_limit_fits_into_the_memory_of_the_child(m
     [image] = (await ChildRenderer().render(content, request)).images
 
     assert (image.width, image.height) == (277, 400)
+
+
+# The worker as it runs where there are no system fonts, as in the container image.
+WITHOUT_FONTS = """
+import sys
+from mcp_server_paperless.rendering import limits
+from mcp_server_paperless.rendering.worker import main
+def guard(memory, seconds):
+    limits.guard(memory, seconds, lock=lambda n: limits.lock_down(n, fonts=()))
+raise SystemExit(main(sys.stdin.buffer, sys.stdout.buffer, guard))
+"""
+
+
+@pytest.mark.skipif(WINDOWS, reason="there are no resource limits on Windows")
+@pytest.mark.parametrize(
+    "kind", ["PDF", "form", "JPEG", "PNG", "TIFF", "WEBP", "palette", "turned"]
+)
+async def test_a_child_that_may_open_nothing_renders_all_the_same(kind: str) -> None:
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    picture = Image.new("RGB", (60, 80), (255, 0, 0))
+    files = {
+        "PDF": ("application/pdf", pdf_of([QUADRANTS])),
+        "form": ("application/pdf", filled_form()),
+        "palette": ("image/png", saved(picture.convert("P"), "PNG", transparency=0)),
+        "turned": ("image/jpeg", saved(picture, "JPEG", exif=exif)),
+    }
+    if kind in {"JPEG", "PNG", "TIFF", "WEBP"}:
+        files[kind] = (f"image/{kind.lower()}", saved(picture, kind))
+    mime_type, content = files[kind]
+    renderer = ChildRenderer(command=(sys.executable, "-I", "-c", WITHOUT_FONTS))
+
+    found = await renderer.render(content, REQUEST.model_copy(update={"mime_type": mime_type}))
+
+    assert len(found.images) == 1
+
+
+@pytest.mark.skipif(WINDOWS, reason="there are no resource limits on Windows")
+@pytest.mark.parametrize(
+    ("content", "expected"), [(ENCRYPTED_PDF, "encrypted"), (b"nothing", "damaged")]
+)
+async def test_a_child_that_may_open_nothing_says_why_it_fails(
+    content: bytes, expected: str
+) -> None:
+    renderer = ChildRenderer(command=(sys.executable, "-I", "-c", WITHOUT_FONTS))
+
+    assert await reason(renderer, content) == expected

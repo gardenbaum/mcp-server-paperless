@@ -4,7 +4,7 @@ title: Show the pages of a document as readable images
 status: In Progress
 assignee: []
 created_date: '2026-11-23T12:14:45Z'
-updated_date: '2026-11-23T19:30:48Z'
+updated_date: '2026-11-23T19:37:40Z'
 labels: []
 dependencies: []
 priority: high
@@ -62,4 +62,6 @@ Deviations from the design: page_count and messages come from this process, the 
 mutmut does not cover rendering/ (its packages are services/ and paperless/): the logic was mutated by hand.
 Gate changes: new CI job rendering-windows (not required), new job e2e-office in e2e-full.yml, import contract 'Only rendering imports pypdfium2 and PIL' and rendering in the layer contracts, stubs in typings/ with ruff exceptions for upstream names. No gate is weaker.
 Snapshots: test_surface (new tool; get_document_thumbnail names it), test_container (image.yml path filter).
+
+Hand mutations of rendering/, services/pages.py, page_ranges, tool, adapter, cli: 45, of which 2 survived at first (answer without images; Pillow plugins loaded before the child may open nothing); both have tests now, seen red. Gates on macOS: test suite green but for the known macOS-only test_the_menu_driver_reports_a_failing_cli, diff coverage 100 %. Open for phase 2: Docker image, Linux-only tests, E2E, Office overlay run time, shard weight of tests/e2e/test_pages.py, Windows job.
 <!-- SECTION:NOTES:END -->
