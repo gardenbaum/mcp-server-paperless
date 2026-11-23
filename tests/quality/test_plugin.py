@@ -274,9 +274,55 @@ def renovate_rule() -> dict[str, object]:
     return found[0]
 
 
+def settings_in(value: object) -> list[tuple[str, object]]:
+    """Every key with its value, at every level of the configuration."""
+    found: list[tuple[str, object]] = []
+    if isinstance(value, dict):
+        for key, item in mapping(cast("object", value)).items():
+            found += [(key, item), *settings_in(item)]
+    elif isinstance(value, list):
+        for item in cast("list[object]", value):
+            found += settings_in(item)
+    return found
+
+
+def test_nothing_in_the_renovate_configuration_switches_the_rule_off() -> None:
+    config = load(ROOT / "renovate.json")
+    found = settings_in(config)
+
+    assert "custom.regex" in cast("list[str]", config["enabledManagers"])
+    assert ("enabled", False) not in found
+    assert not {"ignoreDeps", "ignorePaths", "includePaths"} & {key for key, _ in found}
+
+
+def test_renovate_never_merges_a_release_by_itself_and_takes_only_plain_versions() -> None:
+    """The bot's own configuration automerges; the last matching package rule wins."""
+    config = load(ROOT / "renovate.json")
+    last = mapping(cast("list[object]", config["packageRules"])[-1])
+
+    assert last.pop("description")
+    assert last == {
+        "matchPackageNames": ["mcp-server-paperless"],
+        "automerge": False,
+        # The manifests' patterns do not match 1.2.3.post1, so Renovate could not write it.
+        "allowedVersions": r"/^\d+\.\d+\.\d+$/",
+    }
+    assert ("automerge", True) not in settings_in(config)
+
+
 def test_renovate_follows_the_releases_on_pypi() -> None:
     rule = renovate_rule()
 
+    # Exact: no template can change what is written, nothing else can filter the rule.
+    assert set(rule) == {
+        "customType",
+        "description",
+        "managerFilePatterns",
+        "matchStrings",
+        "depNameTemplate",
+        "datasourceTemplate",
+        "versioningTemplate",
+    }
     assert rule["customType"] == "regex"
     assert rule["datasourceTemplate"] == "pypi"
     assert rule["versioningTemplate"] == "pep440"

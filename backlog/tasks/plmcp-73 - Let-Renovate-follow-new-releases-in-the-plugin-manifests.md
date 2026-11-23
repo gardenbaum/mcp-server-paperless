@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:57:05Z'
-updated_date: '2026-11-23T12:15:50Z'
+updated_date: '2026-11-23T12:28:24Z'
 labels: []
 dependencies: []
 priority: medium
@@ -43,4 +43,6 @@ The directory refuses @latest, so the plugin manifests pin the released version 
 
 <!-- SECTION:NOTES:BEGIN -->
 Red: 3 failed; green: 22 passed. Proof: renovate 44.258.1 config validator --strict passes; a local lookup dry run on a copy with 0.3.1 finds all four places and puts 0.3.2 on the one branch renovate/mcp-server-paperless-0.x. Existing settings unchanged: the Monday schedule, no automerge, prConcurrentLimit 3 apply, so the pull request can come up to a week after a release.
+
+Review fixes. Correction to the note above: the bot's own global configuration automerges (seen in the bodies of PR 54 and 55), so a last packageRule sets automerge false for this package; a 'force' block in the bot's configuration, which this repository cannot see, would still win. Observed in Dependency Dashboard #9: updates wait under Pending Approval until ticked, so the tick is a step of the release. allowedVersions takes only plain versions.
 <!-- SECTION:NOTES:END -->

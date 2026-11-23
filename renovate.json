@@ -53,6 +53,12 @@
       "description": "gitleaks pre-commit rev and the golang hook in .pre-commit-config.yaml move together (golang hook version is a manual follow-up)",
       "matchPackageNames": ["gitleaks/gitleaks"],
       "groupName": "gitleaks"
+    },
+    {
+      "description": "A release of this package reaches plugin users only after a review; the bot's own configuration automerges. Keep this rule last",
+      "matchPackageNames": ["mcp-server-paperless"],
+      "automerge": false,
+      "allowedVersions": "/^\\d+\\.\\d+\\.\\d+$/"
     }
   ]
 }
