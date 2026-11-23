@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 from e2e.helpers import SEEDED_OBJECTS
+from guide_oracle import observe, verify
+from harness import serve
 
 if TYPE_CHECKING:
     from contract.conftest import Backend
@@ -68,3 +70,29 @@ async def test_a_restricted_user_sees_shared_objects_and_no_system_status(
         False,
     )
     assert overview.paperless_version == backend.expected_version
+
+
+@pytest.mark.contract("InstanceReader.get_overview")
+async def test_a_user_without_the_ui_settings_permission_gets_no_ai_flag(backend: Backend) -> None:
+    overview = await backend.restricted(frozenset()).instance.get_overview()
+
+    assert (overview.ai_enabled, overview.current_user) == (None, None)
+
+
+@pytest.mark.contract("InstanceReader.get_overview")
+@pytest.mark.parametrize("who", ["admin", "reader", "blind", "no-settings"])
+@pytest.mark.parametrize("toolsets", [None, ["core"], ["all"], ["trash"]])
+@pytest.mark.parametrize("read_only", [False, True])
+async def test_the_guide_follows_what_the_reader_says_about_ai(
+    backend: Backend, who: str, toolsets: list[str] | None, *, read_only: bool
+) -> None:
+    """The capability the guide reads is the one each kind of user gets: false, or unknown."""
+    ports = backend.restricted(frozenset()) if who == "no-settings" else getattr(backend, who)
+    capability = "unknown" if who == "no-settings" else "missing"
+
+    current = await observe(serve(ports.instance, toolsets=toolsets, read_only=read_only))
+    ceiling = await observe(serve(ports.instance, toolsets=["all"], read_only=read_only))
+
+    assert current is not None
+    assert ceiling is not None
+    verify(current, ceiling, capability=capability)

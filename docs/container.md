@@ -39,6 +39,11 @@ services:
     security_opt: ["no-new-privileges:true"]
 ```
 
+To offer more than the default toolsets, add `PAPERLESS_MCP_TOOLSETS: core,ai,pdf,trash` (or `all`)
+to `environment`. The selection is read at startup and `docker restart` keeps the old
+environment, so recreate the container (`docker compose up -d`) after a change; the assistant is
+told this when toolsets are off.
+
 ## With the OIDC layer
 
 The [OIDC layer](claude-ai-connector.md) is in images built from `main` and in releases after

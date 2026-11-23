@@ -11,6 +11,9 @@ from typing import TYPE_CHECKING, cast
 import pytest
 import yaml
 
+from mcp_server_paperless.settings import ServerSettings
+from mcp_server_paperless.tools.selection import ENABLE
+
 if TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 
@@ -457,3 +460,14 @@ def test_both_jobs_that_name_the_tags_name_the_same_ones() -> None:
 
     assert len(meta) == 2
     assert meta[0] == meta[1]
+
+
+@pytest.mark.decision("decision-28")
+def test_the_image_takes_the_toolsets_from_the_environment_the_server_guide_names() -> None:
+    """The guide (PLMCP-82) says to set the variable on the container; the image sets none."""
+    variable = f"{ServerSettings.model_config.get('env_prefix', '')}toolsets".upper()
+
+    assert variable == "PAPERLESS_MCP_TOOLSETS"
+    assert variable not in DOCKERFILE.read_text(encoding="utf-8")
+    assert f"{variable}=" in ENABLE
+    assert "recreate the container" in ENABLE

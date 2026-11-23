@@ -84,3 +84,39 @@ class InstanceOverview(_Frozen):
             )
         ),
     ]
+
+
+class OffToolset(_Frozen):
+    """A toolset that is off."""
+
+    toolset: str
+    what: str
+    tools: tuple[str, ...]
+    unchecked: str | None
+
+
+class ToolsetGuide(_Frozen):
+    """The toolsets on and off."""
+
+    on: tuple[str, ...]
+    off: tuple[OffToolset, ...]
+    enable: str | None
+
+
+class ServerOverview(InstanceOverview):
+    """The instance as the current user sees it, and the toolsets."""
+
+    toolsets: ToolsetGuide
+
+    @classmethod
+    def of(cls, overview: InstanceOverview, toolsets: ToolsetGuide) -> ServerOverview:
+        """The overview of the instance, with the toolsets of this server."""
+        return cls(
+            paperless_version=overview.paperless_version,
+            api_version=overview.api_version,
+            statistics=overview.statistics,
+            system_status=overview.system_status,
+            current_user=overview.current_user,
+            ai_enabled=overview.ai_enabled,
+            toolsets=toolsets,
+        )

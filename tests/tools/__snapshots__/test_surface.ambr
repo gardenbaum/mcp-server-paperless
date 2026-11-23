@@ -8151,6 +8151,7 @@
         Reports the Paperless and API version, the document, inbox and taxonomy counts, the system
         health (storage, database, task queue, search index, classifier), the current user and
         whether Paperless AI is enabled. Use it first to orient yourself, or to diagnose failures.
+        Lists the toolsets that are off and how the operator switches them on.
         
         Counts include only what the user may see, unless they may view global statistics. A null
         field means the user may not see it, not that it is off: ai_enabled null means unknown.
@@ -8163,7 +8164,7 @@
       }),
       'name': 'get_instance_overview',
       'outputSchema': dict({
-        'description': 'The instance as the current user sees it.',
+        'description': 'The instance as the current user sees it, and the toolsets.',
         'properties': dict({
           'ai_enabled': dict({
             'anyOf': list([
@@ -8453,6 +8454,70 @@
             ]),
             'description': 'Null if the user may not view the system status.',
           }),
+          'toolsets': dict({
+            'description': 'The toolsets on and off.',
+            'properties': dict({
+              'enable': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+              }),
+              'off': dict({
+                'items': dict({
+                  'description': 'A toolset that is off.',
+                  'properties': dict({
+                    'tools': dict({
+                      'items': dict({
+                        'type': 'string',
+                      }),
+                      'type': 'array',
+                    }),
+                    'toolset': dict({
+                      'type': 'string',
+                    }),
+                    'unchecked': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'what': dict({
+                      'type': 'string',
+                    }),
+                  }),
+                  'required': list([
+                    'toolset',
+                    'what',
+                    'tools',
+                    'unchecked',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              'on': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+            }),
+            'required': list([
+              'on',
+              'off',
+              'enable',
+            ]),
+            'type': 'object',
+          }),
         }),
         'required': list([
           'paperless_version',
@@ -8461,6 +8526,7 @@
           'system_status',
           'current_user',
           'ai_enabled',
+          'toolsets',
         ]),
         'type': 'object',
       }),
@@ -22215,6 +22281,7 @@
         Reports the Paperless and API version, the document, inbox and taxonomy counts, the system
         health (storage, database, task queue, search index, classifier), the current user and
         whether Paperless AI is enabled. Use it first to orient yourself, or to diagnose failures.
+        Lists the toolsets that are off and how the operator switches them on.
         
         Counts include only what the user may see, unless they may view global statistics. A null
         field means the user may not see it, not that it is off: ai_enabled null means unknown.
@@ -22227,7 +22294,7 @@
       }),
       'name': 'get_instance_overview',
       'outputSchema': dict({
-        'description': 'The instance as the current user sees it.',
+        'description': 'The instance as the current user sees it, and the toolsets.',
         'properties': dict({
           'ai_enabled': dict({
             'anyOf': list([
@@ -22517,6 +22584,70 @@
             ]),
             'description': 'Null if the user may not view the system status.',
           }),
+          'toolsets': dict({
+            'description': 'The toolsets on and off.',
+            'properties': dict({
+              'enable': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+              }),
+              'off': dict({
+                'items': dict({
+                  'description': 'A toolset that is off.',
+                  'properties': dict({
+                    'tools': dict({
+                      'items': dict({
+                        'type': 'string',
+                      }),
+                      'type': 'array',
+                    }),
+                    'toolset': dict({
+                      'type': 'string',
+                    }),
+                    'unchecked': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'what': dict({
+                      'type': 'string',
+                    }),
+                  }),
+                  'required': list([
+                    'toolset',
+                    'what',
+                    'tools',
+                    'unchecked',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              'on': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+            }),
+            'required': list([
+              'on',
+              'off',
+              'enable',
+            ]),
+            'type': 'object',
+          }),
         }),
         'required': list([
           'paperless_version',
@@ -22525,6 +22656,7 @@
           'system_status',
           'current_user',
           'ai_enabled',
+          'toolsets',
         ]),
         'type': 'object',
       }),
@@ -26852,6 +26984,7 @@
         Reports the Paperless and API version, the document, inbox and taxonomy counts, the system
         health (storage, database, task queue, search index, classifier), the current user and
         whether Paperless AI is enabled. Use it first to orient yourself, or to diagnose failures.
+        Lists the toolsets that are off and how the operator switches them on.
         
         Counts include only what the user may see, unless they may view global statistics. A null
         field means the user may not see it, not that it is off: ai_enabled null means unknown.
@@ -26864,7 +26997,7 @@
       }),
       'name': 'get_instance_overview',
       'outputSchema': dict({
-        'description': 'The instance as the current user sees it.',
+        'description': 'The instance as the current user sees it, and the toolsets.',
         'properties': dict({
           'ai_enabled': dict({
             'anyOf': list([
@@ -27154,6 +27287,70 @@
             ]),
             'description': 'Null if the user may not view the system status.',
           }),
+          'toolsets': dict({
+            'description': 'The toolsets on and off.',
+            'properties': dict({
+              'enable': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+              }),
+              'off': dict({
+                'items': dict({
+                  'description': 'A toolset that is off.',
+                  'properties': dict({
+                    'tools': dict({
+                      'items': dict({
+                        'type': 'string',
+                      }),
+                      'type': 'array',
+                    }),
+                    'toolset': dict({
+                      'type': 'string',
+                    }),
+                    'unchecked': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'what': dict({
+                      'type': 'string',
+                    }),
+                  }),
+                  'required': list([
+                    'toolset',
+                    'what',
+                    'tools',
+                    'unchecked',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              'on': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+            }),
+            'required': list([
+              'on',
+              'off',
+              'enable',
+            ]),
+            'type': 'object',
+          }),
         }),
         'required': list([
           'paperless_version',
@@ -27162,6 +27359,7 @@
           'system_status',
           'current_user',
           'ai_enabled',
+          'toolsets',
         ]),
         'type': 'object',
       }),

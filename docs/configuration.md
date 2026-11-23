@@ -56,6 +56,9 @@ Three settings narrow the tools a client is offered. A tool that is not offered 
   Only `core` and `ai` are on by default, so a client starts with a small set of tools and the
   model's context is not filled with tools you never use. Add what you need, for example
   `PAPERLESS_MCP_TOOLSETS=core,ai,pdf,trash`, or `all`.
+  The assistant is told which toolsets are off, what each is for and how to switch them on, in
+  the server instructions and in the result of `get_instance_overview` (see [Switching a toolset
+  on](#switching-a-toolset-on)).
 - **Read-only mode** (`PAPERLESS_MCP_READ_ONLY=true`). Offers only the tools that change nothing
   in Paperless, from whichever toolsets are selected: searching, reading, listing, downloading.
   The prompts that need a writing tool are not offered either.
@@ -67,6 +70,26 @@ change nothing and answer with what they would do, so the client can show it to 
 tool also tells the client whether it only reads or may change or remove data (its MCP
 annotations), which clients use for their own approval prompts. The [tool
 reference](tools.md) lists the kind of every tool.
+
+### Switching a toolset on
+
+Only you can: the assistant cannot change the selection, neither for the server nor for a session
+(decision-41). It is told which toolsets are off and what each adds, so that it can say what to
+set instead of calling a feature missing. Nothing is listed that read-only mode, disabled tools or
+a Paperless without the capability (Paperless AI for `ai`) leaves out: a toolset that read-only
+mode cuts down is described by the tools that remain. When Paperless did not say whether AI is
+on (the user may not view the UI settings, or it did not answer at startup), `ai` is listed with
+"needs Paperless AI, not checked". The selection is read at startup, so the server must restart:
+
+| How you run it | Where to set `PAPERLESS_MCP_TOOLSETS` | What to restart |
+|---|---|---|
+| Claude Code plugin | The option Toolsets: `/plugin configure mcp-server-paperless@gardenbaum` | Claude Code |
+| Cursor plugin | Not offered (only the URL and the token are): add the server by hand instead | Cursor |
+| stdio (`claude mcp add`, Claude Desktop) | `env` of the server entry in the client's configuration | The client (or reconnect the server in it) |
+| HTTP | The environment of the process | The process |
+| Container image | `environment` of the service, or `-e` | Recreate the container (`docker compose up -d`, or `docker run` again): a plain restart keeps the old environment |
+
+Give the full list (`core,ai,trash`) or `all`; the option of the plugin must not be empty.
 
 ## Toolsets
 

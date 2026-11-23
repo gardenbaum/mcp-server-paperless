@@ -77,7 +77,8 @@ claude plugin update mcp-server-paperless@gardenbaum
 | Upload directories | Directories the model may upload files from by path (default: none) |
 
 [Configuration](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md)
-explains the toolsets and options. The plugin is for Claude Code: chat on claude.ai starts no local
+explains the toolsets and options. The assistant knows which toolsets are off and tells you to
+change the option Toolsets (then restart Claude Code); it cannot change it itself. The plugin is for Claude Code: chat on claude.ai starts no local
 servers, and Cowork does not ask for the options. For claude.ai, see
 [Connect claude.ai](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/claude-ai-connector.md).
 

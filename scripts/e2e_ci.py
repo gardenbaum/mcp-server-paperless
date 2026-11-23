@@ -167,7 +167,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "filter_rules": ("test_search", "test_view_filters", "test_views"),
     "bulk_documents": ("test_bulk",),
     "bulk_taxonomy": ("test_bulk",),
-    "selection": ("test_bulk",),
+    "selection": ("test_bulk", "test_toolset_guide"),
     "page_ranges": ("test_pdf",),
     "task_outcome": ("test_tasks", "test_task_reader"),
     "tasks": ("test_task_reader",),
