@@ -50,11 +50,11 @@ class PaperlessSettings(BaseSettings):
         url: Base URL this server uses to reach Paperless (``PAPERLESS_URL``).
         token: API token (``PAPERLESS_TOKEN``); masked in ``repr`` and ``str``.
         public_url: Base URL for links handed to users when it differs from ``url``
-            (``PAPERLESS_PUBLIC_URL``).
+            (``PAPERLESS_PUBLIC_URL``). Empty values count as unset.
     """
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_prefix="PAPERLESS_", frozen=True
+        env_prefix="PAPERLESS_", frozen=True, env_ignore_empty=True
     )
 
     url: HttpUrl
