@@ -64,7 +64,8 @@ servers, and Cowork does not ask for the options. For claude.ai, see
 ## Install in Cursor
 
 For yourself, use the [install link](https://github.com/gardenbaum/mcp-server-paperless/blob/main/README.md#cursor)
-in the project README: Cursor documents no way for individuals to enter the values of a plugin.
+in the project README: Cursor's docs describe entering a
+plugin's values only in the dashboard, by team admins; whether individuals can is untested.
 
 For a team, an admin imports the repository as a team marketplace and sets `PAPERLESS_URL` and
 `PAPERLESS_TOKEN` in the dashboard (Plugins, Configure). Everyone who shares these values acts as the

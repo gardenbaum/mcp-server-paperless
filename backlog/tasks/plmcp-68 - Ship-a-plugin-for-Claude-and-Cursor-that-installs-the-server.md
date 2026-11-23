@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:37:49Z'
-updated_date: '2026-11-23T11:59:11Z'
+updated_date: '2026-11-23T12:01:41Z'
 labels: []
 dependencies: []
 priority: medium
@@ -56,6 +56,8 @@ Review fixes: the update sequence needs a marketplace refresh first; clearing To
 Owner's icon added: plugin/assets/icon.png (1024 px, Claude icon and Cursor logo), assets/icon.svg (title translated to English) and assets/icon-400.png for other listings; not in the sdist or wheel. claude plugin validate --strict --profile directory passes without findings. Update sequence and the cleared-Toolsets behaviour reproduced in a container with a git marketplace.
 
 Known limits from the review: a manifest option added in a feature PR appears before the pinned release understands it (M2); a manifest-only fix reaches installed users only with a new plugin version, which equals the package version (M3); the README install commands work only once the plugin is on main and are re-run once after the merge (M8). assets/icon.svg differs from the owner's file in one word of its title (English). Owner decisions 2026-11-23: icon supplied, Renovate rule is PLMCP-73, skills are PLMCP-72, Cursor stays URL and token only until tested by the owner.
+
+Re-review: 0 Critical, 0 Important; the Cursor sentence is corrected. Stays In Progress until the owner has loaded the plugin in Cursor (AC 3).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
