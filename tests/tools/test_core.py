@@ -114,13 +114,3 @@ async def test_other_domain_errors_keep_the_error_log_level() -> None:
         await boundary(tool)()
 
     assert raised.value.log_level == logging.ERROR
-
-
-async def test_more_like_id_warns_that_an_empty_result_can_be_an_index_problem() -> None:
-    async with Client(serve(admin())) as client:
-        tools = {tool.name: tool for tool in await client.list_tools()}
-
-    schema = tools["search_documents"].input_schema
-    properties = cast("dict[str, dict[str, str]]", schema["properties"])
-    description = properties["more_like_id"]["description"]
-    assert "document_index reindex" in description

@@ -344,14 +344,6 @@ included).
 - **One Paperless user per server.** Every client of a server acts as the user of its
   `PAPERLESS_TOKEN`, also when clients sign in through an identity provider. Run one server per
   Paperless account.
-- **`search_documents` with `more_like_id` can return nothing on Paperless 3.4.2.** Paperless
-  3.4.2 (Tantivy 0.26) panics while scoring a more-like-this query once edited or deleted
-  documents have left stale entries in the search index. Paperless catches the panic, logs
-  `More Like This scoring panicked` and answers an empty list with HTTP 200, so the server cannot
-  tell it from "no similar documents". If a result is empty although similar documents should
-  exist, have an administrator run `document_index reindex` in the Paperless container (for
-  example `docker compose exec webserver document_index reindex`). The fix is upstream in Tantivy
-  (tantivy PR 2964); it needs a Paperless release that ships it.
 
 ## How this project is built
 

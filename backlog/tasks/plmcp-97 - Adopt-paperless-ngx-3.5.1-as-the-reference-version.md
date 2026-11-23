@@ -4,7 +4,7 @@ title: Adopt paperless-ngx 3.5.1 as the reference version
 status: In Progress
 assignee: []
 created_date: '2026-11-23T18:13:36Z'
-updated_date: '2026-11-23T19:51:28Z'
+updated_date: '2026-11-23T20:14:34Z'
 labels: []
 dependencies: []
 references:
@@ -83,10 +83,15 @@ Removed because it existed only for releases before 3.5.1:
 
 Kept, and why:
 - Statements "probed on 3.4.2" (module docstrings, decisions 14, 16, 18, 21, 26, tests): history of what was observed; the live suite passes on 3.5.1 with them.
-- The wire deviations of 3.4.2 from the schema in tests/adapter/schema_guard.py (WRONG_RESPONSE_SCHEMAS, OMITTED, NULL_OBJECT_PROPERTIES, UNDECLARED_QUERY_PARAMETERS): not re-probed one by one; the live contract suite is green on 3.5.1, but whether each deviation still exists on 3.5.1 is not shown. Kept, to be checked in a follow-up.
+- The wire deviations from the schema in tests/adapter/schema_guard.py: probed on live 3.5.1 on 2026-11-23, see below; all still exist and are now named 3.5.1.
 - The PDF writer's search for the consumption tasks of an operation: 3.5.1 still starts them after the bulk_update task.
-- README "more_like_id can return nothing on 3.4.2" and the tool description: see the probe below.
-- decision-2, 8, 23, 24: their 3.4.2 statements are replaced by decision-43; their text is not edited.
+- decision-2 and decision-8: their 3.4.2 statements are replaced by decision-43 (text not edited); decisions 14, 16, 18, 21, 23, 24 and 26 are history only.
 
 Behaviour against 3.4 today: the server has no version gate. X-Version is read only for get_instance_overview. Against 3.4.x the document operations answer without a task_id, which the adapter now reports as an unexpected response; blank notes, the config read and tag deletion behave as 3.4 does. Proposal, not done: refuse at startup or in get_instance_overview when X-Version is below 3.5.1.
+
+Probe on live 3.5.1 (2026-11-23), with the exception of each entry removed from the guard:
+- Still deviating, so kept and relabelled 3.5.1: created tag, correspondent, document type, storage path and custom field without document_count (and last_correspondence, permissions where listed); GET and PATCH of a correspondent and a document type without last_correspondence and permissions; document history as a bare list with a null actor; /api/status/ with nested tasks and null errors; /api/ui_settings/ without id; saved views without permissions unless full_perms; workflow actions with null email and webhook; full_perms answers carrying permissions instead of user_can_change (tags list, tag PATCH); DELETE of a version answering 200 {"result": "OK", "current_version_id": ...} where the schema documents 204. The undeclared query parameters (more_like_id, all, fields, full_perms on PATCH) and shared_by__id as boolean are still as in the 3.5.1 schema. The HTML error bodies (403, 400) are exercised by the live contract suite, not probed one by one.
+- more_like_id: no longer reproduced. Tantivy in the 3.5.1 image is 0.26.2. On a stack with the stale index entries of hundreds of tests, more_like_id of the private seed document found the public one without a rebuild, and after 4 documents with 6 edits each and one deletion every search answered 2 hits, before and after a rebuild; no "More Like This scoring panicked" in the log. So the README limitation, the tool description sentence, the contract suite's reindex step and its helper (with wait_for_index_reload and its tests) are removed; the contract test now only waits for the index-writing tasks. One stack, one run: if the hosted full run shows an empty more-like result, put the rebuild back.
+- Added after review: an unexpected answer to a write (also add_note answered with an empty list) carries the hint that it may have been applied.
+- The local full E2E run (on 579d293) was stopped at about 60% on the coordinator's request; the hosted run decides AC 3, AC 6 and the DoD.
 <!-- SECTION:NOTES:END -->

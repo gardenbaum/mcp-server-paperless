@@ -6,11 +6,10 @@ object is looked up by its name or title first, so rerunning on a seeded stack c
 
 import base64
 import os
-import subprocess
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import httpx2
 import pytest
@@ -25,9 +24,6 @@ from fakes.accounts import (
     READER,
     READER_PERMISSIONS,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 PORT = os.environ.get("PAPERLESS_E2E_PORT", "8010")
 BASE_URL = f"http://127.0.0.1:{PORT}"
@@ -478,7 +474,6 @@ INDEX_WRITING_TASKS = (
     "reprocess_document",
 )
 # A reindex of the E2E corpus takes seconds; fail fast instead of stalling the job.
-REINDEX_TIMEOUT = 300.0
 INDEX_SETTLE_TIMEOUT = 120.0
 # Only recent tasks count: a long-lived stack can hold one that was killed and never ended.
 RECENT_TASKS = timedelta(minutes=15)
@@ -504,74 +499,3 @@ def wait_for_index_writers(api: httpx2.Client) -> None:
         if time.monotonic() > deadline:
             pytest.fail(f"Index writing tasks still running after {INDEX_SETTLE_TIMEOUT:.0f}s.")
         time.sleep(1)
-
-
-# Tantivy's reader polls the index every 0.5 s for a commit of another process.
-INDEX_RELOAD = 1.0
-# A word of the seeded public document, so a search for it answers as soon as it is indexed.
-INDEXED_WORD = "ACME"
-
-
-def wait_for_index_reload(
-    api: httpx2.Client,
-    *,
-    pause: Callable[[float], None] = time.sleep,
-    timeout: float = INDEX_SETTLE_TIMEOUT,
-) -> None:
-    """Wait until the web process searches the index another process has just rebuilt.
-
-    Why: `document_index reindex` wipes the index before it fills it, and the web process notices
-    both only when its reader polls. Until then it searches an empty index, in which a
-    more-like-this query does not find its own document and answers an empty list.
-    """
-    deadline = time.monotonic() + timeout
-    while True:
-        pause(INDEX_RELOAD)
-        found = obj(
-            parse(api.get("/api/documents/", params={"query": INDEXED_WORD}).raise_for_status())
-        )
-        if found["count"]:
-            return
-        if time.monotonic() > deadline:
-            pytest.fail(f"The rebuilt index is still empty after {timeout:.0f}s.")
-
-
-def rebuild_search_index(api: httpx2.Client) -> None:
-    """Rebuild Paperless's full-text index from the database, as `document_index reindex` does.
-
-    Why: Tantivy keeps replaced and deleted documents in their segments until a merge, and counts
-    them in a term's document frequency. A more-like-this query whose terms occur more often than
-    there are live documents makes Tantivy panic, and Paperless 3.4.2 then answers an empty list
-    (`more_like_this_ids` logs "More Like This scoring panicked"). Every update or deletion of a
-    document leaves such an entry, so any test that runs after other writes (a contract suite, a
-    long-lived stack) can hit it; a rebuild leaves exactly one entry per document. Paperless has no
-    API for it, so this runs the management command in the container that publishes `PORT`.
-    Drop this rebuild (and its callers) once the pinned Paperless ships a Tantivy with the fix
-    (upstream tantivy PR 2964); until then the limitation stays documented in the README and in
-    the `more_like_id` description.
-    Wait for the index-writing tasks first: one that ends after the rebuild leaves new entries.
-    """
-    wait_for_index_writers(api)
-    container = subprocess.run(  # noqa: S603 -- fixed docker arguments, no user input
-        ["docker", "ps", "--quiet", "--filter", f"publish={PORT}"],  # noqa: S607 -- fixed argument list
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-    )
-    assert container.returncode == 0, f"docker ps failed (is docker reachable?): {container.stderr}"
-    ids = container.stdout.split()
-    assert len(ids) == 1, f"Expected one container publishing port {PORT}, got {ids}"
-    rebuilt = subprocess.run(  # noqa: S603 -- fixed argument list
-        [
-            *("docker", "exec", "--user", "paperless", "--workdir", "/usr/src/paperless/src"),
-            ids[0],
-            *("python", "manage.py", "document_index", "reindex", "--no-progress-bar"),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=REINDEX_TIMEOUT,
-    )
-    assert rebuilt.returncode == 0, f"document_index reindex failed: {rebuilt.stderr[-500:]}"
-    wait_for_index_reload(api)

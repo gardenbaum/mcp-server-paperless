@@ -89,6 +89,9 @@ def retry_after(value: str, now: datetime) -> float | None:
     return max(0.0, (when - now).total_seconds())
 
 
+MAY_BE_APPLIED = "The request may have been applied: read the data again before repeating it."
+
+
 def unexpected(response: httpx2.Response) -> PaperlessMcpError:
     """The error for a successful response whose content the adapter cannot use.
 
@@ -97,11 +100,7 @@ def unexpected(response: httpx2.Response) -> PaperlessMcpError:
     request = response.request
     return PaperlessMcpError(
         f"Paperless sent an unexpected response for {request.method} {request.url.path}.",
-        hint=(
-            None
-            if request.method in {"GET", "HEAD"}
-            else "The request may have been applied: read the data again before repeating it."
-        ),
+        hint=None if request.method in {"GET", "HEAD"} else MAY_BE_APPLIED,
     )
 
 

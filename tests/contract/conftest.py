@@ -33,8 +33,8 @@ from e2e.helpers import (
     consume,
     consume_text,
     pdf_pages,
-    rebuild_search_index,
     results,
+    wait_for_index_writers,
 )
 from fakes.accounts import ADMIN, BLIND, READER
 from fakes.paperless import (
@@ -309,10 +309,10 @@ class Backend:
     # The Paperless release behind the backend: the fake's, or the one the live stack runs
     # (`just e2e-latest` runs the suite against the latest release instead of the reference).
     expected_version: str
-    # Makes the full-text index hold exactly one entry per current document (live: waits for the
-    # index-writing tasks, then rebuilds it; the fake has no stale entries). Call it right before
-    # a more-like-this search: see `rebuild_search_index` for why the result can be empty without.
-    rebuild_search_index: Callable[[], None]
+    # Waits until the full-text index holds the documents made so far (live: until the
+    # index-writing tasks have ended; the fake indexes at once). Call it right before a
+    # more-like-this search.
+    index_settled: Callable[[], None]
 
 
 def fake_consume(state: FakeState) -> Consume:
@@ -487,7 +487,7 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
         in_trash=fake_in_trash(state),
         track_document=lambda _document: None,
         expected_version=VERSION,
-        rebuild_search_index=lambda: None,
+        index_settled=lambda: None,
     )
 
 
@@ -743,7 +743,7 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
                 in_trash=lambda document_id: live_in_trash(stack, document_id),
                 track_document=created.append,
                 expected_version=EXPECTED_VERSION,
-                rebuild_search_index=lambda: rebuild_search_index(stack.admin),
+                index_settled=lambda: wait_for_index_writers(stack.admin),
             )
     finally:
         cleanup(stack, created, users)
