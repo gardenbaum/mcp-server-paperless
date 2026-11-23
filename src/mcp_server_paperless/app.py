@@ -303,6 +303,9 @@ def authenticator(http: HttpSettings, oidc: OidcSettings | None = None) -> AuthP
     )
 
 
+# Most bytes of a request body anywhere but at the MCP endpoint: the OAuth routes need no
+# authentication, and what is registered there is stored and shown (decision-39).
+OTHER_BODY_LIMIT = 64 * 1024
 # Room for the JSON-RPC envelope and the other arguments around base64 content.
 ENVELOPE_BYTES = 64 * 1024
 
@@ -330,22 +333,30 @@ class BodyTooLargeError(Exception):
 class BodyLimit:
     """ASGI middleware: refuses a request body larger than ``limit`` bytes with 413.
 
+    Only the path ``mcp_path``, exactly as routed, may take ``mcp_limit`` bytes instead: a route
+    nobody thought of gets the small limit.
+
     A declared ``Content-Length`` over the limit is refused without reading anything; a body
     without one (chunked) is cut off as soon as it passes the limit.
     """
 
-    def __init__(self, app: ASGIApp, limit: int) -> None:
-        """Wrap ``app``; ``limit`` is the most body bytes it may receive."""
+    def __init__(
+        self, app: ASGIApp, limit: int, *, mcp_path: str | None = None, mcp_limit: int = 0
+    ) -> None:
+        """Wrap ``app``; ``limit`` is the most body bytes it may receive off ``mcp_path``."""
         self.app: ASGIApp = app
         self.limit: int = limit
+        self.mcp_path: str | None = mcp_path
+        self.mcp_limit: int = mcp_limit
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Serve one ASGI connection."""
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        limit = self.mcp_limit if scope["path"] == self.mcp_path else self.limit
         declared = request_header(scope, b"content-length") or b"0"
-        if declared.isdigit() and int(declared) > self.limit:
+        if declared.isdigit() and int(declared) > limit:
             await _reply(send, 413, "request body too large")
             return
         received = 0
@@ -354,14 +365,16 @@ class BodyLimit:
         async def counted() -> Message:
             nonlocal received
             message = await receive()
-            if message["type"] == "http.request":
-                received += len(cast("bytes", message.get("body", b"")))
-                if received > self.limit:
-                    raise BodyTooLargeError
+            received += len(cast("bytes", message.get("body", b"")))  # none in a disconnect
+            if received > limit:
+                raise BodyTooLargeError
             return message
 
         async def watched(message: Message) -> None:
             nonlocal started
+            # FastMCP's /authorize catches the error and answers itself: 413 goes out instead.
+            if received > limit and not started:
+                return
             started = started or message["type"] == "http.response.start"
             await send(message)
 
@@ -370,6 +383,7 @@ class BodyLimit:
         except BodyTooLargeError:
             if started:
                 raise
+        if received > limit and not started:
             await _reply(send, 413, "request body too large")
 
 
@@ -501,7 +515,14 @@ def build_app(
     # /mcp/ is not /mcp: a redirect would be answered before authentication, and with the
     # wrong port and scheme behind a proxy.
     app.router.redirect_slashes = False
-    app.add_middleware(BodyLimit, limit=body_limit(max_upload_bytes))
+    # An MCP path that is also an OAuth route's path would raise that route's limit.
+    alone = [getattr(route, "path", None) for route in app.routes].count(http.path) == 1
+    app.add_middleware(
+        BodyLimit,
+        limit=OTHER_BODY_LIMIT,
+        mcp_path=http.path if alone else None,
+        mcp_limit=body_limit(max_upload_bytes),
+    )
     if with_oidc:
         app.add_middleware(OwnIcon)
     if not authenticated:

@@ -612,7 +612,7 @@ async def test_the_middleware_leave_other_connection_kinds_alone(scope_type: str
 @pytest.mark.anyio
 async def test_a_body_that_passes_the_limit_after_the_response_began_is_not_masked() -> None:
     limited = BodyLimit(Recorder(reads=True, responds_first=True), limit=15)
-    scope: Scope = {"type": "http", "headers": []}
+    scope: Scope = {"type": "http", "path": "/", "headers": []}
 
     with pytest.raises(BodyTooLargeError):
         await limited(scope, idle, discard)
