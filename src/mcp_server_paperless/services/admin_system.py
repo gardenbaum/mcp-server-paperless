@@ -345,8 +345,8 @@ class SystemAdmin:
         return (
             f"The archive is over the download limit of {self._max_bytes} bytes, so it is not "
             f"attached. Call again with {ways(saving=bool(self._sink.roots))}, ask for "
-            "fewer documents, fetch single files with download_document, or ask the administrator to raise "
-            "PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
+            "fewer documents, fetch single files with download_document, or ask the administrator "
+            "to raise PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
         )
 
     async def download(
