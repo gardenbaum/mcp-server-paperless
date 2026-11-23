@@ -14,6 +14,7 @@ import pytest
 from fakes.paperless import FakePaperless, FakeUser, seeded
 from fastmcp import Client
 from guide_oracle import (
+    CANONICAL,
     COMBINATIONS,
     DISABLED,
     OVERVIEW,
@@ -38,10 +39,13 @@ from harness import (
 
 from mcp_server_paperless.domain.errors import InvalidConfiguration, UpstreamUnavailable
 from mcp_server_paperless.server import CATALOGUE, create_server
-from mcp_server_paperless.tools._shared import TOOLSETS
+from mcp_server_paperless.tools._shared import TOOL_TOOLSETS, TOOLSETS
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from mcp_server_paperless.domain.instance import InstanceOverview
+    from mcp_server_paperless.domain.ports import InstanceReader
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-41")]
 
@@ -197,7 +201,7 @@ async def test_what_is_on_stays_as_the_start_found_it() -> None:
         seen = await look(client)
 
     assert (seen.guide or {})["on"] == ["core"]  # ai is selected but was hidden at the start
-    assert (seen.guide or {})["pending"] == ["ai"]  # and a restart would offer it
+    assert (seen.guide or {})["offered_after_restart"] == ["ai"]
     assert "ai" not in offered(seen)
 
 
@@ -238,3 +242,43 @@ async def test_the_gap_of_a_toolset_that_is_on_follows_the_current_answer() -> N
     assert (second.guide or {})["unchecked"] == {"ai": "Paperless AI"}
     assert (second.guide or {})["on"] == ["core", "ai"]
     assert first.tools == second.tools
+
+
+async def look_started(
+    reader: InstanceReader, toolsets: Sequence[str] | None, disabled: Sequence[str]
+) -> Seen:
+    seen = await started(reader, toolsets, disabled_tools=disabled, overview=False)
+    assert seen is not None
+    return seen
+
+
+@pytest.mark.parametrize("disabled", [(), ("ask_paperless_ai", "get_ai_suggestions")])
+@pytest.mark.parametrize("selection", ["default", "core", "core-ai-trash", "all"])
+@pytest.mark.parametrize("now", [True, False, None])
+@pytest.mark.parametrize("started", [True, False, None])
+async def test_the_overview_after_the_answer_changed_says_what_a_restart_would_deliver(
+    *, started: bool | None, now: bool | None, selection: str, disabled: tuple[str, ...]
+) -> None:
+    """Started on one answer about AI, asked on another: what is on, offered and off."""
+    paperless = Says(ai_enabled=started)
+    toolsets = SELECTIONS[selection]
+    async with Client(serve(paperless, toolsets=toolsets, disabled_tools=disabled)) as client:
+        paperless.ai_enabled = now
+        seen = await look(client)
+    restarted = await look_started(Says(now), toolsets, disabled)
+    ceiling = await look_started(Says(now), ["all"], disabled)
+    assert seen.guide is not None
+
+    def toolsets_of(tools: frozenset[str]) -> list[str]:
+        return [n for n in CANONICAL if any(TOOL_TOOLSETS[t] == n for t in tools)]
+
+    on = toolsets_of(seen.tools)
+    delivered = toolsets_of(restarted.tools - seen.tools)
+    off = toolsets_of(ceiling.tools - restarted.tools)
+    assert seen.guide["on"] == on
+    assert seen.guide["offered_after_restart"] == delivered
+    assert [e["toolset"] for e in cast("list[dict[str, str]]", seen.guide["off"])] == off
+    # The gap follows the current answer, for any toolset the guide mentions.
+    mentioned = {*on, *delivered, *off}
+    expected = {"ai": "Paperless AI"} if now is None and "ai" in mentioned else {}
+    assert seen.guide["unchecked"] == expected

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T09:24:00Z'
-updated_date: '2026-11-23T17:18:42Z'
+updated_date: '2026-11-23T17:39:04Z'
 labels: []
 dependencies: []
 priority: low
@@ -65,7 +65,7 @@ Variance limits AC 1: the same module sets in the three earlier runs (unchanged 
 
 Controller: the shard balance of a single run varies up to 1.55x for identical module sets (Celery-bound modules depend on what ran before), so AC #1 cannot be met reliably by one run. Decision: merge the median weights (clear improvement: the branch run gave 588/497/444 s against 733/398/637 s before) and keep PLMCP-44 In Progress; AC #1 is judged on the median shard ratio of the next three e2e-full runs on main after the merge, stated here openly rather than by rewording the criterion. If the median ratio is above 1.15, the follow-up is cutting the variance (not re-weighting).
 
-After the merge of PLMCP-82 (2026-11-23): refresh the weights of tests/e2e/test_toolset_guide.py (62 s), tests/e2e/test_http.py (15 s) and tests/contract/test_instance_reader.py (16 s) from the median of several e2e-full runs. They are now ONE pull-request-tier run, 45223357290, in scripts/e2e_ci.py MODULE_SECONDS and in HOSTED_SECONDS of tests/quality/test_e2e_ci.py (both say so); the shards of the first post-merge e2e-full run took 548 s and 492 s with shard 3 empty on the first version of the module.
+After the merge of PLMCP-82 (2026-11-23): refresh the weights of tests/e2e/test_toolset_guide.py (62 s), tests/e2e/test_http.py (15 s) and tests/contract/test_instance_reader.py (16 s) from the median of several e2e-full runs. They are now ONE pull-request-tier run, 45223357290, in scripts/e2e_ci.py MODULE_SECONDS and in HOSTED_SECONDS of tests/quality/test_e2e_ci.py (both say so); the 548 s and 492 s of two shards (shard 3 empty) are from the pull-request-tier run 45214768651 on the FIRST version of the module (one live start per case, 185 s hosted); nothing was merged then, and no e2e-full run has measured the module yet.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

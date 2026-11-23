@@ -29,7 +29,7 @@ Toolsets are switched on by the operator only. The controller accepted this on 2
   - to ask the user, and not to edit the configuration itself;
   - which toolsets are on and which are off, and what each toolset that is off adds: the overview names exactly the tools that remain after read-only mode and disabled tools, the instructions name no tool and say "some of its tools" where one is cut down;
   - the setting and the restart for each way of running the server, so that the assistant can ask the user to change it.
-- It does not advertise a toolset that read-only mode, disabled tools or a missing Paperless capability exclude. It shows a capability it could not check as a gap, and says that a selected toolset that was hidden at the start and is available now is offered after a restart.
+- It does not advertise a toolset that read-only mode, disabled tools or a missing Paperless capability exclude. It shows a capability it could not check as a gap, and the overview lists a selected toolset that was hidden at the start and is available now under `offered_after_restart` (the instructions are written at the start and have nothing to say about it).
 - If per-session switching is wanted later, it needs a new decision that supersedes this one and at least: off by default; a separate operator allowlist of the toolsets a session may add (never `admin`, `raw`, `permissions`, `mail`, `sharing` by default); read-only mode and disabled tools always win; a tool annotated as changing the surface so clients ask the user; behaviour defined for the sessionless era (user-scoped rules that outlive the conversation) and for unauthenticated HTTP (refuse); and a place in the tool budget.
 <!-- SECTION:DECISION:END -->
 

@@ -111,11 +111,12 @@ def toolset_guide(  # noqa: PLR0913 -- the tables and the states a toolset can b
     """The toolsets on and the ones the operator could switch on, as far as that adds a tool.
 
     A toolset that read-only mode, disabled tools or a missing capability leave without a tool is
-    in neither list (a selected one that a restart would offer is ``pending``). One that is cut
-    down is described as such (``PARTIAL``), never by what it is for. A toolset whose capability
-    could not be checked, on or off, is listed in ``unchecked``. ``unavailable`` is what the start
-    found missing and decides what is on; ``missing_now`` (default: the same) is what Paperless
-    says now and decides what a restart would deliver, so what is off.
+    in neither list. A selected one that was hidden at the start and that a restart would offer
+    is ``offered_after_restart``. One that is cut down is described as such (``PARTIAL``), never
+    by what it is for. A toolset whose capability could not be checked, on, offered or off, is
+    listed in ``unchecked``. ``unavailable`` is what the start found missing and decides what is
+    on; ``missing_now`` (default: the same) is what Paperless says now and decides what a restart
+    would deliver, so what is off.
     """
     now = unavailable if missing_now is None else missing_now
     order = list(dict.fromkeys(tool_toolsets.values()))
@@ -132,12 +133,13 @@ def toolset_guide(  # noqa: PLR0913 -- the tables and the states a toolset can b
         for name in order
         if name not in selected and left[name] and name not in now
     )
-    shown = {*on, *(t.toolset for t in off)}
+    offered = tuple(
+        name for name in chosen if left[name] and name in unavailable and name not in now
+    )
+    shown = {*on, *offered, *(t.toolset for t in off)}
     return ToolsetGuide(
         on=on,
-        pending=tuple(
-            name for name in chosen if left[name] and name in unavailable and name not in now
-        ),
+        offered_after_restart=offered,
         off=off,
         switch_on=ENABLE.format(value=",".join((*chosen, "<name>"))) if off else None,
         unchecked={
@@ -154,7 +156,7 @@ def guide_text(guide: ToolsetGuide, *, overview: bool) -> str:
     The setting comes before the list of toolsets, so that a cut text loses the list. No tool is
     named, so nothing that is excluded can be: the overview lists the tools.
     """
-    if not guide.off and not guide.unchecked and not guide.pending:
+    if not guide.off and not guide.unchecked:
         return ""
 
     def gap(name: str) -> str:
@@ -162,8 +164,6 @@ def guide_text(guide: ToolsetGuide, *, overview: bool) -> str:
 
     on = ", ".join(f"{name} ({gap(name)})" if gap(name) else name for name in guide.on)
     parts = [f"Toolsets on: {on}."]
-    if guide.pending:
-        parts.append(f"Selected, offered after a restart: {', '.join(guide.pending)}.")
     if guide.switch_on:
         parts.append(guide.switch_on)
         parts.append(

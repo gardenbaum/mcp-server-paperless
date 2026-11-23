@@ -85,9 +85,10 @@ not view the UI settings, or it did not answer at startup), `ai` is marked "need
 not checked", whether it is on or off. The overview is built on each call from what Paperless
 says then: a toolset that Paperless now says it lacks is not offered, and one it cannot say
 about is marked "not checked", on or off, by the current answer; what is on stays as the start
-found it. A toolset that is selected but was hidden at the start (Paperless AI was off) and is
-available now is listed as "selected, offered after a restart", so it is in neither list of
-toolsets to switch on. The selection is read at startup, so the server must restart:
+found it. A toolset that is selected but was hidden at the start (Paperless AI was off) and that Paperless
+now offers is listed in the overview under `offered_after_restart`; it is in neither list of
+toolsets to switch on, and a restart is all it needs. The instructions never say so: they are
+written at the start, when nothing has changed yet. The selection is read at startup, so the server must restart:
 
 | How you run it | Where to set `PAPERLESS_MCP_TOOLSETS` | What to restart |
 |---|---|---|

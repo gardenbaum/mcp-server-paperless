@@ -98,7 +98,7 @@ class ToolsetGuide(_Frozen):
     """The toolsets on and off."""
 
     on: tuple[str, ...]
-    pending: tuple[str, ...]
+    offered_after_restart: tuple[str, ...]
     off: tuple[OffToolset, ...]
     switch_on: str | None
     unchecked: dict[str, str]

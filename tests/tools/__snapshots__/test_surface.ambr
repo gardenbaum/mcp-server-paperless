@@ -8483,13 +8483,13 @@
                 }),
                 'type': 'array',
               }),
-              'on': dict({
+              'offered_after_restart': dict({
                 'items': dict({
                   'type': 'string',
                 }),
                 'type': 'array',
               }),
-              'pending': dict({
+              'on': dict({
                 'items': dict({
                   'type': 'string',
                 }),
@@ -8514,7 +8514,7 @@
             }),
             'required': list([
               'on',
-              'pending',
+              'offered_after_restart',
               'off',
               'switch_on',
               'unchecked',
@@ -22616,13 +22616,13 @@
                 }),
                 'type': 'array',
               }),
-              'on': dict({
+              'offered_after_restart': dict({
                 'items': dict({
                   'type': 'string',
                 }),
                 'type': 'array',
               }),
-              'pending': dict({
+              'on': dict({
                 'items': dict({
                   'type': 'string',
                 }),
@@ -22647,7 +22647,7 @@
             }),
             'required': list([
               'on',
-              'pending',
+              'offered_after_restart',
               'off',
               'switch_on',
               'unchecked',
@@ -27322,13 +27322,13 @@
                 }),
                 'type': 'array',
               }),
-              'on': dict({
+              'offered_after_restart': dict({
                 'items': dict({
                   'type': 'string',
                 }),
                 'type': 'array',
               }),
-              'pending': dict({
+              'on': dict({
                 'items': dict({
                   'type': 'string',
                 }),
@@ -27353,7 +27353,7 @@
             }),
             'required': list([
               'on',
-              'pending',
+              'offered_after_restart',
               'off',
               'switch_on',
               'unchecked',

@@ -334,19 +334,31 @@ def test_a_toolset_without_a_summary_is_described_by_its_name() -> None:
     ]
 
 
-def test_a_selected_toolset_hidden_at_the_start_and_available_now_is_said_to_need_a_restart() -> (
+def test_a_selected_toolset_hidden_at_the_start_and_available_now_is_offered_after_a_restart() -> (
     None
 ):
     result = guide(selected={"core", "ai"}, unavailable={"ai"}, missing_now=set())
 
-    assert (result.on, result.pending) == (("core",), ("ai",))
+    assert (result.on, result.offered_after_restart) == (("core",), ("ai",))
     assert "ai" not in [t.toolset for t in result.off]
-    assert guide_text(result, overview=True).startswith(
-        "Toolsets on: core. Selected, offered after a restart: ai."
-    )
+    # The instructions are built when nothing has changed since the start: the field is the
+    # overview's, and the instructions have no words for it.
+    assert "Selected" not in guide_text(result, overview=True)
+    assert "offered after" not in guide_text(result, overview=True)
 
 
-def test_a_selected_toolset_still_missing_or_without_tools_is_not_pending() -> None:
-    assert guide(selected={"core", "ai"}, unavailable={"ai"}).pending == ()
-    assert guide(selected={"core", "ai"}, unavailable={"ai"}, missing_now={"ai"}).pending == ()
-    assert guide(selected={"core", "ai"}, hidden={"ask_ai"}, unavailable={"ai"}).pending == ()
+def test_a_selected_toolset_still_missing_or_without_tools_is_not_offered_after_a_restart() -> None:
+    selected = {"core", "ai"}
+    assert guide(selected=selected, unavailable={"ai"}).offered_after_restart == ()
+    still = guide(selected=selected, unavailable={"ai"}, missing_now={"ai"})
+    assert still.offered_after_restart == ()
+    # Without a tool left a restart offers nothing, although Paperless has the capability now.
+    cut = guide(selected=selected, hidden={"ask_ai"}, unavailable={"ai"}, missing_now=set())
+    assert cut.offered_after_restart == ()
+
+
+def test_the_gap_of_a_toolset_offered_after_a_restart_is_shown() -> None:
+    result = guide(selected={"core", "ai"}, unavailable={"ai"}, missing_now=set(), unchecked={"ai"})
+
+    assert result.offered_after_restart == ("ai",)
+    assert result.unchecked == {"ai": "Paperless AI"}

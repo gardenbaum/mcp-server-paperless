@@ -40,8 +40,7 @@ SHARDS = 3
 # PLMCP-82: test_toolset_guide 62 s, test_http 15 s and test_instance_reader 16 s are ONE
 # pull-request-tier run, 45223357290 (hosted, the timestamp gap of each module's progress line, as
 # above), not the median of several full runs; the next e2e-full runs should replace them
-# (PLMCP-44). The 16 s of test_instance_reader are measured, an upper bound of 29 s counts its
-# neighbour's tail.
+# (PLMCP-44).
 MODULE_SECONDS: dict[str, float] = {
     "tests/contract/test_bulk.py": 284,
     "tests/contract/test_document_writer.py": 174,
