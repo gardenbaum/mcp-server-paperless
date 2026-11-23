@@ -26,15 +26,20 @@ services, listed [below](#where-your-data-goes).
   the token's user. `PAPERLESS_MCP_READ_ONLY=true` removes the tools that change anything.
 - **Files on the machine.** The server reads your files only over stdio, and only from the
   directories you list in `PAPERLESS_MCP_UPLOAD_DIRS` (default: none), when the model uploads one
-  of them. It does not write to these directories.
+  of them. It writes files only over stdio, and only into the directories you list in
+  `PAPERLESS_MCP_DOWNLOAD_DIRS` (default: none; never with `PAPERLESS_MCP_READ_ONLY=true`), when the
+  model saves a download there.
 
 ## What the server stores
 
 - **In memory.** Requests and answers while they are handled, the configured secrets, and
   Paperless lists used to resolve names (such as tags, correspondents, custom fields, saved views,
   users and groups). HTTP sessions are in memory too.
-- **On disk.** None of your data, unless an HTTP deployment signs clients in through an identity
-  provider and sets `PAPERLESS_MCP_OIDC_STORAGE_DIR`. That directory then holds client
+- **On disk.** None of your data, with two exceptions. Downloads the model saves in
+  `PAPERLESS_MCP_DOWNLOAD_DIRS` are your documents, unencrypted, readable for the owner of the file;
+  the server neither tracks nor removes them, and a server that was killed can leave a hidden
+  `.mcp-….part` there. And an HTTP deployment can sign clients in through an identity
+  provider and set `PAPERLESS_MCP_OIDC_STORAGE_DIR`. That directory then holds client
   registrations, sign-in state and the provider's tokens (an ID token names you at the provider).
   Their content is encrypted with a key derived from `PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY`; the file
   names are not, and can hold client ids, authorization codes and internal ids. Without the

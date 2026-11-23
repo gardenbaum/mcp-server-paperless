@@ -30,3 +30,17 @@ image, or switch the tool off with `PAPERLESS_MCP_DISABLED_TOOLS=get_document_pa
 
 Vulnerability scanners do not report PDFium's vulnerabilities for pypdfium2. This repository checks
 weekly whether the newest release is locked; keep the server up to date.
+
+## Saved downloads
+
+Nothing is saved unless you set `PAPERLESS_MCP_DOWNLOAD_DIRS`, and never over HTTP, in read-only mode
+or on Windows. A model that reads documents others wrote can be talked into calls, so the server
+itself holds the limits: one new plain file in an existing directory inside those you named, with
+the ending of the type Paperless detected (from a fixed table), never hidden, never executable, and an existing file is
+replaced only with `confirm=true` (which the model passes; your client may ask you first). Name a
+directory of its own for it, not a project folder, and none that a program runs or loads files from:
+a file such as `requirements.txt` or `CMakeLists.txt` can have the ending of a text document.
+
+Another process of the same user can interfere in the microseconds before a confirmed replacement;
+it can then make the server replace a file or link that process put there, but never write through a
+link. Whoever may rewrite the parents of the directory you named can move it.

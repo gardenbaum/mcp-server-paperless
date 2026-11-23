@@ -33,7 +33,8 @@
         "PAPERLESS_MCP_TOOLSETS": "${user_config.paperless_mcp_toolsets}",
         "PAPERLESS_MCP_READ_ONLY": "${user_config.paperless_mcp_read_only}",
         "PAPERLESS_MCP_DISABLED_TOOLS": "${user_config.paperless_mcp_disabled_tools}",
-        "PAPERLESS_MCP_UPLOAD_DIRS": "${user_config.paperless_mcp_upload_dirs}"
+        "PAPERLESS_MCP_UPLOAD_DIRS": "${user_config.paperless_mcp_upload_dirs}",
+        "PAPERLESS_MCP_DOWNLOAD_DIRS": "${user_config.paperless_mcp_download_dirs}"
       }
     }
   },
@@ -66,7 +67,7 @@
     "paperless_mcp_read_only": {
       "type": "boolean",
       "title": "Read-only",
-      "description": "Offer only tools that change nothing in Paperless",
+      "description": "Offer only tools that change nothing in Paperless or on this machine",
       "default": false
     },
     "paperless_mcp_disabled_tools": {
@@ -79,6 +80,12 @@
       "type": "string",
       "title": "Upload directories",
       "description": "Absolute directories the model may upload files from by path, comma-separated. Empty: none",
+      "default": ""
+    },
+    "paperless_mcp_download_dirs": {
+      "type": "string",
+      "title": "Download directories",
+      "description": "Absolute directories the model may save downloads into, comma-separated. Empty: none",
       "default": ""
     }
   }

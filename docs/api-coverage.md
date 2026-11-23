@@ -78,7 +78,7 @@ Limits.
 | `POST /api/documents/rotate/` | `rotate_documents` |  |
 | `POST /api/documents/selection_data/` |  | PLMCP-83 |
 | `DELETE /api/documents/{id}/` | `delete_document` |  |
-| `GET /api/documents/{id}/` | `delete_document`, `delete_document_version`, `delete_note`, `delete_pages`, `edit_pdf` and 12 more |  |
+| `GET /api/documents/{id}/` | `delete_document`, `delete_document_version`, `delete_note`, `delete_pages`, `download_document` and 13 more |  |
 | `PATCH /api/documents/{id}/` | `set_permissions`, `update_document` |  |
 | `PUT /api/documents/{id}/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/ai_suggestions/` | `get_ai_suggestions` |  |

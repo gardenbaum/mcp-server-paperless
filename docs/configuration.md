@@ -38,8 +38,9 @@ release some tools fail or answer differently.
 | `PAPERLESS_MCP_READ_ONLY` | `true` to offer only tools that change nothing (default `false`). See [What the model can do](#what-the-model-can-do) |
 | `PAPERLESS_MCP_DISABLED_TOOLS` | Tools never offered, whatever the toolsets say, e.g. `ask_paperless_ai,get_ai_suggestions` |
 | `PAPERLESS_MCP_UPLOAD_DIRS` | Directories the upload tools may read files from by path (default empty: uploading by path is off). See [Uploads and downloads](#uploads-and-downloads) |
+| `PAPERLESS_MCP_DOWNLOAD_DIRS` | Directories `download_document` and `bulk_download` may save files into (stdio only; default empty: nothing is ever saved). See [Uploads and downloads](#uploads-and-downloads) |
 | `PAPERLESS_MCP_MAX_UPLOAD_BYTES` | Largest file the upload tools take, in bytes (default 10485760 = 10 MiB, at most 104857600) |
-| `PAPERLESS_MCP_MAX_DOWNLOAD_BYTES` | Largest file `download_document` attaches, in bytes (default 524288, at most 33554432) |
+| `PAPERLESS_MCP_MAX_DOWNLOAD_BYTES` | Largest file or part `download_document` and `bulk_download` attach, in bytes (default 524288, at most 33554432) |
 | `PAPERLESS_MCP_LOG_LEVEL` | `DEBUG`, `INFO` (default), `WARNING`, `ERROR` or `CRITICAL` |
 | `PAPERLESS_MCP_STARTUP_TIMEOUT` | Seconds the startup check may take (default 5) |
 
@@ -62,7 +63,8 @@ Three settings narrow the tools a client is offered. A tool that is not offered 
   the server instructions and in the result of `get_instance_overview`, which also lists their
   tools (see [Switching a toolset on](#switching-a-toolset-on)).
 - **Read-only mode** (`PAPERLESS_MCP_READ_ONLY=true`). Offers only the tools that change nothing
-  in Paperless, from whichever toolsets are selected: searching, reading, listing, downloading.
+  in Paperless or on this machine, from whichever toolsets are selected: searching, reading,
+  listing, downloading. Downloads are then never saved, whatever `PAPERLESS_MCP_DOWNLOAD_DIRS` says.
   The prompts that need a writing tool are not offered either.
 - **Disabled tools** (`PAPERLESS_MCP_DISABLED_TOOLS`). Takes single tools away by name.
 
@@ -233,8 +235,9 @@ Off by default. Administers the instance: users (`get_user`, `create_user`, `upd
 `delete_user`), groups (`get_group`, `create_group`, `update_group`, `delete_group`), the
 application configuration (`get_app_config`, `update_app_config`), logs (`list_logs`,
 `get_log`), background tasks (`list_tasks`, `acknowledge_tasks`, `run_task`) and
-`bulk_download`, which attaches the files of several documents as one ZIP archive within the
-download limit. `list_users` and `list_groups` of the `permissions` toolset find the users and
+`bulk_download`, which hands over the files of several documents as one ZIP archive: attached
+within the download limit, in parts, or saved (see [Uploads and downloads](#uploads-and-downloads)).
+`list_users` and `list_groups` of the `permissions` toolset find the users and
 groups.
 
 - Anything that gives or takes away access needs `confirm`, and the refusal names who is
@@ -297,10 +300,51 @@ model names the file instead of encoding it.
 - The server runs these tools over stdio only, whatever `FASTMCP_TRANSPORT` says.
 
 **Downloads.** `download_document` attaches the original or archive file up to
-`PAPERLESS_MCP_MAX_DOWNLOAD_BYTES`; larger files are reported with their link only. Attached
-files travel base64-encoded (a third larger) in one MCP message and cost the client context
-tokens; the FastMCP client reads at most 1 MiB per HTTP event by default, so raise the limit only
-if your clients allow it.
+`PAPERLESS_MCP_MAX_DOWNLOAD_BYTES`, of the newest version or of the one named by `version_id`;
+`bulk_download` (toolset `admin`) attaches a ZIP archive of the newest versions. Attached files
+travel base64-encoded (a third larger) in one MCP message and cost the client context tokens; the
+FastMCP client reads at most 1 MiB per HTTP event by default, so raise the limit only if your
+clients allow it.
+
+**Downloads in parts.** A larger file, up to 2 GiB, is read in parts over stdio and over HTTP: with
+`offset=0` the tool answers the first part and a report, whose `next` names the arguments of the
+next call, until `next_offset` is null. Each part is at most the download limit. Paperless serves no
+ranges and the server keeps nothing between calls, so every part reads the file again from its start
+(a ZIP archive is also built again, and read to its end), and parts of large files get slow.
+
+- The report has the checksum (SHA-256) of the whole file, and every later part must bring it along.
+  If the file changed in between, the call is refused with "The file changed since the first part;
+  start again with offset=0"; parts of two different files are never mixed.
+- A document's file changes when it is reprocessed (its archive version). A ZIP archive also
+  changes with a title, a new version, or anything else its names or files come from. On a
+  Paperless with PostgreSQL there is one more case: the archive holds documents with the same
+  creation date, and one of them was edited. Paperless sorts by that date only, and PostgreSQL may
+  then return them in another order, so the same files come in another order (measured on 3.5.1: 4
+  of 5 edits; never on SQLite). Read the parts again, or save the archive in one piece.
+
+**Saving downloads.** With `PAPERLESS_MCP_DOWNLOAD_DIRS` set, the two tools also take `save_dir`
+(and `save_as`): the file is saved on the machine the server runs on, and only a report comes back.
+
+- Directories are named as for uploads by path, with the same entries refused. Only the stdio
+  transport offers it, and not in read-only mode; over HTTP nothing is ever saved. Where it is
+  offered, the two tools no longer count as read-only, so a client may ask before each call of them,
+  also when nothing is saved.
+- `save_dir` is an existing directory inside these directories; none is created. Symlinks are
+  resolved and must end inside, `..` is refused, and so is every directory below an entry whose
+  name starts with a dot. Every unusable directory gets the same answer.
+- The name is the one Paperless proposes, or `save_as`. Its ending comes from the type Paperless
+  detected (`.pdf`, `.docx`, `.eml`, …, and `.bin` for any type Paperless does not consume), so no
+  title and no text of a document can make the server write a script, a program or a `CLAUDE.md`.
+  Names that start with a dot are refused.
+- An existing file is replaced only with `confirm=true`, and only a plain file: never a link, a file
+  with a second name (hard link) or a device.
+- Up to 2 GiB and 30 minutes; 256 MiB of the disk stay free, checked while the file arrives. Only a complete file gets its name, and
+  it is compared with the size and checksum Paperless knows (a ZIP archive: with its end record). It
+  is readable for its owner only (mode 0600). A failed call leaves nothing; a killed server can
+  leave a hidden `.mcp-….part`, which you may delete.
+- Not on Windows: saving is refused there, as uploading by path is.
+
+The rules are decision-45 and decision-46 (`backlog/decisions/`).
 
 ### Page images
 

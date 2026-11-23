@@ -1,7 +1,6 @@
 """Saving into an allowed directory: where, under which name, and with others interfering."""
 
 import asyncio
-import contextlib
 import errno
 import hashlib
 import io
@@ -371,44 +370,101 @@ async def test_a_platform_without_safe_opening_saves_nothing(tree: Tree) -> None
 
 # --- names
 
+PDF, TEXT = "application/pdf", "text/plain"
+
 
 @pytest.mark.parametrize(
-    ("save_as", "proposed", "expected"),
+    ("save_as", "proposed", "mime_type", "expected"),
     [
-        (None, "2026 Müller €.pdf", "2026 Müller €.pdf"),
-        ("x.pdf", "2026.pdf", "x.pdf"),
-        ("x.PDF", "2026.pdf", "x.PDF"),
-        ("日本語.pdf", "2026.PDF", "日本語.pdf"),
-        (" x.pdf ", "2026.pdf", "x.pdf"),
-        ("noext", "noext", "noext"),
+        (None, "2026 Müller €.pdf", PDF, "2026 Müller €.pdf"),
+        (None, "2026 Scan.PDF", PDF, "2026 Scan.PDF"),
+        (None, "2026 Scan.jpeg", "image/jpeg", "2026 Scan.jpeg"),
+        (None, "a.txt", "text/plain; charset=utf-8", "a.txt"),
+        (None, "a.txt", "TEXT/PLAIN", "a.txt"),
+        ("x.pdf", "2026.pdf", PDF, "x.pdf"),
+        ("x.PDF", "2026.pdf", PDF, "x.PDF"),
+        ("x.tiff", "2026.tif", "image/tiff", "x.tiff"),
+        ("日本語.pdf", "2026.PDF", PDF, "日本語.pdf"),
+        (" x.pdf ", "2026.pdf", PDF, "x.pdf"),
+        # The ending is the type's, whatever the title or the upload was called.
+        (None, "2026 x.command", PDF, "2026 x.command.pdf"),
+        (None, "2026 x.command", "application/x-sh", "2026 x.command.bin"),
+        (None, "run.sh", TEXT, "run.sh.txt"),
+        (None, "noext", TEXT, "noext.txt"),
+        (None, "x.app", "", "x.app.bin"),
+        ("x.bin", "x.app", "application/octet-stream", "x.bin"),
     ],
 )
-def test_a_file_has_the_proposed_name_or_the_given_one(
-    save_as: str | None, proposed: str, expected: str
+def test_a_file_has_the_proposed_name_or_the_given_one_and_the_ending_of_its_type(
+    save_as: str | None, proposed: str, mime_type: str, expected: str
 ) -> None:
-    assert file_name(save_as, proposed) == expected
+    assert file_name(save_as, proposed, mime_type) == expected
 
 
-@pytest.mark.parametrize("save_as", ["x.md", "x", "conftest.py", "x.pdf.sh", "x.pdf."])
-def test_the_given_name_keeps_the_proposed_ending(save_as: str) -> None:
+# Every type Paperless 3.5.1 consumes, with the ending it gives the file.
+CONSUMED = {
+    "application/pdf": ".pdf",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/tiff": ".tif",
+    "image/gif": ".gif",
+    "image/bmp": ".bmp",
+    "image/webp": ".webp",
+    "image/heic": ".heic",
+    "text/plain": ".txt",
+    "text/csv": ".csv",
+    "application/csv": ".csv",
+    "text/rtf": ".rtf",
+    "message/rfc822": ".eml",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.ms-powerpoint": ".ppt",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    "application/vnd.openxmlformats-officedocument.presentationml.slideshow": ".ppsx",
+    "application/vnd.oasis.opendocument.presentation": ".odp",
+    "application/vnd.oasis.opendocument.spreadsheet": ".ods",
+    "application/vnd.oasis.opendocument.text": ".odt",
+    "application/vnd.oasis.opendocument.graphics": ".odg",
+    "application/zip": ".zip",
+}
+
+
+@pytest.mark.parametrize("mime_type", CONSUMED)
+def test_every_kind_of_file_paperless_consumes_keeps_its_ending(mime_type: str) -> None:
+    name = f"2026 Rechnung{CONSUMED[mime_type]}"
+
+    assert file_name(None, name, mime_type) == file_name(name, "other", mime_type) == name
+
+
+@pytest.mark.parametrize(
+    "save_as", ["x.md", "x", "conftest.py", "x.pdf.sh", "x.pdf.", "x.command", "x.app"]
+)
+def test_the_given_name_has_the_ending_of_the_type(save_as: str) -> None:
+    for proposed in ("2026.pdf", save_as):  # also if Paperless proposed that very name
+        with pytest.raises(Validation) as raised:
+            _ = file_name(save_as, proposed, PDF)
+
+        assert (
+            raised.value.message == "A file of type application/pdf is saved with the ending .pdf."
+        )
+        assert raised.value.hint == "Change save_as, or leave it out."
+
+
+def test_the_endings_of_a_type_that_has_several_are_named_and_of_an_unknown_one_is_bin() -> None:
+    with pytest.raises(Validation, match=r"image/jpeg is saved with the ending \.jpg or \.jpeg\."):
+        _ = file_name("x.py", "data", "image/jpeg")
     with pytest.raises(Validation) as raised:
-        _ = file_name(save_as, "2026.pdf")
+        _ = file_name("x.py", "data.py", "text/x-python")
 
-    assert raised.value.message == "The file name must end in .pdf, as the file Paperless sends."
-    assert raised.value.hint == "Change save_as, or leave it out."
-
-
-def test_a_file_without_an_ending_gets_none() -> None:
-    with pytest.raises(Validation) as raised:
-        _ = file_name("x.py", "data")
-
-    assert raised.value.message == "The file name must have no ending, as the file Paperless sends."
+    assert raised.value.message == "A file of type text/x-python is saved with the ending .bin."
 
 
 @pytest.mark.parametrize("save_as", ["a/x.pdf", "../x.pdf", "/x.pdf", "a\\x.pdf"])
 def test_the_given_name_is_no_path(save_as: str) -> None:
     with pytest.raises(Validation) as raised:
-        _ = file_name(save_as, "2026.pdf")
+        _ = file_name(save_as, "2026.pdf", PDF)
 
     assert raised.value.message == "save_as is a file name, not a path."
     assert raised.value.hint == "Name the directory with save_dir."
@@ -417,7 +473,7 @@ def test_the_given_name_is_no_path(save_as: str) -> None:
 @pytest.mark.parametrize("save_as", [".env.pdf", ".pdf", ".mcp-0.pdf"])
 def test_a_name_that_starts_with_a_dot_is_refused(save_as: str) -> None:
     with pytest.raises(Validation) as raised:
-        _ = file_name(save_as, "2026.pdf")
+        _ = file_name(save_as, "2026.pdf", PDF)
 
     assert raised.value.message == "The file name starts with a dot."
     assert raised.value.hint == "Give another name with save_as."
@@ -425,34 +481,39 @@ def test_a_name_that_starts_with_a_dot_is_refused(save_as: str) -> None:
 
 def test_a_proposed_name_that_starts_with_a_dot_is_refused_too() -> None:
     with pytest.raises(Validation, match="starts with a dot"):
-        _ = file_name(None, ".profile")
+        _ = file_name(None, ".profile", PDF)
 
 
 @pytest.mark.parametrize("save_as", ["", "..", f"a{chr(0x202E)}gnp.pdf", "a\x00.pdf", "a\n.pdf"])
 def test_a_name_with_control_or_direction_characters_is_refused(save_as: str) -> None:
     with pytest.raises(Validation):
-        _ = file_name(save_as, "2026.pdf")
+        _ = file_name(save_as, "2026.pdf", PDF)
 
 
 def test_a_given_name_that_is_too_long_is_refused_and_a_proposed_one_shortened() -> None:
     with pytest.raises(Validation, match="longer than 255 bytes"):
-        _ = file_name("x" * 252 + ".pdf", "2026.pdf")
+        _ = file_name("x" * 252 + ".pdf", "2026.pdf", PDF)
 
-    assert file_name("x" * 251 + ".pdf", "2026.pdf") == "x" * 251 + ".pdf"
-    assert file_name(None, "x" * 251 + ".pdf") == "x" * 251 + ".pdf"
-    assert file_name(None, "x" * 252 + ".pdf") == "x" * 251 + ".pdf"
-    assert file_name(None, "ü" * 200 + ".pdf") == "ü" * 125 + ".pdf"
+    assert file_name("x" * 251 + ".pdf", "2026.pdf", PDF) == "x" * 251 + ".pdf"
+    assert file_name(None, "x" * 251 + ".pdf", PDF) == "x" * 251 + ".pdf"
+    assert file_name(None, "x" * 252 + ".pdf", PDF) == "x" * 251 + ".pdf"
+    assert file_name(None, "ü" * 200 + ".pdf", PDF) == "ü" * 125 + ".pdf"
 
 
-@given(st.text(max_size=300), st.sampled_from(["a.pdf", "b.txt", "c.zip"]))
-def test_whatever_name_is_given_stays_one_visible_component(save_as: str, proposed: str) -> None:
-    with contextlib.suppress(Validation):
-        name = file_name(save_as, proposed)
+@given(st.text(max_size=300), st.sampled_from(sorted(CONSUMED)))
+def test_whatever_name_is_given_or_proposed_stays_one_visible_component(
+    text: str, mime_type: str
+) -> None:
+    for save_as, proposed in ((text, "a.pdf"), (None, text)):
+        try:
+            name = file_name(save_as, proposed, mime_type)
+        except Validation:
+            continue
         assert "/" not in name
         assert "\0" not in name
         assert not name.startswith(".")
-        assert name.lower().endswith(proposed[-4:])
-        assert len(name.encode(errors="surrogatepass")) <= MAX_NAME_BYTES
+        assert name.lower().endswith((CONSUMED[mime_type], ".jpeg", ".tiff"))
+        assert len(name.encode()) <= MAX_NAME_BYTES
 
 
 async def test_a_name_the_file_system_does_not_take_is_an_error_without_the_path(
@@ -808,8 +869,49 @@ async def test_too_little_space_is_refused_before_the_file_is_read(tree: Tree) -
         "Make room or choose another directory; 256 MiB stay free in any case."
     )
     assert "created" not in stages
-    # Of a ZIP archive the size is not known.
-    _ = await save(tree, "c.zip", system=system, data=chunks(ZIPPED), expected=Expected(zip=True))
+
+
+@pytest.mark.parametrize(
+    "expected", [Expected(), Expected(zip=True), Expected(1, None)], ids=["none", "zip", "lying"]
+)
+async def test_the_reserve_is_kept_while_the_file_arrives_whatever_its_size_is_said_to_be(
+    tree: Tree, expected: Expected
+) -> None:
+    """A ZIP archive has no size beforehand, and a size can be wrong."""
+
+    class Shrinking(System):
+        space: int = RESERVE + 3 * MIB
+        written: int = 0
+
+        @override
+        def free(self, directory: int) -> int:
+            return self.space - self.written
+
+        @override
+        def write(self, fd: int, data: memoryview) -> int:
+            self.written += len(data)
+            return super().write(fd, data)
+
+    system = Shrinking()
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await save(tree, data=chunks(*[b"x" * MIB] * 64), system=system, expected=expected)
+
+    assert raised.value.message == FULL
+    assert system.written == 3 * MIB  # never below the reserve
+    assert tree.names() == []
+
+
+async def test_without_any_room_not_even_the_temporary_file_is_made(tree: Tree) -> None:
+    class Full(System):
+        @override
+        def free(self, directory: int) -> int:
+            return RESERVE - 1
+
+    stages: list[str] = []
+    with pytest.raises(PaperlessMcpError, match="not enough space"):
+        _ = await save(tree, "c.zip", system=Full(), at=stages.append, expected=Expected(zip=True))
+
+    assert stages == ["resolved"]
 
 
 async def test_the_space_of_the_directory_is_read(tree: Tree) -> None:

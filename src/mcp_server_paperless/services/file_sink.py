@@ -6,8 +6,9 @@ the server write nothing but one new plain file, or replace one that was confirm
 - The directory is found as in ``upload_source``: absolute, without ``..``, resolved inside an
   allowed directory, nothing below it starting with a dot, then opened component by component
   without following a link. Every other path gets the same answer. No directory is created.
-- The name has the ending of the one Paperless proposes, so no text of a document makes the server
-  write a script or an instruction file, and never starts with a dot.
+- The name has the ending of the type Paperless detected, from a fixed table (``.bin`` for any other
+  type), so no title, upload or text of a document makes the server write a script, a program or an
+  instruction file; and it never starts with a dot.
 - The file is written under a random hidden name with mode 0600, and only what is complete gets
   its name: by a hard link, which never replaces anything, or (file systems without them) by
   renaming over an empty file made with ``O_EXCL``. A confirmed replacement renames over exactly
@@ -58,7 +59,7 @@ from mcp_server_paperless.services.transfer import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
+    from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping, Sequence
 
 MIB: Final = 1024 * 1024
 # What stays free on the file system in any case.
@@ -81,6 +82,39 @@ _FAILURES: Final = {
     "EROFS": (_DENIED, _OTHER),
     "EACCES": (_DENIED, _OTHER),
     "EPERM": (_DENIED, _OTHER),
+}
+
+# The endings of every type Paperless consumes; another type is saved as .bin, so that no file is
+# lost and no title or upload decides how the system treats it.
+UNKNOWN_ENDING: Final = ".bin"
+_OFFICE: Final = "application/vnd.openxmlformats-officedocument."
+_OPEN: Final = "application/vnd.oasis.opendocument."
+_ENDINGS: Final[Mapping[str, tuple[str, ...]]] = {
+    "application/pdf": (".pdf",),
+    "application/zip": (".zip",),
+    "image/jpeg": (".jpg", ".jpeg"),
+    "image/png": (".png",),
+    "image/tiff": (".tif", ".tiff"),
+    "image/gif": (".gif",),
+    "image/bmp": (".bmp",),
+    "image/webp": (".webp",),
+    "image/heic": (".heic",),
+    "text/plain": (".txt",),
+    "text/csv": (".csv",),
+    "application/csv": (".csv",),
+    "text/rtf": (".rtf",),
+    "message/rfc822": (".eml",),
+    "application/msword": (".doc",),
+    "application/vnd.ms-excel": (".xls",),
+    "application/vnd.ms-powerpoint": (".ppt",),
+    f"{_OFFICE}wordprocessingml.document": (".docx",),
+    f"{_OFFICE}spreadsheetml.sheet": (".xlsx",),
+    f"{_OFFICE}presentationml.presentation": (".pptx",),
+    f"{_OFFICE}presentationml.slideshow": (".ppsx",),
+    f"{_OPEN}presentation": (".odp",),
+    f"{_OPEN}spreadsheet": (".ods",),
+    f"{_OPEN}text": (".odt",),
+    f"{_OPEN}graphics": (".odg",),
 }
 
 type _Identity = tuple[int, int, int, int]
@@ -147,17 +181,25 @@ class Saved:
     replaced: bool
 
 
-def file_name(save_as: str | None, proposed: str) -> str:
-    """The name to save under: ``save_as``, or the one Paperless proposes, shortened if it must be.
+def file_name(save_as: str | None, proposed: str, mime_type: str) -> str:
+    """The name to save under: ``save_as``, or the proposed one, shortened if it must be.
+
+    The ending is always one of the type, never one of a title or an upload: a proposed name with
+    another ending gets the right one behind it.
 
     Raises:
         Validation: The name is a path, is unusable or hidden, or has another ending.
     """
-    suffix = PurePath(proposed).suffix
+    kind = mime_type.partition(";")[0].strip().lower()
+    endings = _ENDINGS.get(kind, (UNKNOWN_ENDING,))
     if save_as is None:
-        room = MAX_NAME_BYTES - len(suffix.encode())
-        stem = proposed.removesuffix(suffix).encode()[:room].decode(errors="ignore")
-        name = clean_filename(stem + suffix)
+        suffix = PurePath(proposed).suffix
+        if suffix.lower() in endings:
+            stem = proposed.removesuffix(suffix)
+        else:
+            stem, suffix = proposed, endings[0]
+        room = MAX_NAME_BYTES - len(suffix)
+        name = clean_filename(stem.encode(errors="ignore")[:room].decode(errors="ignore") + suffix)
     elif "/" in save_as or "\\" in save_as:
         message = "save_as is a file name, not a path."
         raise Validation(message, hint="Name the directory with save_dir.")
@@ -170,9 +212,9 @@ def file_name(save_as: str | None, proposed: str) -> str:
     if name.startswith("."):
         message = "The file name starts with a dot."
         raise Validation(message, hint="Give another name with save_as.")
-    if PurePath(name).suffix.lower() != suffix.lower():
-        ending = f"must end in {suffix}" if suffix else "must have no ending"
-        message = f"The file name {ending}, as the file Paperless sends."
+    if PurePath(name).suffix.lower() not in endings:
+        listed = " or ".join(endings)
+        message = f"A file of type {kind} is saved with the ending {listed}."
         raise Validation(message, hint="Change save_as, or leave it out.")
     return name
 
@@ -368,12 +410,9 @@ class Target:
             PaperlessMcpError: There is no room, the bytes are not the expected ones, something
                 changed meanwhile, or the disk refused; then nothing was saved.
         """
-        if expected.size is not None:
-            if expected.size > self._sink.max_bytes:
-                raise too_large()
-            free = await _blocking(self._sink.system.free, self._directory)
-            if expected.size + RESERVE > free:
-                raise PaperlessMcpError(_FULL, hint=_ROOM)
+        if expected.size is not None and expected.size > self._sink.max_bytes:
+            raise too_large()
+        await _blocking(self._need, expected.size or 0)
         await _blocking(self._create)
         async with time_limit(self._sink.seconds):
             waiting = bytearray()
@@ -403,6 +442,11 @@ class Target:
         flags = os.O_RDWR | NEW | os.O_NOFOLLOW | os.O_CLOEXEC
         return os.open(name, flags, 0o600, dir_fd=self._directory)
 
+    def _need(self, size: int) -> None:
+        """Refuse to write ``size`` bytes if less than the reserve would stay free."""
+        if size + RESERVE > self._sink.system.free(self._directory):
+            raise PaperlessMcpError(_FULL, hint=_ROOM)
+
     def _create(self) -> None:
         name = f".mcp-{secrets.token_hex(8)}.part"
         self._file = self._make(name)
@@ -414,6 +458,8 @@ class Target:
         self._size += len(data)
         if self._size > self._sink.max_bytes:
             raise too_large()
+        # Again for every piece: the size can be unknown or wrong, and others write, too.
+        self._need(len(data))
         self._digest.update(data)
         rest = memoryview(data)
         while rest:

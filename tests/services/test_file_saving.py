@@ -148,6 +148,7 @@ async def test_the_chosen_file_is_saved_whatever_the_attach_limit(
         "replaced": False,
         "web_url": "https://paperless.example/documents/7/details",
     }
+    assert saved.suffix == (".txt" if content == NEWEST else ".pdf")
     assert saved.name.startswith("2026-11-11 Müller €.")
     assert fake.opened == ((7, kind, shown),)
 
@@ -167,12 +168,33 @@ async def test_a_given_name_is_used_and_an_existing_file_needs_confirm(tmp_path:
 
 
 async def test_a_name_of_another_kind_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(Validation, match=r"must end in \.pdf"):
+    with pytest.raises(Validation, match=r"is saved with the ending \.pdf"):
         _ = await files(fake_with(), tmp_path).save(
             7, "archive", directory=str(tmp_path), save_as="CLAUDE.md"
         )
 
     assert list(tmp_path.iterdir()) == []  # noqa: ASYNC240 -- a test looking at its directory
+
+
+@pytest.mark.parametrize(
+    ("mime_type", "title", "ending"),
+    [
+        ("application/x-sh", "run.command", "run.command.bin"),
+        ("message/rfc822", "Mail", "Mail.eml"),
+        ("application/msword", "Letter.app", "Letter.app.doc"),
+    ],
+)
+async def test_the_ending_comes_from_the_type_and_not_from_the_title(
+    tmp_path: Path, mime_type: str, title: str, ending: str
+) -> None:
+    fake = fake_with()
+    fake.unnamed, fake.facts = True, {"original_filename": title}
+    fake.state.documents[-1].version_files[9] = FakeFile(NEWEST, None, "", mime_type)
+
+    report = await files(fake, tmp_path).save(7, "original", directory=str(tmp_path))
+
+    assert report.filename == ending
+    assert report.size_bytes == len(NEWEST)
 
 
 async def test_an_unusable_directory_asks_paperless_nothing(tmp_path: Path) -> None:
@@ -227,7 +249,8 @@ async def test_a_file_paperless_knows_no_size_or_checksum_of_is_saved(tmp_path: 
     [
         ("original", "scan.PDF", "scan.PDF"),
         ("archive", "scan.JPG", "scan.pdf"),
-        ("original", "", "document-7"),
+        ("original", "x.command", "x.command.pdf"),
+        ("original", "", "document-7.pdf"),
     ],
 )
 async def test_a_file_without_a_proposed_name_is_named_after_the_upload(
@@ -326,7 +349,7 @@ async def test_an_archive_that_would_replace_a_file_is_not_built_unless_confirme
 
 
 async def test_an_archive_keeps_its_ending(tmp_path: Path) -> None:
-    with pytest.raises(Validation, match=r"must end in \.zip"):
+    with pytest.raises(Validation, match=r"is saved with the ending \.zip"):
         _ = await system(fake_with(), tmp_path).save([7], directory=str(tmp_path), save_as="run.sh")
 
 

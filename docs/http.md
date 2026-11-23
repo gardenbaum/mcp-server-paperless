@@ -66,7 +66,9 @@ Every other [setting](configuration.md) works the same over HTTP.
 ## Uploads, request ids and logs
 
 Over HTTP callers upload by sending base64 content: no tool takes a server-side file path,
-whatever `PAPERLESS_MCP_UPLOAD_DIRS` says, and request bodies larger than the base64 size of
+whatever `PAPERLESS_MCP_UPLOAD_DIRS` says, and none saves a file, whatever
+`PAPERLESS_MCP_DOWNLOAD_DIRS` says (larger files are
+[read in parts](configuration.md#uploads-and-downloads)). Request bodies larger than the base64 size of
 `PAPERLESS_MCP_MAX_UPLOAD_BYTES` plus 64 KiB get 413. An MCP client is told the
 limit in bytes. Off the MCP endpoint, so on every route of the
 [OIDC layer](claude-ai-connector.md), the limit is 64 KiB. Every response carries an `X-Request-ID`

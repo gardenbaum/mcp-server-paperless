@@ -296,7 +296,7 @@ takes more than a misunderstanding:
 - **Secrets stay secret.** Passwords and API keys are write-only. Tool calls log neither tokens nor
   document text nor search queries at the default log level; the [privacy policy](https://github.com/gardenbaum/mcp-server-paperless/blob/main/PRIVACY.md) names the exceptions.
 - **No reach beyond Paperless.** Callers cannot make the server read local files or reach other
-  hosts. Uploading by file path exists only over stdio and only from directories you name.
+  hosts. Uploading by file path and saving downloads exist only over stdio and only for directories you name.
 
 Found a security problem? [Report it privately](https://github.com/gardenbaum/mcp-server-paperless/security/advisories/new).
 
@@ -314,6 +314,7 @@ them.
 | `PAPERLESS_MCP_READ_ONLY` | `true` to offer only tools that change nothing |
 | `PAPERLESS_MCP_DISABLED_TOOLS` | Tools never offered, by name |
 | `PAPERLESS_MCP_UPLOAD_DIRS` | Directories the model may upload files from by path (stdio only; default: none) |
+| `PAPERLESS_MCP_DOWNLOAD_DIRS` | Directories the model may save downloads into (stdio only; default: none) |
 
 ## Compatibility
 

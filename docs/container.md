@@ -125,4 +125,6 @@ server's configuration), and start the container again; the assistant is told th
 are off.
 
 Uploading by path works only for directories you mount (`-v`, readable for uid 10001) and name in
-`PAPERLESS_MCP_UPLOAD_DIRS` by their path in the container. The rules are decision-38, carried over into decision-40.
+`PAPERLESS_MCP_UPLOAD_DIRS` by their path in the container. Saving downloads
+works the same way over stdio, for directories that are writable for uid 10001 and named in
+`PAPERLESS_MCP_DOWNLOAD_DIRS`. The rules are decision-38, carried over into decision-40.

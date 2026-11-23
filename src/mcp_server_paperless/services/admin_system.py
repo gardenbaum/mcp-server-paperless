@@ -467,7 +467,7 @@ class SystemAdmin:
         """
         _check_ids(document_ids)
         async with self._sink.open(directory) as target:
-            await target.claim(file_name(save_as, SAVED_NAME), confirm=confirm)
+            await target.claim(file_name(save_as, SAVED_NAME, ZIP), confirm=confirm)
             async with self._reader.open_archive(
                 document_ids,
                 content=content,

@@ -79,9 +79,14 @@ async def _replay(calls: list[observation.PortCall]) -> list[str]:
                 Exception
             ):  # the request is recorded before the answer is read
                 port = cast("object", getattr(ports, call.field))
-                method = cast("Callable[..., Awaitable[object]]", getattr(port, call.method))
+                method = cast("Callable[..., object]", getattr(port, call.method))
                 async with asyncio.timeout(REPLAY_SECONDS):
-                    _ = await method(*call.args, **call.kwargs)
+                    answer = method(*call.args, **call.kwargs)
+                    if isinstance(answer, contextlib.AbstractAsyncContextManager):
+                        async with answer:
+                            pass  # an opened file: its request is enough
+                    else:
+                        _ = await cast("Awaitable[object]", answer)
         finally:
             observation.CURRENT_TOOL.reset(token)
         if len(observation.OBSERVED) == before:

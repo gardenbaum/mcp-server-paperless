@@ -61,7 +61,7 @@ type SaveAs = Annotated[
     str | None,
     Field(
         description=(
-            "File name (no path) to save under, with the ending of the file; default: the name "
+            "File name (no path) to save under, with the ending of its type; default: the name "
             "Paperless proposes."
         )
     ),
