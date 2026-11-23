@@ -3,7 +3,7 @@ id: doc-2
 title: AI contributor workflow
 type: guide
 created_date: '2026-11-12T16:23:00Z'
-updated_date: '2026-11-22T19:40:38Z'
+updated_date: '2026-11-23T11:11:37Z'
 ---
 # AI contributor workflow
 
@@ -23,9 +23,9 @@ The local gates are deliberately narrower than the merge gates so agents do not 
 
 ## GitHub from Claude Code cloud sessions
 
-- GraphQL is blocked: `gh pr` and `gh issue` do not work. Use REST through `gh api repos/gardenbaum/paperless-mcp/...`.
+- GraphQL is blocked: `gh pr` and `gh issue` do not work. Use REST through `gh api repos/gardenbaum/mcp-server-paperless/...`.
 - Review threads, auto-merge and draft state use the CCR routes: `GET .../pulls/{n}/ccr/review_threads`, `POST .../pulls/{n}/ccr/comments/{comment_id}/resolve`, `PUT .../pulls/{n}/ccr/auto_merge`.
-- Merge: `gh api -X PUT repos/gardenbaum/paperless-mcp/pulls/{n}/merge -f merge_method=squash`.
+- Merge: `gh api -X PUT repos/gardenbaum/mcp-server-paperless/pulls/{n}/merge -f merge_method=squash`.
 - Branch protection on main: required checks `check (3.14)`, `check (3.15)`, `audit` (`e2e` is not required: a fast tier runs on pull requests and the full sharded suite after each merge to main, decision-23 and decision-24; a red full run on main is fixed before other work); branch must be up to date; enforced for admins; linear history; all conversations resolved. Never weaken a gate without a decision (CLAUDE.md).
 - The Codex bot reviews every opened PR. Fix P1 findings before merging. P2/P3 findings are fixed in the PR unless they concern only test infrastructure or docs and would take long; then reply in the thread, create a follow-up task and resolve the thread.
 

@@ -1,10 +1,12 @@
 ---
+superseded_by: decision-37
+updated_date: '2026-11-23T11:11:39Z'
 id: decision-36
 title: >-
   Container image for linux/amd64 and linux/arm64, each platform scanned and
   smoke-tested natively
 date: '2026-11-23T09:34:57Z'
-status: accepted
+status: superseded
 ---
 ## Context
 
