@@ -176,6 +176,20 @@ def test_the_listing_declares_exactly_the_variables_the_stdio_server_reads() -> 
     assert [name for name, item in declared.items() if item.get("isSecret")] == ["PAPERLESS_TOKEN"]
 
 
+def test_no_variable_is_listed_with_a_fixed_value_or_an_unknown_key() -> None:
+    known = {"name", "description", "isRequired", "isSecret", "placeholder", "default"}
+    formats = {
+        "PAPERLESS_MCP_READ_ONLY": "boolean",
+        "PAPERLESS_MCP_MAX_UPLOAD_BYTES": "number",
+        "PAPERLESS_MCP_MAX_DOWNLOAD_BYTES": "number",
+        "PAPERLESS_MCP_STARTUP_TIMEOUT": "number",
+    }
+
+    for name, item in variables().items():
+        assert set(item) <= known | {"format", "choices"}, name
+        assert item.get("format") == formats.get(name), name
+
+
 def test_glama_can_claim_the_listing() -> None:
     assert load("glama.json") == {
         "$schema": "https://glama.ai/mcp/schemas/server.json",
@@ -228,6 +242,10 @@ def test_only_v_tags_run_the_workflow() -> None:
     assert flow["name"] == "MCP Registry"
     assert mapping(flow["on"]) == {"push": {"tags": ["v*"]}}
     assert flow["permissions"] == {"contents": "read"}
+    assert flow["concurrency"] == {
+        "group": "registry-${{ github.ref }}",
+        "cancel-in-progress": False,
+    }
     assert set(mapping(flow["jobs"])) == {"prepare", "publish"}
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "mcp-publisher" not in ci
