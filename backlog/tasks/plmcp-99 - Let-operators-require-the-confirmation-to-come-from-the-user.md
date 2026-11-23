@@ -4,7 +4,7 @@ title: Let operators require the confirmation to come from the user
 status: To Do
 assignee: []
 created_date: '2026-11-23T18:44:54Z'
-updated_date: '2026-11-23T18:45:03Z'
+updated_date: '2026-11-23T18:51:41Z'
 labels:
   - safety
   - config
@@ -26,8 +26,8 @@ With confirmation dialogs the assistant can still skip the dialog by passing con
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 A setting, off by default, makes every confirmation require an accepted dialog; confirm=true alone then changes nothing
-- [ ] #2 With the setting on, a client without elicitation gets an error that names the reason and the setting, and nothing is changed
-- [ ] #3 The setting covers bulk, admin and raw write paths as well, with a registry-wide test
+- [ ] #2 With the setting on, a client without form elicitation gets an error that names the reason and the setting, and nothing is changed
+- [ ] #3 The setting covers every tool with a confirm parameter, including bulk and admin, with a registry-wide test
 - [ ] #4 SECURITY.md and the configuration reference state what it protects against and that a client can answer dialogs automatically, so it is no proof of a human
 <!-- AC:END -->
 

@@ -4,6 +4,7 @@ title: Ask the user to confirm destructive actions in a dialog where the client 
 status: To Do
 assignee: []
 created_date: '2026-11-23T18:44:53Z'
+updated_date: '2026-11-23T18:51:40Z'
 labels:
   - tools
   - safety
@@ -25,15 +26,16 @@ Every confirmation today is an error plus a second call with confirm=true (decis
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A new decision records the choice and supersedes the parts of decision-6 and decision-15 that rule elicitation out; doc-1 5.5, doc-2 and docs/fastmcp-reading-guide.md agree with it
+- [ ] #1 A new decision records the choice and supersedes the parts of decision-6 and decision-15 that rule elicitation out; doc-1 5.5, doc-2, docs/fastmcp-reading-guide.md, domain/errors.py, the confirm parameter description, README.md and docs/configuration.md agree with it
 - [ ] #2 A call without confirm on a client that declares form elicitation shows the user the same effect text as the refusal, and runs only after the user accepts, on both protocol eras
-- [ ] #3 Decline, cancel, a malformed answer and a timeout change nothing and return an error that tells the assistant not to retry on its own
-- [ ] #4 Clients that do not declare elicitation get exactly the present refusal and confirm=true flow
+- [ ] #3 Decline, cancel and a malformed answer change nothing and return an error that tells the assistant not to retry on its own; a timeout, a disconnect, or an expired or invalid state changes nothing
+- [ ] #4 Clients that do not declare form elicitation get exactly the present refusal and confirm=true flow
 - [ ] #5 An acceptance applies only to the call and the effect that was shown: changed arguments, or a target whose effect changed in between, ask again and change nothing
-- [ ] #6 One mechanism covers every tool with a confirm parameter, guarded by a registry test with a self-test; no tool is added to the default profile
-- [ ] #7 Error handling, logging, redaction, output schemas and read-only mode are verified on rounds that ask; the dialog text and answers are not logged and never hold a secret
-- [ ] #8 Unit and E2E tests drive accept, decline, cancel and no-handler on a handshake and a 2026-07-28 connection, over stdio and HTTP, including a call that waits longer than the usual request timeouts
-- [ ] #9 The behaviour is tried in Claude Code and one further real client, and the documentation says which clients were seen to show the dialog
+- [ ] #6 An answer without valid server-issued state for this effect, or one already used, changes nothing
+- [ ] #7 One mechanism covers every tool with a confirm parameter, guarded by a registry test with a self-test; no tool is added to the default profile
+- [ ] #8 Error handling, logging, redaction, output schemas and read-only mode are verified on rounds that ask; the dialog text and answers are not logged and never hold a secret
+- [ ] #9 Unit and E2E tests drive accept, decline, cancel and no-handler on a handshake and a 2026-07-28 connection, over stdio and HTTP, including a call that waits longer than the usual request timeouts
+- [ ] #10 The behaviour is tried in Claude Code and one further real client, and the documentation says which clients were seen to show the dialog
 <!-- AC:END -->
 
 ## Definition of Done
