@@ -24,22 +24,38 @@ from fakes.paperless import (
 from fakes.sharing import FakeShareBundle
 
 from mcp_server_paperless.domain.bulk import AddTags, DeleteItems
+from mcp_server_paperless.domain.documents import DocumentEdit
 from mcp_server_paperless.domain.errors import ConfirmationRequired, accepting
+from mcp_server_paperless.domain.mail import MailRuleSettings
 from mcp_server_paperless.domain.permissions import PermissionsRequest
 from mcp_server_paperless.domain.taxonomy import SelectOption
 from mcp_server_paperless.domain.taxonomy_edits import TaxonomyEdit
-from mcp_server_paperless.domain.workflows import Workflow, WorkflowAction, WorkflowTrigger
+from mcp_server_paperless.domain.views import FilterRule
+from mcp_server_paperless.domain.workflows import (
+    ActionInput,
+    TriggerInput,
+    Workflow,
+    WorkflowAction,
+    WorkflowCreate,
+    WorkflowEdit,
+    WorkflowTrigger,
+)
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.admin_accounts import AccountAdmin
 from mcp_server_paperless.services.admin_system import SystemAdmin
 from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
 from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
+from mcp_server_paperless.services.document_edits import DocumentEditor
+from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.mail import MailService
+from mcp_server_paperless.services.pdf import PdfService
 from mcp_server_paperless.services.permissions import PermissionService
 from mcp_server_paperless.services.sharing import SharingService
+from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
 from mcp_server_paperless.services.trash import TrashService
+from mcp_server_paperless.services.views import ViewService
 from mcp_server_paperless.services.workflows import WorkflowService
 
 if TYPE_CHECKING:
@@ -280,9 +296,88 @@ def other_correspondent(state: FakeState) -> None:
     state.correspondents = [FakeTaxonomy(id=9, name="e2e-acme")]
 
 
+def update_workflow(state: FakeState) -> Callable[[], Awaitable[object]]:
+    workflow(state)
+    fake, taxonomy = fakes(state)
+    service = WorkflowService(fake, fake, taxonomy)
+    return lambda: service.update(1, WorkflowEdit(enabled=True), confirm=False)
+
+
+def create_workflow(state: FakeState) -> Callable[[], Awaitable[object]]:
+    fake, taxonomy = fakes(state)
+    service = WorkflowService(fake, fake, taxonomy)
+    trigger = TriggerInput.model_validate({"type": "document_added", "has_tags": ["e2e-inbox"]})
+    action = ActionInput.model_validate({"type": "move_to_trash"})
+    spec = WorkflowCreate(name="New", enabled=True, triggers=(trigger,), actions=(action,))
+    return lambda: service.create(spec, confirm=False)
+
+
+def delete_view(state: FakeState) -> Callable[[], Awaitable[object]]:
+    fake, taxonomy = fakes(state)
+    documents = DocumentService(fake, taxonomy, web_url=WEB)
+    service = ViewService(fake, fake, taxonomy, documents)
+    return lambda: service.delete("e2e-view", confirm=False)
+
+
+def other_rules(state: FakeState) -> None:
+    state.saved_views[0].filter_rules = (FilterRule(rule_type=6, value="2"),)
+
+
+def create_rule(state: FakeState) -> Callable[[], Awaitable[object]]:
+    account(state)
+    fake, taxonomy = fakes(state)
+    service = MailService(fake, fake, taxonomy, fake)
+    settings = MailRuleSettings(
+        name="New", account_id=1, action="delete", assign_tags=("e2e-inbox",)
+    )
+    return lambda: service.create_rule(settings, confirm=False)
+
+
+def update_rule(state: FakeState) -> Callable[[], Awaitable[object]]:
+    account(state)
+    fake, taxonomy = fakes(state)
+    service = MailService(fake, fake, taxonomy, fake)
+    settings = MailRuleSettings(folder="Other")
+    return lambda: service.update_rule(1, settings, clear=(), confirm=False)
+
+
+def other_layout(state: FakeState) -> None:
+    state.mail_rules[0].pdf_layout = "text"
+
+
+def other_pages(state: FakeState) -> None:
+    """A newer file has another page, which the split drops too."""
+    state.documents[0].page_count = 9
+
+
+def split(state: FakeState) -> Callable[[], Awaitable[object]]:
+    state.documents = [FakeDocument(id=1, title="Scan", page_count=4)]
+    fake, _ = fakes(state)
+    service = PdfService(fake, fake, TaskService(fake), web_url=WEB)
+    return lambda: service.split(1, ["1", "2"], output="replace_original")
+
+
+def change_owner(state: FakeState) -> Callable[[], Awaitable[object]]:
+    fake, taxonomy = fakes(state)
+    documents = DocumentService(fake, taxonomy, web_url=WEB)
+    service = DocumentEditor(fake, fake, fake, taxonomy, documents=documents)
+    return lambda: service.update(1, DocumentEdit(owner="e2e-reader"))
+
+
+def other_owner(state: FakeState) -> None:
+    state.documents[0].owner = 2
+
+
 @pytest.mark.parametrize(
     ("make", "change"),
     [
+        (update_workflow, other_trigger),
+        (create_workflow, other_tag),
+        (delete_view, other_rules),
+        (create_rule, other_tag),
+        (update_rule, other_layout),
+        (split, other_pages),
+        (change_owner, other_owner),
         (trash, swap_trash),
         (bulk_documents_with_one_done, swap_changing),
         (bulk_documents, other_tag),
