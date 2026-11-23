@@ -1,7 +1,31 @@
 [project]
 name = "mcp-server-paperless"
 version = "0.1.0"
-description = "MCP server for paperless-ngx 3.x."
+description = "MCP server for paperless-ngx 3.x: let Claude and other AI assistants find, read, file and organise your documents."
+keywords = [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "paperless",
+    "paperless-ngx",
+    "claude",
+    "llm",
+    "ai-agents",
+    "document-management",
+    "fastmcp",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Office/Business",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"
@@ -22,6 +46,7 @@ dependencies = [
 Repository = "https://github.com/gardenbaum/mcp-server-paperless"
 Documentation = "https://github.com/gardenbaum/mcp-server-paperless/tree/main/docs"
 Issues = "https://github.com/gardenbaum/mcp-server-paperless/issues"
+Changelog = "https://github.com/gardenbaum/mcp-server-paperless/releases"
 
 [project.scripts]
 mcp-server-paperless = "mcp_server_paperless.cli:main"
