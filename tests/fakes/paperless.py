@@ -3013,7 +3013,12 @@ class FakePaperless:
         follow_formatting: bool,
         max_bytes: int,
     ) -> ArchiveFile:
-        """`AdminReader.download_documents` (BulkDownloadView): one stored archive."""
+        """`AdminReader.download_documents` (BulkDownloadView): one stored archive.
+
+        The order is Paperless's (newest created first) whatever the order of the ids; documents
+        created on the same day come as the database has them, which on PostgreSQL an edit
+        changes (probed on 3.5.1): here that is the order of `state.documents`.
+        """
         del compression
         self._need("view_document", DOWNLOAD)
         known = {d.id: d for d in self.state.documents}
@@ -3023,7 +3028,8 @@ class FakePaperless:
         if not all(d.visible_to(self.user) for d in chosen):
             raise denied(DOWNLOAD)
         files: list[tuple[str, bytes]] = []
-        for doc in chosen:
+        stored = [d for d in self.state.documents if d in chosen]
+        for doc in sorted(stored, key=lambda d: d.created, reverse=True):
             archived = doc.archive is not None
             name = (
                 doc.download_filename(archive=False) if follow_formatting else doc.original_filename

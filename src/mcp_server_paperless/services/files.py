@@ -1,18 +1,34 @@
 """Thumbnails and downloads of documents, with the size limit applied before the bytes are read.
 
-Callers get a report for every file and the bytes only when the file is within the limit
-(decision-7: files are delivered as MCP content, capped, and never written to the host).
+Callers get a report for every file and the bytes only when the file is within the limit. A larger
+one is read in parts, each within the limit, or saved into a directory the operator allowed (over
+stdio only); nothing else is ever written to the host (decision-7, decision-45).
 """
 
+import hashlib
+from dataclasses import dataclass
 from pathlib import PurePath
 from typing import TYPE_CHECKING
 
 from mcp_server_paperless.domain.documents import FileDelivery, FileReport, Thumbnail
-from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError
-from mcp_server_paperless.services.documents import document_link
+from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError, Validation
+from mcp_server_paperless.domain.files import FilePart, FilePartReport
+from mcp_server_paperless.services.documents import document_link, listed_version
+from mcp_server_paperless.services.transfer import (
+    APPEND,
+    MAX_FILE_BYTES,
+    MAX_SECONDS,
+    REPEAT,
+    changed,
+    check_part,
+    incomplete,
+    read_window,
+    time_limit,
+    too_large,
+)
 
 if TYPE_CHECKING:
-    from mcp_server_paperless.domain.documents import FileKind, FileVersion
+    from mcp_server_paperless.domain.documents import FileMetadata, FileVersion
     from mcp_server_paperless.domain.ports import DocumentReader
 
 PDF = "application/pdf"
@@ -21,9 +37,42 @@ PDF = "application/pdf"
 def _over_limit(limit: int, link: str) -> str:
     return (
         f"The file is over the download limit of {limit} bytes, so it is not attached. "
-        f"Read its text with get_document_content, open it at {link}, or ask the "
-        "administrator to raise PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
+        "Call again with offset=0 to read it in parts, read its text with get_document_content, "
+        f"open it at {link}, or ask the administrator to raise PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
     )
+
+
+@dataclass(frozen=True, slots=True)
+class _Facts:
+    """What Paperless says about the file that was chosen.
+
+    Attributes:
+        name: The name of the upload (the archive version with .pdf), or None.
+    """
+
+    size: int | None
+    checksum: str | None
+    mime_type: str
+    name: str | None
+
+
+def _facts(document_id: int, metadata: FileMetadata, version: FileVersion) -> _Facts:
+    """The facts of the original or of the archive version.
+
+    Raises:
+        NotFound: The document has no archive version.
+    """
+    name = PurePath(metadata.original_filename).name or None
+    if version == "original":
+        return _Facts(
+            metadata.original_size, metadata.original_checksum, metadata.original_mime_type, name
+        )
+    if not metadata.has_archive_version:
+        message = f"Document {document_id} has no archive version."
+        hint = 'Call download_document with kind="original"; it is the only file the document has.'
+        raise NotFound(message, hint=hint)
+    pdf = PurePath(name).with_suffix(".pdf").name if name else None
+    return _Facts(metadata.archive_size, metadata.archive_checksum, PDF, pdf)
 
 
 class FileService:
@@ -63,70 +112,37 @@ class FileService:
         )
         return Thumbnail(report=report, data=found.content)
 
-    async def download(self, document_id: int, version: FileVersion) -> FileDelivery:
+    async def download(
+        self, document_id: int, version: FileVersion, *, version_id: int | None = None
+    ) -> FileDelivery:
         """The original or archive version of a document, if it is within the limit.
 
-        A size the file metadata gives decides before anything is downloaded; otherwise (an
-        archive version of unknown size, or metadata that understates it) the download itself
-        stops at the limit, so no more than the limit is ever read.
+        ``version_id`` names one of the versions the document lists (default: the newest). A size
+        the file metadata gives decides before anything is downloaded; otherwise (an archive
+        version of unknown size, or metadata that understates it) the download itself stops at the
+        limit, so no more than the limit is ever read.
 
         Raises:
-            NotFound: No such document, or ``archive`` asked of a document without one.
+            NotFound: No such document or version, or ``archive`` asked of a document without one.
             PermissionDenied: The user may not see the document.
         """
-        metadata = await self._reader.get_document_metadata(document_id)
-        archive = version == "archive"
-        if archive and not metadata.has_archive_version:
-            message = f"Document {document_id} has no archive version."
-            hint = (
-                'Call download_document with kind="original"; it is the only file the document has.'
+        if version_id is not None:
+            _ = listed_version(await self._reader.get_document(document_id), version_id)
+        metadata = await self._reader.get_document_metadata(document_id, version_id=version_id)
+        facts = _facts(document_id, metadata, version)
+        if facts.size is not None and facts.size > self._max_bytes:
+            filename, mime_type, size, data = facts.name, facts.mime_type, facts.size, None
+        else:
+            found = await self._reader.get_document_file(
+                document_id, version, max_bytes=self._max_bytes, version_id=version_id
             )
-            raise NotFound(message, hint=hint)
-        size: int | None = metadata.archive_size if archive else metadata.original_size
-        name = PurePath(metadata.original_filename).name
-        if size is not None and size > self._max_bytes:
-            upload = (
-                (PurePath(name).with_suffix(".pdf").name if archive else name) if name else None
-            )
-            mime_type = PDF if archive else metadata.original_mime_type
-            return self._delivery(
-                document_id, version, filename=upload, mime_type=mime_type, size=size, data=None
-            )
-        found = await self._reader.get_document_file(
-            document_id, version, max_bytes=self._max_bytes
-        )
-        if found.truncated:
-            return self._delivery(
-                document_id,
-                version,
-                filename=found.filename,
-                mime_type=found.mime_type,
-                size=None,
-                data=None,
-            )
-        return self._delivery(
-            document_id,
-            version,
-            filename=found.filename,
-            mime_type=found.mime_type,
-            size=len(found.content),
-            data=found.content,
-        )
-
-    def _delivery(  # noqa: PLR0913 -- the parts of one report
-        self,
-        document_id: int,
-        kind: FileKind,
-        *,
-        filename: str | None,
-        mime_type: str,
-        size: int | None,
-        data: bytes | None,
-    ) -> FileDelivery:
+            data = None if found.truncated else found.content
+            filename, mime_type = found.filename, found.mime_type
+            size = None if data is None else len(data)
         link = document_link(self._web_url, document_id)
         report = FileReport(
             document_id=document_id,
-            kind=kind,
+            kind=version,
             filename=filename,
             mime_type=mime_type,
             size_bytes=size,
@@ -134,5 +150,82 @@ class FileService:
             max_bytes=self._max_bytes,
             web_url=link,
             note=None if data is not None else _over_limit(self._max_bytes, link),
+            version_id=version_id,
         )
         return FileDelivery(report=report, data=data)
+
+    async def part(  # noqa: PLR0913 -- the file, the window and the proof
+        self,
+        document_id: int,
+        version: FileVersion,
+        *,
+        offset: int,
+        version_id: int | None = None,
+        max_bytes: int | None = None,
+        checksum: str | None = None,
+    ) -> FilePart[FilePartReport]:
+        """The bytes of a file from ``offset``, at most ``max_bytes`` and the download limit.
+
+        Raises:
+            NotFound: No such document, version or archive version.
+            PermissionDenied: The user may not see the document.
+            Validation: A part after the first does not say which file it belongs to, or that
+                file changed.
+            PaperlessMcpError: The file is too large, or Paperless does not describe it.
+        """
+        check_part(offset, max_bytes, checksum)
+        if offset and version_id is None:
+            message = "A part after the first needs the version_id of the first part's report."
+            raise Validation(message, hint=REPEAT)
+        shown = listed_version(await self._reader.get_document(document_id), version_id)
+        metadata = await self._reader.get_document_metadata(document_id, version_id=shown)
+        facts = _facts(document_id, metadata, version)
+        link = document_link(self._web_url, document_id)
+        size, known = facts.size, facts.checksum
+        if size is None or known is None:
+            noun = "archive" if version == "archive" else "original"
+            message = (
+                f"Paperless does not know the size and checksum of the {noun} of document "
+                f"{document_id}, so it is not read in parts."
+            )
+            raise PaperlessMcpError(message, hint=f"Open it at {link}.")
+        if checksum not in {None, known}:
+            raise changed()
+        if size > MAX_FILE_BYTES:
+            raise too_large()
+        limit = min(max_bytes or self._max_bytes, self._max_bytes)
+        filename, mime_type, data = facts.name, facts.mime_type, b""
+        if offset < size:
+            async with (
+                time_limit(MAX_SECONDS),
+                self._reader.open_document_file(document_id, version, version_id=shown) as opened,
+            ):
+                data = await read_window(opened.chunks, offset, limit)
+            filename, mime_type = opened.filename, opened.mime_type
+            again = await self._reader.get_document_metadata(document_id, version_id=shown)
+            if _facts(document_id, again, version).checksum != known:
+                raise changed()
+            if len(data) != min(limit, size - offset):
+                raise incomplete()
+        end = offset + len(data)
+        following = end if end < size else None
+        arguments = (
+            f"document_id={document_id}, kind={version}, version_id={shown}, offset={end}, "
+            f"max_bytes={limit} and checksum={known}"
+        )
+        report = FilePartReport(
+            document_id=document_id,
+            kind=version,
+            version_id=shown,
+            filename=filename,
+            mime_type=mime_type,
+            offset=offset,
+            length=len(data),
+            total_bytes=size,
+            next_offset=following,
+            part_sha256=hashlib.sha256(data).hexdigest(),
+            checksum=known,
+            web_url=link,
+            next=None if following is None else f"Call again with {arguments}; {APPEND}",
+        )
+        return FilePart(report=report, data=data)

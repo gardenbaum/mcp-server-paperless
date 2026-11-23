@@ -570,7 +570,8 @@ async def test_an_opened_archive_holds_the_files_and_is_the_same_bytes_every_tim
     }
 
     first = await opened_archive(backend.admin, ids, "originals", compression)
-    again = await opened_archive(backend.admin, ids, "originals", compression)
+    # The order of the ids does not matter: Paperless has its own.
+    again = await opened_archive(backend.admin, ids[::-1], "originals", compression)
 
     mime_type, filename, data = first
     assert (mime_type, filename) == ("application/zip", "documents.zip")

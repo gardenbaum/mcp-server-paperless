@@ -9,6 +9,7 @@ only reads. Acknowledging a task hides it from the list of new ones and needs no
 download is a read: the archive is attached only within the download limit.
 """
 
+import hashlib
 import json
 from typing import TYPE_CHECKING, Final
 
@@ -31,6 +32,16 @@ from mcp_server_paperless.domain.admin import (
     check_secret,
 )
 from mcp_server_paperless.domain.errors import ConfirmationRequired, Validation, quoted
+from mcp_server_paperless.domain.files import ArchivePartReport, FilePart
+from mcp_server_paperless.services.transfer import (
+    APPEND,
+    MAX_SECONDS,
+    PART_WAIT_SECONDS,
+    changed,
+    check_part,
+    read_all,
+    time_limit,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -54,6 +65,8 @@ MAX_DOCUMENTS: Final = 100
 MAX_TASKS: Final = 100
 ARCHIVE_NAME: Final = "paperless-documents.zip"
 ZIP: Final = "application/zip"
+# The name Paperless gives the archive, for one that is read in parts or saved.
+SAVED_NAME: Final = "documents.zip"
 # Settings a confirmation names in full; the rest are counted.
 SHOWN: Final = 5
 # The longest value a confirmation shows; `quoted` cuts text at the same 60 characters.
@@ -88,6 +101,12 @@ def _config(record: AppConfigRecord) -> AppConfig:
         keys_configured=record.keys_configured,
         externally_configured_variables=record.externally_configured_variables,
     )
+
+
+def _check_ids(document_ids: Sequence[int]) -> None:
+    if not 1 <= len(document_ids) <= MAX_DOCUMENTS or len(set(document_ids)) != len(document_ids):
+        message = f"Give between 1 and {MAX_DOCUMENTS} document ids, each once."
+        raise Validation(message, hint="Find ids with search_documents.")
 
 
 class SystemAdmin:
@@ -309,8 +328,9 @@ class SystemAdmin:
             )
         return (
             f"The archive is over the download limit of {self._max_bytes} bytes, so it is not "
-            "attached. Ask for fewer documents, fetch single files with download_document, or "
-            "ask the administrator to raise PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
+            "attached. Call again with offset=0 to read it in parts, ask for fewer documents, "
+            "fetch single files with download_document, or ask the administrator to raise "
+            "PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
         )
 
     async def download(
@@ -328,11 +348,7 @@ class SystemAdmin:
                 does not exist.
             PermissionDenied: The user may not see one of the documents.
         """
-        if not 1 <= len(document_ids) <= MAX_DOCUMENTS or len(set(document_ids)) != len(
-            document_ids
-        ):
-            message = f"Give between 1 and {MAX_DOCUMENTS} document ids, each once."
-            raise Validation(message, hint="Find ids with search_documents.")
+        _check_ids(document_ids)
         found = await self._reader.download_documents(
             document_ids,
             content=content,
@@ -352,3 +368,62 @@ class SystemAdmin:
             note=None if delivered else self._note(timed_out=found.timed_out),
         )
         return ArchiveDelivery(report=report, data=found.content if delivered else None)
+
+    async def part(  # noqa: PLR0913 -- the archive, the window and the proof
+        self,
+        document_ids: Sequence[int],
+        *,
+        offset: int,
+        content: ArchiveContent = "archive",
+        compression: Compression = "none",
+        follow_formatting: bool = False,
+        max_bytes: int | None = None,
+        checksum: str | None = None,
+    ) -> FilePart[ArchivePartReport]:
+        """The bytes of the archive from ``offset``, at most ``max_bytes`` and the limit.
+
+        Paperless builds the archive anew for every call. It is read and hashed to its end each
+        time: only that proves that the parts are of the same archive (decision-45).
+
+        Raises:
+            Validation: As ``download``; or a part after the first does not say which archive it
+                belongs to, or the archive changed.
+            PermissionDenied: The user may not see one of the documents.
+            PaperlessMcpError: The archive is too large.
+        """
+        check_part(offset, max_bytes, checksum)
+        _check_ids(document_ids)
+        limit = min(max_bytes or self._max_bytes, self._max_bytes)
+        async with (
+            time_limit(MAX_SECONDS),
+            self._reader.open_archive(
+                document_ids,
+                content=content,
+                compression=compression,
+                follow_formatting=follow_formatting,
+                wait_seconds=PART_WAIT_SECONDS,
+            ) as opened,
+        ):
+            data, size, known = await read_all(opened.chunks, offset, limit)
+        if checksum not in {None, known}:
+            raise changed()
+        end = offset + len(data)
+        following = end if end < size else None
+        arguments = (
+            "the same document_ids, content, compression and follow_formatting, "
+            f"offset={end}, max_bytes={limit} and checksum={known}"
+        )
+        report = ArchivePartReport(
+            document_ids=tuple(document_ids),
+            content=content,
+            filename=SAVED_NAME,
+            mime_type=ZIP,
+            offset=offset,
+            length=len(data),
+            total_bytes=size,
+            next_offset=following,
+            part_sha256=hashlib.sha256(data).hexdigest(),
+            checksum=known,
+            next=None if following is None else f"Call again with {arguments}; {APPEND}",
+        )
+        return FilePart(report=report, data=data)

@@ -18,7 +18,12 @@ from mcp_server_paperless.domain.documents import (
     Ref,
     SuggestionNames,
 )
-from mcp_server_paperless.domain.errors import FeatureUnavailable, PermissionDenied, Validation
+from mcp_server_paperless.domain.errors import (
+    FeatureUnavailable,
+    NotFound,
+    PermissionDenied,
+    Validation,
+)
 from mcp_server_paperless.services.search_syntax import query_notices
 
 if TYPE_CHECKING:
@@ -57,6 +62,22 @@ LINK_LIMIT = 100
 # The order sections are fetched and reported in.
 SECTIONS: tuple[Include, ...] = ("notes", "history", "metadata", "versions", "suggestions")
 MONETARY = re.compile(r"([A-Z]{3})(-?\d+(?:\.\d+)?)")
+
+
+def listed_version(document: DocumentRecord, version_id: int | None) -> int:
+    """The version ``version_id`` of a document (None: the newest), which must be listed.
+
+    Paperless would answer the file of a deleted version, too (decision-42).
+
+    Raises:
+        NotFound: The document lists no such version.
+    """
+    # The root version has the id of the document.
+    listed = [version.id for version in document.versions] or [document.id]
+    if version_id is not None and version_id not in listed:
+        message = f"Document {document.id} has no version {version_id}."
+        raise NotFound(message, hint="Its versions are in get_document with include versions.")
+    return listed[0] if version_id is None else version_id
 
 
 def document_link(web_url: str, document_id: int) -> str:

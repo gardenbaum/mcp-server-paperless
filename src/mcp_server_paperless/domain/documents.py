@@ -606,6 +606,9 @@ class FileReport(BaseModel):
     ]
     web_url: Annotated[str, Field(description="Link to the document in the Paperless web UI.")]
     note: Annotated[str | None, Field(description="Why the file is not attached, if it is not.")]
+    version_id: Annotated[
+        int | None, Field(description="The version that was asked for; null: the newest.")
+    ] = None
 
 
 class FileDelivery(BaseModel):
