@@ -191,6 +191,29 @@ async def test_a_destination_that_cannot_be_shown_is_refused(host: str, *, confi
 
 
 @pytest.mark.parametrize("confirm", [False, True])
+async def test_a_webhook_url_that_is_none_is_refused(*, confirm: bool) -> None:
+    setup = Setup()
+    setup.workflow(setup.webhook_action("https://[bad"))
+
+    assert HIDING in await refused(
+        setup.workflows.update(1, WorkflowEdit(enabled=True), confirm=confirm)
+    )
+
+
+async def test_an_internationalised_host_works_and_shows_what_it_resolves_to() -> None:
+    setup = Setup()
+    setup.account("old.example")
+    host = "b\u00fccher.example"
+
+    assert "(xn--bcher-kva.example)" in await asked(setup.mail.update_account(1, imap_server=host))
+    assert "(xn--bcher-kva.example)" in await asked(setup.email(f"a@{host}"))
+    setup.workflow(setup.webhook_action(f"https://{host}/"))
+    assert "(xn--bcher-kva.example)" in await asked(
+        setup.workflows.update(1, WorkflowEdit(enabled=True), confirm=False)
+    )
+
+
+@pytest.mark.parametrize("confirm", [False, True])
 async def test_more_destinations_than_a_dialog_can_list_are_refused(*, confirm: bool) -> None:
     setup = Setup()
     many = ",".join(f"user{n}@x.org" for n in range(MAX_DESTINATIONS))

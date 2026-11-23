@@ -254,7 +254,10 @@ def _object(value: JsonValue) -> dict[str, JsonValue]:
 def _host(url: JsonValue) -> str:
     """The host of a webhook URL: never its credentials, path or query."""
     text = str(url)
-    return urlsplit(text).hostname or text
+    try:
+        return urlsplit(text).hostname or text
+    except ValueError:
+        return text  # no URL; whoever shows it in full finds that out
 
 
 def _origin(url: JsonValue) -> tuple[str, str | None, int | None]:

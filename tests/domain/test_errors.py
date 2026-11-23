@@ -6,6 +6,7 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     Validation,
     accepting,
+    destination,
     listed,
     quoted,
 )
@@ -172,3 +173,73 @@ def test_a_list_shows_the_names_up_to_the_cap_and_counts_the_rest() -> None:
     assert listed(names[:1], limit=3) == "'a'"
     assert listed([], limit=3) == "none"
     assert listed(names[:4], limit=3) == "'a', 'b', 'c' and 1 more"
+
+
+# --- destinations -------------------------------------------------------------------------------
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize(
+    "code",
+    [
+        *(0x200C, 0x200D, 0x034F, 0xFE00, 0xFE0F, 0x17B4, 0x17B5, 0x180B, 0x180F, 0x0600),
+        *(0x115F, 0x1160, 0x3164, 0xFFA0, 0x2800, 0xE0100, 0xE0FFF, 0x2065, 0xFFF0),
+        *(0x20, 0xA0, 0x2003, 0x2028, 0x2029, 0x07, 0xAD, 0x200B, 0x202E, 0xD800, 0xE000, 0x378),
+    ],
+)
+def test_a_destination_holds_no_character_that_may_not_show(code: int) -> None:
+    for text in (f"mail{chr(code)}.example", f"a{chr(code)}b@x.org", f"https://x{chr(code)}.org/"):
+        with pytest.raises(Validation, match="cannot be shown to the user in full"):
+            _ = destination(text, "mail server")
+
+
+@pytest.mark.decision("decision-44")
+def test_a_folder_may_hold_plain_spaces_and_letters_of_any_script() -> None:
+    assert destination("Paperless/Erledigt \u00fcbrig", "folder", address=False) == (
+        "'Paperless/Erledigt \u00fcbrig'"
+    )
+    with pytest.raises(Validation):
+        _ = destination("a\u00a0b", "folder", address=False)
+    with pytest.raises(Validation):
+        _ = destination("a\u200db", "folder", address=False)
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize(
+    ("text", "shown"),
+    [
+        ("mail.example", "'mail.example'"),
+        ("a+b@mail.example", "'a+b@mail.example'"),
+        ("https://api.example/v1?x=1", "'https://api.example/v1?x=1'"),
+        ("b\u00fccher.example", "'b\u00fccher.example' (xn--bcher-kva.example)"),
+        ("B\u00dcCHER.example", "'B\u00dcCHER.example' (xn--bcher-kva.example)"),
+        ("a@b\u00fccher.example", "'a@b\u00fccher.example' (xn--bcher-kva.example)"),
+        ("fa\u00df.example", "'fa\u00df.example' (xn--fa-hia.example)"),
+        (
+            "https://b\u00fccher.example:8443/p",
+            "'https://b\u00fccher.example:8443/p' (xn--bcher-kva.example)",
+        ),
+        ("https://x.example/\u00fc", "'https://x.example/\u00fc'"),
+        # A Cyrillic a, which looks like the Latin one.
+        ("b\u0430nk.example", "'b\u0430nk.example' (xn--bnk-6cd.example)"),
+    ],
+)
+def test_letters_that_look_like_others_are_visible(text: str, shown: str) -> None:
+    assert destination(text, "host") == shown
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize(
+    "text",
+    [
+        "\uff42ank.example",  # full-width letters resolve to plain ones
+        "bank\u3002example",  # full-width dots separate labels, too
+        "cafe\u0301.example",  # the same word may be stored in two forms
+        "https://[bad",
+        "https://\u2100.example/",
+        "x" * 64 + "\u00fc.example",  # longer than a label may be
+    ],
+)
+def test_a_host_that_resolves_to_something_else_is_refused(text: str) -> None:
+    with pytest.raises(Validation, match="cannot be shown to the user in full"):
+        _ = destination(text, "host")

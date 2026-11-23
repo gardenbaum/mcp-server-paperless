@@ -4,7 +4,7 @@ title: Ask the user to confirm destructive actions in a dialog where the client 
 status: In Progress
 assignee: []
 created_date: '2026-11-23T18:44:53Z'
-updated_date: '2026-11-23T22:32:50Z'
+updated_date: '2026-11-23T22:48:07Z'
 labels:
   - tools
   - safety
@@ -82,4 +82,6 @@ Acceptance now binds the newest file version (pdf, sharing, versions, delete_doc
 
 Delta review of 07b1f76 and security review fixed (2026-11-23). Owner approval of the third exception of criterion 4: reported with the invitation to object, answer 2026-11-23 "Bitte wie von dir empfohlen vorgehen"; criterion 4 names it now. Destinations in full and the refusal above a bound (20 recipients and webhook hosts per workflow, the number of recipients one e-mail takes) are decided by the main agent under the owner's standing delegation and reported to the owner; criterion 4 and decision-44 say so.
 A rule whose account its owner cannot see can be changed without confirm again (the account read for the scope treats NotFound and PermissionDenied as no account). The scope of users and groups stays the whole record (N5: safe, left). Tool descriptions and dry-run answers fit clients with dialogs (c5e92b3).
+
+Security review of destination(): destinations use a stricter check than quoted text (no separator, control, format, private, unassigned or default-ignorable character), and a host beyond ASCII is followed by its xn-- form; a host that would be looked up as another text is refused. Standard library only: the punycode codec per label, not the idna codec, whose 2003 rules turn a sharp s into ss. Look-alike letters before the @ of an address are not marked. main 4a05d7c (#110) merged.
 <!-- SECTION:NOTES:END -->

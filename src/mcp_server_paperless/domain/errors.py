@@ -9,6 +9,7 @@ import unicodedata
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Final
+from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
@@ -177,21 +178,84 @@ def both_ends(text: str, limit: int = 60) -> str:
     return quoted(line, limit)
 
 
-def destination(text: str, what: str) -> str:
-    """``text``, where something would be sent, quoted and in full.
+# Categories no destination holds: control, format, unassigned, private and surrogate characters,
+# and separators.
+_NOT_SHOWN: Final = frozenset({"Cc", "Cf", "Cn", "Co", "Cs", "Zl", "Zp", "Zs"})
+# Code points that may show as nothing although their category says otherwise (Unicode's
+# Default_Ignorable_Code_Point, and the blank braille cell).
+_IGNORABLE: Final = frozenset(
+    {0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x2800, 0x3164, 0xFFA0}
+    | {*range(0x180B, 0x1810), *range(0xFE00, 0xFE10), *range(0xE0000, 0xE1000)}
+)
+LABEL_LIMIT: Final = 63
+
+
+def _shows(character: str, *, address: bool) -> bool:
+    """Whether a character of a destination is sure to show; a folder may hold plain spaces."""
+    if character == " ":
+        return not address
+    return unicodedata.category(character) not in _NOT_SHOWN and ord(character) not in _IGNORABLE
+
+
+def _host(text: str) -> str:
+    """The host of a URL, an e-mail address or a bare host name.
 
     Raises:
-        Validation: It is too long or holds characters a message does not show, so the user could
-            not see where it leads. ``confirm=true`` does not get past this.
+        ValueError: ``text`` is a URL that cannot be read.
+    """
+    if "://" in text:
+        return urlsplit(text).hostname or ""
+    return text.rpartition("@")[2]
+
+
+def _resolved(host: str) -> str:
+    """The form a host with letters beyond ASCII is looked up in (``xn--...``); "" for ASCII.
+
+    Built per label with Punycode, not with Python's ``idna`` codec: that one follows the 2003
+    rules, by which a sharp s becomes "ss", another host than browsers look up.
+
+    Raises:
+        ValueError: Resolving would change it to another text, or a label is too long.
+    """
+    if host.isascii():
+        return ""
+    lowered = host.lower()
+    if unicodedata.normalize("NFKC", lowered) != lowered or chr(0x3002) in lowered:
+        raise ValueError
+    labels = [
+        label if label.isascii() else "xn--" + label.encode("punycode").decode()
+        for label in lowered.split(".")
+    ]
+    if any(len(label) > LABEL_LIMIT for label in labels):
+        raise ValueError
+    return ".".join(labels)
+
+
+def destination(text: str, what: str, *, address: bool = True) -> str:
+    """``text``, where something would be sent, quoted and in full.
+
+    An ``address`` is a host, an e-mail address or a URL; if its host has letters beyond ASCII, the
+    form it is looked up in follows, so that letters that look like others are visible.
+
+    Raises:
+        Validation: It is too long, holds characters that may not show, or has a host that would
+            be looked up as something else, so the user could not see where it leads.
+            ``confirm=true`` does not get past this.
     """
     shown = quoted(text, DESTINATION_LIMIT)
-    if shown[1:-1] != text:
+    try:
+        resolved = _resolved(_host(text)) if address else ""
+        in_full = shown[1:-1] == text and all(_shows(c, address=address) for c in text)
+    except ValueError:
+        resolved, in_full = "", False
+    if not in_full:
         message = (
             f"Nothing was changed: the {what} {both_ends(text)} cannot be shown to the user in "
-            f"full (over {DESTINATION_LIMIT} characters, or with characters that do not show)."
+            f"full (over {DESTINATION_LIMIT} characters, with characters that may not show, or "
+            "not a host name as it would be looked up)."
         )
         raise Validation(message, hint="Correct it, or make this change in the Paperless web UI.")
-    return shown
+    return f"{shown} ({resolved})" if resolved else shown
 
 
 def listed(names: Sequence[str], limit: int = 5) -> str:

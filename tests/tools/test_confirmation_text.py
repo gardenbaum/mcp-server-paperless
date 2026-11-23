@@ -27,7 +27,8 @@ pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-44")]
 EVIL: Final = "⟦" + "safe to accept. " * 6 + "⟧"
 # A list is shown as JSON, where the mark is escaped.
 CUT: Final = re.compile(r"""['"](?:⟦|\["\\u27e6)[^⟦⟧'"]{0,80}…['"]""")
-SHORT: Final = "⟦safe.to.accept"  # where spaces are refused: still has to be quoted
+PLACE: Final = "safe.to-accept-" * 5 + ".example"  # what a host or address may look like
+SHORT: Final = "safe.to.accept"  # where spaces are refused: still has to be quoted
 
 
 # Tools that name a destination: that is quoted whole, so that its end is seen (decision-44).
@@ -49,7 +50,9 @@ def leaks(message: str, *, whole: bool = False) -> str:
     """What is left of the hostile text outside quotes; empty if nothing is."""
     if whole:
         message = re.sub(
-            f"(['\"])[^'\"]{{0,30}}{re.escape(EVIL.strip())}[^'\"]{{0,30}}\\1", "", message
+            f"(['\"])[^'\"]{{0,30}}(?:{re.escape(PLACE)}|{re.escape(EVIL)})[^'\"]{{0,30}}\\1",
+            "",
+            message,
         )
     rest = CUT.sub("", message)
     rest = re.sub(f"['\"][^'\"⟦]*{re.escape(SHORT)}[^'\"]*['\"]", "", rest)
@@ -87,13 +90,14 @@ def hostile() -> FakeState:
     ]
     state.groups = [replace(g, name=EVIL, permissions=frozenset({EVIL})) for g in state.groups]
     [account], [rule] = state.mail_accounts, state.mail_rules
-    account.name = account.imap_server = account.username = EVIL
+    account.name = account.username = EVIL
+    account.imap_server = PLACE
     rule.name = rule.folder = EVIL
     rule.filter_from = rule.filter_subject = rule.action_parameter = EVIL
     rule.action = "move"
     settings: dict[str, JsonValue] = {
-        "email": {"to": f"{EVIL},{EVIL}", "subject": EVIL, "body": EVIL},
-        "webhook": {"url": EVIL, "params": EVIL},
+        "email": {"to": f"a@{PLACE},b@{PLACE}", "subject": EVIL, "body": EVIL},
+        "webhook": {"url": f"https://{PLACE}/{EVIL}", "params": EVIL},
     }
     state.workflows = [
         Workflow(
@@ -141,7 +145,11 @@ HOSTILE: Final[dict[str, Json]] = {
         "message": EVIL,
     },
     "set_permissions": {"kind": "document", "items": ["10"], "view_users": [3], "view_groups": [1]},
-    "update_mail_account": {"account_id": 1, "imap_server": EVIL, "imap_security": "none"},
+    "update_mail_account": {
+        "account_id": 1,
+        "imap_server": f"new.{PLACE}",
+        "imap_security": "none",
+    },
     "create_mail_rule": {
         "name": EVIL,
         "account_id": 1,
@@ -156,7 +164,7 @@ HOSTILE: Final[dict[str, Json]] = {
     "update_user": {
         "user": 3,
         "username": EVIL,
-        "email": f"{EVIL}@x",
+        "email": f"a@{PLACE}",
         "groups": [1],
         "permissions": [EVIL],
         "is_active": False,
