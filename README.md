@@ -20,7 +20,7 @@ find, read, file, upload and organise documents by asking.**
 mcp-server-paperless is a [Model Context Protocol](https://modelcontextprotocol.io) server for
 paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai and any
 other MCP client 87 tools in 13 toolsets that cover most of what the Paperless API can do, from a
-search to mail rules and workflows. It starts small and careful: 18 tools by default, names instead
+search to mail rules and workflows. It starts small and careful: 19 tools by default, names instead
 of ids, and a confirmation step before anything that cannot be undone.
 
 ```mermaid
@@ -77,7 +77,7 @@ people who want all of the following in one server:
 - 🛡️ **Nothing final without your yes.** Before a tool deletes, overwrites, publishes or shares
   anything, it reports what would happen and waits for your confirmation. Changes to many
   documents at once can be previewed first.
-- 🪶 **Small to start with.** Only 18 tools by default out of the 87, so the assistant starts
+- 🪶 **Small to start with.** Only 19 tools by default out of the 87, so the assistant starts
   with the essentials and you decide what else it may do. Search results are short lists and long
   documents are read piece by piece, so a conversation does not fill up with text it does not
   need.
@@ -169,13 +169,13 @@ handed tools you never use. Switch more on with `PAPERLESS_MCP_TOOLSETS=core,ai,
 
 | Toolset | Tools | Default | What it is for |
 |---|---|---|---|
-| `core` | 16 | on | Search, read, download, file and upload documents; notes; tags, correspondents, types, storage paths and custom fields; background tasks |
+| `core` | 17 | on | Search, read, download, file and upload documents; run saved views; notes; tags, correspondents, types, storage paths and custom fields; background tasks |
 | `ai` | 2 | on | Ask Paperless AI about your documents and get its filing suggestions (offered only while Paperless AI is enabled) |
 | `bulk` | 2 | | Change many documents or taxonomy items in one step, with a dry run first |
 | `pdf` | 7 | | Rotate, merge, split, delete pages, edit PDFs, remove passwords, reprocess |
 | `versions` | 5 | | The file versions of a document: list, upload, label, delete, merge documents as versions |
 | `trash` | 3 | | List the trash, restore from it, empty it |
-| `views` | 6 | | Saved views: create, change, delete and run them |
+| `views` | 5 | | Saved views: list, create, change and delete them (running them is in `core`) |
 | `sharing` | 8 | | Public share links and bundles, and sending documents by e-mail |
 | `permissions` | 3 | | Owners and view and change rights of documents and taxonomy; list users and groups |
 | `mail` | 13 | | Mail accounts and rules for the mail import, and what it processed |

@@ -105,7 +105,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "create_saved_view": "views",
     "update_saved_view": "views",
     "delete_saved_view": "views",
-    "run_saved_view": "views",
+    "run_saved_view": "core",  # decision-34: the default profile runs saved views
     "list_trash": "trash",
     "restore_from_trash": "trash",
     "empty_trash": "trash",
