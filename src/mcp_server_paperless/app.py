@@ -30,6 +30,7 @@ from key_value.aio.stores.filetree import (
 from key_value.aio.stores.memory import MemoryStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from mcp.server.transport_security import RequestBodyLimitMiddleware
+from mcp.types import INVALID_REQUEST
 from pydantic import AnyHttpUrl, ValidationError
 
 from mcp_server_paperless.domain.errors import InvalidConfiguration
@@ -320,11 +321,21 @@ def body_limit(max_upload_bytes: int) -> int:
     return -(-max_upload_bytes // 3) * 4 + ENVELOPE_BYTES
 
 
-async def _reply(send: Send, status: int, text: str) -> None:
-    body = json.dumps({"error": text}).encode()
+async def _reply(send: Send, status: int, answer: object) -> None:
+    body = json.dumps(answer).encode()
     headers = [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
     await send({"type": "http.response.start", "status": status, "headers": headers})
     await send({"type": "http.response.body", "body": body})
+
+
+async def _too_large(send: Send, limit: int) -> None:
+    """413 with a JSON-RPC error: MCP clients show its message, and nothing of any other body."""
+    message = (
+        f"Request body too large: this server takes at most {limit} bytes. Upload a smaller file; "
+        "the operator can raise PAPERLESS_MCP_MAX_UPLOAD_BYTES."
+    )
+    error = {"code": INVALID_REQUEST, "message": message}
+    await _reply(send, 413, {"jsonrpc": "2.0", "id": None, "error": error})
 
 
 class BodyTooLargeError(Exception):
@@ -350,7 +361,7 @@ class BodyLimit:
             return
         declared = request_header(scope, b"content-length") or b"0"
         if declared.isdigit() and int(declared) > self.limit:
-            await _reply(send, 413, "request body too large")
+            await _too_large(send, self.limit)
             return
         received = 0
         started = False
@@ -374,7 +385,7 @@ class BodyLimit:
         except BodyTooLargeError:
             if started:
                 raise
-            await _reply(send, 413, "request body too large")
+            await _too_large(send, self.limit)
 
 
 class SmallBodies:
@@ -469,11 +480,11 @@ class LoopbackOnly:
             server = cast("tuple[str, int | None] | None", scope.get("server"))
             if not (server and _loopback_address(server[0])):
                 message = "no authentication is configured: this app answers on loopback only"
-                await _reply(send, 403, message)
+                await _reply(send, 403, {"error": message})
                 return
             if any(request_header(scope, name) is not None for name in PROXY_HEADERS):
                 message = "no authentication is configured: this app does not sit behind a proxy"
-                await _reply(send, 403, message)
+                await _reply(send, 403, {"error": message})
                 return
         await self.app(scope, receive, send)
 
