@@ -38,6 +38,35 @@ async def test_names_and_full_text_find_the_document_as_a_compact_row() -> None:
     assert "content" not in row
 
 
+@pytest.mark.parametrize(
+    ("arguments", "title"),
+    [
+        ({"has_correspondent": False}, "e2e-private-note"),
+        ({"has_correspondent": True}, "e2e-public-invoice"),
+        ({"has_document_type": False}, "e2e-private-note"),
+        ({"has_document_type": True}, "e2e-public-invoice"),
+        ({"has_storage_path": False}, "e2e-private-note"),
+        ({"has_storage_path": True}, "e2e-public-invoice"),
+        ({"has_tags": True, "tags_none": ["e2e-private"]}, "e2e-public-invoice"),
+    ],
+)
+async def test_the_has_filters_find_documents_with_or_without_a_value(
+    arguments: Json, title: str
+) -> None:
+    output = await call(arguments)
+
+    assert [row["title"] for row in cast("list[Json]", output["documents"])] == [title]
+
+
+async def test_has_tags_false_finds_the_untagged_documents() -> None:
+    state = seeded()
+    state.documents.append(FakeDocument(id=3, title="bare"))
+
+    output = await call({"has_tags": False}, FakePaperless(state, user="admin"))
+
+    assert [row["title"] for row in cast("list[Json]", output["documents"])] == ["bare"]
+
+
 async def test_the_default_page_holds_25_documents() -> None:
     state = seeded()
     state.documents.extend(FakeDocument(id=n, title=f"bulk-{n}") for n in range(10, 40))
@@ -62,6 +91,11 @@ async def test_a_custom_field_query_passes_through() -> None:
         ({"custom_field_query": ["e2e-nope", "exact", 1]}, "'e2e-nope' is not a valid"),
         ({"page_size": 101}, "less than or equal to 100"),
         ({"page": 0}, "greater than or equal to 1"),
+        (
+            {"has_correspondent": False, "correspondent": "e2e-acme"},
+            "has_correspondent=false contradicts correspondent",
+        ),
+        ({"has_tags": False, "tags_any": ["e2e-finance"]}, "has_tags=false contradicts tags_any"),
     ],
 )
 async def test_bad_filters_are_tool_errors_with_a_hint(arguments: Json, message: str) -> None:

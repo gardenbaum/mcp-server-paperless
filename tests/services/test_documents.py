@@ -110,6 +110,31 @@ async def test_an_ambiguous_name_names_the_candidates() -> None:
             DocumentQuery(),
             "both required and excluded: 'e2e-finance'",
         ),
+        (
+            NameFilters(correspondent="e2e-acme"),
+            DocumentQuery(correspondent_isnull=True),
+            "has_correspondent=false contradicts correspondent",
+        ),
+        (
+            NameFilters(document_type="e2e-invoice"),
+            DocumentQuery(document_type_isnull=True),
+            "has_document_type=false contradicts document_type",
+        ),
+        (
+            NameFilters(storage_path="e2e-archive"),
+            DocumentQuery(storage_path_isnull=True),
+            "has_storage_path=false contradicts storage_path",
+        ),
+        (
+            NameFilters(tags_all=("e2e-finance",)),
+            DocumentQuery(tagged=False),
+            "has_tags=false contradicts tags_all",
+        ),
+        (
+            NameFilters(tags_any=("e2e-finance",)),
+            DocumentQuery(tagged=False),
+            "has_tags=false contradicts tags_any",
+        ),
     ],
 )
 async def test_contradicting_filters_are_rejected_before_asking_paperless(
@@ -608,3 +633,14 @@ async def test_suggested_document_types_are_named() -> None:
         Ref(id=1, name="e2e-invoice"),
         Ref(id=88, name=None),
     )
+
+
+async def test_a_has_filter_set_to_true_may_repeat_the_named_filter() -> None:
+    found = await admin().search(
+        NameFilters(correspondent="e2e-acme"),
+        DocumentQuery(correspondent_isnull=False),
+        page=1,
+        page_size=25,
+    )
+
+    assert [d.title for d in found.documents] == ["e2e-public-invoice"]

@@ -69,6 +69,37 @@ def _check_range(name: str, start: date | None, end: date | None) -> None:
         raise Validation(message, hint=f"Swap them, or leave one out for an open {name} range.")
 
 
+def _check_absent(names: NameFilters, query: DocumentQuery) -> None:
+    """has_x=false (no value) cannot be combined with a name that asks for a value."""
+    asked = (
+        (
+            "has_correspondent",
+            query.correspondent_isnull is True,
+            {"correspondent": names.correspondent},
+        ),
+        (
+            "has_document_type",
+            query.document_type_isnull is True,
+            {"document_type": names.document_type},
+        ),
+        (
+            "has_storage_path",
+            query.storage_path_isnull is True,
+            {"storage_path": names.storage_path},
+        ),
+        (
+            "has_tags",
+            query.tagged is False,
+            {"tags_all": names.tags_all, "tags_any": names.tags_any},
+        ),
+    )
+    for flag, without, named in asked:
+        for field, value in named.items():
+            if without and value not in {None, ()}:
+                message = f"{flag}=false contradicts {field}: no document can match both."
+                raise Validation(message, hint=f"Leave out {flag} or {field}.")
+
+
 def _readable(value: JsonValue, field: TaxonomyItem | None) -> JsonValue:
     """Select option ids as labels and "EUR12.50" as "EUR 12.50"; anything else unchanged."""
     if field is None or not isinstance(value, str):
@@ -116,6 +147,7 @@ class DocumentService:
             raise Validation(message, hint=hint)
         _check_range("created", query.created_from, query.created_to)
         _check_range("added", query.added_from, query.added_to)
+        _check_absent(names, query)
         # Names are optional: the ids a query already holds (a saved view's) stay unless named.
         given = {k: v for k, v in (await self._ids(names)).items() if v not in {None, ()}}
         resolved = query.model_copy(update=given)

@@ -13644,7 +13644,9 @@
         Names (correspondent, document type, storage path, tags, owner) match exactly or ignoring
         case and accents; an unknown or ambiguous name is an error that lists candidates. Rows hold
         ids, names, dates, custom field values and web_url, never the document text. count is the
-        total; pass next_page as page to see more.
+        total; pass next_page as page to see more. To find documents without a correspondent, document
+        type, storage path or tags use has_correspondent, has_document_type, has_storage_path or
+        has_tags set to false; a full-text query like 'NOT type:*' cannot do it.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -13752,6 +13754,54 @@
             ]),
             'default': None,
             'description': 'Name or id; see list_taxonomy.',
+          }),
+          'has_correspondent': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: documents with a correspondent; false: without one.',
+          }),
+          'has_document_type': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: documents with a document type; false: without one.',
+          }),
+          'has_storage_path': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: documents with a storage path; false: without one.',
+          }),
+          'has_tags': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: documents with any tag; false: untagged documents.',
           }),
           'inbox': dict({
             'anyOf': list([
@@ -22945,7 +22995,9 @@
         Names (correspondent, document type, storage path, tags, owner) match exactly or ignoring
         case and accents; an unknown or ambiguous name is an error that lists candidates. Rows hold
         ids, names, dates, custom field values and web_url, never the document text. count is the
-        total; pass next_page as page to see more.
+        total; pass next_page as page to see more. To find documents without a correspondent, document
+        type, storage path or tags use has_correspondent, has_document_type, has_storage_path or
+        has_tags set to false; a full-text query like 'NOT type:*' cannot do it.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -23053,6 +23105,54 @@
             ]),
             'default': None,
             'description': 'Name or id; see list_taxonomy.',
+          }),
+          'has_correspondent': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: documents with a correspondent; false: without one.',
+          }),
+          'has_document_type': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: documents with a document type; false: without one.',
+          }),
+          'has_storage_path': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: documents with a storage path; false: without one.',
+          }),
+          'has_tags': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: documents with any tag; false: untagged documents.',
           }),
           'inbox': dict({
             'anyOf': list([
@@ -30706,7 +30806,9 @@
         Names (correspondent, document type, storage path, tags, owner) match exactly or ignoring
         case and accents; an unknown or ambiguous name is an error that lists candidates. Rows hold
         ids, names, dates, custom field values and web_url, never the document text. count is the
-        total; pass next_page as page to see more.
+        total; pass next_page as page to see more. To find documents without a correspondent, document
+        type, storage path or tags use has_correspondent, has_document_type, has_storage_path or
+        has_tags set to false; a full-text query like 'NOT type:*' cannot do it.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -30814,6 +30916,54 @@
             ]),
             'default': None,
             'description': 'Name or id; see list_taxonomy.',
+          }),
+          'has_correspondent': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: documents with a correspondent; false: without one.',
+          }),
+          'has_document_type': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: documents with a document type; false: without one.',
+          }),
+          'has_storage_path': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: documents with a storage path; false: without one.',
+          }),
+          'has_tags': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: documents with any tag; false: untagged documents.',
           }),
           'inbox': dict({
             'anyOf': list([
