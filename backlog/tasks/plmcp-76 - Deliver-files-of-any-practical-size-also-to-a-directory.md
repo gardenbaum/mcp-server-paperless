@@ -4,25 +4,29 @@ title: Deliver files of any practical size, also to a directory
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:47Z'
+updated_date: '2026-11-23T12:22:00Z'
 labels: []
 dependencies: []
 priority: high
 type: feature
-ordinal: 64000
+ordinal: 65000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-download_document attaches files up to 512 KiB by default; larger ones are only linked. Uploads by path exist for stdio, downloads by path do not. bulk_download has the same limit question. Owner asked for it on 2026-11-23 (feedback from daily use), reading and writing as complete as possible.
+download_document attaches files up to 512 KiB by default; larger ones are only linked. bulk_download has the same limit. Uploads by path exist for stdio, downloads by path do not, because decision-7 says downloads are never written to the host. Page images are PLMCP-74; this task delivers files. Requested by the owner on 2026-11-23.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Over stdio, original, archive, versions and bulk ZIPs can be saved into explicitly allowed directories (off by default), with the path rules of PAPERLESS_MCP_UPLOAD_DIRS, without overwriting unless confirmed
 - [ ] #2 Files above the attach limit can be read in parts over both transports
-- [ ] #3 The default limits are reviewed against real client limits and changed or kept in a decision; HTTP never reaches the host's filesystem (decision-7 kept or superseded deliberately)
-- [ ] #4 Security tests for symlinks, traversal, hard links, dot files, races and full disks; docs and live tests
+- [ ] #3 A new decision supersedes decision-7's rule 'downloads are never written to the host' for stdio with a configured directory allowlist only; HTTP never offers a path or writes to the host; it also says whether such a tool is read-only (PAPERLESS_MCP_READ_ONLY) and how it fits decision-11 (MEDIA_TOOLS)
+- [ ] #4 A second decision keeps or changes the default attach limits, from measured client limits
+- [ ] #5 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
+- [ ] #6 Security tests cover symlinks, traversal, hard links, dot files, races and full disks; docs, the plugin settings and the 'never written to disk' tool texts match
+- [ ] #7 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover every file kind, parts, overwrite with and without confirm and both transports
 <!-- AC:END -->
 
 ## Definition of Done
