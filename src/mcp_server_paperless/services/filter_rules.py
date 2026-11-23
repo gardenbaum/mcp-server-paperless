@@ -1,15 +1,15 @@
 """Filter rules of a saved view to a document query, as the Paperless web UI does it.
 
 Paperless stores a view as numeric rule types with text values and never runs it: its web UI maps
-each type to a document list filter (``FILTER_RULE_TYPES`` in the 3.4.2 frontend). This module
-does the same, for every one of the 51 types (0 to 50). A rule is either translated or rejected
-with an error that names its type, never skipped: a view that ran on a part of its rules would
-return documents the user did not mean.
+each type to a document list filter (``FILTER_RULE_TYPES`` of the web UI, read in its 3.4.2
+source). This module does the same, for every one of the 51 types (0 to 50). A rule is either
+translated or rejected with an error that names its type, never skipped: a view that ran on a
+part of its rules would return documents the user did not mean.
 
 Deliberate differences from the web UI: it silently lets the last of two rules of a single-valued
 type win (we reject the view), and it sends a nonsense value on to Paperless (we reject it first).
 Like the UI, the title rules (0 and 48) use the title search and the text rules (19 and 49) the
-text search, which Paperless 3.4 answers from its index, not the deprecated ``title_content``.
+text search, which Paperless answers from its index, not the deprecated ``title_content``.
 """
 
 import json
@@ -230,7 +230,7 @@ def translate(
         number = rule.rule_type
         spec = SPECS.get(number)
         if spec is None:
-            message = f"Filter rule type {number} is not one of the types of Paperless 3.4.2."
+            message = f"Filter rule type {number} is not one of the types of Paperless."
             raise Validation(
                 message, hint="The types are numbered 0 to 50; create_saved_view lists them."
             )

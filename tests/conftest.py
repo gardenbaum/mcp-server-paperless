@@ -77,7 +77,7 @@ def isolated_logging() -> Iterator[None]:
 
 @pytest.fixture(scope="session")
 def stack() -> Iterator[Stack]:
-    """The ready, seeded Paperless 3.4.2 stack (E2E tests and the live contract backend)."""
+    """The ready, seeded Paperless stack (E2E tests and the live contract backend)."""
     admin_token = wait_ready()
     with client(admin_token) as admin:
         seeded = seed(admin)

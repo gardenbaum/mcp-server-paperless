@@ -1,7 +1,7 @@
 """The backends the contract suite runs against: FakePaperless and the adapter on live Paperless.
 
 `just check` runs the `fake` backend; `just e2e` runs `live` (marker `e2e`) against the seeded
-3.4.2 stack. Both hold the same seed (tests/e2e/helpers.py `seed` and its `SEEDED_OBJECTS`
+stack. Both hold the same seed (tests/e2e/helpers.py `seed` and its `SEEDED_OBJECTS`
 manifest, mirrored by `fakes.paperless.seeded`), so every contract test makes the same
 assertions against both.
 
@@ -307,7 +307,7 @@ class Backend:
     # (and empties its trash entry) when the test ends; the fake needs no cleanup.
     track_document: Callable[[int], None]
     # The Paperless release behind the backend: the fake's, or the one the live stack runs
-    # (`just e2e-latest` runs the suite against a newer release than the pinned one).
+    # (`just e2e-latest` runs the suite against the latest release instead of the reference).
     expected_version: str
     # Makes the full-text index hold exactly one entry per current document (live: waits for the
     # index-writing tasks, then rebuilds it; the fake has no stale entries). Call it right before
@@ -467,14 +467,10 @@ def fake_new_documents(new_document: Callable[[], int]) -> Callable[[int], list[
     return lambda count: [new_document() for _ in range(count)]
 
 
-def fake_backend(*, ai_enabled: bool = False, release: str = VERSION) -> Backend:
-    """The fake's backend; the E2E stack of `just e2e` has AI off, so that is the default.
-
-    ``release`` is the Paperless release the fake behaves like: the pinned one, or `FAKE_35`.
-    """
+def fake_backend(*, ai_enabled: bool = False) -> Backend:
+    """The fake's backend; the E2E stack of `just e2e` has AI off, so that is the default."""
     state = seeded()
     state.ai_enabled = ai_enabled
-    state.release = release
     return Backend(
         admin=fake_ports(state, ADMIN[0]),
         reader=fake_ports(state, READER[0]),
@@ -490,19 +486,9 @@ def fake_backend(*, ai_enabled: bool = False, release: str = VERSION) -> Backend
         grants=fake_grants(state),
         in_trash=fake_in_trash(state),
         track_document=lambda _document: None,
-        expected_version=release,
+        expected_version=VERSION,
         rebuild_search_index=lambda: None,
     )
-
-
-def release(version: str) -> tuple[int, ...]:
-    """A release as a tuple to compare: "3.5.1" is (3, 5, 1)."""
-    return tuple(int(part) for part in version.split("."))
-
-
-def since(backend: Backend, minimum: str) -> bool:
-    """Whether the Paperless behind the backend is at least ``minimum`` (the fake: its release)."""
-    return release(backend.expected_version) >= release(minimum)
 
 
 def trashed(stack: Stack) -> set[int]:
@@ -763,23 +749,11 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
         cleanup(stack, created, users)
 
 
-FAKE_35 = "3.5.1"
-
-# For the tests whose behaviour differs between Paperless 3.4 and 3.5 (they branch with `since`):
-# the fake as the pinned release, the fake as 3.5 and the live stack (whatever release it runs).
-BOTH_RELEASES = pytest.mark.parametrize(
-    "backend", ["fake", "fake-3.5", pytest.param("live", marks=pytest.mark.e2e)], indirect=True
-)
-
-
 @pytest.fixture(params=["fake", pytest.param("live", marks=pytest.mark.e2e)])
 async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
     """The backend under contract (the fixture value is created fresh for every test)."""
     if cast("str", request.param) == "fake":
         yield fake_backend()
-        return
-    if cast("str", request.param) == "fake-3.5":
-        yield fake_backend(release=FAKE_35)
         return
     async with live_backend(cast("Stack", request.getfixturevalue("stack"))) as live:
         yield live

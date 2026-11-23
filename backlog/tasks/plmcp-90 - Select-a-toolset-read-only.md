@@ -4,6 +4,7 @@ title: Select a toolset read-only
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:22:04Z'
+updated_date: '2026-11-23T18:30:58Z'
 labels: []
 dependencies: []
 priority: medium
@@ -23,7 +24,7 @@ Read-only mode applies to the whole server, so reading mail rules, workflows, vi
 - [ ] #2 Server-wide read-only mode still wins, and a misspelt selection stops the server as today
 - [ ] #3 stdio, HTTP, the plugin and the container are covered, and what PLMCP-82 tells the assistant is right
 - [ ] #4 A decision records the setting and how it extends decisions 4 and 6
-- [ ] #5 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover mixed selections, prompts that need a hidden tool (decision-20) and the error messages
+- [ ] #5 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover mixed selections, prompts that need a hidden tool (decision-20) and the error messages
 <!-- AC:END -->
 
 ## Definition of Done

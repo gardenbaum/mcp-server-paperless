@@ -1,4 +1,4 @@
-"""Contract of MailReader and MailWriter: the same assertions against the fake and live 3.4.2.
+"""Contract of MailReader and MailWriter: the same assertions against the fake and a live Paperless.
 
 Accounts and rules get a unique name per test; the `mail` fixture deletes what a test made, rules
 before accounts, also when it failed (the stack is shared). The E2E stack has no IMAP server, so

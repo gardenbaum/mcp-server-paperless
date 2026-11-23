@@ -1,4 +1,4 @@
-"""Contract of BulkWriter on the fake and live Paperless 3.4.2.
+"""Contract of BulkWriter on the fake and a live Paperless.
 
 Every test creates the documents and taxonomy objects it changes (names with `SCRATCH_ITEM` or
 `SCRATCH_TAG` and a uuid, documents through `backend.new_document`) and never touches a seeded
@@ -13,7 +13,7 @@ import anyio
 import pytest
 from fakes.accounts import READER
 
-from contract.conftest import BOTH_RELEASES, SCRATCH_ITEM, SCRATCH_TAG, since
+from contract.conftest import SCRATCH_ITEM, SCRATCH_TAG
 from mcp_server_paperless.domain.bulk import (
     FieldsChange,
     ObjectPermissions,
@@ -468,10 +468,9 @@ async def test_items_are_deleted_together_and_the_others_stay(
     assert kept in left
 
 
-@BOTH_RELEASES
-@pytest.mark.decision("decision-29")
+@pytest.mark.decision("decision-43")
 @pytest.mark.contract(DELETE_ITEMS)
-async def test_bulk_deleting_a_tag_takes_child_tags_of_others_on_3_4_and_is_refused_on_3_5(
+async def test_bulk_deleting_a_tag_that_would_take_child_tags_of_others_is_refused(
     backend: Backend,
 ) -> None:
     mine = backend.restricted(frozenset({"add_tag", "view_tag", "delete_tag"}))
@@ -482,15 +481,11 @@ async def test_bulk_deleting_a_tag_takes_child_tags_of_others_on_3_4_and_is_refu
     async def tags() -> set[int]:
         return {row.id for row in await backend.admin.taxonomy.list_taxonomy("tag")}
 
-    if since(backend, "3.5.0"):
-        with pytest.raises(PermissionDenied) as refused:
-            await mine.bulk_writes.delete_taxonomy_items("tag", (parent,))
-        assert refused.value.hint
-        assert {parent, child} <= await tags()
-        return
-    await mine.bulk_writes.delete_taxonomy_items("tag", (parent,))
+    with pytest.raises(PermissionDenied) as refused:
+        await mine.bulk_writes.delete_taxonomy_items("tag", (parent,))
 
-    assert {parent, child}.isdisjoint(await tags())
+    assert refused.value.hint
+    assert {parent, child} <= await tags()
 
 
 @pytest.mark.contract(DELETE_ITEMS)

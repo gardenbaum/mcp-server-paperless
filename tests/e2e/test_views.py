@@ -1,4 +1,4 @@
-"""The views toolset through the assembled server against the seeded Paperless 3.4.2 stack."""
+"""The views toolset through the assembled server against the seeded Paperless stack."""
 
 import uuid
 from typing import TYPE_CHECKING, cast

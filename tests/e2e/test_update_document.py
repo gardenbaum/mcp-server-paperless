@@ -1,4 +1,4 @@
-"""update_document through the assembled server on Paperless 3.4.2, on documents of its own."""
+"""update_document through the assembled server on the E2E Paperless, on documents of its own."""
 
 import uuid
 from typing import TYPE_CHECKING, cast

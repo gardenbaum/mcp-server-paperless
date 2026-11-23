@@ -1,4 +1,4 @@
-"""Contract of the version methods of DocumentWriter: the same assertions on the fake and 3.4.2.
+"""Contract of the version methods of DocumentWriter: the same assertions on the fake and live.
 
 Every test works on documents of its own (`backend.new_document`), never on a seeded one. Facts
 probed on 3.4.2: a version upload is consumed like any upload and its task names the new version

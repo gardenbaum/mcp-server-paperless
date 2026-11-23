@@ -1,4 +1,4 @@
-"""Contract of TaxonomyReader: the same assertions against the fake and live Paperless 3.4.2."""
+"""Contract of TaxonomyReader: the same assertions against the fake and a live Paperless."""
 
 from typing import TYPE_CHECKING
 

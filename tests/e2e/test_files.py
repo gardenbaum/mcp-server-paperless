@@ -1,4 +1,4 @@
-"""Thumbnails and downloads through the assembled server on Paperless 3.4.2, with real uploads."""
+"""Thumbnails and downloads through the assembled server on the E2E Paperless, with real uploads."""
 
 import base64
 import json

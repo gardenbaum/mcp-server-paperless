@@ -395,6 +395,7 @@ def test_a_jpeg_with_a_second_frame_header_or_another_size_is_left_to_pillow() -
         whole[:frame] + bytes(larger) + whole[frame:],  # two headers, the first one larger
         whole[:frame] + header + bytes(larger) + whole[frame + len(header) :],
         whole[:frame] + bytes(larger) + whole[frame + len(header) :],  # another size
+        whole[:frame] + b"\xff\xdc\x00\x04\xff\xff" + whole[frame:],  # redefines the height
         whole[:-2],  # no end
         whole[: frame + 3],
         whole[2:],

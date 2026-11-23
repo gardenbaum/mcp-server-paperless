@@ -1,6 +1,6 @@
 # Overlay of `just e2e-office`: the E2E stack with Apache Tika and Gotenberg, which Paperless needs
 # to consume Office documents and e-mails. The images are the releases the compose files of
-# paperless-ngx 3.4.2 name (docker/compose/docker-compose.sqlite-tika.yml), pinned by digest.
+# paperless-ngx 3.5.1 name (docker/compose/docker-compose.sqlite-tika.yml), pinned by digest.
 services:
   gotenberg:
     # renovate: datasource=docker depName=gotenberg/gotenberg

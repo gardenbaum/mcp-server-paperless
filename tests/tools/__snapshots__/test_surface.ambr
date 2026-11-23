@@ -960,7 +960,7 @@
         adds its parent, and removing a parent whose child tags stay is refused (list the children
         too). Custom fields are merged: only the fields you name change. Document links are mirrored:
         linking A to B also changes B (you need change permission there), so also_changed lists
-        those documents; a shorter list does not unlink the old target (Paperless 3.4.2), removing
+        those documents; a shorter list does not unlink the old target, removing
         the field does. delete moves documents to the Paperless trash; reprocess runs OCR again in
         the background (the pdf toolset's reprocess_documents does the same, also with remote OCR).
         Paperless checks every document first: if you may not change one of them
@@ -1436,13 +1436,13 @@
         
         Three steps, like bulk_edit_documents: dry_run=true previews, a call without confirm is an
         error that describes the effect, confirm=true executes. A delete is final (taxonomy has no
-        trash): documents lose the reference, and deleting a tag deletes its child tags too (on
-        Paperless 3.4 also ones you cannot see; 3.5 refuses the deletion if it would take tags of
-        other users). set_permissions without merge replaces all grants with the lists you
-        give (a list left out becomes empty); with merge it adds to them, and merge cannot set an
-        owner. A change grant includes view. Users and groups by name or id. Custom fields are not
-        supported. Paperless checks every object first: if you may not change one, none changes (you
-        need the permission and must own it, or it must have no owner). The permissions toolset's
+        trash): documents lose the reference, and deleting a tag deletes its child tags too
+        (Paperless refuses the deletion if it would take child tags of other users).
+        set_permissions without merge replaces all grants with the lists you give (a list left
+        out becomes empty); with merge it adds to them, and merge cannot set an owner. A change
+        grant includes view. Users and groups by name or id. Custom fields are not supported.
+        Paperless checks every object first: if you may not change one, none changes (you need the
+        permission and must own it, or it must have no owner). The permissions toolset's
         set_permissions also sets permissions and covers documents too; this tool's
         set_permissions operation empties the lists you leave out, that tool keeps them.
       ''',
@@ -4014,8 +4014,10 @@
         webhook: url, headers, params or body, include_document), 'move to trash' and 'remote OCR'
         (consumption triggers only). Settings of another action type than the one given are an error.
         Password removal and applying AI suggestions cannot be written here; use the Paperless web UI.
+        A 'manual' trigger (run by hand) is listed but cannot be written here either.
         
-        A workflow runs by itself on every matching document once it is enabled. Without confirm, an
+        A workflow runs by itself on every matching document once it is enabled (one with only manual
+        triggers runs when a user runs it by hand). Without confirm, an
         enabled workflow that moves to trash, e-mails, calls a webhook, removes things or changes owner or
         permissions is refused with an error that says what it would do; describe that to the user and
         call again with confirm=true once they agree. Disabled workflows and plain filing (tags, title,
@@ -6184,7 +6186,7 @@
         Delete a tag, correspondent, document type, storage path or custom field for good.
         
         There is no trash for these: the documents stay but lose the tag, correspondent, type, path
-        or field value, and deleting a tag also deletes its child tags (Paperless 3.5 refuses the
+        or field value, and deleting a tag also deletes its child tags (Paperless refuses the
         deletion if that would take child tags of other users). Without confirm it deletes
         nothing and fails with an error that says the effect (documents affected, child tags that go
         with it); describe that to the user and call again with confirm=true once they agree.
@@ -6235,7 +6237,7 @@
           'also_deleted': dict({
             'default': list([
             ]),
-            'description': "Tags: the child tags you can see that are deleted with it, with their document counts. On Paperless 3.4 child tags you cannot see (other users') are deleted too; 3.5 refuses the deletion instead.",
+            'description': 'Tags: the child tags you can see that are deleted with it, with their document counts. Paperless refuses the deletion if it would take child tags of other users.',
             'items': dict({
               'description': 'A child tag that goes with its parent, and how many documents lose it.',
               'properties': dict({
@@ -18628,8 +18630,10 @@
         webhook: url, headers, params or body, include_document), 'move to trash' and 'remote OCR'
         (consumption triggers only). Settings of another action type than the one given are an error.
         Password removal and applying AI suggestions cannot be written here; use the Paperless web UI.
+        A 'manual' trigger (run by hand) is listed but cannot be written here either.
         
-        A workflow runs by itself on every matching document once it is enabled. Without confirm, an
+        A workflow runs by itself on every matching document once it is enabled (one with only manual
+        triggers runs when a user runs it by hand). Without confirm, an
         enabled workflow that moves to trash, e-mails, calls a webhook, removes things or changes owner or
         permissions is refused with an error that says what it would do; describe that to the user and
         call again with confirm=true once they agree. Disabled workflows and plain filing (tags, title,
@@ -21138,7 +21142,7 @@
         Delete a tag, correspondent, document type, storage path or custom field for good.
         
         There is no trash for these: the documents stay but lose the tag, correspondent, type, path
-        or field value, and deleting a tag also deletes its child tags (Paperless 3.5 refuses the
+        or field value, and deleting a tag also deletes its child tags (Paperless refuses the
         deletion if that would take child tags of other users). Without confirm it deletes
         nothing and fails with an error that says the effect (documents affected, child tags that go
         with it); describe that to the user and call again with confirm=true once they agree.
@@ -21189,7 +21193,7 @@
           'also_deleted': dict({
             'default': list([
             ]),
-            'description': "Tags: the child tags you can see that are deleted with it, with their document counts. On Paperless 3.4 child tags you cannot see (other users') are deleted too; 3.5 refuses the deletion instead.",
+            'description': 'Tags: the child tags you can see that are deleted with it, with their document counts. Paperless refuses the deletion if it would take child tags of other users.',
             'items': dict({
               'description': 'A child tag that goes with its parent, and how many documents lose it.',
               'properties': dict({

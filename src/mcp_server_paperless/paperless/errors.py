@@ -25,7 +25,7 @@ MAX_MESSAGE_LENGTH = 200
 # DRF keys whose messages are not about one field.
 GENERAL_KEYS = frozenset({"detail", "non_field_errors"})
 RETRY_LATER = "Try again in a moment."
-# What Paperless 3.4 answers (400, text/html) to every AI endpoint while AI is switched off.
+# What Paperless answers (400, text/html) to every AI endpoint while AI is switched off.
 AI_DISABLED_BODY = "AI is required for this feature"
 # What the chat answers (400, text/html) to a document_id that names no document.
 DOCUMENT_NOT_FOUND_BODY = "Document not found"

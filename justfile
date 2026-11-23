@@ -3,7 +3,7 @@ _default:
 
 # Paperless-ngx release whose API schema and docs are vendored (docs/vendor/paperless) and the
 # reference version for development and E2E. Single source: bump here, then `just docs-sync-paperless`.
-PAPERLESS_VERSION := "3.4.2"
+PAPERLESS_VERSION := "3.5.1"
 
 # Refresh the vendored FastMCP docs to the latest stable release tag (highest vX.Y.Z; no
 # pre-releases). Only the docs/ subtree is copied, FastMCP's repo-root files (its own
@@ -212,7 +212,7 @@ image-stdio-smoke tag="mcp-server-paperless-stdio:dev":
     docker build --target stdio --tag {{tag}} .
     scripts/image_stdio_smoke.sh {{tag}}
 
-# Start the Paperless 3.4.2 E2E stack (tests/e2e/compose.yaml) on 127.0.0.1:${PAPERLESS_E2E_PORT:-8010}.
+# Start the Paperless 3.5.1 E2E stack (tests/e2e/compose.yaml) on 127.0.0.1:${PAPERLESS_E2E_PORT:-8010}.
 # Readiness and seeding are the test session's job, so this returns as soon as the containers run.
 e2e-up:
     docker compose -f tests/e2e/compose.yaml up -d

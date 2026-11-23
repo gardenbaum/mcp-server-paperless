@@ -90,10 +90,18 @@ def retry_after(value: str, now: datetime) -> float | None:
 
 
 def unexpected(response: httpx2.Response) -> PaperlessMcpError:
-    """The error for a successful response whose content the adapter cannot use."""
+    """The error for a successful response whose content the adapter cannot use.
+
+    A write was accepted, so its hint says that it may have been applied.
+    """
     request = response.request
     return PaperlessMcpError(
-        f"Paperless sent an unexpected response for {request.method} {request.url.path}."
+        f"Paperless sent an unexpected response for {request.method} {request.url.path}.",
+        hint=(
+            None
+            if request.method in {"GET", "HEAD"}
+            else "The request may have been applied: read the data again before repeating it."
+        ),
     )
 
 

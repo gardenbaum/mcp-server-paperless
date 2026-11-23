@@ -1,4 +1,4 @@
-"""get_task through the assembled server against the seeded Paperless 3.4.2 stack."""
+"""get_task through the assembled server against the seeded Paperless stack."""
 
 import time
 import uuid

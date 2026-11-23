@@ -19,7 +19,7 @@
     'three searches': 'Paperless can run only one search per query: rule types 0 (title contains), 20 (fulltext query), 21 (more like this) cannot be combined. Hint: Keep one of them (or a simple search with a fulltext query). Change the view with update_saved_view.',
     'two searches': 'Paperless can run only one search per query: rule types 19 (title or content contains), 0 (title contains) cannot be combined. Hint: Keep one of them (or a simple search with a fulltext query). Change the view with update_saved_view.',
     'unknown sort field': "The view sorts by the unknown sort field 'bogus'. Hint: Change the view with update_saved_view. Use clear_sort to drop the sort, or a field such as created or title.",
-    'unknown type': 'Filter rule type 51 is not one of the types of Paperless 3.4.2. Hint: The types are numbered 0 to 50; create_saved_view lists them.',
+    'unknown type': 'Filter rule type 51 is not one of the types of Paperless. Hint: The types are numbered 0 to 50; create_saved_view lists them.',
   })
 # ---
 # name: test_rule_type_errors
@@ -42,7 +42,7 @@
     'delete, unconfirmed': "Nothing was changed. Confirming would delete saved view 'odd' (id 2) for good: its 1 filter rule and its sort order are lost; no document is touched. Hint: Describe the effect to the user and call the tool again with the same arguments and confirm=true only once they agree, or if they already asked for exactly this.",
     'get, missing id': 'No saved view has id 99. Hint: Call list_saved_views to see the ids.',
     'get, near miss': "No saved view is named 'e2e-vew'. Hint: Did you mean 'e2e-view'? Or call list_saved_views to see all names.",
-    'run, unknown type': 'Filter rule type 99 is not one of the types of Paperless 3.4.2. Hint: The types are numbered 0 to 50; create_saved_view lists them.',
+    'run, unknown type': 'Filter rule type 99 is not one of the types of Paperless. Hint: The types are numbered 0 to 50; create_saved_view lists them.',
     'update, bad rule value': "Filter rule type 2 (ASN is) has the value 'x', which is not a whole number. Hint: Change the view with update_saved_view.",
     'update, bad sort': "The view sorts by the unknown sort field 'bogus'. Hint: Change the view with update_saved_view. Use clear_sort to drop the sort, or a field such as created or title.",
     'update, blank name': 'The view name is empty. Hint: Give the view a name.',

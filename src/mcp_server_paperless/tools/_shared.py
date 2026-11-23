@@ -289,7 +289,7 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         open_world_hint=False,
     ),
     # Not destructive and not idempotent (decision-6): it adds a document and takes nothing away,
-    # but every call adds one, also for content Paperless already holds (3.4.2 keeps duplicates).
+    # but every call adds one, also for content Paperless already holds (it keeps duplicates).
     "upload_document": ToolAnnotations(
         title="Upload document",
         read_only_hint=False,

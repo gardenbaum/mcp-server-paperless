@@ -1,4 +1,4 @@
-"""Contract of DocumentWriter: the same assertions against the fake and live Paperless 3.4.2.
+"""Contract of DocumentWriter: the same assertions against the fake and a live Paperless.
 
 Every test writes to a document of its own (`backend.new_document`), never to a seeded one.
 """

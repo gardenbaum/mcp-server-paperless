@@ -1,4 +1,4 @@
-"""The rule type table of saved views against the vendored Paperless 3.4.2 schema."""
+"""The rule type table of saved views against the vendored Paperless schema."""
 
 import json
 import re

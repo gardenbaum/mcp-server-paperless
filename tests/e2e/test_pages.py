@@ -1,4 +1,4 @@
-"""get_document_pages through the assembled server on Paperless 3.4.2, with real files.
+"""get_document_pages through the assembled server on Paperless 3.5.1, with real files.
 
 Office documents and e-mails need Tika and Gotenberg: the tests marked `office_e2e` run with
 `just e2e-office` and skip elsewhere.

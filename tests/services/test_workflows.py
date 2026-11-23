@@ -96,7 +96,7 @@ class Setup:
         return next(w for w in self.state.workflows if w.name == name)
 
     def seed(self, name: str, *, enabled: bool = True, **given: object) -> Workflow:
-        """A workflow Paperless holds already, as 3.4.2 would hand it out."""
+        """A workflow Paperless holds already."""
         workflow = Workflow.model_validate(
             {
                 "id": max((w.id for w in self.state.workflows), default=0) + 1,
@@ -621,6 +621,62 @@ async def test_an_unsupported_trigger_type_is_rejected_naming_the_types_there_ar
     assert "consumption" in raised.value.hint
     assert "scheduled" in raised.value.hint
     assert setup.fake.writes == []
+
+
+@pytest.mark.parametrize("kind", [5, "manual", "Manual"])
+async def test_a_manual_trigger_is_read_but_not_written(kind: int | str) -> None:
+    """A manual trigger is run by hand from the web UI; it is read here and not written."""
+    setup = Setup()
+
+    with pytest.raises(
+        Validation, match=r"trigger type 'manual' \(5\) cannot be written"
+    ) as raised:
+        _ = await setup.workflows.create(
+            WorkflowCreate(name="n", triggers=(TriggerInput(type=kind),)), confirm=True
+        )
+
+    assert "web UI" in (raised.value.hint or "")
+    assert setup.fake.writes == []
+
+
+async def test_a_manual_trigger_is_refused_in_any_place_of_a_create_or_an_update() -> None:
+    setup = Setup()
+    _ = setup.seed("w", enabled=False)
+    triggers = (NEVER, TriggerInput(type="manual"))
+
+    with pytest.raises(Validation, match=r"'manual' \(5\) cannot be written"):
+        _ = await setup.workflows.create(WorkflowCreate(name="n", triggers=triggers), confirm=True)
+    with pytest.raises(Validation, match=r"'manual' \(5\) cannot be written"):
+        _ = await setup.workflows.update("w", WorkflowEdit(triggers=triggers), confirm=True)
+
+    assert setup.fake.writes == []
+
+
+async def test_a_manual_trigger_is_listed_by_its_label() -> None:
+    setup = Setup()
+    _ = setup.seed("w", enabled=False, triggers=[WorkflowTrigger(id=1, type=5, settings={})])
+
+    listed = await setup.workflows.get("w")
+
+    assert [(t.type, t.type_name) for t in listed.triggers] == [(5, "manual")]
+
+
+async def test_replacing_triggers_never_drops_a_manual_one() -> None:
+    setup = Setup()
+    _ = setup.seed(
+        "w",
+        enabled=False,
+        triggers=[WorkflowTrigger(id=1, type=5, settings={}), WorkflowTrigger(id=2, type=2)],
+    )
+
+    with pytest.raises(Validation, match="holds triggers this server cannot write") as raised:
+        _ = await setup.workflows.update("w", WorkflowEdit(triggers=(NEVER,)), confirm=False)
+    renamed = await setup.workflows.update("w", WorkflowEdit(name="v"), confirm=False)
+
+    assert "manual (id 1)" in raised.value.message
+    assert "web UI" in (raised.value.hint or "")
+    assert setup.fake.writes == ["update"]
+    assert [t.type for t in renamed.triggers] == [5, 2]  # untouched, in the order stored
 
 
 @pytest.mark.parametrize(
@@ -1159,6 +1215,43 @@ async def test_replacing_the_actions_of_an_enabled_workflow_with_an_acting_one_n
     assert setup.fake.writes == []
     done = await setup.workflows.update("w", WorkflowEdit(actions=(trash,)), confirm=True)
     assert [a.type for a in done.actions] == [6]
+
+
+@pytest.mark.parametrize(
+    ("triggers", "when"),
+    [
+        (
+            [WorkflowTrigger(type=5)],
+            (
+                "which is enabled and runs only when a user runs it by hand (manual), possibly "
+                "on documents its trigger filters do not match, and will: "
+            ),
+        ),
+        (
+            [WorkflowTrigger(type=2), WorkflowTrigger(type=5)],
+            (
+                "which is enabled and runs by itself on every document that matches its "
+                "triggers (document added); when a user runs it by hand (manual) it may also "
+                "run on documents its filters do not match; it will: "
+            ),
+        ),
+    ],
+    ids=["manual only", "manual and automatic"],
+)
+async def test_a_manual_trigger_is_described_as_run_by_hand_not_by_itself(
+    triggers: list[WorkflowTrigger], when: str
+) -> None:
+    setup = Setup()
+    _ = setup.seed("w", triggers=triggers)
+    trash = ActionInput(type="move to trash")
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.workflows.update("w", WorkflowEdit(actions=(trash,)), confirm=False)
+
+    assert raised.value.message == (
+        f"Nothing was changed. Confirming would change the workflow 'w' (id 1), {when}"
+        "move the matching documents to the trash."
+    )
 
 
 async def test_new_triggers_for_an_enabled_acting_workflow_need_confirm_too() -> None:

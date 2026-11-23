@@ -44,6 +44,15 @@ class Recorded:
         self.sent: list[tuple[str, str, dict[str, str], object]] = []
 
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        if request.method == "GET" and request.url.path == "/api/tasks/":
+            # The task a queued document change names has succeeded; waiting for it is not logged.
+            done = {
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [task_row("success", TASK)],
+            }
+            return httpx2.Response(200, json=done)
         payload: object = json.loads(request.content) if request.content else None
         self.sent.append((request.method, request.url.path, dict(request.url.params), payload))
         if isinstance(self.body, str):
@@ -110,18 +119,24 @@ def body(method: str, parameters: Json, documents: list[int] | None = None) -> J
 async def test_a_document_change_is_one_bulk_edit_request(
     make_client: ClientFactory, change: DocumentChange, expected: Json
 ) -> None:
-    server = Recorded()
+    server = Recorded(QUEUED)
 
     _ = await PaperlessBulkWriter(make_client(server)).bulk_edit_documents((4, 7), change)
 
     assert server.sent == [("POST", "/api/documents/bulk_edit/", {}, expected)]
 
 
-async def test_an_answer_that_is_not_the_result_object_is_unexpected() -> None:
-    client, _ = streaming(lambda _: httpx2.Response(200, json={"unexpected": True}))
+@pytest.mark.parametrize(
+    "answer", [{"unexpected": True}, {"result": "OK"}], ids=["other", "no-task"]
+)
+async def test_an_answer_that_is_not_the_queued_result_is_unexpected(answer: Json) -> None:
+    # Every document change names the task it queued; an answer without one is not believed.
+    client, _ = streaming(lambda _: httpx2.Response(200, json=answer))
 
-    with pytest.raises(PaperlessMcpError, match="unexpected response"):
+    with pytest.raises(PaperlessMcpError, match="unexpected response") as raised:
         _ = await PaperlessBulkWriter(client).bulk_edit_documents((4,), TrashDocuments())
+
+    assert "may have been applied" in (raised.value.hint or "")
 
 
 async def test_a_refused_document_change_says_nothing_was_changed(

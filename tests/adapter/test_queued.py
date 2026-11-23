@@ -88,16 +88,6 @@ def waiter(make_client: ClientFactory, tasks: Tasks, clock: Clock) -> TaskWaiter
 ANSWER = Queued(result="OK", task_id=TASK)
 
 
-async def test_an_answer_without_a_task_id_is_confirmed_and_reads_nothing(
-    make_client: ClientFactory,
-) -> None:
-    tasks, clock = Tasks([]), Clock()
-
-    outcome = await waiter(make_client, tasks, clock).confirmed(Queued(result="OK"), _never)
-
-    assert (outcome, tasks.reads, clock.sleeps) == (None, [], [])
-
-
 def _never(_: str) -> Validation:
     return Validation("failed")
 

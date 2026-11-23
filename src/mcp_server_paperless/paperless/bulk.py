@@ -1,11 +1,9 @@
 """BulkWriter on ``POST /api/documents/bulk_edit/`` and ``POST /api/bulk_edit_objects/``.
 
-Both endpoints answer ``{"result": "OK"}`` once the change is made (probed on 3.4.2: tag, field
-and reference changes are visible on return; a reprocess is queued and its task is not
-returned). From 3.5 the document endpoint only queues a ``bulk_update`` task and names it
-(``task_id``); the writer follows that task, so a change is made when the call returns on both
-versions (``queued.py``). Both endpoints validate the whole request first, so a refused batch
-changes nothing. Posts are never retried by the client.
+The object endpoint answers ``{"result": "OK"}`` once the change is made. The document endpoint
+only queues a ``bulk_update`` task and names it (``task_id``); the writer follows that task, so a
+change is made when the call returns (``queued.py``). Both endpoints validate the whole request
+first, so a refused batch changes nothing. Posts are never retried by the client.
 """
 
 import asyncio

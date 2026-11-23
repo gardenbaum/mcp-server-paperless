@@ -1,4 +1,4 @@
-"""The raw toolset through the assembled server against the seeded Paperless 3.4.2 stack.
+"""The raw toolset through the assembled server against the seeded Paperless stack.
 
 Reads the seeded tags, the OpenAPI-listed endpoints that hold secrets and files are refused
 without a request, hostile paths never leave the API, and an answer over the cap is cut.

@@ -421,12 +421,12 @@ async def test_paperless_errors_become_domain_errors(
         ).delete_taxonomy_item("tag", 7)
 
 
-@pytest.mark.decision("decision-29")
+@pytest.mark.decision("decision-43")
 async def test_a_refused_tag_deletion_says_what_helps_and_other_kinds_get_no_such_hint(
     make_client: ClientFactory,
 ) -> None:
-    # Paperless 3.5 answers 403 "Insufficient permissions." when the deletion would take child
-    # tags of other users (3.4 deletes them); the same 403 also means a missing permission.
+    # Paperless answers 403 "Insufficient permissions." when the deletion would take child
+    # tags of other users; the same 403 also means a missing permission.
     def refused() -> PaperlessTaxonomyWriter:
         return PaperlessTaxonomyWriter(
             make_client(

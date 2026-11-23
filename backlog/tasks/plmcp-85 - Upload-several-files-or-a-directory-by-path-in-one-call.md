@@ -4,6 +4,7 @@ title: Upload several files or a directory by path in one call
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:21:58Z'
+updated_date: '2026-11-23T18:30:57Z'
 labels: []
 dependencies:
   - PLMCP-77
@@ -25,7 +26,7 @@ Uploads by path take one file per call, so a folder of scans needs one call per 
 - [ ] #3 Walking a directory applies the rules of single files: symlinks must end inside the allowed directories, hard-linked and dot files are never read, no traversal; HTTP never offers it (decision-7)
 - [ ] #4 Every file gets the duplicate check of PLMCP-77, and one failing file does not stop the others or hide their result
 - [ ] #5 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
-- [ ] #6 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover mixed outcomes, limits, symlinks, hard links, dot files, traversal and races
+- [ ] #6 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover mixed outcomes, limits, symlinks, hard links, dot files, traversal and races
 <!-- AC:END -->
 
 ## Definition of Done

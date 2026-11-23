@@ -376,6 +376,63 @@ def test_plumbing_that_is_sent_is_neither_open_work_nor_a_gap() -> None:
     assert check(FULL, [], plumbing=plumbing) == []
 
 
+# What hangs under a plumbing field (its values, its children) is not plumbing by itself: when no
+# tool sends it, the row must name it, or it could hide work (PLMCP-97).
+FLAGGED: dict[Operation, Fields] = {
+    GET_ONE: Fields(
+        query=frozenset({"flag"}), body=NONE, enums={"query:flag": frozenset({"true", "false"})}
+    )
+}
+FLAG_SENT: dict[Operation, Usage] = {GET_ONE: used("query:flag", "query:flag=true")}
+
+
+def test_an_unsent_value_below_a_plumbing_field_is_a_problem_unless_the_row_names_it() -> None:
+    bare = {GET_ONE: Plumbing(names("query:flag"), "reads the grants")}
+    named = {GET_ONE: Plumbing(names("query:flag", "query:flag=false"), "reads the grants")}
+
+    found = check(FLAG_SENT, [], schema=FLAGGED, plumbing=bare)
+
+    assert found == [
+        (
+            "GET /api/things/{id}/: query:flag=false hangs under a plumbing field, is sent by no "
+            "tool and is not named in the plumbing row"
+        )
+    ]
+    assert check(FLAG_SENT, [], schema=FLAGGED, plumbing=named) == []
+
+
+def test_a_value_below_a_plumbing_field_that_a_tool_sends_needs_no_naming() -> None:
+    both = {GET_ONE: used("query:flag", "query:flag=true", "query:flag=false")}
+    bare = {GET_ONE: Plumbing(names("query:flag"), "reads the grants")}
+
+    assert check(both, [], schema=FLAGGED, plumbing=bare) == []
+
+
+def test_a_named_value_that_no_plumbing_field_holds_is_still_a_problem() -> None:
+    stray = {GET_ONE: Plumbing(names("query:flag=false"), "x")}
+
+    found = check(FLAG_SENT, [], schema=FLAGGED, plumbing=stray)
+
+    assert any("query:flag=false is listed as plumbing, but no tool sends it" in f for f in found)
+
+
+def test_an_unsent_child_field_below_a_plumbing_field_cannot_be_named_away() -> None:
+    nested = {PATCH_ONE: Fields(query=NONE, body=frozenset({"stored", "stored.secret"}))}
+    sent = {PATCH_ONE: used("body:stored", tool="update_thing")}
+    bare = {PATCH_ONE: Plumbing(names("body:stored"), "the stored object is sent back")}
+    named = {PATCH_ONE: Plumbing(names("body:stored", "body:stored.secret"), "x")}
+
+    assert check(sent, [], schema=nested, plumbing=bare) == [
+        (
+            "PATCH /api/things/{id}/: body:stored.secret hangs under a plumbing field, is sent "
+            "by no tool and is not named in the plumbing row"
+        )
+    ]
+    assert check(sent, [], schema=nested, plumbing=named) == [
+        "PATCH /api/things/{id}/: body:stored.secret is listed as plumbing, but no tool sends it"
+    ]
+
+
 def test_plumbing_that_no_tool_sends_is_a_problem() -> None:
     partly = {**FULL, GET_ONE: used("query:fields")}
     plumbing = {GET_ONE: Plumbing(names("query:page"), "x")}

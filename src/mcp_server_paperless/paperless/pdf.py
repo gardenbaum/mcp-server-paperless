@@ -1,8 +1,9 @@
 """PdfWriter on the PDF endpoints of Paperless 3.x (API version 10).
 
 ``POST /api/documents/{rotate,merge,edit_pdf,remove_password,reprocess}/`` answer
-``{"result": "OK"}`` once the work is queued, and name no task (probed on 3.4.2). The work runs
-as tasks that appear in ``GET /api/tasks/`` within milliseconds:
+``{"result": "OK", "task_id": ...}`` once a ``bulk_update`` task is queued; it makes the files,
+and they are consumed by tasks of their own, which appear in ``GET /api/tasks/`` within
+milliseconds:
 
 - ``consume_file`` per produced file, named by ``input_data.filename``: ``{id}_rotated.pdf``,
   ``{id}_edit_{n}.pdf`` (new documents) or ``{id}_edited.pdf`` (a new version),
@@ -13,10 +14,9 @@ as tasks that appear in ``GET /api/tasks/`` within milliseconds:
 So the writer notes the newest task before the request and afterwards looks for newer tasks of
 the operation's kind, for a short bounded time. A user who may not view tasks gets none back.
 
-From 3.5 the endpoints queue a ``bulk_update`` task first and answer its ``task_id``; that task
-makes the files and fails for what 3.4 refused with a 400 (a file that is not a PDF, a wrong
-password). The writer waits for it (``queued.py``), turns a failure into the error 3.4 raised, and
-only then looks for the file tasks, with a fresh window.
+The ``bulk_update`` task fails for what would be a 400 otherwise (a file that is not a PDF, a wrong
+password). The writer waits for it (``queued.py``), turns a failure into an error, and only then
+looks for the file tasks, with a fresh window.
 """
 
 import asyncio

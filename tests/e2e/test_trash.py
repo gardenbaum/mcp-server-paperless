@@ -1,4 +1,4 @@
-"""The trash toolset through the assembled server on Paperless 3.4.2, on documents of its own.
+"""The trash toolset through the assembled server on the E2E Paperless, on documents of its own.
 
 Titles start with `plmcp27-`; they are plain text, which skips OCR. The shared stack's trash holds
 entries of other tests, so nothing here empties the whole trash: `all=true` is only called without

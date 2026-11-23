@@ -563,10 +563,7 @@ async def test_an_option_that_was_just_renamed_elsewhere_is_found_in_the_current
 # -- delete
 
 
-HIDDEN = (
-    "on Paperless 3.4 child tags you cannot see (other users') are deleted with it as well; "
-    "Paperless 3.5 refuses the deletion if it would take tags of other users"
-)
+HIDDEN = "Paperless refuses the deletion if it would take child tags of other users"
 EFFECTS = [
     ("tag", "e2e-private", 3, "tag", "it is removed from its documents (1 document); " + HIDDEN),
     (
@@ -658,18 +655,18 @@ async def test_a_tag_delete_names_its_child_tags_with_their_document_counts() ->
     assert {t.id for t in confirmed.state.tags} == {3, 4}
 
 
-async def test_a_tag_delete_also_takes_child_tags_the_caller_cannot_see() -> None:
+async def test_a_tag_delete_that_would_take_child_tags_the_caller_cannot_see_is_refused() -> None:
     setup = Setup(READER[0], grant={"delete_tag"})
     setup.state.tags += [
         FakeTag(id=10, name="mine", owner=3),
         FakeTag(id=11, name="theirs", owner=2, parent=10),
     ]
 
-    result = await setup.editor.delete("tag", "mine", confirm=True)
+    with pytest.raises(PermissionDenied) as refused:
+        _ = await setup.editor.delete("tag", "mine", confirm=True)
 
-    assert result.also_deleted == ()
-    assert HIDDEN in result.message
-    assert 11 not in {t.id for t in setup.state.tags}
+    assert refused.value.hint
+    assert {10, 11} <= {t.id for t in setup.state.tags}
 
 
 async def test_a_missing_item_is_not_found_with_or_without_confirm() -> None:

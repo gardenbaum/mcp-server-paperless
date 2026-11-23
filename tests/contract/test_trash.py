@@ -1,4 +1,4 @@
-"""Contract of TrashReader and TrashWriter: the same assertions on the fake and on Paperless 3.4.2.
+"""Contract of TrashReader and TrashWriter: the same assertions on the fake and on a live Paperless.
 
 Every test works on documents of its own (`backend.new_documents`, plain text) and looks them up
 in the trash by id: the live trash is shared with every other test and holds hundreds of entries,
