@@ -92,6 +92,7 @@ ONE_IMAGE = (
     [
         b"",
         b"not json\n",
+        b'{"page_count": 1}\n',
         b'{"page_count": 1}\n' * 1000,
         ONE_IMAGE % 5 + b"four",
         ONE_IMAGE % 5 + b"six666",
