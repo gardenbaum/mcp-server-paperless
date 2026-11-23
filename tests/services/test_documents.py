@@ -111,6 +111,11 @@ async def test_an_ambiguous_name_names_the_candidates() -> None:
             "both required and excluded: 'e2e-finance'",
         ),
         (
+            NameFilters(correspondent="e2e-acme"),
+            DocumentQuery(correspondent_isnull=True),
+            "has_correspondent=false contradicts correspondent",
+        ),
+        (
             NameFilters(document_type="e2e-invoice"),
             DocumentQuery(document_type_isnull=True),
             "has_document_type=false contradicts document_type",
