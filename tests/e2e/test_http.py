@@ -100,19 +100,22 @@ async def over_http(url: str) -> Seen:
         return await look(client)
 
 
-async def test_the_setting_the_guide_names_switches_the_toolsets_on_after_a_restart_over_http(
+async def test_the_setting_the_guide_names_switches_the_toolset_wanted_on_over_http(
     stack: Stack, endpoint: str
 ) -> None:
     seen = await over_http(endpoint)
 
     assert seen.guide is not None
-    first = cast("list[dict[str, object]]", seen.guide["off"])[0]
     setting = re.search(r"PAPERLESS_MCP_TOOLSETS=(\S+)", seen.instructions)
     assert setting is not None, seen.instructions
-    assert setting[1] == f"core,ai,{first['toolset']}"
+    assert setting[1] == "core,ai,<name>"
     assert "HTTP and image: environment of the process or container" in seen.instructions
+    wanted = "permissions"  # neither the first of the toolsets that are off nor the last
+    [entry] = [
+        e for e in cast("list[dict[str, object]]", seen.guide["off"]) if e["toolset"] == wanted
+    ]
 
-    with running(stack, PAPERLESS_MCP_TOOLSETS=setting[1]) as restarted:
+    with running(stack, PAPERLESS_MCP_TOOLSETS=setting[1].replace("<name>", wanted)) as restarted:
         after = await over_http(restarted)
 
-    assert after.tools == seen.tools | set(cast("list[str]", first["tools"]))
+    assert after.tools == seen.tools | set(cast("list[str]", entry["tools"]))

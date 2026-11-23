@@ -8457,16 +8457,6 @@
           'toolsets': dict({
             'description': 'The toolsets on and off.',
             'properties': dict({
-              'enable': dict({
-                'anyOf': list([
-                  dict({
-                    'type': 'string',
-                  }),
-                  dict({
-                    'type': 'null',
-                  }),
-                ]),
-              }),
               'off': dict({
                 'items': dict({
                   'description': 'A toolset that is off.',
@@ -8480,16 +8470,6 @@
                     'toolset': dict({
                       'type': 'string',
                     }),
-                    'unchecked': dict({
-                      'anyOf': list([
-                        dict({
-                          'type': 'string',
-                        }),
-                        dict({
-                          'type': 'null',
-                        }),
-                      ]),
-                    }),
                     'what': dict({
                       'type': 'string',
                     }),
@@ -8498,7 +8478,6 @@
                     'toolset',
                     'what',
                     'tools',
-                    'unchecked',
                   ]),
                   'type': 'object',
                 }),
@@ -8510,11 +8489,28 @@
                 }),
                 'type': 'array',
               }),
+              'switch_on': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+              }),
+              'unchecked': dict({
+                'additionalProperties': dict({
+                  'type': 'string',
+                }),
+                'type': 'object',
+              }),
             }),
             'required': list([
               'on',
               'off',
-              'enable',
+              'switch_on',
+              'unchecked',
             ]),
             'type': 'object',
           }),
@@ -22587,16 +22583,6 @@
           'toolsets': dict({
             'description': 'The toolsets on and off.',
             'properties': dict({
-              'enable': dict({
-                'anyOf': list([
-                  dict({
-                    'type': 'string',
-                  }),
-                  dict({
-                    'type': 'null',
-                  }),
-                ]),
-              }),
               'off': dict({
                 'items': dict({
                   'description': 'A toolset that is off.',
@@ -22610,16 +22596,6 @@
                     'toolset': dict({
                       'type': 'string',
                     }),
-                    'unchecked': dict({
-                      'anyOf': list([
-                        dict({
-                          'type': 'string',
-                        }),
-                        dict({
-                          'type': 'null',
-                        }),
-                      ]),
-                    }),
                     'what': dict({
                       'type': 'string',
                     }),
@@ -22628,7 +22604,6 @@
                     'toolset',
                     'what',
                     'tools',
-                    'unchecked',
                   ]),
                   'type': 'object',
                 }),
@@ -22640,11 +22615,28 @@
                 }),
                 'type': 'array',
               }),
+              'switch_on': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+              }),
+              'unchecked': dict({
+                'additionalProperties': dict({
+                  'type': 'string',
+                }),
+                'type': 'object',
+              }),
             }),
             'required': list([
               'on',
               'off',
-              'enable',
+              'switch_on',
+              'unchecked',
             ]),
             'type': 'object',
           }),
@@ -27290,16 +27282,6 @@
           'toolsets': dict({
             'description': 'The toolsets on and off.',
             'properties': dict({
-              'enable': dict({
-                'anyOf': list([
-                  dict({
-                    'type': 'string',
-                  }),
-                  dict({
-                    'type': 'null',
-                  }),
-                ]),
-              }),
               'off': dict({
                 'items': dict({
                   'description': 'A toolset that is off.',
@@ -27313,16 +27295,6 @@
                     'toolset': dict({
                       'type': 'string',
                     }),
-                    'unchecked': dict({
-                      'anyOf': list([
-                        dict({
-                          'type': 'string',
-                        }),
-                        dict({
-                          'type': 'null',
-                        }),
-                      ]),
-                    }),
                     'what': dict({
                       'type': 'string',
                     }),
@@ -27331,7 +27303,6 @@
                     'toolset',
                     'what',
                     'tools',
-                    'unchecked',
                   ]),
                   'type': 'object',
                 }),
@@ -27343,11 +27314,28 @@
                 }),
                 'type': 'array',
               }),
+              'switch_on': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+              }),
+              'unchecked': dict({
+                'additionalProperties': dict({
+                  'type': 'string',
+                }),
+                'type': 'object',
+              }),
             }),
             'required': list([
               'on',
               'off',
-              'enable',
+              'switch_on',
+              'unchecked',
             ]),
             'type': 'object',
           }),

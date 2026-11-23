@@ -8,22 +8,40 @@ disabled tool or a missing capability excludes.
 """
 
 import itertools
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from fakes.paperless import FakePaperless, FakeUser, seeded
 from fastmcp import Client
-from guide_oracle import OVERVIEW, Seen, observe, verify
-from harness import FailingReader, admin, serve
+from guide_oracle import (
+    COMBINATIONS,
+    DISABLED,
+    OVERVIEW,
+    SELECTIONS,
+    Seen,
+    check,
+    look,
+    observe,
+    refused,
+    resolved,
+    started,
+    verify,
+)
+from harness import (
+    FailingReader,
+    admin,
+    paperless_settings,
+    refused_url,
+    serve,
+    server_settings,
+)
 
 from mcp_server_paperless.domain.errors import InvalidConfiguration, UpstreamUnavailable
-from mcp_server_paperless.server import CATALOGUE
+from mcp_server_paperless.server import CATALOGUE, create_server
 from mcp_server_paperless.tools._shared import TOOLSETS
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-    from mcp_server_paperless.domain.ports import InstanceReader
+    from mcp_server_paperless.domain.instance import InstanceOverview
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-41")]
 
@@ -48,57 +66,15 @@ def silent() -> FailingReader:
 
 
 READERS = {"present": present, "missing": missing, "unknown": unknown, "silent": silent}
-SELECTIONS: dict[str, list[str] | None] = {
-    "default": None,
-    "core": ["core"],
-    "core-ai-trash": ["core", "ai", "trash"],
-    "all": ["all"],
-    "trash": ["trash"],
-    "raw": ["raw"],
-}
-DISABLED = {
-    "none": (),
-    "part-of-trash": ("restore_from_trash", "empty_trash"),
-    "all-of-trash": ("list_trash", "restore_from_trash", "empty_trash"),
-    "the-overview": (OVERVIEW,),
-}
-
-
-async def started(
-    reader: InstanceReader,
-    toolsets: Sequence[str] | None,
-    *,
-    read_only: bool = False,
-    disabled_tools: Sequence[str] = (),
-) -> Seen | None:
-    """What a client sees of the server, or None if the settings leave nothing to offer."""
-    try:
-        server = serve(
-            reader, toolsets=toolsets, read_only=read_only, disabled_tools=disabled_tools
-        )
-    except InvalidConfiguration:
-        return None
-    return await observe(server, overview=not isinstance(reader, FailingReader))
 
 
 @pytest.mark.parametrize(
-    ("capability", "selection", "disabled", "read_only"),
-    list(itertools.product(READERS, SELECTIONS, DISABLED, (False, True))),
+    ("capability", "combination"), list(itertools.product(READERS, COMBINATIONS))
 )
 async def test_the_guide_matches_what_switching_the_toolsets_on_would_add(
-    capability: str, selection: str, disabled: str, *, read_only: bool
+    capability: str, combination: tuple[str, str, bool]
 ) -> None:
-    kept = DISABLED[disabled]
-    current = await started(
-        READERS[capability](), SELECTIONS[selection], read_only=read_only, disabled_tools=kept
-    )
-    ceiling = await started(
-        READERS[capability](), ["all"], read_only=read_only, disabled_tools=kept
-    )
-    if current is None:
-        return  # nothing is offered, so there is nothing to tell
-    assert ceiling is not None
-    verify(current, ceiling, capability=capability)
+    await check(READERS[capability], capability=capability, combination=combination)
 
 
 async def test_the_default_profile_tells_the_assistant_what_is_off_and_how_to_get_it() -> None:
@@ -108,7 +84,9 @@ async def test_the_default_profile_tells_the_assistant_what_is_off_and_how_to_ge
     assert OVERVIEW in seen.tools
     assert "Toolsets on: core, ai." in seen.instructions
     assert "trash (" in seen.instructions
-    assert "PAPERLESS_MCP_TOOLSETS=core,ai,bulk" in seen.instructions
+    assert "PAPERLESS_MCP_TOOLSETS=core,ai,<name>" in seen.instructions
+    assert "bulk (" in seen.instructions  # listed, but no example to follow
+    assert "PAPERLESS_MCP_TOOLSETS=core,ai,bulk" not in seen.instructions
 
 
 async def test_without_the_overview_tool_the_instructions_do_not_send_the_assistant_to_it() -> None:
@@ -124,7 +102,7 @@ async def test_with_everything_on_the_instructions_have_no_guide_and_no_setting(
     assert seen is not None
     assert "PAPERLESS_MCP_TOOLSETS" not in seen.instructions
     assert seen.guide is not None
-    assert (seen.guide["off"], seen.guide["enable"]) == ([], None)
+    assert (seen.guide["off"], seen.guide["switch_on"]) == ([], None)
 
 
 async def test_one_server_describes_the_capability_of_each_start() -> None:
@@ -144,3 +122,102 @@ async def test_one_server_describes_the_capability_of_each_start() -> None:
 
 def test_every_toolset_has_a_summary_and_only_toolsets_do() -> None:
     assert set(CATALOGUE.summaries) == TOOLSETS
+
+
+# A word each summary must carry, so that a summary under the wrong toolset is noticed.
+KEYWORDS = {
+    "core": "documents",
+    "ai": "AI",
+    "bulk": "many",
+    "versions": "versions",
+    "views": "views",
+    "trash": "deleted",
+    "pdf": "PDF",
+    "sharing": "share",
+    "permissions": "permissions",
+    "mail": "mail",
+    "raw": "endpoints",
+    "workflows": "workflows",
+    "admin": "users",
+}
+
+
+def test_every_summary_says_what_its_own_toolset_is_for() -> None:
+    assert set(KEYWORDS) == TOOLSETS
+    for toolset, word in KEYWORDS.items():
+        assert word in CATALOGUE.summaries[toolset], toolset
+
+
+def offered(seen: Seen) -> list[str]:
+    assert seen.guide is not None
+    return [entry["toolset"] for entry in cast("list[dict[str, str]]", seen.guide["off"])]
+
+
+class Says:
+    """Paperless as it answers the AI question at the moment: on, off or unknown (None)."""
+
+    def __init__(self, ai_enabled: bool | None) -> None:  # noqa: FBT001 -- on, off or unknown
+        self.ai_enabled: bool | None = ai_enabled
+        self._fake: FakePaperless = admin()
+
+    async def get_overview(self) -> InstanceOverview:
+        return (await self._fake.get_overview()).model_copy(update={"ai_enabled": self.ai_enabled})
+
+
+async def test_the_guide_of_the_overview_follows_what_paperless_says_at_the_time_of_the_call() -> (
+    None
+):
+    paperless = Says(ai_enabled=True)
+
+    async with Client(serve(paperless, toolsets=["core"])) as client:
+        first = await look(client)
+        paperless.ai_enabled = False
+        second = await look(client)
+        paperless.ai_enabled = None
+        third = await look(client)
+
+    assert "ai" in offered(first)
+    assert "ai" not in offered(second)  # a restart would not deliver it
+    assert "ai" in offered(third)
+    assert (first.guide or {})["unchecked"] == {}
+    assert (third.guide or {})["unchecked"] == {"ai": "Paperless AI"}
+    # What is offered stays as the start found it, whatever Paperless says later.
+    assert first.tools == second.tools == third.tools
+
+
+async def test_what_is_on_stays_as_the_start_found_it() -> None:
+    state = seeded()
+    state.ai_enabled = False
+    server = serve(FakePaperless(state, user="admin"))
+
+    async with Client(server) as client:
+        state.ai_enabled = True
+        seen = await look(client)
+
+    assert (seen.guide or {})["on"] == ["core"]  # ai is selected but was hidden at the start
+    assert "ai" not in offered(seen)
+
+
+@pytest.mark.parametrize("combination", COMBINATIONS[::5])
+async def test_a_paperless_that_does_not_answer_is_a_gap_with_the_real_adapter(
+    combination: tuple[str, str, bool],
+) -> None:
+    """The real adapter against a port nothing listens on: the capability is unchecked."""
+    selection, disabled, read_only = combination
+    settings = server_settings(
+        toolsets=SELECTIONS[selection], read_only=read_only, disabled_tools=DISABLED[disabled]
+    )
+    ceiling = server_settings(
+        toolsets=["all"], read_only=read_only, disabled_tools=DISABLED[disabled]
+    )
+    url = refused_url()
+    try:
+        current = await observe(create_server(paperless_settings(url), settings), overview=False)
+    except InvalidConfiguration:
+        assert refused(selection, disabled)
+        return
+    wide = await observe(create_server(paperless_settings(url), ceiling), overview=False)
+
+    assert current is not None
+    assert wide is not None
+    verify(current, wide, capability="silent", selected=resolved(SELECTIONS[selection]))

@@ -471,3 +471,14 @@ def test_the_image_takes_the_toolsets_from_the_environment_the_server_guide_name
     assert variable not in DOCKERFILE.read_text(encoding="utf-8")
     assert f"{variable}=" in ENABLE
     assert "recreate the container" in ENABLE
+
+
+@pytest.mark.decision("decision-38")
+def test_the_stdio_image_needs_the_toolsets_passed_in_and_the_guide_says_so() -> None:
+    """Over stdio (`docker run -i`, the Docker MCP Catalog) nothing reaches the container itself."""
+    page = (Path(__file__).parents[2] / "docs" / "container.md").read_text(encoding="utf-8")
+    stdio = page.split("`docker run` (in the Docker MCP Catalog")[0].rsplit("docker run --rm -i", 1)
+
+    assert len(stdio) == 2, "docs/container.md shows the stdio docker run"
+    assert "-e PAPERLESS_MCP_TOOLSETS=" in page
+    assert "docker run -i: -e" in ENABLE

@@ -97,6 +97,7 @@ from mcp_server_paperless.tools._shared import (
     TOOLSET_REQUIRES,
     TOOLSET_SUMMARIES,
     TOOLSETS,
+    GuideFor,
     Services,
 )
 from mcp_server_paperless.tools.selection import (
@@ -158,7 +159,6 @@ INTRO = (
     "tags, correspondents, document types and storage paths."
 )
 START = f"Start with {OVERVIEW} to learn the instance and what the current user may do."
-INSTRUCTIONS = f"{INTRO} {START} {DOCUMENT_TEXT}"
 
 NO_TOOLS = (
     "No tools are left to offer: PAPERLESS_MCP_TOOLSETS, PAPERLESS_MCP_READ_ONLY,"
@@ -295,22 +295,28 @@ def describe_toolsets(
     enabled: frozenset[str],
     hidden: frozenset[str],
     *,
-    unavailable: frozenset[str],
-    unchecked: frozenset[str],
+    started: bool | None,
+    now: bool | None,
 ) -> tuple[str, ToolsetGuide]:
-    """The server instructions and the guide to the toolsets, for what is known about Paperless.
+    """The server instructions and the guide to the toolsets: the one place both are composed.
 
-    Nothing is described that the selection, read-only mode, disabled tools or a missing
-    capability exclude; a capability that could not be checked is named as a gap.
+    ``started`` is whether Paperless AI was on when the server started (None: not known), which
+    decides what is on; ``now`` is what Paperless says now, which decides what is off, so that
+    nothing is promised that a restart would not deliver. Nothing is described that the
+    selection, read-only mode, disabled tools or a missing capability exclude; a capability that
+    could not be checked is named as a gap.
     """
+    requires = catalogue.requires
+    unavailable = unavailable_toolsets(ai_enabled=started, requires=requires)
     guide = toolset_guide(
         catalogue.tool_toolsets,
         catalogue.summaries,
-        catalogue.requires,
+        requires,
         selected=enabled,
         hidden=hidden,
         unavailable=unavailable,
-        unchecked=unchecked,
+        unchecked=unchecked_toolsets(ai_enabled=now, requires=requires),
+        missing_now=unavailable_toolsets(ai_enabled=now, requires=requires),
     )
     overview = OVERVIEW in visible_tools(catalogue.tool_toolsets, enabled - unavailable, hidden)
     parts = (INTRO, START if overview else "", DOCUMENT_TEXT, guide_text(guide, overview=overview))
@@ -463,7 +469,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     overview.paperless_version,
                     overview.api_version,
                 )
-            guide = await _hide_unavailable(
+            guide_for = await _hide_unavailable(
                 running,
                 (capability_rule, prompt_rule),
                 catalogue,
@@ -472,16 +478,10 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 hidden=hidden,
                 selected=selected,
             )
-            yield {SERVICES: services, GUIDE: guide}
+            yield {SERVICES: services, GUIDE: guide_for}
 
     # Until Paperless answers no capability is known; the start replaces these instructions.
-    instructions, _ = describe_toolsets(
-        catalogue,
-        enabled,
-        hidden,
-        unavailable=frozenset(),
-        unchecked=frozenset(catalogue.requires),
-    )
+    instructions, _ = describe_toolsets(catalogue, enabled, hidden, started=None, now=None)
     server = FastMCP(
         name="mcp-server-paperless",
         instructions=instructions,
@@ -510,14 +510,14 @@ async def _hide_unavailable(  # noqa: PLR0913 -- the rules, the catalogue and wh
     enabled: frozenset[str],
     hidden: frozenset[str],
     selected: frozenset[str],
-) -> ToolsetGuide:
+) -> GuideFor:
     """Hide toolsets whose capability Paperless lacks and the prompts that need what is hidden.
 
-    Tells the instructions and the guide what Paperless answered. Fails if no tool is left to
-    offer.
+    Tells the instructions what Paperless answered. Fails if no tool is left to offer.
 
     Returns:
-        The guide to the toolsets that are on and off.
+        What builds the guide to the toolsets on and off from what Paperless says about AI at the
+        time of a call (what is on stays as the start found it).
     """
     rule, prompt_rule = rules
     ai_enabled = overview.ai_enabled if overview else None
@@ -528,12 +528,8 @@ async def _hide_unavailable(  # noqa: PLR0913 -- the rules, the catalogue and wh
             logger.warning("Toolset %s is hidden: Paperless does not offer what it needs", toolset)
     if not await server.list_tools():
         raise InvalidConfiguration(NO_TOOLS)
-    server.instructions, guide = describe_toolsets(
-        catalogue,
-        enabled,
-        hidden,
-        unavailable=unavailable,
-        unchecked=unchecked_toolsets(ai_enabled=ai_enabled, requires=catalogue.requires),
+    server.instructions, _ = describe_toolsets(
+        catalogue, enabled, hidden, started=ai_enabled, now=ai_enabled
     )
     # From the catalogue, not from a listing: what a caller may list can depend on who asks.
     callable_tools = {name for name in selected if catalogue.tool_toolsets[name] not in unavailable}
@@ -546,4 +542,8 @@ async def _hide_unavailable(  # noqa: PLR0913 -- the rules, the catalogue and wh
         if name not in catalogue.prompt_specs
         or not catalogue.prompt_specs[name].tools <= callable_tools
     }
-    return guide
+
+    def guide_for(*, now: bool | None) -> ToolsetGuide:
+        return describe_toolsets(catalogue, enabled, hidden, started=ai_enabled, now=now)[1]
+
+    return guide_for

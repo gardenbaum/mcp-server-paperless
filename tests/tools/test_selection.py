@@ -11,7 +11,9 @@ from mcp.types import ToolAnnotations
 
 from mcp_server_paperless.domain.errors import InvalidConfiguration
 from mcp_server_paperless.tools.selection import (
-    enable_text,
+    ENABLE,
+    PARTIAL,
+    guide_text,
     hidden_tools,
     selected_toolsets,
     toolset_guide,
@@ -128,11 +130,11 @@ def test_a_toolset_is_unchecked_when_its_capability_is_unknown(
 # A catalogue of its own, so that the guide is proven for toolsets of any size: `bulk` has a read
 # and a write tool, `trash` only writes, `ai` needs a capability, `core` is the one selected.
 GUIDE_TOOLSETS = {
-    "find": "core",
+    "find_it": "core",
     "list_bulk": "bulk",
     "change_bulk": "bulk",
-    "empty": "trash",
-    "ask": "ai",
+    "empty_bin": "trash",
+    "ask_ai": "ai",
 }
 SUMMARIES = {"core": "the basics", "bulk": "many at once", "trash": "the bin", "ai": "AI answers"}
 
@@ -143,6 +145,7 @@ def guide(
     hidden: set[str] | None = None,
     unavailable: set[str] | None = None,
     unchecked: set[str] | None = None,
+    missing_now: set[str] | None = None,
 ) -> ToolsetGuide:
     return toolset_guide(
         GUIDE_TOOLSETS,
@@ -152,6 +155,7 @@ def guide(
         hidden=frozenset(hidden or set()),
         unavailable=frozenset(unavailable or set()),
         unchecked=frozenset(unchecked or set()),
+        missing_now=None if missing_now is None else frozenset(missing_now),
     )
 
 
@@ -159,23 +163,24 @@ def test_the_guide_names_what_is_on_and_each_toolset_that_is_off_with_its_tools(
     result = guide()
 
     assert result.on == ("core",)
-    assert [(t.toolset, t.what, t.tools, t.unchecked) for t in result.off] == [
-        ("bulk", "many at once", ("list_bulk", "change_bulk"), None),
-        ("trash", "the bin", ("empty",), None),
-        ("ai", "AI answers", ("ask",), None),
+    assert [(t.toolset, t.what, t.tools) for t in result.off] == [
+        ("bulk", "many at once", ("list_bulk", "change_bulk")),
+        ("trash", "the bin", ("empty_bin",)),
+        ("ai", "AI answers", ("ask_ai",)),
     ]
+    assert result.unchecked == {}
 
 
 def test_a_toolset_left_without_a_tool_is_not_offered() -> None:
-    result = guide(hidden={"empty", "ask"})
+    result = guide(hidden={"empty_bin", "ask_ai"})
 
     assert [t.toolset for t in result.off] == ["bulk"]
 
 
-def test_a_toolset_cut_down_by_hidden_tools_says_which_tools_remain_not_what_it_is_for() -> None:
+def test_a_toolset_cut_down_by_hidden_tools_is_not_described_by_what_it_is_for() -> None:
     [bulk, *_] = guide(hidden={"change_bulk"}).off
 
-    assert (bulk.what, bulk.tools) == ("only list_bulk", ("list_bulk",))
+    assert (bulk.what, bulk.tools) == (PARTIAL, ("list_bulk",))
 
 
 def test_a_toolset_whose_capability_is_missing_is_not_offered() -> None:
@@ -187,15 +192,35 @@ def test_a_toolset_whose_capability_is_missing_is_not_offered() -> None:
 def test_a_toolset_whose_capability_is_unchecked_is_offered_with_that_gap() -> None:
     result = guide(unchecked={"ai"})
 
-    assert [(t.toolset, t.unchecked) for t in result.off] == [
-        ("bulk", None),
-        ("trash", None),
-        ("ai", "Paperless AI"),
-    ]
+    assert [t.toolset for t in result.off] == ["bulk", "trash", "ai"]
+    assert result.unchecked == {"ai": "Paperless AI"}
+
+
+def test_a_gap_is_shown_for_a_toolset_that_is_on_too() -> None:
+    result = guide(selected={"core", "ai"}, unchecked={"ai"})
+
+    assert result.on == ("core", "ai")
+    assert result.unchecked == {"ai": "Paperless AI"}
+
+
+def test_a_gap_of_a_toolset_that_is_neither_on_nor_off_is_not_shown() -> None:
+    result = guide(selected={"core", "ai"}, unchecked={"ai"}, hidden={"ask_ai"})
+
+    assert result.unchecked == {}
+
+
+def test_what_a_restart_delivers_decides_the_off_list_what_runs_now_decides_the_on_list() -> None:
+    # Started without AI (ai hidden), Paperless now says AI is on: a restart delivers it.
+    started_without = guide(selected={"core", "ai"}, unavailable={"ai"}, missing_now=set())
+    # Started with AI, Paperless now says it is off: a restart would not deliver it.
+    started_with = guide(unavailable=set(), missing_now={"ai"})
+
+    assert started_without.on == ("core",)
+    assert [t.toolset for t in started_with.off] == ["bulk", "trash"]
 
 
 def test_a_selected_toolset_that_offers_no_tool_is_not_on() -> None:
-    result = guide(selected={"core", "trash"}, hidden={"empty"})
+    result = guide(selected={"core", "trash"}, hidden={"empty_bin"})
 
     assert result.on == ("core",)
     assert [t.toolset for t in result.off] == ["bulk", "ai"]
@@ -205,29 +230,83 @@ def test_a_selected_toolset_whose_capability_is_missing_is_not_on() -> None:
     assert guide(selected={"core", "ai"}, unavailable={"ai"}).on == ("core",)
 
 
-def test_the_enable_text_gives_the_new_setting_and_the_restart_for_every_channel() -> None:
-    text = guide(selected={"core", "ai"}).enable or ""
+def test_the_enable_text_keeps_the_selection_and_leaves_a_placeholder_for_the_new_toolset() -> None:
+    text = guide(selected={"core", "ai"}).switch_on or ""
 
-    assert "PAPERLESS_MCP_TOOLSETS=core,ai,bulk" in text
-    for channel in ("plugin", "stdio", "HTTP", "image"):
+    assert "PAPERLESS_MCP_TOOLSETS=core,ai,<name>" in text
+    assert "bulk" not in text  # the first toolset that is off is no example to follow
+
+
+def test_the_enable_text_says_who_acts_and_does_not_make_all_look_like_the_default() -> None:
+    text = ENABLE.format(value="core,<name>")
+
+    assert "The operator, not you, switches one on: ask the user" in text
+    assert "do not edit the configuration yourself" in text
+    assert "not all" in text
+    assert "or all" not in text
+
+
+def test_the_enable_text_names_the_restart_of_every_way_to_run_the_server() -> None:
+    text = ENABLE.format(value="core,<name>")
+
+    for channel in (
+        "Claude Code plugin: option Toolsets, restart Claude Code",
+        "Cursor plugin: no such option",
+        "stdio: env of the server entry in the MCP client's config",
+        "docker run -i: -e",
+        "HTTP and image: environment of the process or container",
+        "recreate the container",
+    ):
         assert channel in text
-    assert text.count("restart") >= 1
 
 
 def test_the_enable_text_keeps_a_selected_toolset_that_offers_nothing_now() -> None:
-    text = guide(selected={"core", "trash"}, hidden={"empty"}).enable or ""
+    text = guide(selected={"core", "trash"}, hidden={"empty_bin"}).switch_on or ""
 
-    assert "PAPERLESS_MCP_TOOLSETS=core,trash,bulk" in text
+    assert "PAPERLESS_MCP_TOOLSETS=core,trash,<name>" in text
 
 
 def test_with_nothing_off_there_is_nothing_to_enable() -> None:
     result = guide(selected={"core", "bulk", "trash", "ai"})
 
-    assert (result.off, result.enable) == ((), None)
+    assert (result.off, result.switch_on) == ((), None)
 
 
-def test_the_enable_text_is_the_same_function_for_the_overview_and_the_instructions() -> None:
-    assert enable_text(("core", "ai"), "bulk") == guide(selected={"core", "ai"}).enable
+def test_the_instructions_list_the_setting_before_the_toolsets_that_are_off() -> None:
+    text = guide_text(guide(selected={"core", "ai"}), overview=True)
+
+    assert text.index("Toolsets on: core, ai.") < text.index("PAPERLESS_MCP_TOOLSETS=")
+    assert text.index("PAPERLESS_MCP_TOOLSETS=") < text.index("Off: bulk (many at once);")
+    assert text.endswith("Their tools: get_instance_overview.")
+
+
+def test_the_instructions_name_no_tool_not_even_of_a_cut_down_toolset() -> None:
+    cut = guide(hidden={"change_bulk"})
+    text = guide_text(cut, overview=False)
+
+    assert f"bulk ({PARTIAL})" in text
+    for tool in GUIDE_TOOLSETS:
+        assert tool not in text
+    assert "Their tools" not in text
+
+
+def test_the_instructions_show_the_gap_of_a_toolset_on_and_of_one_off() -> None:
+    both = guide(selected={"core", "ai"}, unchecked={"ai"})
+    one_off = guide(unchecked={"ai"})
+
+    assert "Toolsets on: core, ai (needs Paperless AI, not checked)." in guide_text(
+        both, overview=True
+    )
+    assert "ai (AI answers; needs Paperless AI, not checked)" in guide_text(one_off, overview=True)
+
+
+def test_the_instructions_show_a_gap_even_when_nothing_is_off() -> None:
+    result = guide(selected={"core", "bulk", "trash", "ai"}, unchecked={"ai"})
+
+    assert guide_text(result, overview=True) == (
+        "Toolsets on: core, bulk, trash, ai (needs Paperless AI, not checked)."
+    )
+    assert guide_text(guide(selected={"core", "bulk", "trash", "ai"}), overview=True) == ""
 
 
 def test_a_toolset_without_a_summary_is_described_by_its_name() -> None:

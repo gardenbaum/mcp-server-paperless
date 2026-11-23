@@ -10,7 +10,7 @@ calls on ``Services``. The registry tests
 import functools
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, Final, cast
+from typing import TYPE_CHECKING, Annotated, Final, Protocol, cast
 
 from fastmcp.exceptions import ResourceError, ToolError
 from mcp.types import ToolAnnotations
@@ -928,9 +928,15 @@ def services(ctx: Context) -> Services:
     return cast("Services", ctx.lifespan_context[SERVICES])
 
 
-def guide_of(ctx: Context) -> ToolsetGuide:
-    """The toolsets this server offers and the ones it does not, as the start found them."""
-    return cast("ToolsetGuide", ctx.lifespan_context[GUIDE])
+class GuideFor(Protocol):
+    """Builds the guide to the toolsets for what Paperless says about AI now."""
+
+    def __call__(self, *, now: bool | None) -> ToolsetGuide: ...
+
+
+def guide_for(ctx: Context, *, ai_enabled: bool | None) -> ToolsetGuide:
+    """The toolsets on and off: what is on as the start found it, what is off by ``ai_enabled``."""
+    return cast("GuideFor", ctx.lifespan_context[GUIDE])(now=ai_enabled)
 
 
 def boundary[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:

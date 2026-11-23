@@ -37,6 +37,11 @@ SHARDS = 3
 # lands in some shard without anyone editing this table; refresh the numbers when the balance
 # drifts (a test checks the split of the current table against the measured seconds). Keys are
 # paths relative to the repository.
+# PLMCP-82 ESTIMATES, to be replaced by the next e2e-full measurement: test_toolset_guide,
+# test_http and test_instance_reader. Run 45214768651 on the first version of PLMCP-82 (one live
+# start per case) took 185 s, 14 s and 56 s hosted. This version asks Paperless once per kind of
+# user and takes 33 s, 12 s and 3 s of its own time locally (46, 25 and 16 s with the start of the
+# stack's session), so the weights are scaled to that, not measured on a hosted runner.
 MODULE_SECONDS: dict[str, float] = {
     "tests/contract/test_bulk.py": 284,
     "tests/contract/test_document_writer.py": 174,
@@ -65,18 +70,19 @@ MODULE_SECONDS: dict[str, float] = {
     "tests/e2e/test_mail.py": 15,
     "tests/e2e/test_files.py": 14,
     "tests/e2e/test_stdio.py": 14,
+    "tests/e2e/test_toolset_guide.py": 45,
     "tests/e2e/test_tasks.py": 12,
     "tests/contract/test_ai_reader.py": 10,
     "tests/e2e/test_sharing.py": 10,
     "tests/contract/test_workflows.py": 8,
     "tests/e2e/test_documents.py": 8,
     "tests/contract/test_views.py": 7,
-    "tests/e2e/test_http.py": 6,
+    "tests/e2e/test_http.py": 20,
     "tests/e2e/test_search.py": 6,
     "tests/e2e/test_views.py": 6,
     "tests/contract/test_mail.py": 5,
     "tests/e2e/test_workflows.py": 5,
-    "tests/contract/test_instance_reader.py": 3,
+    "tests/contract/test_instance_reader.py": 20,
     "tests/contract/test_view_filters.py": 3,
     "tests/e2e/test_ai.py": 2,
     "tests/e2e/test_stack.py": 2,
@@ -136,12 +142,14 @@ ALIASES: dict[str, tuple[str, ...]] = {
         "test_taxonomy_edits",
         "test_taxonomy_reader",
         "test_taxonomy_writer",
+        "test_toolset_guide",
         "test_update_document",
     ),
     # The entry points start the server the HTTP transport test talks to (decision-27).
     "app": ("test_http",),
     "cli": ("test_http",),
-    "server": ("test_http",),
+    # server.py composes the instructions and the guide to the toolsets (decision-41).
+    "server": ("test_http", "test_toolset_guide"),
     "documents": (
         "test_document_reader",
         "test_document_writer",
@@ -174,7 +182,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "tag_hierarchy": ("test_taxonomy_edits",),
     "taxonomy": ("test_taxonomy_edits", "test_taxonomy_reader", "test_taxonomy_writer"),
     "taxonomy_edits": ("test_taxonomy_edits",),
-    "instance": ("test_instance_reader",),
+    "instance": ("test_instance_reader", "test_toolset_guide"),
     "ai": ("test_ai_reader",),
     "principals": ("test_admin", "test_permissions"),
     "admin_accounts": ("test_admin", "test_permissions"),

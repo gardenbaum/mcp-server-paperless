@@ -92,7 +92,6 @@ class OffToolset(_Frozen):
     toolset: str
     what: str
     tools: tuple[str, ...]
-    unchecked: str | None
 
 
 class ToolsetGuide(_Frozen):
@@ -100,7 +99,8 @@ class ToolsetGuide(_Frozen):
 
     on: tuple[str, ...]
     off: tuple[OffToolset, ...]
-    enable: str | None
+    switch_on: str | None
+    unchecked: dict[str, str]
 
 
 class ServerOverview(InstanceOverview):

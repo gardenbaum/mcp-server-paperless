@@ -27,6 +27,7 @@ E2E = [
     "stdio",
     "tasks",
     "taxonomy_edits",
+    "toolset_guide",
     "trash",
     "update_document",
     "upload_document",
@@ -203,10 +204,17 @@ def test_shared_plumbing_runs_the_smoke_set_and_the_modules_of_its_stem() -> Non
     assert client.targets == (STDIO, *sorted((set(SMOKE) | {e2e("test_client")}) - {STDIO}))
 
 
-@pytest.mark.parametrize("name", ["app", "cli", "server"])
+@pytest.mark.parametrize("name", ["app", "cli"])
 def test_the_entry_points_run_the_http_transport_test_besides_the_smoke_set(name: str) -> None:
     selection = pick(f"src/mcp_server_paperless/{name}.py")
     assert set(selection.targets) == set(SMOKE) | {e2e("test_http")}
+
+
+def test_the_composition_root_also_runs_the_guide_to_the_toolsets() -> None:
+    selection = pick("src/mcp_server_paperless/server.py")
+    assert set(selection.targets) == set(SMOKE) | {e2e("test_http"), e2e("test_toolset_guide")}
+    for path in ("domain/instance.py", "tools/selection.py", "tools/core.py"):
+        assert e2e("test_toolset_guide") in pick(f"src/mcp_server_paperless/{path}").targets
 
 
 def test_every_live_module_is_reachable_from_a_source_path_or_the_smoke_set() -> None:
@@ -428,18 +436,19 @@ HOSTED_SECONDS = {
     "tests/e2e/test_mail.py": 15,
     "tests/e2e/test_files.py": 14,
     "tests/e2e/test_stdio.py": 14,
+    "tests/e2e/test_toolset_guide.py": 45,
     "tests/e2e/test_tasks.py": 12,
     "tests/contract/test_ai_reader.py": 10,
     "tests/e2e/test_sharing.py": 10,
     "tests/contract/test_workflows.py": 8,
     "tests/e2e/test_documents.py": 8,
     "tests/contract/test_views.py": 7,
-    "tests/e2e/test_http.py": 6,
+    "tests/e2e/test_http.py": 20,
     "tests/e2e/test_search.py": 6,
     "tests/e2e/test_views.py": 6,
     "tests/contract/test_mail.py": 5,
     "tests/e2e/test_workflows.py": 5,
-    "tests/contract/test_instance_reader.py": 3,
+    "tests/contract/test_instance_reader.py": 20,
     "tests/contract/test_view_filters.py": 3,
     "tests/e2e/test_ai.py": 2,
     "tests/e2e/test_stack.py": 2,

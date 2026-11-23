@@ -55,7 +55,7 @@ from mcp_server_paperless.tools._shared import (
     ANNOTATIONS,
     Confirm,
     boundary,
-    guide_of,
+    guide_for,
     resource_boundary,
     services,
 )
@@ -141,7 +141,7 @@ async def get_instance_overview(ctx: Context) -> ServerOverview:
     field means the user may not see it, not that it is off: ai_enabled null means unknown.
     """
     overview = await services(ctx).instance.overview()
-    return ServerOverview.of(overview, guide_of(ctx))
+    return ServerOverview.of(overview, guide_for(ctx, ai_enabled=overview.ai_enabled))
 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["list_taxonomy"])
