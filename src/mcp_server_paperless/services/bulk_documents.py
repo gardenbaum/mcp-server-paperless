@@ -113,7 +113,9 @@ class _Operation:
 
 
 DRY_RUN: Final = "Dry run, nothing was changed."
-TO_GO_AHEAD: Final = "To go ahead, call again without dry_run and with confirm=true."
+TO_GO_AHEAD: Final = (
+    "To go ahead, call again without dry_run; pass confirm=true only if the user already agreed."
+)
 
 
 @dataclass(frozen=True, slots=True)

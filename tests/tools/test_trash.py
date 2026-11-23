@@ -103,7 +103,7 @@ async def test_empty_trash_takes_a_described_confirm_that_defaults_to_false() ->
     assert properties["document_ids"]["default"] is None
     description = " ".join((tools["empty_trash"].description or "").split())
     assert "never empties everything by default" in description
-    assert "whatever the trash holds when the confirmed call runs" in description
+    assert "whatever the trash holds then" in description
     assert "at most 100" in description
 
 

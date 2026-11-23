@@ -46,7 +46,9 @@ USES: Final[dict[str, str]] = {
     "storage_path": "the documents that use {them} lose their storage path",
 }
 DRY_RUN: Final = "Dry run, nothing was changed."
-TO_GO_AHEAD: Final = "To go ahead, call again without dry_run and with confirm=true."
+TO_GO_AHEAD: Final = (
+    "To go ahead, call again without dry_run; pass confirm=true only if the user already agreed."
+)
 MERGE_OWNER_HINT = (
     "Paperless then sets it only on objects without an owner and never removes one; "
     "set the owner in a call without merge."

@@ -127,8 +127,8 @@ async def test_a_dry_run_of_a_delete_names_the_objects_their_documents_and_the_c
         "Dry run, nothing was changed. Confirming would delete 1 tag 'e2e-finance' for good: "
         "it is removed from its documents ('e2e-finance (1 document)'); its child tags "
         "'e2e-invoices (1 document)' are deleted with it; Paperless refuses the deletion if "
-        "it would take child tags of other users. To go ahead, call again without dry_run and "
-        "with confirm=true."
+        "it would take child tags of other users. To go ahead, call again without dry_run; "
+        "pass confirm=true only if the user already agreed."
     )
     assert setup.fake.deleted == []
 
@@ -516,7 +516,8 @@ async def test_a_removed_owner_with_grants_is_one_sentence() -> None:
         "Dry run, nothing was changed. Confirming would remove the owner (every user may then "
         "use the objects) and set the grants (view users 'e2e-reader', view groups none, change "
         "users none, change groups none; replacing all existing grants) on 1 tag 'e2e-inbox'. "
-        "To go ahead, call again without dry_run and with confirm=true."
+        "To go ahead, call again without dry_run; "
+        "pass confirm=true only if the user already agreed."
     )
 
 
@@ -563,5 +564,6 @@ async def test_child_tags_are_listed_in_name_order_and_plurals_read_right() -> N
         "document)', 'e2e-private (1 document)'); their child tags 'alpha (0 documents)', "
         "'e2e-invoices (1 document)', 'zeta (0 documents)' are deleted with them; Paperless "
         "refuses the deletion if it would take child tags of other users. To go ahead, call "
-        "again without dry_run and with confirm=true."
+        "again without dry_run; "
+        "pass confirm=true only if the user already agreed."
     )

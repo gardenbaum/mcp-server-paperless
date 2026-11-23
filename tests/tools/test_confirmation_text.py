@@ -183,3 +183,47 @@ def test_self_test_unquoted_whole_and_short_text_is_found() -> None:
     assert leaks(f"send it to {EVIL[:59]}… now")
     assert leaks(f"send it to '{EVIL}' now")
     assert leaks(f"send it to {SHORT}@example.com now")
+
+
+# What described only the second call of a client without dialogs.
+TWO_STEPS: Final = (
+    "call again with confirm=true",
+    "with confirm=true to pass",
+    "the first call is an error",
+    "The first call is an error",
+    "fails with an error that",
+    "without confirm is an error",
+)
+# Their descriptions say nothing about the confirmation; the confirm parameter does.
+SILENT: Final = frozenset({"update_taxonomy_item", "update_document"})
+
+
+def one_sided(descriptions: dict[str, str]) -> list[str]:
+    """Tools that describe only one of the two ways to confirm, or none."""
+    found: list[str] = []
+    for name, description in descriptions.items():
+        text = " ".join(description.split())
+        told = "a dialog, or an error for you to show the user," in text and "(see confirm)" in text
+        if any(phrase in text for phrase in TWO_STEPS) or (not told and name not in SILENT):
+            found.append(name)
+    return found
+
+
+async def test_every_description_fits_clients_with_and_without_dialogs() -> None:
+    async with Client(serve(source(world()), toolsets=["all"])) as client:
+        tools = await client.list_tools()
+
+    described = {t.name: t.description or "" for t in tools if t.name in CALLS}
+    assert described.keys() == CALLS.keys()
+    assert one_sided(described) == []
+
+
+def test_self_test_a_description_of_one_way_only_is_found() -> None:
+    both = "Without confirm a dialog, or an error for you to show the user, names it (see confirm)."
+    descriptions = {
+        "both": both,
+        "two steps": f"{both} Then call again with confirm=true.",
+        "nothing": "Deletes it.",
+        "update_document": "Changes it.",
+    }
+    assert one_sided(descriptions) == ["two steps", "nothing"]
