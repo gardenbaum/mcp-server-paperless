@@ -8,6 +8,7 @@ import os
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import zipfile
 from pathlib import Path
@@ -827,7 +828,7 @@ asyncio.run(main())
 
 @pytest.mark.skipif("PAPERLESS_MCP_FULL_DISK" not in os.environ, reason="needs a small tmpfs")
 async def test_a_really_full_disk_leaves_nothing() -> None:
-    root = Path(os.environ["PAPERLESS_MCP_FULL_DISK"])
+    root = Path(tempfile.mkdtemp(dir=os.environ["PAPERLESS_MCP_FULL_DISK"]))
 
     class Optimist(System):
         @override
