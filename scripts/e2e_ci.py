@@ -41,6 +41,8 @@ SHARDS = 3
 # pull-request-tier run, 45223357290 (hosted, the timestamp gap of each module's progress line, as
 # above), not the median of several full runs; the next e2e-full runs should replace them
 # (PLMCP-44).
+# PLMCP-74: test_pages and test_pages_files were measured on macOS (2026-11-23), not hosted; the next
+# e2e-full runs should replace them.
 MODULE_SECONDS: dict[str, float] = {
     "tests/contract/test_bulk.py": 284,
     "tests/contract/test_document_writer.py": 174,
@@ -57,6 +59,8 @@ MODULE_SECONDS: dict[str, float] = {
     "tests/contract/test_trash.py": 41,
     "tests/contract/test_notes_and_trash.py": 40,
     "tests/e2e/test_permissions.py": 40,
+    "tests/e2e/test_pages_files.py": 160,
+    "tests/e2e/test_pages.py": 47,
     "tests/e2e/test_admin.py": 39,
     "tests/contract/test_document_reader.py": 31,
     "tests/contract/test_admin.py": 30,
@@ -136,6 +140,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
         "test_instance_reader",
         "test_notes_and_trash",
         "test_pages",
+        "test_pages_files",
         "test_search",
         "test_task_reader",
         "test_tasks",
@@ -155,6 +160,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
         "test_document_writer",
         "test_files",
         "test_notes_and_trash",
+        "test_pages",
         "test_search",
         "test_update_document",
     ),
@@ -177,6 +183,13 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "bulk_taxonomy": ("test_bulk",),
     "selection": ("test_bulk", "test_toolset_guide"),
     "page_ranges": ("test_pages", "test_pdf"),
+    "pages": ("test_pages_files",),
+    # The renderer (rendering/ and domain/rendering.py).
+    "rendering": ("test_pages", "test_pages_files"),
+    "worker": ("test_pages", "test_pages_files"),
+    "runner": ("test_pages", "test_pages_files"),
+    "wire": ("test_pages", "test_pages_files"),
+    "limits": ("test_pages", "test_pages_files"),
     "task_outcome": ("test_tasks", "test_task_reader"),
     "tasks": ("test_task_reader",),
     "tag_hierarchy": ("test_taxonomy_edits",),
@@ -200,7 +213,7 @@ _ENTRY_STEMS = frozenset({"app", "cli", "server"})
 _NON_CODE_PREFIXES = ("backlog/", "docs/", ".github/ISSUE_TEMPLATE/")
 _CODE_PREFIXES = ("docs/vendor/",)
 _SOURCE = re.compile(
-    r"src/mcp_server_paperless/(?:(?:tools|services|paperless|domain)/)?([a-z][a-z0-9_]*)\.py"
+    r"src/mcp_server_paperless/(?:(?:tools|services|paperless|domain|rendering)/)?([a-z][a-z0-9_]*)\.py"
 )
 _UNIT_TEST = re.compile(r"tests/(?:adapter|services|tools)/test_([a-z][a-z0-9_]*)\.py")
 _LIVE_TEST = re.compile(r"tests/(?:e2e|contract)/test_[a-z][a-z0-9_]*\.py")

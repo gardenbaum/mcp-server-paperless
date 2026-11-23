@@ -4,7 +4,7 @@ title: Show the pages of a document as readable images
 status: In Progress
 assignee: []
 created_date: '2026-11-23T12:14:45Z'
-updated_date: '2026-11-23T20:18:03Z'
+updated_date: '2026-11-23T20:48:13Z'
 labels: []
 dependencies: []
 priority: high
@@ -69,4 +69,6 @@ Phase 2a and review of 8bda9c4 (4 Important, 6 Minor): all confirmed and fixed, 
 Further gate notes: tests/adapter/schema_guard.py accepts the undeclared query parameter version on download and metadata (documented in api.md); ruff per-file ignores N802, N803 and A002 for typings/ (upstream names).
 
 Security review of 8bda9c4..: the wait for a killed child is bounded (1 s) and its pipes are closed whatever holds the other end (red first: 40 s); only a single real JPEG frame of the measured size is handed to PDFium, without trailing data or further MPO pictures.
+
+Phase 2b (merged with main 517ac8e, paperless-ngx 3.5.1; own stack plmcp74-e2e on port 8020): test_pages 8, test_pages_files 12 (2 Office skipped there), contract test_document_versions, test_files, test_stdio, test_http, test_toolset_guide green on 3.5.1. Time limit: a page with a long shading calculation; memory limit: a progressive JPEG of 400 megapixels; Paperless takes both because page 1 is plain and both pages have text. Damaged: a JPEG without its end (Paperless refuses cut PNG, WebP and TIFF and a broken content stream). A deleted version is still answered by Paperless and not shown by the tool. Office and e-mail overlay: 46 s with images present (26 s start, 8.5 s docx, 5.7 s eml), 36 s more for the first pull. Weights measured on macOS: test_pages 47 s, test_pages_files 160 s; split in two modules because all of it in the documents map breaks the tier budget of 3 x 450 s (1494 s).
 <!-- SECTION:NOTES:END -->
