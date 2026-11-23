@@ -1,11 +1,11 @@
 ---
 id: PLMCP-54
 title: Rename the import package to mcp_server_paperless
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-22T21:39:19Z'
-updated_date: '2026-11-22T23:49:08Z'
+updated_date: '2026-11-23T00:16:46Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -26,15 +26,15 @@ Owner, 2026-11-22: after PLMCP-53 the distribution and its console script are `m
 - [x] #1 The import package is `mcp_server_paperless` everywhere in src, tests, scripts and configuration, and the uv_build `module-name` override is gone
 - [x] #2 The import-linter contracts, the coverage and mutmut configuration and the recorded mutant equivalents name the new package and still pass unchanged in strength
 - [x] #3 README and docs name the new module (`python -m mcp_server_paperless`) and the changed logger names; the console scripts keep their names
-- [ ] #4 This is the release pull request: it switches README and docs/http.md to `uvx mcp-server-paperless@latest` with a warning that the PyPI project `paperless-mcp` is a different server, and a new `v*` tag (above v0.1.1, whose image is already published; the version comes from the tag, decision-33) is pushed right after the merge so the name is claimed within minutes
+- [x] #4 This is the release pull request: it switches README and docs/http.md to `uvx mcp-server-paperless@latest` with a warning that the PyPI project `paperless-mcp` is a different server, and a new `v*` tag (above v0.1.1, whose image is already published; the version comes from the tag, decision-33) is pushed right after the merge so the name is claimed within minutes
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [x] #1 Tests written first (red, then green) at every test level the change touches
-- [ ] #2 just check passes locally and all required CI checks are green on the PR
+- [x] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -56,4 +56,12 @@ Rename: git mv src/paperless_mcp src/mcp_server_paperless and a word replacement
 README links repository files by their https://github.com/gardenbaum/paperless-mcp/blob/main/ URL so they work on the PyPI page (deferred PLMCP-53 review note); tests/quality/test_docs.py checks those links like relative ones (file and heading) and a new test refuses relative file links in the README.
 Docs never named python -m or the logger names, so AC #3 needs no doc text beyond the package name; the logger names follow __name__ and are now mcp_server_paperless.*.
 Verified: just check green (4639 passed, the two known macOS-only tests deselected; 9 contracts kept; basedpyright 0/0/0); wheel from uv build --no-sources holds only mcp_server_paperless, python -m mcp_server_paperless and mcp-server-paperless start and refuse without configuration; a mutmut run on mcp_server_paperless.paperless.pagination* names its mutants mcp_server_paperless.paperless.pagination.x_collect__mutmut_16/17, matching mutation-equivalents.toml.
+
+Merged as fe3136e (#74) after the branch was updated from main; required checks, CodeQL and all e2e shards green; Codex review of the reviewed head completed with no findings. Owner (2026-11-23) approved the tag: v0.2.0 on fe3136e; PyPI run 45087639951 built and published mcp_server_paperless-0.2.0 (wheel and sdist) by Trusted Publishing. uvx mcp-server-paperless@latest runs 0.2.0 and refuses without configuration; over stdio against the owner's Paperless it reports version 0.2.0 and 18 tools.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The import package is mcp_server_paperless (269 files, mechanical; the uv_build module-name override is gone), so it no longer collides with the unrelated PyPI project paperless-mcp, which installs paperless_mcp. Environment variables, the MCP server name and the console scripts paperless-mcp / paperless-mcp-http are unchanged; logger names follow the package. README and docs/http.md start the server with uvx mcp-server-paperless@latest and warn about paperless-mcp; README links repository files by URL so they work on the PyPI page, and the docs link test checks them. Released as v0.2.0: mcp-server-paperless 0.2.0 is on PyPI and runs via uvx. Not verified: the full weekly mutation run on the renamed package (a sample matched mutation-equivalents.toml) and how PyPI renders every README element.
+<!-- SECTION:FINAL_SUMMARY:END -->
