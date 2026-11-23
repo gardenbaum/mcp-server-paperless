@@ -4,6 +4,7 @@ title: Complete the task list and document history, reading and writing
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:22:03Z'
+updated_date: '2026-11-23T12:24:43Z'
 labels: []
 dependencies: []
 priority: medium
@@ -25,7 +26,7 @@ The task list is in the admin toolset (off by default), beside user administrati
 - [ ] #4 A decision settles whether the task tools get a toolset that does not need user administration
 - [ ] #5 Document history older than the newest 50 entries is readable page by page, without OCR text
 - [ ] #6 The statistics needed for troubleshooting beyond get_instance_overview (task summary and status counts, and what else statistics and status give) are readable
-- [ ] #7 Every endpoint of tasks, document history, statistics and status in the 3.4 schema is covered; a proposed omission is put to the owner, and only an owner-approved exclusion, quoted with its date, is recorded (in the coverage table of PLMCP-83 once it exists)
+- [ ] #7 Every endpoint of tasks, document history, statistics and status in the 3.4 schema is covered; a proposed omission is put to the owner, and only an owner-approved exclusion, quoted with its date, is recorded (in the coverage table of PLMCP-91)
 - [ ] #8 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover each filter, the aggregates, acknowledge all, every startable type and paging of history
 <!-- AC:END -->
 

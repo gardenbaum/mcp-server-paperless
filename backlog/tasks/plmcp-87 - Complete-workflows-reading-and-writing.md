@@ -4,6 +4,7 @@ title: Complete workflows, reading and writing
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:22:01Z'
+updated_date: '2026-11-23T12:24:42Z'
 labels: []
 dependencies: []
 priority: medium
@@ -23,7 +24,7 @@ The toolset workflows (off by default) already reads, creates, changes, switches
 - [ ] #2 Writing: one trigger or action can be added, changed or removed without resending the others; switching on and off and reordering keep working
 - [ ] #3 Why a workflow did not run on a document is explained from its settings, document history and logs; the API keeps no run record beyond that, and the answer says so
 - [ ] #4 Every path keeps decision-21 (confirm, hidden headers and passwords, unwritable types) or a superseding decision says otherwise
-- [ ] #5 Every endpoint of workflows, workflow_triggers and workflow_actions in the 3.4 schema is covered; a proposed omission is put to the owner, and only an owner-approved exclusion, quoted with its date, is recorded (in the coverage table of PLMCP-83 once it exists)
+- [ ] #5 Every endpoint of workflows, workflow_triggers and workflow_actions in the 3.4 schema is covered; a proposed omission is put to the owner, and only an owner-approved exclusion, quoted with its date, is recorded (in the coverage table of PLMCP-91)
 - [ ] #6 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover each new read and write, the decision-21 refusals on the new paths and hidden values
 <!-- AC:END -->
 

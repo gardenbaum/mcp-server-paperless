@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:22:02Z'
+updated_date: '2026-11-23T12:24:43Z'
 labels: []
 dependencies: []
 priority: medium
@@ -24,7 +25,7 @@ The toolset views (off by default) reads and writes name, rules, sort and page s
 - [ ] #1 Every field of SavedView (icon, display_mode, display_fields, owner, permissions) can be read and written
 - [ ] #2 Dashboard and sidebar visibility of a view can be read and written in /api/ui_settings/ of the current user, without losing other settings; the tool says it applies to that user only
 - [ ] #3 Owner and permission changes follow decisions 12 and 19 (confirm)
-- [ ] #4 Every endpoint of saved_views and the saved-view part of ui_settings in the 3.4 schema is covered; a proposed omission is put to the owner, and only an owner-approved exclusion, quoted with its date, is recorded (in the coverage table of PLMCP-83 once it exists)
+- [ ] #4 Every endpoint of saved_views and the saved-view part of ui_settings in the 3.4 schema is covered; a proposed omission is put to the owner, and only an owner-approved exclusion, quoted with its date, is recorded (in the coverage table of PLMCP-91)
 - [ ] #5 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover every field, clearing, sharing with and without confirm, and that other UI settings survive a write
 <!-- AC:END -->
 
