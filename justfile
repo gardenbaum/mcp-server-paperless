@@ -188,6 +188,13 @@ image tag="mcp-server-paperless:dev":
 image-smoke tag="mcp-server-paperless:dev": (image tag)
     scripts/image_smoke.sh {{tag}}
 
+# Build the stdio target the Docker MCP Catalog uses (decision-38) and run
+# scripts/image_stdio_smoke.sh on it: refuses without a token, runs read-only as uid 10001, answers
+# an MCP initialize and tools/list. Needs jq.
+image-stdio-smoke tag="mcp-server-paperless-stdio:dev":
+    docker build --target stdio --tag {{tag}} .
+    scripts/image_stdio_smoke.sh {{tag}}
+
 # Start the Paperless 3.4.2 E2E stack (tests/e2e/compose.yaml) on 127.0.0.1:${PAPERLESS_E2E_PORT:-8010}.
 # Readiness and seeding are the test session's job, so this returns as soon as the containers run.
 e2e-up:

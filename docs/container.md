@@ -93,4 +93,19 @@ Paperless is reachable: the tools report that. All other [settings](configuratio
 unchanged as environment variables. To build the image yourself, `just image` builds it and
 `just image-smoke` also checks that it refuses to start without tokens, runs read-only as
 non-root, becomes healthy and answers 401 without a token, 421 for a foreign `Host` and an MCP initialize with a token. The rules
-are decision-28, carried over into decision-37.
+are decision-28, carried over into decision-38.
+
+The published image serves HTTP only. The Dockerfile also has the build target `stdio`, for the
+[Docker MCP Catalog](https://hub.docker.com/mcp), which builds local servers from their repository
+and starts them over stdin and stdout. `docker build --target stdio .` builds it and
+`just image-stdio-smoke` also checks it. It runs as the same user, listens on no port and needs only
+`PAPERLESS_URL` and `PAPERLESS_TOKEN`:
+
+```sh
+docker build --target stdio --tag mcp-server-paperless-stdio .
+docker run --rm -i --init -e PAPERLESS_URL=https://paperless.example.org \
+    -e PAPERLESS_TOKEN=your-api-token mcp-server-paperless-stdio
+```
+
+Uploading by path works only for directories you mount (`-v`, readable for uid 10001) and name in
+`PAPERLESS_MCP_UPLOAD_DIRS` by their path in the container. The rules are decision-38.
