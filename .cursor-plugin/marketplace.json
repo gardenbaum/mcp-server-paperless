@@ -1,0 +1,16 @@
+{
+  "name": "gardenbaum",
+  "owner": {
+    "name": "gardenbaum"
+  },
+  "metadata": {
+    "description": "MCP server for paperless-ngx 3.x"
+  },
+  "plugins": [
+    {
+      "name": "mcp-server-paperless",
+      "source": "plugin",
+      "description": "Search, read, file, tag and upload documents in your paperless-ngx 3.x archive, by name and with a confirmation step before anything final."
+    }
+  ]
+}
