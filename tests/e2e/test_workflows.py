@@ -155,8 +155,8 @@ async def test_a_workflow_that_acts_is_refused_until_confirmed_and_secrets_stay_
 
     text = await refused(client, "create_workflow", **acting)
     assert stored(stack, name) == []
-    assert "send a POST request to hooks.example.org" in text
-    assert "send an e-mail to a@example.org" in text
+    assert "send a POST request to 'hooks.example.org'" in text
+    assert "send an e-mail to 'a@example.org'" in text
     assert "s3" not in text
     assert "real-token" not in text
 

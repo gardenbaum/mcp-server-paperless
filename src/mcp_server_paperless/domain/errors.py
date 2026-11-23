@@ -5,7 +5,7 @@ Every message is client-safe: it never carries credentials, stack traces or raw 
 """
 
 import hashlib
-import re
+import unicodedata
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Final
@@ -52,17 +52,24 @@ CONFIRM_HINT = (
 )
 
 
-# Characters that hide or reorder text in a message: control characters that are not white space,
-# bidirectional controls and tag characters. Joiners stay, emoji and some scripts need them.
-_CONTROL: Final = "\x00-\x08\x0e-\x1b\x7f-\x84\x86-\x9f"
-_BIDI: Final = "\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069"
-_TAGS: Final = "\U000e0000-\U000e007f"
-_HIDDEN: Final = re.compile(f"[{_CONTROL}{_BIDI}{_TAGS}]")
+# Fillers that show as nothing though Unicode calls them letters or symbols, and the variation
+# selectors beyond the 16 that emoji use.
+_FILLERS: Final = frozenset({0x115F, 0x1160, 0x2800, 0x3164, 0xFFA0, *range(0xE0100, 0xE01F0)})
+# The zero-width non-joiner and joiner: some scripts and emoji need them.
+_JOINERS: Final = frozenset({0x200C, 0x200D})
+
+
+def _hidden(character: str) -> bool:
+    """Whether ``character`` hides or reorders text: controls, format characters and fillers."""
+    code = ord(character)
+    if unicodedata.category(character) in {"Cc", "Cf"}:
+        return code not in _JOINERS and not character.isspace()
+    return code in _FILLERS
 
 
 def _line(text: str) -> str:
     """``text`` on one line, without characters that hide or reorder it."""
-    return " ".join(_HIDDEN.sub("", text).split())
+    return " ".join("".join(c for c in text if not _hidden(c)).split())
 
 
 # The fingerprint of the refusal the user has accepted, while the accepted call runs.
@@ -103,8 +110,10 @@ class ConfirmationRequired(Validation):
         return cls(f"Nothing was changed. Confirming would {_line(effect)}.", scope=scope)
 
     @classmethod
-    def require(cls, effect: str, *, scope: object = None) -> None:
+    def require(cls, effect: str, *, scope: object) -> None:
         """Refuse like ``for_effect``, unless the user accepted exactly this refusal.
+
+        ``scope`` has no default: a caller whose text tells everything apart says so with None.
 
         Raises:
             ConfirmationRequired: The user has not accepted this effect on this ``scope``.

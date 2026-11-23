@@ -6,11 +6,13 @@ writes, so a write fails the test.
 
 import asyncio
 import copy
+import gc
 import json
 import logging
 from typing import TYPE_CHECKING, Literal, cast, override
 
 import anyio
+import anyio.lowlevel
 import pytest
 from confirmation import CALLS, NOT_AGAIN, NOTE, PASSWORD, YES, answering, source, world
 from fakes.paperless import FakeDocument, FakePaperless
@@ -520,6 +522,30 @@ async def test_progress_is_reported_while_the_dialog_is_open_and_not_after() -> 
     assert {message for _, message in reports} == {"Waiting for the user to confirm."}
 
 
+async def test_a_failing_progress_report_ends_neither_the_dialog_nor_in_the_log() -> None:
+    unhandled: list[object] = []
+    loop = asyncio.get_running_loop()
+    before = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: unhandled.append(context))
+
+    async def wait() -> None:
+        await anyio.sleep(0.1)
+
+    broken = Dialogs(progress_every=cast("float", cast("object", "x")))  # raises a TypeError
+    try:
+        result = await call(
+            server(source(world()), broken), "legacy", answering("accept", YES, before=wait)
+        )
+        # asyncio would report it when the task is freed, but cancelling a finished task stops that.
+        _ = gc.collect()
+        await anyio.lowlevel.checkpoint()
+    finally:
+        loop.set_exception_handler(before)
+
+    assert not result.is_error
+    assert unhandled == []
+
+
 async def test_a_call_the_client_gives_up_changes_nothing() -> None:
     state = world()
     opened = anyio.Event()
@@ -689,7 +715,7 @@ async def test_a_tool_called_on_the_server_without_a_client_refuses() -> None:
     @served.tool
     @boundary
     async def destroy() -> None:
-        ConfirmationRequired.require("destroy")
+        ConfirmationRequired.require("destroy", scope=None)
 
     with pytest.raises(ToolError) as raised:
         _ = await served.call_tool("destroy")
@@ -714,7 +740,7 @@ async def test_the_accepted_run_gets_the_same_arguments() -> None:
 
     async def tool(a: int, *, b: int) -> None:
         seen.append((a, b))
-        ConfirmationRequired.require("x")
+        ConfirmationRequired.require("x", scope=None)
 
     with pytest.raises(ToolError):
         await boundary(tool)(1, b=2)

@@ -101,6 +101,8 @@ class _Operation:
     mirrored: Callable[[list[DocumentHit]], set[int]] = lambda _hits: set()
     # Whether removing tags also takes child tags the user cannot see off the documents.
     hidden_children: bool = False
+    # Whether it works on the documents' files, so that a file added meanwhile matters.
+    on_files: bool = False
 
     def phrase(self, docs: str) -> str:
         return f"{self.lead}{docs}{self.tail}"
@@ -202,10 +204,13 @@ class BulkDocumentEditor:
             raise PermissionDenied(message, hint=hint)
         others = await self._others(resolved.mirrored(changing), {hit.id for hit in hits})
         if not (dry_run or not changing or confirm):
+            ids = [hit.id for hit in changing]
+            files = await self._reader.get_newest_versions(ids) if resolved.on_files else {}
             ConfirmationRequired.require(
                 self._effect(resolved, changing, others),
                 scope=(
-                    [hit.id for hit in changing],
+                    ids,
+                    sorted(files.items()),
                     [number for number, _ in others],
                     resolved.change,
                 ),
@@ -368,6 +373,7 @@ class BulkDocumentEditor:
                 change=TrashDocuments(),
                 effects=lambda hits: dict.fromkeys((h.id for h in hits), "move to the trash"),
                 dirty=COUNTED,
+                on_files=True,
             )
         return _Operation(
             name=operation.op,
@@ -376,6 +382,7 @@ class BulkDocumentEditor:
             change=ReprocessChange(),
             effects=lambda hits: dict.fromkeys((h.id for h in hits), "reprocess"),
             dirty=(),
+            on_files=True,
         )
 
     async def _tag_ids(self, values: Sequence[NameOrId]) -> list[int]:

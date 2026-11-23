@@ -289,7 +289,7 @@ async def test_a_password_user_and_a_group_with_permissions_are_refused_until_co
     group = await refusal(source, "create_group", name="powers", permissions=["add_user"])
 
     assert "create user 'mallory' with a password" in user
-    assert "create group 'powers' that grants its members the permissions add_user" in group
+    assert "create group 'powers' that grants its members the permissions 'add_user'" in group
 
 
 async def test_every_archive_has_a_uri_of_its_own() -> None:

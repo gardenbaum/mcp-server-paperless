@@ -66,13 +66,13 @@ class NoteService:
             raise NotFound(message, hint="List the notes with get_document and include notes.")
         if not confirm:
             note = found[0]
-            who = f"by {note.user}, " if note.user else ""
+            who = f"by {quoted(note.user)}, " if note.user else ""
             effect = (
                 f"delete note {note_id} ({who}{len(note.note)} characters, starting "
                 f"{quoted(note.note, EXCERPT_CHARS)}) from document {document_id} "
                 f"{quoted(document.title)} for good; notes have no trash"
             )
-            ConfirmationRequired.require(effect)
+            ConfirmationRequired.require(effect, scope=note)
         await self._writer.delete_note(document_id, note_id)
         return NoteDeleted(
             document_id=document_id,

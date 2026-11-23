@@ -66,10 +66,6 @@ SELF_HINT: Final = "Ask another administrator to do this in the Paperless web UI
 NOTHING_GIVEN: Final = "Nothing to change: no field was given."
 
 
-def _names(values: Sequence[str]) -> str:
-    return ", ".join(values)
-
-
 def _quoted(values: Sequence[str]) -> str:
     return ", ".join(quoted(value) for value in values)
 
@@ -200,7 +196,7 @@ class AccountAdmin:
         if group_ids:
             parts.append(f"in the groups {_quoted(await self._group_names(group_ids))}")
         if permissions:
-            parts.append(f"with the permissions {_names(permissions)}")
+            parts.append(f"with the permissions {_quoted(permissions)}")
         if parts and not confirm:
             effect = f"create user {quoted(username)} {'; '.join(parts)}"
             ConfirmationRequired.require(effect, scope=group_ids)
@@ -283,7 +279,7 @@ class AccountAdmin:
                 message=f"User {who} already is as asked; nothing was changed.",
             )
         if effects and not confirm:
-            ConfirmationRequired.require("; ".join(effects), scope=(number, changes))
+            ConfirmationRequired.require("; ".join(effects), scope=(current, changes))
         made = await self._writer.update_user(number, UserValues.model_validate(changes))
         self._taxonomy.invalidate("user")
         shown = ", ".join(changes)
@@ -356,9 +352,9 @@ class AccountAdmin:
             added = [p for p in permissions if p not in current.permissions]
             removed = [p for p in current.permissions if p not in permissions]
             if added:
-                effects.append(f"grant {who} the permissions {_names(added)}")
+                effects.append(f"grant {who} the permissions {_quoted(added)}")
             if removed:
-                effects.append(f"take the permissions {_names(removed)} away from {who}")
+                effects.append(f"take the permissions {_quoted(removed)} away from {who}")
         if password is not None:
             changes["password"] = password
         return changes, effects
@@ -384,7 +380,7 @@ class AccountAdmin:
                 "owner (every user with the permission may then see them), their grants are "
                 f"removed and they can no longer sign in{rank}"
             )
-            ConfirmationRequired.require(effect, scope=number)
+            ConfirmationRequired.require(effect, scope=current)
         await self._writer.delete_user(number)
         self._taxonomy.invalidate("user")
         return Deletion(id=number, name=current.username, message=f"Deleted user {who}.")
@@ -405,9 +401,10 @@ class AccountAdmin:
         if permissions and not confirm:
             effect = (
                 f"create group {quoted(name)} that grants its members the permissions "
-                f"{_names(permissions)}"
+                f"{_quoted(permissions)}"
             )
-            ConfirmationRequired.require(effect)
+            # The text names the group and every permission; nothing is stored yet.
+            ConfirmationRequired.require(effect, scope=None)
         values = GroupValues(name=name, permissions=tuple(permissions or ()))
         made = await self._writer.create_group(values)
         self._taxonomy.invalidate("group")
@@ -446,9 +443,9 @@ class AccountAdmin:
             added = [p for p in permissions if p not in current.permissions]
             removed = [p for p in current.permissions if p not in permissions]
             if added:
-                effects.append(f"give the members of {who} the permissions {_names(added)}")
+                effects.append(f"give the members of {who} the permissions {_quoted(added)}")
             if removed:
-                effects.append(f"take the permissions {_names(removed)} away from them")
+                effects.append(f"take the permissions {_quoted(removed)} away from them")
         if not changes:
             return GroupOutcome(
                 group=self._group_detail(current),
@@ -456,7 +453,7 @@ class AccountAdmin:
                 message=f"Group {who} already is as asked; nothing was changed.",
             )
         if effects and not confirm:
-            ConfirmationRequired.require("; ".join(effects), scope=(number, changes))
+            ConfirmationRequired.require("; ".join(effects), scope=(current, changes))
         made = await self._writer.update_group(number, GroupValues.model_validate(changes))
         self._taxonomy.invalidate("group")
         return GroupOutcome(
@@ -480,7 +477,7 @@ class AccountAdmin:
                 f"delete group {who} for good; its members lose the permissions it grants and "
                 "objects shared with the group are no longer shared with them"
             )
-            ConfirmationRequired.require(effect, scope=number)
+            ConfirmationRequired.require(effect, scope=current)
         await self._writer.delete_group(number)
         self._taxonomy.invalidate("group")
         return Deletion(id=number, name=current.name, message=f"Deleted group {who}.")

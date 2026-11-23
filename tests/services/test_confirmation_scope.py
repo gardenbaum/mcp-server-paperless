@@ -23,10 +23,16 @@ from fakes.paperless import (
 )
 from fakes.sharing import FakeShareBundle
 
-from mcp_server_paperless.domain.bulk import AddTags, DeleteItems
+from mcp_server_paperless.domain.bulk import (
+    AddTags,
+    DeleteDocuments,
+    DeleteItems,
+    ReprocessDocuments,
+)
 from mcp_server_paperless.domain.documents import DocumentEdit
 from mcp_server_paperless.domain.errors import ConfirmationRequired, accepting
 from mcp_server_paperless.domain.mail import MailRuleSettings
+from mcp_server_paperless.domain.pdf import PageSlot
 from mcp_server_paperless.domain.permissions import PermissionsRequest
 from mcp_server_paperless.domain.taxonomy import SelectOption
 from mcp_server_paperless.domain.taxonomy_edits import TaxonomyEdit
@@ -48,13 +54,16 @@ from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
 from mcp_server_paperless.services.document_edits import DocumentEditor
 from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.mail import MailService
+from mcp_server_paperless.services.notes import NoteService
 from mcp_server_paperless.services.pdf import PdfService
 from mcp_server_paperless.services.permissions import PermissionService
+from mcp_server_paperless.services.removal import DocumentRemoval
 from mcp_server_paperless.services.sharing import SharingService
 from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
 from mcp_server_paperless.services.trash import TrashService
+from mcp_server_paperless.services.versions import VersionService
 from mcp_server_paperless.services.views import ViewService
 from mcp_server_paperless.services.workflows import WorkflowService
 
@@ -283,6 +292,11 @@ def other_group(state: FakeState) -> None:
     state.groups = [FakeGroup(id=11, name="e2e-group")]
 
 
+def other_permissions(state: FakeState) -> None:
+    """The group grants more now; `update_group` takes it away without saying it was there."""
+    state.groups = [FakeGroup(id=1, name="e2e-group", permissions=frozenset({"add_user"}))]
+
+
 def correspondents(state: FakeState) -> Callable[[], Awaitable[object]]:
     fake, taxonomy = fakes(state)
     service = BulkTaxonomyEditor(fake, fake, taxonomy)
@@ -368,9 +382,156 @@ def other_owner(state: FakeState) -> None:
     state.documents[0].owner = 2
 
 
+def newer_file(state: FakeState) -> None:
+    """Someone uploads a new version of every document."""
+    for number, document in enumerate(state.documents, start=900):
+        [*_, root] = document.versions
+        newer = root.model_copy(update={"id": number, "is_root": False})
+        document.versions = [newer, *document.versions]
+
+
+def scans(state: FakeState) -> FakePaperless:
+    """Three PDFs, two of them one page-worth of work for the pdf tools."""
+    state.documents = [FakeDocument(id=n, title=f"Scan {n}", page_count=4) for n in (1, 2, 3)]
+    return fakes(state)[0]
+
+
+def pdf_call(
+    start: Callable[[PdfService], Awaitable[object]],
+) -> Callable[[FakeState], Callable[[], Awaitable[object]]]:
+    def make(state: FakeState) -> Callable[[], Awaitable[object]]:
+        fake = scans(state)
+        service = PdfService(fake, fake, TaskService(fake), web_url=WEB)
+        return lambda: start(service)
+
+    return make
+
+
+def sharing_call(
+    start: Callable[[SharingService], Awaitable[object]],
+) -> Callable[[FakeState], Callable[[], Awaitable[object]]]:
+    def make(state: FakeState) -> Callable[[], Awaitable[object]]:
+        fake = scans(state)
+        state.email_enabled = True
+        service = SharingService(fake, fake, fake, web_url=WEB)
+        return lambda: start(service)
+
+    return make
+
+
+def bulk_call(
+    operation: DeleteDocuments | ReprocessDocuments,
+) -> Callable[[FakeState], Callable[[], Awaitable[object]]]:
+    def make(state: FakeState) -> Callable[[], Awaitable[object]]:
+        fake = scans(state)
+        service = BulkDocumentEditor(fake, fake, fakes(state)[1], web_url=WEB)
+        return lambda: service.edit([1, 2], operation, dry_run=False, confirm=False)
+
+    return make
+
+
+def delete_document(state: FakeState) -> Callable[[], Awaitable[object]]:
+    fake = scans(state)
+    service = DocumentRemoval(fake, fake, fakes(state)[1])
+    return lambda: service.delete(1)
+
+
+def merge_versions(state: FakeState) -> Callable[[], Awaitable[object]]:
+    fake = scans(state)
+    service = VersionService(fake, fake, fakes(state)[1], web_url=WEB)
+    return lambda: service.merge(1, [2], None)
+
+
+def newer_root(state: FakeState) -> None:
+    [root] = state.documents[0].versions
+    newer = root.model_copy(update={"id": 900, "is_root": False})
+    state.documents[0].versions = [newer, root]
+
+
+def move_account(state: FakeState) -> Callable[[], Awaitable[object]]:
+    account(state)
+    fake, taxonomy = fakes(state)
+    service = MailService(fake, fake, taxonomy, fake)
+    return lambda: service.update_account(1, imap_server="other.example")
+
+
+def other_mailbox(state: FakeState) -> None:
+    state.mail_accounts[0].username = "someone else"
+
+
+def delete_mail_rule(state: FakeState) -> Callable[[], Awaitable[object]]:
+    account(state)
+    fake, taxonomy = fakes(state)
+    service = MailService(fake, fake, taxonomy, fake)
+    return lambda: service.delete_rule(1, confirm=False)
+
+
+def other_email(state: FakeState) -> None:
+    state.users = [
+        replace(u, email="other@x.org") if u.username == "e2e-reader" else u for u in state.users
+    ]
+
+
+def renamed_note(state: FakeState) -> None:
+    """The same length and the same start, another end."""
+    document = state.documents[0]
+    document.notes = [n.model_copy(update={"note": n.note[:-1] + "!"}) for n in document.notes]
+
+
+def delete_note(state: FakeState) -> Callable[[], Awaitable[object]]:
+    note = state.documents[0].notes[0]
+    state.documents[0].notes = [note.model_copy(update={"note": "word " * 60})]
+    fake, _ = fakes(state)
+    service = NoteService(fake, fake, web_url=WEB)
+    return lambda: service.delete(1, 1)
+
+
+SLOT = [PageSlot(page=1)]
+
+
+NEWER_FILE = {
+    "delete_pages": pdf_call(lambda s: s.delete_pages(1, "2")),
+    "edit_pdf": pdf_call(lambda s: s.edit(1, SLOT, output="replace_original")),
+    "split": pdf_call(lambda s: s.split(1, ["1", "2"], output="replace_original")),
+    "remove_password": pdf_call(lambda s: s.remove_password(1, "x", output="replace_original")),
+    "merge": pdf_call(lambda s: s.merge([1, 2], None, delete_originals=True)),
+    "reprocess": pdf_call(lambda s: s.reprocess([1, 2])),
+    "share link": sharing_call(
+        lambda s: s.create_link(1, expires_in_days=1, file_version="archive", confirm=False)
+    ),
+    "share bundle": sharing_call(
+        lambda s: s.create_bundle([1, 2], expires_in_days=1, file_version="archive", confirm=False)
+    ),
+    "e-mail": sharing_call(
+        lambda s: s.email(
+            [1],
+            recipients=["a@x.org"],
+            subject="s",
+            message="m",
+            use_archive_version=True,
+            confirm=False,
+        )
+    ),
+    "bulk delete": bulk_call(DeleteDocuments(op="delete")),
+    "bulk reprocess": bulk_call(ReprocessDocuments(op="reprocess")),
+}
+
+
 @pytest.mark.parametrize(
     ("make", "change"),
     [
+        (delete_document, newer_file),
+        (merge_versions, newer_root),
+        (move_account, other_mailbox),
+        (mail_fetch, other_mailbox),
+        (mail_delete, other_mailbox),
+        (create_rule, other_mailbox),
+        (update_rule, other_mailbox),
+        (delete_mail_rule, wider_rule),
+        (update_user, other_email),
+        (delete_user, other_email),
+        (delete_group, other_permissions),
+        (delete_note, renamed_note),
         (update_workflow, other_trigger),
         (create_workflow, other_tag),
         (delete_view, other_rules),
@@ -403,7 +564,18 @@ async def test_an_acceptance_does_not_cover_other_targets_behind_the_same_text(
     change: Callable[[FakeState], None],
 ) -> None:
     state = seeded()
-    call = make(state)
+    await refused_twice(state, make(state), change)
+
+
+@pytest.mark.parametrize("name", NEWER_FILE)
+async def test_an_acceptance_does_not_cover_a_file_added_meanwhile(name: str) -> None:
+    state = seeded()
+    await refused_twice(state, NEWER_FILE[name](state), newer_file)
+
+
+async def refused_twice(
+    state: FakeState, call: Callable[[], Awaitable[object]], change: Callable[[FakeState], None]
+) -> None:
     with pytest.raises(ConfirmationRequired) as first:
         _ = await call()
     with pytest.raises(ConfirmationRequired) as again:

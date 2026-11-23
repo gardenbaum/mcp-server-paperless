@@ -3299,6 +3299,11 @@ class FakePaperless:
             if d.id in wanted and d.visible_to(self.user)
         }
 
+    async def get_newest_versions(self, document_ids: Collection[int]) -> dict[int, int]:
+        """`DocumentReader.get_newest_versions` (the list view filtered by `id__in`)."""
+        wanted = await self.get_document_titles(document_ids)
+        return {d.id: d.versions[0].id for d in self.state.documents if d.id in wanted}
+
     async def get_document_suggestions(self, document_id: int) -> Suggestions:
         """`DocumentReader.get_document_suggestions` (the `suggestions` action)."""
         return self._sub(document_id).suggestions

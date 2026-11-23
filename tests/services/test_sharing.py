@@ -316,8 +316,8 @@ async def test_an_unconfirmed_email_names_the_recipients_and_the_documents_and_s
     assert raised.value.message == (
         "Nothing was changed. Confirming would send an e-mail with the archive files (the "
         "original where there is none) of "
-        "'e2e-public-invoice' (id 1) and 'e2e-private-note' (id 2) to a@example.com and "
-        "b@example.com (all of them in one To: header, so each sees the others), "
+        "'e2e-public-invoice' (id 1) and 'e2e-private-note' (id 2) to 'a@example.com' and "
+        "'b@example.com' (all of them in one To: header, so each sees the others), "
         "subject 'Invoices', message 'Attached.'; it leaves Paperless and cannot be recalled."
     )
     assert raised.value.hint == CONFIRM_HINT

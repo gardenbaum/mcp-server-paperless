@@ -944,7 +944,7 @@ async def test_a_workflow_that_is_disabled_or_only_assigns_needs_no_confirmation
     ("actions", "acts"),
     [
         ((ActionInput(type="move to trash"),), "move the matching documents to the trash"),
-        ((MAIL,), "send an e-mail to a@example.org"),
+        ((MAIL,), "send an e-mail to 'a@example.org'"),
         (
             (
                 ActionInput(
@@ -954,7 +954,7 @@ async def test_a_workflow_that_is_disabled_or_only_assigns_needs_no_confirmation
                     ),
                 ),
             ),
-            "send an e-mail to a@x.org, b@x.org with the document attached",
+            "send an e-mail to 'a@x.org', 'b@x.org' with the document attached",
         ),
         (
             (
@@ -963,7 +963,7 @@ async def test_a_workflow_that_is_disabled_or_only_assigns_needs_no_confirmation
                     webhook=WebhookSettings(url="https://user:pw@hooks.example:8443/a/b?token=1"),
                 ),
             ),
-            "send a POST request to hooks.example",
+            "send a POST request to 'hooks.example'",
         ),
         (
             (
@@ -972,7 +972,7 @@ async def test_a_workflow_that_is_disabled_or_only_assigns_needs_no_confirmation
                     webhook=WebhookSettings(url="https://h.example/x", include_document=True),
                 ),
             ),
-            "send a POST request to h.example with the document",
+            "send a POST request to 'h.example' with the document",
         ),
         (
             (
@@ -1036,7 +1036,7 @@ async def test_the_refusal_lists_every_acting_action_and_every_trigger() -> None
         "Nothing was changed. Confirming would create the workflow 'Many', which is enabled "
         "and runs by itself on every document that matches its triggers (consumption started, "
         "filtered by filename; scheduled, also on documents that already exist) and will: "
-        "move the matching documents to the trash; send an e-mail to a@example.org."
+        "move the matching documents to the trash; send an e-mail to 'a@example.org'."
     )
 
 

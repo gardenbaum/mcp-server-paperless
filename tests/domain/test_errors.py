@@ -99,10 +99,10 @@ def test_only_the_accepted_effect_on_the_accepted_targets_passes() -> None:
 def test_an_acceptance_ends_with_its_run() -> None:
     accepted = refused("delete note 1")
     with accepting(accepted):
-        ConfirmationRequired.require("delete note 1")
+        ConfirmationRequired.require("delete note 1", scope=None)
 
     with pytest.raises(ConfirmationRequired):
-        ConfirmationRequired.require("delete note 1")
+        ConfirmationRequired.require("delete note 1", scope=None)
 
 
 @pytest.mark.decision("decision-44")
@@ -119,7 +119,21 @@ def test_quoted_text_drops_characters_that_hide_or_reorder_text() -> None:
     assert quoted(f"in{HIDDEN}voice") == "'invoice'"
     # Joiners stay: emoji and some scripts need them.
     assert quoted("\U0001f468\u200d\U0001f469") == "'\U0001f468\u200d\U0001f469'"
+    assert quoted("\u0645\u200c\u0646") == "'\u0645\u200c\u0646'"
+    assert quoted("\u2764\ufe0f") == "'\u2764\ufe0f'"
     assert quoted(f"abc{HIDDEN}de", 5) == "'abcde'"
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize(
+    "code",
+    [
+        *(0xAD, 0x200B, 0x2060, 0x2063, 0xFEFF, 0xFFF9, 0x180E, 0x1D173),
+        *(0x3164, 0x115F, 0x1160, 0xFFA0, 0x2800, 0xE0100, 0xE01EF),
+    ],
+)
+def test_invisible_characters_are_dropped(code: int) -> None:
+    assert quoted(f"a{chr(code)}b") == "'ab'"
 
 
 @pytest.mark.decision("decision-44")

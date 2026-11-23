@@ -17,6 +17,7 @@ from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     PermissionDenied,
     Validation,
+    listed,
     quoted,
 )
 from mcp_server_paperless.domain.taxonomy import TaxonomyItem
@@ -274,11 +275,12 @@ def _acts(actions: Sequence[WorkflowAction]) -> list[str]:
         elif action.type == EMAIL:
             mail = _object(settings.get("email"))
             attached = " with the document attached" if mail.get("include_document") else ""
-            found.append(f"send an e-mail to {mail.get('to')}{attached}")
+            to = [part.strip() for part in str(mail.get("to")).split(",")]
+            found.append(f"send an e-mail to {listed(to)}{attached}")
         elif action.type == WEBHOOK:
             hook = _object(settings.get("webhook"))
             attached = " with the document" if hook.get("include_document") else ""
-            found.append(f"send a POST request to {_host(hook.get('url'))}{attached}")
+            found.append(f"send a POST request to {quoted(_host(hook.get('url')))}{attached}")
         elif action.type == 2:  # noqa: PLR2004 -- removal
             removed = [
                 name.removeprefix("remove_").replace("_", " ")

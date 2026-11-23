@@ -4,7 +4,7 @@ title: Ask the user to confirm destructive actions in a dialog where the client 
 status: In Progress
 assignee: []
 created_date: '2026-11-23T18:44:53Z'
-updated_date: '2026-11-23T21:20:17Z'
+updated_date: '2026-11-23T22:19:02Z'
 labels:
   - tools
   - safety
@@ -76,4 +76,7 @@ Steps for criterion 10 (nothing below changes a client configuration; run in the
 4. Claude Code, HTTP: in another terminal PAPERLESS_URL=http://127.0.0.1:8031 PAPERLESS_TOKEN=$T PAPERLESS_MCP_HTTP_AUTH_TOKENS=test-token-not-a-secret uv run mcp-server-paperless-http; then claude --strict-mcp-config --mcp-config '{"mcpServers":{"paperless":{"type":"http","url":"http://127.0.0.1:8000/mcp","headers":{"Authorization":"Bearer test-token-not-a-secret"}}}}' and step 3. Also claude -p with the same options (no person): expect an error, the tag stays.
 5. VS Code with Copilot (agent mode): an empty folder with .vscode/mcp.json {"servers":{"paperless":{"type":"stdio","command":"uv","args":["run","--directory","<worktree>","mcp-server-paperless"],"env":{"PAPERLESS_URL":"http://127.0.0.1:8031","PAPERLESS_TOKEN":"<T>"}}}}; open it, start the server from the file, then step 3 in the chat. Note the VS Code version.
 6. COMPOSE_PROJECT_NAME=plmcp98-client docker compose -f tests/e2e/compose.yaml down --volumes; delete the folder. Then write the clients seen into docs/configuration.md (Confirmation) and tick criterion 10.
+
+Review findings on 2135d9f fixed (2026-11-23). Goes beyond criterion 4's two exceptions: refusals for clients without dialogs now also quote and cut mail hosts, e-mail recipients (sharing and workflows), webhook hosts, note authors, permission names and list or object settings. A hardening accepted by the main agent, to be reported to the owner. Snapshots test_sharing_messages and test_workflow_messages and the pinned texts of the service, tool and e2e tests were updated for exactly this.
+Acceptance now binds the newest file version (pdf, sharing, versions, delete_document, bulk trash and reprocess) through a new port method DocumentReader.get_newest_versions (one list request, contract tests on fake and live), the mailbox (mail accounts and rules), and the whole user, group, note or rule that is changed. scope is a required keyword; the site guard wants a comment with every None. Hidden characters: Unicode Cf and invisible fillers too. The number of open dialogs stays unlimited (decision-44).
 <!-- SECTION:NOTES:END -->

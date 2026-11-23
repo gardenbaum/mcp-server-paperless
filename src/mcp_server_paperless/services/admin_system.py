@@ -56,8 +56,6 @@ ARCHIVE_NAME: Final = "paperless-documents.zip"
 ZIP: Final = "application/zip"
 # Settings a confirmation names in full; the rest are counted.
 SHOWN: Final = 5
-# The longest value a confirmation shows; `quoted` cuts text at the same 60 characters.
-VALUE_LIMIT: Final = 60
 TASK_EFFECTS: Final[dict[str, str]] = {
     "train_classifier": (
         "train the classifier again: it learns from the documents' current tags and metadata "
@@ -71,11 +69,11 @@ TASK_EFFECTS: Final[dict[str, str]] = {
 
 
 def _shown(value: JsonValue) -> str:
-    """A setting's value for a message: text quoted, anything else as JSON, cut short."""
+    """A setting's value for a message: text, lists and objects quoted and cut, the rest as JSON."""
     if isinstance(value, str):
         return quoted(value)
     text = json.dumps(value)
-    return text if len(text) <= VALUE_LIMIT else text[: VALUE_LIMIT - 1] + "…"
+    return quoted(text) if isinstance(value, list | dict) else text
 
 
 def _plural(count: int, noun: str) -> str:
@@ -295,7 +293,8 @@ class SystemAdmin:
             PermissionDenied: Only a superuser may start tasks.
         """
         if task_type in TASK_EFFECTS and not confirm:
-            ConfirmationRequired.require(TASK_EFFECTS[task_type])
+            # The task is the argument; it has no other target.
+            ConfirmationRequired.require(TASK_EFFECTS[task_type], scope=None)
         task_id = await self._writer.run_task(task_type)
         return StartedTask(
             task_id=task_id,
