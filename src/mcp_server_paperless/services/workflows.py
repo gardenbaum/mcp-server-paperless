@@ -18,6 +18,7 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
     destination,
+    not_shown,
     quoted,
 )
 from mcp_server_paperless.domain.taxonomy import TaxonomyItem
@@ -251,19 +252,40 @@ def _object(value: JsonValue) -> dict[str, JsonValue]:
     return cast("dict[str, JsonValue]", value) if isinstance(value, dict) else {}
 
 
-def _host(url: JsonValue) -> str:
-    """The host of a webhook URL: never its credentials, path or query."""
-    text = str(url)
+USUAL_PORTS: Final[Mapping[str, int]] = {"http": 80, "https": 443}
+
+
+def _webhook(url: str) -> str:
+    """Where a webhook goes, for a message: never its credentials, path or query.
+
+    Raises:
+        Validation: It is not certain where, or it cannot be shown in full.
+    """
     try:
-        return urlsplit(text).hostname or text
+        parts = urlsplit(url)
+        host, port = parts.hostname, parts.port
     except ValueError:
-        return text  # no URL; whoever shows it in full finds that out
+        host = port = None
+        parts = urlsplit("")
+    usual = USUAL_PORTS.get(parts.scheme)
+    if not host or usual is None or "\\" in url:
+        cause = "it is not certain which host it leads to"
+        refused = not_shown("URL of the webhook", cause)
+        raise refused
+    shown = destination(host, "webhook host")
+    if port in {None, usual}:
+        return shown
+    bracketed = f"[{host}]" if ":" in host else host
+    return destination(f"{parts.scheme}://{bracketed}:{port}", "webhook host", "url")
 
 
 def _origin(url: JsonValue) -> tuple[str, str | None, int | None]:
     """Scheme, host and port of a URL, as a webhook's destination."""
-    parts = urlsplit(str(url))
-    return parts.scheme.lower(), parts.hostname, parts.port
+    try:
+        parts = urlsplit(str(url))
+        return parts.scheme.lower(), parts.hostname, parts.port
+    except ValueError:
+        return str(url), None, None  # unreadable: the same only as itself
 
 
 # Most recipients and webhook hosts of one workflow a confirmation lists; with more, nobody reads
@@ -306,13 +328,13 @@ def _acts(actions: Sequence[WorkflowAction]) -> list[str]:
             attached = " with the document attached" if mail.get("include_document") else ""
             to = [part.strip() for part in str(mail.get("to")).split(",")]
             reached = _few(reached + len(to))
-            shown = ", ".join(destination(address, "e-mail address") for address in to)
+            shown = ", ".join(destination(address, "e-mail address", "email") for address in to)
             found.append(f"send an e-mail to {shown}{attached}")
         elif action.type == WEBHOOK:
             hook = _object(settings.get("webhook"))
             attached = " with the document" if hook.get("include_document") else ""
             reached = _few(reached + 1)
-            host = destination(_host(hook.get("url")), "webhook host")
+            host = _webhook(str(hook.get("url")))
             found.append(f"send a POST request to {host}{attached}")
         elif action.type == 2:  # noqa: PLR2004 -- removal
             removed = [

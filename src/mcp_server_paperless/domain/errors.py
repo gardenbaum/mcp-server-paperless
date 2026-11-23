@@ -5,10 +5,11 @@ Every message is client-safe: it never carries credentials, stack traces or raw 
 """
 
 import hashlib
+import re
 import unicodedata
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Literal
 from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
@@ -159,6 +160,10 @@ def quoted(text: str, limit: int = 60) -> str:
     """
     line = _line(text)
     shown = line if len(line) <= limit else line[: limit - 1] + "…"
+    return _in_quotes(shown)
+
+
+def _in_quotes(shown: str) -> str:
     if "'" not in shown:
         return f"'{shown}'"
     if '"' not in shown:
@@ -166,6 +171,8 @@ def quoted(text: str, limit: int = 60) -> str:
     return f"'{shown.replace(chr(39), chr(0x2019))}'"
 
 
+# What a folder may hold besides: plain spaces, and the joiners some scripts need.
+_IN_FOLDERS: Final = frozenset({" ", chr(0x200C), chr(0x200D)})
 # The longest host name has 253 characters, the longest e-mail address 254.
 DESTINATION_LIMIT: Final = 254
 
@@ -187,75 +194,98 @@ _IGNORABLE: Final = frozenset(
     {0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x2800, 0x3164, 0xFFA0}
     | {*range(0x180B, 0x1810), *range(0xFE00, 0xFE10), *range(0xE0000, 0xE1000)}
 )
-LABEL_LIMIT: Final = 63
+type DestinationKind = Literal["host", "email", "url", "folder"]
+# What a character of a destination could be taken for: a comment, a quotation, another part.
+_ODD_IN_EMAIL: Final = frozenset('()<>[]",;:\\')
+_ODD_IN_HOST: Final = frozenset("/\\#?@%")
+_URL: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
 
 
-def _shows(character: str, *, address: bool) -> bool:
-    """Whether a character of a destination is sure to show; a folder may hold plain spaces."""
-    if character == " ":
-        return not address
-    return unicodedata.category(character) not in _NOT_SHOWN and ord(character) not in _IGNORABLE
-
-
-def _host(text: str) -> str:
-    """The host of a URL, an e-mail address or a bare host name.
+def _host_of(text: str, kind: DestinationKind) -> str:
+    """The host a destination leads to.
 
     Raises:
-        ValueError: ``text`` is a URL that cannot be read.
+        ValueError: ``text`` has a form in which another part could be taken for the host.
     """
-    if "://" in text:
-        return urlsplit(text).hostname or ""
-    return text.rpartition("@")[2]
+    host = text
+    if kind == "email":
+        local, _, host = text.rpartition("@")
+        if not local or "@" in local or not _ODD_IN_EMAIL.isdisjoint(text):
+            raise ValueError
+    elif kind == "url" and _URL.match(text):
+        host = urlsplit(text).hostname or ""
+        if "@" in text or "\\" in text or (host.isascii() and not text.isascii()):
+            raise ValueError
+    if not host or not _ODD_IN_HOST.isdisjoint(host):
+        raise ValueError
+    return host
 
 
 def _resolved(host: str) -> str:
     """The form a host with letters beyond ASCII is looked up in (``xn--...``); "" for ASCII.
 
-    Built per label with Punycode, not with Python's ``idna`` codec: that one follows the 2003
-    rules, by which a sharp s becomes "ss", another host than browsers look up.
-
     Raises:
-        ValueError: Resolving would change it to another text, or a label is too long.
+        ValueError: The 2003 rules (Python's ``idna`` codec, and so many clients) and plain
+            Punycode (the 2008 rules, as browsers) give different hosts, or the codec none.
     """
     if host.isascii():
         return ""
     lowered = host.lower()
-    if unicodedata.normalize("NFKC", lowered) != lowered or chr(0x3002) in lowered:
-        raise ValueError
-    labels = [
+    # Not of the lowered text: the 2003 rules know fewer capital letters.
+    found = host.encode("idna").decode().lower()
+    plain = ".".join(
         label if label.isascii() else "xn--" + label.encode("punycode").decode()
         for label in lowered.split(".")
-    ]
-    if any(len(label) > LABEL_LIMIT for label in labels):
+    )
+    if found != plain:
         raise ValueError
-    return ".".join(labels)
+    return found
 
 
-def destination(text: str, what: str, *, address: bool = True) -> str:
+def _shows(character: str, kind: DestinationKind) -> bool:
+    """Whether a character of a destination is sure to show; a folder may hold a little more."""
+    if kind == "folder" and character in _IN_FOLDERS:
+        return True
+    return unicodedata.category(character) not in _NOT_SHOWN and ord(character) not in _IGNORABLE
+
+
+def destination(text: str, what: str, kind: DestinationKind = "host") -> str:
     """``text``, where something would be sent, quoted and in full.
 
-    An ``address`` is a host, an e-mail address or a URL; if its host has letters beyond ASCII, the
-    form it is looked up in follows, so that letters that look like others are visible.
+    If its host has letters beyond ASCII, the form it is looked up in follows, so that letters
+    that look like others are visible.
 
     Raises:
-        Validation: It is too long, holds characters that may not show, or has a host that would
-            be looked up as something else, so the user could not see where it leads.
+        Validation: The user could not be shown where it leads; the message says why.
             ``confirm=true`` does not get past this.
     """
-    shown = quoted(text, DESTINATION_LIMIT)
-    try:
-        resolved = _resolved(_host(text)) if address else ""
-        in_full = shown[1:-1] == text and all(_shows(c, address=address) for c in text)
-    except ValueError:
-        resolved, in_full = "", False
-    if not in_full:
-        message = (
-            f"Nothing was changed: the {what} {both_ends(text)} cannot be shown to the user in "
-            f"full (over {DESTINATION_LIMIT} characters, with characters that may not show, or "
-            "not a host name as it would be looked up)."
-        )
-        raise Validation(message, hint="Correct it, or make this change in the Paperless web UI.")
+    shown, resolved, cause = _in_quotes(text), "", ""
+    if len(text) > DESTINATION_LIMIT:
+        cause = f"it has more than {DESTINATION_LIMIT} characters"
+    elif not all(_shows(character, kind) for character in text):
+        cause = "it holds a character that may not show"
+    elif shown[1:-1] != text:
+        cause = "it holds both kinds of quotes"
+    elif "  " in text:
+        cause = "it holds doubled spaces"
+    elif kind != "folder":
+        try:
+            resolved = _resolved(_host_of(text, kind))
+        except ValueError:
+            cause = "it is not certain which host it leads to"
+    if cause:
+        raise not_shown(what, cause, text)
     return f"{shown} ({resolved})" if resolved else shown
+
+
+def not_shown(what: str, cause: str, text: str | None = None) -> Validation:
+    """The refusal of a destination, with both ends of ``text`` unless that may hold a secret."""
+    named = f" {both_ends(text)}" if text is not None else ""
+    message = (
+        f"Nothing was changed: the {what}{named} cannot be shown to the user in full, because "
+        f"{cause}."
+    )
+    return Validation(message, hint="Correct it, or make this change in the Paperless web UI.")
 
 
 def listed(names: Sequence[str], limit: int = 5) -> str:

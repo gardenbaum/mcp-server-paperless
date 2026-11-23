@@ -177,7 +177,9 @@ class SystemAdmin:
             changes[name] = value
             outbound = name in CONFIG_OUTBOUND
             new = (
-                destination(_text(value), name) if outbound and value is not None else _shown(value)
+                destination(_text(value), name, "url")
+                if outbound and value is not None
+                else _shown(value)
             )
             old = both_ends(_text(now)) if outbound and now is not None else _shown(now)
             if value is None:

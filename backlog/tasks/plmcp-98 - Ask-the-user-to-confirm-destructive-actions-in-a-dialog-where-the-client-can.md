@@ -4,7 +4,7 @@ title: Ask the user to confirm destructive actions in a dialog where the client 
 status: In Progress
 assignee: []
 created_date: '2026-11-23T18:44:53Z'
-updated_date: '2026-11-23T22:48:07Z'
+updated_date: '2026-11-23T23:10:58Z'
 labels:
   - tools
   - safety
@@ -29,7 +29,7 @@ Every confirmation today is an error plus a second call with confirm=true (decis
 - [ ] #1 A new decision records the choice and supersedes the parts of decision-6 and decision-15 that rule elicitation out; doc-1 5.5, doc-2, docs/fastmcp-reading-guide.md, domain/errors.py, the confirm parameter description, README.md and docs/configuration.md agree with it
 - [ ] #2 A call without confirm on a client that declares form elicitation shows the user the same effect text as the refusal, and runs only after the user accepts, on both protocol eras
 - [ ] #3 Decline, cancel and a malformed answer change nothing and return an error that tells the assistant not to retry on its own; a timeout, a disconnect, or an expired or invalid state changes nothing
-- [ ] #4 Clients that do not declare form elicitation get exactly the present refusal and confirm=true flow, except for three message changes the owner approved: the owner-change refusal of update_document names the document and the new owner, messages lose control, format and other hidden characters, and text the server did not write (mail hosts, e-mail recipients, webhook hosts, note authors, permission names, list or object settings) is quoted; destinations are shown in full and refused where that is not possible
+- [ ] #4 Clients that do not declare form elicitation get exactly the present refusal and confirm=true flow, except for three message changes the owner approved (the owner-change refusal of update_document names the document and the new owner; messages lose control, format and other hidden characters; text the server did not write, such as mail hosts, e-mail recipients, webhook hosts, note authors, permission names, list or object settings, is quoted) and for one rule the main agent decided under the owner's instruction of 2026-11-23 "merge bitte selbstständig. Wähle bei Entscheidungen deine Empfehlung." and reported to the owner the same evening, no objection so far: destinations are shown in full and refused where that is not possible
 - [ ] #5 An acceptance applies only to the call and the effect that was shown: with changed arguments it changes nothing, and a target whose effect changed in between asks again and changes nothing
 - [ ] #6 On 2026-07-28, an answer without valid server-issued state for this effect, or with state already used, changes nothing
 - [ ] #7 One mechanism covers every tool with a confirm parameter, guarded by a registry test with a self-test; no tool is added to the default profile
@@ -84,4 +84,6 @@ Delta review of 07b1f76 and security review fixed (2026-11-23). Owner approval o
 A rule whose account its owner cannot see can be changed without confirm again (the account read for the scope treats NotFound and PermissionDenied as no account). The scope of users and groups stays the whole record (N5: safe, left). Tool descriptions and dry-run answers fit clients with dialogs (c5e92b3).
 
 Security review of destination(): destinations use a stricter check than quoted text (no separator, control, format, private, unassigned or default-ignorable character), and a host beyond ASCII is followed by its xn-- form; a host that would be looked up as another text is refused. Standard library only: the punycode codec per label, not the idna codec, whose 2003 rules turn a sharp s into ss. Look-alike letters before the @ of an address are not marked. main 4a05d7c (#110) merged.
+
+Second delta review of ba7e1b4 fixed: a host is refused unless the 2003 and 2008 rules agree on it, odd forms of e-mail addresses, hosts and URLs are refused, webhooks show scheme and an unusual port, refusals name their cause, the update_user description says what needs confirm. Corrects the note above: the origin of the destination rule is the instruction of 2026-11-23 "merge bitte selbstständig. Wähle bei Entscheidungen deine Empfehlung.", not a standing delegation and not an approval of the rule; reported to the owner the same evening, no objection so far. E2E runs on GitHub only from now on (owner).
 <!-- SECTION:NOTES:END -->

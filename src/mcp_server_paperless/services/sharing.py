@@ -391,7 +391,7 @@ class SharingService:
             raise mail_disabled()
         titles = await self._titles(ids)
         kind: FileVersionKind = "archive" if use_archive_version else "original"
-        shown = [destination(address, "e-mail address") for address in addresses]
+        shown = [destination(address, "e-mail address", "email") for address in addresses]
         if not confirm:
             named = joined([f"{quoted(titles[number])} (id {number})" for number in ids])
             together = (

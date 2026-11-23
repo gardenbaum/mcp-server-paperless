@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING
+
 import pytest
 
 from mcp_server_paperless.domain.errors import (
@@ -10,6 +12,9 @@ from mcp_server_paperless.domain.errors import (
     listed,
     quoted,
 )
+
+if TYPE_CHECKING:
+    from mcp_server_paperless.domain.errors import DestinationKind
 
 
 def test_the_description_is_the_message_followed_by_the_hint() -> None:
@@ -175,7 +180,15 @@ def test_a_list_shows_the_names_up_to_the_cap_and_counts_the_rest() -> None:
     assert listed(names[:4], limit=3) == "'a', 'b', 'c' and 1 more"
 
 
+BACKSLASH = chr(92)
+
 # --- destinations -------------------------------------------------------------------------------
+
+
+def refusal(text: str, kind: DestinationKind) -> str:
+    with pytest.raises(Validation, match="cannot be shown to the user in full") as raised:
+        _ = destination(text, "mail server", kind)
+    return raised.value.message
 
 
 @pytest.mark.decision("decision-44")
@@ -188,58 +201,109 @@ def test_a_list_shows_the_names_up_to_the_cap_and_counts_the_rest() -> None:
     ],
 )
 def test_a_destination_holds_no_character_that_may_not_show(code: int) -> None:
-    for text in (f"mail{chr(code)}.example", f"a{chr(code)}b@x.org", f"https://x{chr(code)}.org/"):
-        with pytest.raises(Validation, match="cannot be shown to the user in full"):
-            _ = destination(text, "mail server")
-
-
-@pytest.mark.decision("decision-44")
-def test_a_folder_may_hold_plain_spaces_and_letters_of_any_script() -> None:
-    assert destination("Paperless/Erledigt \u00fcbrig", "folder", address=False) == (
-        "'Paperless/Erledigt \u00fcbrig'"
+    texts: tuple[tuple[str, DestinationKind], ...] = (
+        (f"mail{chr(code)}.example", "host"),
+        (f"a{chr(code)}b@x.org", "email"),
+        (f"https://x{chr(code)}.org/", "url"),
     )
-    with pytest.raises(Validation):
-        _ = destination("a\u00a0b", "folder", address=False)
-    with pytest.raises(Validation):
-        _ = destination("a\u200db", "folder", address=False)
+    for text, kind in texts:
+        assert "a character that may not show" in refusal(text, kind)
 
 
 @pytest.mark.decision("decision-44")
 @pytest.mark.parametrize(
-    ("text", "shown"),
+    "text", ["Paperless/Erledigt \u00fcbrig", " leading", "a\u200db", "Bob's", "x/y.z@w"]
+)
+def test_a_folder_may_hold_letters_spaces_and_joiners(text: str) -> None:
+    assert destination(text, "folder", "folder")[1:-1] == text
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize(
+    ("text", "cause"),
     [
-        ("mail.example", "'mail.example'"),
-        ("a+b@mail.example", "'a+b@mail.example'"),
-        ("https://api.example/v1?x=1", "'https://api.example/v1?x=1'"),
-        ("b\u00fccher.example", "'b\u00fccher.example' (xn--bcher-kva.example)"),
-        ("B\u00dcCHER.example", "'B\u00dcCHER.example' (xn--bcher-kva.example)"),
-        ("a@b\u00fccher.example", "'a@b\u00fccher.example' (xn--bcher-kva.example)"),
-        ("fa\u00df.example", "'fa\u00df.example' (xn--fa-hia.example)"),
-        (
-            "https://b\u00fccher.example:8443/p",
-            "'https://b\u00fccher.example:8443/p' (xn--bcher-kva.example)",
-        ),
-        ("https://x.example/\u00fc", "'https://x.example/\u00fc'"),
+        ("a\u00a0b", "a character that may not show"),
+        ("a  b", "doubled spaces"),
+        ("a' \"b", "both kinds of quotes"),
+        ("x" * 255, "more than 254 characters"),
+    ],
+)
+def test_a_folder_that_cannot_be_shown_says_why(text: str, cause: str) -> None:
+    assert cause in refusal(text, "folder")
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize(
+    ("text", "kind", "resolved"),
+    [
+        ("mail.example", "host", ""),
+        ("mail.example.", "host", ""),
+        ("127.0.0.1", "host", ""),
+        ("::1", "host", ""),
+        ("xn--bcher-kva.example", "host", ""),
+        ("a+b@mail.example", "email", ""),
+        ("o'brien@mail.example", "email", ""),
+        ("https://api.example/v1?x=1", "url", ""),
+        ("http://[::1]:11434/v1", "url", ""),
+        ("localhost:11434", "url", ""),
+        ("b\u00fccher.example", "host", "xn--bcher-kva.example"),
+        ("B\u00dcCHER.example", "host", "xn--bcher-kva.example"),
+        ("a@b\u00fccher.example", "email", "xn--bcher-kva.example"),
+        ("https://b\u00fccher.example:8443/p", "url", "xn--bcher-kva.example"),
         # A Cyrillic a, which looks like the Latin one.
-        ("b\u0430nk.example", "'b\u0430nk.example' (xn--bnk-6cd.example)"),
+        ("b\u0430nk.example", "host", "xn--bnk-6cd.example"),
     ],
 )
-def test_letters_that_look_like_others_are_visible(text: str, shown: str) -> None:
-    assert destination(text, "host") == shown
+def test_letters_that_look_like_others_are_visible(
+    text: str, kind: DestinationKind, resolved: str
+) -> None:
+    quote = '"' if "'" in text else "'"
+    tail = f" ({resolved})" if resolved else ""
+
+    assert destination(text, "host", kind) == f"{quote}{text}{quote}{tail}"
 
 
 @pytest.mark.decision("decision-44")
 @pytest.mark.parametrize(
-    "text",
+    ("text", "kind"),
     [
-        "\uff42ank.example",  # full-width letters resolve to plain ones
-        "bank\u3002example",  # full-width dots separate labels, too
-        "cafe\u0301.example",  # the same word may be stored in two forms
-        "https://[bad",
-        "https://\u2100.example/",
-        "x" * 64 + "\u00fc.example",  # longer than a label may be
+        # Looked up differently by the 2003 and the 2008 rules, or not at all.
+        ("stra\u00dfe.ch", "host"),
+        ("\u03c3\u03bf\u03c2.example", "host"),
+        ("\u13a0\u13a1.example", "host"),
+        ("\uff42ank.example", "host"),
+        ("bank\u3002example", "host"),
+        ("cafe\u0301.example", "host"),
+        ("a..\u0435b", "host"),
+        ("xn--\u00e9\u00e9\u00e9.com", "host"),
+        ("x" * 64 + "\u00fc.example", "host"),
+        ("a@stra\u00dfe.ch", "email"),
+        ("https://stra\u00dfe.ch/", "url"),
+        # Forms in which another part could be taken for the host.
+        ("a@\u0435vil.com(x@good.com)", "email"),
+        ("<a@\u0435vil.com>x@good.com", "email"),
+        ("a@b@good.com", "email"),
+        ("good.com", "email"),
+        ("@good.com", "email"),
+        ("a@", "email"),
+        ("a@evil.com/@good.com", "email"),
+        *((f"a{c}b@good.com", "email") for c in "()<>[],;:" + BACKSLASH),
+        *((f"a{c}b.example", "host") for c in "/#?@%" + BACKSLASH),
+        ("fe80::1%en0", "host"),
+        ("", "host"),
+        ("\u0435vil.com/@good.com", "url"),
+        ("http://good.com#@\u0435vil", "url"),
+        ("g\u043e\u043egle.com#@good.com", "url"),
+        ("\u043a.com://good.com", "url"),
+        ("https://user@good.com/", "url"),
+        ("https://good.com" + BACKSLASH + "@evil.com/", "url"),
+        ("https://good.com/\u0435", "url"),
+        ("http://[fe80::1%25en0]/", "url"),
+        ("https://[bad", "url"),
+        ("https:///path", "url"),
     ],
 )
-def test_a_host_that_resolves_to_something_else_is_refused(text: str) -> None:
-    with pytest.raises(Validation, match="cannot be shown to the user in full"):
-        _ = destination(text, "host")
+def test_a_destination_that_could_be_read_another_way_is_refused(
+    text: str, kind: DestinationKind
+) -> None:
+    assert "not certain" in refusal(text, kind)

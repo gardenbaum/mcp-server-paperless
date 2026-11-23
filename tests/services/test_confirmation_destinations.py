@@ -133,6 +133,73 @@ async def test_hosts_that_differ_only_at_their_end_are_told_apart(host: str) -> 
     assert f"'{url[:254]}'" in await asked(setup.system.update_config({"llm_endpoint": url[:254]}))
 
 
+@pytest.mark.parametrize(
+    ("url", "shown"),
+    [
+        ("https://h.example/p", "'h.example'"),
+        ("https://h.example:443/p", "'h.example'"),
+        ("http://h.example:80/p", "'h.example'"),
+        ("https://h.example:8443/p", "'https://h.example:8443'"),
+        ("http://h.example:443/p", "'http://h.example:443'"),
+        ("https://user:secret@h.example:8443/p", "'https://h.example:8443'"),
+        ("http://[::1]:9000/p", "'http://[::1]:9000'"),
+    ],
+)
+async def test_a_webhook_shows_its_port_unless_it_is_the_usual_one(url: str, shown: str) -> None:
+    setup = Setup()
+    setup.workflow(setup.webhook_action(url))
+
+    message = await asked(setup.workflows.update(1, WorkflowEdit(enabled=True), confirm=False))
+
+    assert f"send a POST request to {shown}" in message
+    assert "secret" not in message
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://[bad",
+        "no-scheme.example/x",
+        "https://good.example" + chr(92) + "@evil.example/",
+        "https://h.example:99999/",
+        "ftp://h.example/",
+        "https://user:secret@/",
+    ],
+)
+async def test_a_webhook_url_that_can_be_read_another_way_is_refused_unseen(url: str) -> None:
+    setup = Setup()
+    setup.workflow(setup.webhook_action(url))
+
+    message = await refused(setup.workflows.update(1, WorkflowEdit(enabled=True), confirm=True))
+
+    assert HIDING in message
+    assert "secret" not in message
+
+
+async def test_a_workflow_with_an_unreadable_webhook_can_be_repaired() -> None:
+    setup = Setup(writes=True)
+    setup.workflow(setup.webhook_action("https://[bad"))
+    hook = ActionInput.model_validate(
+        {"id": 3, "type": "webhook", "webhook": {"url": "https://good.example/"}}
+    )
+    setup.state.workflow_object_id[0] = 9
+
+    _ = await setup.workflows.update(1, WorkflowEdit(actions=(hook,)), confirm=False)
+
+    assert "good.example" in str(setup.state.workflows[0].actions)
+
+
+async def test_a_fetch_shows_the_folder_of_a_moving_rule_to_its_end() -> None:
+    setup = Setup()
+    setup.account("old.example")
+    setup.state.mail_rules[0].action = "move"
+    setup.state.mail_rules[0].action_parameter = "Archive/" + "x" * 200 + "/Trash"
+
+    message = await asked(setup.mail.process_account(1, confirm=False))
+
+    assert f"moves the mail to '{setup.state.mail_rules[0].action_parameter}'" in message
+
+
 async def test_every_recipient_is_named() -> None:
     setup = Setup()
     addresses = [f"user{n}@x.org" for n in range(MAX_DESTINATIONS)]
@@ -188,16 +255,6 @@ async def test_a_destination_that_cannot_be_shown_is_refused(host: str, *, confi
         assert HIDING in await refused(
             setup.workflows.update(1, WorkflowEdit(enabled=True), confirm=confirm)
         )
-
-
-@pytest.mark.parametrize("confirm", [False, True])
-async def test_a_webhook_url_that_is_none_is_refused(*, confirm: bool) -> None:
-    setup = Setup()
-    setup.workflow(setup.webhook_action("https://[bad"))
-
-    assert HIDING in await refused(
-        setup.workflows.update(1, WorkflowEdit(enabled=True), confirm=confirm)
-    )
 
 
 async def test_an_internationalised_host_works_and_shows_what_it_resolves_to() -> None:

@@ -963,7 +963,7 @@ async def test_a_workflow_that_is_disabled_or_only_assigns_needs_no_confirmation
                     webhook=WebhookSettings(url="https://user:pw@hooks.example:8443/a/b?token=1"),
                 ),
             ),
-            "send a POST request to 'hooks.example'",
+            "send a POST request to 'https://hooks.example:8443'",
         ),
         (
             (

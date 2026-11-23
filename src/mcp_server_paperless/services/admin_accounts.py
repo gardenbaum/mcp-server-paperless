@@ -325,7 +325,7 @@ class AccountAdmin:
             effects.append(f"rename user {who} to {new_name}; {RENAME_TAIL}")
         if "email" in changes and changes["email"] is not None:
             verb = "change" if current.email else "set"
-            address = destination(str(changes["email"]), "e-mail address")
+            address = destination(str(changes["email"]), "e-mail address", "email")
             effects.append(f"{verb} the e-mail address of {who} to {address}; {EMAIL_TAIL}")
         if "is_superuser" in changes:
             effects.append(
