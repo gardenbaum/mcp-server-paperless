@@ -228,3 +228,21 @@ def test_with_nothing_off_there_is_nothing_to_enable() -> None:
 
 def test_the_enable_text_is_the_same_function_for_the_overview_and_the_instructions() -> None:
     assert enable_text(("core", "ai"), "bulk") == guide(selected={"core", "ai"}).enable
+
+
+def test_a_toolset_without_a_summary_is_described_by_its_name() -> None:
+    result = toolset_guide(
+        GUIDE_TOOLSETS,
+        {},
+        REQUIRES,
+        selected=frozenset({"core"}),
+        hidden=frozenset(),
+        unavailable=frozenset(),
+        unchecked=frozenset(),
+    )
+
+    assert [(t.toolset, t.what) for t in result.off] == [
+        ("bulk", "bulk"),
+        ("trash", "trash"),
+        ("ai", "ai"),
+    ]

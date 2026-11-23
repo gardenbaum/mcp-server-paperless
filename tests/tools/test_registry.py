@@ -5,7 +5,8 @@ self-tests run every check over a synthetic provider of offending tools, so a ch
 pass for want of offenders (no destructive tool, no path parameter yet) is proven to fire.
 """
 
-from pathlib import Path  # noqa: TC003 -- FastMCP reads tool signatures at runtime
+import ast
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, cast
 
 import pytest
@@ -908,3 +909,45 @@ def test_self_test_credential_names_are_recognised(name: str) -> None:
 @pytest.mark.parametrize("name", ["is_token", "token_expires", "title", "key_count", "name"])
 def test_self_test_harmless_names_are_not_credentials(name: str) -> None:
     assert not credential_like(name)
+
+
+# The methods that change what one session or user sees (decision-41: only the operator widens it).
+SESSION_VISIBILITY = frozenset({"enable_components", "disable_components", "reset_visibility"})
+
+
+def switches_visibility(sources: Mapping[str, str]) -> list[str]:
+    """Calls of the session visibility methods, as "file: method", in source order."""
+    return [
+        f"{name}: {node.func.attr}"
+        for name, text in sources.items()
+        for node in ast.walk(ast.parse(text))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in SESSION_VISIBILITY
+    ]
+
+
+@pytest.mark.decision("decision-41")
+def test_no_code_lets_a_client_or_a_session_change_what_is_offered() -> None:
+    root = Path(__file__).parents[2] / "src"
+    sources = {str(path): path.read_text("utf-8") for path in root.rglob("*.py")}
+
+    assert sources
+    assert switches_visibility(sources) == []
+
+
+@pytest.mark.decision("decision-41")
+def test_self_test_a_session_visibility_call_is_found() -> None:
+    found = switches_visibility(
+        {
+            "bad.py": "async def t(ctx):\n    await ctx.enable_components(tags={'raw'})\n",
+            "also.py": "def f(c):\n    c.reset_visibility()\n    c.disable_components()\n",
+            "fine.py": "def g(server):\n    server.enable(tags={'core'}, only=True)\n",
+        }
+    )
+
+    assert found == [
+        "bad.py: enable_components",
+        "also.py: reset_visibility",
+        "also.py: disable_components",
+    ]

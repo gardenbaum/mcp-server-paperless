@@ -1,11 +1,11 @@
 ---
-updated_date: '2026-11-23T15:53:21Z'
+updated_date: '2026-11-23T16:04:45Z'
 id: decision-41
 title: >-
   Toolsets are switched on by the operator, never by the assistant or per
   session
 date: '2026-11-23T15:39:37Z'
-status: proposed
+status: accepted
 ---
 ## Context
 
@@ -22,7 +22,7 @@ Evidence from the vendored FastMCP 4 docs:
 ## Decision
 
 <!-- SECTION:DECISION:BEGIN -->
-Recommended (proposed, for the controller to settle): toolsets are switched on by the operator only.
+Toolsets are switched on by the operator only. The controller accepted this on 2026-11-23 under the owner's delegation of the choice; the owner did not approve the wording.
 
 - `PAPERLESS_MCP_TOOLSETS`, `PAPERLESS_MCP_READ_ONLY` and `PAPERLESS_MCP_DISABLED_TOOLS` are read at startup and stay the ceiling. No tool and no session rule widens the selection: the server never calls `enable_components`, `disable_components` or `reset_visibility` for a client, and offers no tool that changes the selection.
 - The server tells the assistant what is off, what each toolset adds (exactly the tools that remain after read-only mode and disabled tools) and the setting and restart for each way of running it, so that the assistant can ask the user to change it. It does not advertise a toolset that read-only mode, disabled tools or a missing Paperless capability exclude, and shows a capability it could not check as a gap.
@@ -50,4 +50,4 @@ Recommended (proposed, for the controller to settle): toolsets are switched on b
 
 - `tests/tools/test_toolset_guide.py`, `tests/tools/test_toolset_budget.py`, `tests/tools/test_selection.py`, `tests/contract/test_instance_reader.py` and `tests/e2e/test_toolset_guide.py` (marker decision-41): the guide names exactly the tools that switching the advertised toolsets on adds, for every combination of selection, read-only mode, disabled tools and capability, with nothing excluded; its size stays under the limits.
 - `tests/quality/test_plugin.py` and `tests/quality/test_container.py`: the text matches the plugin manifests (option Toolsets in Claude Code, none in Cursor) and the image (no baked-in selection, recreate to apply).
-- Proposed, not yet accepted: once accepted, a registry test fails when a tool changes visibility (`enable_components`, `disable_components`, `reset_visibility` used outside the composition root).
+- `tests/tools/test_registry.py` (marker decision-41): a registry test fails when any code under src calls `enable_components`, `disable_components` or `reset_visibility`; a self-test runs it over a synthetic violator.

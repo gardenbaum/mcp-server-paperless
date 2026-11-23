@@ -4,7 +4,7 @@ title: Tell the assistant which toolsets are off and how to get them
 status: In Progress
 assignee: []
 created_date: '2026-11-23T12:14:52Z'
-updated_date: '2026-11-23T16:04:13Z'
+updated_date: '2026-11-23T16:16:24Z'
 labels: []
 dependencies: []
 priority: high
@@ -21,7 +21,7 @@ An assistant saw only the default profile and reported trash, PDF tools, bulk ch
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 get_instance_overview and the server instructions name the toolsets that are off, what each does, and the setting and restart that turn them on; nothing is shown that read-only mode, disabled tools or a missing capability excludes
-- [ ] #2 It is right for stdio, HTTP, the plugin and the container image
+- [x] #2 It is right for stdio, HTTP, the plugin and the container image
 - [x] #3 Whether toolsets can be switched on per session is examined in a decision (security: the operator keeps the last word)
 - [x] #4 The added tokens (instructions and overview) are measured and stay under a limit that this task sets and a test enforces (today's budget counts tools only)
 - [x] #5 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover every combination of selected toolsets, read-only mode, disabled tools and a missing capability
@@ -61,4 +61,6 @@ AC 3: decision-41 (proposed): operator only, no per-session switching; evidence 
 Evidence: fast tier tests/tools (matrix of 192 combinations: capability present/missing/unknown/silent x 6 selections x 4 disabled sets x read-only), contract on fake and live 3.4.2 (tests/contract/test_instance_reader.py), live in-process matrix (65), stdio and HTTP real processes that apply the setting the guide names and then offer exactly the promised tools, ai_e2e on a Paperless with AI on (3 passed). Hand mutations: 20, 17 killed; 2 survived as equivalent or out of the test selection (m11, m18), 1 killed by the budget test. Gates: just check pieces lock-check, lint, format-check, typecheck, imports, deps, secrets, diff-cover 100 percent pass; the full test run fails only test_the_menu_driver_reports_a_failing_cli (macOS, known), so DoD 2 stays unchecked. Left unchecked: AC 2 (plugin and image are proven by manifest, Dockerfile and docs tests, not by running Claude Code or the built image), DoD 1 (the contract, live and quality tests were written after the code and shown red against main afterwards), DoD 3 and 4 (PR).
 
 Correction: 20 hand mutations, 18 killed, 2 survived: m11 (overview sentence ignoring the capability: equivalent today, no toolset that needs a capability holds the overview tool) and m18 (summaries[name] instead of summaries.get: only the synthetic catalogue of test_visibility needs the fallback, outside the mutation run).
+
+Follow-up: decision-41 accepted by the controller under the owner's delegation of 2026-11-23 (not the owner's approval of the wording); registry test test_no_code_lets_a_client_or_a_session_change_what_is_offered added red first with a synthetic violator. AC 2 image: built locally and run over HTTP with a throwaway token and no Paperless: default shows "Toolsets on: core, ai" and PAPERLESS_MCP_TOOLSETS=core,ai,bulk; created with core,ai,trash it offers 22 tools and docker restart keeps that; recreated with all it offers 87 tools and no guide. Containers and all images removed. Plugin: a server started with the manifest's env (defaults substituted, as the manifest passes them) shows the same guide, with the option set to core,ai,trash it offers 22 tools, and with the option set and then cleared (empty) it refuses to start, as the option's description says; Claude Code and Cursor themselves were not run. m18 now killed by test_a_toolset_without_a_summary_is_described_by_its_name; m11 equivalent today. Shard weight: not measured; CI must give tests/e2e/test_toolset_guide.py a weight on a hosted runner (decision-30), it takes about 3 minutes locally (180 s with a mutation run in parallel) and the fast tier selects it only through tools/selection.py. Full suite without e2e: about 160 s.
 <!-- SECTION:NOTES:END -->
