@@ -490,3 +490,10 @@ def test_renovate_raises_the_version_and_the_pin_of_a_manifest_together(client: 
     entry = mapping(mapping(after["mcpServers"])["paperless"])
     assert after["version"] == "98.76.54"
     assert entry["args"] == ["mcp-server-paperless==98.76.54"]
+
+
+def test_the_claude_listing_links_the_privacy_policy_of_the_repository() -> None:
+    link = "https://github.com/gardenbaum/mcp-server-paperless/blob/main/PRIVACY.md"
+
+    assert manifest(CLAUDE)["privacyPolicyUrl"] == link
+    assert (ROOT / "PRIVACY.md").is_file()

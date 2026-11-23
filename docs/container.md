@@ -8,7 +8,8 @@ image is 0.3.0; the images of earlier releases were removed). It runs
 `PAPERLESS_MCP_HTTP_AUTH_TOKENS` (or the [optional OIDC layer](claude-ai-connector.md)) and
 `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`**. The unauthenticated
 loopback flag has no place in a container, which is never loopback. The image contains no
-credentials: everything comes from the environment.
+credentials: everything comes from the environment. Where your data goes is in the
+[privacy policy](../PRIVACY.md).
 
 ## Next to Paperless with compose
 

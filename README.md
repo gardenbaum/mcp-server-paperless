@@ -290,10 +290,12 @@ takes more than a misunderstanding:
   tools that change nothing, and `PAPERLESS_MCP_DISABLED_TOOLS` takes single tools away.
 - **Paperless stays in charge.** The server acts as the user of its API token: the permissions
   set in Paperless apply to every call.
-- **Secrets stay secret.** Passwords and API keys are write-only, and tokens, document text and
-  search queries are not logged at the default log level.
+- **Secrets stay secret.** Passwords and API keys are write-only. Tool calls log neither tokens nor
+  document text nor search queries at the default log level; the [privacy policy](https://github.com/gardenbaum/mcp-server-paperless/blob/main/PRIVACY.md) names the exceptions.
 - **No reach beyond Paperless.** Callers cannot make the server read local files or reach other
   hosts. Uploading by file path exists only over stdio and only from directories you name.
+
+Found a security problem? [Report it privately](https://github.com/gardenbaum/mcp-server-paperless/security/advisories/new).
 
 ## Configuration
 
@@ -326,6 +328,13 @@ them.
 - [Connect claude.ai](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/claude-ai-connector.md): sign-in through your identity provider
 - [Run in a container](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/container.md): the image, compose files, reverse proxy
 - [Development](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/development.md): architecture, how it is tested, how to contribute
+
+## Privacy Policy
+
+You run the server yourself: it sends your data to your Paperless and your MCP client, keeps no
+copy of your documents on disk and has no telemetry. The [privacy policy](https://github.com/gardenbaum/mcp-server-paperless/blob/main/PRIVACY.md) says what it reads,
+writes, stores and logs, and where data goes (your client's AI model and Paperless's own AI
+included).
 
 ## Known limitations
 
