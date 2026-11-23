@@ -207,6 +207,9 @@ def test_each_platform_is_built_scanned_and_smoke_tested_on_a_runner_of_its_own(
             if str(step.get("uses", "")).startswith("docker/build-push-action@")
         ]
         assert [build["platforms"] for build in builds] == ["linux/${{ matrix.arch }}"]
+        scan = next(s for s in steps(name) if "trivy-action@" in str(s.get("uses")))
+        # Trivy takes linux/amd64 from an image index unless told otherwise, on any runner.
+        assert mapping(scan["env"]) == {"TRIVY_PLATFORM": "linux/${{ matrix.arch }}"}
         assert builds[0]["cache-from"] == "type=gha,scope=${{ matrix.arch }}"
     assert "qemu" not in WORKFLOW.read_text(encoding="utf-8").lower()
 

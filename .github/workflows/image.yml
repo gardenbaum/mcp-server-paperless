@@ -65,6 +65,9 @@ jobs:
       # Reviewed exceptions go in .trivyignore, each with a reason and an expiry date.
       - name: Scan for known vulnerabilities (HIGH and CRITICAL fail the job)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          # Trivy takes linux/amd64 from an image index unless told otherwise, on any runner.
+          TRIVY_PLATFORM: linux/${{ matrix.arch }}
         with:
           image-ref: mcp-server-paperless:ci
           scanners: vuln
@@ -147,6 +150,9 @@ jobs:
 
       - name: Scan the pushed digest (HIGH and CRITICAL fail the job)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          # Trivy takes linux/amd64 from an image index unless told otherwise, on any runner.
+          TRIVY_PLATFORM: linux/${{ matrix.arch }}
         with:
           image-ref: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
           scanners: vuln
