@@ -1,5 +1,5 @@
 # Recorded by `just demo` in the container of docs/demo/Dockerfile.
-Output "/out/demo.gif"
+Output new.gif
 
 Set Shell bash
 Set Width 1200

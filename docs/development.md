@@ -69,9 +69,17 @@ as a throwaway stack, and the recorder container (vhs and uv, pinned in `docs/de
 fills it with the invented documents of `docs/demo/demo.py` and records `docs/demo/demo.tape`. The
 stack and its volumes are removed afterwards. The script runs the released server from PyPI
 (`SERVER` in `demo.py`) as an MCP client. Questions and tool calls are scripted and no model takes
-part; the answers come from the server and are only shortened. Keep the caption and the alt text in
-the README true, look at every scene before committing, and stay within 30 seconds and 3 MB (a test
-checks both). To show another release, change `SERVER`, run `just demo` and update the caption.
+part; the answers come from the server and are only shortened. `demo.gif` is replaced only when the
+script reached its end. Keep the caption and the alt text in
+the README true, look at every scene before committing, and stay within 30 seconds and 500 kB (a
+test checks both; the large-file hook stops more). To show another release, change `SERVER` and
+raise `UV_EXCLUDE_NEWER` in the Dockerfile, run `just demo` and update the caption; a test compares
+the caption with `SERVER` and with the Paperless of the live tests, so a bump of either one needs a
+new recording.
+
+Known limits: PyPI's page of an older release embeds the GIF of main, so it shows the newest
+recording, not the one of its time. The recorder image stays behind after a run; remove it with
+`docker rmi mcp-server-paperless-demo-recorder`.
 
 ## Conventions
 

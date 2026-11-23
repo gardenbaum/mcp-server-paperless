@@ -177,20 +177,83 @@ def test_the_duration_of_a_gif_is_the_sum_of_its_frame_delays() -> None:
     assert gif_seconds(head + loop + frame(150) + frame(100, 0x80, b"\x3b" * 6) + b"\x3b") == 2.5
 
 
-def test_the_readme_shows_the_demo_near_the_top_and_says_what_is_scripted() -> None:
+def demo_texts() -> tuple[str, str]:
+    """The alt text of the demo and the caption under it, at the top of the README."""
     top = prose(README).partition("\n## ")[0]
     found = DEMO_IMAGE.search(top)
-
     assert found, "the README shows no demo before its first section"
-    assert "scripted" in found[1], "the alt text does not say what is scripted"
-    assert "are scripted" in top[found.end() :], "no caption under the demo"
+    caption = re.match(r"\s*<sub>(.*?)</sub>", top[found.end() :], re.DOTALL)
+    assert caption, "no caption under the demo"
+    return found[1], caption[1]
+
+
+@pytest.mark.parametrize("word", ["scripted", "invented", "shortened"])
+def test_the_demo_says_what_is_scripted_invented_and_shortened(word: str) -> None:
+    alt, caption = demo_texts()
+
+    assert re.search(rf"\b{word}\b", alt), "the alt text does not say it"
+    assert re.search(rf"\b{word}\b", caption), "the caption does not say it"
+    assert re.search(rf"\b{word}\b.*RESET", demo_header()), "the header in the GIF does not say it"
+
+
+def demo_header() -> str:
+    """The lines of the demo script that print the header of every scene."""
+    script = (DOCS / "demo" / "demo.py").read_text(encoding="utf-8")
+    return script.partition("def scene(")[2].partition("\ndef ")[0]
+
+
+def test_the_demo_names_the_versions_it_is_recorded_with() -> None:
+    script = (DOCS / "demo" / "demo.py").read_text(encoding="utf-8")
+    compose = (ROOT / "tests" / "e2e" / "compose.yaml").read_text(encoding="utf-8")
+    server = re.search(r'^SERVER = "mcp-server-paperless==([\d.]+)"$', script, re.MULTILINE)
+    paperless = re.search(r"image: ghcr\.io/paperless-ngx/paperless-ngx:([\d.]+)@", compose)
+    assert server
+    assert paperless
+
+    _, caption = demo_texts()
+    assert f"Version {server[1]} against a real paperless-ngx {paperless[1]} " in caption
+    # The scenes ask the server, so the recording cannot name another release than it ran.
+    assert paperless[1] not in script
 
 
 def test_the_demo_is_short_and_loads_quickly() -> None:
     data = DEMO.read_bytes()
 
-    assert len(data) <= 3_000_000
+    assert len(data) <= 500_000  # the large-file hook stops a larger one
     assert 0 < gif_seconds(data) <= 30
+
+
+def test_the_demo_recipe_only_ever_touches_its_own_compose_project() -> None:
+    """It deletes volumes: COMPOSE_PROJECT_NAME must not point it at the live-test stack."""
+    justfile = (ROOT / "justfile").read_text(encoding="utf-8")
+    recipe = justfile.partition("\ndemo:\n")[2].partition("\n\n")[0]
+    commands = [line.strip() for line in recipe.splitlines() if "docker" in line]
+    uses = re.findall(r'"\$\{compose\[@\]\}" (\w+)', recipe)
+
+    assert commands == [
+        (
+            "compose=(docker compose -p mcp-server-paperless-demo -f docs/demo/compose.yaml "
+            "--profile record)"
+        )
+    ]
+    assert uses == ["down", "down", "run"], "trap, a clean start, the recording"
+
+
+def test_a_failed_recording_leaves_the_committed_demo_alone() -> None:
+    tape = (DOCS / "demo" / "demo.tape").read_text(encoding="utf-8")
+    dockerfile = (DOCS / "demo" / "Dockerfile").read_text(encoding="utf-8")
+
+    assert re.findall(r"^Output (.*)$", tape, re.MULTILINE) == ["new.gif"]
+    assert "test -e played && cp new.gif /out/demo.gif" in dockerfile
+
+
+def test_the_demo_resolves_its_packages_as_of_a_fixed_day() -> None:
+    dockerfile = (DOCS / "demo" / "Dockerfile").read_text(encoding="utf-8")
+    script = (DOCS / "demo" / "demo.py").read_text(encoding="utf-8")
+
+    assert re.search(r"^ENV UV_EXCLUDE_NEWER=\d{4}-\d\d-\d\dT", dockerfile, re.MULTILINE)
+    # The server's process gets only the environment it is given.
+    assert '"UV_EXCLUDE_NEWER": os.environ["UV_EXCLUDE_NEWER"]' in script
 
 
 def test_the_readme_links_every_page_written_for_users() -> None:

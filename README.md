@@ -23,10 +23,10 @@ your documents, by name, and nothing final happens without your yes.
 [Quick start](#quick-start) · [What you can ask](#what-you-can-ask) · [Comparison](#how-it-compares) ·
 [Toolsets](#toolsets) · [Safety](#how-it-keeps-your-archive-safe) · [Documentation](#documentation)
 
-![Terminal recording: the server finds three electricity bills by the name of the sender, files a new scan from the inbox like the others, and refuses to delete a correspondent until the user says yes. Questions and tool calls are scripted, the answers are real, the documents are invented.](https://raw.githubusercontent.com/gardenbaum/mcp-server-paperless/main/docs/demo/demo.gif)
+![Terminal recording: the server finds three electricity bills by the name of the sender, files a new scan from the inbox like the others, and refuses to delete a correspondent for good until the call is repeated with confirm=true. Questions, the yes and tool calls are scripted, the answers are real, shortened, and the documents are invented.](https://raw.githubusercontent.com/gardenbaum/mcp-server-paperless/main/docs/demo/demo.gif)
 
-<sub>Version 0.3.2 against a real paperless-ngx 3.4.2 with invented documents. The questions and
-tool calls are scripted, the answers are the server's own, shortened
+<sub>Version 0.3.2 against a real paperless-ngx 3.4.2 with invented documents. The questions, the
+yes and the tool calls are scripted, the answers are the server's own, shortened
 ([how it is recorded](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/development.md#demo-recording)).</sub>
 
 </div>

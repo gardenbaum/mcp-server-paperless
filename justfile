@@ -92,13 +92,15 @@ docs-tools:
 
 # Record the demo of the README (docs/demo/demo.gif): the released server against a throwaway
 # Paperless with invented documents, in containers only. Own compose project and port (8013), so a
-# stack from `e2e-up` is untouched; the stack is removed afterwards.
+# stack from `e2e-up` is untouched: `-p` beats COMPOSE_PROJECT_NAME, which must not choose what
+# `down --volumes` deletes. What a killed run left is removed first, the stack itself afterwards.
 demo:
     #!/usr/bin/env bash
     set -euo pipefail
     export PAPERLESS_E2E_PORT="${PAPERLESS_E2E_PORT:-8013}"
-    compose=(docker compose -f docs/demo/compose.yaml --profile record)
+    compose=(docker compose -p mcp-server-paperless-demo -f docs/demo/compose.yaml --profile record)
     trap '"${compose[@]}" down --volumes --remove-orphans' EXIT
+    "${compose[@]}" down --volumes --remove-orphans
     "${compose[@]}" run --rm --build recorder
 
 # Lint: ruff, then the suppression and patching rules ruff cannot express.

@@ -13,6 +13,7 @@ server returned, shortened to the fields shown and without the hint to the assis
 import asyncio
 import base64
 import json
+import os
 import sys
 import textwrap
 import time
@@ -86,7 +87,11 @@ def wait_for_token() -> str:
 
 def server() -> Client:
     """A client of the released server, as Claude Code starts it."""
-    env = {"PAPERLESS_URL": PAPERLESS, "PAPERLESS_TOKEN": wait_for_token()}
+    env = {
+        "PAPERLESS_URL": PAPERLESS,
+        "PAPERLESS_TOKEN": wait_for_token(),
+        "UV_EXCLUDE_NEWER": os.environ["UV_EXCLUDE_NEWER"],
+    }
     # The server logs to stderr, which is not part of the conversation.
     return Client(StdioTransport("uvx", [SERVER], env=env, log_file=Path("server.log")))
 
@@ -132,11 +137,14 @@ def show(text: str = "", pause: float = 0.05) -> None:
     time.sleep(pause)
 
 
-def scene(question: str) -> None:
+def scene(paperless: str, question: str) -> None:
     """A clean screen with the header, then the question as if typed."""
     say("\x1b[H\x1b[2J\x1b[3J", end="")
-    show(f"{BOLD}{SERVER}{RESET}{DIM}  with paperless-ngx 3.4.2{RESET}", 0)
-    show(f"{DIM}invented documents · scripted questions and calls · real answers{RESET}", 0)
+    show(f"{BOLD}{SERVER}{RESET}{DIM}  with paperless-ngx {paperless}{RESET}", 0)
+    show(
+        f"{DIM}invented documents · scripted questions and calls · real answers, shortened{RESET}",
+        0,
+    )
     ask(question, 0.4)
 
 
@@ -186,8 +194,9 @@ def tags(document: dict[str, Any]) -> str:
 async def play() -> None:
     """The conversation that is recorded."""
     async with server() as client:
+        paperless = (await call(client, "get_instance_overview"))["paperless_version"]
         say("\x1b[?25l", end="")  # no cursor
-        scene("Which bills did City Power send me?")
+        scene(paperless, "Which bills did City Power send me?")
         found = await shown(
             client, "search_documents", correspondent="City Power", tags_all=["utilities"]
         )
@@ -200,7 +209,7 @@ async def play() -> None:
             )
         await asyncio.sleep(2.4)
 
-        scene("Is there a new one in my inbox? File it like the others.")
+        scene(paperless, "Is there a new one in my inbox? File it like the others.")
         found = await shown(client, "search_documents", query="City Power", inbox=True)
         [scan] = found["documents"]
         show(f"  {GREEN}✓{RESET} {found['count']} document")
@@ -225,7 +234,7 @@ async def play() -> None:
         )
         await asyncio.sleep(2.6)
 
-        scene("Delete the misspelt correspondent City Powr.")
+        scene(paperless, "Delete the misspelt correspondent City Powr.")
         deletion = {"kind": "correspondent", "item": "City Powr"}
         try:
             await shown(client, "delete_taxonomy_item", **deletion)

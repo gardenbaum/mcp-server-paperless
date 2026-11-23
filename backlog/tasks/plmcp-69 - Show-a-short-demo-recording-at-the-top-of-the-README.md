@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:37:58Z'
-updated_date: '2026-11-23T11:57:07Z'
+updated_date: '2026-11-23T12:09:27Z'
 labels: []
 dependencies: []
 priority: medium
@@ -46,5 +46,7 @@ Visitors decide in seconds. A short recording at the top of the README shows wha
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Red: the two README/GIF tests failed before docs/demo existed. docs/demo holds the client script, the tape, the recorder image and the compose project; just demo records in containers only (no host tools). Result: docs/demo/demo.gif, 1200x700, 24.96 s, 278526 bytes, frames inspected. Only the questions and the tool calls are scripted (no model); GIF header, alt text, caption and docs/development.md say so; answers are shortened to the fields shown and the confirmation hint to the assistant is left out. uv build: no demo file in sdist or wheel. docs/demo/demo.py is linted but, outside scripts/, not type-checked and not in coverage: it is a recording script, proven by running it. vhs Wait did not end while recording, so the tape uses a fixed Sleep and the recorder fails unless the script reached its end.
+Red: the README/GIF tests failed before docs/demo existed. docs/demo holds the client script, the tape, the recorder image and the compose project; just demo records in containers only (no host tools). Result after the review fixes: docs/demo/demo.gif, 1200x700, 24.84 s, 281037 bytes, every scene inspected. Scripted: the questions, the yes, the tool calls and their arguments (no model). Real but shortened: the answers (only the fields shown, and the refusal without its hint to the assistant). The GIF header, alt text, caption and docs/development.md say scripted, invented and shortened; tests check the first three. uv build: no demo file in sdist or wheel. docs/demo/demo.py is linted but, outside scripts/, not type-checked and not in coverage: it is a recording script, proven by running it. vhs Wait did not end while recording, so the tape uses a fixed Sleep and the recorder fails unless the script reached its end.
+
+Review fixes (tests red first): the recipe passes -p mcp-server-paperless-demo, so COMPOSE_PROJECT_NAME cannot point down --volumes at the e2e stack (recorded with COMPOSE_PROJECT_NAME=paperless-mcp-e2e and a leftover demo stack: e2e containers untouched, leftover removed). The Paperless version in the scenes comes from the server, the caption is tested against SERVER and the compose image, so a bump of either needs a new recording. Packages resolve as of UV_EXCLUDE_NEWER, for the script and the server. demo.gif is replaced only after a complete run. The limit is 500 kB (large-file hook), below the 3 MB of the acceptance criterion. Known limits in docs/development.md: old PyPI pages show the GIF of main, the recorder image stays behind.
 <!-- SECTION:NOTES:END -->
