@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="550" height="550" viewBox="0 0 550 550" role="img" aria-labelledby="title">
+  <title id="title">mcp-server-paperless — archive chat</title>
+  <rect width="550" height="550" rx="98" fill="#084317"/>
+  <path fill="#faf1dc" fill-rule="evenodd" d="
+    M181 93 H346 Q361 93 372 104 L456 187 Q468 199 468 215
+    V335 C468 389 424 433 370 433 H240 L152 498
+    C144 504 133 497 136 487 L152 428
+    C111 414 85 378 85 334 V189 C85 136 128 93 181 93 Z
+    M344 109 V193 Q344 210 361 210 H450 Z"/>
+  <path d="M172 269 H374 M172 345 H374" fill="none"
+        stroke="#084317" stroke-width="42" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,84 @@
+{
+  "name": "mcp-server-paperless",
+  "displayName": "MCP Server for Paperless-ngx",
+  "version": "0.3.2",
+  "description": "Search, read, file, tag and upload documents in your paperless-ngx 3.x archive, by name and with a confirmation step before anything final.",
+  "author": {
+    "name": "gardenbaum",
+    "url": "https://github.com/gardenbaum"
+  },
+  "homepage": "https://github.com/gardenbaum/mcp-server-paperless#readme",
+  "repository": "https://github.com/gardenbaum/mcp-server-paperless",
+  "license": "MIT",
+  "icon": "./assets/icon.png",
+  "keywords": [
+    "paperless-ngx",
+    "documents",
+    "document-management",
+    "mcp"
+  ],
+  "documentationUrl": "https://github.com/gardenbaum/mcp-server-paperless/tree/main/docs",
+  "supportUrl": "https://github.com/gardenbaum/mcp-server-paperless/issues",
+  "mcpServers": {
+    "paperless": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-paperless==0.3.2"
+      ],
+      "env": {
+        "PAPERLESS_URL": "${user_config.paperless_url}",
+        "PAPERLESS_TOKEN": "${user_config.paperless_token}",
+        "PAPERLESS_PUBLIC_URL": "${user_config.paperless_public_url}",
+        "PAPERLESS_MCP_TOOLSETS": "${user_config.paperless_mcp_toolsets}",
+        "PAPERLESS_MCP_READ_ONLY": "${user_config.paperless_mcp_read_only}",
+        "PAPERLESS_MCP_DISABLED_TOOLS": "${user_config.paperless_mcp_disabled_tools}",
+        "PAPERLESS_MCP_UPLOAD_DIRS": "${user_config.paperless_mcp_upload_dirs}"
+      }
+    }
+  },
+  "userConfig": {
+    "paperless_url": {
+      "type": "string",
+      "title": "Paperless URL",
+      "description": "Base URL of your paperless-ngx 3.x instance, e.g. https://paperless.example.org",
+      "required": true
+    },
+    "paperless_token": {
+      "type": "string",
+      "title": "Paperless API token",
+      "description": "Create it in Paperless under your profile menu, My Profile. The server acts as this user",
+      "required": true,
+      "sensitive": true
+    },
+    "paperless_public_url": {
+      "type": "string",
+      "title": "Public URL",
+      "description": "Base URL for links shown to you, if it differs from the Paperless URL",
+      "default": ""
+    },
+    "paperless_mcp_toolsets": {
+      "type": "string",
+      "title": "Toolsets",
+      "description": "Toolsets to offer, comma-separated, or all. Once set, must not be empty: type core,ai for the default",
+      "default": "core,ai"
+    },
+    "paperless_mcp_read_only": {
+      "type": "boolean",
+      "title": "Read-only",
+      "description": "Offer only tools that change nothing in Paperless",
+      "default": false
+    },
+    "paperless_mcp_disabled_tools": {
+      "type": "string",
+      "title": "Disabled tools",
+      "description": "Tools never offered, by name, comma-separated",
+      "default": ""
+    },
+    "paperless_mcp_upload_dirs": {
+      "type": "string",
+      "title": "Upload directories",
+      "description": "Absolute directories the model may upload files from by path, comma-separated. Empty: none",
+      "default": ""
+    }
+  }
+}

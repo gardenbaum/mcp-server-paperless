@@ -152,6 +152,33 @@ Add `--scope user` to have it in every project. Then ask Claude for an overview 
 instance. `@latest` makes uvx check for a new release at every start; to stay on one, name its
 version instead (`mcp-server-paperless@0.2.0`).
 
+Or as a plugin, which asks for seven options (only the URL and the token are required), so the token
+is in no command and Claude Code keeps it in its credential store. In a session (Claude Code 2.1.275 or later):
+
+```text
+/plugin install mcp-server-paperless --marketplace gardenbaum/mcp-server-paperless
+```
+
+From your shell, followed by `/plugin configure mcp-server-paperless@gardenbaum` in a session and a
+restart of Claude Code:
+
+```sh
+claude plugin marketplace add gardenbaum/mcp-server-paperless
+claude plugin install mcp-server-paperless@gardenbaum
+```
+
+The [plugin](https://github.com/gardenbaum/mcp-server-paperless/blob/main/plugin/README.md) runs a
+fixed release of the package (its dependencies are resolved at install). For the next one, refresh
+the marketplace first, then restart Claude Code or run `/reload-plugins`:
+
+```sh
+claude plugin marketplace update gardenbaum
+claude plugin update mcp-server-paperless@gardenbaum
+```
+
+Remove an entry you added with `claude mcp add` (`claude mcp remove paperless`), or every tool
+appears twice.
+
 > [!WARNING]
 > The package is **`mcp-server-paperless`**. The PyPI project
 > [`paperless-mcp`](https://pypi.org/project/paperless-mcp/) is a different server by someone
@@ -189,7 +216,9 @@ for Claude Desktop.
 ### Cursor
 
 [Install in Cursor](https://cursor.com/en/install-mcp?name=paperless&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJtY3Atc2VydmVyLXBhcGVybGVzc0BsYXRlc3QiXSwiZW52Ijp7IlBBUEVSTEVTU19VUkwiOiJodHRwczovL3BhcGVybGVzcy5leGFtcGxlLm9yZyIsIlBBUEVSTEVTU19UT0tFTiI6InlvdXItYXBpLXRva2VuIn19), then replace the placeholder URL and token in the server settings
-(`~/.cursor/mcp.json`).
+(`~/.cursor/mcp.json`). The repository is also a Cursor
+[plugin](https://github.com/gardenbaum/mcp-server-paperless/blob/main/plugin/README.md#install-in-cursor)
+for teams that set the two values in the Cursor dashboard.
 
 ### Container, for remote clients
 
