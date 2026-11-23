@@ -8,6 +8,7 @@ import ctypes
 import importlib.util
 import io
 import math
+import re
 import struct
 import sys
 from typing import TYPE_CHECKING, BinaryIO, Final, Protocol, cast, override
@@ -62,6 +63,13 @@ TURNS: Final[Mapping[int, Image.Transpose]] = {
 BAND: Final = 64
 # Megapixels above which a progressive JPEG is left to PDFium.
 LARGE_JPEG: Final = 25_000_000
+# Markers of a JPEG: the frame headers (which hold the size), and where the data of a scan ends.
+FRAME_HEADERS: Final = frozenset(range(0xC0, 0xD0)) - {0xC4, 0xC8, 0xCC}
+PROGRESSIVE: Final = 0xC2
+START_OF_SCAN: Final = 0xDA
+DEFINE_LINES: Final = 0xDC
+END_OF_IMAGE: Final = 0xD9
+SCAN_END: Final = re.compile(rb"\xff[^\x00\xd0-\xd7\xff]")
 QUALITY = 80
 # A page that is too large alone: this quality first, then three quarters of the pixels per side,
 # again and again. Twelve steps take the largest image to about 100 pixels.
@@ -229,6 +237,35 @@ def decoded_webp(
     return Image.frombuffer("RGBA", size, buffer, "raw", "RGBA", 0, 1)
 
 
+def single_jpeg(content: bytes, image: Image.Image) -> bytes | None:
+    """The one progressive JPEG picture that Pillow opened as ``image``, without what follows it.
+
+    None if the file is something else: another format, no end, more than one frame header or one
+    of another size (the pixel limit was checked on what Pillow measured).
+    """
+    if image.format not in {"JPEG", "MPO"} or content[:2] != b"\xff\xd8":
+        return None
+    position, frames = 2, 0
+    while content[position : position + 1] == b"\xff" and position + 4 <= len(content):
+        marker = content[position + 1]
+        if marker in FRAME_HEADERS:
+            frames += 1
+            shape = struct.unpack_from(">HH", content[position + 5 : position + 9].ljust(4, b"\0"))
+            if frames > 1 or marker != PROGRESSIVE or shape != (image.height, image.width):
+                return None
+        if marker == DEFINE_LINES:  # it could change the height
+            return None
+        position += 2 + int.from_bytes(content[position + 2 : position + 4])
+        if marker == START_OF_SCAN:
+            found = SCAN_END.search(content, position)
+            if found is None:
+                return None
+            position = found.start()
+            if content[position + 1] == END_OF_IMAGE:
+                return content[: position + 2] if frames else None
+    return None
+
+
 def _as_pdf(content: bytes, image: Image.Image) -> bytes:
     """A JPEG as a PDF of one page. Pillow holds a large progressive one twice, PDFium once."""
     side = f"{image.width} 0 0 {image.height} 0 0 cm /I Do".encode()
@@ -295,8 +332,12 @@ class _Picture(_Source):
             shape = image.size
             image = self._image = Image.new("1", (1, 1))
             image = decoded_webp(self._content, shape) or self._opened()
-        elif image.info.get("progressive") and pixels > LARGE_JPEG and image.mode != "L":
-            drawn = _Pdf(_as_pdf(self._content, image)).draw(1, size, box_region)
+        elif (
+            pixels > LARGE_JPEG
+            and image.mode != "L"
+            and (picture := single_jpeg(self._content, image)) is not None
+        ):
+            drawn = _Pdf(_as_pdf(picture, image)).draw(1, size, box_region)
             return drawn if turn is None else drawn.transpose(turn)
         # A JPEG can be decoded at 1/2, 1/4 or 1/8 of its size; never below what is shown.
         _ = image.draft(None, (math.ceil(image.width * scale), math.ceil(image.height * scale)))

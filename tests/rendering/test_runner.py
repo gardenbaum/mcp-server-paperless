@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -162,7 +163,42 @@ async def test_a_child_that_is_ended_leaves_no_open_pipe() -> None:
         assert await reason(worker(flood)) == "crashed"
         assert await reason(worker(flood), b"x" * 5_000_000) == "crashed"
 
+    await asyncio.sleep(0.05)  # the event loop closes the pipes in its next turn
     assert descriptors() == before
+
+
+# A child that starts a process which keeps its stdout for a minute.
+ORPHAN = """
+import subprocess, time
+other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(%d)"])
+open(%r, "w").write(f"{other.pid}.")
+"""
+
+
+@pytest.mark.skipif(WINDOWS, reason="os.kill(pid, 0) is not a test on Windows")
+@pytest.mark.parametrize(
+    ("then", "expected"),
+    [
+        ("", "timeout"),
+        ("time.sleep(60)", "timeout"),
+        ("sys.stdout.buffer.write(b'x' * 3000000)", "crashed"),
+    ],
+    ids=["ends", "stays", "floods"],
+)
+async def test_a_process_that_keeps_the_pipe_open_does_not_hold_the_call(
+    tmp_path: Path, then: str, expected: str
+) -> None:
+    file = tmp_path / "pid"
+    _ = await reason(worker("pass"))
+    before = descriptors()
+    begun = time.monotonic()
+
+    said = await reason(worker(ORPHAN % (40, str(file)) + then, seconds=3.0))
+
+    await asyncio.sleep(0.05)  # the event loop closes the pipe in its next turn
+    assert (said, descriptors()) == (expected, before)
+    assert time.monotonic() - begun < 8
+    os.kill(await started(file), signal.SIGKILL)
 
 
 def descriptors() -> int:

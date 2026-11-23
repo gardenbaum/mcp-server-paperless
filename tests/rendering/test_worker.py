@@ -9,7 +9,14 @@ import pytest
 from PIL import ExifTags, Image, ImageChops
 
 from mcp_server_paperless.domain.rendering import RenderFailed, RenderRequest
-from mcp_server_paperless.rendering.worker import LIBWEBP, decoded_webp, libwebp, render, resized
+from mcp_server_paperless.rendering.worker import (
+    LIBWEBP,
+    decoded_webp,
+    libwebp,
+    render,
+    resized,
+    single_jpeg,
+)
 from rendering.files import (
     BLUE,
     ENCRYPTED_PDF,
@@ -347,6 +354,64 @@ def test_a_large_progressive_jpeg_looks_like_any_other(mode: str, orientation: i
         assert a.size == b.size
         # PDFium's colours of CMYK are duller than Pillow's, but the same colours.
         assert dominant(a) == dominant(b)
+
+
+def jpeg(width: int, height: int, **options: object) -> bytes:
+    """A progressive JPEG."""
+    return saved(Image.new("RGB", (width, height), BLUE), "JPEG", progressive=True, **options)
+
+
+def test_only_a_jpeg_is_handed_to_pdfium() -> None:
+    # A progressive-looking TIFF or PNG must not be taken for one.
+    for kind in ("PNG", "TIFF", "WEBP"):
+        content = saved(Image.new("RGB", (5_100, 5_000), BLUE), kind)
+        image = Image.open(io.BytesIO(content))
+        image.info["progressive"] = 1
+
+        assert single_jpeg(content, image) is None
+
+
+def test_the_jpeg_in_the_pdf_is_the_one_pillow_measured() -> None:
+    whole = jpeg(400, 300)
+
+    assert single_jpeg(whole, Image.open(io.BytesIO(whole))) == whole
+
+
+def test_what_follows_the_first_picture_is_not_handed_to_pdfium() -> None:
+    whole, huge = jpeg(400, 300), jpeg(3_000, 2_000)
+
+    for extra in (huge, b"trailing data", b"\xff\xd8\xff"):
+        assert single_jpeg(whole + extra, Image.open(io.BytesIO(whole))) == whole
+
+
+def test_a_jpeg_with_a_second_frame_header_or_another_size_is_left_to_pillow() -> None:
+    whole = jpeg(400, 300)
+    measured = Image.open(io.BytesIO(whole))
+    frame = whole.index(b"\xff\xc2")
+    header = whole[frame : frame + 2 + int.from_bytes(whole[frame + 2 : frame + 4])]
+    larger = bytearray(header)
+    larger[5:9] = (60_000).to_bytes(2) * 2
+    for broken in (
+        whole[:frame] + bytes(larger) + whole[frame:],  # two headers, the first one larger
+        whole[:frame] + header + bytes(larger) + whole[frame + len(header) :],
+        whole[:frame] + bytes(larger) + whole[frame + len(header) :],  # another size
+        whole[:-2],  # no end
+        whole[: frame + 3],
+        whole[2:],
+        whole[:frame] + b"\x00" + whole[frame:],  # no marker where one belongs
+    ):
+        assert single_jpeg(broken, measured) is None
+
+
+def test_the_second_picture_of_an_mpo_is_not_handed_to_pdfium() -> None:
+    first, second = Image.new("RGB", (400, 300), BLUE), Image.new("RGB", (3_000, 2_000), RED)
+    content = saved(first, "MPO", save_all=True, append_images=[second], progressive=True)
+
+    found = single_jpeg(content, Image.open(io.BytesIO(content)))
+
+    assert found is not None
+    assert len(found) < len(content)
+    assert Image.open(io.BytesIO(found)).size == (400, 300)
 
 
 def dominant(image: Image.Image) -> list[tuple[bool, ...]]:

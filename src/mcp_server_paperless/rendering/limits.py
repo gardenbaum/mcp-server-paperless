@@ -161,7 +161,8 @@ def lock_down(
     truncate, rename, unlink) and replace itself by another program.
 
     Where there are no system fonts to read (as in the container image), it can open nothing at all:
-    no file, no socket. With system fonts it still can, because PDFium reads them for text whose font is not embedded.
+    no file, no socket. With system fonts it still can, because PDFium reads them for text
+    whose font is not embedded.
     """
     if platform == "win32":
         return

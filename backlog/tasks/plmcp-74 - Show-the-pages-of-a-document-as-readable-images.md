@@ -4,7 +4,7 @@ title: Show the pages of a document as readable images
 status: In Progress
 assignee: []
 created_date: '2026-11-23T12:14:45Z'
-updated_date: '2026-11-23T20:10:41Z'
+updated_date: '2026-11-23T20:18:03Z'
 labels: []
 dependencies: []
 priority: high
@@ -67,4 +67,6 @@ Hand mutations of rendering/, services/pages.py, page_ranges, tool, adapter, cli
 
 Phase 2a and review of 8bda9c4 (4 Important, 6 Minor): all confirmed and fixed, tests first. I1 bands of rows, libwebp directly, PDFium for large progressive JPEGs (25 formats and modes at 99.6 MP run on macOS and Linux). I2 LAB is warmed up before the guard, and 18 kinds of file run under RLIMIT_NOFILE=0. Found in Linux: a flooding or killed child left its stdout pipe open (descriptor leak); the pipe is drained now. Linux container (python:3.14-slim, arm64, uid 1500): whole rendering set green, nothing skipped. python:3.14-slim has no /usr/share/fonts.
 Further gate notes: tests/adapter/schema_guard.py accepts the undeclared query parameter version on download and metadata (documented in api.md); ruff per-file ignores N802, N803 and A002 for typings/ (upstream names).
+
+Security review of 8bda9c4..: the wait for a killed child is bounded (1 s) and its pipes are closed whatever holds the other end (red first: 40 s); only a single real JPEG frame of the measured size is handed to PDFium, without trailing data or further MPO pictures.
 <!-- SECTION:NOTES:END -->

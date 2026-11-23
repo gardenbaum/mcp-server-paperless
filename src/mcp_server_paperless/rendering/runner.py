@@ -30,6 +30,8 @@ MEMORY_BYTES: Final = 1024 * 1024 * 1024
 # The image bytes of a call and the head before them.
 OUTPUT_BYTES: Final = 1024 * 1024
 _CHUNK: Final = 256 * 1024
+# How long a killed child is waited for.
+_REAP_SECONDS: Final = 1.0
 # CREATE_NO_WINDOW: no console pops up when the server has none.
 _NO_WINDOW: Final = 0x08000000
 _EXITS: Final[Mapping[int, Reason]] = {MEMORY_EXIT: "memory", TIME_EXIT: "timeout"}
@@ -87,8 +89,10 @@ class ChildRenderer:
             memory_bytes=self._memory_bytes,
             seconds=self._seconds,
         )
+        loop = asyncio.get_running_loop()
         try:
-            process = await asyncio.create_subprocess_exec(
+            transport, protocol = await loop.subprocess_exec(
+                lambda: asyncio.subprocess.SubprocessStreamProtocol(limit=_CHUNK, loop=loop),
                 *self._command,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
@@ -99,6 +103,8 @@ class ChildRenderer:
         except OSError as error:
             # No process or descriptor left, or no such program.
             raise RenderFailed(reason="crashed") from error
+        # What create_subprocess_exec does, but with the transport, which closes the pipes.
+        process = asyncio.subprocess.Process(transport, protocol, loop)
         # Both are pipes, as asked for.
         stdin, stdout = cast("StreamWriter", process.stdin), cast("StreamReader", process.stdout)
         feed = asyncio.create_task(_feed(stdin, encoded(head), content))
@@ -110,13 +116,16 @@ class ChildRenderer:
             raise RenderFailed(reason="timeout") from error
         finally:
             _ = feed.cancel()
-            if process.returncode is None:
-                process.kill()
-                # What it still had in the pipe is read, or the pipe would stay open. Killed is
-                # enough for a call that is cancelled again here: the loop does the rest.
-                while await stdout.read(_CHUNK):
-                    pass
-                _ = await process.wait()
+            try:
+                if process.returncode is None:
+                    process.kill()
+                    with contextlib.suppress(TimeoutError):
+                        async with asyncio.timeout(_REAP_SECONDS):
+                            _ = await process.wait()
+            finally:
+                # Not awaited, so also for a call that is cancelled again here, and whoever else
+                # holds the other end: a full or an inherited pipe would stay open.
+                transport.close()
         if code:
             raise RenderFailed(reason=_EXITS.get(code, "crashed"))
         return answer_of(output, request)
