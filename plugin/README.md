@@ -13,6 +13,21 @@ that is not affiliated with paperless-ngx.
   token. The server acts as that user and sees and changes only what that user may
 - [uv](https://docs.astral.sh/uv/) on your computer; it fetches Python 3.14 by itself
 
+## Skills
+
+The plugin brings four skills for common jobs; the assistant picks one by itself, or you name it. Each
+proposes first and changes nothing before your yes, and needs only the default toolsets.
+
+| Skill | What it does |
+|---|---|
+| `paperless-triage-inbox` | Proposes a title, correspondent, type and tags for the documents in the inbox |
+| `paperless-find-document` | Finds a document from a loose description |
+| `paperless-annual-review` | Collects a year of documents, for example for the tax return |
+| `paperless-cleanup-taxonomy` | Finds duplicate, unused and badly named tags, types and correspondents |
+
+Without the server the skills have no tools: an assistant that loads them but starts no local server
+(such as chat on claude.ai) says so instead of doing the job.
+
 ## Install in Claude Code
 
 In a session (Claude Code 2.1.275 or later):
@@ -76,7 +91,7 @@ To test only that the plugin loads, clone the repository, copy its `plugin/` fol
 
 ## What it runs and sends
 
-The plugin holds no code. It starts `uvx mcp-server-paperless==<version>`, which downloads that
+The plugin holds no code, only the skills' instructions. It starts `uvx mcp-server-paperless==<version>`, which downloads that
 release of the open-source package and its dependencies from PyPI, and a Python runtime if none
 fits, and runs it on your computer. The version pins the package itself; its dependencies are the
 newest ones it allows when uvx installs it. The server sends requests only to your Paperless URL, with your

@@ -99,3 +99,9 @@ step) in a pull request; until then plugin users stay on the release before. The
 `claude plugin validate --profile directory plugin` and `claude plugin validate .`. In the
 directory's review expect a hold "Runs a pinned npx or uvx package", which every pinned launcher
 gets, and possibly a brand-name hold ("Name matches a known brand") for Paperless in the name.
+
+The plugin's skills in `plugin/skills/` repeat the server's prompts (a test compares the text), so
+change both together. They reach installed users only with a new plugin version, which is the pinned
+package version: a changed skill is out with the next release's manifest pull request, not before.
+Whoever installs the plugin anew gets main as it is, so do not merge a skill that names a tool the
+pinned release does not have.

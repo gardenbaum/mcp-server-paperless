@@ -11,8 +11,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
+import yaml
 
 from mcp_server_paperless.settings import PaperlessSettings, ServerSettings
+from mcp_server_paperless.tools._shared import TOOL_TOOLSETS
+from mcp_server_paperless.tools.prompts import (
+    CONFIRMATION,
+    SPECS,
+    annual_review,
+    cleanup_taxonomy,
+    find_document,
+    mentioned_tools,
+    triage_inbox,
+)
 
 if TYPE_CHECKING:
     from pydantic_settings import BaseSettings
@@ -28,6 +39,15 @@ PIN = re.compile(r"mcp-server-paperless==(\d+\.\d+\.\d+)")
 README_VARIABLE = re.compile(r"^\| `(PAPERLESS_\w+)` \|", re.MULTILINE)
 # A row of the plugin README's option table, its heading first: | Toolsets | ...
 OPTION_ROW = re.compile(r"^\| ([^|]+) \| ([^|]+) \|$", re.MULTILINE)
+FRONTMATTER = re.compile(r"---\n(.*?)\n---\n(.*)", re.DOTALL)
+# What the prompt argument stands for in the skill, where the user names it in the conversation.
+PROMPTS = {
+    "triage_inbox": triage_inbox(),
+    "find_document": find_document(description="what the user described"),
+    "annual_review": annual_review(year=1999, purpose="PURPOSE").replace("1999", "YEAR"),
+    "cleanup_taxonomy": cleanup_taxonomy(),
+}
+SKILLS = {name: f"paperless-{name.replace('_', '-')}" for name in SPECS}
 FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 
 
@@ -64,7 +84,8 @@ def options() -> dict[str, dict[str, object]]:
 def option_rows() -> list[tuple[str, str]]:
     """Title and meaning of each row of the plugin README's option table."""
     text = (PLUGIN / "README.md").read_text(encoding="utf-8")
-    rows = [(found[1], found[2]) for found in OPTION_ROW.finditer(text)]
+    table = text[text.index("| Option |") :]  # the table of the skills comes before
+    rows = [(found[1], found[2]) for found in OPTION_ROW.finditer(table)]
     assert rows[0] == ("Option", "Meaning")
     return rows[1:]
 
@@ -241,6 +262,7 @@ def test_the_folder_is_complete_by_itself() -> None:
         "LICENSE",
         "README.md",
         "assets/icon.png",
+        *(f"skills/{skill}/SKILL.md" for skill in SKILLS.values()),
     }
     assert not [name for name, path in entries.items() if path.is_symlink()]
     assert (PLUGIN / "LICENSE").read_bytes() == (ROOT / "LICENSE").read_bytes()
@@ -263,3 +285,67 @@ def test_the_page_names_the_commands_that_install_the_plugin(page: str) -> None:
     ) in text
     assert "/reload-plugins" in text
     assert "claude mcp remove paperless" in text
+
+
+def skill(name: str) -> tuple[dict[str, object], str]:
+    """Frontmatter and body of the skill for a prompt."""
+    text = (PLUGIN / "skills" / SKILLS[name] / "SKILL.md").read_text(encoding="utf-8")
+    found = FRONTMATTER.fullmatch(text)
+    assert found
+    return mapping(cast("object", yaml.safe_load(found[1]))), found[2]
+
+
+def one_line(text: str) -> str:
+    return " ".join(text.split())
+
+
+def test_every_prompt_has_a_skill() -> None:
+    assert set(PROMPTS) == set(SPECS)
+
+
+@pytest.mark.parametrize("name", sorted(SPECS))
+def test_the_frontmatter_follows_the_agent_skills_specification(name: str) -> None:
+    """Both clients read it; no `allowed-tools`, which would pre-approve writing tools."""
+    frontmatter, _ = skill(name)
+    description = frontmatter["description"]
+
+    assert set(frontmatter) == {"name", "description"}
+    assert frontmatter["name"] == SKILLS[name]
+    assert re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", SKILLS[name])
+    assert isinstance(description, str)
+    assert 0 < len(description) <= 1024
+    assert "paperless" in description.lower()
+    assert "Use when" in description
+
+
+@pytest.mark.parametrize("name", sorted(SPECS))
+def test_the_skill_says_what_the_prompt_says(name: str) -> None:
+    """The steps and the confirmation rule are the prompt's, so the two cannot drift apart."""
+    _, body = skill(name)
+
+    assert one_line(PROMPTS[name]) in one_line(body)
+    assert one_line(CONFIRMATION) in one_line(body)
+
+
+@pytest.mark.parametrize("name", sorted(SPECS))
+def test_the_skill_names_only_tools_of_the_default_profile(name: str) -> None:
+    """A skill that needed another toolset would have to say so; none does."""
+    _, body = skill(name)
+    default = ServerSettings.model_construct().toolsets
+
+    assert mentioned_tools(body) == SPECS[name].tools
+    assert {TOOL_TOOLSETS[tool] for tool in mentioned_tools(body)} <= set(default)
+
+
+@pytest.mark.parametrize("name", sorted(SPECS))
+def test_the_skill_stops_when_the_server_is_not_there(name: str) -> None:
+    """Chat on claude.ai loads the skills but starts no local server."""
+    _, body = skill(name)
+
+    assert "do not work around it" in one_line(body)
+
+
+def test_the_plugin_readme_lists_the_skills() -> None:
+    text = (PLUGIN / "README.md").read_text(encoding="utf-8")
+
+    assert [name for name in SKILLS.values() if f"`{name}`" not in text] == []
