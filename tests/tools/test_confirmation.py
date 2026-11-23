@@ -4,6 +4,7 @@
 writes, so a write fails the test.
 """
 
+import asyncio
 import copy
 import json
 import logging
@@ -480,7 +481,10 @@ async def test_progress_is_reported_while_the_dialog_is_open_and_not_after() -> 
         count = len(reports)
         await anyio.sleep(0.1)
 
+        reporting = [t for t in asyncio.all_tasks() if "_report_progress" in repr(t)]
+
     assert not result.is_error
+    assert reporting == []
     assert len(reports) == count
     assert [progress for progress, _ in reports] == sorted({progress for progress, _ in reports})
     assert {message for _, message in reports} == {"Waiting for the user to confirm."}
