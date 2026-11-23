@@ -17,34 +17,19 @@ from mcp_server_paperless.services.search_syntax import SEARCH_FIELDS, query_not
         ("rechnung and swisscom", ("'and'", "AND")),
         ("rechnung or swisscom", ("'or'", "OR")),
         ("(rechnung or swisscom)", ("'or'", "OR")),
-        ('invoice -"secret phrase"', ('-"secret phrase"', 'NOT "secret phrase"')),
-        ("rechnung -swisscom", ("-swisscom", "NOT swisscom")),
-        ("-swisscom", ("-swisscom", "NOT swisscom")),
         ("rechnung Not swisscom", ("'Not'", "write NOT")),
-        ("NOT(a)", ("'NOT('", "space after NOT")),
+        ("NOT(a)", ("'NOT('", "space on both sides")),
         ("NOT-a", ("'NOT-a'", "space")),
         ("rechnung AND", ("'AND'", "nothing to combine")),
         ("NOT", ("'NOT'", "nothing to combine")),
         ("x (OR y)", ("'OR'", "nothing to combine")),
         ("correspondent: acme", ("'correspondent:'", "right after the colon")),
-        ("a \u2013b", ("'\u2013b'", "NOT b")),
-        ("a \u2212b", ("'\u2212b'", "NOT b")),
-        ("a -(b (c) d) e", ("'-(b (c) d)'", "NOT (b (c) d).")),
-        ("a -(b", ("'-('", "NOT (.")),
         ("rechnung [swisscom and migros]", ("'and'", "AND")),
-        ('"terms" -x', ("-x", "NOT x")),
-        ("a (-b)", ("'-b'", "NOT b")),
-        ("a -(b c)", ("'-(b c)'", "NOT (b c)")),
-        ("a -b -c", ("'-b'", "'-c'", "NOT b", "NOT c")),
-        ("!swisscom", ("'!swisscom'", "NOT swisscom")),
-        ("a !b -c", ("'!b'", "'-c'", "NOT b", "NOT c")),
         ("a && b", ("'&&'", "AND")),
         ("a || b", ("'||'", "OR")),
         ("nosuch:foo", ("'nosuch:'", "document_type")),
-        ("NOT nosuch:*", ("'nosuch:'", "plain text")),
         ("Title:foo (tags:x)", ("'Title:'", "'tags:'", "case-sensitive")),
         ('nosuch:"a b"', ("'nosuch:'",)),
-        ("nosuch:[1 to 2]", ("'nosuch:'",)),
         ("nosuch:(a b)", ("'nosuch:'",)),
         ("custom_fields.nosuch:x", ("'custom_fields.nosuch:'",)),
     ],
@@ -136,7 +121,124 @@ def test_nested_exclusions_do_not_multiply_the_notice(query: str) -> None:
     assert sum(map(len, query_notices(query))) < 3 * len(query)
 
 
-def test_only_the_outermost_excluded_group_is_named() -> None:
-    [notice] = query_notices("-(a -b) -c")
+@pytest.mark.parametrize(
+    ("query", "named"),
+    [
+        ("rechnung -swisscom", ["-swisscom"]),
+        ("a -b -c", ["-b", "-c"]),
+        ("a !b -c", ["!b", "-c"]),
+        ("a \N{EN DASH}b \N{MINUS SIGN}c", ["\N{EN DASH}b", "\N{MINUS SIGN}c"]),
+        ("--b !!c -!d -*foo", ["--b", "!!c", "-!d", "-*foo"]),
+        ("a (-b)", ["-b"]),
+        ("-(a -b) -c", ["-(", "-b", "-c"]),
+        ("a ! (b)", ["!"]),
+        ("a -(b", ["-("]),
+        ("a -type:(x OR y)", ["-type:("]),
+        ("a -title:'b c'", ["-title:'b c'"]),
+        ('invoice -"secret phrase"', ['-"secret phrase"']),
+        ("-'b c'", ["-'b c'"]),
+        ("!2024", ["!2024"]),
+        ("-type:*", ["-type:*"]),
+        ("NOT -type:*", ["-type:*"]),
+        ('NOT -"a b"', ['-"a b"']),
+        ("x NOT !(a b)", ["!("]),
+        ("-NOT b", ["-NOT"]),
+    ],
+)
+def test_every_sign_that_does_not_exclude_is_named(query: str, named: list[str]) -> None:
+    [notice] = [n for n in query_notices(query) if "does not exclude" in n]
 
-    assert "'-(a -b)', '-c'; write NOT (a -b), NOT c." in notice
+    assert f": {', '.join(f"'{sign}'" for sign in named)}; " in notice
+    assert "write NOT and a space in its place, e.g. NOT swisscom" in notice
+
+
+@pytest.mark.parametrize(
+    ("query", "named"),
+    [
+        ("-Title:foo", "'Title:'"),
+        ("a !nosuch:x", "'nosuch:'"),
+        ("_x:foo 2foo:bar", "'_x:', '2foo:'"),
+        ('"a"nosuch:x', ""),
+    ],
+)
+def test_an_unknown_field_behind_a_sign_is_named(query: str, named: str) -> None:
+    notices = " ".join(query_notices(query))
+
+    assert named in notices
+    assert "\0" not in notices
+
+
+@pytest.mark.parametrize(
+    ("query", "named"),
+    [
+        ("a||b", "'||'"),
+        ("a &&b", "'&&'"),
+        ("a&& b", "'&&'"),
+        ('NOT"a b"', "'NOT\"a b\"'"),
+        ("NOT'a b'", "'NOT'a'"),
+        ('a AND"b"', "'AND\"b\"'"),
+        ('"a"AND "b"', "'\"a\"AND'"),
+        ("(a)AND b", "'AND'"),
+        ("(a)OR (b)", "'OR'"),
+        ("NOT AND b", "'NOT'"),
+        ("a OR OR b", "'OR'"),
+        ("a OR AND b", "'AND'"),
+        ("title:[a and b]", "'and'"),
+        ("type:{x not y}", "'not'"),
+    ],
+)
+def test_an_operator_that_is_read_as_text_is_named(query: str, named: str) -> None:
+    assert any(named in notice for notice in query_notices(query))
+
+
+@pytest.mark.parametrize("query", ["OR-Tools", "NOT-Aufnahme"])
+def test_a_hyphenated_word_is_only_advised_conditionally(query: str) -> None:
+    [notice] = query_notices(query)
+
+    assert "if you mean the operator" in notice
+
+
+@pytest.mark.parametrize(
+    "query", ["title:'a -b'", "('a not b')", "(x AND 'a -b')", "'it's not a'", "don't a AND b"]
+)
+def test_single_quoted_text_is_no_syntax(query: str) -> None:
+    assert query_notices(query) == ()
+
+
+def test_the_search_fields_are_those_of_paperless() -> None:
+    plain = {
+        *("title", "content", "correspondent", "document_type", "type", "storage_path", "path"),
+        *("original_filename", "tag", "checksum", "asn", "page_count", "num_notes"),
+        *("created", "modified", "added", "notes", "custom_fields", "barcodes"),
+    }
+    nested = {"notes.user", "notes.note", "custom_fields.name", "custom_fields.value"}
+
+    assert set(SEARCH_FIELDS) == plain | nested | {"barcodes.value", "barcodes.format"}
+
+
+@pytest.mark.parametrize(
+    ("query", "notices"),
+    [
+        ('"a" "b -c" "d -e"', 0),
+        ("'a' 'b -c' 'd -e'", 0),
+        ('"" -b', 1),
+        ('"" "-b"', 0),
+        ("5\" 'b -c'", 0),
+        ("title:[a to -b]", 0),
+        ("title:{a to -b}", 0),
+        ("[ -b", 1),
+        ("[-b to c] -d", 1),
+        ("[a b] -c", 1),
+        ("x' -b", 1),
+        ("'-b", 0),
+        ('"-b', 0),
+    ],
+)
+def test_only_closed_phrases_and_ranges_are_left_alone(query: str, notices: int) -> None:
+    assert len(query_notices(query)) == notices
+
+
+def test_what_follows_a_phrase_is_named_as_written() -> None:
+    [notice] = query_notices('"abc" [x to y] -d')
+
+    assert "'-d'" in notice

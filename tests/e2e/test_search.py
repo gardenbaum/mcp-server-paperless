@@ -8,6 +8,7 @@ from fastmcp import Client
 from harness import paperless_settings, server_settings
 
 from mcp_server_paperless.server import create_server
+from mcp_server_paperless.services.search_syntax import query_notices
 
 if TYPE_CHECKING:
     from e2e.helpers import Stack
@@ -76,8 +77,14 @@ async def test_the_constructs_named_in_notices_are_misread_by_live_paperless(sta
     unknown = await titles(stack, query="nosuchfield:acme")
     assert unknown == await titles(stack, query="nosuchfield OR acme") == {"e2e-public-invoice"}
     assert await titles(stack, query="NOT nosuchfield:*") == both
-    for misread in ("acme Not zebra", "NOT(zebra)", "acme AND", "acme &&  Not"):
+    assert await titles(stack, query="acme") == {"e2e-public-invoice"}
+    # Each is misread, and each is named in a notice.
+    for misread in ("acme Not zebra", "NOT(zebra)", "acme AND", "title: zebra", 'NOT"acme"'):
         assert await titles(stack, query=misread) == set()
+        assert query_notices(misread)
+    for included in ("acme&&zebra", "-acme", "!acme", "Title:acme", "NOT -type:*"):
+        assert await titles(stack, query=included) == {"e2e-public-invoice"}
+        assert query_notices(included)
     assert await titles(stack, query="NOT zebra") == both
     assert await titles(stack, query="acme NOT -zebra") == {"e2e-public-invoice"}
 

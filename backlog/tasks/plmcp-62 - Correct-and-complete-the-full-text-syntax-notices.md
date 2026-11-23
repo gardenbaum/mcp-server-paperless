@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T08:40:16Z'
-updated_date: '2026-11-23T08:53:08Z'
+updated_date: '2026-11-23T09:05:39Z'
 labels: []
 dependencies: []
 type: bug
@@ -46,4 +46,6 @@ PLMCP-58 shipped in 0.3.0 with a wrong notice: it says field:* matches nothing, 
 
 <!-- SECTION:NOTES:BEGIN -->
 Reworked after the independent opus review of #77/#81: detection moved to services/search_syntax.py (token based, linear), also covers mixed-case operators, NOT(, NOT-x, dangling operators, a detached field value, Unicode dashes; amounts (CHF -50) and NOT -x stay silent. Presence notice removed: field:* is valid (parser AST in the 3.4.2 container, live e2e with and without a value). Surface snapshot regenerated deliberately (query, docstring, notices). README comparison rewritten from competitor sources. Not covered: field:"*", unbalanced inch marks (5" and 6").
+
+Second opus review (I1-I6, M1-M10 without M8): detector reworked to name occurrences instead of rewriting queries; glued operators and symbols, signs before phrases, groups and fields, single quotes and ranges now follow the 3.4.2 parser; live e2e ties each misread query to a notice. Not covered: field prefixes inside a token (foo-type:bar, type:a,nosuch:b), an unclosed title:(. container.md: the owner deleted the images under the old name, so the old-name exemption of the guard is gone. Follow-ups: PLMCP-63 (arm64), PLMCP-64 (rename leftovers).
 <!-- SECTION:NOTES:END -->
