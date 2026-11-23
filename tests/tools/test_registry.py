@@ -63,6 +63,7 @@ DOCUMENT_TEXT_TOOLS = frozenset(
         "run_saved_view",
         "get_document",
         "get_document_content",
+        "get_document_pages",
         "get_document_thumbnail",
         "download_document",
         "update_document",

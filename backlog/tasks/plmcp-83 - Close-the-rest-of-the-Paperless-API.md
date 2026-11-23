@@ -53,4 +53,6 @@ The guard (PLMCP-91) shows endpoint by endpoint what is covered. After the other
 
 <!-- SECTION:NOTES:BEGIN -->
 From PLMCP-91 (coverage table): POST /api/ui_settings/ is listed open under PLMCP-88 for the saved-view part; the part of /api/ui_settings/ beyond saved views (the other settings of the user) belongs to this task.
+
+From PLMCP-74: query:version of GET /api/documents/{id}/metadata/ is covered now (get_document_pages) and left the coverage table; query:version of thumb and the preview endpoint stay open here. The core toolset has 20 of 20 tools since decision-42.
 <!-- SECTION:NOTES:END -->

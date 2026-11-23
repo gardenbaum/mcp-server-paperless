@@ -291,6 +291,16 @@ def unseen_version(document: int, version: int) -> NotFound:
     return NotFound(message, hint="List the versions with list_document_versions.")
 
 
+def _unseen(document: int, version: int | None) -> NotFound:
+    """The error for a file: of the named version, or of the document if none is named."""
+    return unseen_document(document) if version is None else unseen_version(document, version)
+
+
+def _of_version(version_id: int | None) -> dict[str, int]:
+    """The query parameter that names a version; none for the newest."""
+    return {} if version_id is None else {"version": version_id}
+
+
 def beyond_last_page(page: int) -> NotFound:
     """The error for a page past the end of the results."""
     message = f"Page {page} is beyond the last page of the results."
@@ -432,9 +442,14 @@ class PaperlessDocumentReader:
             raise FeatureUnavailable(message, hint="Leave history out of include.") from None
         return tuple(_entry(row) for row in found.root)
 
-    async def get_document_metadata(self, document_id: int) -> FileMetadata:
+    async def get_document_metadata(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> FileMetadata:
         """See ``DocumentReader.get_document_metadata``."""
-        row = await self._one(document_id, "metadata/", _Metadata)
+        try:
+            row = await self._one(document_id, "metadata/", _Metadata, _of_version(version_id))
+        except NotFound:
+            raise _unseen(document_id, version_id) from None
         return FileMetadata.model_validate(row.model_dump())
 
     async def get_document_suggestions(self, document_id: int) -> Suggestions:
@@ -461,7 +476,12 @@ class PaperlessDocumentReader:
         return found
 
     async def get_document_file(
-        self, document_id: int, version: FileVersion, *, max_bytes: int
+        self,
+        document_id: int,
+        version: FileVersion,
+        *,
+        max_bytes: int,
+        version_id: int | None = None,
     ) -> DocumentFile:
         """See ``DocumentReader.get_document_file``.
 
@@ -469,12 +489,14 @@ class PaperlessDocumentReader:
         the document has none. The file name is the formatted one Paperless proposes (date,
         correspondent and title), not the name of the upload.
         """
-        return await self._file(
-            document_id,
-            "download/",
-            max_bytes,
-            {"original": "true" if version == "original" else "false"},
-        )
+        params: Params = {
+            "original": "true" if version == "original" else "false",
+            **_of_version(version_id),
+        }
+        try:
+            return await self._file(document_id, "download/", max_bytes, params)
+        except NotFound:
+            raise _unseen(document_id, version_id) from None
 
     async def get_document_titles(self, document_ids: Collection[int]) -> dict[int, str]:
         """See ``DocumentReader.get_document_titles``; ``id__in`` leaves hidden ids out."""

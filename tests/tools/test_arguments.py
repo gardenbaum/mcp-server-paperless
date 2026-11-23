@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, cast
 
 import observation
 import pytest
+from e2e.helpers import pdf
 from fakes.admin import BOOLEANS, CHOICES, MINIMUMS
 from fakes.mail import FakeMailAccount, FakeMailRule
 from fakes.paperless import FakePaperless, FakeSavedView, FakeState, FakeTask, seeded
@@ -856,6 +857,12 @@ async def test_updates_that_need_the_current_object_read_it_first() -> None:
     assert not FAILED, "\n".join(FAILED)
 
 
+def with_real_files(state: FakeState) -> None:
+    """Files that can be rendered."""
+    for document in state.documents:
+        document.original = document.archive = pdf("page")
+
+
 async def test_documents_are_read_with_every_section_and_slice() -> None:
     await sweep("get_instance_overview", {}, ())
     await sweep(
@@ -865,6 +872,19 @@ async def test_documents_are_read_with_every_section_and_slice() -> None:
     )
     await sweep("get_document_content", {"document_id": 1, "offset": 1, "max_chars": 10}, ())
     await sweep("get_document_thumbnail", {"document_id": 1}, ())
+    await sweep(
+        "get_document_pages",
+        {
+            "document_id": 1,
+            "pages": "1",
+            "source": "archive",
+            "version_id": 1,
+            "size": 256,
+            "region": [0, 0, 1, 1],
+        },
+        (),
+        with_real_files,
+    )
     await sweep("download_document", {"document_id": 1})
     await sweep("add_note", {"document_id": 1, "note": "n"}, ())
     await sweep("delete_note", {"document_id": 1, "note_id": 1}, ())

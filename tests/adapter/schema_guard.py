@@ -39,6 +39,7 @@ SCHEMA_PATH = Path(__file__).parents[2] / "docs" / "vendor" / "paperless" / "ope
 FULL_PERMS_REASON = (
     "the update serializers honour it like the retrieve ones and then answer the grants (PLMCP-28)"
 )
+VERSION_REASON = "documented in api.md, missing from the generated parameters (PLMCP-74)"
 
 # Query parameters an operation accepts although the generated schema omits them:
 # (method, path template) -> {parameter: reason}.
@@ -47,6 +48,8 @@ UNDECLARED_QUERY_PARAMETERS: Mapping[tuple[str, str], Mapping[str, str]] = {
         "more_like_id": "documented in api.md, missing from the generated parameters (PLMCP-3)",
         "all": "documented in api.md, missing from the generated parameters (PLMCP-3)",
     },
+    ("GET", "/api/documents/{id}/download/"): {"version": VERSION_REASON},
+    ("GET", "/api/documents/{id}/metadata/"): {"version": VERSION_REASON},
     ("PATCH", "/api/documents/{id}/"): {
         "fields": (
             "the update serializer honours it like the retrieve one; without it the answer "

@@ -395,6 +395,7 @@ class FakeFile:
     original: bytes
     archive: bytes | None
     content: str
+    mime_type: str
 
 
 @dataclass(kw_only=True)
@@ -1296,6 +1297,7 @@ class FakePaperless:
             original=file.original,
             archive=file.archive,
             content=file.content,
+            mime_type=file.mime_type,
         )
 
     async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
@@ -1397,8 +1399,12 @@ class FakePaperless:
         [root] = [d for d in self.state.documents if d.id == stub.root_id]
         version = stub.versions[0]
         if not root.version_files:
-            root.version_files[root.id] = FakeFile(root.original, root.archive, root.content)
-        root.version_files[version.id] = FakeFile(stub.original, stub.archive, stub.content)
+            root.version_files[root.id] = FakeFile(
+                root.original, root.archive, root.content, root.mime_type
+            )
+        root.version_files[version.id] = FakeFile(
+            stub.original, stub.archive, stub.content, stub.mime_type
+        )
         root.versions = sorted(
             [*root.versions, version], key=lambda v: (v.added, v.id), reverse=True
         )
@@ -1446,7 +1452,7 @@ class FakePaperless:
         """Add `file` as the newest version `version_id`; the root's file is kept on the first."""
         if not document.version_files:
             document.version_files[document.id] = FakeFile(
-                document.original, document.archive, document.content
+                document.original, document.archive, document.content, document.mime_type
             )
         document.version_files[version_id] = file
         document.versions.insert(
@@ -1494,7 +1500,7 @@ class FakePaperless:
         )
         archive = upload.content + b"\n%archive" if upload.mime_type == "application/pdf" else None
         version_id = self._next_id()
-        file = FakeFile(upload.content, archive, text)
+        file = FakeFile(upload.content, archive, text, upload.mime_type)
         self._push(document, version_id, file, upload.label or None, now)
         task = FakeTask(
             id=len(self.state.tasks) + 1,
@@ -1617,7 +1623,7 @@ class FakePaperless:
         root = seen[root_id]
         for number in source_ids:
             source = seen[number]
-            file = FakeFile(source.original, source.archive, source.content)
+            file = FakeFile(source.original, source.archive, source.content, source.mime_type)
             self._push(root, number, file, label, datetime.now(UTC))
             state.documents.remove(source)
 
@@ -1691,7 +1697,8 @@ class FakePaperless:
         version_id = self._next_id()
         original = document.original + marker
         archive = None if document.archive is None else document.archive + marker
-        self._push(document, version_id, FakeFile(original, archive, document.content), None, now)
+        file = FakeFile(original, archive, document.content, "application/pdf")
+        self._push(document, version_id, file, None, now)
         document.page_count = pages
         return version_id
 
@@ -3241,20 +3248,34 @@ class FakePaperless:
             for entry in entries
         )
 
-    async def get_document_metadata(self, document_id: int) -> FileMetadata:
+    def _file_of(self, document: FakeDocument, version_id: int | None) -> FakeFile:
+        """The file of a version; like Paperless it finds a deleted one, too (`include_deleted`)."""
+        wanted = document.versions[0].id if version_id is None else version_id
+        if wanted in document.version_files:
+            return document.version_files[wanted]
+        stubs = [d for d in self.state.trash if d.id == wanted and d.root_id == document.id]
+        if not stubs and wanted != document.versions[0].id:
+            raise unseen_version(document.id, wanted)
+        shown = stubs[0] if stubs else document
+        return FakeFile(shown.original, shown.archive, shown.content, shown.mime_type)
+
+    async def get_document_metadata(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> FileMetadata:
         """`DocumentReader.get_document_metadata` (the `metadata` action)."""
         document = self._sub(document_id)
+        file = self._file_of(document, version_id)
         return FileMetadata(
             original_filename=document.original_filename,
-            original_mime_type=document.mime_type,
-            original_size=len(document.original),
+            original_mime_type=file.mime_type,
+            original_size=len(file.original),
             original_checksum=f"{document.id:064x}",
             media_filename=f"e2e/2026/{document.original_filename}",
-            has_archive_version=document.archive is not None,
-            archive_size=None if document.archive is None else len(document.archive),
-            archive_checksum=None if document.archive is None else f"{document.id + 1000:064x}",
+            has_archive_version=file.archive is not None,
+            archive_size=None if file.archive is None else len(file.archive),
+            archive_checksum=None if file.archive is None else f"{document.id + 1000:064x}",
             archive_media_filename=(
-                None if document.archive is None else f"e2e/2026/{document.original_filename}"
+                None if file.archive is None else f"e2e/2026/{document.original_filename}"
             ),
         )
 
@@ -3268,18 +3289,24 @@ class FakePaperless:
         )
 
     async def get_document_file(
-        self, document_id: int, version: FileVersion, *, max_bytes: int
+        self,
+        document_id: int,
+        version: FileVersion,
+        *,
+        max_bytes: int,
+        version_id: int | None = None,
     ) -> DocumentFile:
         """`DocumentReader.get_document_file` (the `download` action).
 
         Without an archive version `archive` answers the original, as Paperless does.
         """
         document = self._sub(document_id)
-        archive = version == "archive" and document.archive is not None
-        mime_type = document.mime_type
-        if document.mime_type.startswith("text/"):
+        file = self._file_of(document, version_id)
+        archive = version == "archive" and file.archive is not None
+        mime_type = file.mime_type
+        if mime_type.startswith("text/"):
             mime_type += "; charset=utf-8"
-        content = document.archive if archive and document.archive else document.original
+        content = file.archive if archive and file.archive else file.original
         return DocumentFile(
             content=b"" if len(content) > max_bytes else content,
             mime_type="application/pdf" if archive else mime_type,

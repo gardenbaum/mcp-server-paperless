@@ -3,7 +3,7 @@
 import pytest
 
 from mcp_server_paperless.domain.errors import Validation
-from mcp_server_paperless.services.page_ranges import describe, parse_pages
+from mcp_server_paperless.services.page_ranges import describe, parse_pages, specification
 
 
 @pytest.mark.parametrize(
@@ -116,3 +116,22 @@ def test_an_open_range_needs_a_start_and_runs_to_the_last_page() -> None:
     assert parse_pages("3- ", page_count=5) == [3, 4, 5]
     with pytest.raises(Validation, match="'-' is not a page or a range"):
         _ = parse_pages("-", page_count=5)
+
+
+def test_a_long_range_is_read_in_one_pass() -> None:
+    assert parse_pages("1-", page_count=200_000) == list(range(1, 200_001))
+
+
+@pytest.mark.parametrize(
+    ("pages", "spec"),
+    [
+        ((4,), "4"),
+        ((4, 5, 6), "4-6"),
+        ((3, 1, 2), "3,1-2"),
+        ((6, 5), "6,5"),
+        ((1, 2, 9, 4, 5), "1-2,9,4-5"),
+    ],
+)
+def test_a_specification_names_the_pages_in_their_order(pages: tuple[int, ...], spec: str) -> None:
+    assert specification(pages) == spec
+    assert tuple(parse_pages(spec, page_count=9)) == pages

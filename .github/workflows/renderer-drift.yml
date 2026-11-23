@@ -1,0 +1,68 @@
+name: PDF renderer drift check
+
+# Weekly and on demand (decision-42): compare the newest pypdfium2 release on PyPI with uv.lock and
+# open a GitHub issue when the lock is behind (an alert, nothing is updated). pypdfium2 bundles
+# PDFium, whose vulnerabilities no scanner reports for it. At most one issue stays open (label
+# renderer-drift); a later run refreshes it, and a run without drift closes it.
+on:
+  schedule:
+    - cron: "47 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      open_issue:
+        description: "Open or refresh the GitHub issue when drift is found (off: report only)"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renderer-drift
+  cancel-in-progress: false
+
+env:
+  # renovate: datasource=pypi depName=rust-just
+  RUST_JUST_VERSION: "1.59.0"
+
+jobs:
+  renderer-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write # only the issue step has a token (GH_TOKEN)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Install just
+        run: uv tool install "rust-just==${RUST_JUST_VERSION}"
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      - name: Compare the newest pypdfium2 release with the lock
+        run: just renderer-drift-check
+        env:
+          DRIFT_REPORT: renderer-drift-report.md
+
+      - name: Publish the drift report
+        run: |
+          if [ -f renderer-drift-report.md ]; then
+            cat renderer-drift-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No drift: the newest pypdfium2 is locked." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Open, refresh or close the drift issue
+        if: ${{ github.event_name == 'schedule' || inputs.open_issue }}
+        run: just renderer-drift-issue
+        env:
+          GH_TOKEN: ${{ github.token }}

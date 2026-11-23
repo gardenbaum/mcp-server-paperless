@@ -49,10 +49,12 @@ just e2e-up                   # start the pinned Paperless stack for the live te
 just e2e                      # the live suite against it
 just mutation                 # mutmut on services/ and paperless/, fails below the 80 % gate, a few minutes
 just e2e-latest               # live suite against the latest stable paperless-ngx 3.x image
+just e2e-office               # Office and e-mail documents, with Tika and Gotenberg
+just renderer-drift-check     # locked pypdfium2 vs. the newest release
 just drift-check              # vendored Paperless schema and docs vs. the latest 3.x release
 ```
 
-The last three also run as weekly GitHub workflows and by manual dispatch.
+The last five also run as weekly GitHub workflows and by manual dispatch.
 
 ## Documentation
 

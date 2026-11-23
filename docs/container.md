@@ -88,6 +88,12 @@ networks:
 If you set `PAPERLESS_ALLOWED_HOSTS` in Paperless, it must include the name this container uses
 to reach it (`webserver` above), or Paperless answers the server with 400.
 
+## Memory
+
+`get_document_pages` draws pages in a child process of up to 1 GiB, one at a time, and the server
+holds the file (at most 100 MiB) while it does. Give the container that much above its usual
+memory, or switch the tool off with `PAPERLESS_MCP_DISABLED_TOOLS=get_document_pages`.
+
 ## Reverse proxy, health and building it yourself
 
 Put TLS, rate limiting and public exposure in a reverse proxy and list the host name it

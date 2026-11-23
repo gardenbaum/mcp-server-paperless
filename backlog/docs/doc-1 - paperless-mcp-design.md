@@ -99,7 +99,7 @@ cli.py / __main__.py / app.py      entrypoints (stdio, HTTP/ASGI)
         │
 server.py                          composition root: settings → adapter → services → providers
         │                          the ONLY module that imports both tools/ and paperless/
-   ┌────┴─────────────┐
+   ┌────┴─────────────┐            (beside them rendering/, the page renderer: decision-42)
 tools/                paperless/   tools: FastMCP providers per toolset (thin)
    │                     │         paperless: httpx2 client + wire models (adapter)
 services/                │         services: use cases, pure logic, depend on ports only
@@ -113,6 +113,7 @@ Import rules (enforced, see §9.4):
 - `paperless` imports `domain` (to implement ports and raise domain errors); never `fastmcp`,
   `mcp`, `services`, `tools`.
 - `tools` imports `services` and `domain`; never `httpx2` or `paperless`.
+- `rendering` imports `services` and `domain`; only it imports `pypdfium2` and `PIL` (decision-42).
 - Only `paperless` imports `httpx2`. Only `tools`, `server`, entrypoints import `fastmcp`/`mcp`.
 - Toolset modules inside `tools/` are independent of each other (shared helpers live in
   `tools/_shared`).
@@ -239,7 +240,7 @@ Names are indicative; the builder finalises parameters within §5.5. "Phase" ref
 
 | Toolset (default) | Tools | Phase |
 |---|---|---|
-| **core** (on) — read | `search_documents` (full text, more-like, structured filters by name/id, dates, custom-field query, paging, ordering) · `get_document` (detail + names; `include`: notes, history, metadata, versions, suggestions) · `get_document_content` (sliced) · `get_document_thumbnail` · `download_document` (original/archive) · `list_taxonomy(kind, name_contains)` · `get_instance_overview` (statistics, system status, versions, current user, capabilities) · `get_task(task_id, wait_seconds)` · `run_saved_view` (moved from views by decision-34) | M1 |
+| **core** (on) — read | `search_documents` (full text, more-like, structured filters by name/id, dates, custom-field query, paging, ordering) · `get_document` (detail + names; `include`: notes, history, metadata, versions, suggestions) · `get_document_content` (sliced) · `get_document_thumbnail` · `get_document_pages` (page images, decision-42) · `download_document` (original/archive) · `list_taxonomy(kind, name_contains)` · `get_instance_overview` (statistics, system status, versions, current user, capabilities) · `get_task(task_id, wait_seconds)` · `run_saved_view` (moved from views by decision-34) | M1 |
 | **core** (on) — write | `update_document` (merge semantics) · `add_note` · `delete_note` · `delete_document` (→ trash, confirm) · `upload_document` (base64 / stdio allowlisted path; metadata by name; optional wait) · `create_taxonomy_item` · `update_taxonomy_item` · `delete_taxonomy_item` (confirm) | M2 |
 | **ai** (on if Paperless AI enabled) | `ask_paperless_ai` (RAG chat over all or given documents) · `get_ai_suggestions` | M2 |
 | bulk | `bulk_edit_documents` (typed operations: tags add/remove/modify, correspondent, type, storage path, custom fields, delete, reprocess; `dry_run`, confirm) · `bulk_edit_taxonomy` (delete, permissions) | M3 |

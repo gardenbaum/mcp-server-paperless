@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings
 from mcp_server_paperless.app import create_app, run_server, uvicorn_server
 from mcp_server_paperless.domain.errors import PaperlessMcpError
 from mcp_server_paperless.observability import configure_logging
-from mcp_server_paperless.server import create_server
+from mcp_server_paperless.server import create_server, protect_process
 from mcp_server_paperless.settings import (
     HttpSettings,
     OidcSettings,
@@ -46,14 +46,19 @@ def _load[S: BaseSettings](kind: type[S], problems: list[str]) -> S | None:
         return None
 
 
-def main() -> None:
-    """Run the server over stdio."""
+def main(protect: Callable[[], None] = protect_process) -> None:
+    """Run the server over stdio.
+
+    Args:
+        protect: Keeps other processes out of this one; tests pass a fake.
+    """
     problems: list[str] = []
     paperless = _load(PaperlessSettings, problems)
     settings = _load(ServerSettings, problems)
     if paperless is None or settings is None:
         _fail("invalid configuration: " + "; ".join(problems))
     configure_logging(settings.log_level)
+    protect()
     try:
         # No banner: it is noise on stderr and would check PyPI for updates (decision-7).
         create_server(paperless, settings, stdio=True).run(transport="stdio", show_banner=False)
@@ -61,7 +66,10 @@ def main() -> None:
         _fail(error.describe())
 
 
-def main_http(run: Callable[[uvicorn.Server], bool] = run_server) -> None:
+def main_http(
+    run: Callable[[uvicorn.Server], bool] = run_server,
+    protect: Callable[[], None] = protect_process,
+) -> None:
     """Run the server over Streamable HTTP; refuses to start without authentication.
 
     Authentication is static bearer tokens, the optional OIDC layer (``PAPERLESS_MCP_OIDC_*``),
@@ -69,6 +77,7 @@ def main_http(run: Callable[[uvicorn.Server], bool] = run_server) -> None:
 
     Args:
         run: Serves the uvicorn server and says whether it came up; tests pass a fake.
+        protect: Keeps other processes out of this one; tests pass a fake.
     """
     problems: list[str] = []
     paperless = _load(PaperlessSettings, problems)
@@ -78,6 +87,7 @@ def main_http(run: Callable[[uvicorn.Server], bool] = run_server) -> None:
     if paperless is None or settings is None or http is None or oidc is None:
         _fail("invalid configuration: " + "; ".join(problems))
     configure_logging(settings.log_level)
+    protect()
     try:
         app = create_app(paperless, settings, http, oidc=oidc)
     except PaperlessMcpError as error:
