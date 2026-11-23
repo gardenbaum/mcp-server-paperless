@@ -1,6 +1,7 @@
 """The renderer itself, in the process of the test: pages of PDFs and images."""
 
 import itertools
+from hashlib import shake_256
 
 import pytest
 from PIL import ExifTags, Image
@@ -115,9 +116,7 @@ def test_a_page_past_the_end_is_refused_with_the_page_count() -> None:
     with pytest.raises(RenderFailed) as raised:
         _ = render(pdf_of(["", ""]), request(pages="2-3"))
 
-    assert raised.value.reason == "pages"
-    assert raised.value.detail == "Page 3 does not exist: the document has 2 pages."
-    assert raised.value.hint == "Use pages from 1 to 2."
+    assert (raised.value.reason, raised.value.page_count) == ("pages", 2)
 
 
 @pytest.mark.parametrize(
@@ -255,7 +254,7 @@ def test_an_image_over_the_pixel_limit_is_refused_by_its_header() -> None:
     with pytest.raises(RenderFailed) as raised:
         _ = render(content, request("image/png", max_pixels=1_000_000))
 
-    assert (raised.value.reason, raised.value.detail) == ("pixels", "1.0")
+    assert (raised.value.reason, raised.value.megapixels) == ("pixels", 1.001)
 
 
 def test_an_image_at_the_pixel_limit_is_shown() -> None:
@@ -271,7 +270,7 @@ def test_the_pixel_limit_is_this_servers_also_above_pillows_own() -> None:
     with pytest.raises(RenderFailed) as raised:
         _ = render(content, request("image/png"))
 
-    assert (raised.value.reason, raised.value.detail) == ("pixels", "400.0")
+    assert (raised.value.reason, raised.value.megapixels) == ("pixels", 400.0)
 
 
 @pytest.mark.parametrize(
@@ -298,3 +297,60 @@ def test_a_large_jpeg_is_decoded_at_a_fraction_of_its_size() -> None:
 
     assert (image.width, image.height) == (400, 400)
     assert corners(opened(image.data)) == UPRIGHT
+
+
+def noise(width: int = 400, height: int = 400) -> Image.Image:
+    """An image that hardly compresses."""
+    return Image.frombytes("RGB", (width, height), shake_256(b"noise").digest(width * height * 3))
+
+
+def size_of(content: bytes, mime_type: str = "image/png") -> int:
+    [image] = render(content, request(mime_type)).images
+    return len(image.data)
+
+
+def test_a_page_at_the_byte_budget_is_whole_and_one_byte_over_it_loses_quality() -> None:
+    content = saved(noise(), "PNG")
+    full = size_of(content)
+
+    [whole] = render(content, request("image/png", max_bytes=full)).images
+    [reduced] = render(content, request("image/png", max_bytes=full - 1)).images
+
+    assert (whole.reduced, len(whole.data)) == (False, full)
+    assert reduced.reduced
+    assert len(reduced.data) < full
+    assert (reduced.width, reduced.height) == (400, 400)
+
+
+def test_a_page_that_does_not_fit_at_lower_quality_loses_pixels_until_it_fits() -> None:
+    content = saved(noise(), "PNG")
+
+    [image] = render(content, request("image/png", max_bytes=9_000)).images
+
+    assert image.reduced
+    assert len(image.data) <= 9_000
+    assert (image.width, image.height) == opened(image.data).size
+    assert image.width in {300, 225, 168, 126}
+
+
+def test_pages_that_do_not_fit_into_the_bytes_are_the_rest() -> None:
+    pages = [noise(), noise(), noise()]
+    content = saved(pages[0], "TIFF", save_all=True, append_images=pages[1:])
+    one = size_of(content, "image/tiff")
+
+    two = render(content, request("image/tiff", pages="1-3", max_bytes=2 * one))
+    less = render(content, request("image/tiff", pages="1-3", max_bytes=2 * one - 1))
+
+    assert ([image.page for image in two.images], two.rest) == ([1, 2], (3,))
+    assert ([image.page for image in less.images], less.rest) == ([1], (2, 3))
+    assert not any(image.reduced for image in (*two.images, *less.images))
+
+
+def test_pages_over_the_number_of_images_are_the_rest_and_are_not_drawn() -> None:
+    document = pdf_of([""] * 7)
+
+    found = render(document, request(pages="2-", max_images=5))
+
+    assert [image.page for image in found.images] == [2, 3, 4, 5, 6]
+    assert found.rest == (7,)
+    assert render(document, request(pages="3-7", max_images=5)).rest == ()

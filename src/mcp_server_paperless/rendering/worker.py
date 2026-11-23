@@ -7,7 +7,8 @@ a process of its own for each call and bounds it.
 import io
 import math
 import struct
-from typing import TYPE_CHECKING, Final, Protocol, override
+import sys
+from typing import TYPE_CHECKING, BinaryIO, Final, Protocol, override
 
 import pypdfium2
 import pypdfium2.raw
@@ -15,10 +16,13 @@ from PIL import ExifTags, Image, TiffImagePlugin, UnidentifiedImageError
 
 from mcp_server_paperless.domain.errors import Validation
 from mcp_server_paperless.domain.rendering import PageImage, Rendered, RenderFailed
+from mcp_server_paperless.rendering import limits
+from mcp_server_paperless.rendering.limits import MEMORY_EXIT
+from mcp_server_paperless.rendering.wire import Job, answer
 from mcp_server_paperless.services.page_ranges import parse_pages
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
     from mcp_server_paperless.domain.rendering import Reason, Region, RenderRequest
 
@@ -53,6 +57,11 @@ TURNS: Final[Mapping[int, Image.Transpose]] = {
     8: Image.Transpose.ROTATE_90,
 }
 QUALITY = 80
+# A page that is too large alone: this quality first, then three quarters of the pixels per side,
+# again and again. Twelve steps take the largest image to about 100 pixels.
+LOW_QUALITY = 50
+SHRINK = 0.75
+REDUCTIONS = 12
 # Faster than the default method at the same size.
 METHOD = 2
 
@@ -162,7 +171,7 @@ class _Picture(_Source):
             image.seek(page - 1)
         pixels = image.width * image.height
         if pixels > self._max_pixels:
-            raise RenderFailed(reason="pixels", detail=f"{pixels / 1e6:.1f}")
+            raise RenderFailed(reason="pixels", megapixels=pixels / 1e6)
         # Pillow turns a TIFF itself when it loads it, and gives its size as shown.
         orientation = 1 if self._tiff else image.getexif().get(ExifTags.Base.Orientation, 1)
         turn = TURNS.get(orientation)
@@ -181,14 +190,35 @@ class _Picture(_Source):
         return shown if turn is None else shown.transpose(turn)
 
 
-def _webp(image: Image.Image) -> bytes:
+def _webp(image: Image.Image, quality: int) -> bytes:
     buffer = io.BytesIO()
-    image.save(buffer, "WEBP", quality=QUALITY, method=METHOD)
+    image.save(buffer, "WEBP", quality=quality, method=METHOD)
     return buffer.getvalue()
 
 
+def _page_image(page: int, image: Image.Image, *, max_bytes: int, whole: bool) -> PageImage | None:
+    """The page as an image of at most ``max_bytes`` bytes.
+
+    A page that does not fit is None with ``whole``; else it gets a lower quality and then fewer
+    pixels, as many times as it takes.
+    """
+    data = _webp(image, QUALITY)
+    shown = image
+    reduced = len(data) > max_bytes
+    if reduced and whole:
+        return None
+    for step in range(REDUCTIONS):
+        if len(data) <= max_bytes:
+            break
+        factor = SHRINK**step
+        size = (max(1, int(image.width * factor)), max(1, int(image.height * factor)))
+        shown = image if step == 0 else image.resize(size, Image.Resampling.LANCZOS)
+        data = _webp(shown, LOW_QUALITY)
+    return PageImage(page=page, width=shown.width, height=shown.height, data=data, reduced=reduced)
+
+
 def render(content: bytes, request: RenderRequest) -> Rendered:
-    """The pages ``request`` asks for.
+    """The pages ``request`` asks for, as many as fit its bytes and its number of images.
 
     Raises:
         RenderFailed: The file cannot be read, or it has no such page.
@@ -201,10 +231,44 @@ def render(content: bytes, request: RenderRequest) -> Rendered:
     try:
         pages = parse_pages(request.pages, page_count=source.page_count)
     except Validation as error:
-        raise RenderFailed(reason="pages", detail=error.message, hint=error.hint) from error
+        raise RenderFailed(reason="pages", page_count=source.page_count) from error
     images: list[PageImage] = []
-    for number in pages:
-        image = source.draw(number, request.size, request.region or WHOLE)
-        data = _webp(image)
-        images.append(PageImage(page=number, width=image.width, height=image.height, data=data))
-    return Rendered(page_count=source.page_count, images=tuple(images))
+    left = request.max_bytes
+    for number in pages[: request.max_images]:
+        drawn = source.draw(number, request.size, request.region or WHOLE)
+        image = _page_image(number, drawn, max_bytes=left, whole=bool(images))
+        if image is None:
+            break
+        images.append(image)
+        left -= len(image.data)
+    return Rendered(
+        page_count=source.page_count, images=tuple(images), rest=tuple(pages[len(images) :])
+    )
+
+
+def main(stdin: BinaryIO, stdout: BinaryIO, guard: Callable[[int, float], None]) -> int:
+    """Render the job on ``stdin`` and write the answer to ``stdout``; returns the exit code.
+
+    ``guard`` bounds the process by the memory and the seconds of the job.
+    """
+    # All plugins now: the process may not be able to open their modules later.
+    _ = Image.init()
+    job = Job.model_validate_json(stdin.readline())
+    try:
+        guard(job.memory_bytes, job.seconds)
+        content = stdin.read(job.content_bytes)
+        if len(content) < job.content_bytes:
+            return 1  # the server went away
+        try:
+            found: Rendered | RenderFailed = render(content, job.request)
+        except RenderFailed as failure:
+            found = failure
+        _ = stdout.write(answer(found))
+        stdout.flush()
+    except MemoryError:
+        return MEMORY_EXIT
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.stdin.buffer, sys.stdout.buffer, limits.guard))

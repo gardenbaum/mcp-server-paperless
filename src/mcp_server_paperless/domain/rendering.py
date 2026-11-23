@@ -83,16 +83,16 @@ class RenderFailed(Exception):  # noqa: N818 -- an outcome, as the names of doma
 
     Attributes:
         reason: Why; the caller turns it into a message.
-        detail: More about it: the message of a page error, the megapixels of an image.
-        hint: The next step, for a page error.
+        page_count: How many pages the file has, if the page specification is wrong.
+        megapixels: How large the image is, if it is too large.
     """
 
-    def __init__(self, reason: Reason, detail: str = "", hint: str | None = None) -> None:
-        """Create the failure; ``detail`` is client-safe."""
+    def __init__(self, *, reason: Reason, page_count: int = 0, megapixels: float = 0.0) -> None:
+        """Create the failure. No text in it: the file and the child that reads it are untrusted."""
         super().__init__(reason)
         self.reason: Reason = reason
-        self.detail: str = detail
-        self.hint: str | None = hint
+        self.page_count: int = page_count
+        self.megapixels: float = megapixels
 
 
 class PageRenderer(Protocol):

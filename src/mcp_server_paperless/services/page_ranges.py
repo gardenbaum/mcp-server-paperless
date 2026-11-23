@@ -49,7 +49,7 @@ def parse_pages(spec: str, *, page_count: int) -> list[int]:
     if not spec.strip():
         message = "No pages given."
         raise Validation(message, hint="Name the pages, e.g. '1-3,5'.")
-    pages: list[int] = []
+    pages: dict[int, None] = {}  # in order, and quick to look up: a range can be long
     for part in spec.split(","):
         first, last = _bounds(part.strip(), page_count)
         if first < 1:
@@ -66,8 +66,19 @@ def parse_pages(spec: str, *, page_count: int) -> list[int]:
             if page in pages:
                 message = f"Page {page} is listed twice."
                 raise Validation(message, hint="List each page once.")
-            pages.append(page)
-    return pages
+            pages[page] = None
+    return list(pages)
+
+
+def specification(pages: Iterable[int]) -> str:
+    """The specification that ``parse_pages`` reads as ``pages``, with ranges where they rise."""
+    ranges: list[list[int]] = []
+    for page in pages:
+        if ranges and page == ranges[-1][1] + 1:
+            ranges[-1][1] = page
+        else:
+            ranges.append([page, page])
+    return ",".join(str(a) if a == b else f"{a}-{b}" for a, b in ranges)
 
 
 def describe(pages: Iterable[int]) -> str:
