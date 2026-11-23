@@ -7,6 +7,7 @@ guard, a request id and a body limit.
 """
 
 import base64
+import contextlib
 import hashlib
 import hmac
 import ipaddress
@@ -21,6 +22,7 @@ from cryptography.fernet import Fernet
 from fastmcp.server.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
 from fastmcp.server.auth.jwt_issuer import derive_jwt_key
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration, OIDCProxy
+from fastmcp.server.http import StreamableHTTPASGIApp
 from fastmcp.utilities.ui import FASTMCP_LOGO_URL
 from key_value.aio.stores.filetree import (
     FileTreeStore,
@@ -30,6 +32,7 @@ from key_value.aio.stores.filetree import (
 from key_value.aio.stores.memory import MemoryStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from mcp.server.transport_security import RequestBodyLimitMiddleware
+from mcp.types import INVALID_REQUEST
 from pydantic import AnyHttpUrl, ValidationError
 
 from mcp_server_paperless.domain.errors import InvalidConfiguration
@@ -37,7 +40,7 @@ from mcp_server_paperless.observability import RequestContext, request_header
 from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import AsyncGenerator, Callable, Sequence
 
     from fastmcp import FastMCP
     from key_value.aio.protocols import AsyncKeyValue
@@ -320,11 +323,22 @@ def body_limit(max_upload_bytes: int) -> int:
     return -(-max_upload_bytes // 3) * 4 + ENVELOPE_BYTES
 
 
-async def _reply(send: Send, status: int, text: str) -> None:
-    body = json.dumps({"error": text}).encode()
+async def _reply(send: Send, status: int, answer: object) -> None:
+    body = json.dumps(answer).encode()
     headers = [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
     await send({"type": "http.response.start", "status": status, "headers": headers})
     await send({"type": "http.response.body", "body": body})
+
+
+async def _too_large(send: Send, limit: int) -> None:
+    """413 with a JSON-RPC error: the SDK's client shows its message, and no other body's."""
+    message = (
+        f"Request too large: this server takes at most {limit} bytes per request, which "
+        "follows PAPERLESS_MCP_MAX_UPLOAD_BYTES (at most 100 MiB). Send less, such as a smaller "
+        "file."
+    )
+    error = {"code": INVALID_REQUEST, "message": message}
+    await _reply(send, 413, {"jsonrpc": "2.0", "id": None, "error": error})
 
 
 class BodyTooLargeError(Exception):
@@ -350,7 +364,7 @@ class BodyLimit:
             return
         declared = request_header(scope, b"content-length") or b"0"
         if declared.isdigit() and int(declared) > self.limit:
-            await _reply(send, 413, "request body too large")
+            await _too_large(send, self.limit)
             return
         received = 0
         started = False
@@ -374,7 +388,46 @@ class BodyLimit:
         except BodyTooLargeError:
             if started:
                 raise
-            await _reply(send, 413, "request body too large")
+            await _too_large(send, self.limit)
+
+
+NO_SDK_LIMIT = (
+    "cannot set the request body limit of the MCP endpoint: this version of FastMCP or the MCP SDK "
+    "keeps it elsewhere (decision-40)."
+)
+
+
+def raise_sdk_limit(app: Starlette, limit: int) -> None:
+    """Let the MCP endpoint of ``app`` take bodies of ``limit`` bytes (decision-40).
+
+    The MCP SDK refuses bodies over 4 MiB, and FastMCP has no option to change that. The manager
+    with the SDK's limit is made at each start of the app, so it is set right after.
+
+    Raises:
+        InvalidConfiguration: FastMCP's endpoint is not among the routes. Starting the app raises
+            it when the limit is not where it is expected, so a server with another limit never
+            serves; it then comes out of the session manager's task group, in an ExceptionGroup.
+    """
+    endpoints = [getattr(route, "endpoint", None) for route in app.routes]
+    # With authentication FastMCP wraps its endpoint.
+    inner = [getattr(endpoint, "app", endpoint) for endpoint in endpoints]
+    served = next((e for e in inner if isinstance(e, StreamableHTTPASGIApp)), None)
+    if served is None:
+        raise InvalidConfiguration(NO_SDK_LIMIT)
+    start = app.router.lifespan_context
+
+    @contextlib.asynccontextmanager
+    async def raised(starting: Starlette) -> AsyncGenerator[None]:
+        async with start(starting):
+            limiter = getattr(served.session_manager, "asgi_app", None)
+            if not isinstance(limiter, RequestBodyLimitMiddleware) or not hasattr(
+                limiter, "max_body_size"
+            ):
+                raise InvalidConfiguration(NO_SDK_LIMIT)
+            limiter.max_body_size = limit
+            yield
+
+    app.router.lifespan_context = raised
 
 
 class SmallBodies:
@@ -469,11 +522,11 @@ class LoopbackOnly:
             server = cast("tuple[str, int | None] | None", scope.get("server"))
             if not (server and _loopback_address(server[0])):
                 message = "no authentication is configured: this app answers on loopback only"
-                await _reply(send, 403, message)
+                await _reply(send, 403, {"error": message})
                 return
             if any(request_header(scope, name) is not None for name in PROXY_HEADERS):
                 message = "no authentication is configured: this app does not sit behind a proxy"
-                await _reply(send, 403, message)
+                await _reply(send, 403, {"error": message})
                 return
         await self.app(scope, receive, send)
 
@@ -502,7 +555,7 @@ def build_app(
 
     Raises:
         InvalidConfiguration: ``server`` was built without the authentication the settings ask
-            for, or with authentication they do not ask for.
+            for, or with authentication they do not ask for, or see ``raise_sdk_limit``.
     """
     with_oidc = oidc is not None and oidc.configured
     authenticated = bool(http.auth_tokens) or with_oidc
@@ -522,6 +575,7 @@ def build_app(
         session_idle_timeout="auto",
     )
     app.debug = False
+    raise_sdk_limit(app, body_limit(max_upload_bytes))
     # /mcp/ is not /mcp: a redirect would be answered before authentication, and with the
     # wrong port and scheme behind a proxy.
     app.router.redirect_slashes = False
@@ -551,8 +605,8 @@ def create_app(
     Never offers a path parameter: HTTP callers upload base64 content (decision-7).
 
     Raises:
-        InvalidConfiguration: See ``check_startup`` and ``oidc_proxy``, or the selection leaves
-            no tool.
+        InvalidConfiguration: See ``check_startup``, ``oidc_proxy`` and ``raise_sdk_limit``, or
+            the selection leaves no tool.
     """
     check_startup(http, resolve, oidc=oidc)
     server = create_server(paperless, settings, stdio=False, auth=authenticator(http, oidc))

@@ -1,8 +1,10 @@
 ---
+superseded_by: decision-40
+updated_date: '2026-11-23T14:19:11Z'
 id: decision-39
 title: 64 KiB body limit outside the MCP endpoint
 date: '2026-11-23T13:19:28Z'
-status: accepted
+status: superseded
 ---
 ## Context
 
