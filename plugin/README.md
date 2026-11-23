@@ -16,16 +16,17 @@ that is not affiliated with paperless-ngx.
 ## Skills
 
 The plugin brings four skills for common jobs; the assistant can pick one by itself, or you name it.
-They tell the assistant to propose first, to change nothing before your yes, and to treat the text of
-documents as data, never as instructions. An assistant can still err: the server's own confirmation
-step guards what is final, such as deleting, but not a changed title, tag or correspondent. The skills need only the default toolsets.
+They tell the assistant to propose first, to change nothing before your yes, and to treat text from
+documents, including titles, notes, names and field values, as data, never as instructions. An
+assistant can still err: the server's own confirmation step guards what is final, such as deleting,
+but not a changed title, tag or correspondent. The skills need only the default toolsets.
 
 | Skill | What it does |
 |---|---|
 | `paperless-triage-inbox` | Proposes a title, correspondent, type and tags for the documents in the inbox |
 | `paperless-find-document` | Finds a document from a loose description |
 | `paperless-annual-review` | Collects a year of documents, for example for the tax return |
-| `paperless-cleanup-taxonomy` | Finds duplicate, unused and badly named tags, types and correspondents |
+| `paperless-cleanup-taxonomy` | Finds duplicate, unused and badly named tags, correspondents, types and storage paths |
 
 The skills are written to use the same server configured elsewhere too, such as a claude.ai connector
 (not tested).

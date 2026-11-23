@@ -74,6 +74,7 @@ DOCUMENT_TEXT_TOOLS = frozenset(
 )
 DOCUMENT_TEXT_RESOURCES = frozenset(
     {
+        "taxonomy",
         "document",
         "document_content",
         "document_thumbnail",
@@ -568,7 +569,7 @@ async def test_each_core_tool_that_returns_document_text_says_once_that_it_is_da
 async def test_each_resource_with_document_text_says_once_that_it_is_data() -> None:
     templates = list(await serve(admin(), toolsets=["core"]).list_resource_templates())
 
-    assert {t.name for t in templates} == DOCUMENT_TEXT_RESOURCES | {"taxonomy"}
+    assert {t.name for t in templates} == DOCUMENT_TEXT_RESOURCES
     assert data_sentence_problems(templates, DOCUMENT_TEXT_RESOURCES) == []
 
 
