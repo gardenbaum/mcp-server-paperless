@@ -132,6 +132,7 @@ def test_nested_exclusions_do_not_multiply_the_notice(query: str) -> None:
         ("a (-b)", ["-b"]),
         ("-(a -b) -c", ["-(", "-b", "-c"]),
         ("a ! (b)", ["!"]),
+        ('"a"-b "c"!d', ["-b", "!d"]),
         ("a -(b", ["-("]),
         ("a -type:(x OR y)", ["-type:("]),
         ("a -title:'b c'", ["-title:'b c'"]),
@@ -139,10 +140,6 @@ def test_nested_exclusions_do_not_multiply_the_notice(query: str) -> None:
         ("-'b c'", ["-'b c'"]),
         ("!2024", ["!2024"]),
         ("-type:*", ["-type:*"]),
-        ("NOT -type:*", ["-type:*"]),
-        ('NOT -"a b"', ['-"a b"']),
-        ("x NOT !(a b)", ["!("]),
-        ("-NOT b", ["-NOT"]),
     ],
 )
 def test_every_sign_that_does_not_exclude_is_named(query: str, named: list[str]) -> None:
@@ -158,7 +155,7 @@ def test_every_sign_that_does_not_exclude_is_named(query: str, named: list[str])
         ("-Title:foo", "'Title:'"),
         ("a !nosuch:x", "'nosuch:'"),
         ("_x:foo 2foo:bar", "'_x:', '2foo:'"),
-        ('"a"nosuch:x', ""),
+        ('"a"nosuch:x', "'nosuch:'"),
     ],
 )
 def test_an_unknown_field_behind_a_sign_is_named(query: str, named: str) -> None:
@@ -177,8 +174,13 @@ def test_an_unknown_field_behind_a_sign_is_named(query: str, named: str) -> None
         ('NOT"a b"', "'NOT\"a b\"'"),
         ("NOT'a b'", "'NOT'a'"),
         ('a AND"b"', "'AND\"b\"'"),
-        ('"a"AND "b"', "'\"a\"AND'"),
+        ('"a"AND "b"', "'AND'"),
         ("(a)AND b", "'AND'"),
+        ('"a"NOT b', "'NOT'"),
+        ('"p q"NOT(a)', "'NOT('"),
+        ('or"p q"', "'or'"),
+        ('title:"a\nnot b"', "'not'"),
+        ("'a\nnot b'", "'not'"),
         ("(a)OR (b)", "'OR'"),
         ("NOT AND b", "'NOT'"),
         ("a OR OR b", "'OR'"),
@@ -199,7 +201,15 @@ def test_a_hyphenated_word_is_only_advised_conditionally(query: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "query", ["title:'a -b'", "('a not b')", "(x AND 'a -b')", "'it's not a'", "don't a AND b"]
+    "query",
+    [
+        "title:'a -b'",
+        "('a not b')",
+        "(x AND 'a -b')",
+        "'it's not a'",
+        "don't a AND b",
+        "'a', not 'b'",
+    ],
 )
 def test_single_quoted_text_is_no_syntax(query: str) -> None:
     assert query_notices(query) == ()
@@ -250,5 +260,51 @@ def test_an_unclosed_range_is_read_in_linear_time(bracket: str) -> None:
 
     started = time.perf_counter()
     _ = query_notices(query)
+
+    assert time.perf_counter() - started < 2
+
+
+@pytest.mark.parametrize(
+    ("query", "sign"),
+    [
+        ("NOT -type:*", "-type:*"),
+        ('NOT -"a b"', '-"a b"'),
+        ("x NOT !(a b)", "!("),
+        ("NOT -acme*", "-acme*"),
+        ("-NOT b", "-NOT"),
+    ],
+)
+def test_a_sign_at_not_is_to_be_removed_not_replaced(query: str, sign: str) -> None:
+    [notice] = query_notices(query)
+
+    assert f"'{sign}'" in notice
+    assert "remove the sign" in notice
+    assert "write NOT" not in notice
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "a -> b",
+        "a --> b",
+        "a -_- b",
+        "hello !",
+        "wow ! great",
+        'a "b" ! c',
+        "NOT -a/b",
+        "NOT -a!5",
+        "title:[a TO -b]",
+        "[a to -b}",
+        "title:(a) NOT (b)",
+        "(a)NOT b",
+    ],
+)
+def test_punctuation_and_valid_forms_get_no_notice(query: str) -> None:
+    assert query_notices(query) == ()
+
+
+def test_quotes_before_a_distant_newline_are_read_in_linear_time() -> None:
+    started = time.perf_counter()
+    _ = query_notices("'a " * 50_000 + "\n")
 
     assert time.perf_counter() - started < 2

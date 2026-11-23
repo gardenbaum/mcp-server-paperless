@@ -22,33 +22,36 @@ OPERATORS = ("AND", "OR", "NOT")
 SYMBOLS = {"&&": "AND", "||": "OR"}
 
 _OPEN = re.compile(r"\"|(?<!\w)'|[\[{]")
-_CLOSE = {'"': re.compile('"'), "'": re.compile(r"'(?!\w)")}
-_BRACKETS = re.compile(r"\[[^\[\]]*\]|\{[^{}]*\}")
-_TO = re.compile(r"\bto\b")
-_TOKEN = re.compile(r"[()]|[^\s()]+")
+_CLOSE = {'"': re.compile(r"[\"\n]"), "'": re.compile(r"'(?=[\s\])}]|$)|\n")}
+_BRACKETS = re.compile(r"[\[{][^\[\]{}]*[\]}]")
+_TO = re.compile(r"\bto\b", re.IGNORECASE)
+# Stands for the characters of a phrase or range, whose inside is no query syntax.
+_OPAQUE = "\0"
+_TOKEN = re.compile(r"[()]|\0+|[^\s()\0]+")
 # A field prefix, also behind a sign; "10:30" and URLs are none.
 _FIELD = re.compile(r"[-!\N{EN DASH}\N{MINUS SIGN}]*((?=\w*[^\W\d])\w[\w.]*):(?!//)")
 _SIGN = re.compile(r"[-!\N{EN DASH}\N{MINUS SIGN}]+")
-_GLUED = re.compile(r"(?:AND|OR|NOT)[-!'\0]|\0+(?:AND|OR)$")
-_BARE = re.compile(r"[\w.-]+")
-# Stands for the characters of a phrase or range, whose inside is no query syntax.
-_OPAQUE = "\0"
+_GLUED = re.compile(r"(?:AND|OR|NOT)[-!']")
+# The index drops the sign of such a term, so NOT in front of it excludes.
+_BARE = re.compile(r"[^:*?]+")
 
 
 def _masked(query: str) -> str:
     """The query with phrases and ranges blanked; positions stay the same."""
     parts: list[str] = []
     at = 0
-    unclosed: set[str] = set()
+    open_until = dict.fromkeys(_CLOSE, 0)  # no closing quote before this position
     while opened := _OPEN.search(query, at):
         mark, start = opened[0], opened.start()
         closed = None
-        if mark in _CLOSE and mark not in unclosed:
-            closed = _CLOSE[mark].search(query, start + 1)
-            unclosed |= set() if closed else {mark}
-        elif mark not in _CLOSE:
+        if mark not in _CLOSE:
             closed = _BRACKETS.match(query, start)
             closed = closed if closed and _TO.search(closed[0]) else None
+        elif start >= open_until[mark]:
+            closed = _CLOSE[mark].search(query, start + 1)
+            if closed is None or closed[0] == "\n":
+                open_until[mark] = closed.start() if closed else len(query)
+                closed = None
         end = closed.end() if closed else start + 1
         parts += query[at:start], _OPAQUE * (end - start) if closed else mark
         at = end
@@ -65,26 +68,42 @@ class _Word:
         previous = tokens[at - 1] if at else None
         following = tokens[at + 1] if at + 1 < len(tokens) else None
         self.before = previous[0] if previous else "("
-        after = following[0] if following else ")"
-        self.opens_group = after == "(" and following is not None and following.start() == end
-        self.closes_group = self.before == ")" and previous is not None and previous.end() == start
-        # As the user wrote it, with the parenthesis of a group it applies to.
-        self.shown = query[start : end + self.opens_group]
+        self.after = following[0] if following else ")"
+        touching = previous[0][0] if previous and previous.end() == start else ""
+        self.follows_phrase = touching == _OPAQUE
+        self.follows_group = touching == ")"
+        # A group or phrase right behind the word, which it is meant to apply to.
+        self.has_operand = False
+        self.shown = query[start:end]
+        if following and following.start() == end and following[0][0] in {"(", _OPAQUE}:
+            self.has_operand = True
+            self.shown = query[start : following.end()]
         left = self.text.upper() == "NOT" or self.before not in {"(", *OPERATORS}
-        self.can_operate = left and after not in {")", "AND", "OR"}
+        self.can_operate = left and self.after not in {")", "AND", "OR"}
 
     @property
-    def is_unread_sign(self) -> bool:
+    def has_unread_sign(self) -> bool:
         """Whether a sign in front is meant to exclude, but is read as text."""
         if not (sign := _SIGN.match(self.text)):
             return False
         term = self.text[sign.end() :]
         if not term:
-            return self.opens_group or sign[0] == "!"
-        if self.before == "NOT" and _BARE.fullmatch(term) and not self.opens_group:
-            return False  # NOT excludes; the index drops the sign
+            return self.has_operand or (sign[0] == "!" and self.after == "(")
+        if self.before == "NOT" and _BARE.fullmatch(term) and not self.has_operand:
+            return False
         # A minus before a number is an amount ("CHF -50"), not an attempt to exclude.
-        return "!" in sign[0] or not term[0].isdigit()
+        return (term[0].isalnum() or term[0] in "'*?") and ("!" in sign[0] or not term[0].isdigit())
+
+    @property
+    def is_negated(self) -> bool:
+        return self.before == "NOT" or _SIGN.sub("", self.text) == "NOT"
+
+    @property
+    def is_glued_operator(self) -> bool:
+        if self.text not in OPERATORS:
+            return bool(_GLUED.match(self.text))
+        after_group = self.follows_group and self.text != "NOT"
+        return self.has_operand or self.follows_phrase or after_group
 
 
 def _named(values: Iterable[str]) -> str:
@@ -96,7 +115,7 @@ def _fields(words: list[_Word]) -> Iterator[str]:
     detached: list[str] = []
     for word in words:
         if match := _FIELD.match(word.text):
-            has_value = match.end() < len(word.text) or word.opens_group
+            has_value = match.end() < len(word.text) or word.has_operand
             if match[1] not in SEARCH_FIELDS and has_value:
                 unknown.append(f"{match[1]}:")
             elif match[1] in SEARCH_FIELDS and not has_value:
@@ -121,8 +140,7 @@ def _operators(words: list[_Word]) -> Iterator[str]:
             advice = "leave it out unless you mean the word"
         yield f"'{text}' is searched as a word, not as an operator; {advice}."
     for word in words:
-        glued_after = word.text in {"AND", "OR"} and word.closes_group
-        if (word.text in OPERATORS and word.opens_group) or glued_after or _GLUED.match(word.text):
+        if word.is_glued_operator:
             rule = "is read as text; put a space on both sides if you mean the operator"
             yield f"'{word.shown}' {rule}."
         elif word.text in OPERATORS and not word.can_operate:
@@ -133,14 +151,19 @@ def _operators(words: list[_Word]) -> Iterator[str]:
 
 
 def _exclusions(words: list[_Word]) -> Iterator[str]:
-    if signs := [word.shown for word in words if word.is_unread_sign]:
-        rule = "A leading minus or ! does not exclude and is read as text"
+    signs = [word for word in words if word.has_unread_sign]
+    rule = "A leading minus or ! does not exclude and is read as text"
+    if plain := [word.shown for word in signs if not word.is_negated]:
         advice = "write NOT and a space in its place, e.g. NOT swisscom"
-        yield f"{rule}: {_named(signs)}; {advice}."
+        yield f"{rule}: {_named(plain)}; {advice}."
+    if negated := [word.shown for word in signs if word.is_negated]:
+        yield f"{rule}: {_named(negated)}; remove the sign, NOT alone excludes."
 
 
 def query_notices(query: str) -> tuple[str, ...]:
     """Name each misread construct once, with the working alternative."""
     tokens = list(_TOKEN.finditer(_masked(query)))
-    words = [_Word(query, tokens, at) for at, token in enumerate(tokens) if token[0] not in "()"]
+    words = [
+        _Word(query, tokens, at) for at, token in enumerate(tokens) if token[0][0] not in "()\0"
+    ]
     return tuple(dict.fromkeys((*_fields(words), *_operators(words), *_exclusions(words))))
