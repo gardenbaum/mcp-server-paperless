@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T08:26:24Z'
-updated_date: '2026-11-23T08:40:36Z'
+updated_date: '2026-11-23T09:21:59Z'
 labels: []
 dependencies: []
 type: chore
@@ -43,6 +43,8 @@ The server is on PyPI (decision-33) but not in the official MCP Registry (regist
 2. server.json (schema 2025-12-11, pypi/stdio/uvx, env vars), glama.json, .github/workflows/registry.yml (main ancestry, wait for PyPI, jq version from tag, mcp-publisher v1.8.15 verified with cosign, login github-oidc, publish).
 3. decision-35 for the new channel; docs/development.md Releases.
 4. mcp-publisher validate locally, just check, PR.
+
+5. Independent review fixes: split the job so uv never runs beside the OIDC token; exact-match tests.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -61,12 +63,19 @@ The server is on PyPI (decision-33) but not in the official MCP Registry (regist
 - Correction: decision-32/33 do not say every channel needs its own rules; decision-35 was written because a second job now holds an OIDC token.
 - The causes named above for the two local failures were inferred from their error messages. The pty failure was not investigated; both tests pass in CI (Linux).
 - The cosign verification was not run locally (no cosign). The signing certificate of the v1.8.15 bundle names the expected identity and issuer.
+
+- Independent opus review of b1ca557: no Critical, two Important, several Minor.
+- I1 fixed: the tests compare jobs, steps and scripts word for word, plus defaults, choices and keys of server.json. 39 weakenings on a scratch copy, 0 survivors. This replaces the earlier claim about 12 weakenings, which were too easy: the review found 21 of 22 survivors.
+- I2 fixed: a prepare job without OIDC token holds the main check, the uv version step and the PyPI wait; publish needs it and runs no uv. The new tests ran red against the old workflow (6 failed), then green. The wait is now bounded by elapsed time, since --max-time on a counted loop could have exceeded 15 minutes.
+- M1, M2, M3 in decision-35 and the workflow. M2 checked against internal/service/versioning.go at v1.8.15; the registry documentation describes it differently. M4 is PLMCP-65.
+- The reviewer ran the cosign verification against the real v1.8.15 assets and it passed (as reported by the coordinator).
+- just check on the final code: every recipe ok except test_the_menu_driver_reports_a_failing_cli, which fails on this Mac with a pty error (not investigated) and passed in CI on the previous head. The earlier wording that it fails on an unchanged main is unproven.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Publishes the server to the official MCP Registry on every version tag (decision-35). server.json (schema 2025-12-11) lists io.github.gardenbaum/mcp-server-paperless with the PyPI package mcp-server-paperless run by uvx over stdio and all eleven environment variables of the stdio server (PAPERLESS_URL and PAPERLESS_TOKEN required, the token secret). .github/workflows/registry.yml runs on v* tags only: requires the tagged commit on main, sets the PEP 440 version from the tag with uv as pypi.yml does, writes it into server.json with jq, waits up to 15 minutes for PyPI to serve it, downloads mcp-publisher v1.8.15 verified by cosign, logs in by GitHub OIDC and publishes. Same hardening as pypi.yml. glama.json names gardenbaum as maintainer. tests/quality/test_registry.py guards all of it; docs/development.md names the channel.
+Publishes the server to the official MCP Registry on every version tag (decision-35). server.json lists io.github.gardenbaum/mcp-server-paperless: the PyPI package over stdio with uvx and all eleven environment variables of the stdio server. registry.yml runs on v* tags only: prepare (no OIDC token) requires the tagged commit on main, takes the PEP 440 version from the tag and waits up to 15 minutes for PyPI; publish (needs prepare, the only id-token) writes the version, downloads mcp-publisher v1.8.15 verified by cosign, logs in by GitHub OIDC and publishes. glama.json names gardenbaum. tests/quality/test_registry.py matches the workflow word for word (39 weakenings, none survive).
 
-Risk: the job is first exercised by the next version tag; v0.3.0 is not listed by it (the owner can push a new tag or publish once by hand).
+Risk: first exercised by the next version tag; v0.3.0 is not listed by it. No tag ruleset or environment protects the publish job (recommended to the owner). Follow-up: PLMCP-65.
 <!-- SECTION:FINAL_SUMMARY:END -->
