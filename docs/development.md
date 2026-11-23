@@ -61,6 +61,18 @@ description or its annotations changed. Tests fail when it is stale, when the RE
 tool or toolset count the catalogue does not have, when a setting is documented nowhere under
 `docs/`, or when a relative link leads nowhere.
 
+### Demo recording
+
+`just demo` records `docs/demo/demo.gif`, the recording at the top of the README. It needs only
+Docker and network access: `docs/demo/compose.yaml` starts the pinned Paperless of the live tests
+as a throwaway stack, and the recorder container (vhs and uv, pinned in `docs/demo/Dockerfile`)
+fills it with the invented documents of `docs/demo/demo.py` and records `docs/demo/demo.tape`. The
+stack and its volumes are removed afterwards. The script runs the released server from PyPI
+(`SERVER` in `demo.py`) as an MCP client. Questions and tool calls are scripted and no model takes
+part; the answers come from the server and are only shortened. Keep the caption and the alt text in
+the README true, look at every scene before committing, and stay within 30 seconds and 3 MB (a test
+checks both). To show another release, change `SERVER`, run `just demo` and update the caption.
+
 ## Conventions
 
 Lint suppressions name a specific code and a reason, e.g. `# noqa: S101 -- reason`
