@@ -72,9 +72,8 @@ On by default. Find and read documents (`search_documents` with full text, simil
 structured filters, `get_document`, `get_document_content` in slices, thumbnails and downloads),
 file them (`update_document`, notes), upload new ones, follow background tasks, and maintain
 tags, correspondents, document types, storage paths and custom fields. `run_saved_view` runs a
-saved view that `list_taxonomy` lists, with the rows and paging of `search_documents`
-(decision-34). Names are accepted
-wherever an id is: an unknown or ambiguous name is an error that lists the candidates.
+saved view that `list_taxonomy` lists, with the rows and paging of `search_documents`. Names are
+accepted wherever an id is: an unknown or ambiguous name is an error that lists the candidates.
 `delete_document` moves a document to the Paperless trash; `delete_note` and
 `delete_taxonomy_item` are final. All three need `confirm`, and so do the changes of
 `update_document` and `update_taxonomy_item` that cannot be taken back (handing a document to

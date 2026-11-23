@@ -1,11 +1,11 @@
 ---
 id: PLMCP-57
 title: Offer run_saved_view in the default profile
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T00:52:08Z'
-updated_date: '2026-11-23T01:15:45Z'
+updated_date: '2026-11-23T01:21:40Z'
 labels: []
 dependencies: []
 type: feature
@@ -20,10 +20,10 @@ User feedback (2026-11-23): "The most helpful thing would be if the server could
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 run_saved_view is in the core toolset and offered by the default profile; the other saved-view tools stay in views
-- [ ] #2 The default profile stays within the tool budget of 20, enforced by the registry test
-- [ ] #3 A decision records the move and why; doc-1, the README toolset table and the e2e toolset map agree with it
-- [ ] #4 list_taxonomy's description points to run_saved_view for running a listed view
+- [x] #1 run_saved_view is in the core toolset and offered by the default profile; the other saved-view tools stay in views
+- [x] #2 The default profile stays within the tool budget of 20, enforced by the registry test
+- [x] #3 A decision records the move and why; doc-1, the README toolset table and the e2e toolset map agree with it
+- [x] #4 list_taxonomy's description points to run_saved_view for running a listed view
 <!-- AC:END -->
 
 ## Definition of Done
@@ -43,3 +43,16 @@ User feedback (2026-11-23): "The most helpful thing would be if the server could
 4. list_taxonomy description points to run_saved_view.
 5. Regenerate surface snapshots deliberately.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Evidence: just check green apart from the two known macOS-only failures (test_the_menu_driver_reports_a_failing_cli, test_a_socket_is_not_a_file); e2e test_stdio.py + test_views.py: 7 passed; mutation not applicable (mutmut covers services/ and paperless/ only; this change is in tools/).
+Independent review (opus): no Critical; one Important fixed (decision-34 body was outside the CLI section markers); three Minor fixed (stale run_saved_view in the views read set of test_stdio and test_visibility, a ragged line in configuration.md).
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+run_saved_view moved from the opt-in views toolset to core (decision-34), so the default profile, which already lists saved views through list_taxonomy, can now run them; list_taxonomy says so. The default profile has 19 of its 20 tools; the other five saved-view tools stay in views. doc-1, README counts, configuration.md and the generated tool reference follow; surface snapshots were regenerated deliberately. Leaves one tool of room in the default budget.
+<!-- SECTION:FINAL_SUMMARY:END -->
