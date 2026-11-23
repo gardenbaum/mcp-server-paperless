@@ -88,6 +88,7 @@ def test_the_image_runs_as_a_numeric_non_root_user() -> None:
 
 
 @pytest.mark.decision("decision-28")
+@pytest.mark.decision("decision-37")
 def test_the_image_runs_the_http_entrypoint_and_probes_the_port_without_a_route() -> None:
     text = DOCKERFILE.read_text(encoding="utf-8")
 
