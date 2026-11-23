@@ -202,7 +202,14 @@ class BulkDocumentEditor:
             raise PermissionDenied(message, hint=hint)
         others = await self._others(resolved.mirrored(changing), {hit.id for hit in hits})
         if not (dry_run or not changing or confirm):
-            raise ConfirmationRequired.for_effect(self._effect(resolved, changing, others))
+            ConfirmationRequired.require(
+                self._effect(resolved, changing, others),
+                scope=(
+                    [hit.id for hit in changing],
+                    [number for number, _ in others],
+                    resolved.change,
+                ),
+            )
         applied = bool(changing) and not dry_run
         unconfirmed: Unconfirmed | None = None
         if applied:

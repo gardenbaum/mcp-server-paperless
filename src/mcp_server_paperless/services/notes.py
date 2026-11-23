@@ -72,7 +72,7 @@ class NoteService:
                 f"{quoted(note.note, EXCERPT_CHARS)}) from document {document_id} "
                 f"{quoted(document.title)} for good; notes have no trash"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect)
         await self._writer.delete_note(document_id, note_id)
         return NoteDeleted(
             document_id=document_id,

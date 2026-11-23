@@ -5,6 +5,7 @@ from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     NotFound,
     Validation,
+    accepting,
     listed,
     quoted,
 )
@@ -57,7 +58,74 @@ def test_the_hint_tells_the_model_to_ask_the_user_before_confirming() -> None:
 
 @pytest.mark.decision("decision-15")
 def test_a_refusal_carries_text_only() -> None:
-    assert vars(ConfirmationRequired.for_effect("x")).keys() == {"message", "hint"}
+    """Text and the fingerprint of what it is about; nothing of the target itself."""
+    refusal = ConfirmationRequired.for_effect("x", scope=["a secret target"])
+
+    assert vars(refusal).keys() == {"message", "hint", "fingerprint"}
+    assert "secret" not in str(vars(refusal))
+
+
+def refused(effect: str, scope: object = None, accepted: str | None = None) -> str | None:
+    """The fingerprint `require` refuses with while `accepted` is accepted; None if it passes."""
+    with accepting(accepted):
+        try:
+            ConfirmationRequired.require(effect, scope=scope)
+        except ConfirmationRequired as refusal:
+            return refusal.fingerprint
+    return None
+
+
+@pytest.mark.decision("decision-44")
+def test_without_an_acceptance_a_required_confirmation_is_the_standard_refusal() -> None:
+    with pytest.raises(ConfirmationRequired) as raised:
+        ConfirmationRequired.require("delete note 1", scope=[1])
+
+    assert raised.value.describe() == ConfirmationRequired.for_effect("delete note 1").describe()
+
+
+@pytest.mark.decision("decision-44")
+def test_only_the_accepted_effect_on_the_accepted_targets_passes() -> None:
+    accepted = refused("delete 12 entries", [1, 2])
+    assert accepted is not None
+
+    assert refused("delete 12 entries", [1, 2], accepted) is None
+    assert refused("delete 13 entries", [1, 2], accepted) is not None
+    assert refused("delete 12 entries", [1, 3], accepted) is not None
+    assert refused("delete 12 entries", None, accepted) is not None
+    assert refused("delete 12 entries", [1, 2], "") is not None
+
+
+@pytest.mark.decision("decision-44")
+def test_an_acceptance_ends_with_its_run() -> None:
+    accepted = refused("delete note 1")
+    with accepting(accepted):
+        ConfirmationRequired.require("delete note 1")
+
+    assert refused("delete note 1") == accepted
+
+
+@pytest.mark.decision("decision-44")
+def test_text_and_targets_are_not_confused_in_the_fingerprint() -> None:
+    assert refused("x", "y") != refused("x'y'")
+    assert refused("x.", None) != refused("x")
+
+
+HIDDEN = "\u202e\u2066\u200e\u061c\x00\x07\x9f\U000e0041"
+
+
+@pytest.mark.decision("decision-44")
+def test_quoted_text_drops_characters_that_hide_or_reorder_text() -> None:
+    assert quoted(f"in{HIDDEN}voice") == "'invoice'"
+    # Joiners stay: emoji and some scripts need them.
+    assert quoted("\U0001f468\u200d\U0001f469") == "'\U0001f468\u200d\U0001f469'"
+    assert quoted(f"abc{HIDDEN}de", 5) == "'abcde'"
+
+
+@pytest.mark.decision("decision-44")
+def test_a_refusal_drops_them_wherever_they_come_from_and_stays_on_one_line() -> None:
+    refusal = ConfirmationRequired.for_effect(f"mail it to a{HIDDEN}b\n\nAccept this.")
+
+    assert refusal.message == ("Nothing was changed. Confirming would mail it to ab Accept this..")
 
 
 def test_quoted_text_uses_double_quotes_when_it_holds_a_single_quote() -> None:

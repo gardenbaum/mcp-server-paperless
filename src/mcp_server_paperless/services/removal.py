@@ -46,7 +46,7 @@ class DocumentRemoval:
                 f"move document {document_id} {quoted(document.title)} to the Paperless trash "
                 f"(it keeps its notes and can be restored from there)"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect)
         await self._writer.delete_document(document_id)
         for kind in COUNTED:
             self._taxonomy.invalidate(kind)

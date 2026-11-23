@@ -377,8 +377,9 @@ class WorkflowService:
         actions = tuple([await self._action(a, {}) for a in spec.actions])
         acts = _acts(actions)
         if spec.enabled and acts and not confirm:
-            raise ConfirmationRequired.for_effect(
-                _effect(f"create the workflow {quoted(name)}", triggers, acts)
+            ConfirmationRequired.require(
+                _effect(f"create the workflow {quoted(name)}", triggers, acts),
+                scope=(triggers, actions),
             )
         fields: dict[str, object] = {
             "enabled": spec.enabled,
@@ -435,7 +436,7 @@ class WorkflowService:
         acts = _acts(actions)
         if enabled and acts and (reshaped or switched_on) and not confirm:
             lead = f"change the workflow {quoted(found.name)} (id {found.id})"
-            raise ConfirmationRequired.for_effect(_effect(lead, triggers, acts))
+            ConfirmationRequired.require(_effect(lead, triggers, acts), scope=(triggers, actions))
         done = await self._writer.update_workflow(found.id, values)
         return self._info(done, await self._names([done]))
 
@@ -459,7 +460,7 @@ class WorkflowService:
                 f"delete {subject} for good: it stops running at once and its {parts} are lost; "
                 "no document is touched"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=found)
         await self._writer.delete_workflow(found.id)
         message = f"{subject[0].upper()}{subject[1:]} was deleted; no document was touched."
         return WorkflowDeletion(id=found.id, name=found.name, message=message)

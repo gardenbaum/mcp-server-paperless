@@ -319,7 +319,7 @@ class MailService:
             return self._account(current)
         effect = self._connection_effect(current, changes, new_password=password is not None)
         if effect and not confirm:
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect)
         values = MailAccountValues.model_validate(changes)
         if password is not None:
             values = values.model_copy(update={"password": password})
@@ -393,7 +393,7 @@ class MailService:
                 f"delete {label}{with_rules}; Paperless stops fetching from it, the mail on the "
                 "server stays"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=rules)
         await self._writer.delete_mail_account(account_id)
         message = (
             f"{label[0].upper()}{label[1:]} was deleted{done}; Paperless no longer fetches from it."
@@ -434,7 +434,7 @@ class MailService:
             _, superuser = await self._caller()
             if not superuser:
                 effect += ". Rules of other users on this account that you cannot see run too"
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=rules)
         await self._writer.process_mail_account(account_id)
         message = (
             f"Paperless queued a fetch of the mail of account {label}. It runs in the "
@@ -664,7 +664,7 @@ class MailService:
         if not confirm:
             effects = await self._create_effects(settings.name, account, written, values)
             if effects:
-                raise ConfirmationRequired.for_effect("; and ".join(effects))
+                ConfirmationRequired.require("; and ".join(effects), scope=written)
         [info] = await self._rule_infos([await self._writer.create_mail_rule(written)])
         return info
 
@@ -721,7 +721,7 @@ class MailService:
         label = f"mail rule {quoted(current.name)} (id {current.id})"
         effects = await self._update_effects(current, changes, label)
         if effects and not confirm:
-            raise ConfirmationRequired.for_effect("; and ".join(effects))
+            ConfirmationRequired.require("; and ".join(effects), scope=(current, changes))
         written = await self._writer.update_mail_rule(
             rule_id, MailRuleValues.model_validate(changes)
         )
@@ -816,7 +816,7 @@ class MailService:
                 f"delete the {label} of account {quoted(account)} and the records of the mail "
                 "it processed; Paperless stops importing with it, the mail on the server stays"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect)
         await self._writer.delete_mail_rule(rule_id)
         return MailRuleDeletion(id=rule_id, message=f"{label[0].upper()}{label[1:]} was deleted.")
 

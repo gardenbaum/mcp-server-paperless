@@ -115,7 +115,9 @@ class BulkTaxonomyEditor:
             what = f"{grants[1]} on {subject}"
             done = f"Applied: {what}."
         if not (dry_run or confirm):
-            raise ConfirmationRequired.for_effect(what)
+            ConfirmationRequired.require(
+                what, scope=([row.id for row in chosen], [row.id for row in below], grants)
+            )
         if not dry_run:
             await self._write(kind, [row.id for row in chosen], grants and grants[0])
         return TaxonomyBulkReport(

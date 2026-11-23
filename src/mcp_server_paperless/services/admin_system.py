@@ -188,7 +188,10 @@ class SystemAdmin:
                 message="Nothing changed: the configuration already is as asked.",
             )
         if not confirm:
-            raise ConfirmationRequired.for_effect(self._effect(effects, [*changes, *secrets]))
+            ConfirmationRequired.require(
+                self._effect(effects, [*changes, *secrets]),
+                scope=(changes, [current.settings.get(name) for name in changes]),
+            )
         written = await self._writer.update_config(ConfigValues(settings=changes, secrets=secrets))
         done = (*changes, *secrets)
         return ConfigOutcome(
@@ -292,7 +295,7 @@ class SystemAdmin:
             PermissionDenied: Only a superuser may start tasks.
         """
         if task_type in TASK_EFFECTS and not confirm:
-            raise ConfirmationRequired.for_effect(TASK_EFFECTS[task_type])
+            ConfirmationRequired.require(TASK_EFFECTS[task_type])
         task_id = await self._writer.run_task(task_type)
         return StartedTask(
             task_id=task_id,

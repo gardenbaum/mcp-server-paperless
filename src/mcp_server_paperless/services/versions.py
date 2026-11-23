@@ -158,7 +158,7 @@ class VersionService:
                 f"of document {document_id} {quoted(document.title)}; it moves to the Paperless "
                 f"trash and can be restored from there; {after}"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect)
         current_id = await self._writer.delete_version(document_id, version_id)
         return VersionDeleted(
             document_id=document_id,
@@ -209,7 +209,7 @@ class VersionService:
                     ),
                 )
         if not confirm:
-            raise ConfirmationRequired.for_effect(self._effect(root, sources, text))
+            ConfirmationRequired.require(self._effect(root, sources, text))
         try:
             unconfirmed = await self._writer.merge_as_versions(root_id, tuple(source_ids), text)
         finally:

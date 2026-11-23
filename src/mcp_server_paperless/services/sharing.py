@@ -245,7 +245,7 @@ class SharingService:
                 f"{quoted(titles[document_id])} (id {document_id}) under a public share link "
                 f"that {expiry_phrase(days)}; {PUBLIC_WARNING}"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect)
         expiration = None if days is None else self._now() + timedelta(days=days)
         made = await self._writer.create_share_link(
             document_id, expiration=expiration, file_version=file_version
@@ -266,7 +266,7 @@ class SharingService:
             subject += f" for the document {quoted(link.document_title)} (id {link.document_id})"
         if not confirm:
             effect = f"delete {subject}: its URL stops working for everyone who has it"
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect)
         await self._writer.delete_share_link(link_id)
         message = f"{subject[0].upper()}{subject[1:]} was deleted; its URL no longer works."
         return ShareDeletion(id=link_id, message=message)
@@ -320,7 +320,7 @@ class SharingService:
                 f"archive under a public share link that {expiry_phrase(days)}; "
                 f"{PUBLIC_WARNING}"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect)
         made = await self._writer.create_share_bundle(
             ids, expiration_days=days, file_version=file_version
         )
@@ -352,7 +352,7 @@ class SharingService:
             effect = (
                 f"delete {subject} with its archive: its URL stops working for everyone who has it"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=bundle.document_ids)
         await self._writer.delete_share_bundle(bundle_id)
         message = f"{subject[0].upper()}{subject[1:]} was deleted; its URL no longer works."
         return ShareDeletion(id=bundle_id, message=message)
@@ -397,7 +397,7 @@ class SharingService:
                 f"{joined(addresses)}{together}, subject {quoted(subject)}, message "
                 f"{quoted(message, EXCERPT)}; it leaves Paperless and cannot be recalled"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect)
         await self._writer.email_documents(
             ids,
             addresses=addresses,
