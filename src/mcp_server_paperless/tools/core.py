@@ -36,7 +36,7 @@ from mcp_server_paperless.domain.documents import (
     NoteDeleted,
     Ordering,
 )
-from mcp_server_paperless.domain.instance import InstanceOverview
+from mcp_server_paperless.domain.instance import ServerOverview
 from mcp_server_paperless.domain.tasks import TaskReport
 from mcp_server_paperless.domain.taxonomy import (
     DataType,
@@ -55,6 +55,7 @@ from mcp_server_paperless.tools._shared import (
     ANNOTATIONS,
     Confirm,
     boundary,
+    guide_for,
     resource_boundary,
     services,
 )
@@ -128,17 +129,19 @@ provider = LocalProvider()
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["get_instance_overview"])
 @boundary
-async def get_instance_overview(ctx: Context) -> InstanceOverview:
+async def get_instance_overview(ctx: Context) -> ServerOverview:
     """Describe the Paperless instance as the current user sees it.
 
     Reports the Paperless and API version, the document, inbox and taxonomy counts, the system
     health (storage, database, task queue, search index, classifier), the current user and
     whether Paperless AI is enabled. Use it first to orient yourself, or to diagnose failures.
+    Lists the toolsets that are off and how the operator switches them on.
 
     Counts include only what the user may see, unless they may view global statistics. A null
     field means the user may not see it, not that it is off: ai_enabled null means unknown.
     """
-    return await services(ctx).instance.overview()
+    overview = await services(ctx).instance.overview()
+    return ServerOverview.of(overview, guide_for(ctx, ai_enabled=overview.ai_enabled))
 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["list_taxonomy"])

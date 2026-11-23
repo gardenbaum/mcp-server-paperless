@@ -5,7 +5,8 @@ self-tests run every check over a synthetic provider of offending tools, so a ch
 pass for want of offenders (no destructive tool, no path parameter yet) is proven to fire.
 """
 
-from pathlib import Path  # noqa: TC003 -- FastMCP reads tool signatures at runtime
+import ast
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, cast
 
 import pytest
@@ -908,3 +909,74 @@ def test_self_test_credential_names_are_recognised(name: str) -> None:
 @pytest.mark.parametrize("name", ["is_token", "token_expires", "title", "key_count", "name"])
 def test_self_test_harmless_names_are_not_credentials(name: str) -> None:
     assert not credential_like(name)
+
+
+# The methods that change what one session or user sees (decision-41: only the operator widens it),
+# and the server-wide ones, which only the composition root may call.
+SESSION_VISIBILITY = frozenset({"enable_components", "disable_components", "reset_visibility"})
+SERVER_VISIBILITY = frozenset({"enable", "disable"})
+COMPOSITION_ROOT = "mcp_server_paperless/server.py"
+
+
+def switches_visibility(sources: Mapping[str, str]) -> list[str]:
+    """Every use of a visibility method, as "file: name", in source order.
+
+    A use is a call or a reference (an alias), an import, a ``getattr`` or any other string equal
+    to the name. The server-wide ``enable`` and ``disable`` count outside the composition root.
+    """
+    found: list[str] = []
+    for name, text in sources.items():
+        banned: frozenset[str] = SESSION_VISIBILITY | (
+            frozenset[str]() if name.endswith(COMPOSITION_ROOT) else SERVER_VISIBILITY
+        )
+        for node in ast.walk(ast.parse(text)):
+            used = (
+                node.attr
+                if isinstance(node, ast.Attribute)
+                else node.id
+                if isinstance(node, ast.Name)
+                else node.name
+                if isinstance(node, ast.alias)
+                else node.value
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                else None
+            )
+            if used in banned:
+                found.append(f"{name}: {used}")
+    return found
+
+
+@pytest.mark.decision("decision-41")
+def test_no_code_lets_a_client_or_a_session_change_what_is_offered() -> None:
+    root = Path(__file__).parents[2] / "src"
+    sources = {path.as_posix(): path.read_text("utf-8") for path in root.rglob("*.py")}
+
+    assert sources
+    assert COMPOSITION_ROOT in " ".join(sources)
+    assert switches_visibility(sources) == []
+
+
+@pytest.mark.decision("decision-41")
+def test_self_test_every_way_to_change_visibility_outside_the_composition_root_is_found() -> None:
+    found = switches_visibility(
+        {
+            "a/bad.py": "async def t(ctx):\n    await ctx.enable_components(tags={'raw'})\n",
+            "a/also.py": "def f(c):\n    c.reset_visibility()\n    c.disable_components()\n",
+            "a/alias.py": "from x import enable_components as on\n",
+            "a/reference.py": "def g(ctx):\n    swap = ctx.enable_components\n    swap()\n",
+            "a/dynamic.py": "def h(ctx):\n    getattr(ctx, 'disable_components')()\n",
+            "a/server_wide.py": "def i(server):\n    server.enable(tags={'admin'})\n",
+            "a/mcp_server_paperless/server.py": "def j(s):\n    s.enable(tags={'core'})\n",
+            "a/fine.py": "def k(settings):\n    return settings.read_only\n",
+        }
+    )
+
+    assert found == [
+        "a/bad.py: enable_components",
+        "a/also.py: reset_visibility",
+        "a/also.py: disable_components",
+        "a/alias.py: enable_components",
+        "a/reference.py: enable_components",
+        "a/dynamic.py: disable_components",
+        "a/server_wide.py: enable",
+    ]

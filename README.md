@@ -252,7 +252,9 @@ variables: [Connect claude.ai](https://github.com/gardenbaum/mcp-server-paperles
 
 The 87 tools are grouped into toolsets, and only two are on by default, so the model is not
 handed tools you never use. Switch more on with `PAPERLESS_MCP_TOOLSETS=core,ai,pdf,trash` or
-`all`.
+`all`, and restart the server. The assistant is told which toolsets are off, what each adds and how to
+switch them on (never for a session: only you decide, see
+[Configuration](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md#switching-a-toolset-on)).
 
 | Toolset | Tools | Default | What it is for |
 |---|---|---|---|

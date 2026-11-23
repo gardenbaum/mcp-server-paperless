@@ -213,6 +213,16 @@ class FailsAfterProbe:
         raise self.error
 
 
+class Recorded:
+    """Paperless as it answered once: the same overview on every call, nothing else."""
+
+    def __init__(self, overview: InstanceOverview) -> None:
+        self.overview: InstanceOverview = overview
+
+    async def get_overview(self) -> InstanceOverview:
+        return self.overview
+
+
 class FailingReader:
     """Every call fails with `error`, the startup probe included."""
 

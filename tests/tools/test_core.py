@@ -25,7 +25,9 @@ async def test_the_overview_is_the_structured_output_of_the_instance() -> None:
 
     output = result.structured_content
     assert output is not None
+    guide = cast("dict[str, object]", output.pop("toolsets"))
     assert output == (await fake.get_overview()).model_dump(mode="json")
+    assert guide["on"] == ["core"]
     assert output["current_user"] == {
         "id": 2,
         "username": "admin",

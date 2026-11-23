@@ -6,16 +6,18 @@ client does.
 
 import contextlib
 import os
+import re
 import shutil
 import socket
 import subprocess
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import httpx2
 import pytest
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
+from guide_oracle import Seen, look
 
 from e2e.helpers import EXPECTED_VERSION
 
@@ -35,8 +37,9 @@ def console_script() -> str:
     return path
 
 
-@pytest.fixture
-def endpoint(stack: Stack) -> Generator[str]:
+@contextlib.contextmanager
+def running(stack: Stack, **settings: str) -> Generator[str]:
+    """The HTTP server as a process with `settings` in its environment; yields its MCP URL."""
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = int(probe.getsockname()[1])  # pyright: ignore[reportAny] -- (host, port) tuple
@@ -46,6 +49,7 @@ def endpoint(stack: Stack) -> Generator[str]:
         "PAPERLESS_TOKEN": stack.admin_token,
         "PAPERLESS_MCP_HTTP_PORT": str(port),
         "PAPERLESS_MCP_HTTP_AUTH_TOKENS": MCP_TOKEN,
+        **settings,
     }
     process = subprocess.Popen(  # noqa: S603 -- our own console script, no shell
         [console_script()],
@@ -67,6 +71,12 @@ def endpoint(stack: Stack) -> Generator[str]:
         _ = process.wait(timeout=30)
 
 
+@pytest.fixture
+def endpoint(stack: Stack) -> Generator[str]:
+    with running(stack) as url:
+        yield url
+
+
 async def test_a_client_with_the_bearer_token_can_call_get_instance_overview(endpoint: str) -> None:
     transport = StreamableHttpTransport(endpoint, headers={"Authorization": f"Bearer {MCP_TOKEN}"})
 
@@ -82,3 +92,30 @@ def test_a_request_without_the_token_is_refused(endpoint: str) -> None:
     response = httpx2.post(endpoint, json={}, headers={"Accept": "application/json"})
 
     assert response.status_code == 401
+
+
+async def over_http(url: str) -> Seen:
+    transport = StreamableHttpTransport(url, headers={"Authorization": f"Bearer {MCP_TOKEN}"})
+    async with Client(transport) as client:
+        return await look(client)
+
+
+async def test_the_setting_the_guide_names_switches_the_toolset_wanted_on_over_http(
+    stack: Stack, endpoint: str
+) -> None:
+    seen = await over_http(endpoint)
+
+    assert seen.guide is not None
+    setting = re.search(r"PAPERLESS_MCP_TOOLSETS=(\S+)", seen.instructions)
+    assert setting is not None, seen.instructions
+    assert setting[1] == "core,ai,<name>"
+    assert "HTTP and image: environment of the process or container" in seen.instructions
+    wanted = "permissions"  # neither the first of the toolsets that are off nor the last
+    [entry] = [
+        e for e in cast("list[dict[str, object]]", seen.guide["off"]) if e["toolset"] == wanted
+    ]
+
+    with running(stack, PAPERLESS_MCP_TOOLSETS=setting[1].replace("<name>", wanted)) as restarted:
+        after = await over_http(restarted)
+
+    assert after.tools == seen.tools | set(cast("list[str]", entry["tools"]))
