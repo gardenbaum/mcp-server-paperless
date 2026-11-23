@@ -141,6 +141,15 @@ def test_more_memory_is_noticed() -> None:
     assert int(grown) > 100_000_000
 
 
+@pytest.mark.skipif(WINDOWS, reason="there is no resource module on Windows")
+def test_another_platform_is_measured_by_its_peak() -> None:
+    import resource  # noqa: PLC0415 -- does not exist on Windows
+
+    before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+
+    assert 0 < before <= limits.memory_reader("darwin")() < 8_000_000_000
+
+
 @pytest.mark.skipif(WINDOWS, reason="os.pread and os.sysconf are POSIX")
 def test_linux_memory_is_the_resident_part_of_statm(tmp_path: Path) -> None:
     statm = tmp_path / "statm"
