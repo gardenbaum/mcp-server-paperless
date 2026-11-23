@@ -82,8 +82,8 @@ DOCUMENT_TEXT_RESOURCES = frozenset(
         "document_archive",
     }
 )
-# Our own conservative budget in bytes; clients cut later (Claude Code after 4,096 characters by
-# default, https://code.claude.com/docs/en/mcp).
+# Our own conservative budget in bytes; Claude Code cuts at 4,096 characters by default (2,048
+# before v2.1.296), see https://code.claude.com/docs/en/mcp.
 TEXT_LIMIT = 2048
 
 
