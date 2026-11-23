@@ -99,9 +99,9 @@ backlog-drift-check` runs the comparison locally).
 ## Releases
 
 A release is a version tag on a commit on main, pushed by the owner; nobody publishes by hand and
-no version bump is needed (decision-33, carried over by decision-38): `git tag -a v1.2.3 -m "1.2.3" && git push origin v1.2.3`.
+no version bump is needed (decision-33, carried over by decision-39): `git tag -a v1.2.3 -m "1.2.3" && git push origin v1.2.3`.
 The tag runs two workflows: `image.yml` publishes the container image to GHCR (decision-28 as
-carried over by decision-38), and `pypi.yml` sets the package version from the tag (`uv version`,
+carried over by decision-39), and `pypi.yml` sets the package version from the tag (`uv version`,
 PEP 440: `v1.2.3-rc.1` becomes `1.2.3rc1`) and publishes `mcp-server-paperless` to PyPI by Trusted
 Publishing from the `pypi` environment. A tag that is not a valid version, or a commit that is not
 on main, publishes nothing to PyPI; PyPI also refuses local versions (`+…`). The version in `pyproject.toml` is the development version that
