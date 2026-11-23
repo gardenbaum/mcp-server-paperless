@@ -1,8 +1,10 @@
 ---
+superseded_by: decision-39
+updated_date: '2026-11-23T13:19:29Z'
 id: decision-38
 title: Dockerfile build target stdio for the Docker MCP Catalog
 date: '2026-11-23T11:43:48Z'
-status: accepted
+status: superseded
 ---
 ## Context
 
