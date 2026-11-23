@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:37:49Z'
-updated_date: '2026-11-23T11:47:53Z'
+updated_date: '2026-11-23T11:56:05Z'
 labels: []
 dependencies: []
 priority: medium
@@ -50,4 +50,8 @@ The Claude directory takes local MCP servers only inside a plugin, and the Curso
 
 <!-- SECTION:NOTES:BEGIN -->
 Implemented plugin/ for Claude Code and Cursor plus root marketplace files. Verified in a Linux container with Claude Code 2.1.330 and an empty CLAUDE_CONFIG_DIR: install, /plugin options, the released server connects through uvx, defaults reach the server, the token is only in .credentials.json. Red: 18 failed, green: 82 passed (test_plugin.py, test_docs.py). Cursor is not installed here: checked against its docs only. Pinned to 0.3.2 because the directory blocks unpinned launchers; a release needs a follow-up PR (docs/development.md). Open for the owner: listing icon (only taken on the first save or submission), Cursor options beyond URL and token, Cowork (ignores servers whose options have no default), automatic pin updates through Renovate.
+
+Review fixes: the update sequence needs a marketplace refresh first; clearing Toolsets stores an empty value that 0.3.2 refuses (documented); the Cursor local copy is a load test only. AC3 (Cursor) is checked against Cursor's docs only, never loaded in Cursor. The icon (I4) waits for the owner.
+
+Owner's icon added: plugin/assets/icon.png (1024 px, Claude icon and Cursor logo), assets/icon.svg (title translated to English) and assets/icon-400.png for other listings; not in the sdist or wheel. claude plugin validate --strict --profile directory passes without findings. Update sequence and the cleared-Toolsets behaviour reproduced in a container with a git marketplace.
 <!-- SECTION:NOTES:END -->

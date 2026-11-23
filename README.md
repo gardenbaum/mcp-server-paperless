@@ -146,14 +146,15 @@ Add `--scope user` to have it in every project. Then ask Claude for an overview 
 instance. `@latest` makes uvx check for a new release at every start; to stay on one, name its
 version instead (`mcp-server-paperless@0.2.0`).
 
-Or as a plugin, which asks for the URL and the token, so the token is in no command and Claude Code
-keeps it in its credential store. In a session (Claude Code 2.1.275 or later):
+Or as a plugin, which asks for seven options (only the URL and the token are required), so the token
+is in no command and Claude Code keeps it in its credential store. In a session (Claude Code 2.1.275 or later):
 
 ```text
 /plugin install mcp-server-paperless --marketplace gardenbaum/mcp-server-paperless
 ```
 
-From your shell, followed by `/plugin configure mcp-server-paperless@gardenbaum` in a session:
+From your shell, followed by `/plugin configure mcp-server-paperless@gardenbaum` in a session and a
+restart of Claude Code:
 
 ```sh
 claude plugin marketplace add gardenbaum/mcp-server-paperless
@@ -161,7 +162,16 @@ claude plugin install mcp-server-paperless@gardenbaum
 ```
 
 The [plugin](https://github.com/gardenbaum/mcp-server-paperless/blob/main/plugin/README.md) runs a
-fixed release; `claude plugin update mcp-server-paperless@gardenbaum` fetches the next one.
+fixed release of the package (its dependencies are resolved at install). For the next one, refresh
+the marketplace first, then restart Claude Code or run `/reload-plugins`:
+
+```sh
+claude plugin marketplace update gardenbaum
+claude plugin update mcp-server-paperless@gardenbaum
+```
+
+Remove an entry you added with `claude mcp add` (`claude mcp remove paperless`), or every tool
+appears twice.
 
 > [!WARNING]
 > The package is **`mcp-server-paperless`**. The PyPI project

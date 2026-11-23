@@ -95,5 +95,7 @@ through `glama.json`. Check a changed `server.json` with `mcp-publisher validate
 The plugin in `plugin/` pins the release it runs, because the Claude directory refuses an unpinned
 `uvx`. After PyPI serves a new release, raise `version` and the `mcp-server-paperless==` pin in both
 `plugin/.claude-plugin/plugin.json` and `plugin/.cursor-plugin/plugin.json` (a test keeps the four in
-step) in a pull request; until then plugin users stay on the release before. Check with
-`claude plugin validate --profile directory plugin` and `claude plugin validate .`.
+step) in a pull request; until then plugin users stay on the release before. The pin covers the package, not its dependencies. Check with
+`claude plugin validate --profile directory plugin` and `claude plugin validate .`. In the
+directory's review expect a hold "Runs a pinned npx or uvx package", which every pinned launcher
+gets, and possibly a brand-name hold ("Name matches a known brand") for Paperless in the name.

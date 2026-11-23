@@ -10,6 +10,7 @@
   "homepage": "https://github.com/gardenbaum/mcp-server-paperless#readme",
   "repository": "https://github.com/gardenbaum/mcp-server-paperless",
   "license": "MIT",
+  "icon": "./assets/icon.png",
   "keywords": [
     "paperless-ngx",
     "documents",
@@ -58,7 +59,7 @@
     "paperless_mcp_toolsets": {
       "type": "string",
       "title": "Toolsets",
-      "description": "Toolsets to offer, comma-separated, or all",
+      "description": "Toolsets to offer, comma-separated, or all. Once set, must not be empty: type core,ai for the default",
       "default": "core,ai"
     },
     "paperless_mcp_read_only": {

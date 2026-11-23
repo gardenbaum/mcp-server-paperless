@@ -8,6 +8,7 @@
   "homepage": "https://github.com/gardenbaum/mcp-server-paperless#readme",
   "repository": "https://github.com/gardenbaum/mcp-server-paperless",
   "license": "MIT",
+  "logo": "assets/icon.png",
   "keywords": [
     "paperless-ngx",
     "documents",
