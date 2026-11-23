@@ -19,6 +19,7 @@ on:
       - uv.lock
       - src/**
       - scripts/image_smoke.sh
+      - scripts/image_render_smoke.sh
       - scripts/image_stdio_smoke.sh
       - .github/workflows/image.yml
 

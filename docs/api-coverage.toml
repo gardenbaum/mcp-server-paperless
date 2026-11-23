@@ -19,7 +19,7 @@
 #                 What hangs under a plumbing field and is sent by no tool is a problem, unless it
 #                 is a value (full_perms=false, a value of the stored object that no scenario
 #                 holds) and the row names it as `name=value`. A child field cannot be named
-#                 away: a tool sends it, or it is open under a task.
+#                 away: a tool sends it, or its parent is no plumbing.
 # [[exclusion]]   an owner-approved exclusion: quote, date and a Markdown file under backlog/
 #                 (an excluded value of a field that is sent also needs a `reason`)
 # [[undeclared]]  query parameters the generated schema omits (listed by hand)
@@ -279,11 +279,6 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/documents/{id}/download/"
-fields = ["query:version"]
-task = "PLMCP-76"
-
-[[open_fields]]
-operation = "GET /api/documents/{id}/download/"
 fields = ["query:follow_formatting"]
 task = "PLMCP-83"
 
@@ -291,11 +286,6 @@ task = "PLMCP-83"
 operation = "GET /api/documents/{id}/history/"
 fields = ["query:page", "query:page_size"]
 task = "PLMCP-89"
-
-[[open_fields]]
-operation = "GET /api/documents/{id}/metadata/"
-fields = ["query:version"]
-task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/documents/{id}/notes/"

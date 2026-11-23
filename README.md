@@ -38,8 +38,8 @@ claude mcp add paperless --env PAPERLESS_URL=https://paperless.example.org \
 
 mcp-server-paperless is a [Model Context Protocol](https://modelcontextprotocol.io) server for
 paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai, Cursor, VS
-Code and any other MCP client 87 tools in 13 toolsets that cover most of what the Paperless API
-can do, from a search to saved views, mail rules and workflows. It starts small and careful: 19
+Code and any other MCP client 88 tools in 13 toolsets that cover most of what the Paperless API
+can do, from a search to saved views, mail rules and workflows. It starts small and careful: 20
 tools by default, names instead of ids, and a confirmation step before anything that cannot be
 undone.
 
@@ -58,6 +58,7 @@ flowchart LR
 - "Find last year's electricity bills and add up what I paid."
 - "Upload this PDF as an invoice from ACME and tag it tax-2026."
 - "Which documents mention the rental deposit? Show me the paragraph."
+- "The date next to the signature is unreadable in the text. Show me that part of page 2."
 - "Merge the three scans of the contract into one document and rotate page 2."
 - "Give me a link to my insurance policy that expires in a week."
 - "Set up a mail rule that files the invoices from billing@example.org."
@@ -98,7 +99,7 @@ people who want all of the following in one server:
 - 🛡️ **Nothing final without your yes.** Before a tool deletes, overwrites, publishes or shares
   anything, it reports what would happen and waits for your confirmation. Changes to many
   documents at once can be previewed first.
-- 🪶 **Small to start with.** Only 19 tools by default out of the 87, so the assistant starts
+- 🪶 **Small to start with.** Only 20 tools by default out of the 88, so the assistant starts
   with the essentials and you decide what else it may do. Search results are short lists and long
   documents are read piece by piece, so a conversation does not fill up with text it does not
   need.
@@ -116,7 +117,7 @@ sources, not run; ❌ means not found; open an issue if something is wrong or ha
 
 | | Tools by default / in total | Toolsets and read-only mode | Names instead of ids | Confirms what is final | Runs saved views | Notices misread full-text syntax | HTTP | Tested on a real Paperless |
 |---|---|---|---|---|---|---|---|---|
-| **mcp-server-paperless** | 19 / 87 | ✅ opt-in | ✅ tags, types, people, views | ✅ with a preview | ✅ | ✅ | bearer, OIDC | 3.5.1 after every merge, newest 3.x weekly |
+| **mcp-server-paperless** | 20 / 88 | ✅ opt-in | ✅ tags, types, people, views | ✅ with a preview | ✅ | ✅ | bearer, OIDC | 3.5.1 after every merge, newest 3.x weekly |
 | [OrellBuehler/paperless-mcp](https://github.com/OrellBuehler/paperless-mcp) | 123 / 126 | ✅ all on by default | ❌ | hints only | ❌ | ❌ | bearer, OAuth | ❌ |
 | [freeformz/paperless-ngx-mcp](https://github.com/freeformz/paperless-ngx-mcp) | 123 / 123 | ❌ | ❌ | ❌ | ❌ | ❌ | stdio only | ❌ |
 | [cubinet-code/paperless-ngx-mcp](https://github.com/cubinet-code/paperless-ngx-mcp) | 109 / 109 | ❌ | in results | ✅ | ❌ | ❌ | no auth | 3.2.1 on every change |
@@ -250,7 +251,7 @@ variables: [Connect claude.ai](https://github.com/gardenbaum/mcp-server-paperles
 
 ## Toolsets
 
-The 87 tools are grouped into toolsets, and only two are on by default, so the model is not
+The 88 tools are grouped into toolsets, and only two are on by default, so the model is not
 handed tools you never use. Switch more on with `PAPERLESS_MCP_TOOLSETS=core,ai,pdf,trash` or
 `all`, and restart the server. The assistant is told which toolsets are off, what each adds and how to
 switch them on (never for a session: only you decide, see
@@ -258,7 +259,7 @@ switch them on (never for a session: only you decide, see
 
 | Toolset | Tools | Default | What it is for |
 |---|---|---|---|
-| `core` | 17 | on | Search, read, download, file and upload documents; run saved views; notes; tags, correspondents, types, storage paths and custom fields; background tasks |
+| `core` | 18 | on | Search, read, see pages as images, download, file and upload documents; run saved views; notes; tags, correspondents, types, storage paths and custom fields; background tasks |
 | `ai` | 2 | on | Ask Paperless AI about your documents and get its filing suggestions (offered only while Paperless AI is enabled) |
 | `bulk` | 2 | | Change many documents or taxonomy items in one step, with a dry run first |
 | `pdf` | 7 | | Rotate, merge, split, delete pages, edit PDFs, remove passwords, reprocess |
@@ -346,8 +347,8 @@ included).
 - **One Paperless user per server.** Every client of a server acts as the user of its
   `PAPERLESS_TOKEN`, also when clients sign in through an identity provider. Run one server per
   Paperless account.
-- **`search_documents` with `more_like_id` can return nothing on Paperless 3.4.2.** Paperless
-  3.4.2 (Tantivy 0.26) panics while scoring a more-like-this query once edited or deleted
+- **`search_documents` with `more_like_id` can return nothing on Paperless 3.5.1.** Paperless
+  3.5.1 (Tantivy 0.26) panics while scoring a more-like-this query once edited or deleted
   documents have left stale entries in the search index. Paperless catches the panic, logs
   `More Like This scoring panicked` and answers an empty list with HTTP 200, so the server cannot
   tell it from "no similar documents". If a result is empty although similar documents should

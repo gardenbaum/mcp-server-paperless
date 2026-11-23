@@ -314,6 +314,25 @@ e2e-ai:
     "${compose[@]}" up -d
     uv run pytest -m ai_e2e --no-cov
 
+# Run the Office and e-mail tests (marker `office_e2e`) against the pinned Paperless with Tika and
+# Gotenberg (tests/e2e/compose.office.yaml), which only they need. Own compose project and port
+# (8014), so a stack from `e2e-up` is untouched; the stack is removed afterwards, container logs of
+# a failed run land in e2e-office-containers.log.
+e2e-office:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PAPERLESS_E2E_PORT="${PAPERLESS_E2E_PORT:-8014}"
+    export PAPERLESS_E2E_OFFICE=1
+    compose=(docker compose -p paperless-mcp-e2e-office -f tests/e2e/compose.yaml -f tests/e2e/compose.office.yaml)
+    cleanup() {
+        local status=$?
+        if (( status != 0 )); then "${compose[@]}" logs --no-color > e2e-office-containers.log || true; fi
+        "${compose[@]}" down --volumes --remove-orphans
+    }
+    trap cleanup EXIT
+    "${compose[@]}" up -d
+    uv run pytest -m office_e2e --no-cov --durations=20
+
 # Stop the E2E stack and delete its volumes, so the next start is a fresh instance.
 e2e-down:
     docker compose -f tests/e2e/compose.yaml down --volumes --remove-orphans
@@ -431,6 +450,43 @@ backlog-drift-issue report="backlog-drift-report.md":
     else
         uv run python scripts/scheduled_jobs.py close-issue --label backlog-drift \
             --comment "Resolved: the Backlog.md instructions match the latest release again."
+    fi
+
+# Compare the newest pypdfium2 release on PyPI with uv.lock (weekly job; decision-42): an alert, no
+# update. Needs curl and the network; changes nothing in the repository. DRIFT_REPORT=path also
+# copies the report there (renderer-drift-issue reads it); the exit code is 0 with or without drift.
+renderer-drift-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    status=0
+    uv run python scripts/renderer_drift.py uv.lock "$tmp/report.md" || status=$?
+    # 10 is DRIFT_EXIT_CODE in scripts/scheduled_jobs.py; keep the two in step.
+    if (( status == 10 )); then
+        cat "$tmp/report.md"
+        if [[ -n "${DRIFT_REPORT:-}" ]]; then cp "$tmp/report.md" "$DRIFT_REPORT"; fi
+    elif (( status != 0 )); then
+        exit "$status"
+    elif [[ -n "${DRIFT_REPORT:-}" ]]; then
+        # No drift: drop a report left by an earlier run, so the issue is closed.
+        rm -f -- "$DRIFT_REPORT"
+    fi
+
+# Report the result of `renderer-drift-check` (its DRIFT_REPORT file) as the one GitHub issue labelled
+# renderer-drift, through `gh` (needs GH_TOKEN with issues: write): open it, or refresh it with a
+# comment; with no report file (no drift) close it. Never duplicates an open issue.
+renderer-drift-issue report="renderer-drift-report.md":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -f "{{report}}" ]]; then
+        uv run python scripts/scheduled_jobs.py open-issue \
+            --title "The locked PDF renderer is behind the newest pypdfium2 release" \
+            --label renderer-drift --description "pypdfium2 release newer than the lock" \
+            --body-file "{{report}}"
+    else
+        uv run python scripts/scheduled_jobs.py close-issue --label renderer-drift \
+            --comment "Resolved: the newest pypdfium2 release is locked again."
     fi
 
 # Run every pre-commit hook on all files.

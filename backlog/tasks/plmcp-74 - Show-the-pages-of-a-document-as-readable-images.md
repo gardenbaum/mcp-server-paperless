@@ -1,10 +1,10 @@
 ---
 id: PLMCP-74
 title: Show the pages of a document as readable images
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-23T12:14:45Z'
-updated_date: '2026-11-23T18:30:54Z'
+updated_date: '2026-11-23T21:44:14Z'
 labels: []
 dependencies: []
 priority: high
@@ -20,21 +20,66 @@ get_document_thumbnail shows only a small image of page 1, and download_document
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A tool returns any page or page range as images a model can read, from the original, the archive file and any version
-- [ ] #2 Resolution is selectable and a region of a page can be enlarged, so small print is readable
-- [ ] #3 It works for PDFs and for image originals (JPEG, PNG, TIFF, WebP); text, e-mail and Office originals are shown through their archive PDF or refused with a reason; for encrypted or broken files it says why not
-- [ ] #4 Large documents stay within stated byte, page, memory and time limits without changing the server's configuration; pages that do not fit are named with how to get them
-- [ ] #5 The renderer is chosen in a decision (licence, size, security of parsing untrusted files, arm64, image scan) and runs within the container's restrictions (read-only file system, non-root)
-- [ ] #6 Permissions are those of the token user; stdio and HTTP both work
-- [ ] #7 The tool is added to MEDIA_TOOLS (decision-11) with a reason in the task notes
-- [ ] #8 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
-- [ ] #9 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover every source type, page ranges, regions, each limit and broken or encrypted files; docs and tool reference are updated
+- [x] #1 A tool returns any page or page range as images a model can read, from the original, the archive file and any version
+- [x] #2 Resolution is selectable and a region of a page can be enlarged, so small print is readable
+- [x] #3 It works for PDFs and for image originals (JPEG, PNG, TIFF, WebP); text, e-mail and Office originals are shown through their archive PDF or refused with a reason; for encrypted or broken files it says why not
+- [x] #4 Large documents stay within stated byte, page, memory and time limits without changing the server's configuration; pages that do not fit are named with how to get them
+- [x] #5 The renderer is chosen in a decision (licence, size, security of parsing untrusted files, arm64, image scan) and runs within the container's restrictions (read-only file system, non-root)
+- [x] #6 Permissions are those of the token user; stdio and HTTP both work
+- [x] #7 The tool is added to MEDIA_TOOLS (decision-11) with a reason in the task notes
+- [x] #8 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
+- [x] #9 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover every source type, page ranges, regions, each limit and broken or encrypted files; docs and tool reference are updated
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. version_id through DocumentReader.get_document_file and get_document_metadata (fake, adapter, contract tests).
+2. Package rendering/: worker.render for PDFs (page, size, region, forms, errors), then images (JPEG, PNG, TIFF, WebP), then byte budget and next pages.
+3. rendering/runner: one child process per call, no environment, no shared stdio, bounded time, memory, output; cancellation kills it; hardening of child and parent.
+4. services/pages: version and source choice, limits, texts, one render at a time.
+5. Tool get_document_pages (core, MEDIA_TOOLS), registry, snapshots, stdio and HTTP transport tests.
+6. Smoke scripts, windows-latest job, weekly pypdfium2 alert, compose overlay with Tika and Gotenberg, E2E tests (run in phase 2).
+7. Decision, docs, coverage table, notes of PLMCP-75, 76, 79, 83; gates.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Phase 1 (2026-11-23): everything except Docker and E2E runs.
+MEDIA_TOOLS (AC 7): get_document_pages is listed because its result is images; a structured result next to them would make clients that prefer it drop the images (decision-11).
+Limits with measurements (macOS arm64, this implementation, child peak): 60 pages at 300 dpi (150 MiB PDF) one page 0.45 s and 267 MB, region 0.46 s, five pages asked at 2576 px 0.95 s and 303 MB; JPEG 100 MP 0.7 s and 114 MB; PNG 99 MP RGB 1.4 s and 519 MB, RGBA 1.3 s and 917 MB, palette with transparency 1008 MB; 16 bit grey 292 MB; pure noise at 2576 px is reduced to 1086 px in 2.2 s. 720 KiB in one or five images pass a real uvicorn server in both client modes.
+Watchdog: fails closed on any error (found by a review of the first version; 10 tests red first).
+Deviations from the design: page_count and messages come from this process, the child sends no text; the region is at least 1 % of a side instead of 1 pixel; the download has its own limit of 120 s; resident memory on Linux is read from /proc/self/statm because ru_maxrss hands down the parent's peak; RLIMIT_NOFILE=0 only without system fonts, so that glyphs of unembedded fonts do not change.
+mutmut does not cover rendering/ (its packages are services/ and paperless/): the logic was mutated by hand.
+Gate changes: new CI job rendering-windows (not required), new job e2e-office in e2e-full.yml, import contract 'Only rendering imports pypdfium2 and PIL' and rendering in the layer contracts, stubs in typings/ with ruff exceptions for upstream names. No gate is weaker.
+Snapshots: test_surface (new tool; get_document_thumbnail names it), test_container (image.yml path filter).
+
+Hand mutations of rendering/, services/pages.py, page_ranges, tool, adapter, cli: 45, of which 2 survived at first (answer without images; Pillow plugins loaded before the child may open nothing); both have tests now, seen red. Gates on macOS: test suite green but for the known macOS-only test_the_menu_driver_reports_a_failing_cli, diff coverage 100 %. Open for phase 2: Docker image, Linux-only tests, E2E, Office overlay run time, shard weight of tests/e2e/test_pages.py, Windows job.
+
+Phase 2a and review of 8bda9c4 (4 Important, 6 Minor): all confirmed and fixed, tests first. I1 bands of rows, libwebp directly, PDFium for large progressive JPEGs (25 formats and modes at 99.6 MP run on macOS and Linux). I2 LAB is warmed up before the guard, and 18 kinds of file run under RLIMIT_NOFILE=0. Found in Linux: a flooding or killed child left its stdout pipe open (descriptor leak); the pipe is drained now. Linux container (python:3.14-slim, arm64, uid 1500): whole rendering set green, nothing skipped. python:3.14-slim has no /usr/share/fonts.
+Further gate notes: tests/adapter/schema_guard.py accepts the undeclared query parameter version on download and metadata (documented in api.md); ruff per-file ignores N802, N803 and A002 for typings/ (upstream names).
+
+Security review of 8bda9c4..: the wait for a killed child is bounded (1 s) and its pipes are closed whatever holds the other end (red first: 40 s); only a single real JPEG frame of the measured size is handed to PDFium, without trailing data or further MPO pictures.
+
+Phase 2b (merged with main 517ac8e, paperless-ngx 3.5.1; own stack plmcp74-e2e on port 8020): test_pages 8, test_pages_files 12 (2 Office skipped there), contract test_document_versions, test_files, test_stdio, test_http, test_toolset_guide green on 3.5.1. Time limit: a page with a long shading calculation; memory limit: a progressive JPEG of 400 megapixels; Paperless takes both because page 1 is plain and both pages have text. Damaged: a JPEG without its end (Paperless refuses cut PNG, WebP and TIFF and a broken content stream). A deleted version is still answered by Paperless and not shown by the tool. Office and e-mail overlay: 46 s with images present (26 s start, 8.5 s docx, 5.7 s eml), 36 s more for the first pull. Weights measured on macOS: test_pages 47 s, test_pages_files 160 s; split in two modules because all of it in the documents map breaks the tier budget of 3 x 450 s (1494 s).
+
+Delta review of a40d25b: resized() scales in tiles of the image in both directions (a result of few rows was one band: 14 of 72 wide and tall cases red first); the memory limit's hint no longer promises that a smaller size helps. Correction of an earlier note: the pipe of a killed child is not drained; its transport is closed after at most 1 s of waiting. Every limit has a live test now: file size (a proxy shows that nothing is downloaded), download time (throttling proxy), wait for the only slot, render time, memory, pixels, images, bytes, and a single page that is reduced. test_pages_files runs with core, the renderer and the full suite; test_pages also with the documents map. The wide and tall memory tests cost about 2.5 minutes of the unit suite. Coordinator's decisions: the split of the live tests and the documented WebP exceptions (macOS lossless, Windows) are accepted. just e2e-office was run as a recipe: 2 passed. Still open: hosted E2E, hosted shard weights, the Windows job, amd64 image and scan.
+
+CI of fd09240 (PR): Windows job green (373 passed, 38 skipped), PR e2e parts and e2e-office green. check failed on one control: on Ubuntu Yama (ptrace_scope 1) refuses /proc/<ppid>/mem also without protection. The control now follows ptrace_scope; environ stays strict, and both are refused after protection. Run for real with scope 0 (Linux container); scopes 1 and 2 only as injected values, the hosted check proves scope 1.
+Corrections of earlier notes: images are scaled in tiles, not bands; live weights measured on macOS are test_pages 42 s and test_pages_files 218 s (not 47 and 160). Peaks on Linux arm64 at 99.0 to 99.8 megapixels are in decision-42; highest within the file limit: turned RGB TIFF 986 MB, progressive CMYK JPEG 975 MB, of 1074 MB. The wide and tall memory cases run four children at a time (146 s to 106 s on macOS).
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+get_document_pages shows pages of a document (original, archive, any listed version; PDF, JPEG, PNG, TIFF, WebP) as WebP images with a selectable size and region, over stdio and HTTP, with the rights of the token user. pypdfium2 and Pillow run in one bounded child process per call (decision-42). Limits are constants, each tested in unit tests (Linux, macOS and Windows) and live on paperless-ngx 3.5.1. The tool is in core (20 of 20) and in MEDIA_TOOLS. Documented exceptions: lossless WebP near 100 megapixels on macOS, WebP over about 60 megapixels on Windows. Risk: not a sandbox (SECURITY.md); PDFium CVEs are invisible to the scanners, a weekly alert follows its releases.
+<!-- SECTION:FINAL_SUMMARY:END -->

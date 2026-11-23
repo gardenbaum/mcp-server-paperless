@@ -1,10 +1,10 @@
 ---
 id: PLMCP-96
 title: Say the truth in the upload refusal at the 100 MiB maximum
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-23T15:33:41Z'
-updated_date: '2026-11-23T18:20:56Z'
+updated_date: '2026-11-23T20:43:00Z'
 labels: []
 dependencies: []
 priority: low
@@ -29,7 +29,7 @@ services/upload_source.py tells the caller that the operator can raise PAPERLESS
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Notes

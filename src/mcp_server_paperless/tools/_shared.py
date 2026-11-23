@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.instance import InstanceService
     from mcp_server_paperless.services.mail import MailService
     from mcp_server_paperless.services.notes import NoteService
+    from mcp_server_paperless.services.pages import PageService
     from mcp_server_paperless.services.pdf import PdfService
     from mcp_server_paperless.services.permissions import PermissionService
     from mcp_server_paperless.services.raw import RawApiService
@@ -102,7 +103,9 @@ DOCUMENT_TEXT: Final = (
 
 # Tools whose result is an image or a file as MCP content blocks, with no output schema and no
 # structured content (decision-11); every other tool has a typed return model (decision-4).
-MEDIA_TOOLS: Final = frozenset({"get_document_thumbnail", "download_document", "bulk_download"})
+MEDIA_TOOLS: Final = frozenset(
+    {"get_document_thumbnail", "get_document_pages", "download_document", "bulk_download"}
+)
 
 # The toolset of every tool, keyed by tool name. It must equal each tool's tag (registry test); the
 # server uses it to refuse a configuration that leaves no tool before it contacts Paperless.
@@ -113,6 +116,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "get_document": "core",
     "get_document_content": "core",
     "get_document_thumbnail": "core",
+    "get_document_pages": "core",
     "download_document": "core",
     "get_task": "core",
     "update_document": "core",
@@ -228,6 +232,12 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
     ),
     "get_document_content": ToolAnnotations(
         title="Get document content",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_document_pages": ToolAnnotations(
+        title="Get document pages",
         read_only_hint=True,
         idempotent_hint=True,
         open_world_hint=False,
@@ -909,6 +919,7 @@ class Services:
     taxonomy_edits: TaxonomyEditor
     documents: DocumentService
     files: FileService
+    pages: PageService
     edits: DocumentEditor
     notes: NoteService
     removal: DocumentRemoval

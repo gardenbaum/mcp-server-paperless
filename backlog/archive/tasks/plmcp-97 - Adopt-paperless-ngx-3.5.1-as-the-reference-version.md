@@ -1,10 +1,10 @@
 ---
 id: PLMCP-97
 title: Adopt paperless-ngx 3.5.1 as the reference version
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-23T18:13:36Z'
-updated_date: '2026-11-23T19:51:28Z'
+updated_date: '2026-11-23T20:43:00Z'
 labels: []
 dependencies: []
 references:
@@ -24,18 +24,18 @@ The weekly drift workflow reports that the vendored reference (3.4.2) differs fr
 <!-- AC:BEGIN -->
 - [x] #1 The vendored reference, the E2E stack and every mention of the reference version are 3.5.1, with the image pinned by digest, and the drift check passes
 - [x] #2 What changed between 3.4.2 and 3.5.1 is listed in the task notes from the release notes and the schema diff, with its effect on every tool
-- [ ] #3 Changed by the owner on 2026-11-23: 3.5.1 is the minimum and 3.4.x and 3.5.0 are no longer supported; the code, tests and docs for them are removed and decision-43 supersedes decision-29
+- [x] #3 Changed by the owner on 2026-11-23: 3.5.1 is the minimum and 3.4.x and 3.5.0 are no longer supported; the code, tests and docs for them are removed and decision-43 supersedes decision-29
 - [x] #4 Every new or changed endpoint, field and value of 3.5.1 is in the coverage table under a task that includes it, and the task text is extended where none does
 - [x] #5 A plumbing row cannot hide an unsent field or value below it (left over from the PLMCP-91 review)
-- [ ] #6 The full E2E suite is green on 3.5.1
+- [x] #6 The full E2E suite is green on 3.5.1
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -83,10 +83,25 @@ Removed because it existed only for releases before 3.5.1:
 
 Kept, and why:
 - Statements "probed on 3.4.2" (module docstrings, decisions 14, 16, 18, 21, 26, tests): history of what was observed; the live suite passes on 3.5.1 with them.
-- The wire deviations of 3.4.2 from the schema in tests/adapter/schema_guard.py (WRONG_RESPONSE_SCHEMAS, OMITTED, NULL_OBJECT_PROPERTIES, UNDECLARED_QUERY_PARAMETERS): not re-probed one by one; the live contract suite is green on 3.5.1, but whether each deviation still exists on 3.5.1 is not shown. Kept, to be checked in a follow-up.
+- The wire deviations from the schema in tests/adapter/schema_guard.py: probed on live 3.5.1 on 2026-11-23, see below; all still exist and are now named 3.5.1.
 - The PDF writer's search for the consumption tasks of an operation: 3.5.1 still starts them after the bulk_update task.
-- README "more_like_id can return nothing on 3.4.2" and the tool description: see the probe below.
-- decision-2, 8, 23, 24: their 3.4.2 statements are replaced by decision-43; their text is not edited.
+- decision-2 and decision-8: their 3.4.2 statements are replaced by decision-43 (text not edited); decisions 14, 16, 18, 21, 23, 24 and 26 are history only.
 
 Behaviour against 3.4 today: the server has no version gate. X-Version is read only for get_instance_overview. Against 3.4.x the document operations answer without a task_id, which the adapter now reports as an unexpected response; blank notes, the config read and tag deletion behave as 3.4 does. Proposal, not done: refuse at startup or in get_instance_overview when X-Version is below 3.5.1.
+
+Probe on live 3.5.1 (2026-11-23), with the exception of each entry removed from the guard:
+- Still deviating, so kept and relabelled 3.5.1: created tag, correspondent, document type, storage path and custom field without document_count (and last_correspondence, permissions where listed); GET and PATCH of a correspondent and a document type without last_correspondence and permissions; document history as a bare list with a null actor; /api/status/ with nested tasks and null errors; /api/ui_settings/ without id; saved views without permissions unless full_perms; workflow actions with null email and webhook; full_perms answers carrying permissions instead of user_can_change (tags list, tag PATCH); DELETE of a version answering 200 {"result": "OK", "current_version_id": ...} where the schema documents 204. The undeclared query parameters (more_like_id, all, fields, full_perms on PATCH) and shared_by__id as boolean are still as in the 3.5.1 schema. The HTML error bodies (403, 400) are exercised by the live contract suite, not probed one by one.
+- more_like_id: one probe did not show the panic; see the correction at the end, the limitation stays.
+- Added after review: an unexpected answer to a write (also add_note answered with an empty list) carries the hint that it may have been applied.
+- The local full E2E run (on 579d293) was stopped at about 60% on the coordinator's request; the hosted run decides AC 3, AC 6 and the DoD.
+
+Correction to the more_like_id probe (controller, 2026-11-23): the limitation is NOT gone. Paperless 3.5.1 ships Tantivy 0.26.x, whose more_like_this still compares doc_freq (with stale entries) to the live num_docs and asserts in bm25 idf; the fix, tantivy PR 2964, is open and not merged, and the Tantivy main branch still has the code. One probe without a panic does not disprove it. So the README limitation, the tool description, the contract reindex step and its helpers with tests stay, now naming 3.5.1. Evidence for AC 3 and AC 6: the hosted E2E full suite is green on a87abae (run 45254839945) and on 517ac8e, the squash merge of PR #107, both on 3.5.1. The last commit after that merge lands in a follow-up PR.
+
+Precision on the schema_guard probe: the HTML error bodies (403, 400) were not probed one by one, and full_perms only on the tags list and the tag PATCH; "all still exist" above holds for the probed entries.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in #107 and #108. The repository uses paperless-ngx 3.5.1 as reference and minimum (owner, 2026-11-23; decision-43 supersedes decision-29). Code, fake and tests for older releases are removed. Workflows with manual triggers are read, never silently deleted and described correctly; a queued answer without a task id is an error with a hint. The more_like_id limitation stays. Hosted full E2E green on 517ac8e. Not verified: AI chat on 3.5.1.
+<!-- SECTION:FINAL_SUMMARY:END -->

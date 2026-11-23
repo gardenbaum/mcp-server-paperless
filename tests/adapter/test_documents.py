@@ -750,6 +750,33 @@ async def test_a_version_is_chosen_with_the_original_parameter(
     assert found.content == PDF
 
 
+async def test_a_version_of_a_document_is_named_to_the_download_and_the_metadata(
+    make_client: ClientFactory,
+) -> None:
+    file, facts = Binary(PDF, "application/pdf", NON_ASCII_DISPOSITION), Resource(METADATA)
+
+    _ = await PaperlessDocumentReader(make_client(file)).get_document_file(
+        30, "archive", max_bytes=1000, version_id=34
+    )
+    _ = await PaperlessDocumentReader(make_client(facts)).get_document_metadata(30, version_id=34)
+
+    assert file.sent == [("/api/documents/30/download/", {"original": "false", "version": "34"})]
+    assert facts.sent == [("/api/documents/30/metadata/", {"version": "34"})]
+
+
+async def test_a_missing_version_is_not_found_with_the_way_to_the_versions(
+    make_client: ClientFactory,
+) -> None:
+    reader = PaperlessDocumentReader(make_client(Resource({"detail": "Not found."}, status=404)))
+
+    with pytest.raises(NotFound, match="No version 34 exists on document 30") as raised:
+        _ = await reader.get_document_file(30, "original", max_bytes=1000, version_id=34)
+    with pytest.raises(NotFound, match="No version 34 exists on document 30"):
+        _ = await reader.get_document_metadata(30, version_id=34)
+
+    assert raised.value.hint == "List the versions with list_document_versions."
+
+
 async def test_the_filename_is_the_rfc_5987_one_with_its_non_ascii_characters(
     make_client: ClientFactory,
 ) -> None:

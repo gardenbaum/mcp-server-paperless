@@ -157,11 +157,16 @@ class DocumentReader(Protocol):
         """
         ...
 
-    async def get_document_metadata(self, document_id: int) -> FileMetadata:
-        """The file facts of a document.
+    async def get_document_metadata(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> FileMetadata:
+        """The file facts of a document, or of one of its versions (default: the newest).
+
+        Paperless answers a deleted version, too, while it is in the trash: callers that must not
+        show one check the versions ``get_document`` lists.
 
         Raises:
-            NotFound: No such document.
+            NotFound: No such document, or no such version of it.
             PermissionDenied: The user may not see the document.
         """
         ...
@@ -185,16 +190,24 @@ class DocumentReader(Protocol):
         ...
 
     async def get_document_file(
-        self, document_id: int, version: FileVersion, *, max_bytes: int
+        self,
+        document_id: int,
+        version: FileVersion,
+        *,
+        max_bytes: int,
+        version_id: int | None = None,
     ) -> DocumentFile:
         """The original file or the archive version (the OCR'd PDF/A) of a document.
+
+        ``version_id`` names a version of the document (default: the newest; a deleted one is
+        answered, too, see ``get_document_metadata``).
 
         Reads at most ``max_bytes`` bytes: a larger file comes back ``truncated`` with its type
         and name but no content. Paperless answers the original for ``archive`` when the
         document has no archive version, so callers check ``has_archive_version`` first.
 
         Raises:
-            NotFound: No such document.
+            NotFound: No such document, or no such version of it.
             PermissionDenied: The user may not see the document.
         """
         ...

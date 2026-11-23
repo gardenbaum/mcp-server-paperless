@@ -72,7 +72,8 @@ _AI_HINT: Final = (
     "document text to the model backend."
 )
 _FILE_HINT: Final = (
-    "Files are returned by download_document and get_document_thumbnail, which cap their size."
+    "Files are returned by download_document, get_document_pages and get_document_thumbnail, which "
+    "cap their size."
 )
 # Parts of a JSON key that mark a secret value, and the key of webhook headers (they carry the
 # authorization of the receiving service).

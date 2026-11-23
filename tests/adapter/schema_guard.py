@@ -39,6 +39,7 @@ SCHEMA_PATH = Path(__file__).parents[2] / "docs" / "vendor" / "paperless" / "ope
 FULL_PERMS_REASON = (
     "the update serializers honour it like the retrieve ones and then answer the grants (PLMCP-28)"
 )
+VERSION_REASON = "documented in api.md, missing from the generated parameters (PLMCP-74)"
 
 # Query parameters an operation accepts although the generated schema omits them:
 # (method, path template) -> {parameter: reason}.
@@ -47,6 +48,8 @@ UNDECLARED_QUERY_PARAMETERS: Mapping[tuple[str, str], Mapping[str, str]] = {
         "more_like_id": "documented in api.md, missing from the generated parameters (PLMCP-3)",
         "all": "documented in api.md, missing from the generated parameters (PLMCP-3)",
     },
+    ("GET", "/api/documents/{id}/download/"): {"version": VERSION_REASON},
+    ("GET", "/api/documents/{id}/metadata/"): {"version": VERSION_REASON},
     ("PATCH", "/api/documents/{id}/"): {
         "fields": (
             "the update serializer honours it like the retrieve one; without it the answer "
@@ -86,7 +89,7 @@ FORM_REQUESTS: Mapping[tuple[str, str], str] = {
 # adapter against the real ones instead.
 WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
     ("DELETE", "/api/documents/{id}/versions/{version_id}/", 200): (
-        "3.4.2 answers {result, current_version_id}; the schema documents 204 without a body "
+        "3.5.1 answers {result, current_version_id}; the schema documents 204 without a body "
         "(PLMCP-24)"
     ),
     ("DELETE", "/api/documents/{id}/versions/{version_id}/", 400): (
@@ -137,41 +140,41 @@ WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
         "and id lists, which the value's oneOf omits (PLMCP-16)"
     ),
     ("POST", "/api/tags/", 201): (
-        "3.4.2 answers a created tag without the `document_count` the schema requires (PLMCP-16)"
+        "3.5.1 answers a created tag without the `document_count` the schema requires (PLMCP-16)"
     ),
     ("POST", "/api/correspondents/", 201): (
-        "3.4.2 answers a created correspondent without `document_count`, `last_correspondence` "
+        "3.5.1 answers a created correspondent without `document_count`, `last_correspondence` "
         "and `permissions`, which the schema requires (PLMCP-19)"
     ),
     ("POST", "/api/document_types/", 201): (
-        "3.4.2 answers a created document type without `document_count` and `permissions`, "
+        "3.5.1 answers a created document type without `document_count` and `permissions`, "
         "which the schema requires (PLMCP-19)"
     ),
     ("POST", "/api/storage_paths/", 201): (
-        "3.4.2 answers a created storage path without the `document_count` the schema requires "
+        "3.5.1 answers a created storage path without the `document_count` the schema requires "
         "(PLMCP-19)"
     ),
     ("POST", "/api/custom_fields/", 201): (
-        "3.4.2 answers a created custom field without the `document_count` the schema requires "
+        "3.5.1 answers a created custom field without the `document_count` the schema requires "
         "(PLMCP-19)"
     ),
     ("PATCH", "/api/correspondents/{id}/", 200): (
-        "3.4.2 answers an updated correspondent without `last_correspondence` and `permissions`, "
+        "3.5.1 answers an updated correspondent without `last_correspondence` and `permissions`, "
         "which the schema requires (PLMCP-19)"
     ),
     ("PATCH", "/api/document_types/{id}/", 200): (
-        "3.4.2 answers an updated document type without the `permissions` the schema requires "
+        "3.5.1 answers an updated document type without the `permissions` the schema requires "
         "(PLMCP-19)"
     ),
     ("GET", "/api/correspondents/{id}/", 200): (
-        "3.4.2 answers a correspondent without `last_correspondence` and `permissions`, which "
+        "3.5.1 answers a correspondent without `last_correspondence` and `permissions`, which "
         "the schema requires (PLMCP-19)"
     ),
     ("GET", "/api/document_types/{id}/", 200): (
-        "3.4.2 answers a document type without the `permissions` the schema requires (PLMCP-19)"
+        "3.5.1 answers a document type without the `permissions` the schema requires (PLMCP-19)"
     ),
     ("GET", "/api/documents/{id}/history/", 200): (
-        "3.4.2 answers a bare list, not the paginated envelope of the schema, and a null actor "
+        "3.5.1 answers a bare list, not the paginated envelope of the schema, and a null actor "
         "for system changes (PLMCP-11)"
     ),
     ("GET", "/api/documents/{id}/thumb/", 403): (
@@ -219,7 +222,7 @@ WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
         "HttpResponseForbidden('Insufficient permissions'), text/html (PLMCP-29)"
     ),
     ("GET", "/api/status/", 200): (
-        "3.4.2 nests index, classifier and sanity check under `tasks` and sends null errors; "
+        "3.5.1 nests index, classifier and sanity check under `tasks` and sends null errors; "
         "the schema has them top-level and non-nullable (PLMCP-7)"
     ),
     ("GET", "/api/status/", 403): (
@@ -227,7 +230,7 @@ WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
         "(PLMCP-7)"
     ),
     ("GET", "/api/ui_settings/", 200): (
-        "3.4.2 answers {user, settings, permissions}; the schema has {id, settings} (PLMCP-7)"
+        "3.5.1 answers {user, settings, permissions}; the schema has {id, settings} (PLMCP-7)"
     ),
 }
 # Responses that lack a property the schema requires, which is filled in (as an empty object)
@@ -242,7 +245,7 @@ _SAVED_VIEW_ENDPOINTS = (
 _NO_PERMISSIONS = (
     "permissions",
     (
-        "3.4.2 answers saved views without the `permissions` the schema requires unless the "
+        "3.5.1 answers saved views without the `permissions` the schema requires unless the "
         "list asks for `full_perms` (PLMCP-25)"
     ),
 )
@@ -275,7 +278,7 @@ _WORKFLOW_ENDPOINTS = (
 _NULL_OBJECTS = (
     frozenset({"email", "webhook"}),
     (
-        "3.4.2 answers `email` and `webhook` of an action as null where there is none; the "
+        "3.5.1 answers `email` and `webhook` of an action as null where there is none; the "
         "schema's nullable `allOf` object cannot be validated (PLMCP-30)"
     ),
 )
@@ -549,7 +552,7 @@ def _with_full_perms(
 ) -> httpx2.Response:
     """The response of `FULL_PERMS_RESPONSES` to a `full_perms=true` request, completed.
 
-    With ``full_perms=true`` 3.4.2 answers the grants in `permissions` and leaves out
+    With ``full_perms=true`` 3.5.1 answers the grants in `permissions` and leaves out
     `user_can_change`, which the schema requires of every object (PLMCP-28); it is filled in so
     that the rest of the body is still checked.
     """

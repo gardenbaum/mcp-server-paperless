@@ -738,3 +738,15 @@ def test_a_latest_workflow_that_could_miss_shards_or_the_resolved_version_is_rep
     assert broken != GOOD_LATEST
     found = problems_of(latest=broken)
     assert any(problem in line for line in found), found
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["rendering/worker.py", "rendering/limits.py", "services/pages.py", "domain/rendering.py"],
+)
+def test_a_changed_renderer_runs_the_live_tests_of_page_images(path: str) -> None:
+    live = {path.relative_to(ROOT).as_posix() for path in (ROOT / "tests").glob("e2e/test_*.py")}
+
+    targets = e2e_ci.select([f"src/mcp_server_paperless/{path}"], live_modules=live).targets
+
+    assert {e2e("test_pages"), e2e("test_pages_files")} <= set(targets)

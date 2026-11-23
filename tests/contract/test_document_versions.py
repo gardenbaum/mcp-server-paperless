@@ -94,6 +94,63 @@ async def test_a_new_version_is_the_newest_with_its_label_and_checksum(backend: 
     assert original.content == b"plmcp24 second version"
 
 
+@pytest.mark.contract("DocumentReader.get_document_file")
+@pytest.mark.contract("DocumentReader.get_document_metadata")
+async def test_the_file_and_the_facts_of_one_version_are_read_by_its_id(backend: Backend) -> None:
+    ports, document = backend.admin, backend.new_document()
+    reader = ports.documents
+    root = await reader.get_document_file(document, "original", max_bytes=100_000)
+    text = "plmcp74 second version"
+    version = await add_version(backend, document, text)
+
+    for wanted, content in ((document, root.content), (version, text.encode())):
+        file = await reader.get_document_file(
+            document, "original", max_bytes=100_000, version_id=wanted
+        )
+        facts = await reader.get_document_metadata(document, version_id=wanted)
+        assert file.content == content
+        assert facts.original_size == len(content)
+        assert file.mime_type.partition(";")[0] == facts.original_mime_type
+    assert (
+        await reader.get_document_metadata(document, version_id=version)
+    ).original_mime_type == ("text/plain")
+    assert (
+        await reader.get_document_metadata(document, version_id=document)
+    ).original_mime_type == root.mime_type.partition(";")[0]
+
+
+@pytest.mark.contract("DocumentReader.get_document_file")
+@pytest.mark.contract("DocumentReader.get_document_metadata")
+async def test_paperless_still_answers_the_file_of_a_deleted_version(backend: Backend) -> None:
+    ports, document = backend.admin, backend.new_document()
+    version = await add_version(backend, document, "plmcp74 deleted version")
+    _ = await ports.document_writes.delete_version(document, version)
+
+    file = await ports.documents.get_document_file(
+        document, "original", max_bytes=100_000, version_id=version
+    )
+    facts = await ports.documents.get_document_metadata(document, version_id=version)
+
+    # So a caller checks the versions the document lists before it shows one.
+    assert file.content == b"plmcp74 deleted version"
+    assert facts.original_size == len(file.content)
+    assert version not in [v.id for v in await versions(ports, document)]
+
+
+@pytest.mark.contract("DocumentReader.get_document_file")
+@pytest.mark.contract("DocumentReader.get_document_metadata")
+async def test_a_version_that_is_not_on_the_document_is_not_found(backend: Backend) -> None:
+    ports, document, other = backend.admin, backend.new_document(), backend.new_document()
+
+    for missing in (MISSING, other):
+        with pytest.raises(NotFound):
+            _ = await ports.documents.get_document_file(
+                document, "original", max_bytes=100_000, version_id=missing
+            )
+        with pytest.raises(NotFound):
+            _ = await ports.documents.get_document_metadata(document, version_id=missing)
+
+
 @pytest.mark.contract(UPLOAD)
 async def test_the_same_content_twice_is_two_versions_and_a_blank_label_is_none(
     backend: Backend,

@@ -55,6 +55,7 @@ if TYPE_CHECKING:
         WorkflowReader,
         WorkflowWriter,
     )
+    from mcp_server_paperless.domain.rendering import PageRenderer
     from mcp_server_paperless.tools.confirmation import Dialogs
 
 URL = "http://paperless.test"
@@ -118,6 +119,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     workflow_writes: WorkflowWriter | None = None,
     management: AdminReader | None = None,
     management_writes: AdminWriter | None = None,
+    renderer: PageRenderer | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     clock: Callable[[], float] = time.monotonic,
     startup_timeout: float = 2.0,
@@ -137,6 +139,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     `taxonomy`, `documents`, `tasks`, `ai`, `views`, `trash`, `sharing`, `mail`, `workflows` and the
     writers default to `reader` if that is a fake, else to the seeded admin's fake (which refuses
     writes unless created to allow them).
+    `renderer` replaces the child process that draws pages.
     `sleep` and `clock` replace the real ones the task wait uses. `toolsets`, `read_only` and
     `disabled_tools` go to the server settings; `catalogue` replaces the tools the server
     offers, to try toolsets that do not exist yet. `max_download_bytes` replaces the download
@@ -190,6 +193,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
         ),
         sleep=sleep,
         clock=clock,
+        renderer=renderer,
     )
     if observation.RECORDING:  # the coverage test records which tool makes which port call
         server.add_middleware(observation.ToolMarker())

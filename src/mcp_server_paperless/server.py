@@ -45,6 +45,8 @@ from mcp_server_paperless.paperless.workflows import (
     PaperlessWorkflowReader,
     PaperlessWorkflowWriter,
 )
+from mcp_server_paperless.rendering.limits import protect_server
+from mcp_server_paperless.rendering.runner import ChildRenderer
 from mcp_server_paperless.services.admin_accounts import AccountAdmin
 from mcp_server_paperless.services.admin_system import SystemAdmin
 from mcp_server_paperless.services.ai import AiService
@@ -56,6 +58,7 @@ from mcp_server_paperless.services.files import FileService
 from mcp_server_paperless.services.instance import InstanceService
 from mcp_server_paperless.services.mail import MailService
 from mcp_server_paperless.services.notes import NoteService
+from mcp_server_paperless.services.pages import PageService
 from mcp_server_paperless.services.pdf import PdfService
 from mcp_server_paperless.services.permissions import PermissionService
 from mcp_server_paperless.services.raw import RawApiService
@@ -146,6 +149,7 @@ if TYPE_CHECKING:
         WorkflowReader,
         WorkflowWriter,
     )
+    from mcp_server_paperless.domain.rendering import PageRenderer
     from mcp_server_paperless.paperless.client import PaperlessClient
     from mcp_server_paperless.settings import PaperlessSettings, ServerSettings
 
@@ -161,6 +165,9 @@ INTRO = (
     "tags, correspondents, document types and storage paths."
 )
 START = f"Start with {OVERVIEW} to learn the instance and what the current user may do."
+
+# What the entry points do first, with the one process of the server.
+protect_process: Final = protect_server
 
 NO_TOOLS = (
     "No tools are left to offer: PAPERLESS_MCP_TOOLSETS, PAPERLESS_MCP_READ_ONLY,"
@@ -336,6 +343,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     stdio: bool = False,
     auth: AuthProvider | None = None,
     dialogs: Dialogs | None = None,
+    renderer: PageRenderer | None = None,
 ) -> FastMCP:
     """Assemble the MCP server.
 
@@ -352,6 +360,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
         auth: Authentication of the HTTP endpoint (the HTTP app's static bearer tokens); ``None``
             for stdio and for the flagged unauthenticated loopback mode.
         dialogs: The times and the clock of the confirmation dialogs; tests pass short ones.
+        renderer: Draws pages; default: a child process per call. Tests pass a fake.
 
     Returns:
         The server. Starting it (its lifespan) raises the probe's ``PaperlessMcpError`` when
@@ -406,6 +415,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 files=FileService(
                     adapters.documents, web_url=web_url, max_bytes=settings.max_download_bytes
                 ),
+                pages=PageService(adapters.documents, renderer or ChildRenderer(), web_url=web_url),
                 edits=DocumentEditor(
                     adapters.documents,
                     adapters.document_writes,

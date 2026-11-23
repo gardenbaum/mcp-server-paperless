@@ -2,7 +2,7 @@
 
 <!-- Generated from the tool surface by `just docs-tools`. Do not edit by hand. -->
 
-87 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
+88 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
 default; the others are switched on with
 [`PAPERLESS_MCP_TOOLSETS`](configuration.md#toolsets), which also says what each toolset is for.
 
@@ -22,6 +22,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | `get_document` | read | Read one document: names, dates, tags, readable custom fields, notes count and web_url. |
 | `get_document_content` | read | Read the OCR text of a document in slices of max_chars characters (default 20000). |
 | `get_document_thumbnail` | read | See a document as a small preview image (its first page), for clients that read images. |
+| `get_document_pages` | read | See pages of a document as images large enough to read. |
 | `download_document` | read | Get the original file of a document, or its archive version, as an embedded resource. |
 | `get_task` | read | Follow a Paperless background task, such as an upload being processed, to its result. |
 | `update_document` | write, confirm | Change a document's title, correspondent, type, storage path, dates, owner, tags or custom fields. |

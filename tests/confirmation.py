@@ -41,7 +41,9 @@ def world() -> FakeState:
     newer = DocumentVersion(id=20, added=root.added, version_label=None, is_root=False)
     state.documents[0].versions.insert(0, newer)
     for version in (root, newer):
-        state.documents[0].version_files[version.id] = FakeFile(b"%PDF-1.4", None, "text")
+        state.documents[0].version_files[version.id] = FakeFile(
+            b"%PDF-1.4", None, "text", "application/pdf"
+        )
     state.trash = [FakeDocument(id=30, title="Old")]
     state.share_links = [FakeShareLink(id=1, document=1, owner=2)]
     state.share_bundles = [FakeShareBundle(id=1, documents=(1,), owner=2)]

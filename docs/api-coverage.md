@@ -78,14 +78,14 @@ Limits.
 | `POST /api/documents/rotate/` | `rotate_documents` |  |
 | `POST /api/documents/selection_data/` |  | PLMCP-83 |
 | `DELETE /api/documents/{id}/` | `delete_document` |  |
-| `GET /api/documents/{id}/` | `delete_document`, `delete_document_version`, `delete_note`, `delete_pages`, `edit_pdf` and 11 more |  |
+| `GET /api/documents/{id}/` | `delete_document`, `delete_document_version`, `delete_note`, `delete_pages`, `edit_pdf` and 12 more |  |
 | `PATCH /api/documents/{id}/` | `set_permissions`, `update_document` |  |
 | `PUT /api/documents/{id}/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/ai_suggestions/` | `get_ai_suggestions` |  |
-| `GET /api/documents/{id}/download/` | `download_document` |  |
+| `GET /api/documents/{id}/download/` | `download_document`, `get_document_pages` |  |
 | `POST /api/documents/{id}/email/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/history/` | `get_document` |  |
-| `GET /api/documents/{id}/metadata/` | `download_document`, `get_document` |  |
+| `GET /api/documents/{id}/metadata/` | `download_document`, `get_document`, `get_document_pages` |  |
 | `DELETE /api/documents/{id}/notes/` | `delete_note` |  |
 | `GET /api/documents/{id}/notes/` | `delete_note`, `get_document` |  |
 | `POST /api/documents/{id}/notes/` | `add_note` |  |
@@ -248,10 +248,8 @@ TOML file.
 | `GET /api/documents/{id}/` | `query:full_perms` | PLMCP-83 |
 | `PATCH /api/documents/{id}/` | `body:content`, `query:version` | PLMCP-75 |
 | `PATCH /api/documents/{id}/` | `body:created_date`, `body:remove_inbox_tags` | PLMCP-83 |
-| `GET /api/documents/{id}/download/` | `query:version` | PLMCP-76 |
 | `GET /api/documents/{id}/download/` | `query:follow_formatting` | PLMCP-83 |
 | `GET /api/documents/{id}/history/` | `query:page`, `query:page_size` | PLMCP-89 |
-| `GET /api/documents/{id}/metadata/` | `query:version` | PLMCP-83 |
 | `GET /api/documents/{id}/notes/` | `query:id` | PLMCP-83 |
 | `POST /api/documents/{id}/notes/` | `body:format`, `query:id` | PLMCP-83 |
 | `GET /api/documents/{id}/thumb/` | `query:version` | PLMCP-83 |
@@ -306,7 +304,8 @@ every constant an adapter sends. A row is checked: the operation is in the schem
 each field is in the schema and some tool sends it, there is one row per operation, and no
 field is also `[[internal]]`. What hangs under a plumbing field is left out of the table above;
 when no tool sends it, it is a problem, unless it is a value (`name=value`, one the adapter never
-chooses) that the row names. A child field cannot be named away.
+chooses) that the row names. A child field cannot be named away: a tool sends it, or its parent is
+no plumbing.
 
 | Operation | Fields | Why |
 |---|---|---|
