@@ -213,7 +213,14 @@ def test_a_file_with_two_names_is_refused(allowed: Path) -> None:
     _ = refused(allowed / "second name.pdf", allowed)
 
 
-@pytest.mark.parametrize("name", [".ssh/id.pdf", "sub/.hidden.pdf", ".env", "sub/.git/config"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        *(".ssh/id.pdf", "sub/.hidden.pdf", ".env", "sub/.git/config"),
+        # HFS+ ignores these characters: there the names are .ssh and .env, too.
+        *(f"{chr(0x200C)}.ssh/id.pdf", f"{chr(0xFEFF)}.env", f"sub/.{chr(0x200D)}git/config"),
+    ],
+)
 def test_dot_files_and_dot_directories_below_the_allowlist_are_refused(
     allowed: Path, name: str
 ) -> None:

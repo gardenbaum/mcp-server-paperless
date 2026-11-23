@@ -20,7 +20,9 @@ class OpenedFile:
         mime_type: The ``Content-Type`` Paperless sent, parameters included.
         filename: The name Paperless proposes, without a path, control or bidi characters; None if
             it proposes none.
-        chunks: The bytes. A connection that breaks raises; it never ends the file early.
+        chunks: The bytes. A connection that breaks raises, unless the body ends with its connection
+            (no length, no chunks): then it can end early unnoticed, so readers compare the size,
+            the checksum or the end of the file.
     """
 
     mime_type: str

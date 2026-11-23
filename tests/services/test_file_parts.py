@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import io
 import zipfile
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, override
 
@@ -19,18 +20,23 @@ from mcp_server_paperless.domain.errors import (
     UpstreamUnreachable,
     Validation,
 )
+from mcp_server_paperless.domain.files import OpenedFile
 from mcp_server_paperless.services.admin_system import SystemAdmin
+from mcp_server_paperless.services.file_sink import FileSink
 from mcp_server_paperless.services.files import FileService
 from mcp_server_paperless.services.transfer import (
     MAX_FILE_BYTES,
     check_part,
     read_all,
+    read_window,
     time_limit,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
+    from collections.abc import AsyncGenerator, Sequence
+    from pathlib import Path
 
+    from mcp_server_paperless.domain.admin import ArchiveContent, Compression
     from mcp_server_paperless.domain.documents import FileMetadata, FileVersion
     from mcp_server_paperless.domain.files import ArchivePartReport, FilePart, FilePartReport
 
@@ -157,7 +163,8 @@ async def test_a_part_says_what_it_is_and_what_to_call_next() -> None:
         "web_url": "https://paperless.example/documents/7/details",
         "next": (
             "Call again with document_id=7, kind=original, version_id=7, offset=4, max_bytes=4 "
-            f"and checksum={sha(ORIGINAL)}; append the parts in order."
+            f"and checksum={sha(ORIGINAL)}; append the parts in order "
+            "and compare the SHA-256 of the whole with checksum."
         ),
     }
 
@@ -418,8 +425,7 @@ async def test_an_archive_over_the_limit_is_given_up_while_it_is_read() -> None:
         for chunk in given:
             yield chunk
 
-    _, size, _ = await read_all(chunks(Huge(b"x")), 0, 1)
-    assert size == MAX_FILE_BYTES
+    assert (await read_all(chunks(Huge(b"x")), 0, 1)).size == MAX_FILE_BYTES
     with pytest.raises(PaperlessMcpError, match="larger than 2 GiB"):
         _ = await read_all(chunks(Huge(b"x"), b"y"), 0, 1)
 
@@ -487,7 +493,8 @@ async def test_a_part_of_an_archive_says_what_it_is_and_what_to_call_next() -> N
     }
     assert part.report.next == (
         "Call again with the same document_ids, content, compression and follow_formatting, "
-        f"offset=9, max_bytes=9 and checksum={part.report.checksum}; append the parts in order."
+        f"offset=9, max_bytes=9 and checksum={part.report.checksum}; append the parts in order "
+        "and compare the SHA-256 of the whole with checksum."
     )
 
 
@@ -547,3 +554,123 @@ async def test_the_note_of_an_archive_over_the_limit_says_how_to_read_the_parts(
 
     assert "Call again with offset=0 to read it in parts" in (delivery.report.note or "")
     assert "save_dir" not in (delivery.report.note or "")
+
+
+class Sending(FakePaperless):
+    """A Paperless that sends these bytes as the archive."""
+
+    content: bytes = b""
+    mime_type: str = "application/zip"
+
+    @override
+    @asynccontextmanager
+    async def open_archive(
+        self,
+        document_ids: Sequence[int],
+        *,
+        content: ArchiveContent,
+        compression: Compression,
+        follow_formatting: bool,
+        wait_seconds: float,
+    ) -> AsyncGenerator[OpenedFile]:
+        yield OpenedFile(self.mime_type, "documents.zip", self._chunks(self.content))
+
+
+def sending(content: bytes, mime_type: str = "application/zip") -> Sending:
+    fake = Sending(fake_with().state, user=ADMIN[0])
+    fake.content, fake.mime_type = content, mime_type
+    return fake
+
+
+NO_ARCHIVE = "Paperless did not send a complete ZIP archive, so it is not used."
+
+
+def damaged(archive: bytes) -> dict[str, bytes]:
+    return {
+        "without its last byte": archive[:-1],
+        "half": archive[: len(archive) // 2],
+        "only its start": archive[:4],
+        "empty": b"",
+        "a page": b"<html>Login</html>",
+        "behind a page": b"<html>" + archive,
+        "behind a second start": b"PK\x03\x04" + archive,
+        "without its start": archive[4:],
+        "with more behind it": archive + b"more",
+        "with more before its end": archive[:-22] + b"x" + archive[-22:],
+    }
+
+
+@pytest.mark.parametrize("how", sorted(damaged(b"")))
+async def test_what_is_no_whole_archive_is_no_part_even_with_status_200(
+    how: str, tmp_path: Path
+) -> None:
+    """A body that ends with the connection, or after a wrong length, raises nothing by itself."""
+    fake = sending(damaged(await whole(fake_with()))[how])
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await part_of(fake, 0)
+    assert (raised.value.message, raised.value.hint) == (
+        NO_ARCHIVE,
+        "Try again, or fetch single files with download_document.",
+    )
+    with pytest.raises(PaperlessMcpError, match="complete ZIP archive"):
+        _ = await saver(fake, tmp_path).save([7], directory=str(tmp_path))
+    assert list(tmp_path.iterdir()) == []  # noqa: ASYNC240 -- a test looking at its directory
+
+
+@pytest.mark.parametrize("mime_type", ["text/html", "application/octet-stream", ""])
+async def test_an_archive_of_another_content_type_is_refused(
+    mime_type: str, tmp_path: Path
+) -> None:
+    fake = sending(await whole(fake_with()), mime_type)
+
+    with pytest.raises(PaperlessMcpError, match="complete ZIP archive"):
+        _ = await part_of(fake, 0)
+    with pytest.raises(PaperlessMcpError, match="complete ZIP archive"):
+        _ = await saver(fake, tmp_path).save([7], directory=str(tmp_path))
+    assert list(tmp_path.iterdir()) == []  # noqa: ASYNC240 -- a test looking at its directory
+
+
+async def test_an_archive_is_complete_with_parameters_comments_and_a_long_directory(
+    tmp_path: Path,
+) -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for number in range(200):
+            archive.writestr(f"{number}-" + "n" * 240, b"x")
+        archive.comment = b"c" * 65535
+    fake = sending(buffer.getvalue(), "Application/ZIP; charset=binary")
+
+    assert (await part_of(fake, 0)).report.total_bytes == len(buffer.getvalue())
+    saved = await saver(fake, tmp_path).save([7], directory=str(tmp_path))
+    assert saved.size_bytes == len(buffer.getvalue())
+
+
+def saver(fake: FakePaperless, root: Path) -> SystemAdmin:
+    return SystemAdmin(fake, fake, max_bytes=100, sink=FileSink([str(root)]))
+
+
+@pytest.mark.parametrize("reader", ["window", "all"])
+async def test_reading_lets_others_run_although_the_bytes_are_already_there(reader: str) -> None:
+    """A compressed chunk can hold far more than it looks: nothing between its pieces waits."""
+
+    async def ready() -> AsyncGenerator[bytes]:
+        for _ in range(64):
+            yield bytes(65536)
+
+    turns = 0
+
+    async def other() -> None:
+        nonlocal turns
+        while True:
+            await asyncio.sleep(0)
+            turns += 1
+
+    task = asyncio.create_task(other())
+    if reader == "window":
+        _ = await read_window(ready(), 64 * 65536, 1)
+    else:
+        _ = await read_all(ready(), 0, 1)
+    _ = task.cancel()
+
+    assert turns >= 3  # once per mebibyte, between the first and the last

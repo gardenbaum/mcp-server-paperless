@@ -95,15 +95,16 @@ def retry_after(value: str, now: datetime) -> float | None:
 MAY_BE_APPLIED = "The request may have been applied: read the data again before repeating it."
 
 
-def unexpected(response: httpx2.Response) -> PaperlessMcpError:
+def unexpected(response: httpx2.Response, *, reading: bool = False) -> PaperlessMcpError:
     """The error for a successful response whose content the adapter cannot use.
 
-    A write was accepted, so its hint says that it may have been applied.
+    A write was accepted, so its hint says that it may have been applied; ``reading`` is for a
+    POST that only reads.
     """
     request = response.request
     return PaperlessMcpError(
         f"Paperless sent an unexpected response for {request.method} {request.url.path}.",
-        hint=None if request.method in {"GET", "HEAD"} else MAY_BE_APPLIED,
+        hint=None if reading or request.method in {"GET", "HEAD"} else MAY_BE_APPLIED,
     )
 
 
@@ -305,7 +306,8 @@ class PaperlessClient:
 
         Raises:
             PaperlessMcpError: The matching subclass for an error status or a failed transport,
-                also while the body is read: a body that ends early is never a short file.
+                also while the body is read. A body that ends with its connection and has no
+                length (or a wrong one) can be short without one: readers compare what they know.
         """
         outgoing = self._build(method, path, params=params, json=json, timeout=timeout)
         response = await self._exchange(outgoing, stream=True)
@@ -313,13 +315,13 @@ class PaperlessClient:
             if response.is_error:
                 raise error_for_status(await _with_capped_body(response))
             if response.status_code != HTTPStatus.OK:
-                raise unexpected(response)
+                raise unexpected(response, reading=True)
             yield response
         except httpx2.TransportError as error:
             logger.warning("%s %s failed: %s", method, outgoing.url.path, type(error).__name__)
             raise error_for_transport(error) from error
         except httpx2.DecodingError as error:
-            raise unexpected(response) from error
+            raise unexpected(response, reading=True) from error
         finally:
             await response.aclose()
 

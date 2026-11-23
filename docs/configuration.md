@@ -296,7 +296,8 @@ model names the file instead of encoding it.
   HTTP callers send base64 content.
 - Symlinks are resolved and must end inside these directories; only regular files with a single
   hard link are read, `..` in a path is refused, and files or folders whose name starts with a
-  dot below an entry (`.ssh`, `.env`) are never read.
+  dot below an entry (`.ssh`, `.env`) are never read, nor any with characters nobody sees
+  (zero-width, direction marks, line breaks).
 - The server runs these tools over stdio only, whatever `FASTMCP_TRANSPORT` says.
 
 **Downloads.** `download_document` attaches the original or archive file up to
@@ -314,7 +315,8 @@ ranges and the server keeps nothing between calls, so every part reads the file 
 
 - The report has the checksum (SHA-256) of the whole file, and every later part must bring it along.
   If the file changed in between, the call is refused with "The file changed since the first part;
-  start again with offset=0"; parts of two different files are never mixed.
+  start again with offset=0". Compare the SHA-256 of the assembled file with `checksum` at the end:
+  that, and not the server, proves that nothing was cut off or changed on the way.
 - A document's file changes when it is reprocessed (its archive version). A ZIP archive also
   changes with a title, a new version, or anything else its names or files come from. On a
   Paperless with PostgreSQL there is one more case: the archive holds documents with the same
@@ -331,7 +333,7 @@ ranges and the server keeps nothing between calls, so every part reads the file 
   also when nothing is saved.
 - `save_dir` is an existing directory inside these directories; none is created. Symlinks are
   resolved and must end inside, `..` is refused, and so is every directory below an entry whose
-  name starts with a dot. Every unusable directory gets the same answer.
+  name starts with a dot or has characters nobody sees (zero-width, direction marks, line breaks). Every unusable directory gets the same answer.
 - The name is the one Paperless proposes, or `save_as`. Its ending comes from the type Paperless
   detected (`.pdf`, `.docx`, `.eml`, …, and `.bin` for any type Paperless does not consume), so no
   title and no text of a document can make the server write a script, a program or a `CLAUDE.md`.
@@ -339,7 +341,7 @@ ranges and the server keeps nothing between calls, so every part reads the file 
 - An existing file is replaced only with `confirm=true`, and only a plain file: never a link, a file
   with a second name (hard link) or a device.
 - Up to 2 GiB and 30 minutes; 256 MiB of the disk stay free, checked while the file arrives. Only a complete file gets its name, and
-  it is compared with the size and checksum Paperless knows (a ZIP archive: with its end record). It
+  it is compared with the size and checksum Paperless knows (a ZIP archive must be whole). It
   is readable for its owner only (mode 0600). A failed call leaves nothing; a killed server can
   leave a hidden `.mcp-….part`, which you may delete.
 - Not on Windows: saving is refused there, as uploading by path is.

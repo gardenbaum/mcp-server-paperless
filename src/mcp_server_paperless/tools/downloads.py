@@ -98,14 +98,16 @@ FILE_PARTS = (
     "A file over the server's download limit (512 KiB unless the administrator changed it) is "
     "not attached: delivered is false and the note says what to do. With offset you get one part "
     "of a file of up to 2 GiB: start with offset=0, then repeat the arguments that next in the "
-    "report names until next_offset is null, and append the parts. Use get_document_content when "
+    "report names until next_offset is null, append the parts and compare the SHA-256 of the "
+    "whole with checksum. Use get_document_content when "
     f"you only need the text. {DOCUMENT_TEXT}"
 )
 ARCHIVE_PARTS = (
     "An archive over the server's download limit (512 KiB unless the administrator changed it) "
     "is not attached: delivered is false and the note says what to do. With offset you get one "
     "part of an archive of up to 2 GiB: start with offset=0, then repeat the arguments that next "
-    "in the report names until next_offset is null, and append the parts. Paperless builds the "
+    "in the report names until next_offset is null, append the parts and compare the SHA-256 of "
+    "the whole with checksum. Paperless builds the "
     "archive anew for every part; if a document changed in between, start again. The archive "
     "holds the newest version of each document. The whole request fails if one document is "
     "hidden from the user. Use download_document for one file."

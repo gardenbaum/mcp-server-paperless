@@ -41,6 +41,7 @@ replaced only with `confirm=true` (which the model passes; your client may ask y
 directory of its own for it, not a project folder, and none that a program runs or loads files from:
 a file such as `requirements.txt` or `CMakeLists.txt` can have the ending of a text document.
 
-Another process of the same user can interfere in the microseconds before a confirmed replacement;
-it can then make the server replace a file or link that process put there, but never write through a
-link. Whoever may rewrite the parents of the directory you named can move it.
+Another process of the same user can interfere in the microseconds after the server's last look: it
+can make a confirmed replacement replace something it put there (never write through a link), give
+the file's name to something it put under the hidden temporary name, or move the directory away with
+the file. Whoever may rewrite the parents of the directory you named can move it.

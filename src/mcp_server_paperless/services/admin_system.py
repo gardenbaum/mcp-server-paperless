@@ -39,7 +39,9 @@ from mcp_server_paperless.services.transfer import (
     MAX_SECONDS,
     PART_WAIT_SECONDS,
     changed,
+    check_archive_type,
     check_part,
+    no_archive,
     read_all,
     time_limit,
     ways,
@@ -420,7 +422,11 @@ class SystemAdmin:
                 wait_seconds=PART_WAIT_SECONDS,
             ) as opened,
         ):
-            data, size, known = await read_all(opened.chunks, offset, limit)
+            check_archive_type(opened)
+            found = await read_all(opened.chunks, offset, limit)
+        if not found.archive:
+            raise no_archive()
+        data, size, known = found.window, found.size, found.sha256
         if checksum not in {None, known}:
             raise changed()
         end = offset + len(data)
@@ -475,6 +481,7 @@ class SystemAdmin:
                 follow_formatting=follow_formatting,
                 wait_seconds=SAVE_WAIT_SECONDS,
             ) as opened:
+                check_archive_type(opened)
                 saved = await target.write(opened.chunks, Expected(zip=True))
         return SavedArchiveReport(
             document_ids=tuple(document_ids),

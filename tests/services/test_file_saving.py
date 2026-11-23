@@ -395,7 +395,7 @@ async def test_an_archive_that_is_none_is_not_saved(tmp_path: Path) -> None:
             async with self.open_document_file(7, "original") as found:
                 yield found
 
-    with pytest.raises(PaperlessMcpError, match="other bytes than it says"):
+    with pytest.raises(PaperlessMcpError, match="complete ZIP archive"):
         _ = await system(Empty(fake_with().state, user=ADMIN[0]), tmp_path).save(
             [7], directory=str(tmp_path)
         )

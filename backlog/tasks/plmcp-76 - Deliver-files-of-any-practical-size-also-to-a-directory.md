@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:47Z'
-updated_date: '2026-11-23T23:09:26Z'
+updated_date: '2026-11-23T23:26:03Z'
 labels: []
 dependencies: []
 priority: high
@@ -22,11 +22,11 @@ download_document attaches files up to 512 KiB by default; larger ones are only 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Over stdio, original, archive, versions and bulk ZIPs can be saved into explicitly allowed directories (off by default), with the path rules of PAPERLESS_MCP_UPLOAD_DIRS, without overwriting unless confirmed
-- [x] #2 Files above the attach limit can be read in parts over both transports
+- [ ] #2 Files above the attach limit can be read in parts over both transports
 - [x] #3 A new decision supersedes decision-7's rule 'downloads are never written to the host' for stdio with a configured directory allowlist only; HTTP never offers a path or writes to the host; it also says whether such a tool is read-only (PAPERLESS_MCP_READ_ONLY) and how it fits decision-11 (MEDIA_TOOLS)
 - [ ] #4 A second decision keeps or changes the default attach limits, from measured client limits
 - [x] #5 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
-- [x] #6 Security tests cover symlinks, traversal, hard links, dot files, races and full disks; docs, the plugin settings and the 'never written to disk' tool texts match
+- [ ] #6 Security tests cover symlinks, traversal, hard links, dot files, races and full disks; docs, the plugin settings and the 'never written to disk' tool texts match
 - [ ] #7 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover every file kind, parts, overwrite with and without confirm and both transports
 <!-- AC:END -->
 
@@ -65,4 +65,6 @@ Mutation (mutmut in a Linux container, changed modules, first run, before the la
 Deviations from the design: open_archive takes wait_seconds (the two waits need it); parts and saves have report models of their own, so the report of an attached file only gains version_id; endings from a table (security review); a document's metadata is read again after a part; the files are opened O_RDWR (the end record of a ZIP is read back); CI mounts a small tmpfs. Deliberate test changes: surface snapshot (two tools), the notes over the limit, the thumbnail report's version_id, the registry's path allowlist, the import contract's two new modules.
 
 Correction: the first mutation run left 96 survivors and 5 timeouts outside the entries of mutation-equivalents.toml (the moved entries included), not 91.
+
+Independent review (2026-11-24, 99b905c), all verified by a failing test first. I1 ZIP parts took any 200: a part and a save now need Content-Type application/zip (Paperless 3.5.1 sends exactly that: BulkDownloadView, and measured on the E2E stack), a member at byte 0 and an end record that counts to the last byte; the claim that a body never ends early is corrected for bodies that end with their connection. I2 a name with U+200C before .git is .git on HFS+: every component below an allowed directory with a control, format or break character is refused, in allowed_paths, so uploads by path are covered too; that hole existed before this task (read_allowed). A consequence: files whose name has such characters (a zero-width joiner in an emoji) can no longer be uploaded by path. I3 a close that fails no longer skips the unlink or keeps the directory open. M1 reading lets others run once per decoded mebibyte; no limiter for parts and saves was added: the only one in the code is the private semaphore of PageService, which is for the renderer's memory. M2 with I1. M3 a proposed name is cleaned instead of refused. M4 a streamed POST that reads has no 'may have been applied'. M5, M6 texts. M7 a temporary name that stays after the hard link is reported. M8 left to PLMCP-103 (main agent).
 <!-- SECTION:NOTES:END -->

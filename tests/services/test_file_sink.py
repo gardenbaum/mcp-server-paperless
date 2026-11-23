@@ -190,8 +190,6 @@ async def test_an_existing_file_is_replaced_only_with_confirm(tree: Tree) -> Non
     ("folder", "name"),
     [
         ("sub  two", NAME),
-        ("sub\nConfirming would do nothing", NAME),
-        (f"sub{chr(0x202E)}", NAME),
         ('it\'s "quoted"', NAME),
         ("sub", "a  b.pdf"),
     ],
@@ -303,6 +301,10 @@ def refused_directories(tree: Tree) -> dict[str, str]:
     (tree.allowed / "escape").symlink_to(tree.out)
     (tree.allowed / "loop").symlink_to(tree.allowed / "loop")
     (tree.allowed / ".git").mkdir()
+    # HFS+ ignores some format characters: there this name is .git, too.
+    unseen = chr(0x200C)
+    (tree.allowed / f"{unseen}.git").mkdir(exist_ok=True)
+    (tree.allowed / f"a{unseen}b").mkdir()
     (tree.allowed / "file").touch()
     (tree.allowed.parent / "inner").mkdir()
     return {
@@ -311,6 +313,8 @@ def refused_directories(tree: Tree) -> dict[str, str]:
         "up and down again": f"{tree.allowed}/../in/sub",
         "up inside": f"{tree.sub}/../sub",
         "a dot directory": f"{tree.allowed}/.git",
+        "a dot directory behind a character nobody sees": f"{tree.allowed}/{unseen}.git",
+        "a character nobody sees": f"{tree.allowed}/a{unseen}b",
         "outside": str(tree.out),
         "a missing one outside": f"{tree.out}/nothing",
         "a missing one inside": f"{tree.allowed}/nothing",
@@ -490,9 +494,22 @@ def test_a_name_that_starts_with_a_dot_is_refused(save_as: str) -> None:
     assert raised.value.hint == "Give another name with save_as."
 
 
-def test_a_proposed_name_that_starts_with_a_dot_is_refused_too() -> None:
-    with pytest.raises(Validation, match="starts with a dot"):
-        _ = file_name(None, ".profile", PDF)
+@pytest.mark.parametrize(
+    ("proposed", "expected"),
+    [
+        (".profile", "profile.txt"),
+        ("...a.txt", "a.txt"),
+        (".txt", "txt.txt"),
+        (f"a{chr(0xAD)}b{chr(0x200D)}c{chr(0xFEFF)}d{chr(0x2028)}e.txt", "abcde.txt"),
+        (f"{chr(0xFEFF)}.env.txt", "env.txt"),
+        (f"{chr(0x200D)}", "document.txt"),
+        ("", "document.txt"),
+        ("a/b\\c.txt", "a_b_c.txt"),
+    ],
+)
+def test_a_proposed_name_is_cleaned_rather_than_refused(proposed: str, expected: str) -> None:
+    """The caller cannot change it; a name of their own is refused instead."""
+    assert file_name(None, proposed, TEXT) == expected
 
 
 @pytest.mark.parametrize("save_as", ["", "..", f"a{chr(0x202E)}gnp.pdf", "a\x00.pdf", "a\n.pdf"])
@@ -1131,7 +1148,7 @@ async def test_an_archive_needs_its_end(tree: Tree) -> None:
     saved = await save(tree, "d.zip", data=chunks(ZIPPED), expected=Expected(zip=True))
     assert saved.size == len(ZIPPED)
 
-    with pytest.raises(PaperlessMcpError, match="other bytes than it says"):
+    with pytest.raises(PaperlessMcpError, match="complete ZIP archive"):
         _ = await save(tree, "e.zip", data=chunks(ZIPPED[:-30]), expected=Expected(zip=True))
 
     assert tree.names() == ["d.zip"]
@@ -1217,6 +1234,66 @@ async def test_a_cancelled_save_waits_for_its_write_and_leaves_nothing(
 
     assert disk.ended
     assert tree.names() == ([] if how == "asyncio" else [NAME])
+
+
+@pytest.mark.parametrize("commits", [True, False])
+async def test_a_file_whose_closing_fails_leaves_no_descriptor_and_no_temporary_file(
+    tree: Tree, *, commits: bool
+) -> None:
+    """NFS tells of a full disk as late as that; what is committed was synced before."""
+    closed: list[int] = []
+
+    class Late(System):
+        @override
+        def close(self, fd: int) -> None:
+            super().close(fd)
+            closed.append(fd)
+            raise OSError(errno.ENOSPC, "late")
+
+    expected = Expected(len(DATA) if commits else 1, None)
+    if commits:
+        assert (await save(tree, system=Late(), expected=expected)).size == len(DATA)
+    else:
+        with pytest.raises(PaperlessMcpError, match="other bytes"):
+            _ = await save(tree, system=Late(), expected=expected)
+
+    assert len(closed) == 2  # the file and the directory
+    assert tree.names() == ([NAME] if commits else [])
+
+
+async def test_without_hard_links_a_reservation_whose_closing_fails_is_still_used(
+    tree: Tree,
+) -> None:
+    class Late(System):
+        @override
+        def link(self, source: str, target: str, directory: int) -> None:
+            raise OSError(errno.ENOTSUP, "no hard links")
+
+        @override
+        def close(self, fd: int) -> None:
+            super().close(fd)
+            raise OSError(errno.EDQUOT, "late")
+
+    assert (await save(tree, system=Late())).size == len(DATA)
+
+
+async def test_a_second_name_that_cannot_be_removed_is_said(tree: Tree) -> None:
+    class Stuck(System):
+        @override
+        def unlink(self, name: str, directory: int) -> None:
+            raise OSError(errno.EIO, "stuck")
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await save(tree, system=Stuck())
+
+    [temporary, name] = tree.names()
+    assert (name, (tree.sub / NAME).read_bytes()) == (NAME, DATA)
+    assert raised.value.message == (
+        f"The file was saved, but its temporary name {temporary} could not be removed."
+    )
+    assert raised.value.hint == (
+        "Remove that name in the directory; until then the file cannot be replaced."
+    )
 
 
 async def test_no_descriptor_stays_open(tree: Tree) -> None:

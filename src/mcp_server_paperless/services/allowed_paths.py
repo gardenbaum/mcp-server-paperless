@@ -37,7 +37,7 @@ def clean_filename(name: str) -> str:
     problem = None
     if last in {"", ".", ".."}:
         problem = "is empty or only dots"
-    elif any(unicodedata.category(c) in FORBIDDEN_CATEGORIES for c in last):
+    elif unseen(last):
         problem = "has control characters"
     elif len(last.encode()) > MAX_NAME_BYTES:
         problem = f"is longer than {MAX_NAME_BYTES} bytes"
@@ -45,6 +45,20 @@ def clean_filename(name: str) -> str:
         message = f"The file name {problem}."
         raise Validation(message, hint="Give the file a plain name such as invoice.pdf.")
     return last
+
+
+def unseen(name: str) -> bool:
+    """Whether a name holds characters that are not shown: controls, format characters and breaks.
+
+    HFS+ ignores some of them, so such a name can be another one's: U+200C before ``.git`` is
+    ``.git`` there.
+    """
+    return any(unicodedata.category(c) in FORBIDDEN_CATEGORIES for c in name)
+
+
+def untouched(parts: Sequence[str]) -> bool:
+    """Whether a path below an allowed directory is left alone: credentials live in dot names."""
+    return any(part.startswith(".") or unseen(part) for part in parts)
 
 
 def inside(resolved: str, roots: Sequence[str]) -> tuple[str, tuple[str, ...]] | None:

@@ -4,8 +4,8 @@ The directory and the name come from a model that reads documents others wrote, 
 the server write nothing but one new plain file, or replace one that was confirmed:
 
 - The directory is found as in ``upload_source``: absolute, without ``..``, resolved inside an
-  allowed directory, nothing below it starting with a dot, then opened component by component
-  without following a link. Every other path gets the same answer. No directory is created.
+  allowed directory, nothing below it starting with a dot or holding unseen characters, then opened
+  component by component without following a link. Every other path gets the same answer. No directory is created.
 - The name has the ending of the type Paperless detected, from a fixed table (``.bin`` for any other
   type), so no title, upload or text of a document makes the server write a script, a program or an
   instruction file; and it never starts with a dot.
@@ -16,11 +16,13 @@ the server write nothing but one new plain file, or replace one that was confirm
   replaced. Everything goes through the descriptor of the directory, which is compared with the
   path again before the end.
 
-Known limits: POSIX has no rename that compares, so between the last look and the rename another
-process of the same user can swap the target (microseconds); a link there is replaced, never
-followed. A killed process leaves its ``.mcp-*.part``. The allowed directory itself is opened by its
-resolved name, as in ``upload_source``, and what is mounted inside it counts as inside. Windows has
-neither ``dir_fd`` nor ``O_NOFOLLOW``: saving is refused there.
+Known limits: POSIX has no rename or link that compares, so another process of the same user can
+interfere in the microseconds after the last look: swap the target of a confirmed replacement (a
+link there is replaced, never followed), swap the temporary name (what it put there gets the name),
+or move the directory away (the file is then where the directory went). A killed process leaves its
+``.mcp-*.part``. The allowed directory itself is opened by its resolved name, as in
+``upload_source``, and what is mounted inside it counts as inside. Windows has neither ``dir_fd``
+nor ``O_NOFOLLOW``: saving is refused there.
 """
 
 import asyncio
@@ -30,7 +32,6 @@ import hashlib
 import os
 import secrets
 import stat
-import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePath
@@ -49,11 +50,17 @@ from mcp_server_paperless.services.allowed_paths import (
     clean_filename,
     inside,
     open_directory,
+    unseen,
+    untouched,
 )
 from mcp_server_paperless.services.transfer import (
+    HEAD_BYTES,
     MAX_FILE_BYTES,
     MAX_SECONDS,
+    TAIL_BYTES,
     incomplete,
+    is_archive,
+    no_archive,
     time_limit,
     too_large,
 )
@@ -87,6 +94,7 @@ _FAILURES: Final = {
 # The endings of every type Paperless consumes; another type is saved as .bin, so that no file is
 # lost and no title or upload decides how the system treats it.
 UNKNOWN_ENDING: Final = ".bin"
+UNNAMED: Final = "document"
 _OFFICE: Final = "application/vnd.openxmlformats-officedocument."
 _OPEN: Final = "application/vnd.oasis.opendocument."
 _ENDINGS: Final[Mapping[str, tuple[str, ...]]] = {
@@ -143,6 +151,10 @@ class System:
         """Remove the name."""
         os.unlink(name, dir_fd=directory)
 
+    def close(self, fd: int) -> None:
+        """Close the file or directory."""
+        os.close(fd)
+
     def free(self, directory: int) -> int:
         """Bytes this user may still write there."""
         found = os.fstatvfs(directory)
@@ -182,7 +194,7 @@ class Saved:
 
 
 def file_name(save_as: str | None, proposed: str, mime_type: str) -> str:
-    """The name to save under: ``save_as``, or the proposed one, shortened if it must be.
+    """The name to save under: ``save_as``, or the proposed one, cleaned and shortened as needed.
 
     The ending is always one of the type, never one of a title or an upload: a proposed name with
     another ending gets the right one behind it.
@@ -193,13 +205,15 @@ def file_name(save_as: str | None, proposed: str, mime_type: str) -> str:
     kind = mime_type.partition(";")[0].strip().lower()
     endings = _ENDINGS.get(kind, (UNKNOWN_ENDING,))
     if save_as is None:
-        suffix = PurePath(proposed).suffix
+        plain = proposed.replace("/", "_").replace("\\", "_").encode(errors="ignore").decode()
+        shown = "".join(c for c in plain if not unseen(c)).strip().lstrip(".").strip()
+        suffix = PurePath(shown).suffix
         if suffix.lower() in endings:
-            stem = proposed.removesuffix(suffix)
+            stem = shown.removesuffix(suffix)
         else:
-            stem, suffix = proposed, endings[0]
+            stem, suffix = shown, endings[0]
         room = MAX_NAME_BYTES - len(suffix)
-        name = clean_filename(stem.encode(errors="ignore")[:room].decode(errors="ignore") + suffix)
+        name = clean_filename((stem.encode()[:room].decode(errors="ignore") or UNNAMED) + suffix)
     elif "/" in save_as or "\\" in save_as:
         message = "save_as is a file name, not a path."
         raise Validation(message, hint="Name the directory with save_dir.")
@@ -363,7 +377,7 @@ class Target:
             raise nowhere
         try:
             found = inside(os.path.realpath(self._given), self._sink.roots)
-            if found is None or any(part.startswith(".") for part in found[1]):
+            if found is None or untouched(found[1]):
                 raise nowhere
             self._root, self._parts = found
             self._sink.at("resolved")
@@ -372,16 +386,21 @@ class Target:
             raise nowhere from None
 
     def leave(self) -> None:
-        """Remove what was not finished and close everything."""
+        """Remove what was not finished and close everything, whatever fails on the way."""
+        system = self._sink.system
         if self._file is not None:
-            os.close(self._file)
+            # Network file systems tell of a full disk here, too: what was committed was synced
+            # before, and the rest is thrown away.
+            with contextlib.suppress(OSError):
+                system.close(self._file)
             self._file = None
         if self._fd is None:
             return
         if self._temporary is not None:
             with contextlib.suppress(OSError):
-                self._sink.system.unlink(self._temporary, self._fd)
-        os.close(self._fd)
+                system.unlink(self._temporary, self._fd)
+        with contextlib.suppress(OSError):
+            system.close(self._fd)
         self._fd = None
 
     async def claim(self, name: str, *, confirm: bool) -> None:
@@ -496,12 +515,14 @@ class Target:
     def _compare(self, fd: int, expected: Expected) -> None:
         checksum = expected.checksum
         comparable = checksum is not None and len(checksum) == SHA256_LENGTH
-        if (
-            (expected.size is not None and expected.size != self._size)
-            or (comparable and checksum != self._digest.hexdigest())
-            or (expected.zip and not _is_zip(fd))
+        if (expected.size is not None and expected.size != self._size) or (
+            comparable and checksum != self._digest.hexdigest()
         ):
             raise incomplete()
+        if expected.zip:
+            tail = os.pread(fd, TAIL_BYTES, max(0, self._size - TAIL_BYTES))
+            if not is_archive(os.pread(fd, HEAD_BYTES, 0), tail, self._size):
+                raise no_archive()
 
     def _check_directory(self) -> None:
         """The held directory is still the one at its place inside the allowed directory."""
@@ -531,6 +552,16 @@ class Target:
             if _name_of(error) not in NO_LINKS:
                 raise
             self._commit_without_links(temporary)
+            return
+        try:
+            system.unlink(temporary, self._directory)
+        except OSError:
+            message = (
+                f"The file was saved, but its temporary name {temporary} could not be removed."
+            )
+            hint = "Remove that name in the directory; until then the file cannot be replaced."
+            raise PaperlessMcpError(message, hint=hint) from None
+        self._temporary = None
 
     def _commit_without_links(self, temporary: str) -> None:
         """Take the name with an empty file, then rename over exactly that file."""
@@ -539,7 +570,8 @@ class Target:
         except FileExistsError:
             raise _appeared() from None
         mine = os.fstat(reserved)
-        os.close(reserved)
+        with contextlib.suppress(OSError):
+            self._sink.system.close(reserved)
         ours = (mine.st_dev, mine.st_ino, 0, mine.st_mtime_ns)
         self._sink.at("reserved")
         if self._look() != ours:
@@ -551,11 +583,6 @@ class Target:
                 self._sink.system.unlink(self._name, self._directory)
             raise
         self._temporary = None
-
-
-def _is_zip(fd: int) -> bool:
-    with os.fdopen(os.dup(fd), "rb") as file:
-        return zipfile.is_zipfile(file)
 
 
 # For a server that saves nothing.

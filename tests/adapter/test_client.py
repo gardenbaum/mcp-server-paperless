@@ -1158,6 +1158,18 @@ async def test_a_stream_sends_the_method_the_body_the_credential_and_its_timeout
     assert cast("dict[str, float]", got.extensions["timeout"])["read"] != 600.0
 
 
+async def test_an_unexpected_answer_to_a_streamed_post_is_no_write_that_may_have_been_applied() -> (
+    None
+):
+    client, _ = streaming(lambda _: httpx2.Response(204))
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        async with client.stream("POST", "/api/documents/bulk_download/"):
+            raise AssertionError
+
+    assert raised.value.hint is None
+
+
 async def test_a_stream_that_is_refused_is_the_domain_error_and_closed() -> None:
     body = Chunks(b'{"original": ["Bad."]}')
     client, _ = streaming(lambda _: httpx2.Response(400, stream=body))
