@@ -41,8 +41,8 @@ SHARDS = 3
 # pull-request-tier run, 45223357290 (hosted, the timestamp gap of each module's progress line, as
 # above), not the median of several full runs; the next e2e-full runs should replace them
 # (PLMCP-44).
-# PLMCP-74: test_pages and test_pages_files were measured on macOS (2026-11-23), not hosted; the next
-# e2e-full runs should replace them.
+# PLMCP-74: test_pages and test_pages_files were measured on macOS (2026-11-23), not hosted; the
+# next e2e-full runs should replace them.
 MODULE_SECONDS: dict[str, float] = {
     "tests/contract/test_bulk.py": 284,
     "tests/contract/test_document_writer.py": 174,
