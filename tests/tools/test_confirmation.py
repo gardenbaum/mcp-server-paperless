@@ -513,6 +513,24 @@ async def test_a_call_the_client_gives_up_changes_nothing() -> None:
         assert await client.list_tools()
 
 
+async def test_an_open_dialog_holds_nothing_back() -> None:
+    """Meanwhile other calls read and write, the same object included."""
+    state, meanwhile = world(), list[bool]()
+    served = server(source(state))
+
+    async def elsewhere() -> None:
+        async with Client(served, mode="legacy") as other:
+            read = await other.call_tool("get_document", {"document_id": 1}, raise_on_error=False)
+            wrote = await other.call_tool("delete_note", {**NOTE, "confirm": True})
+            meanwhile.extend([read.is_error, wrote.is_error])
+
+    with anyio.fail_after(10):
+        result = await call(served, "legacy", answering("accept", YES, before=elsewhere))
+
+    assert meanwhile == [False, False]
+    assert "has no note 1" in text(result)
+
+
 # --- the rest of the server ----------------------------------------------------------------------
 
 

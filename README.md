@@ -282,8 +282,10 @@ An assistant that can file your documents can also delete them. The server is bu
 takes more than a misunderstanding:
 
 - **Confirmation before anything final.** Tools that delete, overwrite, publish or grant access
-  change nothing when called without `confirm=true`. They answer with what would happen (which
-  documents, who gains access, what cannot be undone), so the client shows it to you first.
+  first say what would happen (which documents, who gains access, what cannot be undone). Where
+  your client can show a dialog you are asked in it, and nothing happens unless you accept; with
+  any other client nothing changes until the call is repeated with `confirm=true`
+  ([details](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md#confirmation)).
 - **Dry runs for bulk edits.** `bulk_edit_documents` and `bulk_edit_taxonomy` preview how many
   objects would change before they ask for confirmation.
 - **The trash first.** Deleting a document moves it to the Paperless trash, from where it can be

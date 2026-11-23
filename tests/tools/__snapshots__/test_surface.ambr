@@ -972,7 +972,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_ids': dict({
@@ -1451,7 +1451,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'dry_run': dict({
@@ -1754,7 +1754,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'name': dict({
@@ -2206,7 +2206,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'consumption_scope': dict({
@@ -3009,7 +3009,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_ids': dict({
@@ -3217,7 +3217,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_id': dict({
@@ -3724,7 +3724,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'email': dict({
@@ -4736,7 +4736,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'enabled': dict({
@@ -5371,7 +5371,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_id': dict({
@@ -5445,7 +5445,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_id': dict({
@@ -5518,7 +5518,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'group': dict({
@@ -5593,7 +5593,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
         }),
@@ -5649,7 +5649,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'rule_id': dict({
@@ -5713,7 +5713,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_id': dict({
@@ -5787,7 +5787,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_id': dict({
@@ -6002,7 +6002,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'view': dict({
@@ -6078,7 +6078,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
         }),
@@ -6133,7 +6133,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'link_id': dict({
@@ -6198,7 +6198,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'item': dict({
@@ -6320,7 +6320,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'user': dict({
@@ -6390,7 +6390,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'workflow': dict({
@@ -6516,7 +6516,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_id': dict({
@@ -6768,7 +6768,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_ids': dict({
@@ -6884,7 +6884,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_ids': dict({
@@ -11969,7 +11969,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'delete_originals': dict({
@@ -12195,7 +12195,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'label': dict({
@@ -12495,7 +12495,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
         }),
@@ -12727,7 +12727,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_id': dict({
@@ -12948,7 +12948,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_ids': dict({
@@ -13771,7 +13771,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'task_type': dict({
@@ -14628,7 +14628,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'items': dict({
@@ -14967,7 +14967,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_id': dict({
@@ -15292,7 +15292,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'llm_api_key': dict({
@@ -15482,7 +15482,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Required to change owner (also to no owner): the new owner takes the document over and you may lose access, which you cannot undo yourself.',
+            'description': 'Required to change owner (also to no owner): the new owner takes the document over and you may lose access, which you cannot undo yourself. Without it a client that can show dialogs asks the user; with any other the call fails.',
             'type': 'boolean',
           }),
           'correspondent': dict({
@@ -16425,7 +16425,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'group': dict({
@@ -16565,7 +16565,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'imap_port': dict({
@@ -16973,7 +16973,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'consumption_scope': dict({
@@ -17851,7 +17851,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'is_inbox_tag': dict({
@@ -18218,7 +18218,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'email': dict({
@@ -19251,7 +19251,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'enabled': dict({
@@ -20907,7 +20907,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_id': dict({
@@ -20980,7 +20980,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'document_id': dict({
@@ -21053,7 +21053,7 @@
         'properties': dict({
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'item': dict({
@@ -23969,7 +23969,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Required to change owner (also to no owner): the new owner takes the document over and you may lose access, which you cannot undo yourself.',
+            'description': 'Required to change owner (also to no owner): the new owner takes the document over and you may lose access, which you cannot undo yourself. Without it a client that can show dialogs asks the user; with any other the call fails.',
             'type': 'boolean',
           }),
           'correspondent': dict({
@@ -24945,7 +24945,7 @@
           }),
           'confirm': dict({
             'default': False,
-            'description': 'Must be true to go ahead. Without it nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
             'type': 'boolean',
           }),
           'is_inbox_tag': dict({

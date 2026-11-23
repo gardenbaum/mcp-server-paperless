@@ -862,14 +862,15 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
 
 logger = logging.getLogger(__name__)
 
-# The `confirm` parameter of every destructive tool (decision-6, decision-15).
+# The `confirm` parameter of every destructive tool (decision-6, decision-15, decision-44).
 type Confirm = Annotated[
     bool,
     Field(
         description=(
-            "Must be true to go ahead. Without it nothing changes and the error says what would "
-            "happen. Describe that to the user and pass true only once they agree, or if they "
-            "already asked for exactly this."
+            "Must be true to go ahead at once. Without it a client that can show dialogs asks the "
+            "user, and the tool runs only if they accept; with any other nothing changes and the "
+            "error says what would happen. Describe that to the user and pass true only once they "
+            "agree, or if they already asked for exactly this."
         )
     ),
 ]

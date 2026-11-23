@@ -44,6 +44,12 @@ The server speaks plain HTTP: with tokens configured, put TLS, rate limiting of 
 and public exposure in a reverse proxy, and list the host name the proxy forwards in
 `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`.
 
+A call that waits for your answer in a [confirmation dialog](configuration.md#confirmation) can
+stay open for up to 10 minutes on MCP versions up to 2025-11-25. The server sends a ping every 15
+seconds, so a proxy's read timeout has to be longer than that, and the proxy must not buffer the
+response. If the connection drops, an answer given afterwards changes nothing. Run one server
+process per address: sessions and dialogs are not shared between processes.
+
 ## Without tokens, for local development only
 
 `PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK=true` serves without tokens on a loopback

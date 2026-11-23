@@ -67,7 +67,8 @@ client or whoever runs the server.
 
 At the default log levels it logs:
 
-- for each tool call: the tool's name, a request id, the duration, and success or the type of error;
+- for each tool call: the tool's name, a request id, the duration, and success, that it asked for a
+  confirmation, or the type of error (what a confirmation dialog shows or is answered is not logged);
 - for each HTTP request, one record with method, path, status, duration and the request id (which
   the caller may choose), and none of its query string, headers, body or IP address;
 - HTTP session ids, also unknown ones a caller sends;

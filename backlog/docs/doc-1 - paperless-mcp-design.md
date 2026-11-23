@@ -3,7 +3,7 @@ id: doc-1
 title: paperless-mcp design
 type: specification
 created_date: '2026-11-09T19:21:00Z'
-updated_date: '2026-11-23T19:33:11Z'
+updated_date: '2026-11-23T21:01:15Z'
 ---
 # mcp-server-paperless — Design
 
@@ -185,9 +185,10 @@ Pure use-case logic, fully testable against in-memory fakes:
   `Annotated` parameter types); `ToolAnnotations` (`read_only_hint`, `destructive_hint`,
   `idempotent_hint`, `open_world_hint`) from one central table; exactly one toolset tag; a typed
   return model (structured output).
-- Destructive tools require `confirm: bool = False`; without it they return what *would* happen
-  and how to confirm. Elicitation is not used for confirmation (raises on the sessionless MCP
-  2026-07-28 era).
+- Destructive tools require `confirm: bool = False`. Without it the boundary shows the user what
+  *would* happen in a dialog (MCP form elicitation, on both protocol eras) and runs the tool only
+  after they accept exactly that; with a client that declares no form dialog the tool returns what
+  would happen and how to confirm (decision-44).
 - Tools translate domain errors via one boundary decorator into `ToolError` (client-safe message
   + hint); everything else is masked (`mask_error_details=True`).
 - Every document-shaped output carries `web_url` (from `PAPERLESS_PUBLIC_URL` or the base URL).

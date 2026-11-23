@@ -641,7 +641,8 @@ async def update_document(  # noqa: PLR0913 -- one parameter per changeable fiel
         Field(
             description=(
                 "Required to change owner (also to no owner): the new owner takes the document "
-                "over and you may lose access, which you cannot undo yourself."
+                "over and you may lose access, which you cannot undo yourself. Without it a "
+                "client that can show dialogs asks the user; with any other the call fails."
             )
         ),
     ] = False,

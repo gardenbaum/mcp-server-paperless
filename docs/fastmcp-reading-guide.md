@@ -63,10 +63,13 @@ all images and videos (pages may link to media that is absent). Ignore `assets/`
 
 ## Sessionless-era caveats
 
-- `ctx.elicit()` **raises** on sessionless (2026-07-28) connections, and the project forbids
-  elicitation for confirmation anyway (destructive tools take `confirm: bool = False`).
-  `servers/elicitation.mdx` explains the era gate and the guard pattern; read it only to understand
-  the failure, not to use it.
+- `ctx.elicit()` **raises** on sessionless (2026-07-28) connections, and a returned
+  `InputRequiredResult` is refused on handshake ones. Read `servers/elicitation.mdx` for the era
+  gate and the guard pattern before touching `tools/confirmation.py`, the only place that uses
+  either: it asks the user to confirm destructive calls on both eras (decision-44). Tools never
+  elicit themselves; services call `ConfirmationRequired.require`. Two things the page does not
+  say: an answer without `requestState` reaches the tool unchecked, and a sealed state is not
+  single use.
 - Do not keep state between calls in `ctx.set_state`; use explicit parameters, lifespan-owned
   objects or `servers/sessions.mdx`.
 - `Middleware.on_initialize` never runs on sessionless connections; do not hang setup on it.

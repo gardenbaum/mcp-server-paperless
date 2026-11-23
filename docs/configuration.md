@@ -67,11 +67,32 @@ Three settings narrow the tools a client is offered. A tool that is not offered 
 - **Disabled tools** (`PAPERLESS_MCP_DISABLED_TOOLS`). Takes single tools away by name.
 
 Whatever is offered, the Paperless permissions of the token's user still apply, and tools that
-can lose data or widen access have a confirmation step: called without `confirm=true` they
-change nothing and answer with what they would do, so the client can show it to you first. Every
+can lose data or widen access have a [confirmation step](#confirmation). Every
 tool also tells the client whether it only reads or may change or remove data (its MCP
 annotations), which clients use for their own approval prompts. The [tool
 reference](tools.md) lists the kind of every tool.
+
+### Confirmation
+
+A tool that can lose data or widen access needs your consent for that, in one of two ways:
+
+- **A dialog**, where your client can show one (it declares form elicitation of MCP). A call
+  without `confirm` shows you what would happen and waits. Only if you accept does the call go
+  on, and only for what you saw: if the target changes meanwhile you are asked again. If you
+  decline, close the dialog, or do not answer within 10 minutes, nothing changes and the assistant is
+  told not to try again on its own. The same holds if the connection drops before you answer.
+- **`confirm=true`** with any other client. A call without it changes nothing and answers with
+  what it would do; the assistant is told to describe that to you and to repeat the call with
+  `confirm=true` once you agree.
+
+The assistant can also pass `confirm=true` in its first call, when you already asked for exactly
+this; no dialog is shown then. A client that declares dialogs but cannot show them to anybody (a
+run without a person) is told "no" every time, so this is its only way. Dialogs need one server
+process: with several behind one address, an answer that reaches another process changes nothing.
+
+Which clients were seen to show the dialog: none yet. According to their documentation
+[Claude Code](https://code.claude.com/docs/en/mcp) and
+[VS Code](https://code.visualstudio.com/api/extension-guides/ai/mcp) show such dialogs.
 
 ### Switching a toolset on
 
@@ -132,8 +153,9 @@ read-only tools will run them unasked. Use `PAPERLESS_MCP_TOOLSETS=core` to leav
 Off by default. `bulk_edit_documents` changes many documents in one step (tags, correspondent,
 type, storage path, custom fields, trash, reprocess) and `bulk_edit_taxonomy` deletes many tags,
 correspondents, document types or storage paths or sets who owns and may see them. Both work in
-three steps: `dry_run=true` previews how many objects change, a call without `confirm` is
-refused with a description of the effect, `confirm=true` executes. Paperless checks every object
+three steps: `dry_run=true` previews how many objects change, a call without `confirm` asks you
+in a [dialog](#confirmation) or is refused with a description of the effect, `confirm=true`
+executes. Paperless checks every object
 first: if one may not be changed, none is. Deleting taxonomy is final (it has no trash).
 
 ### `versions`
