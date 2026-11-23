@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:39:56Z'
-updated_date: '2026-11-23T12:20:06Z'
+updated_date: '2026-11-23T15:33:39Z'
 labels: []
 dependencies: []
 priority: medium
@@ -32,7 +32,7 @@ The Docker MCP Catalog builds a local server from its Dockerfile and runs the im
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
