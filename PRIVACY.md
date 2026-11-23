@@ -52,7 +52,8 @@ services, listed [below](#where-your-data-goes).
   the image; a container's environment variables, the token included, are part of its settings.
 
 To remove everything, take the server out of your client (`claude mcp remove paperless`, or
-`claude plugin uninstall mcp-server-paperless@gardenbaum`, which deletes the stored options and the
+`claude plugin uninstall mcp-server-paperless@gardenbaum`, with `--scope` if it was not installed
+for your user, which deletes the stored options and the
 token with the last installation, unless it reports otherwise, then
 `claude plugin marketplace remove gardenbaum`), run `uv cache clean` (it clears uv's cache for
 everything) and `uv python uninstall` for a Python you no longer need, remove the container and
@@ -77,7 +78,8 @@ At the default log levels it logs:
   argument or Paperless's answer;
 - with sign-in through an identity provider, client ids and names, your user id at the provider,
   parts of token ids, authorization codes the server does not recognise, and values from failed
-  sign-in requests (error, description, state, requested resource).
+  sign-in requests (error, description, state, requested resource),
+  and sign-in errors, possibly with a traceback.
 
 Its records of tool calls contain no arguments or results, and it does not log your Paperless token
 or bearer tokens, at these levels.
@@ -105,7 +107,8 @@ for troubleshooting.
 - **Package hosts**, by requests of your installer, not of the server. `uvx` contacts PyPI
   (`pypi.org`, `files.pythonhosted.org`) to install and again at a start when its index cache is
   older than about ten minutes, also for a fixed version. If it needs a Python, it downloads one
-  from `releases.astral.sh` or GitHub. Docker pulls the image from `ghcr.io`. Adding, installing or
+  from `releases.astral.sh` or GitHub. Docker pulls the image from `ghcr.io`;
+  building it yourself also contacts Docker Hub, Debian and PyPI. Adding, installing or
   updating the plugin, and refreshing its marketplace, contacts GitHub.
 - **A proxy**, if the usual proxy environment variables (such as `HTTPS_PROXY`) name one: the
   server's requests go through it.

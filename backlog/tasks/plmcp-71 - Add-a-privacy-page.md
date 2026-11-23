@@ -1,11 +1,11 @@
 ---
 id: PLMCP-71
 title: Add a privacy page
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:57:03Z'
-updated_date: '2026-11-23T12:40:10Z'
+updated_date: '2026-11-23T12:41:19Z'
 labels: []
 dependencies: []
 priority: medium
@@ -21,16 +21,16 @@ Anthropic's docs ask local connectors for a privacy policy; users also want to k
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 PRIVACY.md says what the server reads, writes, stores and logs, and to whom data goes (Paperless, the MCP client and its model, PyPI and the image registry on install, Paperless's own LLM for the ai tools), each statement checked against the code
-- [ ] #2 README and docs link it, and the plugin manifest names it as its privacy policy URL once the plugin is merged
-- [ ] #3 Tests keep the links valid
+- [x] #1 PRIVACY.md says what the server reads, writes, stores and logs, and to whom data goes (Paperless, the MCP client and its model, PyPI and the image registry on install, Paperless's own LLM for the ai tools), each statement checked against the code
+- [x] #2 README and docs link it, and the plugin manifest names it as its privacy policy URL once the plugin is merged
+- [x] #3 Tests keep the links valid
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -74,4 +74,12 @@ Review round (PR 93), each point verified before writing:
 Open: the code fix for the logo and the log findings are owner decisions. Not observed live: the logo request in a browser, OIDC log lines, Paperless's OCR and embedding services.
 
 README's safety list now limits the log statement to tool calls and links the policy. main merged (decision-38).
+
+Independent opus review and re-review: 0 Critical, 0 Important left; N1 to N3 fixed. Known: both contact routes need a GitHub account. Owner decides on shortening (about 100 to 140 words possible).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+PRIVACY.md says what the server reads, writes, stores and logs and who receives data, each statement checked against code or a canary run; README, docs, SECURITY.md and the plugin manifest link it. Wrong log statements in README and docs/configuration.md are corrected. DoD 2: one known macOS-only local failure, CI green.
+<!-- SECTION:FINAL_SUMMARY:END -->
