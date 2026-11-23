@@ -1,4 +1,4 @@
-# FastMCP 4 reading guide (relevance triage for paperless-mcp)
+# FastMCP 4 reading guide (relevance triage for mcp-server-paperless)
 
 Read this before any FastMCP work, then open the specific vendored page. The vendored docs
 (`docs/vendor/fastmcp/docs/`, marker in `docs/vendor/fastmcp/UPSTREAM`) are the source of truth:

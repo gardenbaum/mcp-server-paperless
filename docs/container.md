@@ -1,8 +1,8 @@
 # Run in a container
 
-Version tags (`v*`) publish an image to `ghcr.io/gardenbaum/paperless-mcp`, with a provenance and
-an SBOM attestation. It runs
-`paperless-mcp-http` as a non-root user (uid 10001) from a read-only filesystem, listens on
+Version tags (`v*`) publish an image to `ghcr.io/gardenbaum/mcp-server-paperless`, with a provenance and
+an SBOM attestation (releases up to 0.2.0 kept the old name `ghcr.io/gardenbaum/paperless-mcp`). It runs
+`mcp-server-paperless-http` as a non-root user (uid 10001) from a read-only filesystem, listens on
 `0.0.0.0:8000` inside the container and, like the plain command, **does not start without
 `PAPERLESS_MCP_HTTP_AUTH_TOKENS` (or the [optional OIDC layer](claude-ai-connector.md)) and
 `PAPERLESS_MCP_HTTP_ALLOWED_HOSTS`**. The unauthenticated
@@ -20,8 +20,8 @@ publishes port 8000 itself, so the server is published on 8001:
 
 ```yaml
 services:
-  paperless-mcp:
-    image: ghcr.io/gardenbaum/paperless-mcp:0.1.0   # a published version tag; pin the digest too
+  mcp-server-paperless:
+    image: ghcr.io/gardenbaum/mcp-server-paperless:0.3.0   # a published version tag; pin the digest too
     restart: unless-stopped
     depends_on:
       - webserver                                      # the paperless-ngx service
@@ -49,7 +49,7 @@ belong to the server's user (uid 10001). Without the mount, leave
 ```yaml
     environment:
       # ... as above, plus:
-      PAPERLESS_MCP_OIDC_CONFIG_URL: https://authentik.example.org/application/o/paperless-mcp/.well-known/openid-configuration
+      PAPERLESS_MCP_OIDC_CONFIG_URL: https://authentik.example.org/application/o/mcp-server-paperless/.well-known/openid-configuration
       PAPERLESS_MCP_OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?set it in .env}
       PAPERLESS_MCP_OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?set it in .env}
       PAPERLESS_MCP_OIDC_BASE_URL: https://mcp.example.org      # its host is in PAPERLESS_MCP_HTTP_ALLOWED_HOSTS
@@ -69,7 +69,7 @@ If the container lives in its own compose project, join Paperless's network inst
 
 ```yaml
 services:
-  paperless-mcp:
+  mcp-server-paperless:
     # ... as above, with PAPERLESS_URL: http://webserver:8000
     networks: [paperless]
 networks:

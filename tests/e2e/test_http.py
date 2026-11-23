@@ -1,4 +1,4 @@
-"""Smoke test of `paperless-mcp-http` over Streamable HTTP against Paperless 3.4.2.
+"""Smoke test of `mcp-server-paperless-http` over Streamable HTTP against Paperless 3.4.2.
 
 The real process, a real socket and FastMCP's HTTP client with a bearer token: what a remote
 client does.

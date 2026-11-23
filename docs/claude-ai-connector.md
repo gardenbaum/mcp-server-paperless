@@ -50,7 +50,7 @@ Any OIDC provider works the same way.
    *Signing Key* (for example the self-signed certificate Authentik ships: the server checks ID
    tokens against the provider's published keys, so they must be signed with RS256, not with the
    client secret). The default scopes (`openid`, `email`, `profile`) are enough.
-2. Create an *Application* for it (slug `paperless-mcp`) and bind it to the users or the group
+2. Create an *Application* for it (slug `mcp-server-paperless`) and bind it to the users or the group
    who may use your Paperless through claude.ai. Note the client id and secret.
 3. Start the server with the OIDC variables next to the HTTP ones:
 
@@ -58,13 +58,13 @@ Any OIDC provider works the same way.
    export PAPERLESS_MCP_HTTP_HOST=0.0.0.0
    export PAPERLESS_MCP_HTTP_ALLOWED_HOSTS=mcp.example.org
    export PAPERLESS_MCP_HTTP_AUTH_TOKENS="$(openssl rand -hex 32)"          # optional: for Claude Code
-   export PAPERLESS_MCP_OIDC_CONFIG_URL=https://authentik.example.org/application/o/paperless-mcp/.well-known/openid-configuration
+   export PAPERLESS_MCP_OIDC_CONFIG_URL=https://authentik.example.org/application/o/mcp-server-paperless/.well-known/openid-configuration
    export PAPERLESS_MCP_OIDC_CLIENT_ID=the-client-id
    export PAPERLESS_MCP_OIDC_CLIENT_SECRET=the-client-secret
    export PAPERLESS_MCP_OIDC_BASE_URL=https://mcp.example.org
    export PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY="$(openssl rand -hex 32)"     # keep it: changing it signs clients out
    export PAPERLESS_MCP_OIDC_STORAGE_DIR=/var/lib/paperless-mcp            # optional, survives restarts
-   paperless-mcp-http
+   mcp-server-paperless-http
    ```
 
    For Google, Keycloak or Auth0 only the discovery URL and the redirect URI registration

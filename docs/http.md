@@ -1,7 +1,7 @@
 # Run over HTTP
 
 stdio is the default and needs nothing else. To serve several clients, or a connector, over
-Streamable HTTP, run `paperless-mcp-http`. It **refuses to start without authentication**.
+Streamable HTTP, run `mcp-server-paperless-http`. It **refuses to start without authentication**.
 
 ## Start it
 
@@ -9,14 +9,15 @@ Streamable HTTP, run `paperless-mcp-http`. It **refuses to start without authent
 export PAPERLESS_URL=https://paperless.example.org
 export PAPERLESS_TOKEN=your-api-token
 export PAPERLESS_MCP_HTTP_AUTH_TOKENS="$(openssl rand -hex 32)"   # what clients send as a bearer token
-uvx --from mcp-server-paperless@latest paperless-mcp-http   # http://127.0.0.1:8000/mcp
+uvx --from mcp-server-paperless@latest mcp-server-paperless-http   # http://127.0.0.1:8000/mcp
 claude mcp add --transport http paperless http://127.0.0.1:8000/mcp \
     --header "Authorization: Bearer $PAPERLESS_MCP_HTTP_AUTH_TOKENS"
 ```
 
 The package is `mcp-server-paperless`; the PyPI project
 [`paperless-mcp`](https://pypi.org/project/paperless-mcp/) is a different server. From a clone,
-`just serve-http` or `.venv/bin/paperless-mcp-http` start the same server. For a
+`just serve-http` or `.venv/bin/mcp-server-paperless-http` start the same server; the old command
+names `paperless-mcp` and `paperless-mcp-http` still work. For a
 container see [Run in a container](container.md).
 
 ## Authentication and allowed hosts
@@ -32,7 +33,7 @@ and any foreign browser `Origin` 403, before authentication, and no CORS access 
 ```sh
 PAPERLESS_MCP_HTTP_HOST=0.0.0.0 \
 PAPERLESS_MCP_HTTP_ALLOWED_HOSTS=mcp.example.org \
-PAPERLESS_MCP_HTTP_AUTH_TOKENS=... paperless-mcp-http
+PAPERLESS_MCP_HTTP_AUTH_TOKENS=... mcp-server-paperless-http
 ```
 
 The server speaks plain HTTP: with tokens configured, put TLS, rate limiting of failed attempts

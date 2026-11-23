@@ -19,14 +19,15 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/gardenbaum/paperless-mcp"
-Documentation = "https://github.com/gardenbaum/paperless-mcp/tree/main/docs"
-Issues = "https://github.com/gardenbaum/paperless-mcp/issues"
+Repository = "https://github.com/gardenbaum/mcp-server-paperless"
+Documentation = "https://github.com/gardenbaum/mcp-server-paperless/tree/main/docs"
+Issues = "https://github.com/gardenbaum/mcp-server-paperless/issues"
 
 [project.scripts]
 mcp-server-paperless = "mcp_server_paperless.cli:main"
 paperless-mcp = "mcp_server_paperless.cli:main"
 paperless-mcp-http = "mcp_server_paperless.cli:main_http"
+mcp-server-paperless-http = "mcp_server_paperless.cli:main_http"
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]

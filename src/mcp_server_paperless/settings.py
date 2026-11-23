@@ -178,7 +178,7 @@ def _is_host(entry: str) -> bool:
 
 
 class HttpSettings(BaseSettings):
-    """Settings of the HTTP transport (``paperless-mcp http``).
+    """Settings of the HTTP transport (``mcp-server-paperless-http``).
 
     Attributes:
         host: Address to bind (``PAPERLESS_MCP_HTTP_HOST``). Anything but a loopback address

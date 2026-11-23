@@ -247,7 +247,7 @@ async def test_any_configured_token_opens_the_endpoint(token: str) -> None:
         response = await post(client, {"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200
-    assert '"name":"paperless-mcp"' in response.text
+    assert '"name":"mcp-server-paperless"' in response.text
 
 
 @pytest.mark.anyio

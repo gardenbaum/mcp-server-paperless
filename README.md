@@ -1,23 +1,23 @@
 <div align="center">
 
-# paperless-mcp
+# mcp-server-paperless
 
 **Let Claude work with your [paperless-ngx](https://docs.paperless-ngx.com) archive:<br>
 find, read, file, upload and organise documents by asking.**
 
-[![CI](https://github.com/gardenbaum/paperless-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gardenbaum/paperless-mcp/actions/workflows/ci.yml)
-[![E2E full suite](https://github.com/gardenbaum/paperless-mcp/actions/workflows/e2e-full.yml/badge.svg?branch=main)](https://github.com/gardenbaum/paperless-mcp/actions/workflows/e2e-full.yml)
-[![Release](https://img.shields.io/github/v/tag/gardenbaum/paperless-mcp?label=release&sort=semver)](https://github.com/gardenbaum/paperless-mcp/pkgs/container/paperless-mcp)
+[![CI](https://github.com/gardenbaum/mcp-server-paperless/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gardenbaum/mcp-server-paperless/actions/workflows/ci.yml)
+[![E2E full suite](https://github.com/gardenbaum/mcp-server-paperless/actions/workflows/e2e-full.yml/badge.svg?branch=main)](https://github.com/gardenbaum/mcp-server-paperless/actions/workflows/e2e-full.yml)
+[![Release](https://img.shields.io/github/v/tag/gardenbaum/mcp-server-paperless?label=release&sort=semver)](https://github.com/gardenbaum/mcp-server-paperless/pkgs/container/mcp-server-paperless)
 [![paperless-ngx 3.x](https://img.shields.io/badge/paperless--ngx-3.x-17541f)](https://github.com/paperless-ngx/paperless-ngx)
 [![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-3776ab)](pyproject.toml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/gardenbaum/paperless-mcp/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/gardenbaum/mcp-server-paperless/blob/main/LICENSE)
 
 [Quick start](#quick-start) · [What you can ask](#what-you-can-ask) · [Toolsets](#toolsets) ·
 [Safety](#how-it-keeps-your-archive-safe) · [Documentation](#documentation)
 
 </div>
 
-paperless-mcp is a [Model Context Protocol](https://modelcontextprotocol.io) server for
+mcp-server-paperless is a [Model Context Protocol](https://modelcontextprotocol.io) server for
 paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai and any
 other MCP client 87 tools in 13 toolsets that cover most of what the Paperless API can do, from a
 search to mail rules and workflows. It starts small and careful: 18 tools by default, names instead
@@ -28,7 +28,7 @@ flowchart LR
     A["Claude Code<br>Claude Desktop"] -- stdio --> S
     B["claude.ai<br>connector"] -- "HTTPS + OIDC" --> S
     C["Other MCP<br>clients"] -- "HTTP + bearer token" --> S
-    S(["paperless-mcp"]) -- "REST API v10" --> P[("paperless-ngx 3.x")]
+    S(["mcp-server-paperless"]) -- "REST API v10" --> P[("paperless-ngx 3.x")]
 ```
 
 ## What you can ask
@@ -141,25 +141,25 @@ The image serves MCP over Streamable HTTP and does not start without authenticat
 
 ```sh
 export MCP_TOKEN="$(openssl rand -hex 32)"
-docker run -d --name paperless-mcp -p 127.0.0.1:8001:8000 \
+docker run -d --name mcp-server-paperless -p 127.0.0.1:8001:8000 \
     -e PAPERLESS_URL=https://paperless.example.org \
     -e PAPERLESS_TOKEN=your-api-token \
     -e PAPERLESS_MCP_HTTP_AUTH_TOKENS="$MCP_TOKEN" \
     -e PAPERLESS_MCP_HTTP_ALLOWED_HOSTS=localhost \
-    ghcr.io/gardenbaum/paperless-mcp:0.1.0
+    ghcr.io/gardenbaum/mcp-server-paperless:0.3.0
 
 claude mcp add --transport http paperless http://127.0.0.1:8001/mcp \
     --header "Authorization: Bearer $MCP_TOKEN"
 ```
 
-[Run in a container](https://github.com/gardenbaum/paperless-mcp/blob/main/docs/container.md) has the compose file next to Paperless and the reverse
-proxy setup, [Run over HTTP](https://github.com/gardenbaum/paperless-mcp/blob/main/docs/http.md) the details of the transport.
+[Run in a container](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/container.md) has the compose file next to Paperless and the reverse
+proxy setup, [Run over HTTP](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/http.md) the details of the transport.
 
 ### claude.ai
 
 claude.ai custom connectors sign in with OAuth. Put the HTTP server behind your identity provider
 (Authentik, Keycloak, Google, Auth0 or any other OpenID Connect provider) with five environment
-variables: [Connect claude.ai](https://github.com/gardenbaum/paperless-mcp/blob/main/docs/claude-ai-connector.md).
+variables: [Connect claude.ai](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/claude-ai-connector.md).
 
 ## Toolsets
 
@@ -184,8 +184,8 @@ handed tools you never use. Switch more on with `PAPERLESS_MCP_TOOLSETS=core,ai,
 | `raw` | 1 | | A read-only escape hatch: GET any path of the Paperless API the other tools do not cover |
 
 Every tool with its kind and a one-line description is in the [tool
-reference](https://github.com/gardenbaum/paperless-mcp/blob/main/docs/tools.md); what to know before switching a toolset on is in
-[Configuration](https://github.com/gardenbaum/paperless-mcp/blob/main/docs/configuration.md#toolsets).
+reference](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/tools.md); what to know before switching a toolset on is in
+[Configuration](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md#toolsets).
 
 ## How it keeps your archive safe
 
@@ -210,7 +210,7 @@ takes more than a misunderstanding:
 
 ## Configuration
 
-The settings you are most likely to touch; [Configuration](https://github.com/gardenbaum/paperless-mcp/blob/main/docs/configuration.md) has all of
+The settings you are most likely to touch; [Configuration](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md) has all of
 them.
 
 | Variable | Meaning |
@@ -233,12 +233,12 @@ them.
 
 ## Documentation
 
-- [Configuration](https://github.com/gardenbaum/paperless-mcp/blob/main/docs/configuration.md): every variable, the toolsets, read-only mode, uploads
-- [Tool reference](https://github.com/gardenbaum/paperless-mcp/blob/main/docs/tools.md): all tools and prompts
-- [Run over HTTP](https://github.com/gardenbaum/paperless-mcp/blob/main/docs/http.md): bearer tokens, allowed hosts, what the transport refuses
-- [Connect claude.ai](https://github.com/gardenbaum/paperless-mcp/blob/main/docs/claude-ai-connector.md): sign-in through your identity provider
-- [Run in a container](https://github.com/gardenbaum/paperless-mcp/blob/main/docs/container.md): the image, compose files, reverse proxy
-- [Development](https://github.com/gardenbaum/paperless-mcp/blob/main/docs/development.md): architecture, how it is tested, how to contribute
+- [Configuration](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md): every variable, the toolsets, read-only mode, uploads
+- [Tool reference](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/tools.md): all tools and prompts
+- [Run over HTTP](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/http.md): bearer tokens, allowed hosts, what the transport refuses
+- [Connect claude.ai](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/claude-ai-connector.md): sign-in through your identity provider
+- [Run in a container](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/container.md): the image, compose files, reverse proxy
+- [Development](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/development.md): architecture, how it is tested, how to contribute
 
 ## Known limitations
 
@@ -260,7 +260,7 @@ The code is written by AI agents and held to rules that are checked, not remembe
 architecture enforced by import contracts, every design decision recorded with the test that
 guards it (`backlog/decisions/`), a contract suite that runs the same tests against a fake and a
 real Paperless, and mutation testing with a gate. Plans and task history are in `backlog/`. See
-[Development](https://github.com/gardenbaum/paperless-mcp/blob/main/docs/development.md) to run the checks yourself; issues and pull requests are
+[Development](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/development.md) to run the checks yourself; issues and pull requests are
 welcome.
 
 ## Credits
@@ -285,12 +285,12 @@ Thanks to the [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) an
 
 ## Licence
 
-MIT, see [LICENSE](https://github.com/gardenbaum/paperless-mcp/blob/main/LICENSE).
+MIT, see [LICENSE](https://github.com/gardenbaum/mcp-server-paperless/blob/main/LICENSE).
 
 ---
 
 <div align="center">
 
-If paperless-mcp saves you time, a ⭐ helps other Paperless users find it.
+If mcp-server-paperless saves you time, a ⭐ helps other Paperless users find it.
 
 </div>

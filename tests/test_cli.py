@@ -45,7 +45,7 @@ def exit_message(capsys: pytest.CaptureFixture[str]) -> str:
 def test_missing_configuration_names_the_variables(capsys: pytest.CaptureFixture[str]) -> None:
     err = exit_message(capsys)
 
-    assert "paperless-mcp: invalid configuration" in err
+    assert "mcp-server-paperless: invalid configuration" in err
     assert "PAPERLESS_URL" in err
     assert "PAPERLESS_TOKEN" in err
 
@@ -82,7 +82,7 @@ def test_a_rejected_token_or_api_version_stops_the_start(
         monkeypatch.setenv("PAPERLESS_URL", url)
         err = exit_message(capsys)
 
-    assert f"paperless-mcp: {message}" in err
+    assert f"mcp-server-paperless: {message}" in err
     assert "Hint: " in err
     assert TOKEN not in err
 
@@ -120,7 +120,7 @@ def test_filters_that_leave_no_tool_stop_the_start_before_any_request(
 
     err = exit_message(capsys)
 
-    assert "paperless-mcp: No tools are left to offer" in err
+    assert "mcp-server-paperless: No tools are left to offer" in err
 
 
 @pytest.mark.usefixtures("isolated_logging")
@@ -214,7 +214,7 @@ def test_http_without_authentication_stops_the_start_with_the_remedy(
 ) -> None:
     err = http_exit_message(capsys)
 
-    assert "paperless-mcp: refusing to start without authentication" in err
+    assert "mcp-server-paperless: refusing to start without authentication" in err
     assert "PAPERLESS_MCP_HTTP_AUTH_TOKENS" in err
     assert "PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK" in err
 
@@ -279,7 +279,7 @@ def test_incomplete_oidc_settings_stop_the_start_naming_the_missing_variables(
 
     err = http_exit_message(capsys)
 
-    assert "paperless-mcp: the OIDC layer is incomplete" in err
+    assert "mcp-server-paperless: the OIDC layer is incomplete" in err
     for name in ("CONFIG_URL", "BASE_URL", "JWT_SIGNING_KEY"):
         assert f"PAPERLESS_MCP_OIDC_{name}" in err
     assert OIDC_SECRET not in err
