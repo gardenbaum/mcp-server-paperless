@@ -171,8 +171,9 @@ def _in_quotes(shown: str) -> str:
     return f"'{shown.replace(chr(39), chr(0x2019))}'"
 
 
-# What a folder may hold besides: plain spaces, and the joiners some scripts need.
-_IN_FOLDERS: Final = frozenset({" ", chr(0x200C), chr(0x200D)})
+# What a destination that is no address (a folder, a name) may hold besides: plain spaces, and the
+# joiners some scripts need.
+_IN_TEXT: Final = frozenset({" ", chr(0x200C), chr(0x200D)})
 # The longest host name has 253 characters, the longest e-mail address 254.
 DESTINATION_LIMIT: Final = 254
 
@@ -194,11 +195,24 @@ _IGNORABLE: Final = frozenset(
     {0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x2800, 0x3164, 0xFFA0}
     | {*range(0x180B, 0x1810), *range(0xFE00, 0xFE10), *range(0xE0000, 0xE1000)}
 )
-type DestinationKind = Literal["host", "email", "url", "folder"]
+type DestinationKind = Literal["host", "email", "url", "text"]
 # What a character of a destination could be taken for: a comment, a quotation, another part.
 _ODD_IN_EMAIL: Final = frozenset('()<>[]",;:\\')
+_UNCERTAIN: Final = "it is not certain which host it leads to"
 _ODD_IN_HOST: Final = frozenset("/\\#?@%")
 _URL: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
+# A URL with credentials in the plain characters RFC 3986 gives them, which nobody reads otherwise.
+_CREDENTIALS: Final = re.compile(
+    r"([A-Za-z][A-Za-z0-9+.-]*://)[A-Za-z0-9._~!$&'()*+,;=:%-]*@([^@]*)"
+)
+
+
+def without_credentials(url: str) -> str | None:
+    """A service URL without its credentials; None if it is not certain what else they are."""
+    if "@" not in url:
+        return url
+    found = _CREDENTIALS.fullmatch(url)
+    return found[1] + found[2] if found else None
 
 
 def _host_of(text: str, kind: DestinationKind) -> str:
@@ -214,7 +228,7 @@ def _host_of(text: str, kind: DestinationKind) -> str:
             raise ValueError
     elif kind == "url" and _URL.match(text):
         host = urlsplit(text).hostname or ""
-        if "@" in text or "\\" in text or (host.isascii() and not text.isascii()):
+        if "\\" in text or (host.isascii() and not text.isascii()):
             raise ValueError
     if not host or not _ODD_IN_HOST.isdisjoint(host):
         raise ValueError
@@ -231,6 +245,10 @@ def _resolved(host: str) -> str:
     if host.isascii():
         return ""
     lowered = host.lower()
+    # Letters whose case rules changed over time (sharp s, final sigma, Cherokee): what the codec
+    # answers for them depends on the Python build.
+    if lowered != host.casefold():
+        raise ValueError
     # Not of the lowered text: the 2003 rules know fewer capital letters.
     found = host.encode("idna").decode().lower()
     plain = ".".join(
@@ -243,8 +261,8 @@ def _resolved(host: str) -> str:
 
 
 def _shows(character: str, kind: DestinationKind) -> bool:
-    """Whether a character of a destination is sure to show; a folder may hold a little more."""
-    if kind == "folder" and character in _IN_FOLDERS:
+    """Whether a character of a destination is sure to show; text may hold a little more."""
+    if kind == "text" and character in _IN_TEXT:
         return True
     return unicodedata.category(character) not in _NOT_SHOWN and ord(character) not in _IGNORABLE
 
@@ -252,13 +270,18 @@ def _shows(character: str, kind: DestinationKind) -> bool:
 def destination(text: str, what: str, kind: DestinationKind = "host") -> str:
     """``text``, where something would be sent, quoted and in full.
 
-    If its host has letters beyond ASCII, the form it is looked up in follows, so that letters
-    that look like others are visible.
+    A service URL is shown without its credentials. If its host has letters beyond ASCII, the form
+    it is looked up in follows, so that letters that look like others are visible.
 
     Raises:
         Validation: The user could not be shown where it leads; the message says why.
             ``confirm=true`` does not get past this.
     """
+    if kind == "url":
+        public = without_credentials(text)
+        if public is None:
+            raise not_shown(what, _UNCERTAIN)
+        text = public
     shown, resolved, cause = _in_quotes(text), "", ""
     if len(text) > DESTINATION_LIMIT:
         cause = f"it has more than {DESTINATION_LIMIT} characters"
@@ -268,11 +291,11 @@ def destination(text: str, what: str, kind: DestinationKind = "host") -> str:
         cause = "it holds both kinds of quotes"
     elif "  " in text:
         cause = "it holds doubled spaces"
-    elif kind != "folder":
+    elif kind != "text":
         try:
             resolved = _resolved(_host_of(text, kind))
         except ValueError:
-            cause = "it is not certain which host it leads to"
+            cause = _UNCERTAIN
     if cause:
         raise not_shown(what, cause, text)
     return f"{shown} ({resolved})" if resolved else shown

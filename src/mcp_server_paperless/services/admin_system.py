@@ -36,6 +36,7 @@ from mcp_server_paperless.domain.errors import (
     both_ends,
     destination,
     quoted,
+    without_credentials,
 )
 
 if TYPE_CHECKING:
@@ -50,6 +51,7 @@ if TYPE_CHECKING:
         RunnableTask,
         TaskType,
     )
+    from mcp_server_paperless.domain.errors import DestinationKind
     from mcp_server_paperless.domain.ports import AdminReader, AdminWriter
     from mcp_server_paperless.domain.tasks import TaskState
 
@@ -60,6 +62,8 @@ MAX_DOCUMENTS: Final = 100
 MAX_TASKS: Final = 100
 ARCHIVE_NAME: Final = "paperless-documents.zip"
 ZIP: Final = "application/zip"
+# The settings that are URLs.
+ENDPOINTS: Final = frozenset({"llm_endpoint", "llm_embedding_endpoint", "remote_ocr_endpoint"})
 # Settings a confirmation names in full; the rest are counted.
 SHOWN: Final = 5
 TASK_EFFECTS: Final[dict[str, str]] = {
@@ -76,6 +80,28 @@ TASK_EFFECTS: Final[dict[str, str]] = {
 
 def _text(value: JsonValue) -> str:
     return value if isinstance(value, str) else json.dumps(value)
+
+
+def _goes(name: str, value: JsonValue) -> str:
+    """A new value for a message; where document text goes is shown in full.
+
+    Raises:
+        Validation: It decides that and cannot be shown in full.
+    """
+    if name not in CONFIG_OUTBOUND or value is None:
+        return _shown(value)
+    kind: DestinationKind = "url" if name in ENDPOINTS else "text"
+    return destination(_text(value), name, kind) if value != "" else "empty"
+
+
+def _went(name: str, value: JsonValue) -> str:
+    """The value a setting has now, for a message: it may be one that could not be set."""
+    if name not in CONFIG_OUTBOUND or value is None:
+        return _shown(value)
+    text = without_credentials(_text(value)) if name in ENDPOINTS else _text(value)
+    if text is None:
+        return "a URL that is not shown"
+    return both_ends(text) if text else "empty"
 
 
 def _shown(value: JsonValue) -> str:
@@ -175,13 +201,7 @@ class SystemAdmin:
             if value == now:
                 continue
             changes[name] = value
-            outbound = name in CONFIG_OUTBOUND
-            new = (
-                destination(_text(value), name, "url")
-                if outbound and value is not None
-                else _shown(value)
-            )
-            old = both_ends(_text(now)) if outbound and now is not None else _shown(now)
+            new, old = _goes(name, value), _went(name, now)
             if value is None:
                 effects.append(f"reset {name} (now {old}) to the server's environment")
             elif now is None:

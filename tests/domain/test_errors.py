@@ -215,7 +215,7 @@ def test_a_destination_holds_no_character_that_may_not_show(code: int) -> None:
     "text", ["Paperless/Erledigt \u00fcbrig", " leading", "a\u200db", "Bob's", "x/y.z@w"]
 )
 def test_a_folder_may_hold_letters_spaces_and_joiners(text: str) -> None:
-    assert destination(text, "folder", "folder")[1:-1] == text
+    assert destination(text, "folder", "text")[1:-1] == text
 
 
 @pytest.mark.decision("decision-44")
@@ -229,7 +229,7 @@ def test_a_folder_may_hold_letters_spaces_and_joiners(text: str) -> None:
     ],
 )
 def test_a_folder_that_cannot_be_shown_says_why(text: str, cause: str) -> None:
-    assert cause in refusal(text, "folder")
+    assert cause in refusal(text, "text")
 
 
 @pytest.mark.decision("decision-44")
@@ -250,6 +250,8 @@ def test_a_folder_that_cannot_be_shown_says_why(text: str, cause: str) -> None:
         ("B\u00dcCHER.example", "host", "xn--bcher-kva.example"),
         ("a@b\u00fccher.example", "email", "xn--bcher-kva.example"),
         ("https://b\u00fccher.example:8443/p", "url", "xn--bcher-kva.example"),
+        ("\u03bb\u03cc\u03b3\u03bf.example", "host", "xn--oxapn4c.example"),
+        ("\u0131.example", "host", "xn--cfa.example"),
         # A Cyrillic a, which looks like the Latin one.
         ("b\u0430nk.example", "host", "xn--bnk-6cd.example"),
     ],
@@ -271,6 +273,7 @@ def test_letters_that_look_like_others_are_visible(
         ("stra\u00dfe.ch", "host"),
         ("\u03c3\u03bf\u03c2.example", "host"),
         ("\u13a0\u13a1.example", "host"),
+        ("\uab70\uab71.example", "host"),
         ("\uff42ank.example", "host"),
         ("bank\u3002example", "host"),
         ("cafe\u0301.example", "host"),
@@ -295,7 +298,12 @@ def test_letters_that_look_like_others_are_visible(
         ("http://good.com#@\u0435vil", "url"),
         ("g\u043e\u043egle.com#@good.com", "url"),
         ("\u043a.com://good.com", "url"),
-        ("https://user@good.com/", "url"),
+        ("https://a@b@good.com/", "url"),
+        ("https://user@good.com/@x", "url"),
+        ("https://good.com/@x", "url"),
+        ("https://user:p\u00e9@good.com/", "url"),
+        ("https://a/b@good.com/", "url"),
+        ("user:pw@good.com", "url"),
         ("https://good.com" + BACKSLASH + "@evil.com/", "url"),
         ("https://good.com/\u0435", "url"),
         ("http://[fe80::1%25en0]/", "url"),
@@ -307,3 +315,30 @@ def test_a_destination_that_could_be_read_another_way_is_refused(
     text: str, kind: DestinationKind
 ) -> None:
     assert "not certain" in refusal(text, kind)
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize("user", ["user", "user:s3cr-et", "u%40x:p;=+!*'"])
+def test_a_service_url_is_shown_without_its_credentials(user: str) -> None:
+    assert destination(f"https://{user}@b.example:8443/v1", "llm_endpoint", "url") == (
+        "'https://b.example:8443/v1'"
+    )
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize(
+    "text", ["https://a:s3cret@b@c.org/", "user:s3cret@c.org", "https://c.org/@s3cret"]
+)
+def test_a_refused_url_that_may_hold_credentials_is_not_shown(text: str) -> None:
+    message = refusal(text, "url")
+
+    assert "s3cret" not in message
+    assert "c.org" not in message
+
+
+@pytest.mark.decision("decision-44")
+def test_a_refused_url_drops_the_credentials_it_is_sure_of() -> None:
+    message = refusal("https://a:s3cret@" + "x" * 250 + ".org/end", "url")
+
+    assert "s3cret" not in message
+    assert ".org/end'" in message
