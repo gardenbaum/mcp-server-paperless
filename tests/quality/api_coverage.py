@@ -71,6 +71,7 @@ class Entry:
     fields: frozenset[str] | None  # `query:x`, `body:y`, `body:y=value`; None: the endpoint itself
     task: str | None
     approval: Approval | None
+    reason: str | None = None  # why no tool sends the values it lists; required for them
 
 
 def _schemas(schema: Json) -> Json:
@@ -180,10 +181,29 @@ def field_keys(fields: Fields) -> set[str]:
     return keys | {f"{name}={value}" for name, values in fields.enums.items() for value in values}
 
 
+def _ancestors(key: str) -> list[str]:
+    """The keys a key hangs under: the field of a value, then the objects around the field."""
+    kind, _, rest = key.partition(":")
+    found: list[str] = []
+    if "=" in rest:
+        rest = rest.split("=", 1)[0]
+        found.append(f"{kind}:{rest}")
+    path = rest.removesuffix("[]")
+    while "." in path:
+        path = path.rsplit(".", 1)[0].removesuffix("[]")
+        found.append(f"{kind}:{path}")
+    return found
+
+
 def unused(fields: Fields, usage: Usage, internal: frozenset[str] | None = None) -> set[str]:
-    """What the schema offers and no tool sends; `internal` fields count as unsent."""
+    """What the schema offers and no tool sends; `internal` fields count as unsent.
+
+    A field that hangs under an unsent one (a child, or a value) is left out: it is listed once its
+    parent is sent. Values of a field that is sent are listed.
+    """
     keys = field_keys(fields)
-    return (keys - set(usage.used)) | (keys & (internal or frozenset()))
+    raw = (keys - set(usage.used)) | (keys & (internal or frozenset()))
+    return {key for key in raw if not any(parent in raw for parent in _ancestors(key))}
 
 
 def _text(operation: Operation) -> str:
@@ -279,6 +299,11 @@ def problems(  # noqa: PLR0913 -- the inputs of the check
     found = _entry_problems(schema, covered, entries)
     for entry in entries:
         found += _owner(entry, statuses, root)
+        found += [
+            f"{_text(entry.operation)}: {key} needs a reason: why no tool sends it"
+            for key in sorted(entry.fields or ())
+            if "=" in key and not (entry.reason or "").strip()
+        ]
     whole = {e.operation for e in entries if e.fields is None}
     named: dict[Operation, set[str]] = defaultdict(set)
     for entry in entries:
@@ -349,6 +374,7 @@ def load_entries(path: Path) -> Entries:
             frozenset(cast("list[str]", row["fields"])),
             str(row["task"]),
             None,
+            str(row["reason"]) if "reason" in row else None,
         )
         for row in data.get("open_fields", [])
     ]
@@ -434,7 +460,7 @@ def render(
         only = sorted(
             key
             for key, who in usage.used.items()
-            if who == frozenset({SAVED_VIEW_TOOL}) and key not in sent
+            if who == frozenset({SAVED_VIEW_TOOL}) and key not in sent and "=" not in key
         )
         if only:
             views.append(f"| `{_text(operation)}` | {', '.join(f'`{k}`' for k in only)} |")
@@ -465,13 +491,22 @@ correspondents) is named too; at most five tools are shown. The entries are in
 operation, field or enum value is neither covered nor listed, and when an open entry's task is
 missing or done.
 
-Limits. A field counts as sent only when some tool test makes a tool send it, so a field a tool
-supports and no tool test uses is listed as open. The requests are built from recorded port calls
-and answered with responses taken from the adapter tests, so a request that depends on a later
-answer of Paperless may be missed. The adapter's own requests, and those of streamed bodies, are
-recorded but not checked against the schema; the adapter tests check the others. Fields the
-adapter sends by itself (the `[[internal]]` entries) are listed as open although a tool causes
-them.
+Limits.
+
+- A field or value counts as sent only when some tool test makes a tool send it, so a field a
+  tool supports and no tool test uses is listed as open. A field under an unsent parent is not
+  listed on its own: it appears once the parent is sent.
+- The requests are built from recorded port calls and answered with responses taken from the
+  adapter tests. A request that depends on a later answer of Paperless may be missed, and a
+  value the adapter copies from the stored object (the answer it is given) is credited too,
+  although no tool chose it.
+- A request that is the adapter's own is listed under `[[internal]]` in the TOML file: fields no
+  argument of any tool can choose (a fixed `ordering`, a filter the adapter adds, the settings of
+  the saved account that a test sends back). They stay open although a tool causes the request.
+- A covered GET does not mean that the whole answer is shown: a tool may read an answer and show
+  only part of it (for example the view visibility in `GET /api/ui_settings/`, PLMCP-88).
+- The adapter's own requests, and those of streamed bodies, are recorded but not checked against
+  the schema; the adapter tests check the others.
 
 ## Endpoints
 

@@ -63,13 +63,13 @@ tool or toolset count the catalogue does not have, when a setting is documented 
 
 `docs/api-coverage.md` shows, operation by operation of the vendored Paperless schema, which tools
 cover it, which query parameters, body fields (nested ones too) and enum values no tool sends, and
-for the rest the open task. It is derived from the tool tests: they run with their ports recorded,
+for the rest the open task. It is derived from the scenarios of `tests/tools/test_arguments.py`: they run with their ports recorded,
 and each recorded call is handed to the real adapter, which builds the request (about 45 s, run
-inside the coverage test, so it works alone and in CI). Only `docs/api-coverage.toml` is written
+inside the coverage test, so it works alone and in CI; about 20 s). Only `docs/api-coverage.toml` is written
 by hand: open tasks, owner-approved exclusions (a quote and its date, found in a paragraph of a
 Markdown file under `backlog/` that says the owner approved it) and the fields an adapter sends on
 its own. Run `just docs-coverage` after a tool, a tool test or the schema changed; give a new tool
-argument a scenario in `tests/tools/test_arguments.py`, or the field shows up as open. The test
+argument a scenario there (a test fails when a tool or an argument has none, and when a writing tool writes nothing), or the field shows up as open. The test
 fails when an operation or field is neither covered nor listed, when an entry is stale, and when
 an open entry's task does not exist or is done.
 

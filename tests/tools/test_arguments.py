@@ -1,15 +1,21 @@
-"""Every tool takes every argument it offers, and every value of an enum it offers (PLMCP-91).
+"""Every tool is called with every argument it offers, and with every enum or flag value (PLMCP-91).
 
-The coverage table (docs/api-coverage.md) credits a tool only with what its tests make it send.
-These scenarios call the tools with all their arguments at once, and once more for each value of
-each enum, on the seeded fake; each call must succeed, so an argument that no longer reaches
-Paperless fails here before it silently drops out of the table.
+The coverage table (docs/api-coverage.md) credits a tool only with what its tests make it send,
+and the coverage test derives it from this file alone. Each scenario calls a tool with its
+arguments, then once more for each value of the enums and flags it varies, on the seeded fake,
+from a state where the value is a change (the services leave unchanged values out). A call must
+succeed, and a tool that writes must make a write call. The last test checks that every tool and
+every argument of its schema is in some scenario.
+
+The record of what was given (`GIVEN`) is a global of the process: run the file as a whole, and
+not under xdist, which would give each worker a part of it.
 """
 
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, cast
 
+import observation
 import pytest
 from fakes.admin import BOOLEANS, CHOICES, MINIMUMS
 from fakes.mail import FakeMailAccount, FakeMailRule
@@ -65,6 +71,7 @@ class Session:
     fake: FakePaperless
     client: Client[FastMCPTransport]
     schemas: dict[str, Json]
+    reads: frozenset[str]  # the tools that only read
 
 
 SESSIONS: list[Session] = []
@@ -73,26 +80,48 @@ SESSIONS: list[Session] = []
 @pytest.fixture(autouse=True)
 async def _session() -> AsyncIterator[None]:
     fake = admin()
+    before = observation.RECORDING
+    observation.RECORDING = True  # the ports note their calls, to tell a write from none
     async with Client(serve(fake, toolsets=["all"])) as client:
-        schemas = {t.name: t.input_schema for t in await client.list_tools()}
-        SESSIONS.append(Session(fake, client, schemas))
+        tools = await client.list_tools()
+        reads = frozenset(t.name for t in tools if t.annotations and t.annotations.read_only_hint)
+        SESSIONS.append(Session(fake, client, {t.name: t.input_schema for t in tools}, reads))
         yield
     _ = SESSIONS.pop()
+    observation.RECORDING = before
+
+
+GIVEN: dict[str, set[str]] = {}  # the arguments each tool was given (per process: not for xdist)
+
+
+async def step(tool: str, arguments: Json) -> Json:
+    """One call on the current instance; a refusal, or a write tool that wrote nothing, fails."""
+    session = SESSIONS[-1]
+    confirms = "confirm" in cast("Json", session.schemas[tool].get("properties", {}))
+    given = {**arguments, "confirm": True} if confirms else arguments
+    GIVEN.setdefault(tool, set()).update(given)
+    start = len(observation.PORT_CALLS)
+    result = await session.client.call_tool(tool, given, raise_on_error=False)
+    if result.is_error:
+        FAILED.append(f"{tool} {given}: {result.content}")
+    elif (
+        tool not in session.reads
+        and given.get("dry_run") is not True
+        and not any(call.field.endswith("_writes") for call in observation.PORT_CALLS[start:])
+    ):
+        FAILED.append(f"{tool} {given}: made no write call")
+    return result.structured_content or {}
 
 
 async def sweep_cases(tool: str, cases: list[tuple[Json, Prepare | None]]) -> None:
     """Call `tool` once per case on a fresh seeded instance (`prepare` adds what the case needs)."""
     session = SESSIONS[-1]
-    confirms = "confirm" in cast("Json", session.schemas[tool].get("properties", {}))
     for arguments, prepare in cases:
         fresh = admin()  # every case starts from the seeded instance
         if prepare is not None:
             prepare(fresh.state)
         session.fake.state, session.fake.user = fresh.state, fresh.user
-        given = {**arguments, "confirm": True} if confirms else arguments
-        result = await session.client.call_tool(tool, given, raise_on_error=False)
-        if result.is_error:
-            FAILED.append(f"{tool} {given}: {result.content}")
+        _ = await step(tool, arguments)
 
 
 async def sweep(
@@ -118,6 +147,20 @@ def admin() -> FakePaperless:
     return FakePaperless(state, user="admin", allow_writes=True)
 
 
+async def test_a_write_tool_that_writes_nothing_fails_its_scenario() -> None:
+    # The title is the one the document has: the service sees no change and sends nothing.
+    await sweep_cases(
+        "update_document", [({"document_id": 1, "title": "e2e-public-invoice"}, None)]
+    )
+    # A read tool may of course send no write.
+    await sweep_cases("get_document", [({"document_id": 1}, None)])
+
+    assert len(FAILED) == 1
+    assert "update_document" in FAILED[0]
+    assert "no write" in FAILED[0]
+    FAILED.clear()
+
+
 async def test_taxonomy_is_listed_created_changed_and_deleted_of_every_kind() -> None:
     for kind in ("tag", "correspondent", "document_type", "storage_path", "custom_field"):
         await sweep("list_taxonomy", {"kind": kind, "name_contains": "e2e"}, ())
@@ -135,15 +178,13 @@ async def test_taxonomy_is_listed_created_changed_and_deleted_of_every_kind() ->
         "storage_path": {**settings, "path": "{{ created_year }}/{{ title }}"},
     }
     for kind, extra in created.items():
-        await sweep(
-            "create_taxonomy_item",
-            {"kind": kind, "name": "Sweep", **extra},
-            ("matching_algorithm",),
-        )
+        flags = ("matching_algorithm", "case_insensitive")
+        flags += ("is_inbox_tag",) if kind == "tag" else ()
+        await sweep("create_taxonomy_item", {"kind": kind, "name": "Sweep", **extra}, flags)
         await sweep(
             "update_taxonomy_item",
             {"kind": kind, "item": 2 if kind == "tag" else 1, "name": "Renamed", **extra},
-            ("matching_algorithm",),
+            flags,
         )
         await sweep("delete_taxonomy_item", {"kind": kind, "item": 1}, ())
     for data_type in (
@@ -173,6 +214,17 @@ async def test_taxonomy_is_listed_created_changed_and_deleted_of_every_kind() ->
         (),
     )
     await sweep("update_taxonomy_item", {"kind": "tag", "item": 2, "clear_parent": True}, ())
+    # The inbox tag loses its flag; a tag that matches case-sensitively gets it back.
+    await sweep(
+        "update_taxonomy_item", {"kind": "tag", "item": 4, "name": "Inbox 2"}, ("is_inbox_tag",)
+    )
+    for kind in ("tag", "correspondent", "document_type", "storage_path"):
+        await sweep(
+            "update_taxonomy_item",
+            {"kind": kind, "item": 1, "name": "Z"},
+            ("case_insensitive",),
+            prepare=sensitive,
+        )
     await sweep("delete_taxonomy_item", {"kind": "custom_field", "item": 1}, ())
     assert not FAILED, "\n".join(FAILED)
 
@@ -185,6 +237,26 @@ MAIL_ENUMS = (
     "assign_title_from",
     "assign_correspondent_from",
 )
+
+
+def sensitive(state: FakeState) -> None:
+    """Every taxonomy object matches case-sensitively: ignoring case is then a change."""
+    for objects in (state.tags, state.correspondents, state.document_types, state.storage_paths):
+        for item in objects:
+            item.case_insensitive = False
+
+
+def owned(state: FakeState) -> None:
+    """Everything has an owner, so that removing it is a change."""
+    for objects in (
+        state.documents,
+        state.tags,
+        state.correspondents,
+        state.document_types,
+        state.storage_paths,
+    ):
+        for item in objects:
+            item.owner = 2
 
 
 def bare(state: FakeState) -> None:
@@ -300,7 +372,9 @@ async def test_documents_are_searched_changed_and_uploaded_with_every_argument()
         "archive_serial_number",
         "owner",
     ):
-        await sweep("update_document", {"document_id": 1, "clear": [field]}, ())
+        await sweep("update_document", {"document_id": 1, "clear": [field]}, (), prepare=owned)
+    await sweep("update_document", {"document_id": 1, "custom_fields": {"e2e-string": "x"}}, ())
+    await sweep("update_document", {"document_id": 1, "remove_custom_fields": ["e2e-string"]}, ())
     assert not FAILED, "\n".join(FAILED)
 
 
@@ -349,7 +423,9 @@ async def test_permissions_and_bulk_changes_take_every_argument() -> None:
             },
             ("mode",),
         )
-        await sweep("set_permissions", {"kind": kind, "items": [1], "clear_owner": True}, ())
+        await sweep(
+            "set_permissions", {"kind": kind, "items": [1], "clear_owner": True}, (), prepare=owned
+        )
     for kind in ("tag", "correspondent", "document_type", "storage_path"):
         await sweep(
             "bulk_edit_taxonomy", {"kind": kind, "items": [1], "operation": {"op": "delete"}}, ()
@@ -372,7 +448,7 @@ async def test_permissions_and_bulk_changes_take_every_argument() -> None:
             (),
         )
     operations: list[Json] = [
-        {"op": "add_tags", "tags": [1]},
+        {"op": "add_tags", "tags": [3]},
         {"op": "remove_tags", "tags": [4]},
         {"op": "modify_tags", "add": [3], "remove": [4]},
         {"op": "set_correspondent", "correspondent": 1},
@@ -387,6 +463,7 @@ async def test_permissions_and_bulk_changes_take_every_argument() -> None:
             "bulk_edit_documents",
             {"document_ids": [1], "operation": operation, "dry_run": False},
             (),
+            prepare=bare,
         )
     assert not FAILED, "\n".join(FAILED)
 
@@ -466,7 +543,7 @@ async def test_the_administration_takes_every_argument() -> None:
 async def test_mail_takes_every_argument() -> None:
     account: Json = {
         "name": "Sweep",
-        "imap_server": "imap.example.com",
+        "imap_server": "imap2.example.com",
         "imap_port": 143,
         "username": "new@example.com",
         "password": "S3cret-Passw0rd!x",
@@ -816,7 +893,7 @@ async def test_the_pdf_tools_take_every_option() -> None:
             "delete_originals": True,
             "wait_seconds": 0,
         },
-        (),
+        ("delete_originals",),
         prepare=with_pages,
     )
     await sweep(
@@ -850,7 +927,9 @@ async def test_the_pdf_tools_take_every_option() -> None:
         prepare=with_pages,
     )
     await sweep(
-        "reprocess_documents", {"document_ids": [1], "remote_ocr": True, "wait_seconds": 0}, ()
+        "reprocess_documents",
+        {"document_ids": [1], "remote_ocr": True, "wait_seconds": 0},
+        ("remote_ocr",),
     )
     await sweep(
         "email_documents",
@@ -874,3 +953,247 @@ async def test_the_pdf_tools_take_every_option() -> None:
     await sweep("empty_trash", {"all": True}, (), prepare=with_trash)
     await sweep("empty_trash", {"document_ids": [2]}, (), prepare=with_trash)
     assert not FAILED, "\n".join(FAILED)
+
+
+def flags_on(state: FakeState) -> None:
+    """Every on/off setting of the configuration is on: switching it off is a change."""
+    state.config.update(dict.fromkeys(BOOLEANS, True))
+
+
+def reader_off(state: FakeState) -> None:
+    """The reader is inactive, a staff member and a superuser: each flag is sent the other way."""
+    state.users[:] = [
+        replace(user, is_active=False, is_staff=True, is_superuser=True)
+        if user.username == "e2e-reader"
+        else user
+        for user in state.users
+    ]
+
+
+def unordered(state: FakeState) -> None:
+    """Documents have no owner; a rule runs with the settings the tools do not default to."""
+    with_other_mail(state)
+    rule = state.mail_rules[0]
+    rule.enabled, rule.stop_processing, rule.assign_owner_from_rule = False, True, False
+    rule.owner, rule.folder, rule.maximum_age = None, "Elsewhere", 7
+    state.mail_accounts[0].imap_security = "none"
+
+
+def reversed_view(state: FakeState) -> None:
+    state.saved_views[0].sort_reverse, state.saved_views[0].sort_field = True, "created"
+
+
+async def test_values_are_sent_from_the_state_where_they_are_a_change() -> None:
+    names = sorted(set(BOOLEANS) & set(CONFIG_SETTINGS))
+    await sweep(
+        "update_app_config", {"settings": dict.fromkeys(names, False)}, (), prepare=flags_on
+    )
+    flags = ("is_active", "is_staff", "is_superuser")
+    await sweep("update_user", {"user": "e2e-reader", "first_name": "A"}, flags)
+    await sweep("update_user", {"user": "e2e-reader", "first_name": "A"}, flags, prepare=reader_off)
+    await sweep("create_user", {"username": "sweeper", "password": "S3cret-Passw0rd!x"}, flags)
+    await sweep(
+        "update_mail_account", {"account_id": 1, "name": "N"}, ("imap_security",), prepare=with_mail
+    )
+    await sweep(
+        "update_mail_account", {"account_id": 1, "name": "N"}, ("imap_security",), prepare=unordered
+    )
+    booleans = ("enabled", "stop_processing", "assign_owner_from_rule")
+    await sweep("update_mail_rule", {"rule_id": 1, "name": "N"}, booleans, prepare=with_mail)
+    await sweep("update_mail_rule", {"rule_id": 1, "name": "N"}, booleans, prepare=unordered)
+    await sweep(
+        "update_mail_rule",
+        {"rule_id": 1, "owner": "admin", "folder": "Archive", "maximum_age_days": 31},
+        (),
+        prepare=unordered,
+    )
+    await sweep(
+        "update_mail_rule",
+        {"rule_id": 1, "account_id": 2, "assign_correspondent_from": "none"},
+        (),
+        prepare=unordered,
+    )
+    await sweep(
+        "update_saved_view", {"view": 1, "name": "N"}, ("sort_reverse",), prepare=reversed_view
+    )
+    await sweep("update_saved_view", {"view": 1, "name": "N"}, ("sort_reverse",))
+    await sweep(
+        "create_saved_view",
+        {"name": "N", "sort_field": "created", "sort_reverse": True},
+        ("sort_reverse",),
+    )
+    await sweep(
+        "bulk_edit_taxonomy",
+        {
+            "kind": "tag",
+            "items": [1],
+            "operation": {"op": "set_permissions", "view_users": ["admin"], "merge": True},
+        },
+        (),
+    )
+    await sweep(
+        "email_documents",
+        {"document_ids": [1], "recipients": ["a@b.example"], "subject": "s", "message": "m"},
+        ("use_archive_version",),
+        prepare=with_pages,
+    )
+    await sweep(
+        "update_taxonomy_item",
+        {"kind": "tag", "item": 2, "name": "Z"},
+        ("is_inbox_tag", "case_insensitive"),
+        prepare=sensitive,
+    )
+    assert not FAILED, "\n".join(FAILED)
+
+
+async def test_workflows_take_every_algorithm_flag_schedule_and_action_type() -> None:
+    for algorithm in ("none", "any", "all", "exact", "regex", "fuzzy"):
+        trigger: Json = {"type": "added", "matching_algorithm": algorithm, "is_insensitive": False}
+        if algorithm != "none":
+            trigger["match"] = "m"
+        await sweep("create_workflow", {"name": "W", "enabled": False, "triggers": [trigger]}, ())
+        await sweep("create_workflow", {"name": "W", "enabled": True, "triggers": [trigger]}, ())
+        await sweep(
+            "update_workflow", {"workflow": 1, "triggers": [trigger]}, (), prepare=with_workflow
+        )
+    for field in ("modified", "custom_field"):
+        schedule = {
+            "type": "scheduled",
+            "schedule_date_field": field,
+            "schedule_date_custom_field": 1 if field == "custom_field" else None,
+            "schedule_offset_days": 1,
+            "schedule_is_recurring": False,
+        }
+        await sweep("create_workflow", {"name": "W", "enabled": False, "triggers": [schedule]}, ())
+        await sweep(
+            "update_workflow", {"workflow": 1, "triggers": [schedule]}, (), prepare=with_workflow
+        )
+    kept = {
+        "remove_tags": [1],
+        "remove_correspondents": [1],
+        "remove_document_types": [1],
+        "remove_storage_paths": [1],
+        "remove_custom_fields": [1],
+        "remove_owners": ["admin"],
+        "remove_all_tags": False,
+        "remove_all_correspondents": False,
+        "remove_all_document_types": False,
+        "remove_all_storage_paths": False,
+        "remove_all_custom_fields": False,
+        "remove_all_owners": False,
+        "remove_all_permissions": False,
+        "remove_view_users": ["admin"],
+    }
+    consumption = {"type": "consumption", "filename": "*.pdf"}
+    actions: list[Json] = [
+        {"type": "removal", **kept},
+        {"type": "move to trash"},
+        {"type": "remote OCR"},
+        {
+            "type": "email",
+            "email": {"subject": "s", "body": "b", "to": "a@b.example", "include_document": False},
+        },
+        {
+            "type": "webhook",
+            "webhook": {
+                "url": "https://hook.example/x",
+                "use_params": False,
+                "as_json": False,
+                "body": "x",
+                "include_document": False,
+            },
+        },
+    ]
+    for action in actions:
+        await sweep(
+            "create_workflow",
+            {"name": "W", "enabled": False, "triggers": [consumption], "actions": [action]},
+            (),
+        )
+        await sweep(
+            "update_workflow",
+            {"workflow": 1, "triggers": [consumption], "actions": [action]},
+            (),
+            prepare=with_workflow,
+        )
+    await sweep(
+        "update_workflow", {"workflow": 1, "name": "N"}, ("enabled",), prepare=with_workflow
+    )
+    assert not FAILED, "\n".join(FAILED)
+
+
+async def test_saved_view_rules_of_every_kind_are_run_with_every_value() -> None:
+    cases: list[tuple[Json, Prepare | None]] = []
+    for number, spec in SPECS.items():
+        if spec.kind == "bool":
+            cases.append(({"view": 2, "page": 1}, with_view(number, "false")))
+    await sweep_cases("run_saved_view", cases)
+    assert not FAILED, "\n".join(FAILED)
+
+
+async def test_the_remaining_tools_have_a_scenario_with_all_their_arguments() -> None:
+    link = await step("create_share_link", {"document_id": 1, "file_version": "archive"})
+    bundle = await step("create_share_bundle", {"document_ids": [1]})
+    _ = await step("delete_share_link", {"link_id": cast("int", link.get("id", 1))})
+    _ = await step("rebuild_share_bundle", {"bundle_id": cast("int", bundle.get("id", 1))})
+    _ = await step("delete_share_bundle", {"bundle_id": cast("int", bundle.get("id", 1))})
+    version = await step(
+        "upload_document_version",
+        {
+            "document_id": 1,
+            "content_base64": "JVBERi0xLjQK",
+            "filename": "v.pdf",
+            "label": "L",
+            "wait_seconds": 0,
+        },
+    )
+    _ = await step(
+        "delete_document_version",
+        {"document_id": 1, "version_id": cast("int", version.get("version_id", 2))},
+    )
+    _ = await step(
+        "bulk_edit_taxonomy",
+        {"kind": "tag", "items": [1], "operation": {"op": "delete"}, "dry_run": True},
+    )
+    await sweep("search_documents", {"custom_field_query": ["e2e-string", "exact", "x"]}, ())
+    await sweep("acknowledge_tasks", {"task_ids": [1]}, (), prepare=with_pages)
+    await sweep("delete_group", {"group": "e2e-group"}, ())
+    await sweep("delete_user", {"user": "e2e-reader"}, ())
+    await sweep("get_user", {"user": "e2e-reader"}, ())
+    await sweep("get_group", {"group": "e2e-group"}, ())
+    await sweep("get_app_config", {}, ())
+    await sweep("list_logs", {}, ())
+    await sweep("get_log", {"name": "mail", "lines": 10}, (), prepare=with_logs)
+    await sweep("get_mail_account", {"account_id": 1}, (), prepare=with_mail)
+    await sweep("get_mail_rule", {"rule_id": 1}, (), prepare=with_mail)
+    await sweep("delete_mail_account", {"account_id": 2}, (), prepare=with_mail)
+    await sweep("delete_mail_rule", {"rule_id": 1}, (), prepare=with_mail)
+    await sweep("list_mail_accounts", {"page": 1, "page_size": 10}, (), prepare=with_mail)
+    await sweep(
+        "list_mail_rules", {"account_id": 1, "page": 1, "page_size": 10}, (), prepare=with_mail
+    )
+    await sweep(
+        "list_processed_mail",
+        {"rule_id": 1, "page": 1, "page_size": 10},
+        ("status",),
+        prepare=with_mail,
+    )
+    await sweep("ask_paperless_ai", {"question": "q", "document_id": 1}, ())
+    await sweep("paperless_api_get", {"path": "/api/tags/", "params": {"page": "1"}}, ())
+    assert not FAILED, "\n".join(FAILED)
+
+
+def with_logs(state: FakeState) -> None:
+    state.logs["mail"] = ["one", "two", "three"]
+
+
+async def test_every_tool_and_every_argument_of_it_is_in_a_scenario() -> None:
+    """The last test of the file: it reads what the scenarios above gave (not under xdist)."""
+    schemas = SESSIONS[-1].schemas
+    missing = [
+        f"{tool}.{name}"
+        for tool, schema in sorted(schemas.items())
+        for name in cast("Json", schema.get("properties", {}))
+        if name not in GIVEN.get(tool, set())
+    ]
+    assert not missing, missing

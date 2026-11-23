@@ -3,9 +3,15 @@
 #
 # [[open]]        operations no tool covers, each under a Backlog task that is not done
 # [[open_fields]] query parameters, body fields and enum values of covered operations that no
-#                 tool sends (a field a tool supports but no tool test sends is listed too)
-# [[internal]]    fields the adapter sends by itself although a tool causes the request: no
-#                 argument of any tool can choose them, so they stay open (and are listed above)
+#                 tool sends. A field under an unsent parent is not listed on its own. A listed
+#                 value of a field that is sent carries a `reason`, so that the owner can decide on
+#                 an exclusion. A field a tool supports that no tool test sends is listed too.
+# [[internal]]    fields the adapter chooses itself although a tool causes the request: fixed
+#                 constants (ordering, a projection, full_perms, owner), a filter the adapter
+#                 adds, and the stored object it sends back (the body of mail_accounts/test and
+#                 /process/, document_ids of a bundle rebuild). No argument of any tool can set
+#                 them, so they stay open although they are sent. A value or id a tool argument
+#                 decides (id__in, task_type) is not internal.
 # [[exclusion]]   an owner-approved exclusion: quote, date and a Markdown file under backlog/
 # [[undeclared]]  query parameters the generated schema omits (listed by hand)
 
@@ -124,26 +130,91 @@ params = ["version"]
 [[internal]]
 operation = "GET /api/tasks/"
 fields = ["query:owner", "query:ordering", "query:date_created_after"]
-reason = "the adapter always sends it, no tool argument sets it"
+reason = "the adapter chooses it"
 
 [[internal]]
 operation = "GET /api/processed_mail/"
 fields = ["query:ordering"]
-reason = "the adapter always sends it, no tool argument sets it"
+reason = "the adapter chooses it"
 
 [[internal]]
 operation = "POST /api/mail_accounts/test/"
 fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security", "body:username", "body:password", "body:character_set", "body:is_token"]
-reason = "the saved account's own settings are sent; testing an unsaved account is open (PLMCP-81)"
+reason = "the stored account is sent back; testing an unsaved account is open (PLMCP-81)"
+
+[[internal]]
+operation = "POST /api/mail_accounts/{id}/process/"
+fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security", "body:username", "body:password", "body:character_set", "body:is_token"]
+reason = "the stored account is sent back; testing an unsaved account is open (PLMCP-81)"
+
+[[internal]]
+operation = "POST /api/share_link_bundles/{id}/rebuild/"
+fields = ["body:document_ids"]
+reason = "the stored bundle's documents are sent back"
+
+[[internal]]
+operation = "GET /api/tags/"
+fields = ["query:full_perms"]
+reason = "the adapter chooses it"
+
+[[internal]]
+operation = "PATCH /api/tags/{id}/"
+fields = ["query:full_perms"]
+reason = "the adapter chooses it"
+
+[[internal]]
+operation = "GET /api/correspondents/"
+fields = ["query:full_perms"]
+reason = "the adapter chooses it"
+
+[[internal]]
+operation = "PATCH /api/correspondents/{id}/"
+fields = ["query:full_perms"]
+reason = "the adapter chooses it"
+
+[[internal]]
+operation = "GET /api/document_types/"
+fields = ["query:full_perms"]
+reason = "the adapter chooses it"
+
+[[internal]]
+operation = "PATCH /api/document_types/{id}/"
+fields = ["query:full_perms"]
+reason = "the adapter chooses it"
+
+[[internal]]
+operation = "GET /api/storage_paths/"
+fields = ["query:full_perms"]
+reason = "the adapter chooses it"
+
+[[internal]]
+operation = "PATCH /api/storage_paths/{id}/"
+fields = ["query:full_perms"]
+reason = "the adapter chooses it"
+
+[[internal]]
+operation = "GET /api/documents/"
+fields = ["query:full_perms", "query:fields"]
+reason = "the adapter chooses it"
+
+[[internal]]
+operation = "PATCH /api/documents/{id}/"
+fields = ["query:full_perms", "query:fields"]
+reason = "the adapter chooses it"
+
+[[internal]]
+operation = "GET /api/documents/{id}/"
+fields = ["query:fields"]
+reason = "the adapter chooses it"
 
 [[open_fields]]
 operation = "GET /api/correspondents/"
-fields = ["query:full_perms=false", "query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+fields = ["query:full_perms", "query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/correspondents/{id}/"
-fields = ["query:full_perms", "query:full_perms=false", "query:full_perms=true"]
+fields = ["query:full_perms"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -153,18 +224,24 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/document_types/"
-fields = ["query:full_perms=false", "query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+fields = ["query:full_perms", "query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/document_types/{id}/"
-fields = ["query:full_perms", "query:full_perms=false", "query:full_perms=true"]
+fields = ["query:full_perms"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/documents/"
-fields = ["query:added__day", "query:added__gt", "query:added__gte", "query:added__lt", "query:added__lte", "query:added__month", "query:added__year", "query:all", "query:archive_serial_number__gte", "query:archive_serial_number__isnull=false", "query:archive_serial_number__lte", "query:checksum__icontains", "query:checksum__iendswith", "query:checksum__iexact", "query:checksum__istartswith", "query:content__iendswith", "query:content__iexact", "query:content__istartswith", "query:correspondent__name__icontains", "query:correspondent__name__iendswith", "query:correspondent__name__iexact", "query:correspondent__name__istartswith", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:document_type__name__icontains", "query:document_type__name__iendswith", "query:document_type__name__iexact", "query:document_type__name__istartswith", "query:full_perms=false", "query:has_custom_fields=false", "query:has_duplicates=false", "query:id", "query:modified__date__gte", "query:modified__date__lte", "query:modified__day", "query:modified__gt", "query:modified__gte", "query:modified__lt", "query:modified__lte", "query:modified__month", "query:modified__year", "query:original_filename__icontains", "query:original_filename__iendswith", "query:original_filename__iexact", "query:original_filename__istartswith", "query:owner__isnull=false", "query:search", "query:shared_by__id=false", "query:shared_by__id=true", "query:storage_path__name__icontains", "query:storage_path__name__iendswith", "query:storage_path__name__iexact", "query:storage_path__name__istartswith", "query:tags__id", "query:tags__name__icontains", "query:tags__name__iendswith", "query:tags__name__iexact", "query:tags__name__istartswith", "query:title__iendswith", "query:title__iexact", "query:title__istartswith", "query:title_content"]
+fields = ["query:added__day", "query:added__gt", "query:added__gte", "query:added__lt", "query:added__lte", "query:added__month", "query:added__year", "query:all", "query:archive_serial_number__gte", "query:archive_serial_number__lte", "query:checksum__icontains", "query:checksum__iendswith", "query:checksum__iexact", "query:checksum__istartswith", "query:content__iendswith", "query:content__iexact", "query:content__istartswith", "query:correspondent__name__icontains", "query:correspondent__name__iendswith", "query:correspondent__name__iexact", "query:correspondent__name__istartswith", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:document_type__name__icontains", "query:document_type__name__iendswith", "query:document_type__name__iexact", "query:document_type__name__istartswith", "query:fields", "query:full_perms", "query:id", "query:modified__date__gte", "query:modified__date__lte", "query:modified__day", "query:modified__gt", "query:modified__gte", "query:modified__lt", "query:modified__lte", "query:modified__month", "query:modified__year", "query:original_filename__icontains", "query:original_filename__iendswith", "query:original_filename__iexact", "query:original_filename__istartswith", "query:search", "query:storage_path__name__icontains", "query:storage_path__name__iendswith", "query:storage_path__name__iexact", "query:storage_path__name__istartswith", "query:tags__id", "query:tags__name__icontains", "query:tags__name__iendswith", "query:tags__name__iexact", "query:tags__name__istartswith", "query:title__iendswith", "query:title__iexact", "query:title__istartswith", "query:title_content"]
 task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/documents/"
+fields = ["query:shared_by__id=false", "query:shared_by__id=true"]
+task = "PLMCP-83"
+reason = "the schema declares a boolean, Paperless takes a user id; a tool sends the id (PLMCP-25)"
 
 [[open_fields]]
 operation = "GET /api/documents/{id}/"
@@ -173,7 +250,7 @@ task = "PLMCP-75"
 
 [[open_fields]]
 operation = "GET /api/documents/{id}/"
-fields = ["query:full_perms", "query:full_perms=false", "query:full_perms=true"]
+fields = ["query:fields", "query:full_perms"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -183,7 +260,7 @@ task = "PLMCP-76"
 
 [[open_fields]]
 operation = "GET /api/documents/{id}/download/"
-fields = ["query:follow_formatting", "query:follow_formatting=false", "query:follow_formatting=true"]
+fields = ["query:follow_formatting"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -218,12 +295,12 @@ task = "PLMCP-81"
 
 [[open_fields]]
 operation = "GET /api/saved_views/"
-fields = ["query:full_perms", "query:full_perms=false", "query:full_perms=true", "query:ordering"]
+fields = ["query:full_perms", "query:ordering"]
 task = "PLMCP-88"
 
 [[open_fields]]
 operation = "GET /api/share_link_bundles/"
-fields = ["query:created__date__gt", "query:created__date__gte", "query:created__date__lt", "query:created__date__lte", "query:created__day", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:created__month", "query:created__year", "query:documents", "query:expiration__date__gt", "query:expiration__date__gte", "query:expiration__date__lt", "query:expiration__date__lte", "query:expiration__day", "query:expiration__gt", "query:expiration__gte", "query:expiration__lt", "query:expiration__lte", "query:expiration__month", "query:expiration__year", "query:ordering", "query:status", "query:status=failed", "query:status=pending", "query:status=processing", "query:status=ready"]
+fields = ["query:created__date__gt", "query:created__date__gte", "query:created__date__lt", "query:created__date__lte", "query:created__day", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:created__month", "query:created__year", "query:documents", "query:expiration__date__gt", "query:expiration__date__gte", "query:expiration__date__lt", "query:expiration__date__lte", "query:expiration__day", "query:expiration__gt", "query:expiration__gte", "query:expiration__lt", "query:expiration__lte", "query:expiration__month", "query:expiration__year", "query:ordering", "query:status"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -233,27 +310,27 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/storage_paths/"
-fields = ["query:full_perms=false", "query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering", "query:path__icontains", "query:path__iendswith", "query:path__iexact", "query:path__istartswith"]
+fields = ["query:full_perms", "query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering", "query:path__icontains", "query:path__iendswith", "query:path__iexact", "query:path__istartswith"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/storage_paths/{id}/"
-fields = ["query:full_perms", "query:full_perms=false", "query:full_perms=true"]
+fields = ["query:full_perms"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/tags/"
-fields = ["query:full_perms=false", "query:id", "query:is_root", "query:is_root=false", "query:is_root=true", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+fields = ["query:full_perms", "query:id", "query:is_root", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/tags/{id}/"
-fields = ["query:full_perms", "query:full_perms=false", "query:full_perms=true"]
+fields = ["query:full_perms"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/tasks/"
-fields = ["query:date_created_after", "query:date_created_before", "query:is_complete", "query:is_complete=false", "query:is_complete=true", "query:name", "query:ordering", "query:owner", "query:result", "query:trigger_source", "query:trigger_source=api_upload", "query:trigger_source=email_consume", "query:trigger_source=folder_consume", "query:trigger_source=manual", "query:trigger_source=scheduled", "query:trigger_source=system", "query:trigger_source=web_ui"]
+fields = ["query:date_created_after", "query:date_created_before", "query:is_complete", "query:name", "query:ordering", "query:owner", "query:result", "query:trigger_source"]
 task = "PLMCP-89"
 
 [[open_fields]]
@@ -263,22 +340,22 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/config/{id}/"
-fields = ["body:ai_enabled=false", "body:app_logo", "body:barcode_enable_asn=false", "body:barcode_enable_tag=false", "body:barcode_enable_tiff_support=false", "body:barcode_retain_split_pages=false", "body:barcode_store_values=false", "body:barcode_tag_split=false", "body:barcodes_enabled=false", "body:deskew=false", "body:rotate_pages=false"]
+fields = ["body:app_logo"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/correspondents/{id}/"
-fields = ["body:is_insensitive=false"]
+fields = ["query:full_perms"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/custom_fields/{id}/"
-fields = ["body:data_type", "body:data_type=boolean", "body:data_type=date", "body:data_type=documentlink", "body:data_type=float", "body:data_type=integer", "body:data_type=longtext", "body:data_type=monetary", "body:data_type=select", "body:data_type=string", "body:data_type=url"]
+fields = ["body:data_type"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/document_types/{id}/"
-fields = ["body:is_insensitive=false"]
+fields = ["query:full_perms"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -288,137 +365,146 @@ task = "PLMCP-75"
 
 [[open_fields]]
 operation = "PATCH /api/documents/{id}/"
-fields = ["body:created_date", "body:remove_inbox_tags", "body:remove_inbox_tags=false", "body:remove_inbox_tags=true"]
+fields = ["body:created_date", "body:remove_inbox_tags", "query:fields", "query:full_perms"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/mail_accounts/{id}/"
-fields = ["body:account_type", "body:account_type=1", "body:account_type=2", "body:account_type=3", "body:expiration", "body:imap_security=2", "body:is_token", "body:is_token=false", "body:is_token=true"]
-task = "PLMCP-81"
-
-[[open_fields]]
-operation = "PATCH /api/mail_accounts/{id}/"
-fields = ["body:owner", "body:set_permissions", "body:set_permissions.change", "body:set_permissions.change.groups", "body:set_permissions.change.users", "body:set_permissions.view", "body:set_permissions.view.groups", "body:set_permissions.view.users"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "PATCH /api/mail_rules/{id}/"
-fields = ["body:assign_owner_from_rule=true", "body:enabled=true", "body:stop_processing=false"]
+fields = ["body:account_type", "body:expiration", "body:is_token", "body:owner", "body:set_permissions"]
 task = "PLMCP-81"
 
 [[open_fields]]
 operation = "PATCH /api/mail_rules/{id}/"
-fields = ["body:owner", "body:set_permissions", "body:set_permissions.change", "body:set_permissions.change.groups", "body:set_permissions.change.users", "body:set_permissions.view", "body:set_permissions.view.groups", "body:set_permissions.view.users"]
-task = "PLMCP-83"
+fields = ["body:set_permissions"]
+task = "PLMCP-81"
 
 [[open_fields]]
 operation = "PATCH /api/saved_views/{id}/"
-fields = ["body:display_fields", "body:display_mode", "body:display_mode=largeCards", "body:display_mode=smallCards", "body:display_mode=table", "body:icon", "body:icon=archive", "body:icon=bank", "body:icon=basket", "body:icon=bell", "body:icon=bookmark", "body:icon=boxes", "body:icon=briefcase", "body:icon=building", "body:icon=calculator", "body:icon=calendar", "body:icon=camera", "body:icon=card-checklist", "body:icon=cash", "body:icon=chat-left-text", "body:icon=check-circle", "body:icon=clipboard", "body:icon=clock-history", "body:icon=credit-card", "body:icon=download", "body:icon=envelope", "body:icon=exclamation-triangle", "body:icon=file-earmark", "body:icon=file-earmark-check", "body:icon=file-earmark-lock", "body:icon=file-earmark-medical", "body:icon=file-earmark-person", "body:icon=file-earmark-spreadsheet", "body:icon=file-text", "body:icon=files", "body:icon=folder", "body:icon=funnel", "body:icon=gear", "body:icon=globe2", "body:icon=hash", "body:icon=heart", "body:icon=house", "body:icon=inbox", "body:icon=journals", "body:icon=list-task", "body:icon=newspaper", "body:icon=paperclip", "body:icon=people", "body:icon=person", "body:icon=printer", "body:icon=receipt", "body:icon=safe", "body:icon=search", "body:icon=send", "body:icon=shop", "body:icon=stack", "body:icon=stars", "body:icon=tag", "body:icon=tags", "body:icon=telephone", "body:icon=truck", "body:icon=upc-scan", "body:icon=wallet2", "body:owner", "body:set_permissions", "body:set_permissions.change", "body:set_permissions.change.groups", "body:set_permissions.change.users", "body:set_permissions.view", "body:set_permissions.view.groups", "body:set_permissions.view.users", "body:sort_reverse=false"]
+fields = ["body:display_fields", "body:display_mode", "body:icon", "body:owner", "body:set_permissions"]
 task = "PLMCP-88"
 
 [[open_fields]]
 operation = "PATCH /api/storage_paths/{id}/"
-fields = ["body:is_insensitive=false"]
+fields = ["query:full_perms"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/tags/{id}/"
-fields = ["body:is_inbox_tag=false", "body:is_insensitive=false"]
+fields = ["query:full_perms"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/users/{id}/"
-fields = ["body:date_joined", "body:is_active=true", "body:is_staff=false", "body:is_superuser=false"]
+fields = ["body:date_joined"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/workflows/{id}/"
-fields = ["body:actions[].ai_create_missing", "body:actions[].ai_create_missing=false", "body:actions[].ai_create_missing=true", "body:actions[].ai_overwrite_existing", "body:actions[].ai_overwrite_existing=false", "body:actions[].ai_overwrite_existing=true", "body:actions[].ai_suggestion_fields", "body:actions[].email.id", "body:actions[].email.include_document=false", "body:actions[].id", "body:actions[].passwords", "body:actions[].remove_all_correspondents=false", "body:actions[].remove_all_custom_fields=false", "body:actions[].remove_all_document_types=false", "body:actions[].remove_all_owners=false", "body:actions[].remove_all_permissions=false", "body:actions[].remove_all_storage_paths=false", "body:actions[].remove_all_tags=false", "body:actions[].type=5", "body:actions[].type=6", "body:actions[].type=7", "body:actions[].type=8", "body:actions[].webhook.id", "body:actions[].webhook.use_params=false", "body:enabled=true", "body:triggers[].id", "body:triggers[].is_insensitive=false", "body:triggers[].matching_algorithm=0", "body:triggers[].matching_algorithm=2", "body:triggers[].matching_algorithm=3", "body:triggers[].matching_algorithm=5", "body:triggers[].schedule_date_field=custom_field", "body:triggers[].schedule_date_field=modified", "body:triggers[].schedule_is_recurring=false"]
+fields = ["body:actions[].ai_create_missing", "body:actions[].ai_overwrite_existing", "body:actions[].ai_suggestion_fields", "body:actions[].email.id", "body:actions[].id", "body:actions[].passwords", "body:actions[].webhook.id", "body:triggers[].id"]
 task = "PLMCP-87"
 
 [[open_fields]]
+operation = "PATCH /api/workflows/{id}/"
+fields = ["body:actions[].type=5", "body:actions[].type=8"]
+task = "PLMCP-87"
+reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them"
+
+[[open_fields]]
 operation = "POST /api/bulk_edit_objects/"
-fields = ["body:all", "body:all=false", "body:all=true", "body:filters", "body:merge=true"]
+fields = ["body:all", "body:filters"]
 task = "PLMCP-80"
 
 [[open_fields]]
 operation = "POST /api/correspondents/"
-fields = ["body:is_insensitive=false", "body:owner", "body:set_permissions", "body:set_permissions.change", "body:set_permissions.change.groups", "body:set_permissions.change.users", "body:set_permissions.view", "body:set_permissions.view.groups", "body:set_permissions.view.users"]
+fields = ["body:owner", "body:set_permissions"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/document_types/"
-fields = ["body:is_insensitive=false", "body:owner", "body:set_permissions", "body:set_permissions.change", "body:set_permissions.change.groups", "body:set_permissions.change.users", "body:set_permissions.view", "body:set_permissions.view.groups", "body:set_permissions.view.users"]
+fields = ["body:owner", "body:set_permissions"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/documents/bulk_download/"
-fields = ["body:all", "body:all=false", "body:all=true", "body:excluded_documents", "body:filters"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/bulk_edit/"
-fields = ["body:all", "body:all=false", "body:all=true", "body:excluded_documents", "body:filters", "body:method=add_tag", "body:method=delete_pages", "body:method=edit_pdf", "body:method=merge", "body:method=remove_password", "body:method=remove_tag", "body:method=rotate", "body:method=set_document_type", "body:method=set_permissions", "body:method=set_storage_path", "body:method=split"]
+fields = ["body:all", "body:excluded_documents", "body:filters"]
 task = "PLMCP-80"
 
 [[open_fields]]
 operation = "POST /api/documents/bulk_edit/"
-fields = ["body:from_webui", "body:from_webui=false", "body:from_webui=true"]
+fields = ["body:all", "body:excluded_documents", "body:filters"]
+task = "PLMCP-80"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:method=add_tag", "body:method=remove_tag"]
+task = "PLMCP-80"
+reason = "modify_tags adds and removes tags in one call, so the tool never sends the single-tag methods"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:method=set_permissions"]
+task = "PLMCP-80"
+reason = "permissions are changed by the set_permissions tool (bulk_edit_objects and set_permissions of the document), not by bulk_edit_documents"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:method=delete_pages", "body:method=edit_pdf", "body:method=merge", "body:method=remove_password", "body:method=rotate", "body:method=split"]
+task = "PLMCP-80"
+reason = "the pdf toolset has an endpoint of its own for it (API 10 deprecates this bulk_edit form), so bulk_edit_documents never sends it"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:from_webui"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/documents/edit_pdf/"
-fields = ["body:include_metadata", "body:include_metadata=false", "body:include_metadata=true", "body:source_mode"]
+fields = ["body:include_metadata", "body:source_mode"]
 task = "PLMCP-79"
 
 [[open_fields]]
 operation = "POST /api/documents/edit_pdf/"
-fields = ["body:from_webui", "body:from_webui=false", "body:from_webui=true"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/email/"
-fields = ["body:use_archive_version=true"]
+fields = ["body:from_webui"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/documents/merge/"
-fields = ["body:archive_fallback", "body:archive_fallback=false", "body:archive_fallback=true", "body:source_mode"]
+fields = ["body:archive_fallback", "body:source_mode"]
 task = "PLMCP-79"
 
 [[open_fields]]
 operation = "POST /api/documents/merge/"
-fields = ["body:from_webui", "body:from_webui=false", "body:from_webui=true"]
+fields = ["body:from_webui"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/documents/post_document/"
-fields = ["body:from_webui", "body:from_webui=false", "body:from_webui=true"]
+fields = ["body:from_webui"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/documents/remove_password/"
-fields = ["body:include_metadata", "body:include_metadata=false", "body:include_metadata=true", "body:source_mode"]
+fields = ["body:include_metadata", "body:source_mode"]
 task = "PLMCP-79"
 
 [[open_fields]]
 operation = "POST /api/documents/remove_password/"
-fields = ["body:from_webui", "body:from_webui=false", "body:from_webui=true"]
+fields = ["body:from_webui"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/documents/reprocess/"
-fields = ["body:all", "body:all=false", "body:all=true", "body:excluded_documents", "body:filters"]
+fields = ["body:all", "body:excluded_documents", "body:filters"]
 task = "PLMCP-79"
 
 [[open_fields]]
 operation = "POST /api/documents/rotate/"
-fields = ["body:all", "body:all=false", "body:all=true", "body:excluded_documents", "body:filters", "body:source_mode"]
+fields = ["body:all", "body:excluded_documents", "body:filters", "body:source_mode"]
 task = "PLMCP-79"
 
 [[open_fields]]
 operation = "POST /api/documents/rotate/"
-fields = ["body:from_webui", "body:from_webui=false", "body:from_webui=true"]
+fields = ["body:from_webui"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -428,75 +514,67 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/mail_accounts/"
-fields = ["body:account_type", "body:account_type=1", "body:account_type=2", "body:account_type=3", "body:expiration", "body:is_token", "body:is_token=false", "body:is_token=true"]
-task = "PLMCP-81"
-
-[[open_fields]]
-operation = "POST /api/mail_accounts/"
-fields = ["body:owner", "body:set_permissions", "body:set_permissions.change", "body:set_permissions.change.groups", "body:set_permissions.change.users", "body:set_permissions.view", "body:set_permissions.view.groups", "body:set_permissions.view.users"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/mail_accounts/test/"
-fields = ["body:account_type", "body:account_type=1", "body:account_type=2", "body:account_type=3", "body:character_set", "body:expiration", "body:imap_port", "body:imap_security", "body:imap_security=2", "body:imap_security=3", "body:imap_server", "body:is_token", "body:is_token=true", "body:name", "body:password", "body:username"]
+fields = ["body:account_type", "body:expiration", "body:is_token", "body:owner", "body:set_permissions"]
 task = "PLMCP-81"
 
 [[open_fields]]
 operation = "POST /api/mail_accounts/test/"
-fields = ["body:owner", "body:set_permissions", "body:set_permissions.change", "body:set_permissions.change.groups", "body:set_permissions.change.users", "body:set_permissions.view", "body:set_permissions.view.groups", "body:set_permissions.view.users"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/mail_accounts/{id}/process/"
-fields = ["body:account_type", "body:account_type=1", "body:account_type=2", "body:account_type=3", "body:expiration", "body:imap_security=2", "body:imap_security=3", "body:is_token=true"]
+fields = ["body:account_type", "body:character_set", "body:expiration", "body:imap_port", "body:imap_security", "body:imap_server", "body:is_token", "body:name", "body:owner", "body:password", "body:set_permissions", "body:username"]
 task = "PLMCP-81"
 
 [[open_fields]]
 operation = "POST /api/mail_accounts/{id}/process/"
-fields = ["body:owner", "body:set_permissions", "body:set_permissions.change", "body:set_permissions.change.groups", "body:set_permissions.change.users", "body:set_permissions.view", "body:set_permissions.view.groups", "body:set_permissions.view.users"]
-task = "PLMCP-83"
+fields = ["body:account_type", "body:character_set", "body:expiration", "body:imap_port", "body:imap_security", "body:imap_server", "body:is_token", "body:name", "body:owner", "body:password", "body:set_permissions", "body:username"]
+task = "PLMCP-81"
 
 [[open_fields]]
 operation = "POST /api/mail_rules/"
-fields = ["body:set_permissions", "body:set_permissions.change", "body:set_permissions.change.groups", "body:set_permissions.change.users", "body:set_permissions.view", "body:set_permissions.view.groups", "body:set_permissions.view.users"]
-task = "PLMCP-83"
+fields = ["body:set_permissions"]
+task = "PLMCP-81"
 
 [[open_fields]]
 operation = "POST /api/saved_views/"
-fields = ["body:display_fields", "body:display_mode", "body:display_mode=largeCards", "body:display_mode=smallCards", "body:display_mode=table", "body:icon", "body:icon=archive", "body:icon=bank", "body:icon=basket", "body:icon=bell", "body:icon=bookmark", "body:icon=boxes", "body:icon=briefcase", "body:icon=building", "body:icon=calculator", "body:icon=calendar", "body:icon=camera", "body:icon=card-checklist", "body:icon=cash", "body:icon=chat-left-text", "body:icon=check-circle", "body:icon=clipboard", "body:icon=clock-history", "body:icon=credit-card", "body:icon=download", "body:icon=envelope", "body:icon=exclamation-triangle", "body:icon=file-earmark", "body:icon=file-earmark-check", "body:icon=file-earmark-lock", "body:icon=file-earmark-medical", "body:icon=file-earmark-person", "body:icon=file-earmark-spreadsheet", "body:icon=file-text", "body:icon=files", "body:icon=folder", "body:icon=funnel", "body:icon=gear", "body:icon=globe2", "body:icon=hash", "body:icon=heart", "body:icon=house", "body:icon=inbox", "body:icon=journals", "body:icon=list-task", "body:icon=newspaper", "body:icon=paperclip", "body:icon=people", "body:icon=person", "body:icon=printer", "body:icon=receipt", "body:icon=safe", "body:icon=search", "body:icon=send", "body:icon=shop", "body:icon=stack", "body:icon=stars", "body:icon=tag", "body:icon=tags", "body:icon=telephone", "body:icon=truck", "body:icon=upc-scan", "body:icon=wallet2", "body:owner", "body:set_permissions", "body:set_permissions.change", "body:set_permissions.change.groups", "body:set_permissions.change.users", "body:set_permissions.view", "body:set_permissions.view.groups", "body:set_permissions.view.users"]
+fields = ["body:display_fields", "body:display_mode", "body:icon", "body:owner", "body:set_permissions"]
 task = "PLMCP-88"
 
 [[open_fields]]
 operation = "POST /api/share_link_bundles/{id}/rebuild/"
-fields = ["body:expiration_days", "body:file_version", "body:file_version=archive", "body:file_version=original"]
+fields = ["body:document_ids", "body:expiration_days", "body:file_version"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/storage_paths/"
-fields = ["body:is_insensitive=false", "body:owner", "body:set_permissions", "body:set_permissions.change", "body:set_permissions.change.groups", "body:set_permissions.change.users", "body:set_permissions.view", "body:set_permissions.view.groups", "body:set_permissions.view.users"]
+fields = ["body:owner", "body:set_permissions"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/tags/"
-fields = ["body:is_inbox_tag=false", "body:is_insensitive=false", "body:owner", "body:set_permissions", "body:set_permissions.change", "body:set_permissions.change.groups", "body:set_permissions.change.users", "body:set_permissions.view", "body:set_permissions.view.groups", "body:set_permissions.view.users"]
+fields = ["body:owner", "body:set_permissions"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/tasks/acknowledge/"
-fields = ["body:all", "body:all=false", "body:all=true"]
+fields = ["body:all"]
 task = "PLMCP-89"
 
 [[open_fields]]
 operation = "POST /api/tasks/run/"
 fields = ["body:task_type=apply_ai_suggestions", "body:task_type=build_share_link", "body:task_type=bulk_delete", "body:task_type=bulk_update", "body:task_type=check_workflows", "body:task_type=consume_file", "body:task_type=empty_trash", "body:task_type=index_optimize", "body:task_type=mail_fetch", "body:task_type=reprocess_document"]
 task = "PLMCP-89"
+reason = "run_task offers train_classifier, sanity_check and llm_index; which of the other types Paperless lets a user start is PLMCP-89 AC 3"
 
 [[open_fields]]
 operation = "POST /api/users/"
-fields = ["body:date_joined", "body:is_active=false", "body:is_staff=false", "body:is_superuser=true"]
+fields = ["body:date_joined"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/workflows/"
-fields = ["body:actions[].ai_create_missing", "body:actions[].ai_create_missing=false", "body:actions[].ai_create_missing=true", "body:actions[].ai_overwrite_existing", "body:actions[].ai_overwrite_existing=false", "body:actions[].ai_overwrite_existing=true", "body:actions[].ai_suggestion_fields", "body:actions[].email.id", "body:actions[].id", "body:actions[].passwords", "body:actions[].remove_all_correspondents=false", "body:actions[].remove_all_custom_fields=false", "body:actions[].remove_all_document_types=false", "body:actions[].remove_all_owners=false", "body:actions[].remove_all_permissions=false", "body:actions[].remove_all_storage_paths=false", "body:actions[].remove_all_tags=false", "body:actions[].type=5", "body:actions[].type=7", "body:actions[].type=8", "body:actions[].webhook.id", "body:actions[].webhook.use_params=false", "body:triggers[].id", "body:triggers[].is_insensitive=false", "body:triggers[].matching_algorithm=0", "body:triggers[].matching_algorithm=2", "body:triggers[].matching_algorithm=3", "body:triggers[].matching_algorithm=5", "body:triggers[].schedule_date_field=custom_field", "body:triggers[].schedule_date_field=modified", "body:triggers[].schedule_is_recurring=false"]
+fields = ["body:actions[].ai_create_missing", "body:actions[].ai_overwrite_existing", "body:actions[].ai_suggestion_fields", "body:actions[].email.id", "body:actions[].id", "body:actions[].passwords", "body:actions[].webhook.id", "body:triggers[].id"]
 task = "PLMCP-87"
+
+[[open_fields]]
+operation = "POST /api/workflows/"
+fields = ["body:actions[].type=5", "body:actions[].type=8"]
+task = "PLMCP-87"
+reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them"

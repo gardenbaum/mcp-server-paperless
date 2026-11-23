@@ -13,13 +13,22 @@ correspondents) is named too; at most five tools are shown. The entries are in
 operation, field or enum value is neither covered nor listed, and when an open entry's task is
 missing or done.
 
-Limits. A field counts as sent only when some tool test makes a tool send it, so a field a tool
-supports and no tool test uses is listed as open. The requests are built from recorded port calls
-and answered with responses taken from the adapter tests, so a request that depends on a later
-answer of Paperless may be missed. The adapter's own requests, and those of streamed bodies, are
-recorded but not checked against the schema; the adapter tests check the others. Fields the
-adapter sends by itself (the `[[internal]]` entries) are listed as open although a tool causes
-them.
+Limits.
+
+- A field or value counts as sent only when some tool test makes a tool send it, so a field a
+  tool supports and no tool test uses is listed as open. A field under an unsent parent is not
+  listed on its own: it appears once the parent is sent.
+- The requests are built from recorded port calls and answered with responses taken from the
+  adapter tests. A request that depends on a later answer of Paperless may be missed, and a
+  value the adapter copies from the stored object (the answer it is given) is credited too,
+  although no tool chose it.
+- A request that is the adapter's own is listed under `[[internal]]` in the TOML file: fields no
+  argument of any tool can choose (a fixed `ordering`, a filter the adapter adds, the settings of
+  the saved account that a test sends back). They stay open although a tool causes the request.
+- A covered GET does not mean that the whole answer is shown: a tool may read an answer and show
+  only part of it (for example the view visibility in `GET /api/ui_settings/`, PLMCP-88).
+- The adapter's own requests, and those of streamed bodies, are recorded but not checked against
+  the schema; the adapter tests check the others.
 
 ## Endpoints
 
@@ -31,7 +40,7 @@ them.
 | `GET /api/config/{id}/` |  | PLMCP-83 |
 | `PATCH /api/config/{id}/` | `update_app_config` |  |
 | `PUT /api/config/{id}/` |  | PLMCP-83 |
-| `GET /api/correspondents/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_saved_view`, `create_workflow` and 13 more |  |
+| `GET /api/correspondents/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 9 more |  |
 | `POST /api/correspondents/` | `create_taxonomy_item` |  |
 | `DELETE /api/correspondents/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/correspondents/{id}/` | `update_taxonomy_item` |  |
@@ -43,13 +52,13 @@ them.
 | `GET /api/custom_fields/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/custom_fields/{id}/` | `update_taxonomy_item` |  |
 | `PUT /api/custom_fields/{id}/` |  | PLMCP-83 |
-| `GET /api/document_types/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 11 more |  |
+| `GET /api/document_types/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 9 more |  |
 | `POST /api/document_types/` | `create_taxonomy_item` |  |
 | `DELETE /api/document_types/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/document_types/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/document_types/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/document_types/{id}/` |  | PLMCP-83 |
-| `GET /api/documents/` | `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents`, `get_document` and 7 more |  |
+| `GET /api/documents/` | `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents`, `get_document` and 5 more |  |
 | `POST /api/documents/bulk_download/` | `bulk_download` |  |
 | `POST /api/documents/bulk_edit/` | `bulk_edit_documents` |  |
 | `POST /api/documents/chat/` | `ask_paperless_ai` |  |
@@ -84,7 +93,7 @@ them.
 | `POST /api/documents/{id}/update_version/` | `upload_document_version` |  |
 | `DELETE /api/documents/{id}/versions/{version_id}/` | `delete_document_version` |  |
 | `PATCH /api/documents/{id}/versions/{version_id}/` | `set_document_version_label` |  |
-| `GET /api/groups/` | `bulk_edit_taxonomy`, `create_user`, `create_workflow`, `delete_group`, `get_group` and 6 more |  |
+| `GET /api/groups/` | `create_user`, `create_workflow`, `delete_group`, `get_user`, `list_groups` and 4 more |  |
 | `POST /api/groups/` | `create_group` |  |
 | `DELETE /api/groups/{id}/` | `delete_group` |  |
 | `GET /api/groups/{id}/` | `delete_group`, `get_group`, `update_group` |  |
@@ -96,11 +105,11 @@ them.
 | `POST /api/mail_accounts/` | `create_mail_account` |  |
 | `POST /api/mail_accounts/test/` | `test_mail_account` |  |
 | `DELETE /api/mail_accounts/{id}/` | `delete_mail_account` |  |
-| `GET /api/mail_accounts/{id}/` | `create_mail_rule`, `delete_mail_account`, `delete_mail_rule`, `get_mail_account`, `process_mail_account` and 3 more |  |
+| `GET /api/mail_accounts/{id}/` | `create_mail_rule`, `delete_mail_account`, `get_mail_account`, `process_mail_account`, `test_mail_account` and 2 more |  |
 | `PATCH /api/mail_accounts/{id}/` | `update_mail_account` |  |
 | `PUT /api/mail_accounts/{id}/` |  | PLMCP-81 |
 | `POST /api/mail_accounts/{id}/process/` | `process_mail_account` |  |
-| `GET /api/mail_rules/` | `delete_mail_account`, `list_mail_rules`, `process_mail_account` |  |
+| `GET /api/mail_rules/` | `delete_mail_account`, `list_mail_rules` |  |
 | `POST /api/mail_rules/` | `create_mail_rule` |  |
 | `DELETE /api/mail_rules/{id}/` | `delete_mail_rule` |  |
 | `GET /api/mail_rules/{id}/` | `delete_mail_rule`, `get_mail_rule`, `update_mail_rule` |  |
@@ -136,8 +145,8 @@ them.
 | `POST /api/share_links/` | `create_share_link` |  |
 | `DELETE /api/share_links/{id}/` | `delete_share_link` |  |
 | `GET /api/share_links/{id}/` | `delete_share_link` |  |
-| `GET /api/statistics/` | `get_instance_overview`, `process_mail_account`, `set_permissions` |  |
-| `GET /api/status/` | `get_instance_overview`, `process_mail_account`, `set_permissions` |  |
+| `GET /api/statistics/` | `get_instance_overview` |  |
+| `GET /api/status/` | `get_instance_overview` |  |
 | `GET /api/storage_paths/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_workflow`, `delete_taxonomy_item`, `get_document` and 7 more |  |
 | `POST /api/storage_paths/` | `create_taxonomy_item` |  |
 | `POST /api/storage_paths/test/` |  | PLMCP-83 |
@@ -145,8 +154,8 @@ them.
 | `GET /api/storage_paths/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/storage_paths/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/storage_paths/{id}/` |  | PLMCP-83 |
-| `GET /api/tags/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_saved_view`, `create_taxonomy_item` and 18 more |  |
-| `POST /api/tags/` | `create_taxonomy_item`, `update_document` |  |
+| `GET /api/tags/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_taxonomy_item`, `delete_taxonomy_item` and 10 more |  |
+| `POST /api/tags/` | `create_taxonomy_item` |  |
 | `DELETE /api/tags/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/tags/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/tags/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
@@ -161,9 +170,9 @@ them.
 | `POST /api/token/` |  | PLMCP-83 |
 | `GET /api/trash/` | `empty_trash`, `list_trash`, `restore_from_trash` |  |
 | `POST /api/trash/` | `empty_trash`, `restore_from_trash` |  |
-| `GET /api/ui_settings/` | `delete_pages`, `delete_user`, `edit_pdf`, `email_documents`, `get_instance_overview` and 8 more |  |
+| `GET /api/ui_settings/` | `delete_pages`, `delete_user`, `edit_pdf`, `email_documents`, `get_instance_overview` and 6 more |  |
 | `POST /api/ui_settings/` |  | PLMCP-88 |
-| `GET /api/users/` | `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_user`, `get_document` and 10 more |  |
+| `GET /api/users/` | `create_mail_rule`, `create_workflow`, `delete_user`, `get_document`, `get_user` and 7 more |  |
 | `POST /api/users/` | `create_user` |  |
 | `DELETE /api/users/{id}/` | `delete_user` |  |
 | `GET /api/users/{id}/` | `delete_user`, `get_user`, `update_user` |  |
@@ -198,79 +207,79 @@ TOML file.
 
 | Operation | Fields | Open task or exclusion |
 |---|---|---|
-| `POST /api/bulk_edit_objects/` | `body:all`, `body:all=false`, `body:all=true`, `body:filters`, `body:merge=true` | PLMCP-80 |
-| `PATCH /api/config/{id}/` | `body:ai_enabled=false`, `body:app_logo`, `body:barcode_enable_asn=false`, `body:barcode_enable_tag=false`, `body:barcode_enable_tiff_support=false`, `body:barcode_retain_split_pages=false`, `body:barcode_store_values=false`, `body:barcode_tag_split=false`, `body:barcodes_enabled=false`, `body:deskew=false`, `body:rotate_pages=false` | PLMCP-83 |
-| `GET /api/correspondents/` | `query:full_perms=false`, `query:id`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
-| `POST /api/correspondents/` | `body:is_insensitive=false`, `body:owner`, `body:set_permissions`, `body:set_permissions.change`, `body:set_permissions.change.groups`, `body:set_permissions.change.users`, `body:set_permissions.view`, `body:set_permissions.view.groups`, `body:set_permissions.view.users` | PLMCP-83 |
-| `GET /api/correspondents/{id}/` | `query:full_perms`, `query:full_perms=false`, `query:full_perms=true` | PLMCP-83 |
-| `PATCH /api/correspondents/{id}/` | `body:is_insensitive=false` | PLMCP-83 |
+| `POST /api/bulk_edit_objects/` | `body:all`, `body:filters` | PLMCP-80 |
+| `PATCH /api/config/{id}/` | `body:app_logo` | PLMCP-83 |
+| `GET /api/correspondents/` | `query:full_perms`, `query:id`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
+| `POST /api/correspondents/` | `body:owner`, `body:set_permissions` | PLMCP-83 |
+| `GET /api/correspondents/{id}/` | `query:full_perms` | PLMCP-83 |
+| `PATCH /api/correspondents/{id}/` | `query:full_perms` | PLMCP-83 |
 | `GET /api/custom_fields/` | `query:id`, `query:id__in`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
-| `PATCH /api/custom_fields/{id}/` | `body:data_type`, `body:data_type=boolean`, `body:data_type=date`, `body:data_type=documentlink`, `body:data_type=float`, `body:data_type=integer`, `body:data_type=longtext`, `body:data_type=monetary`, `body:data_type=select`, `body:data_type=string`, `body:data_type=url` | PLMCP-83 |
-| `GET /api/document_types/` | `query:full_perms=false`, `query:id`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
-| `POST /api/document_types/` | `body:is_insensitive=false`, `body:owner`, `body:set_permissions`, `body:set_permissions.change`, `body:set_permissions.change.groups`, `body:set_permissions.change.users`, `body:set_permissions.view`, `body:set_permissions.view.groups`, `body:set_permissions.view.users` | PLMCP-83 |
-| `GET /api/document_types/{id}/` | `query:full_perms`, `query:full_perms=false`, `query:full_perms=true` | PLMCP-83 |
-| `PATCH /api/document_types/{id}/` | `body:is_insensitive=false` | PLMCP-83 |
-| `GET /api/documents/` | `query:added__day`, `query:added__gt`, `query:added__gte`, `query:added__lt`, `query:added__lte`, `query:added__month`, `query:added__year`, `query:all`, `query:archive_serial_number__gte`, `query:archive_serial_number__isnull=false`, `query:archive_serial_number__lte`, `query:checksum__icontains`, `query:checksum__iendswith`, `query:checksum__iexact`, `query:checksum__istartswith`, `query:content__iendswith`, `query:content__iexact`, `query:content__istartswith`, `query:correspondent__name__icontains`, `query:correspondent__name__iendswith`, `query:correspondent__name__iexact`, `query:correspondent__name__istartswith`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:document_type__name__icontains`, `query:document_type__name__iendswith`, `query:document_type__name__iexact`, `query:document_type__name__istartswith`, `query:full_perms=false`, `query:has_custom_fields=false`, `query:has_duplicates=false`, `query:id`, `query:modified__date__gte`, `query:modified__date__lte`, `query:modified__day`, `query:modified__gt`, `query:modified__gte`, `query:modified__lt`, `query:modified__lte`, `query:modified__month`, `query:modified__year`, `query:original_filename__icontains`, `query:original_filename__iendswith`, `query:original_filename__iexact`, `query:original_filename__istartswith`, `query:owner__isnull=false`, `query:search`, `query:shared_by__id=false`, `query:shared_by__id=true`, `query:storage_path__name__icontains`, `query:storage_path__name__iendswith`, `query:storage_path__name__iexact`, `query:storage_path__name__istartswith`, `query:tags__id`, `query:tags__name__icontains`, `query:tags__name__iendswith`, `query:tags__name__iexact`, `query:tags__name__istartswith`, `query:title__iendswith`, `query:title__iexact`, `query:title__istartswith`, `query:title_content` | PLMCP-83 |
-| `POST /api/documents/bulk_download/` | `body:all`, `body:all=false`, `body:all=true`, `body:excluded_documents`, `body:filters` | PLMCP-83 |
-| `POST /api/documents/bulk_edit/` | `body:all`, `body:all=false`, `body:all=true`, `body:excluded_documents`, `body:filters`, `body:method=add_tag`, `body:method=delete_pages`, `body:method=edit_pdf`, `body:method=merge`, `body:method=remove_password`, `body:method=remove_tag`, `body:method=rotate`, `body:method=set_document_type`, `body:method=set_permissions`, `body:method=set_storage_path`, `body:method=split` | PLMCP-80 |
-| `POST /api/documents/bulk_edit/` | `body:from_webui`, `body:from_webui=false`, `body:from_webui=true` | PLMCP-83 |
-| `POST /api/documents/edit_pdf/` | `body:include_metadata`, `body:include_metadata=false`, `body:include_metadata=true`, `body:source_mode` | PLMCP-79 |
-| `POST /api/documents/edit_pdf/` | `body:from_webui`, `body:from_webui=false`, `body:from_webui=true` | PLMCP-83 |
-| `POST /api/documents/email/` | `body:use_archive_version=true` | PLMCP-83 |
-| `POST /api/documents/merge/` | `body:archive_fallback`, `body:archive_fallback=false`, `body:archive_fallback=true`, `body:source_mode` | PLMCP-79 |
-| `POST /api/documents/merge/` | `body:from_webui`, `body:from_webui=false`, `body:from_webui=true` | PLMCP-83 |
-| `POST /api/documents/post_document/` | `body:from_webui`, `body:from_webui=false`, `body:from_webui=true` | PLMCP-83 |
-| `POST /api/documents/remove_password/` | `body:include_metadata`, `body:include_metadata=false`, `body:include_metadata=true`, `body:source_mode` | PLMCP-79 |
-| `POST /api/documents/remove_password/` | `body:from_webui`, `body:from_webui=false`, `body:from_webui=true` | PLMCP-83 |
-| `POST /api/documents/reprocess/` | `body:all`, `body:all=false`, `body:all=true`, `body:excluded_documents`, `body:filters` | PLMCP-79 |
-| `POST /api/documents/rotate/` | `body:all`, `body:all=false`, `body:all=true`, `body:excluded_documents`, `body:filters`, `body:source_mode` | PLMCP-79 |
-| `POST /api/documents/rotate/` | `body:from_webui`, `body:from_webui=false`, `body:from_webui=true` | PLMCP-83 |
+| `PATCH /api/custom_fields/{id}/` | `body:data_type` | PLMCP-83 |
+| `GET /api/document_types/` | `query:full_perms`, `query:id`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
+| `POST /api/document_types/` | `body:owner`, `body:set_permissions` | PLMCP-83 |
+| `GET /api/document_types/{id}/` | `query:full_perms` | PLMCP-83 |
+| `PATCH /api/document_types/{id}/` | `query:full_perms` | PLMCP-83 |
+| `GET /api/documents/` | `query:added__day`, `query:added__gt`, `query:added__gte`, `query:added__lt`, `query:added__lte`, `query:added__month`, `query:added__year`, `query:all`, `query:archive_serial_number__gte`, `query:archive_serial_number__lte`, `query:checksum__icontains`, `query:checksum__iendswith`, `query:checksum__iexact`, `query:checksum__istartswith`, `query:content__iendswith`, `query:content__iexact`, `query:content__istartswith`, `query:correspondent__name__icontains`, `query:correspondent__name__iendswith`, `query:correspondent__name__iexact`, `query:correspondent__name__istartswith`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:document_type__name__icontains`, `query:document_type__name__iendswith`, `query:document_type__name__iexact`, `query:document_type__name__istartswith`, `query:fields`, `query:full_perms`, `query:id`, `query:modified__date__gte`, `query:modified__date__lte`, `query:modified__day`, `query:modified__gt`, `query:modified__gte`, `query:modified__lt`, `query:modified__lte`, `query:modified__month`, `query:modified__year`, `query:original_filename__icontains`, `query:original_filename__iendswith`, `query:original_filename__iexact`, `query:original_filename__istartswith`, `query:search`, `query:storage_path__name__icontains`, `query:storage_path__name__iendswith`, `query:storage_path__name__iexact`, `query:storage_path__name__istartswith`, `query:tags__id`, `query:tags__name__icontains`, `query:tags__name__iendswith`, `query:tags__name__iexact`, `query:tags__name__istartswith`, `query:title__iendswith`, `query:title__iexact`, `query:title__istartswith`, `query:title_content` | PLMCP-83 |
+| `GET /api/documents/` | `query:shared_by__id=false`, `query:shared_by__id=true` | PLMCP-83 |
+| `POST /api/documents/bulk_download/` | `body:all`, `body:excluded_documents`, `body:filters` | PLMCP-80 |
+| `POST /api/documents/bulk_edit/` | `body:all`, `body:excluded_documents`, `body:filters` | PLMCP-80 |
+| `POST /api/documents/bulk_edit/` | `body:method=add_tag`, `body:method=remove_tag` | PLMCP-80 |
+| `POST /api/documents/bulk_edit/` | `body:method=set_permissions` | PLMCP-80 |
+| `POST /api/documents/bulk_edit/` | `body:method=delete_pages`, `body:method=edit_pdf`, `body:method=merge`, `body:method=remove_password`, `body:method=rotate`, `body:method=split` | PLMCP-80 |
+| `POST /api/documents/bulk_edit/` | `body:from_webui` | PLMCP-83 |
+| `POST /api/documents/edit_pdf/` | `body:include_metadata`, `body:source_mode` | PLMCP-79 |
+| `POST /api/documents/edit_pdf/` | `body:from_webui` | PLMCP-83 |
+| `POST /api/documents/merge/` | `body:archive_fallback`, `body:source_mode` | PLMCP-79 |
+| `POST /api/documents/merge/` | `body:from_webui` | PLMCP-83 |
+| `POST /api/documents/post_document/` | `body:from_webui` | PLMCP-83 |
+| `POST /api/documents/remove_password/` | `body:include_metadata`, `body:source_mode` | PLMCP-79 |
+| `POST /api/documents/remove_password/` | `body:from_webui` | PLMCP-83 |
+| `POST /api/documents/reprocess/` | `body:all`, `body:excluded_documents`, `body:filters` | PLMCP-79 |
+| `POST /api/documents/rotate/` | `body:all`, `body:excluded_documents`, `body:filters`, `body:source_mode` | PLMCP-79 |
+| `POST /api/documents/rotate/` | `body:from_webui` | PLMCP-83 |
 | `GET /api/documents/{id}/` | `query:version` | PLMCP-75 |
-| `GET /api/documents/{id}/` | `query:full_perms`, `query:full_perms=false`, `query:full_perms=true` | PLMCP-83 |
+| `GET /api/documents/{id}/` | `query:fields`, `query:full_perms` | PLMCP-83 |
 | `PATCH /api/documents/{id}/` | `body:content`, `query:version` | PLMCP-75 |
-| `PATCH /api/documents/{id}/` | `body:created_date`, `body:remove_inbox_tags`, `body:remove_inbox_tags=false`, `body:remove_inbox_tags=true` | PLMCP-83 |
+| `PATCH /api/documents/{id}/` | `body:created_date`, `body:remove_inbox_tags`, `query:fields`, `query:full_perms` | PLMCP-83 |
 | `GET /api/documents/{id}/download/` | `query:version` | PLMCP-76 |
-| `GET /api/documents/{id}/download/` | `query:follow_formatting`, `query:follow_formatting=false`, `query:follow_formatting=true` | PLMCP-83 |
+| `GET /api/documents/{id}/download/` | `query:follow_formatting` | PLMCP-83 |
 | `GET /api/documents/{id}/history/` | `query:page`, `query:page_size` | PLMCP-89 |
 | `GET /api/documents/{id}/metadata/` | `query:version` | PLMCP-83 |
 | `GET /api/documents/{id}/notes/` | `query:id` | PLMCP-83 |
 | `POST /api/documents/{id}/notes/` | `query:id` | PLMCP-83 |
 | `GET /api/documents/{id}/thumb/` | `query:version` | PLMCP-83 |
 | `GET /api/groups/` | `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
-| `POST /api/mail_accounts/` | `body:account_type`, `body:account_type=1`, `body:account_type=2`, `body:account_type=3`, `body:expiration`, `body:is_token`, `body:is_token=false`, `body:is_token=true` | PLMCP-81 |
-| `POST /api/mail_accounts/` | `body:owner`, `body:set_permissions`, `body:set_permissions.change`, `body:set_permissions.change.groups`, `body:set_permissions.change.users`, `body:set_permissions.view`, `body:set_permissions.view.groups`, `body:set_permissions.view.users` | PLMCP-83 |
-| `POST /api/mail_accounts/test/` | `body:account_type`, `body:account_type=1`, `body:account_type=2`, `body:account_type=3`, `body:character_set`, `body:expiration`, `body:imap_port`, `body:imap_security`, `body:imap_security=2`, `body:imap_security=3`, `body:imap_server`, `body:is_token`, `body:is_token=true`, `body:name`, `body:password`, `body:username` | PLMCP-81 |
-| `POST /api/mail_accounts/test/` | `body:owner`, `body:set_permissions`, `body:set_permissions.change`, `body:set_permissions.change.groups`, `body:set_permissions.change.users`, `body:set_permissions.view`, `body:set_permissions.view.groups`, `body:set_permissions.view.users` | PLMCP-83 |
-| `PATCH /api/mail_accounts/{id}/` | `body:account_type`, `body:account_type=1`, `body:account_type=2`, `body:account_type=3`, `body:expiration`, `body:imap_security=2`, `body:is_token`, `body:is_token=false`, `body:is_token=true` | PLMCP-81 |
-| `PATCH /api/mail_accounts/{id}/` | `body:owner`, `body:set_permissions`, `body:set_permissions.change`, `body:set_permissions.change.groups`, `body:set_permissions.change.users`, `body:set_permissions.view`, `body:set_permissions.view.groups`, `body:set_permissions.view.users` | PLMCP-83 |
-| `POST /api/mail_accounts/{id}/process/` | `body:account_type`, `body:account_type=1`, `body:account_type=2`, `body:account_type=3`, `body:expiration`, `body:imap_security=2`, `body:imap_security=3`, `body:is_token=true` | PLMCP-81 |
-| `POST /api/mail_accounts/{id}/process/` | `body:owner`, `body:set_permissions`, `body:set_permissions.change`, `body:set_permissions.change.groups`, `body:set_permissions.change.users`, `body:set_permissions.view`, `body:set_permissions.view.groups`, `body:set_permissions.view.users` | PLMCP-83 |
-| `POST /api/mail_rules/` | `body:set_permissions`, `body:set_permissions.change`, `body:set_permissions.change.groups`, `body:set_permissions.change.users`, `body:set_permissions.view`, `body:set_permissions.view.groups`, `body:set_permissions.view.users` | PLMCP-83 |
-| `PATCH /api/mail_rules/{id}/` | `body:assign_owner_from_rule=true`, `body:enabled=true`, `body:stop_processing=false` | PLMCP-81 |
-| `PATCH /api/mail_rules/{id}/` | `body:owner`, `body:set_permissions`, `body:set_permissions.change`, `body:set_permissions.change.groups`, `body:set_permissions.change.users`, `body:set_permissions.view`, `body:set_permissions.view.groups`, `body:set_permissions.view.users` | PLMCP-83 |
+| `POST /api/mail_accounts/` | `body:account_type`, `body:expiration`, `body:is_token`, `body:owner`, `body:set_permissions` | PLMCP-81 |
+| `POST /api/mail_accounts/test/` | `body:account_type`, `body:character_set`, `body:expiration`, `body:imap_port`, `body:imap_security`, `body:imap_server`, `body:is_token`, `body:name`, `body:owner`, `body:password`, `body:set_permissions`, `body:username` | PLMCP-81 |
+| `PATCH /api/mail_accounts/{id}/` | `body:account_type`, `body:expiration`, `body:is_token`, `body:owner`, `body:set_permissions` | PLMCP-81 |
+| `POST /api/mail_accounts/{id}/process/` | `body:account_type`, `body:character_set`, `body:expiration`, `body:imap_port`, `body:imap_security`, `body:imap_server`, `body:is_token`, `body:name`, `body:owner`, `body:password`, `body:set_permissions`, `body:username` | PLMCP-81 |
+| `POST /api/mail_rules/` | `body:set_permissions` | PLMCP-81 |
+| `PATCH /api/mail_rules/{id}/` | `body:set_permissions` | PLMCP-81 |
 | `GET /api/processed_mail/` | `query:ordering` | PLMCP-81 |
-| `GET /api/saved_views/` | `query:full_perms`, `query:full_perms=false`, `query:full_perms=true`, `query:ordering` | PLMCP-88 |
-| `POST /api/saved_views/` | `body:display_fields`, `body:display_mode`, `body:display_mode=largeCards`, `body:display_mode=smallCards`, `body:display_mode=table`, `body:icon`, `body:icon=archive`, `body:icon=bank`, `body:icon=basket`, `body:icon=bell`, `body:icon=bookmark`, `body:icon=boxes`, `body:icon=briefcase`, `body:icon=building`, `body:icon=calculator`, `body:icon=calendar`, `body:icon=camera`, `body:icon=card-checklist`, `body:icon=cash`, `body:icon=chat-left-text`, `body:icon=check-circle`, `body:icon=clipboard`, `body:icon=clock-history`, `body:icon=credit-card`, `body:icon=download`, `body:icon=envelope`, `body:icon=exclamation-triangle`, `body:icon=file-earmark`, `body:icon=file-earmark-check`, `body:icon=file-earmark-lock`, `body:icon=file-earmark-medical`, `body:icon=file-earmark-person`, `body:icon=file-earmark-spreadsheet`, `body:icon=file-text`, `body:icon=files`, `body:icon=folder`, `body:icon=funnel`, `body:icon=gear`, `body:icon=globe2`, `body:icon=hash`, `body:icon=heart`, `body:icon=house`, `body:icon=inbox`, `body:icon=journals`, `body:icon=list-task`, `body:icon=newspaper`, `body:icon=paperclip`, `body:icon=people`, `body:icon=person`, `body:icon=printer`, `body:icon=receipt`, `body:icon=safe`, `body:icon=search`, `body:icon=send`, `body:icon=shop`, `body:icon=stack`, `body:icon=stars`, `body:icon=tag`, `body:icon=tags`, `body:icon=telephone`, `body:icon=truck`, `body:icon=upc-scan`, `body:icon=wallet2`, `body:owner`, `body:set_permissions`, `body:set_permissions.change`, `body:set_permissions.change.groups`, `body:set_permissions.change.users`, `body:set_permissions.view`, `body:set_permissions.view.groups`, `body:set_permissions.view.users` | PLMCP-88 |
-| `PATCH /api/saved_views/{id}/` | `body:display_fields`, `body:display_mode`, `body:display_mode=largeCards`, `body:display_mode=smallCards`, `body:display_mode=table`, `body:icon`, `body:icon=archive`, `body:icon=bank`, `body:icon=basket`, `body:icon=bell`, `body:icon=bookmark`, `body:icon=boxes`, `body:icon=briefcase`, `body:icon=building`, `body:icon=calculator`, `body:icon=calendar`, `body:icon=camera`, `body:icon=card-checklist`, `body:icon=cash`, `body:icon=chat-left-text`, `body:icon=check-circle`, `body:icon=clipboard`, `body:icon=clock-history`, `body:icon=credit-card`, `body:icon=download`, `body:icon=envelope`, `body:icon=exclamation-triangle`, `body:icon=file-earmark`, `body:icon=file-earmark-check`, `body:icon=file-earmark-lock`, `body:icon=file-earmark-medical`, `body:icon=file-earmark-person`, `body:icon=file-earmark-spreadsheet`, `body:icon=file-text`, `body:icon=files`, `body:icon=folder`, `body:icon=funnel`, `body:icon=gear`, `body:icon=globe2`, `body:icon=hash`, `body:icon=heart`, `body:icon=house`, `body:icon=inbox`, `body:icon=journals`, `body:icon=list-task`, `body:icon=newspaper`, `body:icon=paperclip`, `body:icon=people`, `body:icon=person`, `body:icon=printer`, `body:icon=receipt`, `body:icon=safe`, `body:icon=search`, `body:icon=send`, `body:icon=shop`, `body:icon=stack`, `body:icon=stars`, `body:icon=tag`, `body:icon=tags`, `body:icon=telephone`, `body:icon=truck`, `body:icon=upc-scan`, `body:icon=wallet2`, `body:owner`, `body:set_permissions`, `body:set_permissions.change`, `body:set_permissions.change.groups`, `body:set_permissions.change.users`, `body:set_permissions.view`, `body:set_permissions.view.groups`, `body:set_permissions.view.users`, `body:sort_reverse=false` | PLMCP-88 |
-| `GET /api/share_link_bundles/` | `query:created__date__gt`, `query:created__date__gte`, `query:created__date__lt`, `query:created__date__lte`, `query:created__day`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:created__month`, `query:created__year`, `query:documents`, `query:expiration__date__gt`, `query:expiration__date__gte`, `query:expiration__date__lt`, `query:expiration__date__lte`, `query:expiration__day`, `query:expiration__gt`, `query:expiration__gte`, `query:expiration__lt`, `query:expiration__lte`, `query:expiration__month`, `query:expiration__year`, `query:ordering`, `query:status`, `query:status=failed`, `query:status=pending`, `query:status=processing`, `query:status=ready` | PLMCP-83 |
-| `POST /api/share_link_bundles/{id}/rebuild/` | `body:expiration_days`, `body:file_version`, `body:file_version=archive`, `body:file_version=original` | PLMCP-83 |
+| `GET /api/saved_views/` | `query:full_perms`, `query:ordering` | PLMCP-88 |
+| `POST /api/saved_views/` | `body:display_fields`, `body:display_mode`, `body:icon`, `body:owner`, `body:set_permissions` | PLMCP-88 |
+| `PATCH /api/saved_views/{id}/` | `body:display_fields`, `body:display_mode`, `body:icon`, `body:owner`, `body:set_permissions` | PLMCP-88 |
+| `GET /api/share_link_bundles/` | `query:created__date__gt`, `query:created__date__gte`, `query:created__date__lt`, `query:created__date__lte`, `query:created__day`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:created__month`, `query:created__year`, `query:documents`, `query:expiration__date__gt`, `query:expiration__date__gte`, `query:expiration__date__lt`, `query:expiration__date__lte`, `query:expiration__day`, `query:expiration__gt`, `query:expiration__gte`, `query:expiration__lt`, `query:expiration__lte`, `query:expiration__month`, `query:expiration__year`, `query:ordering`, `query:status` | PLMCP-83 |
+| `POST /api/share_link_bundles/{id}/rebuild/` | `body:document_ids`, `body:expiration_days`, `body:file_version` | PLMCP-83 |
 | `GET /api/share_links/` | `query:created__date__gt`, `query:created__date__gte`, `query:created__date__lt`, `query:created__date__lte`, `query:created__day`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:created__month`, `query:created__year`, `query:expiration__date__gt`, `query:expiration__date__gte`, `query:expiration__date__lt`, `query:expiration__date__lte`, `query:expiration__day`, `query:expiration__gt`, `query:expiration__gte`, `query:expiration__lt`, `query:expiration__lte`, `query:expiration__month`, `query:expiration__year`, `query:ordering` | PLMCP-83 |
-| `GET /api/storage_paths/` | `query:full_perms=false`, `query:id`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering`, `query:path__icontains`, `query:path__iendswith`, `query:path__iexact`, `query:path__istartswith` | PLMCP-83 |
-| `POST /api/storage_paths/` | `body:is_insensitive=false`, `body:owner`, `body:set_permissions`, `body:set_permissions.change`, `body:set_permissions.change.groups`, `body:set_permissions.change.users`, `body:set_permissions.view`, `body:set_permissions.view.groups`, `body:set_permissions.view.users` | PLMCP-83 |
-| `GET /api/storage_paths/{id}/` | `query:full_perms`, `query:full_perms=false`, `query:full_perms=true` | PLMCP-83 |
-| `PATCH /api/storage_paths/{id}/` | `body:is_insensitive=false` | PLMCP-83 |
-| `GET /api/tags/` | `query:full_perms=false`, `query:id`, `query:is_root`, `query:is_root=false`, `query:is_root=true`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
-| `POST /api/tags/` | `body:is_inbox_tag=false`, `body:is_insensitive=false`, `body:owner`, `body:set_permissions`, `body:set_permissions.change`, `body:set_permissions.change.groups`, `body:set_permissions.change.users`, `body:set_permissions.view`, `body:set_permissions.view.groups`, `body:set_permissions.view.users` | PLMCP-83 |
-| `GET /api/tags/{id}/` | `query:full_perms`, `query:full_perms=false`, `query:full_perms=true` | PLMCP-83 |
-| `PATCH /api/tags/{id}/` | `body:is_inbox_tag=false`, `body:is_insensitive=false` | PLMCP-83 |
-| `GET /api/tasks/` | `query:date_created_after`, `query:date_created_before`, `query:is_complete`, `query:is_complete=false`, `query:is_complete=true`, `query:name`, `query:ordering`, `query:owner`, `query:result`, `query:trigger_source`, `query:trigger_source=api_upload`, `query:trigger_source=email_consume`, `query:trigger_source=folder_consume`, `query:trigger_source=manual`, `query:trigger_source=scheduled`, `query:trigger_source=system`, `query:trigger_source=web_ui` | PLMCP-89 |
-| `POST /api/tasks/acknowledge/` | `body:all`, `body:all=false`, `body:all=true` | PLMCP-89 |
+| `GET /api/storage_paths/` | `query:full_perms`, `query:id`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering`, `query:path__icontains`, `query:path__iendswith`, `query:path__iexact`, `query:path__istartswith` | PLMCP-83 |
+| `POST /api/storage_paths/` | `body:owner`, `body:set_permissions` | PLMCP-83 |
+| `GET /api/storage_paths/{id}/` | `query:full_perms` | PLMCP-83 |
+| `PATCH /api/storage_paths/{id}/` | `query:full_perms` | PLMCP-83 |
+| `GET /api/tags/` | `query:full_perms`, `query:id`, `query:is_root`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
+| `POST /api/tags/` | `body:owner`, `body:set_permissions` | PLMCP-83 |
+| `GET /api/tags/{id}/` | `query:full_perms` | PLMCP-83 |
+| `PATCH /api/tags/{id}/` | `query:full_perms` | PLMCP-83 |
+| `GET /api/tasks/` | `query:date_created_after`, `query:date_created_before`, `query:is_complete`, `query:name`, `query:ordering`, `query:owner`, `query:result`, `query:trigger_source` | PLMCP-89 |
+| `POST /api/tasks/acknowledge/` | `body:all` | PLMCP-89 |
 | `POST /api/tasks/run/` | `body:task_type=apply_ai_suggestions`, `body:task_type=build_share_link`, `body:task_type=bulk_delete`, `body:task_type=bulk_update`, `body:task_type=check_workflows`, `body:task_type=consume_file`, `body:task_type=empty_trash`, `body:task_type=index_optimize`, `body:task_type=mail_fetch`, `body:task_type=reprocess_document` | PLMCP-89 |
 | `GET /api/users/` | `query:ordering`, `query:username__iendswith`, `query:username__iexact`, `query:username__istartswith` | PLMCP-83 |
-| `POST /api/users/` | `body:date_joined`, `body:is_active=false`, `body:is_staff=false`, `body:is_superuser=true` | PLMCP-83 |
-| `PATCH /api/users/{id}/` | `body:date_joined`, `body:is_active=true`, `body:is_staff=false`, `body:is_superuser=false` | PLMCP-83 |
-| `POST /api/workflows/` | `body:actions[].ai_create_missing`, `body:actions[].ai_create_missing=false`, `body:actions[].ai_create_missing=true`, `body:actions[].ai_overwrite_existing`, `body:actions[].ai_overwrite_existing=false`, `body:actions[].ai_overwrite_existing=true`, `body:actions[].ai_suggestion_fields`, `body:actions[].email.id`, `body:actions[].id`, `body:actions[].passwords`, `body:actions[].remove_all_correspondents=false`, `body:actions[].remove_all_custom_fields=false`, `body:actions[].remove_all_document_types=false`, `body:actions[].remove_all_owners=false`, `body:actions[].remove_all_permissions=false`, `body:actions[].remove_all_storage_paths=false`, `body:actions[].remove_all_tags=false`, `body:actions[].type=5`, `body:actions[].type=7`, `body:actions[].type=8`, `body:actions[].webhook.id`, `body:actions[].webhook.use_params=false`, `body:triggers[].id`, `body:triggers[].is_insensitive=false`, `body:triggers[].matching_algorithm=0`, `body:triggers[].matching_algorithm=2`, `body:triggers[].matching_algorithm=3`, `body:triggers[].matching_algorithm=5`, `body:triggers[].schedule_date_field=custom_field`, `body:triggers[].schedule_date_field=modified`, `body:triggers[].schedule_is_recurring=false` | PLMCP-87 |
-| `PATCH /api/workflows/{id}/` | `body:actions[].ai_create_missing`, `body:actions[].ai_create_missing=false`, `body:actions[].ai_create_missing=true`, `body:actions[].ai_overwrite_existing`, `body:actions[].ai_overwrite_existing=false`, `body:actions[].ai_overwrite_existing=true`, `body:actions[].ai_suggestion_fields`, `body:actions[].email.id`, `body:actions[].email.include_document=false`, `body:actions[].id`, `body:actions[].passwords`, `body:actions[].remove_all_correspondents=false`, `body:actions[].remove_all_custom_fields=false`, `body:actions[].remove_all_document_types=false`, `body:actions[].remove_all_owners=false`, `body:actions[].remove_all_permissions=false`, `body:actions[].remove_all_storage_paths=false`, `body:actions[].remove_all_tags=false`, `body:actions[].type=5`, `body:actions[].type=6`, `body:actions[].type=7`, `body:actions[].type=8`, `body:actions[].webhook.id`, `body:actions[].webhook.use_params=false`, `body:enabled=true`, `body:triggers[].id`, `body:triggers[].is_insensitive=false`, `body:triggers[].matching_algorithm=0`, `body:triggers[].matching_algorithm=2`, `body:triggers[].matching_algorithm=3`, `body:triggers[].matching_algorithm=5`, `body:triggers[].schedule_date_field=custom_field`, `body:triggers[].schedule_date_field=modified`, `body:triggers[].schedule_is_recurring=false` | PLMCP-87 |
+| `POST /api/users/` | `body:date_joined` | PLMCP-83 |
+| `PATCH /api/users/{id}/` | `body:date_joined` | PLMCP-83 |
+| `POST /api/workflows/` | `body:actions[].ai_create_missing`, `body:actions[].ai_overwrite_existing`, `body:actions[].ai_suggestion_fields`, `body:actions[].email.id`, `body:actions[].id`, `body:actions[].passwords`, `body:actions[].webhook.id`, `body:triggers[].id` | PLMCP-87 |
+| `POST /api/workflows/` | `body:actions[].type=5`, `body:actions[].type=8` | PLMCP-87 |
+| `PATCH /api/workflows/{id}/` | `body:actions[].ai_create_missing`, `body:actions[].ai_overwrite_existing`, `body:actions[].ai_suggestion_fields`, `body:actions[].email.id`, `body:actions[].id`, `body:actions[].passwords`, `body:actions[].webhook.id`, `body:triggers[].id` | PLMCP-87 |
+| `PATCH /api/workflows/{id}/` | `body:actions[].type=5`, `body:actions[].type=8` | PLMCP-87 |
 
 ## Fields only a saved view reaches
 
@@ -279,4 +288,4 @@ an argument.
 
 | Operation | Fields |
 |---|---|
-| `GET /api/documents/` | `query:added__date__gt`, `query:added__date__gt=2026-01-02`, `query:added__date__gte=2026-01-02`, `query:added__date__lt`, `query:added__date__lt=2026-01-02`, `query:added__date__lte=2026-01-02`, `query:archive_serial_number`, `query:archive_serial_number=1`, `query:archive_serial_number__gt`, `query:archive_serial_number__gt=1`, `query:archive_serial_number__isnull`, `query:archive_serial_number__isnull=true`, `query:archive_serial_number__lt`, `query:archive_serial_number__lt=1`, `query:content__icontains`, `query:content__icontains=x`, `query:correspondent__id__in`, `query:correspondent__id__in=1`, `query:correspondent__id__none`, `query:correspondent__id__none=1`, `query:created__date__gt`, `query:created__date__gt=2026-01-02`, `query:created__date__gte=2026-01-02`, `query:created__date__lt`, `query:created__date__lt=2026-01-02`, `query:created__date__lte=2026-01-02`, `query:created__day`, `query:created__day=1`, `query:created__month`, `query:created__month=1`, `query:created__year`, `query:created__year=1`, `query:custom_field_query=["e2e-string", "exact", "x"]`, `query:custom_fields__icontains`, `query:custom_fields__icontains=x`, `query:custom_fields__id__all`, `query:custom_fields__id__all=1`, `query:custom_fields__id__in`, `query:custom_fields__id__in=1`, `query:custom_fields__id__none`, `query:custom_fields__id__none=1`, `query:document_type__id__in`, `query:document_type__id__in=1`, `query:document_type__id__none`, `query:document_type__id__none=1`, `query:has_custom_fields`, `query:has_custom_fields=true`, `query:has_duplicates`, `query:has_duplicates=true`, `query:mime_type`, `query:mime_type=x`, `query:modified__date__gt`, `query:modified__date__gt=2026-01-02`, `query:modified__date__lt`, `query:modified__date__lt=2026-01-02`, `query:owner__id=1`, `query:owner__id__in`, `query:owner__id__in=1`, `query:owner__id__none`, `query:owner__id__none=1`, `query:owner__isnull`, `query:owner__isnull=true`, `query:page=2`, `query:query=x`, `query:shared_by__id`, `query:shared_by__id=1`, `query:storage_path__id__in`, `query:storage_path__id__in=1`, `query:storage_path__id__none`, `query:storage_path__id__none=1`, `query:tags__id__all=2`, `query:tags__id__in=1`, `query:tags__id__none=1`, `query:text`, `query:text=x`, `query:title_search`, `query:title_search=x` |
+| `GET /api/documents/` | `query:added__date__gt`, `query:added__date__lt`, `query:archive_serial_number`, `query:archive_serial_number__gt`, `query:archive_serial_number__isnull`, `query:archive_serial_number__lt`, `query:content__icontains`, `query:correspondent__id__in`, `query:correspondent__id__none`, `query:created__date__gt`, `query:created__date__lt`, `query:created__day`, `query:created__month`, `query:created__year`, `query:custom_fields__icontains`, `query:custom_fields__id__all`, `query:custom_fields__id__in`, `query:custom_fields__id__none`, `query:document_type__id__in`, `query:document_type__id__none`, `query:has_custom_fields`, `query:has_duplicates`, `query:mime_type`, `query:modified__date__gt`, `query:modified__date__lt`, `query:owner__id__in`, `query:owner__id__none`, `query:owner__isnull`, `query:shared_by__id`, `query:storage_path__id__in`, `query:storage_path__id__none`, `query:text`, `query:title_search` |

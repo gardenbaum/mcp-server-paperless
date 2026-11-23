@@ -55,8 +55,9 @@ def entry(
     fields: frozenset[str] | None = None,
     task: str | None = None,
     approval: Approval | None = None,
+    reason: str | None = None,
 ) -> Entry:
-    return Entry(operation=operation, fields=fields, task=task, approval=approval)
+    return Entry(operation=operation, fields=fields, task=task, approval=approval, reason=reason)
 
 
 def used(*keys: str, tool: str = "get_thing") -> Usage:
@@ -261,7 +262,6 @@ def test_a_nested_field_no_tool_sends_needs_an_entry() -> None:
     assert sorted(found) == [
         "POST /api/nested/: body:method=merge is used by no tool and not listed",
         "POST /api/nested/: body:triggers[].type is used by no tool and not listed",
-        "POST /api/nested/: body:triggers[].type=2 is used by no tool and not listed",
     ]
 
 
@@ -290,9 +290,63 @@ def test_unused_enum_values_are_listed_like_any_other_field() -> None:
             "body:triggers[].type=2",
         )
     }
-    listed = entry(NESTED, fields=names("body:method=merge"), task="PLMCP-83")
+    listed = entry(NESTED, fields=names("body:method=merge"), task="PLMCP-83", reason="no tool")
 
     assert check(sent, [listed], schema=NESTED_SCHEMA) == []
+
+
+def test_when_a_parent_is_open_only_the_parent_is_listed() -> None:
+    sent = {NESTED: used("body:method", "body:method=rotate", "body:method=merge")}
+
+    assert (
+        check(
+            sent,
+            [entry(NESTED, fields=names("body:triggers"), task="PLMCP-83")],
+            schema=NESTED_SCHEMA,
+        )
+        == []
+    )
+    found = check(
+        sent,
+        [entry(NESTED, fields=names("body:triggers", "body:triggers[].type"), task="PLMCP-83")],
+        schema=NESTED_SCHEMA,
+    )
+    assert len(found) == 1
+    assert "body:triggers[].type is listed" in found[0]
+
+
+def test_the_children_and_values_of_a_parent_reappear_once_it_is_sent() -> None:
+    sent = {NESTED: used("body:method", "body:method=rotate", "body:method=merge", "body:triggers")}
+
+    found = check(
+        sent, [entry(NESTED, fields=names("body:triggers"), task="PLMCP-83")], schema=NESTED_SCHEMA
+    )
+
+    assert sorted(found) == [
+        "POST /api/nested/: body:triggers is listed, but a tool uses it or the schema lacks it",
+        "POST /api/nested/: body:triggers[].type is used by no tool and not listed",
+    ]
+
+
+def test_the_values_of_a_field_that_is_sent_are_listed_with_a_reason() -> None:
+    sent = {
+        NESTED: used(
+            "body:method",
+            "body:method=rotate",
+            "body:triggers",
+            "body:triggers[].type",
+            "body:triggers[].type=1",
+            "body:triggers[].type=2",
+        )
+    }
+
+    found = check(
+        sent,
+        [entry(NESTED, fields=names("body:method=merge"), task="PLMCP-83")],
+        schema=NESTED_SCHEMA,
+    )
+
+    assert found == ["POST /api/nested/: body:method=merge needs a reason: why no tool sends it"]
 
 
 # Fields the adapter sends by itself stay open although a tool is credited with them.
@@ -662,7 +716,11 @@ def test_the_table_names_the_fields_only_a_saved_view_reaches() -> None:
     covered = {
         GET_ONE: Usage(
             names("run_saved_view", "x"),
-            {"query:page": names("run_saved_view"), "query:fields": names("run_saved_view", "x")},
+            {
+                "query:page": names("run_saved_view"),
+                "query:page=2": names("run_saved_view"),
+                "query:fields": names("run_saved_view", "x"),
+            },
         )
     }
 
@@ -671,6 +729,7 @@ def test_the_table_names_the_fields_only_a_saved_view_reaches() -> None:
     section = page.split("## Fields only a saved view reaches")[1]
     assert "| `GET /api/things/{id}/` | `query:page` |" in section
     assert "query:fields" not in section
+    assert "query:page=2" not in section  # names, not sample values
 
 
 def test_a_long_list_of_covering_tools_is_cut_and_counted() -> None:
@@ -690,10 +749,13 @@ def test_an_exclusion_is_shown_with_its_quote_and_date() -> None:
 
 
 def test_the_page_says_what_it_does_not_check() -> None:
-    page = render(SCHEMA, FULL, [], {})
+    page = " ".join(render(SCHEMA, FULL, [], {}).split())
 
     assert "The tool tests" in page
     assert "not checked against the schema" in page
+    assert "does not mean that the whole answer is shown" in page
+    assert "copies from the stored object" in page
+    assert "[[internal]]" in page
 
 
 # The real thing: what the tools ask of the ports, and what the adapters send for it.

@@ -2,8 +2,9 @@
 
 1. The adapter tests run once more, only to keep an answer per operation (the schema guard saves
    it): the replay below needs something the adapters can read.
-2. The tool tests run with their ports recorded: every call a tool makes to a port, with its
-   arguments and the tool's name.
+2. The scenarios of tests/tools/test_arguments.py run with their ports recorded: every call a tool
+   makes to a port, with its arguments and the tool's name. (The other tool tests add no
+   field, value or covering tool the scenarios lack, apart from tools that only look up names.)
 3. Each recorded call is handed to the real adapter on a transport that answers with the saved
    answers; the adapter records the request it builds (before it reads the answer).
 
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from pathlib import Path
 
-REPLAY_SECONDS = 0.25  # a call that waits for a task Paperless never finishes is given up
+REPLAY_SECONDS = 0.1  # a call that waits for a task Paperless never finishes is given up
 
 
 def _run(root: Path, folder: str) -> None:
@@ -59,16 +60,19 @@ def _canned(request: httpx2.Request) -> httpx2.Response:
     return httpx2.Response(status, content=content, headers=headers)
 
 
-async def _replay(calls: list[observation.PortCall]) -> None:
+async def _replay(calls: list[observation.PortCall]) -> list[str]:
+    """Hand each distinct call to the adapter; the calls that sent no request are named."""
     client, _ = streaming(_canned)
     ports = paperless_ports(client)
     done: set[str] = set()
+    silent: list[str] = []
     for call in calls:
         key = repr((call.tool, call.field, call.method, call.args, call.kwargs))
         if call.tool is None or call.field == "raw" or key in done:
             continue
         done.add(key)
         token = observation.CURRENT_TOOL.set(call.tool)
+        before = len(observation.OBSERVED)
         try:
             with contextlib.suppress(
                 Exception
@@ -79,6 +83,9 @@ async def _replay(calls: list[observation.PortCall]) -> None:
                     _ = await method(*call.args, **call.kwargs)
         finally:
             observation.CURRENT_TOOL.reset(token)
+        if len(observation.OBSERVED) == before:
+            silent.append(f"{call.tool}: {call.field}.{call.method}")
+    return silent
 
 
 def derive(root: Path) -> list[observation.Observation]:
@@ -88,10 +95,11 @@ def derive(root: Path) -> list[observation.Observation]:
     observation.PORT_CALLS.clear()
     observation.RECORDING = True
     try:
-        _run(root, "tests/tools")
+        _run(root, "tests/tools/test_arguments.py")
     finally:
         observation.RECORDING = False
     calls = list(observation.PORT_CALLS)
     observation.OBSERVED.clear()
-    asyncio.run(_replay(calls))
+    silent = asyncio.run(_replay(calls))
+    assert not silent, f"these port calls made the adapter send no request: {silent}"
     return list(observation.OBSERVED)
