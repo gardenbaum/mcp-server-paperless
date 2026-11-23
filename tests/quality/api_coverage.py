@@ -366,7 +366,7 @@ def problems(  # noqa: PLR0913 -- the inputs of the check
         sent_by_tools = set(covered[operation].used)
         # What hangs under a plumbing field (a value, a child) is no plumbing by itself: unsent,
         # it is work that the row would hide. Only a value (`name=value`) may be named in the row
-        # and so accepted; a child field has to be sent by a tool, or be open under a task.
+        # and so accepted; a child field has to be sent by a tool, or its parent is no plumbing.
         below = {
             key
             for key in field_keys(fields)
@@ -653,7 +653,8 @@ every constant an adapter sends. A row is checked: the operation is in the schem
 each field is in the schema and some tool sends it, there is one row per operation, and no
 field is also `[[internal]]`. What hangs under a plumbing field is left out of the table above;
 when no tool sends it, it is a problem, unless it is a value (`name=value`, one the adapter never
-chooses) that the row names. A child field cannot be named away.
+chooses) that the row names. A child field cannot be named away: a tool sends it, or its parent is
+no plumbing.
 
 | Operation | Fields | Why |
 |---|---|---|

@@ -304,7 +304,8 @@ every constant an adapter sends. A row is checked: the operation is in the schem
 each field is in the schema and some tool sends it, there is one row per operation, and no
 field is also `[[internal]]`. What hangs under a plumbing field is left out of the table above;
 when no tool sends it, it is a problem, unless it is a value (`name=value`, one the adapter never
-chooses) that the row names. A child field cannot be named away.
+chooses) that the row names. A child field cannot be named away: a tool sends it, or its parent is
+no plumbing.
 
 | Operation | Fields | Why |
 |---|---|---|
