@@ -18,7 +18,12 @@ ROOT = Path(__file__).parents[2]
 DOCKERFILE = ROOT / "Dockerfile"
 WORKFLOW = ROOT / ".github" / "workflows" / "image.yml"
 
-FROM = re.compile(r"^FROM\s+(?P<ref>\S+)(?:\s+AS\s+(?P<name>\S+))?\s*$", re.MULTILINE)
+# Docker reads instructions in any case, with flags, and the last of two stages of one name.
+FROM = re.compile(
+    r"^FROM(?:[ \t]+--\S+)*[ \t]+(?P<ref>[^\s-]\S*)(?:[ \t]+AS[ \t]+(?P<name>\S+))?[ \t]*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+ANY_FROM = re.compile(r"^\s*FROM\b", re.MULTILINE | re.IGNORECASE)
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
 SHA_PIN = re.compile(r"^[\w./-]+@[0-9a-f]{40}$")
 JOBS = ("build", "publish", "tag")
@@ -63,9 +68,14 @@ def steps(name: str) -> list[dict[str, object]]:
 def stage(name: str) -> str:
     """The instructions of one Dockerfile stage, without comments; fails when it is missing."""
     text = DOCKERFILE.read_text(encoding="utf-8")
-    found = re.search(rf"^FROM \S+ AS {name}\n(.*?)(?=^FROM |\Z)", text, re.MULTILINE | re.DOTALL)
-    assert found, f"the Dockerfile has no stage {name}"
-    return re.sub(r"^#.*\n", "", str(found[1]), flags=re.MULTILINE)
+    found = list(FROM.finditer(text))
+    names = [str(match["name"]).lower() for match in found]
+    assert len(found) == len(ANY_FROM.findall(text)), "a FROM line these guards cannot read"
+    assert len(set(names)) == len(names), "two stages of one name"
+    assert name in names, f"the Dockerfile has no stage {name}"
+    number = names.index(name)
+    end = found[number + 1].start() if number + 1 < len(found) else len(text)
+    return re.sub(r"^#.*\n", "", text[found[number].end() + 1 : end], flags=re.MULTILINE)
 
 
 def instructions(text: str) -> list[str]:
@@ -79,6 +89,7 @@ def test_every_base_image_is_pinned_by_digest_with_a_renovate_comment() -> None:
     stages = {found["name"] for found in FROM.finditer(text) if found["name"]}
     external = [found for found in FROM.finditer(text) if found["ref"] not in stages]
 
+    assert len(list(FROM.finditer(text))) == len(ANY_FROM.findall(text))
     assert len(external) >= 2  # the uv stage and the python base
     for found in external:
         assert DIGEST.search(found["ref"]), f"{found['ref']} is not pinned by digest"
@@ -127,7 +138,16 @@ def test_the_http_runtime_is_the_default_target() -> None:
 
 @pytest.mark.decision("decision-38")
 def test_the_stdio_target_is_the_scanned_filesystem_without_the_http_settings() -> None:
-    """Only metadata on top of `base`: no layer the scan of the HTTP image has not seen."""
+    """Only metadata on top of `base`, in both: no layer the scan of the HTTP image has not seen."""
+    assert {line.split()[0] for line in instructions(stage("runtime")) if line} == {
+        "ENV",
+        "USER",
+        "EXPOSE",
+        "HEALTHCHECK",
+        "ARG",
+        "LABEL",
+        "ENTRYPOINT",
+    }
     assert {line.split()[0] for line in instructions(stage("base")) if line} == {"RUN", "COPY"}
     stdio = [line for line in instructions(stage("stdio")) if line]
 
@@ -152,8 +172,17 @@ def test_the_stdio_target_is_built_and_smoke_tested_but_never_published() -> Non
     assert mapping(target["with"])["load"] is True
     assert "cache-to" not in mapping(target["with"]), "it would replace the cache of the full build"
     assert smoke["run"] == f"scripts/image_stdio_smoke.sh {mapping(target['with'])['tags']}"
-    for step in (target, smoke):
+    compare = next(step for step in build if "RootFS" in str(step.get("run")))
+    assert build.index(target) < build.index(compare)
+    layers = "\"$(docker image inspect --format '{{json .RootFS.Layers}}' mcp-server-paperless%s)\""
+    assert str(compare["run"]).splitlines() == [
+        f"http={layers % ':ci'}",
+        f"stdio={layers % '-stdio:ci'}",
+        '[[ "$http" == "$stdio" ]]',
+    ]
+    for step in (target, compare, smoke):
         assert "if" not in step
+        assert "continue-on-error" not in step
     for name in ("publish", "tag"):
         assert "stdio" not in yaml.safe_dump(job(name))
         assert not any("target" in mapping(step.get("with", {})) for step in steps(name))
@@ -365,8 +394,8 @@ def test_the_image_workflow_is_separate_from_ci_so_it_never_gates_a_merge() -> N
 
 
 @pytest.mark.decision("decision-28")
-def test_the_runtime_stage_removes_pip_and_upgrades_os_packages() -> None:
-    runtime = stage("base") + stage("runtime")
+def test_the_base_stage_removes_pip_and_upgrades_os_packages() -> None:
+    runtime = stage("base")
 
     assert "apt-get upgrade -y --no-install-recommends" in runtime
     assert "rm -rf /var/lib/apt/lists/*" in runtime

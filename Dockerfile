@@ -45,8 +45,9 @@ RUN groupadd --system --gid 10001 mcp-server-paperless \
 COPY --from=builder /app/.venv /app/.venv
 
 # The Docker MCP Catalog builds this target and runs it over stdio: `docker build --target stdio`.
-# Only metadata, so its filesystem is the scanned one; no HTTP settings, port or health check, for
-# nothing listens. Never published from here.
+# Only metadata, so within one build its filesystem is the one the workflow scans (a later build, like
+# the catalog's, gets newer packages from apt-get upgrade). No HTTP settings, port or health check,
+# for nothing listens. Never published from here.
 FROM base AS stdio
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \

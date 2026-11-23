@@ -96,6 +96,13 @@ jobs:
           tags: mcp-server-paperless-stdio:ci
           cache-from: type=gha,scope=${{ matrix.arch }}
 
+      # The scan above covers the stdio target only while both have the same filesystem.
+      - name: Require the stdio target to have exactly the scanned layers
+        run: |
+          http="$(docker image inspect --format '{{json .RootFS.Layers}}' mcp-server-paperless:ci)"
+          stdio="$(docker image inspect --format '{{json .RootFS.Layers}}' mcp-server-paperless-stdio:ci)"
+          [[ "$http" == "$stdio" ]]
+
       - name: Smoke test the stdio target (refusal, read-only, non-root, initialize and tools/list)
         run: scripts/image_stdio_smoke.sh mcp-server-paperless-stdio:ci
 

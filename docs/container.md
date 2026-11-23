@@ -97,7 +97,15 @@ are decision-28, carried over into decision-38.
 
 The published image serves HTTP only. The Dockerfile also has the build target `stdio`, for the
 [Docker MCP Catalog](https://hub.docker.com/mcp), which builds local servers from their repository
-and starts them over stdin and stdout. `docker build --target stdio .` builds it, `just
-image-stdio-smoke` also checks it. It runs as the same user, listens on no port and needs only
-`PAPERLESS_URL` and `PAPERLESS_TOKEN`; uploading by path works only for directories you mount. The
-rules are decision-38.
+and starts them over stdin and stdout. `docker build --target stdio .` builds it and
+`just image-stdio-smoke` also checks it. It runs as the same user, listens on no port and needs only
+`PAPERLESS_URL` and `PAPERLESS_TOKEN`:
+
+```sh
+docker build --target stdio --tag mcp-server-paperless-stdio .
+docker run --rm -i --init -e PAPERLESS_URL=https://paperless.example.org \
+    -e PAPERLESS_TOKEN=your-api-token mcp-server-paperless-stdio
+```
+
+Uploading by path works only for directories you mount (`-v`, readable for uid 10001) and name in
+`PAPERLESS_MCP_UPLOAD_DIRS` by their path in the container. The rules are decision-38.
