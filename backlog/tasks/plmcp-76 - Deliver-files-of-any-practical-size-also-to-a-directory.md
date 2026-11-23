@@ -4,7 +4,7 @@ title: Deliver files of any practical size, also to a directory
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:47Z'
-updated_date: '2026-11-23T12:22:00Z'
+updated_date: '2026-11-23T19:20:36Z'
 labels: []
 dependencies: []
 priority: high
@@ -36,3 +36,9 @@ download_document attaches files up to 512 KiB by default; larger ones are only 
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+From PLMCP-74: GET /api/documents/{id}/download/ takes version_id in the port (DocumentReader.get_document_file), sent as ?version=; the coverage row for query:version moved off this task. get_document_pages uses it. No tool delivers the file of a version yet, so AC 1 still covers versions. The core toolset has 20 of 20 tools since decision-42: a further default tool needs a removal or a new budget decision (AC 5 says 19 of 20).
+<!-- SECTION:NOTES:END -->

@@ -34,7 +34,7 @@ def environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def exit_message(capsys: pytest.CaptureFixture[str]) -> str:
     with pytest.raises(SystemExit) as caught:
-        main()
+        main(lambda: None)
     assert caught.value.code == 1
     err = capsys.readouterr().err
     assert "Traceback" not in err
@@ -194,7 +194,7 @@ def runner(
 
 def http_exit_message(capsys: pytest.CaptureFixture[str]) -> str:
     with pytest.raises(SystemExit) as caught:
-        main_http(runner()[1])
+        main_http(runner()[1], lambda: None)
     assert caught.value.code == 1
     err = capsys.readouterr().err
     assert "Traceback" not in err
@@ -246,6 +246,29 @@ def test_invalid_http_settings_are_named_but_not_echoed(
     assert "short-secret" not in err
 
 
+@pytest.mark.decision("decision-42")
+@pytest.mark.usefixtures("isolated_logging", "connection")
+def test_both_servers_protect_their_process_before_they_serve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_HTTP_AUTH_TOKENS", HTTP_TOKEN)
+    done: list[str] = []
+
+    def stop() -> None:
+        done.append("protect")
+        raise InterruptedError
+
+    def run(_server: uvicorn.Server) -> bool:
+        done.append("run")
+        return True
+
+    main_http(run, lambda: done.append("protect"))
+    with pytest.raises(InterruptedError):
+        main(stop)
+
+    assert done == ["protect", "run", "protect"]
+
+
 @pytest.mark.usefixtures("isolated_logging", "connection")
 def test_http_serves_with_the_configured_address_and_tokens(
     monkeypatch: pytest.MonkeyPatch,
@@ -254,7 +277,7 @@ def test_http_serves_with_the_configured_address_and_tokens(
     monkeypatch.setenv("PAPERLESS_MCP_HTTP_PORT", "8123")
     seen, run = runner()
 
-    main_http(run)
+    main_http(run, lambda: None)
 
     assert [(s.ran, s.config.host, s.config.port) for s in seen] == [(True, "127.0.0.1", 8123)]
     config = seen[0].config
@@ -313,7 +336,7 @@ def test_http_serves_with_the_oidc_layer_alone(monkeypatch: pytest.MonkeyPatch) 
             monkeypatch.setenv(f"PAPERLESS_MCP_OIDC_{name}", value)
         seen, run = runner()
 
-        main_http(run)
+        main_http(run, lambda: None)
 
     assert [s.ran for s in seen] == [True]
 
@@ -325,7 +348,7 @@ def test_a_server_that_did_not_come_up_ends_the_process_with_exit_code_1(
     monkeypatch.setenv("PAPERLESS_MCP_HTTP_AUTH_TOKENS", HTTP_TOKEN)
 
     with pytest.raises(SystemExit) as caught:
-        main_http(runner(starts=False)[1])
+        main_http(runner(starts=False)[1], lambda: None)
 
     assert caught.value.code == 1
     assert "did not start" in capsys.readouterr().err

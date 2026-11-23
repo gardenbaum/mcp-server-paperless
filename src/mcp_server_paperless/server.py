@@ -44,6 +44,7 @@ from mcp_server_paperless.paperless.workflows import (
     PaperlessWorkflowReader,
     PaperlessWorkflowWriter,
 )
+from mcp_server_paperless.rendering.limits import protect_server
 from mcp_server_paperless.rendering.runner import ChildRenderer
 from mcp_server_paperless.services.admin_accounts import AccountAdmin
 from mcp_server_paperless.services.admin_system import SystemAdmin
@@ -162,6 +163,9 @@ INTRO = (
     "tags, correspondents, document types and storage paths."
 )
 START = f"Start with {OVERVIEW} to learn the instance and what the current user may do."
+
+# What the entry points do first, with the one process of the server.
+protect_process: Final = protect_server
 
 NO_TOOLS = (
     "No tools are left to offer: PAPERLESS_MCP_TOOLSETS, PAPERLESS_MCP_READ_ONLY,"

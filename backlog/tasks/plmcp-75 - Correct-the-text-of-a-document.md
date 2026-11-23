@@ -4,7 +4,7 @@ title: Correct the text of a document
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:46Z'
-updated_date: '2026-11-23T12:22:01Z'
+updated_date: '2026-11-23T19:20:37Z'
 labels: []
 dependencies:
   - PLMCP-74
@@ -37,3 +37,9 @@ Once a page can be read as an image, a wrong or missing OCR passage should be co
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+From PLMCP-74: pages can be read as images with get_document_pages (any version). The core toolset has 20 of 20 tools since decision-42, so AC 6 (one free slot) no longer holds: the tool goes to an opt-in toolset, extends an existing tool, or needs a new budget decision. Reading the text of a version (GET /api/documents/{id}/ with version) is still open here.
+<!-- SECTION:NOTES:END -->

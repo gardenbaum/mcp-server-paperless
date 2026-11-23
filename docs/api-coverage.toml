@@ -275,11 +275,6 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/documents/{id}/download/"
-fields = ["query:version"]
-task = "PLMCP-76"
-
-[[open_fields]]
-operation = "GET /api/documents/{id}/download/"
 fields = ["query:follow_formatting"]
 task = "PLMCP-83"
 
@@ -287,11 +282,6 @@ task = "PLMCP-83"
 operation = "GET /api/documents/{id}/history/"
 fields = ["query:page", "query:page_size"]
 task = "PLMCP-89"
-
-[[open_fields]]
-operation = "GET /api/documents/{id}/metadata/"
-fields = ["query:version"]
-task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/documents/{id}/notes/"

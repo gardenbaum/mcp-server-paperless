@@ -108,7 +108,8 @@ what to know before switching it on.
 ### `core`
 
 On by default. Find and read documents (`search_documents` with full text, similarity and
-structured filters, `get_document`, `get_document_content` in slices, thumbnails and downloads),
+structured filters, `get_document`, `get_document_content` in slices, thumbnails, page images
+(`get_document_pages`) and downloads),
 file them (`update_document`, notes), upload new ones, follow background tasks, and maintain
 tags, correspondents, document types, storage paths and custom fields. `run_saved_view` runs a
 saved view that `list_taxonomy` lists, with the rows and paging of `search_documents`. Names are
@@ -298,6 +299,27 @@ model names the file instead of encoding it.
 files travel base64-encoded (a third larger) in one MCP message and cost the client context
 tokens; the FastMCP client reads at most 1 MiB per HTTP event by default, so raise the limit only
 if your clients allow it.
+
+### Page images
+
+`get_document_pages` shows pages as images a model can read, from the original, the archive version
+and any version of a document. PDFs and JPEG, PNG, TIFF and WebP images are drawn; other originals
+(text, e-mail, Office) are shown through their archive version if they have one. Its limits are
+fixed, and `PAPERLESS_MCP_MAX_DOWNLOAD_BYTES` does not apply, because the file goes to the renderer
+and not to the assistant:
+
+| Limit | Value |
+|---|---|
+| File | 100 MiB, and 120 seconds to download it |
+| Image original | 100 megapixels per page |
+| Images of one call | 5, together 720 KiB; the pages that did not fit are named |
+| Long side of an image | 256 to 2576 pixels, 1568 by default; a region of a page can be enlarged to it |
+| Renderer | 30 seconds and 1 GiB, one document at a time; another call waits up to 30 seconds |
+
+A page that does not fit alone is shown at a lower quality or smaller, and the report says so. Every
+call downloads the file again. Text whose font is not embedded can look different where the system
+has no such font, as in the container image. What the renderer may and may not do is in
+[SECURITY.md](../SECURITY.md).
 
 ## Startup and logs
 

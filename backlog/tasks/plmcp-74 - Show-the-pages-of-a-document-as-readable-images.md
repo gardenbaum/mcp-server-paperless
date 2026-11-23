@@ -1,10 +1,10 @@
 ---
 id: PLMCP-74
 title: Show the pages of a document as readable images
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-23T12:14:45Z'
-updated_date: '2026-11-23T12:21:58Z'
+updated_date: '2026-11-23T18:45:20Z'
 labels: []
 dependencies: []
 priority: high
@@ -38,3 +38,15 @@ get_document_thumbnail shows only a small image of page 1, and download_document
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. version_id through DocumentReader.get_document_file and get_document_metadata (fake, adapter, contract tests).
+2. Package rendering/: worker.render for PDFs (page, size, region, forms, errors), then images (JPEG, PNG, TIFF, WebP), then byte budget and next pages.
+3. rendering/runner: one child process per call, no environment, no shared stdio, bounded time, memory, output; cancellation kills it; hardening of child and parent.
+4. services/pages: version and source choice, limits, texts, one render at a time.
+5. Tool get_document_pages (core, MEDIA_TOOLS), registry, snapshots, stdio and HTTP transport tests.
+6. Smoke scripts, windows-latest job, weekly pypdfium2 alert, compose overlay with Tika and Gotenberg, E2E tests (run in phase 2).
+7. Decision, docs, coverage table, notes of PLMCP-75, 76, 79, 83; gates.
+<!-- SECTION:PLAN:END -->

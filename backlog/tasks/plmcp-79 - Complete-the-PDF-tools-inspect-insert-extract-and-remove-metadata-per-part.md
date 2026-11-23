@@ -4,7 +4,7 @@ title: 'Complete the PDF tools: inspect, insert, extract and remove, metadata pe
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:50Z'
-updated_date: '2026-11-23T12:25:16Z'
+updated_date: '2026-11-23T19:20:37Z'
 labels: []
 dependencies:
   - PLMCP-74
@@ -39,3 +39,9 @@ The toolset pdf (off by default) already rotates, merges, splits, deletes pages,
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+From PLMCP-74: the renderer is rendering/ (pypdfium2 and Pillow in a bounded child process, decision-42). get_document_pages reports page_count and shows pages; page sizes and rotation are not reported yet and can come from the same child (rendering/worker.py).
+<!-- SECTION:NOTES:END -->

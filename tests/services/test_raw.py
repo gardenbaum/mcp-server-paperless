@@ -709,7 +709,8 @@ def test_a_denied_endpoint_has_exact_words() -> None:
         _ = check_path("/api/documents/1/thumb/")
     assert refused.value.message == "Reading /api/.../thumb/ is not available: it returns a file."
     assert refused.value.hint == (
-        "Files are returned by download_document and get_document_thumbnail, which cap their size."
+        "Files are returned by download_document, get_document_pages and get_document_thumbnail, "
+        "which cap their size."
     )
 
 
