@@ -263,3 +263,47 @@ def test_the_page_names_the_commands_that_install_the_plugin(page: str) -> None:
     ) in text
     assert "/reload-plugins" in text
     assert "claude mcp remove paperless" in text
+
+
+def renovate_rule() -> dict[str, object]:
+    """The one Renovate rule that follows the releases of this package."""
+    managers = cast("list[object]", load(ROOT / "renovate.json")["customManagers"])
+    rules = [mapping(item) for item in managers]
+    found = [rule for rule in rules if rule.get("depNameTemplate") == "mcp-server-paperless"]
+    assert len(found) == 1
+    return found[0]
+
+
+def test_renovate_follows_the_releases_on_pypi() -> None:
+    rule = renovate_rule()
+
+    assert rule["customType"] == "regex"
+    assert rule["datasourceTemplate"] == "pypi"
+    assert rule["versioningTemplate"] == "pep440"
+    patterns = cast("list[str]", rule["managerFilePatterns"])
+    files = [path.relative_to(ROOT).as_posix() for path in PLUGIN.rglob("*") if path.is_file()]
+    files += [".claude-plugin/marketplace.json", ".cursor-plugin/marketplace.json", "server.json"]
+    matched = {file for file in files for item in patterns if re.search(item.strip("/"), file)}
+    assert matched == {"plugin/.claude-plugin/plugin.json", "plugin/.cursor-plugin/plugin.json"}
+
+
+@pytest.mark.parametrize("client", [CLAUDE, CURSOR])
+def test_renovate_raises_the_version_and_the_pin_of_a_manifest_together(client: str) -> None:
+    """Its pull request keeps the version and the pin equal, which the tests above require."""
+    text = (PLUGIN / client / "plugin.json").read_text(encoding="utf-8")
+    current = str(manifest(client)["version"])
+    raised = text
+    matches = 0
+    for pattern in cast("list[str]", renovate_rule()["matchStrings"]):
+        # Renovate's regex dialect writes a named group without Python's P.
+        for found in re.finditer(pattern.replace("(?<", "(?P<"), text):
+            assert found["currentValue"] == current
+            matches += 1
+            raised = raised.replace(found[0], found[0].replace(current, "98.76.54"))
+
+    assert matches == 2
+    assert current not in raised
+    after = mapping(cast("object", json.loads(raised)))
+    entry = mapping(mapping(after["mcpServers"])["paperless"])
+    assert after["version"] == "98.76.54"
+    assert entry["args"] == ["mcp-server-paperless==98.76.54"]
