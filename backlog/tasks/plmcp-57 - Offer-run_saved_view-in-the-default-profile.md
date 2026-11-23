@@ -1,9 +1,11 @@
 ---
 id: PLMCP-57
 title: Offer run_saved_view in the default profile
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T00:52:08Z'
+updated_date: '2026-11-23T01:15:45Z'
 labels: []
 dependencies: []
 type: feature
@@ -31,3 +33,13 @@ User feedback (2026-11-23): "The most helpful thing would be if the server could
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Failing tests: default profile offers run_saved_view and no other view tool; views toolset has five tools, read-only keeps two.
+2. TOOL_TOOLSETS maps run_saved_view to core; the tool stays in tools/views.py and takes its tag from the table.
+3. decision-34; doc-1 table via backlog doc update; README counts (19 default, core 17, views 5), configuration.md, generated docs/tools.md.
+4. list_taxonomy description points to run_saved_view.
+5. Regenerate surface snapshots deliberately.
+<!-- SECTION:PLAN:END -->

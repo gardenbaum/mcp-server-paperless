@@ -50,21 +50,23 @@ def titles(output: Json) -> list[str]:
     return [str(d["title"]) for d in cast("list[Json]", output["documents"])]
 
 
-async def test_the_views_are_not_in_the_default_profile() -> None:
-    async with Client(serve(fake())) as client:
-        names = {tool.name for tool in await client.list_tools()}
-
-    assert names.isdisjoint(TOOLS)
-
-
-async def test_the_views_toolset_offers_six_tools_and_read_only_mode_keeps_three() -> None:
+async def test_the_views_toolset_offers_five_tools_and_read_only_mode_keeps_two() -> None:
     async with Client(serve(fake(), toolsets=["views"])) as client:
         names = {tool.name for tool in await client.list_tools()}
     async with Client(serve(fake(), toolsets=["views"], read_only=True)) as client:
         read_only = {tool.name for tool in await client.list_tools()}
 
-    assert names == TOOLS
-    assert read_only == {"list_saved_views", "get_saved_view", "run_saved_view"}
+    assert names == TOOLS - {"run_saved_view"}
+    assert read_only == {"list_saved_views", "get_saved_view"}
+
+
+@pytest.mark.decision("decision-34")
+async def test_the_default_profile_runs_saved_views_without_the_views_toolset() -> None:
+    async with Client(serve(fake())) as client:
+        names = {tool.name for tool in await client.list_tools()}
+
+    assert "run_saved_view" in names
+    assert names.isdisjoint(TOOLS - {"run_saved_view"})
 
 
 async def test_the_saved_views_are_listed_with_rule_labels() -> None:

@@ -2,7 +2,9 @@
 
 Paperless stores a view as numbered filter rules and leaves running it to its web UI;
 ``run_saved_view`` translates the rules into the document query the search tool uses, so a view
-returns the rows and paging of ``search_documents``. The toolset is opt-in.
+returns the rows and paging of ``search_documents``. The toolset is opt-in, except
+``run_saved_view``: it belongs to ``core`` (decision-34), so the default profile runs the views it
+lists, and it stays in this module beside the rule translation it shares.
 """
 
 from typing import Annotated
@@ -20,7 +22,13 @@ from mcp_server_paperless.domain.views import (
     ViewDeletion,
     ViewEdit,
 )
-from mcp_server_paperless.tools._shared import ANNOTATIONS, Confirm, boundary, services
+from mcp_server_paperless.tools._shared import (
+    ANNOTATIONS,
+    TOOL_TOOLSETS,
+    Confirm,
+    boundary,
+    services,
+)
 
 TOOLSET = "views"
 PAGE_SIZE = 25
@@ -185,7 +193,7 @@ async def delete_saved_view(ctx: Context, view: View, *, confirm: Confirm = Fals
     return await services(ctx).views.delete(view, confirm=confirm)
 
 
-@provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["run_saved_view"])
+@provider.tool(tags={TOOL_TOOLSETS["run_saved_view"]}, annotations=ANNOTATIONS["run_saved_view"])
 @boundary
 async def run_saved_view(
     ctx: Context,
