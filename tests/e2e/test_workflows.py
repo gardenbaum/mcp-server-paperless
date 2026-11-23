@@ -1,4 +1,4 @@
-"""The workflows toolset through the assembled server against the seeded Paperless 3.4.2 stack.
+"""The workflows toolset through the assembled server against the seeded Paperless stack.
 
 Every workflow here is disabled or has a trigger that no file matches (`NEVER`): a live workflow
 acts on documents other tests consume.
@@ -12,7 +12,7 @@ from contract.conftest import drop_orphaned_workflow_parts
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import results
+from e2e.helpers import results, since
 from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
@@ -214,3 +214,31 @@ async def test_an_unsupported_type_and_a_misplaced_setting_are_refused_with_an_e
     assert "'assign_title' belongs to assignment actions" in misplaced
     assert "No workflow trigger type is called 'hourly'" in nothing
     assert stored(stack, name) == []
+
+
+async def test_a_manual_trigger_is_read_and_kept_and_only_the_web_ui_writes_it(
+    client: Connected, stack: Stack
+) -> None:
+    """Paperless 3.5 has manual triggers (type 5); 3.4.2 does not, so there the tool refuses it."""
+    name = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
+    refusal = await refused(client, "create_workflow", name=name, triggers=[{"type": "manual"}])
+    assert "cannot be written by this server" in refusal
+    assert stored(stack, name) == []
+    if not since("3.5.0"):
+        return
+    made = stack.admin.post(
+        "/api/workflows/",
+        json={"name": name, "enabled": False, "triggers": [{"type": 5}], "actions": []},
+    )
+    _ = made.raise_for_status()
+
+    shown = await call(client, "get_workflow", workflow=name)
+    replaced = await refused(client, "update_workflow", workflow=name, triggers=[NEVER])
+    renamed = await call(client, "update_workflow", workflow=name, order=7)
+
+    assert [(t["type"], t["type_name"]) for t in cast("list[Json]", shown["triggers"])] == [
+        (5, "manual")
+    ]
+    assert "holds triggers this server cannot write" in replaced
+    assert renamed["order"] == 7
+    assert [t["type"] for t in cast("list[Json]", renamed["triggers"])] == [5]

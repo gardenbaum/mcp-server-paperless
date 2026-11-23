@@ -4,7 +4,7 @@ title: Correct the text of a document
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:46Z'
-updated_date: '2026-11-23T12:22:01Z'
+updated_date: '2026-11-23T18:30:54Z'
 labels: []
 dependencies:
   - PLMCP-74
@@ -27,7 +27,7 @@ Once a page can be read as an image, a wrong or missing OCR passage should be co
 - [ ] #4 A decision supplements decision-12: content changes need confirm
 - [ ] #5 The tool says that reprocessing overwrites the correction, and full-text search finds the new text (live test)
 - [ ] #6 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
-- [ ] #7 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover whole and passage replacement, a version, a missing or ambiguous passage, a change in between and a restricted user
+- [ ] #7 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover whole and passage replacement, a version, a missing or ambiguous passage, a change in between and a restricted user
 <!-- AC:END -->
 
 ## Definition of Done

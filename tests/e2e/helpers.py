@@ -32,8 +32,8 @@ if TYPE_CHECKING:
 PORT = os.environ.get("PAPERLESS_E2E_PORT", "8010")
 BASE_URL = f"http://127.0.0.1:{PORT}"
 API_VERSION = 10
-# The release the stack runs: the pinned one, or the one `just e2e-latest` started.
-EXPECTED_VERSION = os.environ.get("PAPERLESS_E2E_VERSION", "3.4.2")
+# The release the stack runs: the one of compose.yaml, or the one `just e2e-latest` started.
+EXPECTED_VERSION = os.environ.get("PAPERLESS_E2E_VERSION", "3.5.1")
 
 
 def since(minimum: str) -> bool:

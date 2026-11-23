@@ -1,4 +1,4 @@
-"""The admin toolset through the assembled server on Paperless 3.4.2, on objects of its own.
+"""The admin toolset through the assembled server on the E2E Paperless, on objects of its own.
 
 Users and groups are created by the tests and removed again; the only configuration setting
 touched is `app_title`, which the `title` fixture puts back; the only task run is the sanity

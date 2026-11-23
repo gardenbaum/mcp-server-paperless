@@ -282,7 +282,7 @@ async def test_an_upload_fails_unless_the_test_opts_in_and_leaves_no_task() -> N
     assert len(state.documents) == 2
 
 
-# --- the release setting (decision-29): the pinned 3.4.2 by default, 3.5 behaviour on request
+# --- the release setting (decision-29): 3.4.2, the oldest supported, by default; 3.5 on request
 
 
 def state_35(*users: FakeUser) -> FakeState:
@@ -296,7 +296,7 @@ def writer(state: FakeState, user: str) -> FakePaperless:
 
 
 @pytest.mark.decision("decision-29")
-async def test_the_fake_is_the_pinned_release_unless_told_otherwise() -> None:
+async def test_the_fake_is_the_oldest_supported_release_unless_told_otherwise() -> None:
     assert seeded().release == "3.4.2"
     assert (await FakePaperless(seeded(), user="admin").get_overview()).paperless_version == "3.4.2"
     assert (await FakePaperless(state_35(), user="admin").get_overview()).paperless_version == (

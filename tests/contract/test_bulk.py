@@ -1,4 +1,4 @@
-"""Contract of BulkWriter on the fake and live Paperless 3.4.2.
+"""Contract of BulkWriter on the fake and a live Paperless.
 
 Every test creates the documents and taxonomy objects it changes (names with `SCRATCH_ITEM` or
 `SCRATCH_TAG` and a uuid, documents through `backend.new_document`) and never touches a seeded

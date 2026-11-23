@@ -553,6 +553,39 @@ def test_the_rest_of_a_workflow_is_still_checked(body: dict[str, object]) -> Non
         )
 
 
+QUEUED_OPERATIONS = [
+    "bulk_edit",
+    "delete",
+    "edit_pdf",
+    "merge",
+    "merge_as_versions",
+    "remove_password",
+    "reprocess",
+    "rotate",
+]
+
+
+def queued(operation: str) -> httpx2.Request:
+    return httpx2.Request(
+        "POST", f"{BASE_URL}/api/documents/{operation}/", json={}, headers=HEADERS
+    )
+
+
+@pytest.mark.parametrize("operation", QUEUED_OPERATIONS)
+@pytest.mark.parametrize("body", [{"result": "OK"}, {"result": "OK", "task_id": "t-1"}])
+def test_a_queued_operation_answers_with_or_without_a_task_id(
+    operation: str, body: dict[str, object]
+) -> None:
+    """3.5 names the task it queued; 3.4.2 (still supported) answers only "OK"."""
+    check_response(queued(operation), httpx2.Response(200, json=body))
+
+
+@pytest.mark.parametrize("body", [{"task_id": "t-1"}, {"result": "OK", "task_id": 5}])
+def test_the_rest_of_a_queued_answer_is_still_checked(body: dict[str, object]) -> None:
+    with pytest.raises(SchemaViolationError):
+        check_response(queued("rotate"), httpx2.Response(200, json=body))
+
+
 # The guard records what each adapter method sends, for the coverage table (PLMCP-91).
 TRASH_PAGE: dict[str, object] = {"count": 0, "next": None, "previous": None, "results": []}
 

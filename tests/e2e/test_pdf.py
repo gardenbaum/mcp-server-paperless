@@ -1,4 +1,4 @@
-"""The pdf toolset through the assembled server on Paperless 3.4.2, on documents of its own.
+"""The pdf toolset through the assembled server on the E2E Paperless, on documents of its own.
 
 Titles start with `plmcp23-`. Every document and version a test made is deleted again at its end
 and its trash entry emptied, so nothing is left on the shared stack, also when a test fails. The

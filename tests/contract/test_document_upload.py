@@ -1,4 +1,4 @@
-"""Contract of DocumentWriter.upload_document: the same assertions against the fake and 3.4.2.
+"""Contract of DocumentWriter.upload_document: the same assertions on the fake and a live Paperless.
 
 Every test uploads documents of its own (unique title and content) and registers what
 consumption created with `backend.track_document`, so the live backend deletes it again.

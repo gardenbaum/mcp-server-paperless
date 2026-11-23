@@ -1,4 +1,4 @@
-"""Smoke test of the installed `mcp-server-paperless-http` script over HTTP against Paperless 3.4.2.
+"""Smoke test of the installed `mcp-server-paperless-http` script over HTTP against the E2E stack.
 
 The real process, a real socket and FastMCP's HTTP client with a bearer token: what a remote
 client does.

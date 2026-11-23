@@ -1,4 +1,4 @@
-"""Contract of AiReader against the fake and live Paperless 3.4.2.
+"""Contract of AiReader against the fake and a live Paperless.
 
 Two groups. The first runs on the `backend` fixture: the live stack of CI has Paperless AI
 switched off, so these pin what every AI endpoint answers then (a feature error, and the

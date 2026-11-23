@@ -4,7 +4,7 @@ title: 'Complete bulk changes: individual values and selection by search'
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:50Z'
-updated_date: '2026-11-23T12:25:16Z'
+updated_date: '2026-11-23T18:30:56Z'
 labels: []
 dependencies:
   - PLMCP-91
@@ -16,7 +16,7 @@ ordinal: 69000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The toolset bulk (off by default) applies one operation with the same values to up to 100 documents named by id; different values need one update_document call each, and there is no bulk endpoint for that, so each document needs its own PATCH. Rotate, merge, split, edit and permissions are already covered by the pdf and permissions toolsets. Requested by the owner on 2026-11-23.
+The toolset bulk (off by default) applies one operation with the same values to up to 100 documents named by id; different values need one update_document call each, and there is no bulk endpoint for that, so each document needs its own PATCH. Rotate, merge, split, edit and permissions are already covered by the pdf and permissions toolsets. Requested by the owner on 2026-11-23. Paperless 3.5.1 (PLMCP-97) added the bulk_edit method run_workflow (it runs a workflow with a manual trigger on the selected documents; see PLMCP-87) and `from_webui` on the delete request (the web UI sets it to keep its selection). Every queued document operation now answers a task_id, which the adapter already follows.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -25,8 +25,8 @@ The toolset bulk (off by default) applies one operation with the same values to 
 - [ ] #2 Documents can be chosen by ids, by the search filters or by a saved view, up to a stated maximum, with the matched set shown first and protected against changes in between
 - [ ] #3 Reading many documents in one call is possible (fields selectable) within a size limit; content only on request (decision-4 keeps OCR text out of list rows)
 - [ ] #4 Notes can be added to many documents in one call, with a result per document
-- [ ] #5 Every endpoint of bulk operations (every bulk_edit and bulk_edit_objects method) in the 3.4 schema is covered; a proposed omission is put to the owner, and only an owner-approved exclusion, quoted with its date, is recorded (in the coverage table of PLMCP-91)
-- [ ] #6 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover limits, rate, partial failures, a changed set between preview and confirm and a restricted user
+- [ ] #5 Every endpoint of bulk operations (every bulk_edit and bulk_edit_objects method) in the vendored 3.5.1 schema is covered; a proposed omission is put to the owner, and only an owner-approved exclusion, quoted with its date, is recorded (in the coverage table of PLMCP-91)
+- [ ] #6 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover limits, rate, partial failures, a changed set between preview and confirm and a restricted user
 <!-- AC:END -->
 
 ## Definition of Done

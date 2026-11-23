@@ -4,7 +4,7 @@ title: Deliver files of any practical size, also to a directory
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:47Z'
-updated_date: '2026-11-23T12:22:00Z'
+updated_date: '2026-11-23T18:30:55Z'
 labels: []
 dependencies: []
 priority: high
@@ -26,7 +26,7 @@ download_document attaches files up to 512 KiB by default; larger ones are only 
 - [ ] #4 A second decision keeps or changes the default attach limits, from measured client limits
 - [ ] #5 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
 - [ ] #6 Security tests cover symlinks, traversal, hard links, dot files, races and full disks; docs, the plugin settings and the 'never written to disk' tool texts match
-- [ ] #7 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover every file kind, parts, overwrite with and without confirm and both transports
+- [ ] #7 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover every file kind, parts, overwrite with and without confirm and both transports
 <!-- AC:END -->
 
 ## Definition of Done

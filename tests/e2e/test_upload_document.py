@@ -1,4 +1,4 @@
-"""upload_document on Paperless 3.4.2: a PDF goes in through the tool and is found afterwards.
+"""upload_document on the E2E Paperless: a PDF goes in through the tool and is found afterwards.
 
 Each test uploads documents of its own (unique title and content). The fixture waits for every
 task it was told about to end, then deletes the documents and empties their trash entries, so

@@ -3,7 +3,7 @@ id: doc-2
 title: AI contributor workflow
 type: guide
 created_date: '2026-11-12T16:23:00Z'
-updated_date: '2026-11-23T11:11:37Z'
+updated_date: '2026-11-23T18:31:13Z'
 ---
 # AI contributor workflow
 
@@ -42,17 +42,17 @@ At most two tasks at a time, chosen for independent dependencies and little file
 
 - Python 3.15 stays a required check. An upstream warning that breaks 3.15 gets one narrowly scoped `filterwarnings` entry with a reason and a follow-up task to remove it.
 - Registry and meta checks that could pass vacuously get a self-test with a synthetic violating provider.
-- Every port added to the domain gets a FakePaperless implementation and contract tests on fake and live 3.4.2, with realistic pagination and PATCH semantics.
+- Every port added to the domain gets a FakePaperless implementation and contract tests on fake and live 3.5.1, with realistic pagination and PATCH semantics.
 - Inline `# pragma` and `# type: ignore` are banned; coverage exclusions are reviewed `exclude_also` patterns in pyproject.toml.
 - A gate, threshold, contract or accepted decision changes only through a new decision that supersedes it.
-- Verification against the owner's own Paperless instance is the owner's job; automated tests use the E2E stack (3.4.2).
+- Verification against the owner's own Paperless instance is the owner's job; automated tests use the E2E stack (3.5.1).
 - The tool error boundary re-raises ToolError unchanged; any other exception is logged by type only and masked.
 - Split FakePaperless into per-port mixins once it grows further.
 - Always use the latest Backlog.md CLI (owner, 2026-11-22), enforced by scripts rather than memory: `just backlog-update` installs `backlog.md@latest` and refreshes the managed block of CLAUDE.md and AGENTS.md non-interactively (`scripts/backlog_instructions.py`; only that block may change), and the weekly `backlog-drift.yml` workflow keeps one `backlog-drift` issue open while the `backlog.md-instructions-version` header of either file is behind the latest npm release. Cloud sessions install the latest release in the environment's setup script (`npm install -g backlog.md`); run `just backlog-update` when the issue appears, review and commit the diff.
 
 ## Global constraints (summary of doc-1)
 
-- paperless-ngx 3.x only, API version 10; reference version 3.4.2. FastMCP 4.1.x. httpx2 is the only HTTP library.
+- paperless-ngx 3.x only, API version 10; reference version 3.5.1 (3.4.2 stays supported). FastMCP 4.1.x. httpx2 is the only HTTP library.
 - Python 3.14 baseline; CI also runs 3.15.
 - Layers: entrypoints → server.py (composition root, the only module importing both tools/ and paperless/) → tools/ and paperless/ → services/ → domain/. domain imports nothing from the package and no I/O or MCP library; services import domain only; paperless imports domain, never fastmcp/mcp/services/tools; tools import services and domain, never httpx2/paperless; only paperless imports httpx2. Toolset modules in tools/ are independent.
 - Every request sends `Accept: application/json; version=10` and the auth header of the current credential.

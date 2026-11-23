@@ -15,13 +15,14 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from mcp_server_paperless.domain.documents import NameOrId
 from mcp_server_paperless.domain.taxonomy import TaxonomyKind  # noqa: TC001 -- NamedTuple needs it
 
-# The types of Paperless 3.4.2 (WorkflowTrigger.WorkflowTriggerType, WorkflowAction.
+# The types of Paperless 3.5.1 (WorkflowTrigger.WorkflowTriggerType, WorkflowAction.
 # WorkflowActionType) with the labels tools use. A test compares them with the vendored schema.
 TRIGGER_TYPES: Final[Mapping[int, str]] = {
     1: "consumption started",
     2: "document added",
     3: "document updated",
     4: "scheduled",
+    5: "manual",  # Paperless 3.5 and later
 }
 ACTION_TYPES: Final[Mapping[int, str]] = {
     1: "assignment",
@@ -52,8 +53,9 @@ SCHEDULE_DATE_FIELDS: Final = ("added", "created", "modified", "custom_field")
 
 # The types a tool may write. Password removal stores passwords this server must never echo, so it
 # could neither show nor keep them; applying AI suggestions makes Paperless query its AI backend
-# for every document that matches. Both stay with the Paperless web UI.
-WRITABLE_TRIGGER_TYPES: Final = frozenset(TRIGGER_TYPES)
+# for every document that matches. A manual trigger exists only from Paperless 3.5 on, which
+# this server supports besides 3.4.2. All three stay with the Paperless web UI.
+WRITABLE_TRIGGER_TYPES: Final = frozenset({1, 2, 3, 4})
 WRITABLE_ACTION_TYPES: Final = frozenset({1, 2, 3, 4, 6, 7})
 
 type FieldShape = Literal["one", "list", "text", "flag", "number", "json"]

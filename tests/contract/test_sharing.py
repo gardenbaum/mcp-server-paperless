@@ -1,4 +1,4 @@
-"""Contract of SharingReader and SharingWriter: the same assertions against the fake and live 3.4.2.
+"""Contract of SharingReader and SharingWriter: the same assertions on the fake and live.
 
 Links and bundles belong to documents a test creates (the live backend deletes those, and Paperless
 deletes their links with them); a test deletes the bundles it makes through the `shares` fixture,

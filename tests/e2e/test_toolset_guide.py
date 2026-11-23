@@ -1,4 +1,4 @@
-"""The guide to the toolsets on Paperless 3.4.2: every combination, and real processes.
+"""The guide to the toolsets on the E2E Paperless: every combination, and real processes.
 
 What Paperless answers about AI is taken once from the live stack for each kind of user (the
 overview the adapter returns), and every combination of selection, disabled tools and read-only

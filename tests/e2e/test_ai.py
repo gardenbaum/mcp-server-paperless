@@ -1,4 +1,4 @@
-"""The ai toolset through the assembled server on Paperless 3.4.2.
+"""The ai toolset through the assembled server on the E2E Paperless.
 
 The stack of `just e2e` has Paperless AI switched off: there the toolset must be hidden. The
 tests marked `ai_e2e` need a Paperless with an LLM backend and skip without one (`just e2e-ai`).

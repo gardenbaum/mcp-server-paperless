@@ -1,4 +1,4 @@
-"""Smoke test of the installed `mcp-server-paperless` script over stdio against Paperless 3.4.2.
+"""Smoke test of the installed `mcp-server-paperless` script over stdio against the E2E Paperless.
 
 This is how Claude Code runs the server (`claude mcp add`): a subprocess speaking MCP on
 stdin/stdout, configured by environment variables, logging to stderr.

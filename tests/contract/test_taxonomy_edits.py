@@ -1,4 +1,4 @@
-"""Contract of TaxonomyWriter's create, update and delete: fake and live Paperless 3.4.2.
+"""Contract of TaxonomyWriter's create, update and delete: fake and a live Paperless.
 
 Every object is named with `SCRATCH_ITEM` and a uuid; the live backend deletes what is left when
 the test ends. Documents are the test's own (`backend.new_document`), never a seeded one.

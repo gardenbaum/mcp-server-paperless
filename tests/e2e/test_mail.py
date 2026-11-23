@@ -1,4 +1,4 @@
-"""The mail toolset through the assembled server against the seeded Paperless 3.4.2 stack.
+"""The mail toolset through the assembled server against the seeded Paperless stack.
 
 The stack has no IMAP server and compose.yaml is not given one on purpose (PLMCP-29): a mail server
 would be one more container for every developer and CI run, to test what the fake, the adapter

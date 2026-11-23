@@ -1,4 +1,4 @@
-"""Contract of DocumentReader: the same assertions against the fake and live Paperless 3.4.2.
+"""Contract of DocumentReader: the same assertions against the fake and a live Paperless.
 
 The seed's ids differ between the backends, so every test looks them up by name first.
 """

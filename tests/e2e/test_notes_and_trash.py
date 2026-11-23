@@ -1,4 +1,4 @@
-"""Notes and deletion through the assembled server on Paperless 3.4.2, on documents of its own.
+"""Notes and deletion through the assembled server on the E2E Paperless, on documents of its own.
 
 Every document is deleted again at the end and its trash entry emptied, so nothing is left.
 """

@@ -4,6 +4,7 @@ title: Find and resolve duplicate documents
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:21:59Z'
+updated_date: '2026-11-23T18:30:57Z'
 labels: []
 dependencies:
   - PLMCP-77
@@ -25,7 +26,7 @@ Paperless 3.4 keeps duplicates and knows them (duplicate_documents, filter has_d
 - [ ] #3 The preview says that merging as a version is final: the merged documents do not go to the trash and lose their metadata and notes (as merge_documents_as_versions says), while trashed ones can be restored
 - [ ] #4 Documents the user cannot see or may not change are stated, and nothing is changed in part without being named
 - [ ] #5 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
-- [ ] #6 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover the filter, duplicates in the trash, both ways of resolving and restricted users
+- [ ] #6 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover the filter, duplicates in the trash, both ways of resolving and restricted users
 <!-- AC:END -->
 
 ## Definition of Done

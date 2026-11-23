@@ -1,4 +1,4 @@
-"""Contract of AdminReader and AdminWriter: the same assertions against the fake and live 3.4.2.
+"""Contract of AdminReader and AdminWriter: the same assertions on the fake and a live Paperless.
 
 Users and groups get a unique name per test; the `people` fixture deletes what a test made, also
 when it failed (the stack is shared). The configuration is shared by every test of the stack: the

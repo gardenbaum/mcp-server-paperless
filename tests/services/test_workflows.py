@@ -623,6 +623,62 @@ async def test_an_unsupported_trigger_type_is_rejected_naming_the_types_there_ar
     assert setup.fake.writes == []
 
 
+@pytest.mark.parametrize("kind", [5, "manual", "Manual"])
+async def test_a_manual_trigger_is_read_but_not_written(kind: int | str) -> None:
+    """Paperless 3.5 has manual triggers; writing them would fail on 3.4.2, so only the UI does."""
+    setup = Setup()
+
+    with pytest.raises(
+        Validation, match=r"trigger type 'manual' \(5\) cannot be written"
+    ) as raised:
+        _ = await setup.workflows.create(
+            WorkflowCreate(name="n", triggers=(TriggerInput(type=kind),)), confirm=True
+        )
+
+    assert "web UI" in (raised.value.hint or "")
+    assert setup.fake.writes == []
+
+
+async def test_a_manual_trigger_is_refused_in_any_place_of_a_create_or_an_update() -> None:
+    setup = Setup()
+    _ = setup.seed("w", enabled=False)
+    triggers = (NEVER, TriggerInput(type="manual"))
+
+    with pytest.raises(Validation, match=r"'manual' \(5\) cannot be written"):
+        _ = await setup.workflows.create(WorkflowCreate(name="n", triggers=triggers), confirm=True)
+    with pytest.raises(Validation, match=r"'manual' \(5\) cannot be written"):
+        _ = await setup.workflows.update("w", WorkflowEdit(triggers=triggers), confirm=True)
+
+    assert setup.fake.writes == []
+
+
+async def test_a_manual_trigger_is_listed_by_its_label() -> None:
+    setup = Setup()
+    _ = setup.seed("w", enabled=False, triggers=[WorkflowTrigger(id=1, type=5, settings={})])
+
+    listed = await setup.workflows.get("w")
+
+    assert [(t.type, t.type_name) for t in listed.triggers] == [(5, "manual")]
+
+
+async def test_replacing_triggers_never_drops_a_manual_one() -> None:
+    setup = Setup()
+    _ = setup.seed(
+        "w",
+        enabled=False,
+        triggers=[WorkflowTrigger(id=1, type=5, settings={}), WorkflowTrigger(id=2, type=2)],
+    )
+
+    with pytest.raises(Validation, match="holds triggers this server cannot write") as raised:
+        _ = await setup.workflows.update("w", WorkflowEdit(triggers=(NEVER,)), confirm=False)
+    renamed = await setup.workflows.update("w", WorkflowEdit(name="v"), confirm=False)
+
+    assert "manual (id 1)" in raised.value.message
+    assert "web UI" in (raised.value.hint or "")
+    assert setup.fake.writes == ["update"]
+    assert [t.type for t in renamed.triggers] == [5, 2]  # untouched, in the order stored
+
+
 @pytest.mark.parametrize(
     ("kind", "message"),
     [

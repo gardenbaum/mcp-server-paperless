@@ -4014,6 +4014,7 @@
         webhook: url, headers, params or body, include_document), 'move to trash' and 'remote OCR'
         (consumption triggers only). Settings of another action type than the one given are an error.
         Password removal and applying AI suggestions cannot be written here; use the Paperless web UI.
+        A 'manual' trigger (Paperless 3.5 and later) is listed but cannot be written here either.
         
         A workflow runs by itself on every matching document once it is enabled. Without confirm, an
         enabled workflow that moves to trash, e-mails, calls a webhook, removes things or changes owner or
@@ -18527,6 +18528,7 @@
         webhook: url, headers, params or body, include_document), 'move to trash' and 'remote OCR'
         (consumption triggers only). Settings of another action type than the one given are an error.
         Password removal and applying AI suggestions cannot be written here; use the Paperless web UI.
+        A 'manual' trigger (Paperless 3.5 and later) is listed but cannot be written here either.
         
         A workflow runs by itself on every matching document once it is enabled. Without confirm, an
         enabled workflow that moves to trash, e-mails, calls a webhook, removes things or changes owner or

@@ -4,7 +4,7 @@ title: Check for duplicates before and after an upload
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:48Z'
-updated_date: '2026-11-23T12:21:58Z'
+updated_date: '2026-11-23T18:30:55Z'
 labels: []
 dependencies: []
 priority: high
@@ -21,11 +21,11 @@ By default Paperless 3.4 keeps duplicates (with PAPERLESS_CONSUMER_DELETE_DUPLIC
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 upload_document and upload_document_version check before sending whether a visible document has the same original checksum, name the matches and upload anyway only when told to
-- [ ] #2 Versions and the trash are checked before sending if a probe of 3.4.2 shows a way; otherwise they are reported after the upload from duplicate_documents; the tool says what was not checked (trash, versions, archive checksum, documents the user cannot see)
+- [ ] #2 Versions and the trash are checked before sending if a probe of 3.5.1 shows a way; otherwise they are reported after the upload from duplicate_documents; the tool says what was not checked (trash, versions, archive checksum, documents the user cannot see)
 - [ ] #3 The result of a finished upload reports the duplicates Paperless found, also through get_task when the upload was not waited for, and a rejected duplicate names the existing document
 - [ ] #4 Over stdio the error for base64-only use and the tool descriptions say how to enable upload by path; over HTTP nothing suggests it, and the rules of decision-7 hold
 - [ ] #5 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
-- [ ] #6 Contract tests on the fake and Paperless 3.4.2, tool tests and E2E cover matches, no match, upload anyway, rejection by Paperless, a restricted user and the checksum algorithm in use (SHA-256 is pinned for versions)
+- [ ] #6 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover matches, no match, upload anyway, rejection by Paperless, a restricted user and the checksum algorithm in use (SHA-256 is pinned for versions)
 <!-- AC:END -->
 
 ## Definition of Done

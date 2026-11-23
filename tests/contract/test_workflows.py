@@ -1,4 +1,4 @@
-"""Contract of WorkflowReader and WorkflowWriter, on the fake and on live 3.4.2.
+"""Contract of WorkflowReader and WorkflowWriter, on the fake and on a live Paperless.
 
 Workflows a test creates carry the scratch prefix (SCRATCH_WORKFLOW); the live backend deletes
 them. A live workflow acts on documents other tests consume, so they are disabled or have a trigger
@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from contract.conftest import SCRATCH_WORKFLOW
+from contract.conftest import BOTH_RELEASES, SCRATCH_WORKFLOW, since
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 from mcp_server_paperless.domain.workflows import (
     Workflow,
@@ -183,6 +183,29 @@ async def test_an_unknown_trigger_or_action_type_is_refused_and_nothing_is_made(
         _ = await writer.create_workflow(name, safe(actions=(WorkflowAction(type=99),)))
 
     assert [w for w in await backend.admin.workflows.list_workflows() if w.name == name] == []
+
+
+@BOTH_RELEASES
+@pytest.mark.decision("decision-29")
+@pytest.mark.contract(CREATE)
+@pytest.mark.contract(LIST)
+@pytest.mark.contract(UPDATE)
+async def test_a_manual_trigger_exists_from_3_5_and_is_kept_by_an_update_of_the_name(
+    backend: Backend,
+) -> None:
+    writer = backend.admin.workflow_writes
+    manual = safe(triggers=(WorkflowTrigger(type=5),), actions=())
+    if not since(backend, "3.5.0"):
+        with pytest.raises(Validation):
+            _ = await writer.create_workflow(scratch(), manual)
+        return
+
+    made = await writer.create_workflow(scratch(), manual)
+    renamed = await writer.update_workflow(made.id, WorkflowValues(name=scratch()))
+
+    assert [t.type for t in made.triggers] == [5]
+    assert renamed.triggers == made.triggers
+    assert await named(backend.admin, renamed.name) == renamed
 
 
 @pytest.mark.contract(CREATE)

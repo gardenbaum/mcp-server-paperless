@@ -1,4 +1,4 @@
-"""search_documents through the assembled server against the seeded Paperless 3.4.2 stack."""
+"""search_documents through the assembled server against the seeded Paperless stack."""
 
 from datetime import date, timedelta
 from typing import TYPE_CHECKING, cast

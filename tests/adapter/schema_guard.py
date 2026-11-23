@@ -246,9 +246,31 @@ _NO_PERMISSIONS = (
         "list asks for `full_perms` (PLMCP-25)"
     ),
 )
-OMITTED_RESPONSE_PROPERTIES: Mapping[tuple[str, str, int], tuple[str, str]] = dict.fromkeys(
-    _SAVED_VIEW_ENDPOINTS, _NO_PERMISSIONS
+# The document operations that queue a task: 3.5 names it (`task_id`, which the 3.5.1 schema
+# requires), 3.4.2 answers only {"result": "OK"} and the adapter supports both (decision-29).
+_QUEUED_ENDPOINTS = tuple(
+    ("POST", f"/api/documents/{name}/", 200)
+    for name in (
+        "bulk_edit",
+        "delete",
+        "edit_pdf",
+        "merge",
+        "merge_as_versions",
+        "remove_password",
+        "reprocess",
+        "rotate",
+    )
 )
+_NO_TASK_ID = (
+    "task_id",
+    "3.4.2 answers a queued document operation without the `task_id` the 3.5.1 schema requires",
+)
+OMITTED_RESPONSE_PROPERTIES: Mapping[tuple[str, str, int], tuple[str, str]] = {
+    **dict.fromkeys(_SAVED_VIEW_ENDPOINTS, _NO_PERMISSIONS),
+    **dict.fromkeys(_QUEUED_ENDPOINTS, _NO_TASK_ID),
+}
+# What an omitted property is filled in with (an empty object unless listed): the type it has.
+FILLED_IN: Mapping[str, object] = {"task_id": "filled-in"}
 # Responses to a `full_perms=true` request that carry `permissions` instead of the
 # `user_can_change` the schema requires (PLMCP-28): the lists and the updates of the five objects.
 _PERMISSION_PATHS = (
@@ -578,7 +600,7 @@ def _with_omitted_properties(
     objects = cast("Json", body)
     rows = objects.get("results")
     for row in cast("list[Json]", rows) if isinstance(rows, list) else [objects]:
-        _ = row.setdefault(name, {})
+        _ = row.setdefault(name, FILLED_IN.get(name, {}))
     return httpx2.Response(
         response.status_code, json=body, headers={"Content-Type": "application/json"}
     )

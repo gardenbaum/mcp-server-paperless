@@ -4,7 +4,7 @@ title: Close the rest of the Paperless API
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:53Z'
-updated_date: '2026-11-23T17:23:23Z'
+updated_date: '2026-11-23T18:30:56Z'
 labels: []
 dependencies:
   - PLMCP-91
@@ -31,14 +31,14 @@ ordinal: 71000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The guard (PLMCP-91) shows endpoint by endpoint what is covered. After the other tasks of this feedback, this one closes what is left. The owner wants reading and writing, as complete as the API allows. Requested by the owner on 2026-11-23.
+The guard (PLMCP-91) shows endpoint by endpoint what is covered. After the other tasks of this feedback, this one closes what is left. The owner wants reading and writing, as complete as the API allows. Requested by the owner on 2026-11-23. Paperless 3.5.1 (PLMCP-97) added fields that no other task names: the `format` of a note (plain or markdown) when one is added and in the notes read back, and `from_webui` of the bulk_edit, reprocess and merge_as_versions requests (the web UI sets it to keep its selection). They stay open here until a tool sends them or the owner approves an exclusion.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Each endpoint and field the table of PLMCP-91 still leaves open gets a tool, or an exclusion the owner approved, quoted with its date in the table; when this was written that included next ASN, autocomplete, storage path test, selection data and profile (which returns the API token and is denied by decision-25)
 - [ ] #2 The README's statement about coverage matches the table
-- [ ] #3 New operations have contract tests on the fake and Paperless 3.4.2, tool tests and E2E
+- [ ] #3 New operations have contract tests on the fake and Paperless 3.5.1, tool tests and E2E
 <!-- AC:END -->
 
 ## Definition of Done

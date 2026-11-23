@@ -16,6 +16,9 @@
 #                 projections, constants of helpers that read every page, the stored object sent
 #                 back. No feature, no open work; shown apart, checked against the schema. A value
 #                 or id a tool argument decides (id__in, task_type) is neither.
+#                 What hangs under a plumbing field and is sent by no tool (full_perms=false, a
+#                 value of the stored object that no scenario holds) is named in the row too, or
+#                 it counts as a problem.
 # [[exclusion]]   an owner-approved exclusion: quote, date and a Markdown file under backlog/
 #                 (an excluded value of a field that is sent also needs a `reason`)
 # [[undeclared]]  query parameters the generated schema omits (listed by hand)
@@ -134,12 +137,12 @@ params = ["version"]
 
 [[plumbing]]
 operation = "POST /api/mail_accounts/{id}/process/"
-fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security", "body:username", "body:password", "body:character_set", "body:is_token"]
-reason = "the stored account is sent back; the tool takes only its id"
+fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security", "body:username", "body:password", "body:character_set", "body:is_token", "body:imap_security=2", "body:imap_security=3", "body:is_token=true"]
+reason = "the stored account is sent back; the tool takes only its id. The values the scenario account does not hold are named: the other security modes and a token account"
 
 [[plumbing]]
 operation = "GET /api/tags/"
-fields = ["query:full_perms"]
+fields = ["query:full_perms", "query:full_perms=false"]
 reason = "reads the grants: sent as true whenever the adapter needs them, no tool argument sets it"
 
 [[plumbing]]
@@ -149,7 +152,7 @@ reason = "reads the grants back: sent as true, no tool argument sets it"
 
 [[plumbing]]
 operation = "GET /api/correspondents/"
-fields = ["query:full_perms"]
+fields = ["query:full_perms", "query:full_perms=false"]
 reason = "reads the grants: sent as true whenever the adapter needs them, no tool argument sets it"
 
 [[plumbing]]
@@ -159,7 +162,7 @@ reason = "reads the grants back: sent as true, no tool argument sets it"
 
 [[plumbing]]
 operation = "GET /api/document_types/"
-fields = ["query:full_perms"]
+fields = ["query:full_perms", "query:full_perms=false"]
 reason = "reads the grants: sent as true whenever the adapter needs them, no tool argument sets it"
 
 [[plumbing]]
@@ -169,7 +172,7 @@ reason = "reads the grants back: sent as true, no tool argument sets it"
 
 [[plumbing]]
 operation = "GET /api/storage_paths/"
-fields = ["query:full_perms"]
+fields = ["query:full_perms", "query:full_perms=false"]
 reason = "reads the grants: sent as true whenever the adapter needs them, no tool argument sets it"
 
 [[plumbing]]
@@ -179,7 +182,7 @@ reason = "reads the grants back: sent as true, no tool argument sets it"
 
 [[plumbing]]
 operation = "GET /api/documents/"
-fields = ["query:full_perms"]
+fields = ["query:full_perms", "query:full_perms=false"]
 reason = "full_perms reads the grants back; no tool argument sets it"
 
 [[plumbing]]
@@ -359,6 +362,11 @@ fields = ["query:ordering", "query:username__iendswith", "query:username__iexact
 task = "PLMCP-83"
 
 [[open_fields]]
+operation = "GET /api/workflows/"
+fields = ["query:enabled", "query:id", "query:id__in", "query:trigger_type"]
+task = "PLMCP-87"
+
+[[open_fields]]
 operation = "PATCH /api/config/{id}/"
 fields = ["body:app_logo"]
 task = "PLMCP-83"
@@ -405,9 +413,9 @@ task = "PLMCP-87"
 
 [[open_fields]]
 operation = "PATCH /api/workflows/{id}/"
-fields = ["body:actions[].type=5", "body:actions[].type=8"]
+fields = ["body:actions[].type=5", "body:actions[].type=8", "body:triggers[].type=5"]
 task = "PLMCP-87"
-reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them"
+reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them. A manual trigger (type 5, Paperless 3.5 and later) is read but not written: 3.4.2 refuses it, so the web UI keeps it (PLMCP-97, decided in PLMCP-87)."
 
 [[open_fields]]
 operation = "POST /api/bulk_edit_objects/"
@@ -464,6 +472,12 @@ fields = ["body:from_webui"]
 task = "PLMCP-83"
 
 [[open_fields]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:method=run_workflow"]
+task = "PLMCP-80"
+reason = "Paperless 3.5 runs a workflow with a manual trigger on selected documents; no tool does, and the workflows toolset does not write manual triggers (PLMCP-97)"
+
+[[open_fields]]
 operation = "POST /api/documents/edit_pdf/"
 fields = ["body:include_metadata", "body:source_mode"]
 task = "PLMCP-79"
@@ -480,6 +494,11 @@ task = "PLMCP-79"
 
 [[open_fields]]
 operation = "POST /api/documents/merge/"
+fields = ["body:from_webui"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/documents/merge_as_versions/"
 fields = ["body:from_webui"]
 task = "PLMCP-83"
 
@@ -504,6 +523,11 @@ fields = ["body:all", "body:excluded_documents", "body:filters"]
 task = "PLMCP-79"
 
 [[open_fields]]
+operation = "POST /api/documents/reprocess/"
+fields = ["body:from_webui"]
+task = "PLMCP-83"
+
+[[open_fields]]
 operation = "POST /api/documents/rotate/"
 fields = ["body:all", "body:excluded_documents", "body:filters", "body:source_mode"]
 task = "PLMCP-79"
@@ -515,7 +539,7 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/documents/{id}/notes/"
-fields = ["query:id"]
+fields = ["body:format", "query:id"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -581,6 +605,6 @@ task = "PLMCP-87"
 
 [[open_fields]]
 operation = "POST /api/workflows/"
-fields = ["body:actions[].type=5", "body:actions[].type=8"]
+fields = ["body:actions[].type=5", "body:actions[].type=8", "body:triggers[].type=5"]
 task = "PLMCP-87"
-reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them"
+reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them. A manual trigger (type 5, Paperless 3.5 and later) is read but not written: 3.4.2 refuses it, so the web UI keeps it (PLMCP-97, decided in PLMCP-87)."

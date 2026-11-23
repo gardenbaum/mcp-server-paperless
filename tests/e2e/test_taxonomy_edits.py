@@ -1,4 +1,4 @@
-"""create, update and delete_taxonomy_item through the assembled server on Paperless 3.4.2.
+"""create, update and delete_taxonomy_item through the assembled server on the E2E Paperless.
 
 Every object is named `plmcp19-<uuid>...` and deleted again, also when a test fails; documents
 are the test's own. Seeded objects are never changed.

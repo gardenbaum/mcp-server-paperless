@@ -116,7 +116,7 @@ sources, not run; ❌ means not found; open an issue if something is wrong or ha
 
 | | Tools by default / in total | Toolsets and read-only mode | Names instead of ids | Confirms what is final | Runs saved views | Notices misread full-text syntax | HTTP | Tested on a real Paperless |
 |---|---|---|---|---|---|---|---|---|
-| **mcp-server-paperless** | 19 / 87 | ✅ opt-in | ✅ tags, types, people, views | ✅ with a preview | ✅ | ✅ | bearer, OIDC | 3.4.2 after every merge, newest 3.x weekly |
+| **mcp-server-paperless** | 19 / 87 | ✅ opt-in | ✅ tags, types, people, views | ✅ with a preview | ✅ | ✅ | bearer, OIDC | 3.5.1 after every merge, newest 3.x weekly |
 | [OrellBuehler/paperless-mcp](https://github.com/OrellBuehler/paperless-mcp) | 123 / 126 | ✅ all on by default | ❌ | hints only | ❌ | ❌ | bearer, OAuth | ❌ |
 | [freeformz/paperless-ngx-mcp](https://github.com/freeformz/paperless-ngx-mcp) | 123 / 123 | ❌ | ❌ | ❌ | ❌ | ❌ | stdio only | ❌ |
 | [cubinet-code/paperless-ngx-mcp](https://github.com/cubinet-code/paperless-ngx-mcp) | 109 / 109 | ❌ | in results | ✅ | ❌ | ❌ | no auth | 3.2.1 on every change |
@@ -318,7 +318,7 @@ them.
 
 | | |
 |---|---|
-| **paperless-ngx** | 3.4.2 and later (API version 10). Every change is tested against 3.4.2, the latest 3.x release weekly. 2.x is not supported |
+| **paperless-ngx** | 3.4.2 and later (API version 10). Every change is tested against 3.5.1, the latest 3.x release weekly; the 3.4.2 behaviour is tested through the fake in its 3.4 mode and, on demand, against the 3.4.2 image. 2.x is not supported |
 | **Clients** | Claude Code and Claude Desktop over stdio, claude.ai custom connectors and other MCP clients over Streamable HTTP |
 | **Runtime** | Python 3.14 or later (`uvx` fetches it for you), or the container image |
 

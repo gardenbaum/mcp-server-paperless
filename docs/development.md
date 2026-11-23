@@ -54,6 +54,9 @@ just drift-check              # vendored Paperless schema and docs vs. the lates
 
 The last three also run as weekly GitHub workflows and by manual dispatch.
 
+`PAPERLESS_E2E_VERSION=3.4.2 just e2e-latest` runs the suite against 3.4.2, the oldest supported
+release (the reference stack of `just e2e-up` is 3.5.1).
+
 ## Documentation
 
 `docs/tools.md` is generated from the tool surface: run `just docs-tools` after a tool, its

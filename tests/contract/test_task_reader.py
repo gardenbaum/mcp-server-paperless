@@ -1,4 +1,4 @@
-"""Contract of TaskReader: the same assertions against the fake and live Paperless 3.4.2.
+"""Contract of TaskReader: the same assertions against the fake and a live Paperless.
 
 Task ids are Celery UUIDs; the backend's `consume` hands out the id of a finished consumption
 task (live: a real upload of a generated PDF, whose document is deleted again).

@@ -1,7 +1,7 @@
 """FakePaperless: an in-memory Paperless that implements the domain ports (design 9.1).
 
-It behaves like 3.4.2, the pinned release, and from 3.5 on when `FakeState.release` says so
-(decision-29).
+It behaves like 3.4.2 (the oldest supported release), and from 3.5 on when
+`FakeState.release` says so (decision-29).
 
 Services and tools are tested against it instead of mocks. The contract suite (tests/contract)
 runs the same tests against it and against the adapter on live Paperless, so it cannot drift.
@@ -539,7 +539,7 @@ class FakeState:
     # The id of the last note created: note ids are global and never reused.
     last_note_id: int = 1
     system_status: SystemStatus = HEALTHY
-    # The paperless-ngx release the fake behaves like (decision-29): the pinned one, or a 3.5.x
+    # The paperless-ngx release the fake behaves like (decision-29): 3.4.2 by default, or a 3.5.x
     # for what 3.5 changed (see `FakePaperless.since_3_5`).
     release: str = VERSION
     ai_enabled: bool = False
@@ -2834,7 +2834,9 @@ class FakePaperless:
     def _workflows(self) -> tuple[WorkflowData, Actor]:
         state = self.state
         user = self.user
-        data = WorkflowData(state.workflows, state.workflow_object_id)
+        data = WorkflowData(
+            state.workflows, state.workflow_object_id, manual_triggers=self.since_3_5
+        )
         return data, Actor(
             has=user.has, known=lambda kind: frozenset(r.id for r in self._rows(kind))
         )
