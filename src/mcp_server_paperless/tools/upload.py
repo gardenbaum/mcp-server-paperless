@@ -15,7 +15,7 @@ from pydantic import Field, JsonValue
 
 from mcp_server_paperless.domain.documents import NameOrId, UploadMetadata, UploadResult
 from mcp_server_paperless.services.tasks import MAX_WAIT_SECONDS
-from mcp_server_paperless.tools._shared import ANNOTATIONS, boundary, services
+from mcp_server_paperless.tools._shared import ANNOTATIONS, DOCUMENT_TEXT, boundary, services
 
 TOOLSET = "core"
 
@@ -68,7 +68,7 @@ COMMON = (
     "created. Paperless consumes the file later: the result holds the task_id and, with "
     "wait_seconds, the new document_id and web_url; a problem found only then (a taken archive "
     "serial number) shows as state failure. Each call adds a document, also for content "
-    "Paperless already holds (no duplicate check)."
+    f"Paperless already holds (no duplicate check). {DOCUMENT_TEXT}"
 )
 
 

@@ -172,6 +172,6 @@ proposes its changes and waits for a yes before it writes.
 | Prompt | What it does |
 |---|---|
 | `annual_review` | Review one year of documents for a purpose such as a tax return and find what is missing. |
-| `cleanup_taxonomy` | Find duplicate, unused and badly named tags, correspondents and types and propose fixes. |
+| `cleanup_taxonomy` | Find duplicate, unused and badly named tags, correspondents, types and storage paths and propose fixes. |
 | `find_document` | Find one document in Paperless from a loose description and show where it is. |
 | `triage_inbox` | Work through the documents in the Paperless inbox and propose how to file each one. |
