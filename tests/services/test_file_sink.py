@@ -646,7 +646,7 @@ async def test_a_file_swapped_for_a_link_before_the_replacement_is_refused(tree:
     assert victim.read_bytes() == b"victim"
 
 
-@pytest.mark.parametrize("how", ["link", "file", "second name"])
+@pytest.mark.parametrize("how", ["gone", "link", "file", "second name"])
 async def test_a_temporary_file_that_was_swapped_is_not_committed(tree: Tree, how: str) -> None:
     def swap() -> None:
         [temporary] = [p for p in tree.sub.iterdir() if p.name.startswith(".mcp-")]
@@ -654,6 +654,8 @@ async def test_a_temporary_file_that_was_swapped_is_not_committed(tree: Tree, ho
             (tree.out / "copy").hardlink_to(temporary)
             return
         temporary.unlink()
+        if how == "gone":
+            return
         if how == "link":
             temporary.symlink_to(tree.out / "victim")
         else:
@@ -778,6 +780,21 @@ async def test_without_hard_links_a_written_reservation_is_left_alone(tree: Tree
     assert target.read_bytes() == b"theirs"
 
 
+async def test_without_hard_links_a_file_that_appears_before_the_reservation_is_left_alone(
+    tree: Tree,
+) -> None:
+    class NoLinks(System):
+        @override
+        def link(self, source: str, target: str, directory: int) -> None:
+            _ = (tree.sub / NAME).write_bytes(b"theirs")  # after the link was tried
+            raise OSError(errno.ENOTSUP, "no hard links")
+
+    with pytest.raises(PaperlessMcpError, match="appeared meanwhile"):
+        _ = await save(tree, system=NoLinks())
+
+    assert ((tree.sub / NAME).read_bytes(), tree.names()) == (b"theirs", [NAME])
+
+
 async def test_without_hard_links_a_failed_rename_leaves_nothing(tree: Tree) -> None:
     class NoRename(System):
         @override
@@ -790,6 +807,30 @@ async def test_without_hard_links_a_failed_rename_leaves_nothing(tree: Tree) -> 
 
     with pytest.raises(PaperlessMcpError):
         _ = await save(tree, system=NoRename())
+
+    assert tree.names() == []
+
+
+async def test_without_hard_links_a_failed_rename_leaves_what_took_the_name(tree: Tree) -> None:
+    class Overtaken(System):
+        @override
+        def link(self, source: str, target: str, directory: int) -> None:
+            raise OSError(errno.ENOTSUP, "no hard links")
+
+        @override
+        def replace(self, source: str, target: str, directory: int) -> None:
+            _ = (tree.sub / NAME).write_bytes(b"theirs")
+            raise OSError(errno.EIO, "broken")
+
+    with pytest.raises(PaperlessMcpError, match="could not be written"):
+        _ = await save(tree, system=Overtaken())
+
+    assert ((tree.sub / NAME).read_bytes(), tree.names()) == (b"theirs", [NAME])
+
+
+async def test_a_link_that_fails_for_another_reason_is_no_reason_to_go_without(tree: Tree) -> None:
+    with pytest.raises(PaperlessMcpError, match="could not be written"):
+        _ = await save(tree, system=without_links(errno.EIO))
 
     assert tree.names() == []
 
