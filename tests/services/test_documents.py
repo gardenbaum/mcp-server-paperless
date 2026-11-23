@@ -17,7 +17,12 @@ from mcp_server_paperless.domain.documents import (
 )
 from mcp_server_paperless.domain.errors import Ambiguous, NotFound, PermissionDenied, Validation
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
-from mcp_server_paperless.services.documents import DEFAULT_SLICE, DocumentService, document_link
+from mcp_server_paperless.services.documents import (
+    DEFAULT_SLICE,
+    DocumentService,
+    document_link,
+    query_notices,
+)
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 pytestmark = pytest.mark.anyio
@@ -644,3 +649,67 @@ async def test_a_has_filter_set_to_true_may_repeat_the_named_filter() -> None:
     )
 
     assert [d.title for d in found.documents] == ["e2e-public-invoice"]
+
+
+@pytest.mark.parametrize(
+    ("query", "words"),
+    [
+        ("NOT type:*", ("type:*", "has_document_type")),
+        ("rechnung AND NOT correspondent:*", ("correspondent:*", "has_correspondent")),
+        ("rechnung not swisscom", ("Lowercase 'not'", "NOT")),
+        ("rechnung and swisscom", ("Lowercase 'and'", "AND")),
+        ("rechnung or swisscom", ("Lowercase 'or'", "OR")),
+        ("(rechnung or swisscom)", ("Lowercase 'or'", "OR")),
+        ("rechnung -swisscom", ("-swisscom", "NOT swisscom")),
+        ("-swisscom", ("-swisscom", "NOT swisscom")),
+        ('"terms" -x', ("-x", "NOT x")),
+    ],
+)
+def test_query_syntax_the_index_does_not_support_gets_a_notice(
+    query: str, words: tuple[str, ...]
+) -> None:
+    [notice] = query_notices(query)
+
+    assert all(word in notice for word in words)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "rechnung",
+        "NOT rechnung",
+        "rechnung AND NOT swisscom",
+        "a OR b",
+        "created:[2024 to 2025]",
+        "created:[2024-01-01 to 2025-12-31]",
+        '"this is not a drill" AND acme',
+        '"a -b" "x:*"',
+        "added:[-2 weeks to -1 week]",
+        "added:[-1 week to now]",
+        "title:*voice",
+        "title:rechnung-2024",
+        "notes.note:paid",
+        "e-mail",
+        "",
+    ],
+)
+def test_clean_queries_get_no_notice(query: str) -> None:
+    assert query_notices(query) == ()
+
+
+def test_several_constructs_give_one_notice_each() -> None:
+    assert len(query_notices("NOT type:* rechnung not swisscom -x")) == 3
+
+
+async def test_a_search_with_unsupported_syntax_carries_the_notices() -> None:
+    found = await admin().search(
+        NameFilters(), DocumentQuery(query="acme not zebra"), page=1, page_size=25
+    )
+
+    assert len(found.notices) == 1
+
+
+async def test_a_clean_search_has_no_notices() -> None:
+    found = await admin().search(NameFilters(), DocumentQuery(query="acme"), page=1, page_size=25)
+
+    assert found.notices == ()

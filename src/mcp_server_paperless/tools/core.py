@@ -311,6 +311,9 @@ async def search_documents(  # noqa: PLR0913 -- one parameter per filter, descri
             description=(
                 "Full-text query in Paperless syntax over title, content, notes and fields, "
                 "e.g. 'invoice AND acme', 'created:[2024 to 2025]', 'notes.note:paid'. "
+                "NOT, AND and OR must be uppercase (lowercase are plain search terms); a leading "
+                "minus does not exclude, write NOT term; field:* (presence) does not work, use "
+                "the has_* filters. Unsupported syntax is named in notices. "
                 "Results are ranked by relevance and carry highlights."
             )
         ),
