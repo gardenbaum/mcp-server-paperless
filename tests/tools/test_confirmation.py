@@ -20,7 +20,7 @@ from harness import serve
 from mcp import MCPError
 from mcp.types import ElicitResult, InputRequiredResult, ListRootsResult
 
-from mcp_server_paperless.domain.errors import CONFIRM_HINT, ConfirmationRequired
+from mcp_server_paperless.domain.errors import CONFIRM_HINT, ConfirmationRequired, NotConfirmed
 from mcp_server_paperless.tools._shared import boundary
 from mcp_server_paperless.tools.confirmation import MAX_DIALOGS, Asked, Dialogs
 
@@ -306,6 +306,18 @@ async def test_an_expired_dialog_is_told_and_changes_nothing() -> None:
     assert result == f"Nothing was changed: the dialog has expired. Hint: {NOT_AGAIN}"
 
 
+async def test_the_sdk_keeps_a_state_longer_than_its_dialog() -> None:
+    """Otherwise an expired dialog would be a rejected request instead of a readable answer."""
+    async with Client(
+        server(source(world(), writes=False), Dialogs(timeout=1)), elicitation_handler=NEVER
+    ) as client:
+        state = state_of(await raw(client))
+        await anyio.sleep(1.1)
+        result = refused_text(await raw(client, ACCEPT, state))
+
+    assert "the dialog has expired" in result
+
+
 async def test_a_dialog_counts_until_it_expires() -> None:
     now = [1000.0]
     dialogs = Dialogs(clock=lambda: now[0])
@@ -335,7 +347,10 @@ def test_a_used_state_is_remembered_until_it_expires_and_not_longer() -> None:
 
 async def test_a_state_this_server_did_not_make_is_no_state() -> None:
     """Sealed by the SDK, but not a dialog's: another feature's state proves no question."""
-    for sealed in ("", "x", "[]", "{}", "null", '{"nonce": 1, "fingerprint": 2, "expires": "3"}'):
+    good = {"nonce": "n", "fingerprint": "f", "expires": 1.5}
+    for wrong in ({}, {**good, "nonce": 1}, {**good, "expires": "1.5"}, {**good, "extra": "x"}):
+        assert Asked.parse(json.dumps(wrong)) is None
+    for sealed in (None, "", "x", "[]", "null"):
         assert Asked.parse(sealed) is None
     asked = Asked(nonce="n", fingerprint="f", expires=1.5)
     assert Asked.parse(asked.model_dump_json()) == asked
@@ -371,6 +386,21 @@ async def test_a_handshake_call_asks_at_most_three_times_and_then_refuses() -> N
     assert len(seen) == MAX_DIALOGS == 3
     assert text(result).endswith(HINT)
     assert "changed 3" in text(result)
+
+
+async def test_the_third_and_last_dialog_of_a_handshake_call_still_counts() -> None:
+    state, seen = world(), list[str]()
+
+    async def rename_twice() -> None:
+        state.documents[0].title = f"changed {min(len(seen), 2)}"
+
+    result = await call(
+        server(source(state)), "legacy", answering("accept", YES, seen=seen, before=rename_twice)
+    )
+
+    assert len(seen) == MAX_DIALOGS
+    assert not result.is_error
+    assert state.documents[0].notes == []
 
 
 @both_eras
@@ -665,6 +695,17 @@ async def test_a_tool_called_on_the_server_without_a_client_refuses() -> None:
         _ = await served.call_tool("destroy")
 
     assert str(raised.value).endswith(HINT)
+
+
+async def test_a_refused_answer_is_logged_at_info_not_error() -> None:
+    async def tool() -> None:
+        reason = "the user declined"
+        raise NotConfirmed(reason)
+
+    with pytest.raises(ToolError) as raised:
+        await boundary(tool)()
+
+    assert raised.value.log_level == logging.INFO
 
 
 async def test_the_accepted_run_gets_the_same_arguments() -> None:

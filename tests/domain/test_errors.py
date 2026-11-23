@@ -101,7 +101,8 @@ def test_an_acceptance_ends_with_its_run() -> None:
     with accepting(accepted):
         ConfirmationRequired.require("delete note 1")
 
-    assert refused("delete note 1") == accepted
+    with pytest.raises(ConfirmationRequired):
+        ConfirmationRequired.require("delete note 1")
 
 
 @pytest.mark.decision("decision-44")
