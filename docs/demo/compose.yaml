@@ -1,0 +1,14 @@
+# The throwaway stack of `just demo`: the pinned Paperless of the live tests, plus the recorder.
+name: mcp-server-paperless-demo
+
+include:
+  - ../../tests/e2e/compose.yaml
+
+services:
+  recorder:
+    profiles: [record]
+    build: .
+    depends_on:
+      - paperless
+    volumes:
+      - ./:/out
