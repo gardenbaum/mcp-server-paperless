@@ -342,8 +342,10 @@ ranges and the server keeps nothing between calls, so every part reads the file 
   with a second name (hard link) or a device.
 - Up to 2 GiB and 30 minutes; 256 MiB of the disk stay free, checked while the file arrives. Only a complete file gets its name, and
   it is compared with the size and checksum Paperless knows (a ZIP archive must be whole). It
-  is readable for its owner only (mode 0600). A failed call leaves nothing; a killed server can
-  leave a hidden `.mcp-….part`, which you may delete.
+  is readable for its owner only (mode 0600). A failed call leaves nothing, except that a
+  call that is cancelled, or meets a disk error, just as the file gets its name can leave the
+  finished file, complete: a disk error says so, a cancelled call has no answer to say it in. A killed
+  server can leave a hidden `.mcp-….part`, which you may delete.
 - Not on Windows: saving is refused there, as uploading by path is.
 
 The rules are decision-45 and decision-46 (`backlog/decisions/`).

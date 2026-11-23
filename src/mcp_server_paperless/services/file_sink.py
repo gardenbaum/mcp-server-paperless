@@ -207,7 +207,9 @@ def file_name(save_as: str | None, proposed: str, mime_type: str) -> str:
     endings = _ENDINGS.get(kind, (UNKNOWN_ENDING,))
     if save_as is None:
         plain = proposed.replace("/", "_").replace("\\", "_").encode(errors="ignore").decode()
-        shown = "".join(c for c in plain if not unseen(c)).strip().lstrip(".").strip()
+        shown = "".join(c for c in plain if not unseen(c)).strip()
+        while shown.startswith("."):
+            shown = shown[1:].lstrip()
         suffix = PurePath(shown).suffix
         if suffix.lower() in endings:
             stem = shown.removesuffix(suffix)
@@ -355,6 +357,8 @@ class Target:
         self._file: int | None = None
         self._temporary: str | None = None
         self._name: str = ""
+        # A name of the saved file that could not be removed.
+        self._second_name: str | None = None
         self._existing: _Identity | None = None
         self._size: int = 0
         self._digest = hashlib.sha256()
@@ -512,6 +516,13 @@ class Target:
                 )
                 hint = "Look at the file before you rely on it."
                 raise PaperlessMcpError(message, hint=hint) from None
+        if self._second_name is not None:
+            message = (
+                f"The file was saved, but its temporary name {self._second_name} could not be "
+                "removed."
+            )
+            hint = "Remove that name in the directory; until then the file cannot be replaced."
+            raise PaperlessMcpError(message, hint=hint)
 
     def _compare(self, fd: int, expected: Expected) -> None:
         checksum = expected.checksum
@@ -554,15 +565,19 @@ class Target:
                 raise
             self._commit_without_links(temporary)
             return
-        try:
-            system.unlink(temporary, self._directory)
-        except OSError:
-            message = (
-                f"The file was saved, but its temporary name {temporary} could not be removed."
-            )
-            hint = "Remove that name in the directory; until then the file cannot be replaced."
-            raise PaperlessMcpError(message, hint=hint) from None
+        # What is left to do with the name is done here: leave() does not try again.
         self._temporary = None
+        if not self._removed(temporary) and not self._removed(temporary):
+            self._second_name = temporary
+
+    def _removed(self, name: str) -> bool:
+        try:
+            self._sink.system.unlink(name, self._directory)
+        except FileNotFoundError:  # another process was faster
+            return True
+        except OSError:
+            return False
+        return True
 
     def _commit_without_links(self, temporary: str) -> None:
         """Take the name with an empty file, then rename over exactly that file."""

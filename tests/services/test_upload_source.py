@@ -246,6 +246,7 @@ def test_dot_files_and_dot_directories_below_the_allowlist_are_refused(
     ],
 )
 def test_a_file_or_directory_with_format_characters_is_read(allowed: Path, name: str) -> None:
+    """Read only: such a file name is no upload name, so the call has to give another filename."""
     target = allowed / name
     target.parent.mkdir(parents=True, exist_ok=True)
     _ = target.write_bytes(b"%PDF-1.4 x")

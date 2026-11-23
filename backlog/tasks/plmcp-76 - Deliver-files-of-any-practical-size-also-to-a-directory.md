@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:47Z'
-updated_date: '2026-11-23T23:33:35Z'
+updated_date: '2026-11-23T23:51:55Z'
 labels: []
 dependencies: []
 priority: high
@@ -69,4 +69,6 @@ Correction: the first mutation run left 96 survivors and 5 timeouts outside the 
 Independent review (2026-11-24, 99b905c), all verified by a failing test first. I1 ZIP parts took any 200: a part and a save now need Content-Type application/zip (Paperless 3.5.1 sends exactly that: BulkDownloadView, and measured on the E2E stack), a member at byte 0 and an end record that counts to the last byte; the claim that a body never ends early is corrected for bodies that end with their connection. I2 a name with U+200C before .git is .git on HFS+: every component below an allowed directory with a control, format or break character is refused, in allowed_paths, so uploads by path are covered too; that hole existed before this task (read_allowed). A consequence: files whose name has such characters (a zero-width joiner in an emoji) can no longer be uploaded by path. I3 a close that fails no longer skips the unlink or keeps the directory open. M1 reading lets others run once per decoded mebibyte; no limiter for parts and saves was added: the only one in the code is the private semaphore of PageService, which is for the renderer's memory. M2 with I1. M3 a proposed name is cleaned instead of refused. M4 a streamed POST that reads has no 'may have been applied'. M5, M6 texts. M7 a temporary name that stays after the hard link is reported. M8 left to PLMCP-103 (main agent).
 
 Follow-up to the review: reading by path is no stricter than needed. A dot name counts as one behind format characters, control and line-break characters are refused, and other format characters (the joiner in an emoji) are read as before; this replaces the consequence named under I2. Saving stays strict. The ZIP that bulk_download attaches whole has the same check of its start and end (its port does not hand over the Content-Type).
+
+Correction of the follow-up note: 'read as before' is about reading. A file whose own name holds a format character is read by path, but uploaded only with a filename of its own, as before this task (clean_filename refuses such upload names); a directory with one needs nothing. Delta review of 6c732f7: N1 (a retry, another process and the directory sync come before the report of a temporary name that stays), N3 (leading dots and spaces of a proposed name are removed together), N4 (configuration.md names a call that is cancelled or fails while the file gets its name).
 <!-- SECTION:NOTES:END -->

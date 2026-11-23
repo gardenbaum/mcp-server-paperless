@@ -499,6 +499,9 @@ def test_a_name_that_starts_with_a_dot_is_refused(save_as: str) -> None:
     [
         (".profile", "profile.txt"),
         ("...a.txt", "a.txt"),
+        (". .profile", "profile.txt"),
+        (" . .. . x.txt", "x.txt"),
+        (". . .", "document.txt"),
         (".txt", "txt.txt"),
         (f"a{chr(0xAD)}b{chr(0x200D)}c{chr(0xFEFF)}d{chr(0x2028)}e.txt", "abcde.txt"),
         (f"{chr(0xFEFF)}.env.txt", "env.txt"),
@@ -1277,23 +1280,58 @@ async def test_without_hard_links_a_reservation_whose_closing_fails_is_still_use
     assert (await save(tree, system=Late())).size == len(DATA)
 
 
-async def test_a_second_name_that_cannot_be_removed_is_said(tree: Tree) -> None:
+async def test_a_second_name_that_cannot_be_removed_is_said_after_a_retry_and_the_sync(
+    tree: Tree,
+) -> None:
+    done: list[str] = []
+
     class Stuck(System):
         @override
         def unlink(self, name: str, directory: int) -> None:
+            done.append("unlink")
             raise OSError(errno.EIO, "stuck")
+
+        @override
+        def fsync(self, fd: int) -> None:
+            done.append("directory" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file")
+            super().fsync(fd)
 
     with pytest.raises(PaperlessMcpError) as raised:
         _ = await save(tree, system=Stuck())
 
     [temporary, name] = tree.names()
     assert (name, (tree.sub / NAME).read_bytes()) == (NAME, DATA)
+    assert done == ["file", "unlink", "unlink", "directory"]  # and it is not tried once more
     assert raised.value.message == (
         f"The file was saved, but its temporary name {temporary} could not be removed."
     )
     assert raised.value.hint == (
         "Remove that name in the directory; until then the file cannot be replaced."
     )
+
+
+@pytest.mark.parametrize("failures", [1, 0])
+async def test_a_second_name_that_is_removed_at_last_is_no_failure(
+    tree: Tree, failures: int
+) -> None:
+    """By the retry, or by another process (then the name is not found)."""
+
+    class Late(System):
+        calls: int = 0
+
+        @override
+        def unlink(self, name: str, directory: int) -> None:
+            self.calls += 1
+            if self.calls <= failures:
+                raise OSError(errno.EIO, "busy")
+            super().unlink(name, directory)
+            if not failures:
+                raise FileNotFoundError(errno.ENOENT, "gone")
+
+    saved = await save(tree, system=Late())
+
+    assert (saved.filename, tree.names()) == (NAME, [NAME])
+    assert (tree.sub / NAME).stat().st_nlink == 1
 
 
 async def test_no_descriptor_stays_open(tree: Tree) -> None:
