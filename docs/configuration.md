@@ -270,6 +270,9 @@ API version 10 stops it with a message on stderr (in Claude Code: `claude --debu
 details). An unreachable Paperless does not stop it; the tools report the problem until
 Paperless is back.
 
-Logs go to stderr (the server's own records as JSON lines) and never contain tokens, document
-content or query text at INFO or above: tool arguments and error messages are not logged, and an
-internal error is logged by type, with its traceback only at DEBUG.
+Logs go to stderr (the server's own records as JSON lines). At INFO and above, the records of tool
+calls hold no arguments, results or error messages, the API token and bearer tokens are not
+logged, and an internal error in a tool is logged by type. Error messages of resources and prompts
+and a failed startup check are logged and can quote a prompt's argument or Paperless's answer;
+DEBUG can log arguments and document content. The full list is in the
+[privacy policy](../PRIVACY.md#what-the-server-logs).
