@@ -4,6 +4,7 @@ Office documents and e-mails need Tika and Gotenberg: the tests marked `office_e
 `just e2e-office` and skip elsewhere.
 """
 
+import asyncio
 import io
 import os
 import uuid
@@ -22,14 +23,17 @@ from e2e.pages import (
     PDF,
     UPRIGHT,
     Json,
+    Proxy,
     Scope,
     dark,
     images,
+    page_service,
     refused,
     report,
     show,
     unique,
 )
+from mcp_server_paperless.domain.errors import PaperlessMcpError
 from mcp_server_paperless.domain.rendering import MAX_IMAGE_BYTES
 from mcp_server_paperless.services.pages import MAX_SOURCE_BYTES
 
@@ -112,9 +116,63 @@ async def test_a_file_over_the_source_limit_is_refused_before_it_is_read(
     padding = b"\n%" + b"x" * MAX_SOURCE_BYTES
     document = scope.document(unique(pdf_of([QUADRANTS])) + padding, "large.pdf")
 
-    assert "is over 100 MiB, the most that is rendered" in await refused(
-        stack, document, source="original"
-    )
+    async with Proxy().listening() as proxy, page_service(stack, url=proxy.url) as service:
+        with pytest.raises(PaperlessMcpError, match="is over 100 MiB, the most that is rendered"):
+            _ = await service.show(document, "1", source="original")
+
+    assert any(path.startswith(f"/api/documents/{document}/metadata/") for path in proxy.requests)
+    assert not any("/download/" in path for path in proxy.requests)
+
+
+async def test_a_file_that_takes_too_long_to_come_is_given_up(stack: Stack, scope: Scope) -> None:
+    # Not compressible: Paperless compresses what it sends.
+    padding = b"\n%" + os.urandom(1_000_000).hex().encode()
+    document = scope.document(unique(pdf_of([QUADRANTS])) + padding, "late.pdf")
+
+    async with (
+        Proxy(slow=True).listening() as proxy,
+        page_service(stack, url=proxy.url, download_seconds=2.0) as service,
+    ):
+        with pytest.raises(
+            PaperlessMcpError,
+            match=r"did not send the file of document .* within 2 seconds",
+        ):
+            _ = await service.show(document, "1", source="original")
+        assert any("/download/" in path for path in proxy.requests)
+        # The only slot is free again.
+        proxy.slow = False
+        shown = await service.show(document, "1", source="original", size=256)
+
+    assert len(shown.images) == 1
+
+
+async def test_a_call_waits_for_the_one_before_it_and_then_gives_up(
+    stack: Stack, scope: Scope
+) -> None:
+    document = scope.document(unique(slow_pdf()), "slow.pdf")
+
+    async with page_service(stack, wait_seconds=1.0, render_seconds=8.0) as service:
+        first = asyncio.create_task(service.show(document, "2", source="original"))
+        await asyncio.sleep(2.0)
+        with pytest.raises(PaperlessMcpError, match="Another document is being rendered"):
+            _ = await service.show(document, "1", source="original")
+        with pytest.raises(PaperlessMcpError, match="was stopped"):
+            _ = await first
+        shown = await service.show(document, "1", source="original", size=256)
+
+    assert len(shown.images) == 1
+
+
+async def test_a_page_too_large_for_a_call_is_shown_reduced(stack: Stack, scope: Scope) -> None:
+    noise = Image.frombytes("RGB", (1500, 1500), shake_256(uuid.uuid4().bytes).digest(6_750_000))
+    document = scope.document(saved(noise, "PNG", dpi=(100, 100)), "noise.png", "image/png")
+
+    result = await show(stack, document, size=2576, source="original")
+
+    [image] = cast("list[Json]", report(result)["images"])
+    assert image["reduced"] is True
+    assert cast("int", image["size_bytes"]) <= MAX_IMAGE_BYTES
+    assert "Page 1 was too large as asked and is shown reduced" in str(report(result)["note"])
 
 
 async def test_an_image_over_the_pixel_limit_is_refused(stack: Stack, scope: Scope) -> None:
@@ -143,6 +201,9 @@ async def test_pages_over_the_bytes_of_a_call_come_with_the_next_calls(
         result = await show(stack, document, pages=wanted, size=1000, source="original")
         shown = cast("list[Json]", report(result)["images"])
         assert sum(cast("int", image["size_bytes"]) for image in shown) <= MAX_IMAGE_BYTES
+        if not seen:
+            first = report(result)
+            assert (first["next_pages"], first["not_shown"]) == ("2-3", "pages 2-3")
         seen += [cast("int", image["page"]) for image in shown]
         wanted = report(result)["next_pages"]
 

@@ -410,7 +410,7 @@ UNLOCK = "remove_document_password (toolset pdf) makes a version without the pas
         (
             RenderFailed(reason="memory"),
             "Rendering document 7 needed more than 1 GiB of memory and was stopped.",
-            LESS,
+            ELSEWHERE,
         ),
         (
             RenderFailed(reason="count"),

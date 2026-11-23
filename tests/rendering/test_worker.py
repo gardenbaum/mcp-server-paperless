@@ -448,6 +448,22 @@ def extreme(band: Image.Image) -> int:
     return max(value for value, count in enumerate(band.histogram()) if count)
 
 
+@pytest.mark.parametrize("shape", [(3_000, 90), (90, 3_000), (1_200, 1_100)])
+@pytest.mark.parametrize("size", [(64, 3), (900, 40), (200, 180)])
+def test_scaling_in_small_tiles_is_scaling_the_whole(
+    shape: tuple[int, int], size: tuple[int, int]
+) -> None:
+    out = size if shape[0] >= shape[1] else (size[1], size[0])
+    data = shake_256(b"tiles").digest(shape[0] * shape[1])
+    picture = Image.frombytes("L", shape, data)
+    box = (0.0, 0.0, float(shape[0]), float(shape[1]))
+
+    found = resized(picture, box, out, tile=200)
+
+    whole = picture.resize(out, Image.Resampling.LANCZOS, box=box)
+    assert extreme(ImageChops.difference(found, whole)) <= 2
+
+
 def test_a_webp_image_that_cannot_be_decoded_directly_is_left_to_pillow() -> None:
     content = saved(quadrants(30, 40), "WEBP")
 

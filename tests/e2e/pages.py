@@ -1,7 +1,10 @@
 """What the live tests of get_document_pages share."""
 
+import asyncio
 import base64
+import contextlib
 import json
+import re
 import uuid
 from typing import TYPE_CHECKING, cast
 
@@ -10,10 +13,17 @@ from harness import paperless_settings, server_settings
 from mcp.types import ImageContent, TextContent
 from rendering.files import opened
 
-from e2e.helpers import consume
+from e2e.helpers import PORT, consume
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.client import RetryPolicy, connect
+from mcp_server_paperless.paperless.documents import PaperlessDocumentReader
+from mcp_server_paperless.rendering.runner import ChildRenderer
 from mcp_server_paperless.server import create_server
+from mcp_server_paperless.services.pages import PageService
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
     from fastmcp import FastMCP
     from fastmcp.client.client import CallToolResult
     from PIL import Image
@@ -21,6 +31,8 @@ if TYPE_CHECKING:
     from e2e.helpers import Stack
 
 type Json = dict[str, object]
+
+REQUEST_LINE = re.compile(rb"(?m)^GET (\S+) HTTP")
 
 PDF = "application/pdf"
 UPRIGHT = ["red", "green", "blue", "yellow"]
@@ -85,3 +97,79 @@ async def refused(stack: Stack, document: int, **arguments: object) -> str:
 def dark(image: Image.Image) -> int:
     """How many pixels are dark: whether something is written there."""
     return sum(image.convert("L").histogram()[:100])
+
+
+class Proxy:
+    """Stands between the server and Paperless: notes the requests, and can send slowly.
+
+    Attributes:
+        requests: The paths asked for, in order.
+        slow: Whether everything after the first 64 KiB of an answer comes drop by drop.
+    """
+
+    def __init__(self, *, slow: bool = False) -> None:
+        self.slow: bool = slow
+        self.requests: list[str] = []
+        self.url: str = ""
+
+    async def _forward(self, source: asyncio.StreamReader, target: asyncio.StreamWriter) -> None:
+        while data := await source.read(65536):
+            self.requests += [found[1].decode() for found in REQUEST_LINE.finditer(data)]
+            target.write(data)
+            await target.drain()
+        target.close()
+
+    async def _answer(self, source: asyncio.StreamReader, target: asyncio.StreamWriter) -> None:
+        seen = 0
+        while data := await source.read(1024 if self.slow and seen > 65536 else 65536):
+            seen += len(data)
+            target.write(data)
+            await target.drain()
+            if self.slow and seen > 65536:
+                await asyncio.sleep(0.05)
+        target.close()
+
+    async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        with contextlib.suppress(ConnectionError):
+            upstream = await asyncio.open_connection("127.0.0.1", int(PORT))
+            async with asyncio.TaskGroup() as group:
+                _ = group.create_task(self._forward(reader, upstream[1]))
+                _ = group.create_task(self._answer(upstream[0], writer))
+
+    @contextlib.asynccontextmanager
+    async def listening(self) -> AsyncGenerator[Proxy]:
+        """Run while the block runs; ``url`` is where."""
+        server = await asyncio.start_server(self._serve, "127.0.0.1", 0)
+        port = int(server.sockets[0].getsockname()[1])  # pyright: ignore[reportAny] -- (host, port)
+        self.url = f"http://127.0.0.1:{port}"
+        try:
+            yield self
+        finally:
+            server.close()
+            server.close_clients()
+
+
+@contextlib.asynccontextmanager
+async def page_service(
+    stack: Stack,
+    *,
+    url: str = "",
+    wait_seconds: float = 30.0,
+    download_seconds: float = 120.0,
+    render_seconds: float = 30.0,
+) -> AsyncGenerator[PageService]:
+    """The service on the real adapter, with shorter waits than the server's."""
+    async with connect(
+        url or stack.base_url,
+        StaticTokenProvider(stack.admin_token),
+        timeout=30.0,
+        upload_timeout=30.0,
+        retry=RetryPolicy(),
+    ) as client:
+        yield PageService(
+            PaperlessDocumentReader(client),
+            ChildRenderer(seconds=render_seconds),
+            web_url=stack.base_url,
+            wait_seconds=wait_seconds,
+            download_seconds=download_seconds,
+        )

@@ -59,7 +59,7 @@ MODULE_SECONDS: dict[str, float] = {
     "tests/contract/test_trash.py": 41,
     "tests/contract/test_notes_and_trash.py": 40,
     "tests/e2e/test_permissions.py": 40,
-    "tests/e2e/test_pages_files.py": 160,
+    "tests/e2e/test_pages_files.py": 200,
     "tests/e2e/test_pages.py": 47,
     "tests/e2e/test_admin.py": 39,
     "tests/contract/test_document_reader.py": 31,

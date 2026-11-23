@@ -373,8 +373,40 @@ async def test_an_image_near_the_pixel_limit_fits_into_the_memory_of_the_child(
     assert opened(image.data).getpixel((200, 200)) != (0, 0, 0)
 
 
-def large(kind: str, mode: str) -> bytes:
-    """A light picture of 8 300 x 12 000 pixels."""
+# As many pixels in shapes whose result is a few rows or columns.
+SHAPES = [(19_900, 4_990), (4_990, 19_900), (60_000, 1_650), (1_650, 60_000)]
+
+
+@pytest.mark.parametrize("shape", SHAPES, ids=str)
+@pytest.mark.parametrize(
+    ("kind", "mode"),
+    [("PNG", mode) for mode in ("L", "LA", "P", "RGB", "RGBA", "I;16")]
+    + [("TIFF", mode) for mode in ("1", "LA", "RGB", "RGBA", "CMYK", "LAB", "F", "RGB turned")]
+    + [("JPEG", mode) for mode in ("RGB", "CMYK", "RGB progressive", "CMYK progressive")],
+)
+async def test_wide_and_tall_images_fit_into_the_memory_of_the_child(
+    kind: str, mode: str, shape: tuple[int, int]
+) -> None:
+    content = large(kind, mode, shape)
+    mime_type = f"image/{kind.lower()}"
+    sizes = (256, 1568)
+
+    found = await asyncio.gather(
+        *(
+            ChildRenderer().render(
+                content, REQUEST.model_copy(update={"mime_type": mime_type, "size": size})
+            )
+            for size in sizes
+        )
+    )
+
+    for size, rendered in zip(sizes, found, strict=True):
+        [image] = rendered.images
+        assert max(image.width, image.height) == size
+
+
+def large(kind: str, mode: str, shape: tuple[int, int] = (8_300, 12_000)) -> bytes:
+    """A light picture of about 99 megapixels."""
     compression: dict[str, dict[str, object]] = {
         "PNG": {"compress_level": 1},
         "TIFF": {"compression": "tiff_lzw"},
@@ -390,14 +422,14 @@ def large(kind: str, mode: str) -> bytes:
     elif special == "lossless":
         options = {"lossless": True, "quality": 0, "method": 0}
     if mode == "P":
-        picture = Image.new("P", (8_300, 12_000), 1)
+        picture = Image.new("P", shape, 1)
         picture.putpalette([0, 0, 0, 200, 200, 200])
         if kind == "PNG":
             options["transparency"] = 0
     else:
         light = {"I;16": 50_000, "LA": (200, 128), "RGBA": (200, 200, 200, 128)}
         light |= {"CMYK": (50, 50, 50, 0), "LAB": (200, 128, 128), "RGB": (200, 200, 200)}
-        picture = Image.new(mode, (8_300, 12_000), light.get(mode, 1 if mode == "1" else 200))
+        picture = Image.new(mode, shape, light.get(mode, 1 if mode == "1" else 200))
     return saved(picture, kind, **options)
 
 

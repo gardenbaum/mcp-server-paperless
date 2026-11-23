@@ -59,8 +59,10 @@ TURNS: Final[Mapping[int, Image.Transpose]] = {
     7: Image.Transpose.TRANSVERSE,
     8: Image.Transpose.ROTATE_90,
 }
-# Rows of the result that are scaled at a time.
-BAND: Final = 64
+# Pixels of an image on each side that are scaled at a time, and how many pixels of the result
+# LANCZOS looks at around one (three, and one for rounding).
+TILE: Final = 4_096
+MARGIN: Final = 4
 # Megapixels above which a progressive JPEG is left to PDFium.
 LARGE_JPEG: Final = 25_000_000
 # Markers of a JPEG: the frame headers (which hold the size), and where the data of a scan ends.
@@ -159,32 +161,47 @@ def _flat(image: Image.Image) -> Image.Image:
     return image.convert("L" if image.mode == "1" else "RGB")
 
 
-def resized(image: Image.Image, box: Region, size: tuple[int, int]) -> Image.Image:
+def resized(
+    image: Image.Image, box: Region, size: tuple[int, int], *, tile: int = TILE
+) -> Image.Image:
     """The box of an image, scaled to ``size``: what ``resize`` with this box gives.
 
-    A band of rows at a time, because converting and scaling a large image as a whole takes several
-    copies of it. Each band is cut with the rows around it that the filter looks at.
+    A tile at a time, of about ``tile`` pixels of the image on each side, because converting and
+    scaling a large image as a whole takes several copies of it. Each tile is cut with the pixels
+    around it that the filter looks at.
     """
-    width, height = size
-    left, top, right, bottom = box
-    step = (bottom - top) / height
-    reach = 4 * max(1.0, step)  # LANCZOS looks at three rows, in pixels of the result
-    margin = 4 * max(1.0, (right - left) / width)
-    from_column = max(0, int(left - margin))
-    to_column = min(image.width, math.ceil(right + margin))
-    bands: list[Image.Image] = []
-    for start in range(0, height, BAND):
-        end = min(start + BAND, height)
-        first, last = top + start * step, min(top + end * step, image.height)
-        from_row = max(0, int(first - reach))
-        to_row = min(image.height, math.ceil(last + reach))
-        part = _flat(image.crop((from_column, from_row, to_column, to_row)))
-        place = (left - from_column, first - from_row, right - from_column, last - from_row)
-        bands.append(part.resize((width, end - start), Image.Resampling.LANCZOS, box=place))
-    shown = Image.new(bands[0].mode, size)
-    for number, band in enumerate(bands):
-        shown.paste(band, (0, number * BAND))
-    return shown
+    columns = _spans(box[0], box[2], size[0], image.width, tile)
+    rows = _spans(box[1], box[3], size[1], image.height, tile)
+    shown: Image.Image | None = None
+    for x, width, (from_x, to_x), (left, right) in columns:
+        for y, height, (from_y, to_y), (top, bottom) in rows:
+            part = _flat(image.crop((from_x, from_y, to_x, to_y)))
+            place = (left - from_x, top - from_y, right - from_x, bottom - from_y)
+            piece = part.resize((width, height), Image.Resampling.LANCZOS, box=place)
+            if shown is None:
+                shown = Image.new(piece.mode, size)
+            shown.paste(piece, (x, y))
+    return shown or image
+
+
+def _spans(
+    start: float, end: float, pixels: int, limit: int, tile: int
+) -> list[tuple[int, int, tuple[int, int], tuple[float, float]]]:
+    """One direction, cut into tiles.
+
+    For each its place and length in the result, the pixels of the image it needs, and the part of
+    them it shows.
+    """
+    step = (end - start) / pixels
+    reach = MARGIN * max(1.0, step)
+    length = max(1, int(tile / max(1.0, step)) - 2 * MARGIN)
+    spans: list[tuple[int, int, tuple[int, int], tuple[float, float]]] = []
+    for first in range(0, pixels, length):
+        count = min(length, pixels - first)
+        low, high = start + first * step, min(start + (first + count) * step, float(limit))
+        needed = (max(0, int(low - reach)), min(limit, math.ceil(high + reach)))
+        spans.append((first, count, needed, (low, high)))
+    return spans
 
 
 class DecodeInto(Protocol):

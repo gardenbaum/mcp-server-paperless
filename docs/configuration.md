@@ -323,6 +323,9 @@ Two kinds of image near 100 megapixels can end at the memory limit instead, with
 so: on macOS a lossless WebP with a large file, and on Windows any WebP of roughly 60 megapixels or
 more (estimated).
 
+A progressive CMYK JPEG of more than 25 megapixels is drawn by PDFium, whose colours differ visibly
+from those of other CMYK images (8 to 23 levels of 255 measured); the text is the same.
+
 A page that does not fit alone is shown at a lower quality or smaller, and the report says so. Every
 call downloads the file again. Text whose font is not embedded can look different where the system
 has no such font, as in the container image. What the renderer may and may not do is in

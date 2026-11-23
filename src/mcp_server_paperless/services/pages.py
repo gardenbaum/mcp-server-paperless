@@ -173,7 +173,7 @@ class _File:
                     f"Rendering {document} needed more than {RENDER_MEMORY} of memory and was "
                     "stopped."
                 )
-                hint = less
+                hint = self._elsewhere
             case _:
                 message, hint = (
                     f"Document {self.document_id} could not be rendered.",
