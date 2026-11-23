@@ -218,7 +218,6 @@ jobs:
             [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
             refs+=("$IMAGE@$digest")
           done
-          tags=()
-          while read -r name; do tags+=(-t "$name"); done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
-          ((${#tags[@]} > 0))
-          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+          mapfile -t names < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          ((${#names[@]} > 0))
+          docker buildx imagetools create "${names[@]/#/--tag=}" "${refs[@]}"
