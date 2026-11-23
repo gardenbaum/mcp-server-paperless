@@ -158,9 +158,10 @@ def lock_down(
 
     It cannot write data into a file with ordinary writes and cannot fork or start a thread (root
     on Linux still can). It can still change, empty, rename or delete what the user may (mmap,
-    truncate, rename, unlink) and replace itself by another program. Where there are no system fonts to read
-    (as in the container image), it can open nothing at all: no file, no socket. With system fonts
-    it still can, because PDFium reads them for text whose font is not embedded.
+    truncate, rename, unlink) and replace itself by another program.
+
+    Where there are no system fonts to read (as in the container image), it can open nothing at all:
+    no file, no socket. With system fonts it still can, because PDFium reads them for text whose font is not embedded.
     """
     if platform == "win32":
         return
