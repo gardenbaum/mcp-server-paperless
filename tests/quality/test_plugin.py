@@ -263,3 +263,10 @@ def test_the_page_names_the_commands_that_install_the_plugin(page: str) -> None:
     ) in text
     assert "/reload-plugins" in text
     assert "claude mcp remove paperless" in text
+
+
+def test_the_claude_listing_links_the_privacy_policy_of_the_repository() -> None:
+    link = "https://github.com/gardenbaum/mcp-server-paperless/blob/main/PRIVACY.md"
+
+    assert manifest(CLAUDE)["privacyPolicyUrl"] == link
+    assert (ROOT / "PRIVACY.md").is_file()

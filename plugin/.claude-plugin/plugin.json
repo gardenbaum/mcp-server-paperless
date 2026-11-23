@@ -19,6 +19,7 @@
   ],
   "documentationUrl": "https://github.com/gardenbaum/mcp-server-paperless/tree/main/docs",
   "supportUrl": "https://github.com/gardenbaum/mcp-server-paperless/issues",
+  "privacyPolicyUrl": "https://github.com/gardenbaum/mcp-server-paperless/blob/main/PRIVACY.md",
   "mcpServers": {
     "paperless": {
       "command": "uvx",
