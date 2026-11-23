@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Protocol
 import httpx2
 import pytest
 
-from adapter.schema_guard import Handler, SchemaGuardedTransport
+from adapter.schema_guard import Handler, RecordingTransport, SchemaGuardedTransport
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.paperless.client import Jitter, PaperlessClient, RetryPolicy
 
@@ -96,9 +96,9 @@ async def make_client(sleep: RecordingSleep) -> AsyncIterator[ClientFactory]:
 
 
 def streaming(handler: Handler) -> tuple[PaperlessClient, RecordingSleep]:
-    """A client on a plain MockTransport (the schema guard reads whole bodies)."""
+    """A client on a recording MockTransport (the schema guard reads whole bodies)."""
     sleep = RecordingSleep()
-    http = httpx2.AsyncClient(base_url=BASE_URL, transport=httpx2.MockTransport(handler))
+    http = httpx2.AsyncClient(base_url=BASE_URL, transport=RecordingTransport(handler))
     client = PaperlessClient(
         http, StaticTokenProvider(TOKEN), retry=RetryPolicy(), upload_timeout=1.0, sleep=sleep
     )

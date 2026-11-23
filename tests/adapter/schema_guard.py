@@ -9,6 +9,7 @@ declare are rejected, so a misspelt filter cannot pass silently.
 Deliberate deviations from the schema are listed below, each with its reason.
 """
 
+import inspect
 import json
 import re
 from collections.abc import Callable, Collection, Mapping
@@ -25,6 +26,7 @@ from openapi_core import Config, OpenAPI
 from openapi_core.datatypes import RequestParameters
 from openapi_core.templating.paths.exceptions import PathError
 from openapi_core.templating.paths.finders import APICallPathFinder
+from quality.api_coverage import Observation
 from werkzeug.datastructures import Headers, ImmutableMultiDict
 
 if TYPE_CHECKING:
@@ -635,6 +637,57 @@ def check_response(request: httpx2.Request, response: httpx2.Response) -> None:
         raise _fail(request, f"{response.status_code} response does not match the schema", errors)
 
 
+# What the adapter methods sent through the guard, for the coverage table (PLMCP-91).
+OBSERVED: list[Observation] = []
+
+
+def _port_method() -> tuple[str, str] | None:
+    """The adapter method (as `(port, method)`) the test called, found on the stack.
+
+    It is the outermost frame of an adapter class (`PaperlessTrashReader` implements
+    `TrashReader`), so the helpers it calls on the way do not count; the client is no adapter.
+    """
+    found: tuple[str, str] | None = None
+    for info in inspect.stack(0):  # innermost first, so the outermost adapter frame wins
+        module = str(cast("Mapping[str, object]", info.frame.f_globals).get("__name__", ""))
+        owner = cast("Mapping[str, object]", info.frame.f_locals).get("self")
+        if (
+            module.startswith("mcp_server_paperless.paperless.")
+            and not module.endswith(".client")
+            and owner is not None
+        ):
+            found = (type(owner).__name__.removeprefix("Paperless"), info.function)
+    return found
+
+
+def _body_fields(request: httpx2.Request) -> frozenset[str]:
+    """The top-level field names of a JSON or multipart body."""
+    if "multipart/" in request.headers.get("Content-Type", ""):
+        header = f"Content-Type: {request.headers['Content-Type']}\r\n\r\n".encode()
+        message = BytesParser(policy=default).parsebytes(header + request.content)
+        return frozenset(
+            str(p.get_param("name", header="content-disposition")) for p in message.iter_parts()
+        )
+    body = _json_or_none(request)
+    return frozenset(cast("dict[str, object]", body)) if isinstance(body, dict) else frozenset()
+
+
+def _record(request: httpx2.Request) -> None:
+    try:
+        operation = (request.method, _template(request))
+    except PathError:  # a path the schema lacks (a raw read of a made-up path)
+        return
+    if (call := _port_method()) is not None:
+        OBSERVED.append(
+            Observation(
+                call=call,
+                operation=operation,
+                query=frozenset(request.url.params.keys()),
+                body=_body_fields(request),
+            )
+        )
+
+
 class SchemaGuardedTransport(httpx2.MockTransport):
     """A MockTransport that passes only schema-conforming requests and responses.
 
@@ -648,6 +701,24 @@ class SchemaGuardedTransport(httpx2.MockTransport):
 
     def _guarded(self, request: httpx2.Request) -> httpx2.Response:
         check_request(request)
+        _record(request)
         response = self._handler(request)
         check_response(request, response)
         return response
+
+
+class RecordingTransport(httpx2.MockTransport):
+    """A MockTransport for streamed requests: it records them for the coverage, checks nothing.
+
+    The guard reads whole bodies, so a streamed download or upload cannot pass through it; its
+    path and fields are still matched with the schema's operations when recorded.
+    """
+
+    def __init__(self, handler: Handler) -> None:
+        """Wrap `handler` in the recording."""
+        super().__init__(self._recorded)
+        self._handler: Handler = handler
+
+    def _recorded(self, request: httpx2.Request) -> httpx2.Response:
+        _record(request)
+        return self._handler(request)

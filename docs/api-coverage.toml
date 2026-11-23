@@ -1,0 +1,396 @@
+# Hand-written part of the Paperless API coverage (PLMCP-91). See api-coverage.md, the
+# generated table, and tests/quality/test_api_coverage.py, which checks this file.
+#
+# [[open]]        operations no tool covers yet, each under a Backlog task that is not done
+# [[open_fields]] query parameters and body fields of covered operations that no tool uses
+# [[exclusion]]   an owner-approved exclusion: quote, date and the file of the repository
+# [[undeclared]]  query parameters the generated schema omits (listed by hand)
+
+[[open]]
+task = "PLMCP-80"
+operations = [
+  "POST /api/documents/delete/",
+]
+
+[[open]]
+task = "PLMCP-81"
+operations = [
+  "GET /api/oauth/callback/",
+  "GET /api/processed_mail/{id}/",
+  "POST /api/processed_mail/bulk_delete/",
+  "PUT /api/mail_accounts/{id}/",
+  "PUT /api/mail_rules/{id}/",
+]
+
+[[open]]
+task = "PLMCP-83"
+operations = [
+  "DELETE /api/config/{id}/",
+  "DELETE /api/profile/totp/",
+  "GET /api/config/{id}/",
+  "GET /api/document_types/{id}/",
+  "GET /api/documents/next_asn/",
+  "GET /api/documents/{id}/preview/",
+  "GET /api/documents/{id}/root/",
+  "GET /api/documents/{id}/share_links/",
+  "GET /api/profile/",
+  "GET /api/profile/social_account_providers/",
+  "GET /api/profile/totp/",
+  "GET /api/remote_version/",
+  "GET /api/search/",
+  "GET /api/search/autocomplete/",
+  "GET /api/storage_paths/{id}/",
+  "PATCH /api/profile/",
+  "POST /api/documents/selection_data/",
+  "POST /api/documents/{id}/email/",
+  "POST /api/profile/disconnect_social_account/",
+  "POST /api/profile/generate_auth_token/",
+  "POST /api/profile/totp/",
+  "POST /api/storage_paths/test/",
+  "POST /api/token/",
+  "POST /api/users/{id}/deactivate_totp/",
+  "PUT /api/config/{id}/",
+  "PUT /api/correspondents/{id}/",
+  "PUT /api/custom_fields/{id}/",
+  "PUT /api/document_types/{id}/",
+  "PUT /api/documents/{id}/",
+  "PUT /api/groups/{id}/",
+  "PUT /api/storage_paths/{id}/",
+  "PUT /api/tags/{id}/",
+  "PUT /api/users/{id}/",
+]
+
+[[open]]
+task = "PLMCP-87"
+operations = [
+  "DELETE /api/workflow_actions/{id}/",
+  "DELETE /api/workflow_triggers/{id}/",
+  "GET /api/workflow_actions/",
+  "GET /api/workflow_actions/{id}/",
+  "GET /api/workflow_triggers/",
+  "GET /api/workflow_triggers/{id}/",
+  "GET /api/workflows/{id}/",
+  "PATCH /api/workflow_actions/{id}/",
+  "PATCH /api/workflow_triggers/{id}/",
+  "POST /api/workflow_actions/",
+  "POST /api/workflow_triggers/",
+  "PUT /api/workflow_actions/{id}/",
+  "PUT /api/workflow_triggers/{id}/",
+  "PUT /api/workflows/{id}/",
+]
+
+[[open]]
+task = "PLMCP-88"
+operations = [
+  "GET /api/saved_views/{id}/",
+  "POST /api/ui_settings/",
+  "PUT /api/saved_views/{id}/",
+]
+
+[[open]]
+task = "PLMCP-89"
+operations = [
+  "GET /api/tasks/active/",
+  "GET /api/tasks/status_counts/",
+  "GET /api/tasks/summary/",
+  "GET /api/tasks/{id}/",
+]
+
+[[undeclared]]
+operation = "GET /api/documents/{id}/"
+params = ["version"]
+
+[[undeclared]]
+operation = "PATCH /api/documents/{id}/"
+params = ["version"]
+
+[[undeclared]]
+operation = "GET /api/documents/{id}/download/"
+params = ["version"]
+
+[[undeclared]]
+operation = "GET /api/documents/{id}/thumb/"
+params = ["version"]
+
+[[undeclared]]
+operation = "GET /api/documents/{id}/metadata/"
+params = ["version"]
+
+[[undeclared]]
+operation = "GET /api/documents/{id}/preview/"
+params = ["version"]
+
+[[open_fields]]
+operation = "POST /api/users/"
+fields = ["body:date_joined"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "PATCH /api/users/{id}/"
+fields = ["body:date_joined", "body:is_staff", "body:is_superuser", "body:last_name", "body:password", "body:user_permissions", "body:username"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "PATCH /api/config/{id}/"
+fields = ["body:ai_enabled", "body:app_logo", "body:archive_file_generation", "body:barcode_asn_prefix", "body:barcode_dpi", "body:barcode_enable_asn", "body:barcode_enable_tag", "body:barcode_enable_tiff_support", "body:barcode_max_pages", "body:barcode_retain_split_pages", "body:barcode_store_values", "body:barcode_string", "body:barcode_tag_mapping", "body:barcode_tag_split", "body:barcode_upscale", "body:barcodes_enabled", "body:color_conversion_strategy", "body:deskew", "body:image_dpi", "body:language", "body:llm_backend", "body:llm_context_size", "body:llm_embedding_api_key", "body:llm_embedding_backend", "body:llm_embedding_chunk_size", "body:llm_embedding_endpoint", "body:llm_embedding_model", "body:llm_endpoint", "body:llm_model", "body:llm_output_language", "body:llm_request_timeout", "body:max_image_pixels", "body:mode", "body:output_type", "body:remote_ocr_api_key", "body:remote_ocr_endpoint", "body:remote_ocr_engine", "body:remote_ocr_mode", "body:rotate_pages", "body:rotate_pages_threshold", "body:unpaper_clean", "body:user_args"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/tasks/"
+fields = ["query:date_created_before", "query:is_complete", "query:name", "query:result", "query:trigger_source"]
+task = "PLMCP-89"
+
+[[open_fields]]
+operation = "POST /api/tasks/acknowledge/"
+fields = ["body:all"]
+task = "PLMCP-89"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_download/"
+fields = ["body:all", "body:excluded_documents", "body:filters"]
+task = "PLMCP-80"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:all", "body:excluded_documents", "body:filters", "body:from_webui"]
+task = "PLMCP-80"
+
+[[open_fields]]
+operation = "POST /api/bulk_edit_objects/"
+fields = ["body:all", "body:filters"]
+task = "PLMCP-80"
+
+[[open_fields]]
+operation = "PATCH /api/documents/{id}/"
+fields = ["body:content", "body:created_date", "body:remove_inbox_tags", "body:set_permissions", "query:version"]
+task = "PLMCP-75"
+
+[[open_fields]]
+operation = "POST /api/tags/"
+fields = ["body:owner", "body:set_permissions"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/documents/post_document/"
+fields = ["body:from_webui"]
+task = "PLMCP-77"
+
+[[open_fields]]
+operation = "GET /api/documents/"
+fields = ["query:added__day", "query:added__gt", "query:added__gte", "query:added__lt", "query:added__lte", "query:added__month", "query:added__year", "query:all", "query:archive_serial_number__gte", "query:archive_serial_number__lte", "query:checksum__icontains", "query:checksum__iendswith", "query:checksum__iexact", "query:checksum__istartswith", "query:content__iendswith", "query:content__iexact", "query:content__istartswith", "query:correspondent__name__icontains", "query:correspondent__name__iendswith", "query:correspondent__name__iexact", "query:correspondent__name__istartswith", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:document_type__name__icontains", "query:document_type__name__iendswith", "query:document_type__name__iexact", "query:document_type__name__istartswith", "query:id", "query:modified__date__gte", "query:modified__date__lte", "query:modified__day", "query:modified__gt", "query:modified__gte", "query:modified__lt", "query:modified__lte", "query:modified__month", "query:modified__year", "query:original_filename__icontains", "query:original_filename__iendswith", "query:original_filename__iexact", "query:original_filename__istartswith", "query:search", "query:storage_path__name__icontains", "query:storage_path__name__iendswith", "query:storage_path__name__iexact", "query:storage_path__name__istartswith", "query:tags__id", "query:tags__name__icontains", "query:tags__name__iendswith", "query:tags__name__iexact", "query:tags__name__istartswith", "query:title__iendswith", "query:title__iexact", "query:title__istartswith", "query:title_content"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/"
+fields = ["query:version"]
+task = "PLMCP-75"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/"
+fields = ["query:full_perms"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/notes/"
+fields = ["query:id"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/history/"
+fields = ["query:page", "query:page_size"]
+task = "PLMCP-89"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/download/"
+fields = ["query:follow_formatting", "query:version"]
+task = "PLMCP-76"
+
+[[open_fields]]
+operation = "POST /api/mail_accounts/"
+fields = ["body:account_type", "body:character_set", "body:expiration", "body:is_token", "body:owner", "body:set_permissions"]
+task = "PLMCP-81"
+
+[[open_fields]]
+operation = "PATCH /api/mail_accounts/{id}/"
+fields = ["body:account_type", "body:expiration", "body:imap_port", "body:imap_server", "body:is_token", "body:owner", "body:set_permissions", "body:username"]
+task = "PLMCP-81"
+
+[[open_fields]]
+operation = "POST /api/mail_accounts/test/"
+fields = ["body:account_type", "body:expiration", "body:owner", "body:set_permissions"]
+task = "PLMCP-81"
+
+[[open_fields]]
+operation = "POST /api/mail_accounts/{id}/process/"
+fields = ["body:account_type", "body:expiration", "body:owner", "body:set_permissions"]
+task = "PLMCP-81"
+
+[[open_fields]]
+operation = "POST /api/mail_rules/"
+fields = ["body:filter_attachment_filename_exclude", "body:filter_body", "body:filter_subject", "body:filter_to", "body:set_permissions"]
+task = "PLMCP-81"
+
+[[open_fields]]
+operation = "PATCH /api/mail_rules/{id}/"
+fields = ["body:assign_owner_from_rule", "body:enabled", "body:filter_attachment_filename_include", "body:folder", "body:maximum_age", "body:order", "body:set_permissions", "body:stop_processing"]
+task = "PLMCP-81"
+
+[[open_fields]]
+operation = "POST /api/documents/{id}/notes/"
+fields = ["query:id"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/documents/rotate/"
+fields = ["body:all", "body:excluded_documents", "body:filters", "body:from_webui", "body:source_mode"]
+task = "PLMCP-79"
+
+[[open_fields]]
+operation = "POST /api/documents/merge/"
+fields = ["body:archive_fallback", "body:from_webui", "body:source_mode"]
+task = "PLMCP-79"
+
+[[open_fields]]
+operation = "POST /api/documents/edit_pdf/"
+fields = ["body:from_webui", "body:include_metadata", "body:source_mode"]
+task = "PLMCP-79"
+
+[[open_fields]]
+operation = "POST /api/documents/remove_password/"
+fields = ["body:from_webui", "body:include_metadata", "body:source_mode"]
+task = "PLMCP-79"
+
+[[open_fields]]
+operation = "POST /api/documents/reprocess/"
+fields = ["body:all", "body:excluded_documents", "body:filters"]
+task = "PLMCP-79"
+
+[[open_fields]]
+operation = "GET /api/tags/"
+fields = ["query:id", "query:is_root", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/correspondents/"
+fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/document_types/"
+fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/storage_paths/"
+fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering", "query:path__icontains", "query:path__iendswith", "query:path__iexact", "query:path__istartswith"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "PATCH /api/tags/{id}/"
+fields = ["body:is_insensitive"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "PATCH /api/document_types/{id}/"
+fields = ["body:is_insensitive", "body:match", "body:matching_algorithm", "body:name", "body:set_permissions"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/users/"
+fields = ["query:ordering", "query:username__iendswith", "query:username__iexact", "query:username__istartswith"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/groups/"
+fields = ["query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/share_links/"
+fields = ["query:created__date__gt", "query:created__date__gte", "query:created__date__lt", "query:created__date__lte", "query:created__day", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:created__month", "query:created__year", "query:expiration__date__gt", "query:expiration__date__gte", "query:expiration__date__lt", "query:expiration__date__lte", "query:expiration__day", "query:expiration__gt", "query:expiration__gte", "query:expiration__lt", "query:expiration__lte", "query:expiration__month", "query:expiration__year", "query:ordering"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/share_link_bundles/"
+fields = ["query:created__date__gt", "query:created__date__gte", "query:created__date__lt", "query:created__date__lte", "query:created__day", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:created__month", "query:created__year", "query:documents", "query:expiration__date__gt", "query:expiration__date__gte", "query:expiration__date__lt", "query:expiration__date__lte", "query:expiration__day", "query:expiration__gt", "query:expiration__gte", "query:expiration__lt", "query:expiration__lte", "query:expiration__month", "query:expiration__year", "query:ordering", "query:status"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/share_link_bundles/{id}/rebuild/"
+fields = ["body:expiration_days", "body:file_version"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/custom_fields/"
+fields = ["query:id", "query:id__in", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/saved_views/"
+fields = ["query:full_perms", "query:ordering"]
+task = "PLMCP-88"
+
+[[open_fields]]
+operation = "POST /api/correspondents/"
+fields = ["body:is_insensitive", "body:match", "body:owner", "body:set_permissions"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/document_types/"
+fields = ["body:is_insensitive", "body:match", "body:owner", "body:set_permissions"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/storage_paths/"
+fields = ["body:is_insensitive", "body:match", "body:owner", "body:set_permissions"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "PATCH /api/custom_fields/{id}/"
+fields = ["body:data_type"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/correspondents/{id}/"
+fields = ["query:full_perms"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "PATCH /api/correspondents/{id}/"
+fields = ["body:is_insensitive", "body:owner", "body:set_permissions", "query:full_perms"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/tags/{id}/"
+fields = ["query:full_perms"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "PATCH /api/storage_paths/{id}/"
+fields = ["body:is_insensitive", "body:match", "body:owner", "body:path", "body:set_permissions", "query:full_perms"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/saved_views/"
+fields = ["body:display_fields", "body:display_mode", "body:icon", "body:owner", "body:set_permissions"]
+task = "PLMCP-88"
+
+[[open_fields]]
+operation = "PATCH /api/saved_views/{id}/"
+fields = ["body:display_fields", "body:display_mode", "body:icon", "body:owner", "body:set_permissions"]
+task = "PLMCP-88"
+
+[[open_fields]]
+operation = "PATCH /api/workflows/{id}/"
+fields = ["body:order"]
+task = "PLMCP-87"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/thumb/"
+fields = ["query:version"]
+task = "PLMCP-74"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/metadata/"
+fields = ["query:version"]
+task = "PLMCP-83"

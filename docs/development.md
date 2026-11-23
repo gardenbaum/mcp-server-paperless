@@ -61,6 +61,13 @@ description or its annotations changed. Tests fail when it is stale, when the RE
 tool or toolset count the catalogue does not have, when a setting is documented nowhere under
 `docs/`, or when a relative link leads nowhere.
 
+`docs/api-coverage.md` shows, operation by operation of the vendored Paperless schema, which tools
+cover it, and for the rest the open task. It is derived from the adapter tests and the code; only
+`docs/api-coverage.toml` is written by hand (open tasks, owner-approved exclusions quoted with
+their date). Run `just docs-coverage` after a tool, an adapter test or the schema changed. The
+test fails when an operation or an unused field is neither covered nor listed, when an open
+entry's task does not exist or is done, and when an exclusion's quote is not in the repository.
+
 ### Demo recording
 
 `just demo` records `docs/demo/demo.gif`, the recording at the top of the README. It needs only

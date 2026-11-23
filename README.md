@@ -324,6 +324,7 @@ them.
 
 - [Configuration](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md): every variable, the toolsets, read-only mode, uploads
 - [Tool reference](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/tools.md): all tools and prompts
+- [API coverage](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/api-coverage.md): every Paperless endpoint, the tools that cover it, and what is still open
 - [Run over HTTP](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/http.md): bearer tokens, allowed hosts, what the transport refuses
 - [Connect claude.ai](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/claude-ai-connector.md): sign-in through your identity provider
 - [Run in a container](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/container.md): the image, compose files, reverse proxy

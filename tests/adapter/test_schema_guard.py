@@ -2,9 +2,14 @@
 
 import httpx2
 import pytest
+from quality.api_coverage import Observation
 
-from adapter.conftest import BASE_URL, ClientFactory, tag
-from adapter.schema_guard import SchemaViolationError, check_request, check_response
+from adapter.conftest import BASE_URL, ClientFactory, streaming, tag
+from adapter.schema_guard import OBSERVED, SchemaViolationError, check_request, check_response
+from mcp_server_paperless.domain.documents import DocumentUpload
+from mcp_server_paperless.paperless.admin import PaperlessAdminReader
+from mcp_server_paperless.paperless.documents import PaperlessDocumentWriter
+from mcp_server_paperless.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
 
 HEADERS = {"Accept": "application/json; version=10", "Authorization": "Token t"}
 TAG_PAGE = {"count": 1, "next": None, "previous": None, "results": [tag(1, "inbox")]}
@@ -544,3 +549,83 @@ def test_the_rest_of_a_workflow_is_still_checked(body: dict[str, object]) -> Non
             get("/api/workflows/"),
             httpx2.Response(200, json={**WORKFLOW_PAGE, "results": [body]}),
         )
+
+
+# The guard records what each adapter method sends, for the coverage table (PLMCP-91).
+TRASH_PAGE: dict[str, object] = {"count": 0, "next": None, "previous": None, "results": []}
+
+
+@pytest.mark.anyio
+async def test_a_request_is_recorded_with_the_port_method_that_sent_it(
+    make_client: ClientFactory,
+) -> None:
+    start = len(OBSERVED)
+    reader = PaperlessTrashReader(make_client(lambda _: httpx2.Response(200, json=TRASH_PAGE)))
+
+    _ = await reader.list_trash(page=2, page_size=5)
+
+    assert OBSERVED[start:] == [
+        Observation(
+            call=("TrashReader", "list_trash"),
+            operation=("GET", "/api/trash/"),
+            query=frozenset({"page", "page_size"}),
+            body=frozenset(),
+        )
+    ]
+
+
+@pytest.mark.anyio
+async def test_the_fields_of_a_json_body_are_recorded(make_client: ClientFactory) -> None:
+    start = len(OBSERVED)
+    writer = PaperlessTrashWriter(
+        make_client(lambda _: httpx2.Response(200, json={"result": "OK"}))
+    )
+
+    await writer.restore_from_trash((1,))
+
+    [seen] = OBSERVED[start:]
+    assert seen.call == ("TrashWriter", "restore_from_trash")
+    assert seen.operation == ("POST", "/api/trash/")
+    assert seen.body == {"action", "documents"}
+
+
+@pytest.mark.anyio
+async def test_the_fields_of_a_form_are_recorded(make_client: ClientFactory) -> None:
+    start = len(OBSERVED)
+    writer = PaperlessDocumentWriter(make_client(lambda _: httpx2.Response(200, json="task-1")))
+    upload = DocumentUpload(
+        filename="a.pdf", mime_type="application/pdf", content=b"%PDF-1.4", title="T"
+    )
+
+    _ = await writer.upload_document(upload)
+
+    [seen] = OBSERVED[start:]
+    assert seen.operation == ("POST", "/api/documents/post_document/")
+    assert seen.body == {"document", "title"}
+
+
+@pytest.mark.anyio
+async def test_a_request_sent_outside_the_adapter_has_no_port_method(
+    make_client: ClientFactory,
+) -> None:
+    start = len(OBSERVED)
+    client = make_client(lambda _: httpx2.Response(200, json=TAG_PAGE))
+
+    _ = await client.request("GET", "/api/tags/")
+
+    assert OBSERVED[start:] == []
+
+
+@pytest.mark.anyio
+async def test_a_streamed_request_is_recorded_although_the_guard_cannot_check_it() -> None:
+    start = len(OBSERVED)
+    client, _ = streaming(lambda _: httpx2.Response(200, content=b"PK-zip"))
+
+    _ = await PaperlessAdminReader(client).download_documents(
+        [1], content="both", compression="deflated", follow_formatting=True, max_bytes=100
+    )
+
+    [seen] = OBSERVED[start:]
+    assert seen.call == ("AdminReader", "download_documents")
+    assert seen.operation == ("POST", "/api/documents/bulk_download/")
+    assert seen.body == {"documents", "content", "compression", "follow_formatting"}
