@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T14:05:31Z'
-updated_date: '2026-11-23T14:22:28Z'
+updated_date: '2026-11-23T14:52:36Z'
 labels: []
 dependencies: []
 priority: high
@@ -48,18 +48,19 @@ The MCP SDK limits the body of the MCP endpoint to 4 MiB and FastMCP passes no o
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-No supported way found: FastMCP 4.2.1, 4.2.5 (latest) and its main branch pass no max_request_body_size to the SDK's session manager (mcp 2.3.0 takes it), and there is no setting for it. Prototype on real uvicorn: setting max_body_size of the SDK's RequestBodyLimitMiddleware instance when the app starts lets 10 MiB and 100 MiB files through. Waiting for the owner's decision between the options; docs, decision and tool descriptions follow it.
-Done, independent of the option: BodyLimit's 413 is a JSON-RPC error naming the limit in bytes and the setting; before, the client showed only 'Server returned an error response'. Between 4 MiB and this server's limit the SDK's plain 413 still answers.
-
-Owner approved option 1 and the unchanged 100 MiB maximum (2026-11-23). The tool descriptions needed no change: 10 MiB by default is now true over HTTP too. The documented 'three times the file' was wrong and is replaced by measurements. FastMCP issue 854 already asks for the parameter.
+No supported way to raise the SDK's 4 MiB cap: FastMCP 4.2.1, 4.2.5 (latest) and its main branch pass no max_request_body_size to the SDK's session manager (mcp 2.3.0 takes it), and there is no setting for it. The owner approved option 1 (set max_body_size of this app's own SDK middleware at each start) and the unchanged 100 MiB maximum (2026-11-23).
+BodyLimit's 413 is a JSON-RPC error naming the limit in bytes and the setting; before, the client showed only 'Server returned an error response'. The tool descriptions needed no change: 10 MiB by default is now true over HTTP too. The documented 'three times the file' was wrong; measured peaks for 100 MiB are 640 MB on a fresh server and 845 to about 890 MB after an earlier upload of 40 MiB.
+PrefectHQ/fastmcp#854 reports the 413 (its own text does not name the parameter); a comment there asks for the parameter, and the owner-approved comment of this project is https://github.com/PrefectHQ/fastmcp/issues/854#issuecomment-7104191663.
+Review of PR 100 (6 Minor, all fixed): two starts of one app, the exact value set, foreign limiter object and FastMCP's real session manager tested; refusals are InvalidConfiguration, so a build-time one is one line of main_http instead of a traceback, while a start-time one comes out of the task group as an ExceptionGroup and uvicorn exits with status 3; the 413 text holds for every request and at the maximum; 401 tested at exactly the limit. Left for the owner: services/upload_source.py has the same 'the operator can raise' wording.
+CI on 57b61aa (before these fixes): check 3.14 and 3.15, audit, e2e 1-3 and the container builds green, Codex clean; it did not run on the fixes.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Over HTTP, files up to PAPERLESS_MCP_MAX_UPLOAD_BYTES reach the upload tools: app.raise_sdk_limit sets the MCP SDK's 4 MiB body limit of this app's own session manager to BodyLimit's, and the app refuses to start if it is not where expected (decision-40, superseding decision-39). BodyLimit's 413 is a JSON-RPC error a client shows.
+Over HTTP, files up to PAPERLESS_MCP_MAX_UPLOAD_BYTES reach the upload tools: app.raise_sdk_limit sets the MCP SDK's 4 MiB body limit of this app's own session manager to BodyLimit's, and the app is not built or does not start if it is not where expected (decision-40, superseding decision-39). BodyLimit's 413 is a JSON-RPC error a client shows.
 
-Verified on real uvicorn with FastMCP's client: 10 MiB and 20 MiB limits, with and without a token, one byte over, far over, and 401 without a token; hand mutations killed. just check passes except test_the_menu_driver_reports_a_failing_cli (known on macOS).
+Verified on real uvicorn with FastMCP's client: 10 MiB and 20 MiB limits, with and without a token, two starts, one byte over, far over, 401 without a token at exactly the limit, and the refusal to start; hand mutations killed. CI on 57b61aa was green on Python 3.14 and 3.15, e2e and the container builds.
 
-Open: DoD 2 (CI and that macOS failure), 3 and 4 wait for the pull request. Not verified: e2e against Paperless, Docker, Python 3.15, clients other than FastMCP's. Risk: one 100 MiB upload takes 640 to 850 MB.
+Open: DoD 2 (test_the_menu_driver_reports_a_failing_cli fails locally on macOS; CI has to run on the review fixes), 3 and 4 wait for the pull request. Not verified: a large upload to a real Paperless, clients other than FastMCP's, memory on Linux. Risk: one 100 MiB upload takes 640 to about 890 MB, and nothing limits how many run at once.
 <!-- SECTION:FINAL_SUMMARY:END -->

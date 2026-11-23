@@ -245,7 +245,7 @@ far smaller. The size is checked on the text before anything is decoded, but the
 text and the decoded bytes are in memory together, over HTTP in several copies. Measured on a real
 HTTP server with a stand-in for Paperless (the peak of single runs on macOS, above about 125 MB
 when idle): a 10 MiB file took about 70 MB, four at once about 145 MB, and a 100 MiB file 640 MB on
-a fresh server and 850 MB after an earlier upload. Nothing limits how many uploads run at once, so
+a fresh server and up to about 890 MB after an earlier upload. Nothing limits how many uploads run at once, so
 give a container the memory for the limit you set.
 
 **Uploads by path.** With `PAPERLESS_MCP_UPLOAD_DIRS` set, the two tools also take a `path` on

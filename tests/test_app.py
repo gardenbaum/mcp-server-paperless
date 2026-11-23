@@ -522,8 +522,11 @@ async def test_a_client_learns_that_its_file_is_too_large(*, chunked: bool) -> N
 
     message = str(refused.value)
     assert f"at most {SMALL_LIMIT} bytes" in message
-    assert "Upload a smaller file" in message
-    assert "PAPERLESS_MCP_MAX_UPLOAD_BYTES" in message
+    # True for any tool, not only an upload, and for an operator at the maximum.
+    assert "per request" in message
+    assert "PAPERLESS_MCP_MAX_UPLOAD_BYTES (at most 100 MiB)" in message
+    assert "can raise" not in message
+    assert "Upload" not in message
 
 
 @pytest.mark.anyio

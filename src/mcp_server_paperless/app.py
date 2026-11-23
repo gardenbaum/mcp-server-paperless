@@ -333,8 +333,9 @@ async def _reply(send: Send, status: int, answer: object) -> None:
 async def _too_large(send: Send, limit: int) -> None:
     """413 with a JSON-RPC error: the SDK's client shows its message, and no other body's."""
     message = (
-        f"Request body too large: this server takes at most {limit} bytes. Upload a smaller file; "
-        "the operator can raise PAPERLESS_MCP_MAX_UPLOAD_BYTES."
+        f"Request too large: this server takes at most {limit} bytes per request, which "
+        "follows PAPERLESS_MCP_MAX_UPLOAD_BYTES (at most 100 MiB). Send less, such as a smaller "
+        "file."
     )
     error = {"code": INVALID_REQUEST, "message": message}
     await _reply(send, 413, {"jsonrpc": "2.0", "id": None, "error": error})
@@ -403,15 +404,16 @@ def raise_sdk_limit(app: Starlette, limit: int) -> None:
     with the SDK's limit is made at each start of the app, so it is set right after.
 
     Raises:
-        RuntimeError: FastMCP's endpoint is not among the routes. Starting the app raises it when
-            the limit is not where it is expected: a server with another limit never serves.
+        InvalidConfiguration: FastMCP's endpoint is not among the routes. Starting the app raises
+            it when the limit is not where it is expected, so a server with another limit never
+            serves; it then comes out of the session manager's task group, in an ExceptionGroup.
     """
     endpoints = [getattr(route, "endpoint", None) for route in app.routes]
     # With authentication FastMCP wraps its endpoint.
     inner = [getattr(endpoint, "app", endpoint) for endpoint in endpoints]
     served = next((e for e in inner if isinstance(e, StreamableHTTPASGIApp)), None)
     if served is None:
-        raise RuntimeError(NO_SDK_LIMIT)
+        raise InvalidConfiguration(NO_SDK_LIMIT)
     start = app.router.lifespan_context
 
     @contextlib.asynccontextmanager
@@ -421,7 +423,7 @@ def raise_sdk_limit(app: Starlette, limit: int) -> None:
             if not isinstance(limiter, RequestBodyLimitMiddleware) or not hasattr(
                 limiter, "max_body_size"
             ):
-                raise RuntimeError(NO_SDK_LIMIT)
+                raise InvalidConfiguration(NO_SDK_LIMIT)
             limiter.max_body_size = limit
             yield
 
@@ -553,7 +555,7 @@ def build_app(
 
     Raises:
         InvalidConfiguration: ``server`` was built without the authentication the settings ask
-            for, or with authentication they do not ask for.
+            for, or with authentication they do not ask for, or see ``raise_sdk_limit``.
     """
     with_oidc = oidc is not None and oidc.configured
     authenticated = bool(http.auth_tokens) or with_oidc
@@ -603,8 +605,8 @@ def create_app(
     Never offers a path parameter: HTTP callers upload base64 content (decision-7).
 
     Raises:
-        InvalidConfiguration: See ``check_startup`` and ``oidc_proxy``, or the selection leaves
-            no tool.
+        InvalidConfiguration: See ``check_startup``, ``oidc_proxy`` and ``raise_sdk_limit``, or
+            the selection leaves no tool.
     """
     check_startup(http, resolve, oidc=oidc)
     server = create_server(paperless, settings, stdio=False, auth=authenticator(http, oidc))
