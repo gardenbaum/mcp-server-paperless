@@ -12,8 +12,9 @@ from typing import TYPE_CHECKING
 
 from mcp_server_paperless.domain.documents import FileDelivery, FileReport, Thumbnail
 from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError, Validation
-from mcp_server_paperless.domain.files import FilePart, FilePartReport
+from mcp_server_paperless.domain.files import FilePart, FilePartReport, SavedFileReport
 from mcp_server_paperless.services.documents import document_link, listed_version
+from mcp_server_paperless.services.file_sink import NO_SINK, Expected, file_name
 from mcp_server_paperless.services.transfer import (
     APPEND,
     MAX_FILE_BYTES,
@@ -25,19 +26,21 @@ from mcp_server_paperless.services.transfer import (
     read_window,
     time_limit,
     too_large,
+    ways,
 )
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.documents import FileMetadata, FileVersion
     from mcp_server_paperless.domain.ports import DocumentReader
+    from mcp_server_paperless.services.file_sink import FileSink
 
 PDF = "application/pdf"
 
 
-def _over_limit(limit: int, link: str) -> str:
+def _over_limit(limit: int, link: str, *, saving: bool) -> str:
     return (
         f"The file is over the download limit of {limit} bytes, so it is not attached. "
-        "Call again with offset=0 to read it in parts, read its text with get_document_content, "
+        f"Call again with {ways(saving=saving)}, read its text with get_document_content, "
         f"open it at {link}, or ask the administrator to raise PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
     )
 
@@ -78,11 +81,20 @@ def _facts(document_id: int, metadata: FileMetadata, version: FileVersion) -> _F
 class FileService:
     """Reads the files of the documents the current user may see."""
 
-    def __init__(self, reader: DocumentReader, *, web_url: str, max_bytes: int) -> None:
+    def __init__(
+        self,
+        reader: DocumentReader,
+        *,
+        web_url: str,
+        max_bytes: int,
+        sink: FileSink = NO_SINK,
+    ) -> None:
         """Read through ``reader``; files over ``max_bytes`` bytes are reported, not delivered.
 
-        ``web_url`` is the base of links to the Paperless UI.
+        ``web_url`` is the base of links to the Paperless UI. ``sink`` saves files; by default it
+        refuses to.
         """
+        self._sink: FileSink = sink
         self._reader: DocumentReader = reader
         self._web_url: str = web_url
         self._max_bytes: int = max_bytes
@@ -149,7 +161,9 @@ class FileService:
             delivered=data is not None,
             max_bytes=self._max_bytes,
             web_url=link,
-            note=None if data is not None else _over_limit(self._max_bytes, link),
+            note=None
+            if data is not None
+            else _over_limit(self._max_bytes, link, saving=bool(self._sink.roots)),
             version_id=version_id,
         )
         return FileDelivery(report=report, data=data)
@@ -229,3 +243,45 @@ class FileService:
             next=None if following is None else f"Call again with {arguments}; {APPEND}",
         )
         return FilePart(report=report, data=data)
+
+    async def save(  # noqa: PLR0913 -- the file and where it goes
+        self,
+        document_id: int,
+        version: FileVersion,
+        *,
+        directory: str,
+        version_id: int | None = None,
+        save_as: str | None = None,
+        confirm: bool = False,
+    ) -> SavedFileReport:
+        """Save a file of any size up to the limit into ``directory``.
+
+        Raises:
+            NotFound: No such document, version or archive version, or no usable directory.
+            PermissionDenied: The user may not see the document.
+            Validation: Saving is not enabled, or the name is not usable.
+            ConfirmationRequired: A file of that name exists and ``confirm`` is not set.
+            PaperlessMcpError: The file could not be read or written completely; nothing is saved.
+        """
+        async with self._sink.open(directory) as target:
+            shown = listed_version(await self._reader.get_document(document_id), version_id)
+            metadata = await self._reader.get_document_metadata(document_id, version_id=shown)
+            facts = _facts(document_id, metadata, version)
+            async with self._reader.open_document_file(
+                document_id, version, version_id=shown
+            ) as opened:
+                proposed = opened.filename or facts.name or f"document-{document_id}"
+                # The name is known only now; the bytes are not read yet.
+                await target.claim(file_name(save_as, proposed), confirm=confirm)
+                saved = await target.write(opened.chunks, Expected(facts.size, facts.checksum))
+        return SavedFileReport(
+            document_id=document_id,
+            kind=version,
+            version_id=shown,
+            directory=directory,
+            filename=saved.filename,
+            size_bytes=saved.size,
+            sha256=saved.sha256,
+            replaced=saved.replaced,
+            web_url=document_link(self._web_url, document_id),
+        )

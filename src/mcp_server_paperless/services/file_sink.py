@@ -64,12 +64,10 @@ MIB: Final = 1024 * 1024
 # What stays free on the file system in any case.
 RESERVE: Final = 256 * MIB
 SHA256_LENGTH: Final = 64
-# How file systems say that they have no hard links.
-NO_LINKS: Final = frozenset(
-    {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS, errno.EMLINK}
-)
+# How file systems say that they have no hard links. Names, as not every platform has every number.
+NO_LINKS: Final = frozenset({"EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EMLINK"})
 # How they say that a directory cannot be synced, which is no failure.
-NO_SYNC: Final = frozenset({errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP})
+NO_SYNC: Final = frozenset({"EINVAL", "ENOTSUP", "EOPNOTSUPP"})
 NEW: Final = os.O_CREAT | os.O_EXCL
 _FULL: Final = "There is not enough space for the file in that directory; nothing was saved."
 _DENIED: Final = "The server may not write into that directory; nothing was saved."
@@ -77,12 +75,12 @@ _LARGE: Final = "The file is too large for the file system of that directory; no
 _ROOM: Final = "Make room or choose another directory; 256 MiB stay free in any case."
 _OTHER: Final = "Choose another directory, or ask the operator."
 _FAILURES: Final = {
-    errno.ENOSPC: (_FULL, _ROOM),
-    errno.EDQUOT: (_FULL, _ROOM),
-    errno.EFBIG: (_LARGE, _OTHER),
-    errno.EROFS: (_DENIED, _OTHER),
-    errno.EACCES: (_DENIED, _OTHER),
-    errno.EPERM: (_DENIED, _OTHER),
+    "ENOSPC": (_FULL, _ROOM),
+    "EDQUOT": (_FULL, _ROOM),
+    "EFBIG": (_LARGE, _OTHER),
+    "EROFS": (_DENIED, _OTHER),
+    "EACCES": (_DENIED, _OTHER),
+    "EPERM": (_DENIED, _OTHER),
 }
 
 type _Identity = tuple[int, int, int, int]
@@ -179,6 +177,20 @@ def file_name(save_as: str | None, proposed: str) -> str:
     return name
 
 
+def _shown(text: str) -> str:
+    """``text`` in quotes, whole and exactly as it is.
+
+    Raises:
+        Validation: That is not possible.
+    """
+    shown = quoted(text, len(text))
+    if shown[1:-1] != text or not text.isprintable():
+        message = "The directory or the file name has characters that a confirmation cannot show."
+        hint = "Choose another name with save_as, or another directory."
+        raise Validation(message, hint=hint)
+    return shown
+
+
 def _meanwhile() -> PaperlessMcpError:
     message = "The directory or the file changed meanwhile; nothing was saved."
     return PaperlessMcpError(message, hint="Look at the directory, then try again.")
@@ -189,10 +201,14 @@ def _appeared() -> PaperlessMcpError:
     return PaperlessMcpError(message, hint="Look at the directory, then try again.")
 
 
+def _name_of(error: OSError) -> str:
+    return errno.errorcode.get(error.errno or 0, "")
+
+
 def _failure(error: OSError) -> PaperlessMcpError:
     """The client's message: never the system's, which may name paths."""
     default = ("The file could not be written; nothing was saved.", _OTHER)
-    message, hint = _FAILURES.get(error.errno or 0, default)
+    message, hint = _FAILURES.get(_name_of(error), default)
     return PaperlessMcpError(message, hint=hint)
 
 
@@ -331,16 +347,18 @@ class Target:
 
         Raises:
             ConfirmationRequired: A file of that name exists and ``confirm`` is not set.
-            Validation: Something that is no plain file has the name.
+            Validation: Something that is no plain file has the name, or the replacement cannot be
+                shown.
         """
         self._name = name
         self._existing = await _blocking(self._look)
-        if self._existing is not None and not confirm:
+        if self._existing is None:
+            return
+        file, directory = _shown(name), _shown(self._given)
+        if not confirm:
             _, _, size, changed = self._existing
-            effect = (
-                f"replace the file {quoted(name)} ({size} bytes"
-                f"{self._sink.system.date(changed / 1e9)}) in {self._given}"
-            )
+            day = self._sink.system.date(changed / 1e9)
+            effect = f"replace the file {file} ({size} bytes{day}) in {directory}"
             raise ConfirmationRequired.for_effect(effect)
 
     async def write(self, chunks: AsyncIterator[bytes], expected: Expected) -> Saved:
@@ -422,7 +440,7 @@ class Target:
         try:
             self._sink.system.fsync(self._directory)
         except OSError as error:
-            if error.errno not in NO_SYNC:
+            if _name_of(error) not in NO_SYNC:
                 message = (
                     "The file was saved, but the disk reported an error afterwards; it may be lost."
                 )
@@ -464,7 +482,7 @@ class Target:
         except FileExistsError:
             raise _appeared() from None
         except OSError as error:
-            if error.errno not in NO_LINKS:
+            if _name_of(error) not in NO_LINKS:
                 raise
             self._commit_without_links(temporary)
 
@@ -492,3 +510,7 @@ class Target:
 def _is_zip(fd: int) -> bool:
     with os.fdopen(os.dup(fd), "rb") as file:
         return zipfile.is_zipfile(file)
+
+
+# For a server that saves nothing.
+NO_SINK: Final = FileSink(())

@@ -25,6 +25,12 @@ APPEND: Final = "append the parts in order."
 RESTART: Final = "Repeat the call with offset=0 and without checksum, and use only the new parts."
 
 
+def ways(*, saving: bool) -> str:
+    """How a file over the attach limit can be had, after "Call again with"."""
+    parts = "offset=0 to read it in parts"
+    return f"save_dir to save it, or with {parts}" if saving else parts
+
+
 def changed() -> Validation:
     """The refusal of a part that does not belong to the parts before it."""
     message = "The file changed since the first part; start again with offset=0."

@@ -178,12 +178,52 @@ async def test_an_existing_file_is_replaced_only_with_confirm(tree: Tree) -> Non
         _ = await save(tree)
     assert raised.value.message == (
         "Nothing was changed. Confirming would replace the file 'a.pdf' (4 bytes, changed "
-        f"2023-11-14) in {tree.sub}."
+        f"2023-11-14) in '{tree.sub}'."
     )
     assert (old.read_bytes(), tree.names()) == (b"old!", [NAME])
 
     saved = await save(tree, confirm=True)
     assert (saved.replaced, old.read_bytes(), tree.names()) == (True, DATA, [NAME])
+
+
+@pytest.mark.parametrize(
+    ("folder", "name"),
+    [
+        ("sub  two", NAME),
+        ("sub\nConfirming would do nothing", NAME),
+        (f"sub{chr(0x202E)}", NAME),
+        ('it\'s "quoted"', NAME),
+        ("sub", "a  b.pdf"),
+    ],
+)
+async def test_a_replacement_that_cannot_be_shown_is_refused_also_with_confirm(
+    tree: Tree, folder: str, name: str
+) -> None:
+    directory = tree.allowed / folder
+    directory.mkdir(exist_ok=True)
+    _ = (directory / name).write_bytes(b"old")
+
+    for confirm in (False, True):
+        with pytest.raises(Validation) as raised:
+            _ = await save(tree, name, directory=directory, confirm=confirm)
+        assert raised.value.message == (
+            "The directory or the file name has characters that a confirmation cannot show."
+        )
+        assert raised.value.hint == "Choose another name with save_as, or another directory."
+    assert (directory / name).read_bytes() == b"old"
+    _ = await save(tree, "new.pdf", directory=directory)  # a new file needs no confirmation
+
+
+async def test_a_confirmation_shows_the_whole_name_and_directory(tree: Tree) -> None:
+    directory, name = tree.allowed / ("d" * 200), "n" * 200 + ".pdf"
+    directory.mkdir()
+    _ = (directory / name).write_bytes(b"old")
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await save(tree, name, directory=directory)
+
+    assert f"replace the file '{name}' (3 bytes" in raised.value.message
+    assert raised.value.message.endswith(f" in '{directory}'.")
 
 
 async def test_the_refusal_comes_before_anything_is_read_or_written(tree: Tree) -> None:

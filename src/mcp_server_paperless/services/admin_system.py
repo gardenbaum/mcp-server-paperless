@@ -32,7 +32,8 @@ from mcp_server_paperless.domain.admin import (
     check_secret,
 )
 from mcp_server_paperless.domain.errors import ConfirmationRequired, Validation, quoted
-from mcp_server_paperless.domain.files import ArchivePartReport, FilePart
+from mcp_server_paperless.domain.files import ArchivePartReport, FilePart, SavedArchiveReport
+from mcp_server_paperless.services.file_sink import NO_SINK, Expected, file_name
 from mcp_server_paperless.services.transfer import (
     APPEND,
     MAX_SECONDS,
@@ -41,6 +42,7 @@ from mcp_server_paperless.services.transfer import (
     check_part,
     read_all,
     time_limit,
+    ways,
 )
 
 if TYPE_CHECKING:
@@ -57,6 +59,7 @@ if TYPE_CHECKING:
     )
     from mcp_server_paperless.domain.ports import AdminReader, AdminWriter
     from mcp_server_paperless.domain.tasks import TaskState
+    from mcp_server_paperless.services.file_sink import FileSink
 
 DEFAULT_LOG_LINES: Final = 100
 MAX_LOG_LINES: Final = 1000
@@ -67,6 +70,8 @@ ARCHIVE_NAME: Final = "paperless-documents.zip"
 ZIP: Final = "application/zip"
 # The name Paperless gives the archive, for one that is read in parts or saved.
 SAVED_NAME: Final = "documents.zip"
+# How long Paperless may take to build an archive before its first byte, for one that is saved.
+SAVE_WAIT_SECONDS: Final = 600.0
 # Settings a confirmation names in full; the rest are counted.
 SHOWN: Final = 5
 # The longest value a confirmation shows; `quoted` cuts text at the same 60 characters.
@@ -112,8 +117,19 @@ def _check_ids(document_ids: Sequence[int]) -> None:
 class SystemAdmin:
     """Configuration, logs, tasks and bulk download."""
 
-    def __init__(self, reader: AdminReader, writer: AdminWriter, *, max_bytes: int) -> None:
-        """Read and write through the ports; archives over ``max_bytes`` bytes are not attached."""
+    def __init__(
+        self,
+        reader: AdminReader,
+        writer: AdminWriter,
+        *,
+        max_bytes: int,
+        sink: FileSink = NO_SINK,
+    ) -> None:
+        """Read and write through the ports; archives over ``max_bytes`` bytes are not attached.
+
+        ``sink`` saves archives; by default it refuses to.
+        """
+        self._sink: FileSink = sink
         self._reader: AdminReader = reader
         self._writer: AdminWriter = writer
         self._max_bytes: int = max_bytes
@@ -328,8 +344,8 @@ class SystemAdmin:
             )
         return (
             f"The archive is over the download limit of {self._max_bytes} bytes, so it is not "
-            "attached. Call again with offset=0 to read it in parts, ask for fewer documents, "
-            "fetch single files with download_document, or ask the administrator to raise "
+            f"attached. Call again with {ways(saving=bool(self._sink.roots))}, ask for "
+            "fewer documents, fetch single files with download_document, or ask the administrator to raise "
             "PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
         )
 
@@ -427,3 +443,45 @@ class SystemAdmin:
             next=None if following is None else f"Call again with {arguments}; {APPEND}",
         )
         return FilePart(report=report, data=data)
+
+    async def save(  # noqa: PLR0913 -- the archive and where it goes
+        self,
+        document_ids: Sequence[int],
+        *,
+        directory: str,
+        content: ArchiveContent = "archive",
+        compression: Compression = "none",
+        follow_formatting: bool = False,
+        save_as: str | None = None,
+        confirm: bool = False,
+    ) -> SavedArchiveReport:
+        """Save the archive, of any size up to the limit, into ``directory``.
+
+        Raises:
+            NotFound: No usable directory.
+            Validation: As ``download``; or saving is not enabled, or the name is not usable.
+            PermissionDenied: The user may not see one of the documents.
+            ConfirmationRequired: A file of that name exists and ``confirm`` is not set; the
+                archive is not built.
+            PaperlessMcpError: It could not be read or written completely; nothing is saved.
+        """
+        _check_ids(document_ids)
+        async with self._sink.open(directory) as target:
+            await target.claim(file_name(save_as, SAVED_NAME), confirm=confirm)
+            async with self._reader.open_archive(
+                document_ids,
+                content=content,
+                compression=compression,
+                follow_formatting=follow_formatting,
+                wait_seconds=SAVE_WAIT_SECONDS,
+            ) as opened:
+                saved = await target.write(opened.chunks, Expected(zip=True))
+        return SavedArchiveReport(
+            document_ids=tuple(document_ids),
+            content=content,
+            directory=directory,
+            filename=saved.filename,
+            size_bytes=saved.size,
+            sha256=saved.sha256,
+            replaced=saved.replaced,
+        )
