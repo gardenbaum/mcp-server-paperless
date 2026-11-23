@@ -1,4 +1,7 @@
-# Privacy policy
+# Privacy Policy
+
+Effective 2026-11-23. Changes are visible in this file's
+[history](https://github.com/gardenbaum/mcp-server-paperless/commits/main/PRIVACY.md).
 
 This policy covers mcp-server-paperless, the software in this repository. You run the server, or
 someone you trust does; this project operates no service for it. Paperless, your MCP client, its
@@ -6,7 +9,8 @@ AI model and an identity provider are separate and have their own policies.
 
 In short: the project receives no data from a running server. The server talks to the Paperless
 instance you configure and to your MCP client, keeps no copy of your documents on disk, and has no
-telemetry of its own.
+telemetry of its own. Installing it, and signing in through an identity provider, involve other
+services, listed [below](#where-your-data-goes).
 
 ## What the server reads and writes
 
@@ -29,11 +33,31 @@ telemetry of its own.
 - **In memory.** Requests and answers while they are handled, the configured secrets, and
   Paperless lists used to resolve names (such as tags, correspondents, custom fields, saved views,
   users and groups). HTTP sessions are in memory too.
-- **On disk.** None of your data, unless an HTTP deployment signs clients in through an identity provider
-  and sets `PAPERLESS_MCP_OIDC_STORAGE_DIR`. That directory then holds client registrations,
-  sign-in state and the provider's tokens (an ID token names you at the provider), encrypted with
-  a key derived from `PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY`. Without the directory they are in memory.
+- **On disk.** None of your data, unless an HTTP deployment signs clients in through an identity
+  provider and sets `PAPERLESS_MCP_OIDC_STORAGE_DIR`. That directory then holds client
+  registrations, sign-in state and the provider's tokens (an ID token names you at the provider).
+  Their content is encrypted with a key derived from `PAPERLESS_MCP_OIDC_JWT_SIGNING_KEY`; the file
+  names are not, and can hold client ids, authorization codes and internal ids. Without the
+  directory all of this is in memory.
 - **In your browser.** With that sign-in, the consent page sets short-lived cookies.
+
+## What your client and installer store
+
+- **Your MCP client** keeps the Paperless token and the other settings you give it, usually in its
+  configuration file. `claude mcp add` writes them to `~/.claude.json` (to `.mcp.json` with project
+  scope). The Claude Code plugin keeps the token in Claude Code's credential store (the Keychain
+  on macOS, otherwise `.credentials.json` in its configuration directory, also on macOS if the
+  Keychain refuses) and the other options in `settings.json`.
+- **uv** keeps the downloaded packages in its cache, and a Python it downloaded. **Docker** keeps
+  the image; a container's environment variables, the token included, are part of its settings.
+
+To remove everything, take the server out of your client (`claude mcp remove paperless`, or
+`claude plugin uninstall mcp-server-paperless@gardenbaum`, which deletes the stored options and the
+token with the last installation, unless it reports otherwise, then
+`claude plugin marketplace remove gardenbaum`), run `uv cache clean` (it clears uv's cache for
+everything) and `uv python uninstall` for a Python you no longer need, remove the container and
+image, empty the sign-in storage directory, and delete logs. Revoke the token in Paperless and,
+after sign-in, the access at the provider.
 
 ## What the server logs
 
@@ -43,22 +67,24 @@ client or whoever runs the server.
 At the default log levels it logs:
 
 - for each tool call: the tool's name, a request id, the duration, and success or the type of error;
-- for each HTTP request: method, path, status, duration and the request id (which the caller may
-  choose), but not the query string, headers, body or the caller's IP address;
+- for each HTTP request, one record with method, path, status, duration and the request id (which
+  the caller may choose), and none of its query string, headers, body or IP address;
+- HTTP session ids, also unknown ones a caller sends;
 - startup messages, and failed or retried requests to Paperless with their path, which can
   contain ids and, for `paperless_api_get`, is the path the model asked for;
 - errors outside tool calls: when a resource or prompt fails, its address or name and the error
   message, and when the startup check fails, possibly a traceback. These can quote a prompt's
   argument or Paperless's answer;
-- with sign-in through an identity provider, identifiers such as client ids, your user id at the
-  provider, and authorization codes the server does not recognise.
+- with sign-in through an identity provider, client ids and names, your user id at the provider,
+  parts of token ids, authorization codes the server does not recognise, and values from failed
+  sign-in requests (error, description, state, requested resource).
 
-Apart from what this list names, it does not log your Paperless token, bearer tokens, tool
-arguments, search queries, document text or file content at these levels.
+Its records of tool calls contain no arguments or results, and it does not log your Paperless token
+or bearer tokens, at these levels.
 
 **Debug logging is different.** With `PAPERLESS_MCP_LOG_LEVEL=DEBUG` or `FASTMCP_LOG_LEVEL=DEBUG`,
-libraries can log tool arguments and answers, document content included. Use it only for
-troubleshooting.
+the server's libraries can log tool arguments and answers, document content included. Use it only
+for troubleshooting.
 
 ## Where your data goes
 
@@ -69,18 +95,24 @@ troubleshooting.
 - **Services Paperless uses.** `ask_paperless_ai` and `get_ai_suggestions` make Paperless send
   document text to the language model it is configured with. Other tools can make Paperless publish
   a document under a public link, send it by e-mail, contact a mail server, or set up workflows
-  that send e-mail or call webhooks.
+  that send e-mail or call webhooks. If it is set up for them, Paperless also sends documents to a
+  remote OCR service, and document text and questions to an embedding service.
 - **Your identity provider**, if an HTTP deployment uses one: the sign-in and its tokens. The
   server also fetches the metadata of a client that identifies itself by a URL from that URL.
-- **PyPI and the image registry**, when you install or update: `uvx` contacts PyPI (and may
-  download Python), Docker contacts `ghcr.io`. `@latest` checks at every start. These are requests
-  of your installer, not of the server.
+- **FastMCP's website**, during that sign-in: the server's consent and error pages make your
+  browser load a logo from `gofastmcp.com`, which sees your IP address and what your browser sends
+  with an image request.
+- **Package hosts**, by requests of your installer, not of the server. `uvx` contacts PyPI
+  (`pypi.org`, `files.pythonhosted.org`) to install and again at a start when its index cache is
+  older than about ten minutes, also for a fixed version. If it needs a Python, it downloads one
+  from `releases.astral.sh` or GitHub. Docker pulls the image from `ghcr.io`. Adding, installing or
+  updating the plugin, and refreshing its marketplace, contacts GitHub.
 - **A proxy**, if the usual proxy environment variables (such as `HTTPS_PROXY`) name one: the
   server's requests go through it.
 
-There is no telemetry, analytics, crash reporting or update check. FastMCP includes the
-OpenTelemetry interface, but no exporter is installed: trace data leaves the server only if whoever
-runs it installs and configures one. Such traces can include error messages.
+The server has no telemetry, analytics or crash reporting and does not check for updates. FastMCP
+includes the OpenTelemetry interface, but no exporter is installed: trace data leaves the server
+only if whoever runs it installs and configures one. Such traces can include error messages.
 
 ## If someone else runs the server
 
@@ -93,18 +125,21 @@ it. Use a deployment only if you trust its operator.
 
 - **Requests and answers:** in memory while they are handled; the server makes no archive of them.
 - **Name lists:** reread when they are older than five minutes, gone when the server stops.
-- **HTTP sessions:** closed after 30 minutes without a request.
+- **HTTP sessions:** closed after 30 minutes without a request; a request in progress or an open
+  event stream keeps one alive.
 - **Sign-in state:** a pending sign-in expires after 15 minutes and an authorization code after 5.
-  The provider's tokens are kept until the longest-lived of them expires; if the provider states
-  no lifetime, up to a year from sign-in or the last refresh. Client registrations do not expire. In memory all of it is
-  gone when the server stops. In the storage directory, expired files can remain: delete the
-  directory's contents to remove everything.
+  The provider's tokens are kept until the longest-lived of them expires. One without a stated
+  lifetime counts as up to a year; a refresh extends this if the provider states a new one. Client
+  registrations do not expire. In memory all of it is gone when the server stops. In the storage
+  directory, expired files can remain until you delete them.
 - **Consent cookies:** at most 15 minutes.
 - **Logs:** as long as your client or operator keeps them; the server never deletes any.
 - **Data in Paperless, your client or at the model provider:** by their rules.
 
 ## Contact
 
-Questions, problems and corrections: open an issue at
-<https://github.com/gardenbaum/mcp-server-paperless/issues>. Issues are public, so leave out
-tokens, document content and personal data. For data in a deployment, ask its operator.
+Report security problems privately at
+<https://github.com/gardenbaum/mcp-server-paperless/security/advisories/new>. For questions and
+anything else, open an issue at <https://github.com/gardenbaum/mcp-server-paperless/issues>; issues
+are public, so leave out tokens, document content and personal data. For data in a deployment, ask
+its operator.

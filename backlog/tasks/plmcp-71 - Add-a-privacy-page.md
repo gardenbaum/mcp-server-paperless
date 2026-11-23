@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:57:03Z'
-updated_date: '2026-11-23T12:13:16Z'
+updated_date: '2026-11-23T12:39:40Z'
 labels: []
 dependencies: []
 priority: medium
@@ -63,4 +63,13 @@ docs/configuration.md claimed no error messages are logged; corrected to the obs
 AC #2 manifest part open: plugin/.claude-plugin/plugin.json exists only on plmcp-68-plugin; after its merge add privacyPolicyUrl https://github.com/gardenbaum/mcp-server-paperless/blob/main/PRIVACY.md. PAGES in test_docs.py conflicts trivially with that branch.
 
 Manifest links the policy (privacyPolicyUrl) after the merge of PLMCP-68; test red first. Two open questions for the owner: a task for the four log findings, and private vulnerability reporting.
+
+Review round (PR 93), each point verified before writing:
+- I1 logo: FastMCP utilities/ui.py FASTMCP_LOGO_URL, create_logo without icons, used by consent.py and oauth_proxy/ui.py error pages; CSP allows img-src https:. Code fix is an owner decision.
+- I2 uvx: with a private UV_CACHE_DIR and mcp-server-paperless==0.3.2, a second start used only fresh index entries; a start more than 10 minutes later found them stale and revalidated at pypi.org. uv python install -vv downloads from releases.astral.sh (GitHub is the documented default mirror).
+- I3 plugin/README.md, Claude Code docs (mcp scopes, manifest-reference, authentication, cli-reference "plugin uninstall", deletes options and secrets at the last scope), uv cache docs.
+- I4 docs/configuration.md: the "never contain" sentence replaced by what the canary runs showed.
+- M1 mcp streamable_http_manager.py 277/305/325/366; FastMCP proxy.py 1215, 2807, 2849 (txn id is the state parameter), handlers/authorize.py 364, cimd.py 442. M2 proxy.py store keys (client_id, code, ids, token hashes), FernetEncryptionWrapper wraps values only. M3 proxy.py refresh fallback and refresh branch. M4 streamable_http.py _requests_in_flight. M5 vendored paperless usage.md (AI features, Remote OCR).
+- M6 gh api: private vulnerability reporting enabled. SECURITY.md added, linked from README, page guards cover it. M7 heading and line lengths guarded by test, M8 subject.
+Open: the code fix for the logo and the log findings are owner decisions. Not observed live: the logo request in a browser, OIDC log lines, Paperless's OCR and embedding services.
 <!-- SECTION:NOTES:END -->

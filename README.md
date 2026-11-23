@@ -287,6 +287,8 @@ takes more than a misunderstanding:
 - **No reach beyond Paperless.** Callers cannot make the server read local files or reach other
   hosts. Uploading by file path exists only over stdio and only from directories you name.
 
+Found a security problem? [Report it privately](https://github.com/gardenbaum/mcp-server-paperless/security/advisories/new).
+
 ## Configuration
 
 The settings you are most likely to touch; [Configuration](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md) has all of
@@ -319,7 +321,7 @@ them.
 - [Run in a container](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/container.md): the image, compose files, reverse proxy
 - [Development](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/development.md): architecture, how it is tested, how to contribute
 
-## Privacy policy
+## Privacy Policy
 
 You run the server yourself: it sends your data to your Paperless and your MCP client, keeps no
 copy of your documents on disk and has no telemetry. The [privacy policy](https://github.com/gardenbaum/mcp-server-paperless/blob/main/PRIVACY.md) says what it reads,
