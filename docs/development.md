@@ -86,3 +86,8 @@ PEP 440: `v1.2.3-rc.1` becomes `1.2.3rc1`) and publishes `mcp-server-paperless` 
 Publishing from the `pypi` environment. A tag that is not a valid version, or a commit that is not
 on main, publishes nothing to PyPI; PyPI also refuses local versions (`+…`). The version in `pyproject.toml` is the development version that
 a clone, a Git URL or the container's package report; raise it now and then.
+
+The same tag also runs `registry.yml` (decision-35): once PyPI serves the version, it writes that
+version into `server.json` and publishes the listing `io.github.gardenbaum/mcp-server-paperless`
+to the [MCP Registry](https://registry.modelcontextprotocol.io) by GitHub OIDC; Glama claims it
+through `glama.json`. Check a changed `server.json` with `mcp-publisher validate`.

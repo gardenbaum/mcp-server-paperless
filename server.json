@@ -1,0 +1,59 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.gardenbaum/mcp-server-paperless",
+  "title": "Paperless-ngx",
+  "description": "Search, read, file, tag and upload documents in paperless-ngx 3.x",
+  "repository": {
+    "url": "https://github.com/gardenbaum/mcp-server-paperless",
+    "source": "github"
+  },
+  "version": "0.0.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "mcp-server-paperless",
+      "version": "0.0.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "PAPERLESS_URL",
+          "description": "Base URL of the paperless-ngx 3.x instance",
+          "isRequired": true,
+          "placeholder": "https://paperless.example.org"
+        },
+        {
+          "name": "PAPERLESS_TOKEN",
+          "description": "Paperless API token; the server acts as this user",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "PAPERLESS_PUBLIC_URL",
+          "description": "Base URL for links shown to users, if it differs from PAPERLESS_URL"
+        },
+        {
+          "name": "PAPERLESS_MCP_TOOLSETS",
+          "description": "Toolsets to offer, comma-separated, or all",
+          "default": "core,ai"
+        },
+        {
+          "name": "PAPERLESS_MCP_READ_ONLY",
+          "description": "Offer only tools that change nothing",
+          "format": "boolean",
+          "default": "false"
+        },
+        {
+          "name": "PAPERLESS_MCP_DISABLED_TOOLS",
+          "description": "Tools never offered, comma-separated"
+        },
+        {
+          "name": "PAPERLESS_MCP_UPLOAD_DIRS",
+          "description": "Absolute directories the upload tools may read files from by path (default: none)"
+        }
+      ]
+    }
+  ]
+}
