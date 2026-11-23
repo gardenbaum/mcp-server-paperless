@@ -25,7 +25,7 @@ Decision-27 bounds every request body by the upload limit (14 046 552 bytes at t
 <!-- SECTION:CONSEQUENCES:BEGIN -->
 - A registration of a client with about a thousand redirect URIs still fits. The limit is not configurable.
 - The in-memory store is bounded in bytes only indirectly, and an entry can be larger than the body it came from, because the stored JSON escapes characters: a body of 65 KB retained 67 KB with ASCII text, 196 KB with other text such as accented letters and 390 KB in the worst case found (control characters, raw bytes). 10 000 registrations can therefore hold up to about 4 GB, and as many authorization transactions (a `state` of 64 000 bytes retained 65 to 385 KB) as much again. A storage directory stays unbounded. Rate limiting `/register` and `/authorize` at the reverse proxy (decision-31) stays necessary.
-- Off the MCP endpoint the body, at most 64 KiB, is read before the host and origin guard answers.
+- Off the MCP endpoint the body, at most 64 KiB, is read before the host and origin guard answers, so a slow body delays that refusal.
 - The query string and headers are not part of the body; this limit does not bound them.
 <!-- SECTION:CONSEQUENCES:END -->
 
