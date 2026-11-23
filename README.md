@@ -56,6 +56,7 @@ flowchart LR
 - "Give me a link to my insurance policy that expires in a week."
 - "Set up a mail rule that files the invoices from billing@example.org."
 - "Find duplicate and unused tags and propose how to clean them up."
+- "Which documents have no document type yet? Then run my saved view *To do*."
 
 An example of how that goes (illustrative):
 
