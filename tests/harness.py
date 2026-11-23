@@ -74,6 +74,7 @@ def server_settings(  # noqa: PLR0913 -- one keyword per setting a test varies
     max_download_bytes: int | None = None,
     max_upload_bytes: int | None = None,
     upload_dirs: Sequence[str] = (),
+    download_dirs: Sequence[str] = (),
 ) -> ServerSettings:
     """Server settings; `toolsets=None` leaves the setting at its shipped default."""
     given: dict[str, object] = {
@@ -89,6 +90,8 @@ def server_settings(  # noqa: PLR0913 -- one keyword per setting a test varies
         given["max_upload_bytes"] = max_upload_bytes
     if upload_dirs:
         given["upload_dirs"] = ",".join(upload_dirs)
+    if download_dirs:
+        given["download_dirs"] = ",".join(download_dirs)
     return ServerSettings.model_validate(given)
 
 
@@ -129,6 +132,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     max_download_bytes: int | None = None,
     max_upload_bytes: int | None = None,
     upload_dirs: Sequence[str] = (),
+    download_dirs: Sequence[str] = (),
     stdio: bool = False,
     auth: AuthProvider | None = None,
 ) -> FastMCP:
@@ -142,7 +146,8 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     `disabled_tools` go to the server settings; `catalogue` replaces the tools the server
     offers, to try toolsets that do not exist yet. `max_download_bytes` replaces the download
     limit. `max_upload_bytes` and `upload_dirs` are the upload settings; `stdio` says the server
-    runs over stdio (the only mode that offers uploads by path, and then only with `upload_dirs`).
+    runs over stdio (the only mode that offers uploads by path, and then only with `upload_dirs`,
+    and saving downloads, and then only with `download_dirs` and without read-only mode).
     """
     fake = reader if isinstance(reader, FakePaperless) else admin()
     server = create_server(
@@ -155,6 +160,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
             max_download_bytes=max_download_bytes,
             max_upload_bytes=max_upload_bytes,
             upload_dirs=upload_dirs,
+            download_dirs=download_dirs,
         ),
         catalogue=catalogue,
         stdio=stdio,

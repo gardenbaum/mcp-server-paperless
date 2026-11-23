@@ -334,7 +334,7 @@ forbidden_modules = ["httpx"]
 
 # Toolset independence (design §5.1, decision-1): toolset modules in tools/ do not import each
 # other; what they share lives in tools/_shared. A toolset's stdio variant imports its own
-# toolset's module (the shared description and parameter types), which is why those two edges are
+# toolset's module (the shared description and parameter types), which is why those edges are
 # ignored. Add every new toolset module here.
 [[tool.importlinter.contracts]]
 name = "Toolset modules do not import each other"
@@ -343,6 +343,8 @@ modules = [
     "mcp_server_paperless.tools.core",
     "mcp_server_paperless.tools.ai",
     "mcp_server_paperless.tools.bulk",
+    "mcp_server_paperless.tools.downloads",
+    "mcp_server_paperless.tools.downloads_stdio",
     "mcp_server_paperless.tools.mail",
     "mcp_server_paperless.tools.prompts",
     "mcp_server_paperless.tools.sharing",
@@ -359,4 +361,5 @@ modules = [
 ignore_imports = [
     "mcp_server_paperless.tools.upload_stdio -> mcp_server_paperless.tools.upload",
     "mcp_server_paperless.tools.versions_stdio -> mcp_server_paperless.tools.versions",
+    "mcp_server_paperless.tools.downloads_stdio -> mcp_server_paperless.tools.downloads",
 ]

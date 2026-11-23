@@ -864,6 +864,20 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
     ),
 }
 
+# The two tools where the server may save what they read (decision-45): registered instead of their
+# plain form only over stdio, with download directories and without read-only mode. Not read-only:
+# a call with save_dir changes the machine, and with confirm replaces a file there.
+SAVING_ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
+    name: ToolAnnotations(
+        title=ANNOTATIONS[name].title,
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=False,
+    )
+    for name in ("download_document", "bulk_download")
+}
+
 logger = logging.getLogger(__name__)
 
 # The `confirm` parameter of every destructive tool (decision-6, decision-15).
@@ -878,11 +892,12 @@ type Confirm = Annotated[
     ),
 ]
 
-# The transports of a remote caller (FastMCP's names); a path is never read for one of them.
+# The transports of a remote caller (FastMCP's names); a path is never used for one of them.
 HTTP_TRANSPORTS = frozenset({"sse", "streamable-http"})
+UPLOAD_HINT = "Send the file as content_base64."
 
 
-def check_transport(transport: str | None) -> None:
+def check_transport(transport: str | None, *, hint: str = UPLOAD_HINT) -> None:
     """Refuse a path unless the request came over stdio (or the server runs in-process).
 
     The server never registers this tool over HTTP; this is the second lock, for a server that
@@ -892,8 +907,8 @@ def check_transport(transport: str | None) -> None:
         Validation: The request came over an HTTP transport.
     """
     if transport in HTTP_TRANSPORTS:
-        message = "A path can only be read when the server runs over stdio."
-        raise Validation(message, hint="Send the file as content_base64.")
+        message = "A path can only be used when the server runs over stdio."
+        raise Validation(message, hint=hint)
 
 
 # Keys of the ``Services`` and of the toolset guide in the server's lifespan context.
