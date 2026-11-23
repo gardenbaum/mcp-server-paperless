@@ -1,0 +1,120 @@
+name: MCP Registry
+
+# Lists the server in the official MCP Registry (registry.modelcontextprotocol.io) on every version
+# tag (decision-35). Separate from ci.yml and pypi.yml and not a required check. The registry only
+# stores server.json; it checks that PyPI serves the version and that its README carries the
+# `mcp-name` marker, so this waits for the PyPI release pypi.yml publishes in parallel. GitHub's
+# OIDC token proves the io.github.gardenbaum namespace: no registry token exists anywhere. A rerun
+# after a successful publish fails harmlessly: the registry answers that the version already exists.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: registry-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Everything that gates the publish job or runs uv, without an OIDC token.
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the ancestry check below needs the history of main
+          persist-credentials: false
+
+      # A tag on a commit that never reached main (a branch, a fork's pull request) lists nothing.
+      - name: Require the tagged commit to be on main
+        env:
+          TAGGED_SHA: ${{ github.sha }}
+        run: |
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          git merge-base --is-ancestor "$TAGGED_SHA" origin/main
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.14"
+          enable-cache: false
+
+      # The PEP 440 form pypi.yml publishes (decision-33): uv refuses an invalid tag and turns
+      # v1.2.3-rc.1 into 1.2.3rc1, so the listing names the version PyPI has.
+      - name: Take the version from the tag
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          uv version --frozen -- "${TAG#v}"
+          version="$(uv version --short)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # pypi.yml builds and uploads in parallel; the registry rejects a version PyPI lacks.
+      - name: Wait until PyPI serves the version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          while [ "$SECONDS" -lt 900 ]; do
+            if curl --fail --silent --max-time 10 --output /dev/null "https://pypi.org/pypi/mcp-server-paperless/$VERSION/json"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "PyPI does not serve mcp-server-paperless $VERSION after 15 minutes" >&2
+          exit 1
+
+  # Runs only when every check of `prepare` passed (no `if`); the only job with an OIDC token.
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      # Raised deliberately, never a moving "latest" download.
+      MCP_PUBLISHER_VERSION: v1.8.15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set the listing version
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          jq --arg v "$VERSION" '.version = $v | .packages[].version = $v' server.json > server.tmp
+          mv server.tmp server.json
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # As the registry's GitHub Actions guide does it: the archive must be signed by the release
+      # workflow of modelcontextprotocol/registry at exactly the pinned tag.
+      - name: Download and verify mcp-publisher
+        run: |
+          set -euo pipefail
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+          archive="mcp-publisher_${os}_${arch}.tar.gz"
+          base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+
+          curl --fail --location --silent --show-error --output "$archive" "$base_url/$archive"
+          curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base_url/$archive.sigstore.json"
+          cosign verify-blob \
+            --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$archive"
+          tar xzf "$archive" mcp-publisher
+          rm -f "$archive" "$archive.sigstore.json"
+
+      - name: Log in to the MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish the listing
+        run: ./mcp-publisher publish
