@@ -3,7 +3,7 @@
 The server does not trust the answer: it holds no text, and what does not add up is a crash.
 """
 
-from typing import Annotated
+from typing import Annotated, Final
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -14,6 +14,9 @@ from mcp_server_paperless.domain.rendering import (
     RenderFailed,
     RenderRequest,
 )
+
+# More pages than any real document has.
+MAX_PAGES: Final = 200_000
 
 type Count = Annotated[int, Field(ge=0)]
 
@@ -40,7 +43,8 @@ class _Answer(BaseModel):
 
     failure: Reason | None = None
     megapixels: float = 0.0
-    page_count: Count = 0
+    # The server walks the pages of a specification: a claim must not make it walk for ever.
+    page_count: Annotated[int, Field(ge=0, le=MAX_PAGES)] = 0
     images: tuple[_Image, ...] = ()
     rest: tuple[Count, ...] = ()
 

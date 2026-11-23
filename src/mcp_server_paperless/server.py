@@ -44,6 +44,7 @@ from mcp_server_paperless.paperless.workflows import (
     PaperlessWorkflowReader,
     PaperlessWorkflowWriter,
 )
+from mcp_server_paperless.rendering.runner import ChildRenderer
 from mcp_server_paperless.services.admin_accounts import AccountAdmin
 from mcp_server_paperless.services.admin_system import SystemAdmin
 from mcp_server_paperless.services.ai import AiService
@@ -55,6 +56,7 @@ from mcp_server_paperless.services.files import FileService
 from mcp_server_paperless.services.instance import InstanceService
 from mcp_server_paperless.services.mail import MailService
 from mcp_server_paperless.services.notes import NoteService
+from mcp_server_paperless.services.pages import PageService
 from mcp_server_paperless.services.pdf import PdfService
 from mcp_server_paperless.services.permissions import PermissionService
 from mcp_server_paperless.services.raw import RawApiService
@@ -144,6 +146,7 @@ if TYPE_CHECKING:
         WorkflowReader,
         WorkflowWriter,
     )
+    from mcp_server_paperless.domain.rendering import PageRenderer
     from mcp_server_paperless.paperless.client import PaperlessClient
     from mcp_server_paperless.settings import PaperlessSettings, ServerSettings
 
@@ -333,6 +336,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     clock: Callable[[], float] = time.monotonic,
     stdio: bool = False,
     auth: AuthProvider | None = None,
+    renderer: PageRenderer | None = None,
 ) -> FastMCP:
     """Assemble the MCP server.
 
@@ -348,6 +352,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
             case that parameter is in no schema (decision-7).
         auth: Authentication of the HTTP endpoint (the HTTP app's static bearer tokens); ``None``
             for stdio and for the flagged unauthenticated loopback mode.
+        renderer: Draws pages; default: a child process per call. Tests pass a fake.
 
     Returns:
         The server. Starting it (its lifespan) raises the probe's ``PaperlessMcpError`` when
@@ -400,6 +405,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 files=FileService(
                     adapters.documents, web_url=web_url, max_bytes=settings.max_download_bytes
                 ),
+                pages=PageService(adapters.documents, renderer or ChildRenderer(), web_url=web_url),
                 edits=DocumentEditor(
                     adapters.documents,
                     adapters.document_writes,

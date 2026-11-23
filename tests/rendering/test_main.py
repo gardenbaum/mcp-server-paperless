@@ -96,6 +96,7 @@ ONE_IMAGE = (
         ONE_IMAGE % 5 + b"four",
         ONE_IMAGE % 5 + b"six666",
         ONE_IMAGE % -1,
+        b'{"failure": "pages", "page_count": 200001}\n',
     ],
 )
 def test_an_answer_that_does_not_add_up_is_a_crash(answer: bytes) -> None:

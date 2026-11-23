@@ -105,3 +105,48 @@ class PageRenderer(Protocol):
             RenderFailed: The file or the page specification cannot be used, or a limit was hit.
         """
         ...
+
+
+class ShownPage(BaseModel):
+    """One page among the images of a result."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    page: int
+    width: int
+    height: int
+    size_bytes: int
+    reduced: bool
+
+
+class PagesReport(BaseModel):
+    """What a call of get_document_pages shows, and how to go on.
+
+    Attributes:
+        not_shown: The pages asked for that did not fit, in words.
+        next_pages: The page specification that asks for them.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    document_id: int
+    version_id: int
+    source: Literal["original", "archive"]
+    filename: str | None
+    mime_type: str
+    page_count: int
+    region: Region | None
+    images: tuple[ShownPage, ...]
+    not_shown: str | None
+    next_pages: str | None
+    web_url: str
+    note: str
+
+
+class DocumentPages(BaseModel):
+    """The report and the images it lists, in the same order."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    report: PagesReport
+    images: tuple[PageImage, ...]
