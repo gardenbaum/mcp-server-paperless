@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:39:56Z'
-updated_date: '2026-11-23T11:41:29Z'
+updated_date: '2026-11-23T11:49:36Z'
 labels: []
 dependencies: []
 priority: medium
@@ -44,3 +44,15 @@ The Docker MCP Catalog builds a local server from its Dockerfile and runs the im
 4. decision-38 supersedes decision-37 (stdio target, stage list); docs/container.md, justfile, references.
 5. Prove the HTTP image config and layers identical before and after; run just check, image-smoke, the catalog's validate and build against a local entry.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Catalog (docker/mcp-registry 7acac06): cmd/build runs docker buildx build -f Dockerfile --target <source.buildTarget> --load <project>.git#<commit>, so BuildKit handles the bind mounts and digest pins; the image runs as docker run --rm -i --init --cap-drop=ALL -e ... image <run.command>, so arguments but no entrypoint can be set.
+Design: base (shared filesystem), stdio (ENV, USER, ENTRYPOINT only; no HTTP env, EXPOSE or HEALTHCHECK), runtime last. The default image built before and after has the same image id, config, layers and history.
+Red: 6 guards failed, --target stdio was not found, the stdio smoke failed on the HTTP image. Green: 23 container guards, both smoke tests. Four Dockerfile mutations (default stage renamed, user, entrypoint, parent stage) each fail a guard.
+Deliberate: decision-38 supersedes decision-37; the workflow snapshot gains the two stdio steps and one path; the guards of the runtime stage read base and runtime together; the build job has two builds. The target is not scanned on its own: it adds no filesystem layer.
+Catalog check (local clone, nothing pushed): validate passes for the GitHub project; build --tools passes on this branch's commit served by a local git daemon (17 tools, no tools.json needed, no Paperless reachable); catalog generation passes. The final entry needs the merged commit in source.commit.
+
+just check: everything passes except the known macOS-only test_the_menu_driver_reports_a_failing_cli. Not verified locally: the linux/amd64 leg and the workflow run itself.
+<!-- SECTION:NOTES:END -->
