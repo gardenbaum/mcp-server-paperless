@@ -1109,3 +1109,152 @@ async def test_the_target_url_is_the_base_url_with_the_path_and_the_query() -> N
     )
     assert str(client.target("/api/tags/")) == "http://paperless.test/api/tags/"
     assert str(client.base_url) == "http://paperless.test"
+
+
+# --- PLMCP-76: a body handed over chunk by chunk
+
+
+async def read_all(client: PaperlessClient) -> bytes:
+    async with client.stream("GET", "/api/documents/1/download/") as response:
+        return b"".join([chunk async for chunk in response.aiter_bytes()])
+
+
+async def test_a_stream_hands_over_the_chunks_and_is_closed_afterwards() -> None:
+    body = Chunks(b"abc", b"def", b"ghi")
+    client, _ = streaming(
+        lambda _: httpx2.Response(200, headers={"Content-Type": "text/plain"}, stream=body)
+    )
+
+    async with client.stream("GET", "/api/documents/1/download/") as response:
+        assert response.headers["Content-Type"] == "text/plain"
+        first = await anext(response.aiter_bytes())
+        assert (first, body.pulled, body.closed) == (b"abc", 1, False)
+
+    assert (body.pulled, body.closed) == (1, True)
+
+
+async def test_a_stream_sends_the_method_the_body_the_credential_and_its_timeout() -> None:
+    seen: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request)
+        return httpx2.Response(200, content=b"x")
+
+    client, _ = streaming(handler)
+    async with client.stream(
+        "POST", "/api/documents/bulk_download/", json={"documents": [1]}, timeout=600.0
+    ):
+        pass
+    async with client.stream("GET", "/api/documents/1/download/", params={"original": "true"}):
+        pass
+
+    posted, got = seen
+    assert (posted.method, posted.content) == ("POST", b'{"documents":[1]}')
+    timeouts = cast("dict[str, float]", posted.extensions["timeout"])
+    assert timeouts["read"] == 600.0
+    assert posted.headers["Authorization"] == f"Token {TOKEN}"
+    assert posted.headers["Accept"] == "application/json; version=10"
+    assert got.url.params["original"] == "true"
+    assert cast("dict[str, float]", got.extensions["timeout"])["read"] != 600.0
+
+
+async def test_a_stream_that_is_refused_is_the_domain_error_and_closed() -> None:
+    body = Chunks(b'{"original": ["Bad."]}')
+    client, _ = streaming(lambda _: httpx2.Response(400, stream=body))
+
+    with pytest.raises(Validation, match="original: Bad"):
+        _ = await read_all(client)
+
+    assert body.closed
+
+
+async def test_a_stream_reads_no_more_of_an_error_than_its_limit() -> None:
+    body = Chunks(*[b"x" * ERROR_BODY_LIMIT] * 3)
+    client, _ = streaming(lambda _: httpx2.Response(500, stream=body))
+
+    with pytest.raises(UpstreamUnavailable):
+        _ = await read_all(client)
+
+    assert (body.pulled, body.closed) == (1, True)
+
+
+@pytest.mark.parametrize("status", [204, 206, 302])
+async def test_a_stream_takes_a_whole_file_only_and_follows_no_redirect(status: int) -> None:
+    headers = {"Location": "http://evil.test/"}
+    client, _ = streaming(lambda _: httpx2.Response(status, headers=headers))
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await read_all(client)
+
+    assert raised.value.message == (
+        "Paperless sent an unexpected response for GET /api/documents/1/download/."
+    )
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [(httpx2.ReadTimeout, UpstreamTimeout), (httpx2.RemoteProtocolError, UpstreamUnreachable)],
+)
+async def test_a_stream_that_breaks_midway_is_an_error_and_never_a_short_file(
+    error: type[httpx2.TransportError],
+    expected: type[UpstreamUnavailable],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=CLIENT_LOGGER)
+    body = Failing(error, b"half")
+    client, sleep = streaming(lambda _: httpx2.Response(200, stream=body))
+
+    with pytest.raises(expected):
+        _ = await read_all(client)
+
+    assert (body.closed, sleep.delays) == (True, [])
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING] == [
+        f"GET /api/documents/1/download/ failed: {error.__name__}"
+    ]
+
+
+async def test_a_stream_that_cannot_be_decompressed_is_a_client_safe_error() -> None:
+    body = Chunks(b"not gzip at all")
+    client, _ = streaming(
+        lambda _: httpx2.Response(200, headers={"Content-Encoding": "gzip"}, stream=body)
+    )
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await read_all(client)
+
+    assert raised.value.message == (
+        "Paperless sent an unexpected response for GET /api/documents/1/download/."
+    )
+    assert body.closed
+
+
+@pytest.mark.parametrize(("method", "asked"), [("GET", 2), ("POST", 1)])
+async def test_only_a_get_stream_is_retried_and_only_before_its_body(
+    method: Method, asked: int
+) -> None:
+    seen: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request)
+        return httpx2.Response(503 if len(seen) == 1 else 200, content=b"ok")
+
+    client, _ = streaming(handler)
+    try:
+        async with client.stream(method, "/api/documents/bulk_download/") as response:
+            assert await response.aread() == b"ok"
+    except UpstreamUnavailable:
+        assert method == "POST"
+
+    assert len(seen) == asked
+
+
+async def test_an_error_of_the_reader_passes_through_a_stream_and_closes_it() -> None:
+    body = Chunks(b"abc")
+    client, _ = streaming(lambda _: httpx2.Response(200, stream=body))
+
+    error = Validation("mine")
+    with pytest.raises(Validation, match="mine"):
+        async with client.stream("GET", "/api/documents/1/download/"):
+            raise error
+
+    assert body.closed

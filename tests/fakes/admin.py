@@ -157,5 +157,5 @@ def archive_of(files: list[tuple[str, bytes]]) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as archive:
         for name, content in files:
-            archive.writestr(name, content)
+            archive.writestr(zipfile.ZipInfo(name), content)  # a fixed time, so stable bytes
     return buffer.getvalue()

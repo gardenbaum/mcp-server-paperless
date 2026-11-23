@@ -19,9 +19,11 @@ Paperless source of the tag, not the docs alone), extend the state only as far a
 write its contract tests.
 """
 
+import contextlib
 import functools
 import hashlib
 import re
+import sys
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
@@ -101,8 +103,10 @@ from mcp_server_paperless.domain.errors import (
     FeatureUnavailable,
     NotFound,
     PermissionDenied,
+    UpstreamUnreachable,
     Validation,
 )
+from mcp_server_paperless.domain.files import OpenedFile
 from mcp_server_paperless.domain.instance import (
     ComponentStatus,
     CurrentUser,
@@ -161,7 +165,7 @@ from mcp_server_paperless.paperless.trash import refused as trash_refused
 from mcp_server_paperless.paperless.views import unseen_view
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Mapping, Sequence
+    from collections.abc import AsyncGenerator, Callable, Collection, Mapping, Sequence
     from types import CoroutineType
 
     from _typeshed import SupportsRichComparison
@@ -388,6 +392,10 @@ NO_AI_SUGGESTIONS = AiSuggestions(
 CHAT_NO_CONTENT = "Sorry, I couldn't find any content to answer your question."
 
 
+# Bytes of a chunk of an opened file; small, so that the files of the tests have several.
+CHUNK = 5
+
+
 @dataclass(frozen=True)
 class FakeFile:
     """The file of one version of a document, and the text Paperless read from it."""
@@ -536,6 +544,8 @@ class FakeState:
     trash: list[FakeDocument] = field(default_factory=list[FakeDocument])
     # The ids of the documents a bulk reprocess queued, in order (the fake does no OCR).
     reprocessed: list[int] = field(default_factory=list[int])
+    # An opened file breaks off before its chunk of this number (None: never).
+    break_after: int | None = None
     # The id of the last note created: note ids are global and never reused.
     last_note_id: int = 1
     system_status: SystemStatus = HEALTHY
@@ -3028,6 +3038,27 @@ class FakePaperless:
             return ArchiveFile(content=b"", truncated=True)
         return ArchiveFile(content=archive, truncated=False)
 
+    @contextlib.asynccontextmanager
+    async def open_archive(
+        self,
+        document_ids: Sequence[int],
+        *,
+        content: ArchiveContent,
+        compression: Compression,
+        follow_formatting: bool,
+        wait_seconds: float,
+    ) -> AsyncGenerator[OpenedFile]:
+        """`AdminReader.open_archive`: the archive of `download_documents` in chunks."""
+        del wait_seconds
+        file = await self.download_documents(
+            document_ids,
+            content=content,
+            compression=compression,
+            follow_formatting=follow_formatting,
+            max_bytes=sys.maxsize,
+        )
+        yield OpenedFile("application/zip", "documents.zip", self._chunks(file.content))
+
     @write
     async def create_user(self, values: UserValues) -> UserRecord:
         """`AdminWriter.create_user` (UserViewSet create)."""
@@ -3269,11 +3300,13 @@ class FakePaperless:
             original_filename=document.original_filename,
             original_mime_type=file.mime_type,
             original_size=len(file.original),
-            original_checksum=f"{document.id:064x}",
+            original_checksum=hashlib.sha256(file.original).hexdigest(),
             media_filename=f"e2e/2026/{document.original_filename}",
             has_archive_version=file.archive is not None,
             archive_size=None if file.archive is None else len(file.archive),
-            archive_checksum=None if file.archive is None else f"{document.id + 1000:064x}",
+            archive_checksum=(
+                None if file.archive is None else hashlib.sha256(file.archive).hexdigest()
+            ),
             archive_media_filename=(
                 None if file.archive is None else f"e2e/2026/{document.original_filename}"
             ),
@@ -3313,6 +3346,23 @@ class FakePaperless:
             filename=document.download_filename(archive=archive),
             truncated=len(content) > max_bytes,
         )
+
+    @contextlib.asynccontextmanager
+    async def open_document_file(
+        self, document_id: int, version: FileVersion, *, version_id: int | None = None
+    ) -> AsyncGenerator[OpenedFile]:
+        """`DocumentReader.open_document_file`: the file of `get_document_file` in chunks."""
+        file = await self.get_document_file(
+            document_id, version, max_bytes=sys.maxsize, version_id=version_id
+        )
+        yield OpenedFile(file.mime_type, file.filename, self._chunks(file.content))
+
+    async def _chunks(self, content: bytes) -> AsyncGenerator[bytes]:
+        for number, start in enumerate(range(0, len(content), CHUNK)):
+            if number == self.state.break_after:
+                message = "Paperless could not be reached."
+                raise UpstreamUnreachable(message)
+            yield content[start : start + CHUNK]
 
     async def get_document_titles(self, document_ids: Collection[int]) -> dict[int, str]:
         """`DocumentReader.get_document_titles` (the list view filtered by `id__in`)."""

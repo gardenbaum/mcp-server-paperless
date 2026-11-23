@@ -15,12 +15,8 @@ from typing import TYPE_CHECKING
 import pytest
 
 from mcp_server_paperless.domain.errors import NotFound, Validation
-from mcp_server_paperless.services.upload_source import (
-    clean_filename,
-    decode_base64,
-    read_allowed,
-    size_text,
-)
+from mcp_server_paperless.services.allowed_paths import clean_filename
+from mcp_server_paperless.services.upload_source import decode_base64, read_allowed, size_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable

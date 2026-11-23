@@ -1,10 +1,11 @@
 ---
 id: PLMCP-76
 title: Deliver files of any practical size, also to a directory
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T12:14:47Z'
-updated_date: '2026-11-23T19:20:36Z'
+updated_date: '2026-11-23T22:07:58Z'
 labels: []
 dependencies: []
 priority: high
@@ -36,6 +37,12 @@ download_document attaches files up to 512 KiB by default; larger ones are only 
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Follows the owner-approved design (design-plmcp-76.md). 1. Measure ZIP stability and the file facts on 3.5.1 (SQLite and PostgreSQL) before parts of a ZIP are promised. 2. Decisions 45 (saving) and 46 (attach limits). 3. client.stream, the ports open_document_file and open_archive, the fake, contract tests. 4. Parts of a document file and of a ZIP. 5. allowed_paths moved out of upload_source without a change of behaviour. 6. file_sink with its security tests. 7. Saving in the services, the setting PAPERLESS_MCP_DOWNLOAD_DIRS, the stdio variants of download_document and bulk_download, the registration matrix. 8. E2E over stdio and HTTP, docs, plugin, coverage.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
