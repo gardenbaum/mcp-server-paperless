@@ -5,11 +5,15 @@ and enrich the hits with names into ``DocumentSummary``. No row ever holds the O
 """
 
 from datetime import date, datetime
-from typing import Annotated, ClassVar, Literal
+from typing import Annotated, ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from mcp_server_paperless.domain.tasks import TaskState, Wait
+
+# The most ``PAPERLESS_MCP_MAX_UPLOAD_BYTES`` may be set to (100 MiB); settings and the refusal
+# hint both read it.
+MAX_UPLOAD_LIMIT: Final = 100 * 1024 * 1024
 
 type Include = Literal["notes", "history", "metadata", "versions", "suggestions"]
 type Ordering = Literal[

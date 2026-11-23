@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 from e2e.helpers import pdf
 
-from mcp_server_paperless.domain.documents import UploadMetadata
+from mcp_server_paperless.domain.documents import MAX_UPLOAD_LIMIT, UploadMetadata
 from mcp_server_paperless.domain.errors import PaperlessMcpError
 from mcp_server_paperless.services.upload_source import clean_filename, decode_base64, read_allowed
 from services.test_uploads import Setup, b64
@@ -27,6 +27,17 @@ def words(call: Callable[[], object]) -> str:
     with pytest.raises(PaperlessMcpError) as raised:
         _ = call()
     return f"{type(raised.value).__name__}: {raised.value.describe()}"
+
+
+@pytest.mark.parametrize(
+    ("limit", "raisable"), [(MAX_UPLOAD_LIMIT, False), (MAX_UPLOAD_LIMIT - 1, True)]
+)
+def test_the_refusal_offers_a_raise_only_below_the_maximum(*, limit: int, raisable: bool) -> None:
+    refusal = words(lambda: decode_base64("A" * (4 * -(-limit // 3) + 4), max_bytes=limit))
+
+    assert "The file is larger than the limit of" in refusal
+    assert ("operator can raise PAPERLESS_MCP_MAX_UPLOAD_BYTES" in refusal) is raisable
+    assert ("Upload a smaller file." in refusal) is not raisable
 
 
 async def awords(call: Callable[[], Awaitable[object]]) -> str:
