@@ -75,10 +75,48 @@ def test_url_and_token_are_required(monkeypatch: pytest.MonkeyPatch, missing: st
 
 
 @pytest.mark.usefixtures("connection_env")
-def test_empty_token_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PAPERLESS_TOKEN", "")
+def test_an_empty_public_url_counts_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clients that build a form from server.json may pass what the user left blank (PLMCP-65)."""
+    monkeypatch.setenv("PAPERLESS_PUBLIC_URL", "")
 
-    assert invalid_fields(PaperlessSettings) == [("token",)]
+    assert PaperlessSettings.model_validate({}).public_url is None
+
+
+@pytest.mark.parametrize("name", ["PAPERLESS_URL", "PAPERLESS_TOKEN"])
+@pytest.mark.usefixtures("connection_env")
+def test_an_empty_required_variable_is_refused(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    monkeypatch.setenv(name, "")
+
+    assert invalid_fields(PaperlessSettings) == [(name.removeprefix("PAPERLESS_").lower(),)]
+
+
+EMPTY_LISTS = {"disabled_tools", "upload_dirs"}
+
+
+def test_an_empty_token_is_refused_however_the_settings_are_built() -> None:
+    with pytest.raises(ValidationError, match="token"):
+        _ = PaperlessSettings.model_validate({"url": URL, "token": ""})
+
+
+@pytest.mark.parametrize("field", sorted(set(ServerSettings.model_fields) - EMPTY_LISTS))
+def test_an_empty_server_setting_is_refused_rather_than_guessed(
+    monkeypatch: pytest.MonkeyPatch, field: str
+) -> None:
+    """Unset would offer more than an empty READ_ONLY or TOOLSETS may mean; a new field decides."""
+    monkeypatch.setenv(f"PAPERLESS_MCP_{field.upper()}", "")
+
+    assert invalid_fields(ServerSettings) == [(field,)]
+
+
+@pytest.mark.parametrize("field", sorted(EMPTY_LISTS))
+def test_an_empty_list_setting_is_an_empty_list(
+    monkeypatch: pytest.MonkeyPatch, field: str
+) -> None:
+    monkeypatch.setenv(f"PAPERLESS_MCP_{field.upper()}", "")
+
+    settings = ServerSettings()
+
+    assert (settings.disabled_tools, settings.upload_dirs) == ((), ())
 
 
 @pytest.mark.parametrize("variable", ["PAPERLESS_URL", "PAPERLESS_PUBLIC_URL"])
