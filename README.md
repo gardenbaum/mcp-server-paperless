@@ -167,7 +167,9 @@ claude plugin marketplace add gardenbaum/mcp-server-paperless
 claude plugin install mcp-server-paperless@gardenbaum
 ```
 
-The [plugin](https://github.com/gardenbaum/mcp-server-paperless/blob/main/plugin/README.md) runs a
+The plugin also brings four skills (inbox triage, finding a document, annual review, taxonomy
+cleanup) that Claude can pick by itself. The
+[plugin](https://github.com/gardenbaum/mcp-server-paperless/blob/main/plugin/README.md) runs a
 fixed release of the package (its dependencies are resolved at install). For the next one, refresh
 the marketplace first, then restart Claude Code or run `/reload-plugins`:
 
