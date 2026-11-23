@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:47Z'
-updated_date: '2026-11-23T22:46:34Z'
+updated_date: '2026-11-23T23:09:26Z'
 labels: []
 dependencies: []
 priority: high
@@ -21,18 +21,18 @@ download_document attaches files up to 512 KiB by default; larger ones are only 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Over stdio, original, archive, versions and bulk ZIPs can be saved into explicitly allowed directories (off by default), with the path rules of PAPERLESS_MCP_UPLOAD_DIRS, without overwriting unless confirmed
-- [ ] #2 Files above the attach limit can be read in parts over both transports
-- [ ] #3 A new decision supersedes decision-7's rule 'downloads are never written to the host' for stdio with a configured directory allowlist only; HTTP never offers a path or writes to the host; it also says whether such a tool is read-only (PAPERLESS_MCP_READ_ONLY) and how it fits decision-11 (MEDIA_TOOLS)
+- [x] #1 Over stdio, original, archive, versions and bulk ZIPs can be saved into explicitly allowed directories (off by default), with the path rules of PAPERLESS_MCP_UPLOAD_DIRS, without overwriting unless confirmed
+- [x] #2 Files above the attach limit can be read in parts over both transports
+- [x] #3 A new decision supersedes decision-7's rule 'downloads are never written to the host' for stdio with a configured directory allowlist only; HTTP never offers a path or writes to the host; it also says whether such a tool is read-only (PAPERLESS_MCP_READ_ONLY) and how it fits decision-11 (MEDIA_TOOLS)
 - [ ] #4 A second decision keeps or changes the default attach limits, from measured client limits
-- [ ] #5 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
-- [ ] #6 Security tests cover symlinks, traversal, hard links, dot files, races and full disks; docs, the plugin settings and the 'never written to disk' tool texts match
+- [x] #5 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
+- [x] #6 Security tests cover symlinks, traversal, hard links, dot files, races and full disks; docs, the plugin settings and the 'never written to disk' tool texts match
 - [ ] #7 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover every file kind, parts, overwrite with and without confirm and both transports
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
@@ -57,4 +57,12 @@ A. stdio (Cursor, Claude Desktop, Claude Code): add a second, temporary server e
 B. HTTP (Claude Code, Cursor): the same environment for 'uv run mcp-server-paperless-http' plus PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK=true, client URL http://127.0.0.1:8000/mcp.
 For each file say: 'Download document <id> with download_document and tell me its size.' Note: worked, error text, cut off, saved to a file by the client, or the model did not see the file. Stop at the first size that fails.
 Then, once per client: (1) set PAPERLESS_MCP_MAX_DOWNLOAD_BYTES back to its default and say 'Read document <8 MiB id> in parts with offset and give me the first two parts and their checksums'; note whether the model repeats the arguments of next and whether it can join two parts. (2) stdio only: 'Save document <8 MiB id> to <directory>', then the same again (it must ask before it replaces), then 'Save it to <another directory>' (refused). Compare the file with Paperless (shasum -a 256). (3) Note whether the client asks for approval before each download call (expected with download directories: the tools are not read-only then).
+
+Evidence. AC 1: tests/services/test_file_sink.py, test_file_saving.py, tests/tools/test_downloads.py; live over stdio tests/e2e/test_downloads.py. A ZIP has no versions in Paperless: versions are saved per document, a ZIP holds the newest. AC 2: tests/services/test_file_parts.py, tests/tools/test_downloads.py, test_downloads_transport.py (stdio, HTTP legacy and auto). AC 3: decision-45, the variant matrix in test_downloads.py, test_registry.py. AC 4: open, decision-46 is proposed until the real clients are measured. AC 5: no tool joins the default profile (20 of 20, budget test unchanged), so no budget decision. AC 6: test_file_sink.py on macOS and in a Linux container with a really full tmpfs (CI mounts one); exFAT, FAT32 and HFS+ images on macOS: save, confirmed replacement and a full disk. AC 7: open until the hosted run of the final commit; locally on 3.5.1 the contract modules (99 passed) and tests/e2e/test_downloads.py (4 passed) were green before the last changes (tests only).
+Security review findings (2026-11-23): (1) applied: the ending came from the proposed name, which is the title's where Paperless knows no ending for a type, or the upload's where no name is proposed; now a fixed table of the types Paperless 3.5.1 consumes decides, .bin for others. (2) applied: the reserve is checked before the file is made and before every piece. From the PLMCP-98 review: confirmation texts quote the whole file name and directory, and a replacement that cannot be shown exactly is refused.
+More probes: ZIP of 320 MiB: first byte after 0.8 s (none) and 147.6 s (lzma, so a lzma part of that size exceeds the 120 s for a part; saving has 600 s); saved in 6.2 s; Paperless killed in mid-body, zstd and identity: an error, never a short file.
+Mutation (mutmut in a Linux container, changed modules, first run, before the last tests): 91 survivors outside the reviewed equivalents; tests were added for those that mattered (a temporary file swapped for a link to itself, the facts of a named version, the wait of a part, texts). The second run was stopped with the local containers on the owner's request, so the effect of the added tests is not measured. Found on the way, not from this task: the mutation run cannot collect its statistics since tests/adapter/test_schema_guard.py::test_a_request_is_recorded_with_the_port_method_that_sent_it (mutmut renames the method; excluded in that container only), and three entries of mutation-equivalents.toml are stale (add_note 11, delete_taxonomy_item 7, merge_as_versions 20).
+Deviations from the design: open_archive takes wait_seconds (the two waits need it); parts and saves have report models of their own, so the report of an attached file only gains version_id; endings from a table (security review); a document's metadata is read again after a part; the files are opened O_RDWR (the end record of a ZIP is read back); CI mounts a small tmpfs. Deliberate test changes: surface snapshot (two tools), the notes over the limit, the thumbnail report's version_id, the registry's path allowlist, the import contract's two new modules.
+
+Correction: the first mutation run left 96 survivors and 5 timeouts outside the entries of mutation-equivalents.toml (the moved entries included), not 91.
 <!-- SECTION:NOTES:END -->
