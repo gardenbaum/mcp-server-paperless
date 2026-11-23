@@ -39,7 +39,8 @@ claude.ai register again); in `PAPERLESS_MCP_OIDC_STORAGE_DIR` nothing bounds th
 user id there) when it rejects a token, so the log can hold that identifier. The server re-checks
 the provider's ID token on every request; when it expires (often after an hour) it refreshes at
 the provider, and if the provider returns no new ID token on refresh, claude.ai has to sign in
-again.
+again. What is stored for how long is in the
+[privacy policy](../PRIVACY.md#how-long-data-is-kept).
 
 ## Example with Authentik
 

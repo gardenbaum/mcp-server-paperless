@@ -290,6 +290,13 @@ them.
 - [Run in a container](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/container.md): the image, compose files, reverse proxy
 - [Development](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/development.md): architecture, how it is tested, how to contribute
 
+## Privacy policy
+
+You run the server yourself: it sends your data to your Paperless and your MCP client, keeps no
+copy of your documents on disk and has no telemetry. The [privacy policy](https://github.com/gardenbaum/mcp-server-paperless/blob/main/PRIVACY.md) says what it reads,
+writes, stores and logs, and where data goes (your client's AI model and Paperless's own AI
+included).
+
 ## Known limitations
 
 - **One Paperless user per server.** Every client of a server acts as the user of its

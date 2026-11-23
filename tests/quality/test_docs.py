@@ -25,8 +25,9 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "README.md"
 DOCS = ROOT / "docs"
+PRIVACY = ROOT / "PRIVACY.md"
 # The pages written for users; the reading guides for contributors are checked for links too.
-PAGES = (README, *sorted(DOCS.glob("*.md")))
+PAGES = (README, PRIVACY, *sorted(DOCS.glob("*.md")))
 NAMES = [page.name for page in PAGES]
 # Every current doc and the Dockerfile; decisions and tasks keep the names of their time.
 NAMED = (
@@ -145,6 +146,35 @@ def test_the_readme_links_every_page_written_for_users() -> None:
     assert [name for name in pages if f"({BLOB}docs/{name}" not in text] == []
 
 
+def test_the_readme_has_a_privacy_section_that_links_the_policy() -> None:
+    # Anthropic asks local connectors for a "Privacy Policy" section in the README (PLMCP-71).
+    _, heading, rest = prose(README).partition("\n## Privacy policy\n")
+
+    assert heading
+    assert f"({BLOB}PRIVACY.md)" in rest.partition("\n## ")[0]
+
+
+@pytest.mark.parametrize(
+    "name", ["configuration.md", "http.md", "claude-ai-connector.md", "container.md"]
+)
+def test_the_pages_on_running_the_server_link_the_privacy_policy(name: str) -> None:
+    assert "../PRIVACY.md" in {
+        found[1].partition("#")[0] for found in LINK.finditer(prose(DOCS / name))
+    }
+
+
+def test_the_privacy_policy_covers_what_the_directory_asks_for() -> None:
+    # Collection, use and storage, third-party sharing, retention and contact.
+    assert {
+        "what-the-server-reads-and-writes",
+        "what-the-server-stores",
+        "what-the-server-logs",
+        "where-your-data-goes",
+        "how-long-data-is-kept",
+        "contact",
+    } <= anchors(PRIVACY)
+
+
 @pytest.mark.parametrize(
     "name",
     [
@@ -187,7 +217,9 @@ def test_the_guard_leaves_other_projects_and_the_old_command_names_alone(name: s
 def test_the_guard_covers_the_design_the_workflow_guide_and_the_dockerfile() -> None:
     names = [path.name for path in NAMED]
 
-    assert {"README.md", "CLAUDE.md", "AGENTS.md", "http.md", "Dockerfile"} <= set(names)
+    assert {"README.md", "PRIVACY.md", "CLAUDE.md", "AGENTS.md", "http.md", "Dockerfile"} <= set(
+        names
+    )
     assert [name for name in names if name.startswith(("doc-1 ", "doc-2 "))] == [
         "doc-1 - paperless-mcp-design.md",
         "doc-2 - AI-contributor-workflow.md",

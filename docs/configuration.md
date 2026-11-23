@@ -268,5 +268,7 @@ details). An unreachable Paperless does not stop it; the tools report the proble
 Paperless is back.
 
 Logs go to stderr (the server's own records as JSON lines) and never contain tokens, document
-content or query text at INFO or above: tool arguments and error messages are not logged, and an
-internal error is logged by type, with its traceback only at DEBUG.
+content or query text at INFO or above: tool arguments and the error messages of tools are not
+logged (those of resources and prompts are), and an internal error in a tool is logged by type, with its
+traceback only at DEBUG. What DEBUG can log, and everything else about your data, is in the
+[privacy policy](../PRIVACY.md).
