@@ -101,9 +101,6 @@ for troubleshooting.
   remote OCR service, and document text and questions to an embedding service.
 - **Your identity provider**, if an HTTP deployment uses one: the sign-in and its tokens. The
   server also fetches the metadata of a client that identifies itself by a URL from that URL.
-- **FastMCP's website**, during that sign-in: the server's consent and error pages make your
-  browser load a logo from `gofastmcp.com`, which sees your IP address and what your browser sends
-  with an image request.
 - **Package hosts**, by requests of your installer, not of the server. `uvx` contacts PyPI
   (`pypi.org`, `files.pythonhosted.org`) to install and again at a start when its index cache is
   older than about ten minutes, also for a fixed version. If it needs a Python, it downloads one

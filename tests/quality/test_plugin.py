@@ -300,6 +300,9 @@ def test_the_repository_keeps_the_icon_for_other_listings() -> None:
 
     assert png_size(ROOT / "assets" / "icon-400.png") == (400, 400)
     assert 'viewBox="0 0 550 550"' in svg
+    # The wheel carries its own copy for the sign-in pages: assets/ is not in the package.
+    packaged = ROOT / "src" / "mcp_server_paperless" / "icon.svg"
+    assert packaged.read_text(encoding="utf-8") == svg
 
 
 def test_the_folder_is_complete_by_itself() -> None:
