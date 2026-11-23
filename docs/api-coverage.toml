@@ -1,0 +1,586 @@
+# Hand-written part of the Paperless API coverage (PLMCP-91). See api-coverage.md, the
+# generated table, and tests/quality/test_api_coverage.py, which checks this file.
+#
+# [[open]]        operations no tool covers, each under a Backlog task that is not done
+# [[open_fields]] query parameters, body fields and enum values of covered operations that no
+#                 tool sends. A field under an unsent parent is not listed on its own. A listed
+#                 value of a field that is sent carries a `reason`, so that the owner can decide on
+#                 an exclusion. A field a tool supports that no tool test sends is listed too.
+# [[internal]]    fields the adapter chooses itself although a task wants them as a tool argument
+#                 (tasks owner, ordering, date_created_after; processed_mail ordering; the body
+#                 of mail_accounts/test, for testing an unsaved account; the documents `fields`
+#                 projection, PLMCP-80 AC 3; the documents of a bundle rebuild, PLMCP-83). They
+#                 stay open under that task although they are sent.
+# [[plumbing]]    fields the adapter chooses itself and no task is known to want as an argument
+#                 (applied where it was noticed, not a census of every constant): full_perms,
+#                 projections, constants of helpers that read every page, the stored object sent
+#                 back. No feature, no open work; shown apart, checked against the schema. A value
+#                 or id a tool argument decides (id__in, task_type) is neither.
+# [[exclusion]]   an owner-approved exclusion: quote, date and a Markdown file under backlog/
+#                 (an excluded value of a field that is sent also needs a `reason`)
+# [[undeclared]]  query parameters the generated schema omits (listed by hand)
+
+[[open]]
+task = "PLMCP-80"
+operations = [
+  "POST /api/documents/delete/",
+]
+
+[[open]]
+task = "PLMCP-81"
+operations = [
+  "GET /api/oauth/callback/",
+  "GET /api/processed_mail/{id}/",
+  "POST /api/processed_mail/bulk_delete/",
+  "PUT /api/mail_accounts/{id}/",
+  "PUT /api/mail_rules/{id}/",
+]
+
+[[open]]
+task = "PLMCP-83"
+operations = [
+  "DELETE /api/config/{id}/",
+  "DELETE /api/profile/totp/",
+  "GET /api/config/{id}/",
+  "GET /api/documents/next_asn/",
+  "GET /api/documents/{id}/preview/",
+  "GET /api/documents/{id}/root/",
+  "GET /api/documents/{id}/share_links/",
+  "GET /api/profile/",
+  "GET /api/profile/social_account_providers/",
+  "GET /api/profile/totp/",
+  "GET /api/remote_version/",
+  "GET /api/search/",
+  "GET /api/search/autocomplete/",
+  "PATCH /api/profile/",
+  "POST /api/documents/selection_data/",
+  "POST /api/documents/{id}/email/",
+  "POST /api/profile/disconnect_social_account/",
+  "POST /api/profile/generate_auth_token/",
+  "POST /api/profile/totp/",
+  "POST /api/storage_paths/test/",
+  "POST /api/token/",
+  "POST /api/users/{id}/deactivate_totp/",
+  "PUT /api/config/{id}/",
+  "PUT /api/correspondents/{id}/",
+  "PUT /api/custom_fields/{id}/",
+  "PUT /api/document_types/{id}/",
+  "PUT /api/documents/{id}/",
+  "PUT /api/groups/{id}/",
+  "PUT /api/storage_paths/{id}/",
+  "PUT /api/tags/{id}/",
+  "PUT /api/users/{id}/",
+]
+
+[[open]]
+task = "PLMCP-87"
+operations = [
+  "DELETE /api/workflow_actions/{id}/",
+  "DELETE /api/workflow_triggers/{id}/",
+  "GET /api/workflow_actions/",
+  "GET /api/workflow_actions/{id}/",
+  "GET /api/workflow_triggers/",
+  "GET /api/workflow_triggers/{id}/",
+  "GET /api/workflows/{id}/",
+  "PATCH /api/workflow_actions/{id}/",
+  "PATCH /api/workflow_triggers/{id}/",
+  "POST /api/workflow_actions/",
+  "POST /api/workflow_triggers/",
+  "PUT /api/workflow_actions/{id}/",
+  "PUT /api/workflow_triggers/{id}/",
+  "PUT /api/workflows/{id}/",
+]
+
+[[open]]
+task = "PLMCP-88"
+operations = [
+  "GET /api/saved_views/{id}/",
+  "POST /api/ui_settings/",
+  "PUT /api/saved_views/{id}/",
+]
+
+[[open]]
+task = "PLMCP-89"
+operations = [
+  "GET /api/tasks/active/",
+  "GET /api/tasks/status_counts/",
+  "GET /api/tasks/summary/",
+  "GET /api/tasks/{id}/",
+]
+
+[[undeclared]]
+operation = "GET /api/documents/{id}/"
+params = ["version"]
+
+[[undeclared]]
+operation = "PATCH /api/documents/{id}/"
+params = ["version"]
+
+[[undeclared]]
+operation = "GET /api/documents/{id}/download/"
+params = ["version"]
+
+[[undeclared]]
+operation = "GET /api/documents/{id}/thumb/"
+params = ["version"]
+
+[[undeclared]]
+operation = "GET /api/documents/{id}/metadata/"
+params = ["version"]
+
+[[undeclared]]
+operation = "GET /api/documents/{id}/preview/"
+params = ["version"]
+
+[[plumbing]]
+operation = "POST /api/mail_accounts/{id}/process/"
+fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security", "body:username", "body:password", "body:character_set", "body:is_token"]
+reason = "the stored account is sent back; the tool takes only its id"
+
+[[plumbing]]
+operation = "GET /api/tags/"
+fields = ["query:full_perms"]
+reason = "reads the grants: sent as true whenever the adapter needs them, no tool argument sets it"
+
+[[plumbing]]
+operation = "PATCH /api/tags/{id}/"
+fields = ["query:full_perms"]
+reason = "reads the grants back: sent as true, no tool argument sets it"
+
+[[plumbing]]
+operation = "GET /api/correspondents/"
+fields = ["query:full_perms"]
+reason = "reads the grants: sent as true whenever the adapter needs them, no tool argument sets it"
+
+[[plumbing]]
+operation = "PATCH /api/correspondents/{id}/"
+fields = ["query:full_perms"]
+reason = "reads the grants back: sent as true, no tool argument sets it"
+
+[[plumbing]]
+operation = "GET /api/document_types/"
+fields = ["query:full_perms"]
+reason = "reads the grants: sent as true whenever the adapter needs them, no tool argument sets it"
+
+[[plumbing]]
+operation = "PATCH /api/document_types/{id}/"
+fields = ["query:full_perms"]
+reason = "reads the grants back: sent as true, no tool argument sets it"
+
+[[plumbing]]
+operation = "GET /api/storage_paths/"
+fields = ["query:full_perms"]
+reason = "reads the grants: sent as true whenever the adapter needs them, no tool argument sets it"
+
+[[plumbing]]
+operation = "PATCH /api/storage_paths/{id}/"
+fields = ["query:full_perms"]
+reason = "reads the grants back: sent as true, no tool argument sets it"
+
+[[plumbing]]
+operation = "GET /api/documents/"
+fields = ["query:full_perms"]
+reason = "full_perms reads the grants back; no tool argument sets it"
+
+[[plumbing]]
+operation = "PATCH /api/documents/{id}/"
+fields = ["query:full_perms", "query:fields"]
+reason = "full_perms reads the grants back and fields is a projection; no tool argument sets them"
+
+[[plumbing]]
+operation = "GET /api/documents/{id}/"
+fields = ["query:fields"]
+reason = "a projection that keeps the OCR text out of the answer; no tool argument sets it"
+
+[[plumbing]]
+operation = "GET /api/workflows/"
+fields = ["query:page", "query:page_size"]
+reason = "page and page_size are constants of a helper that reads every page; no tool argument sets them"
+
+[[internal]]
+operation = "GET /api/tasks/"
+fields = ["query:owner", "query:ordering", "query:date_created_after"]
+reason = "the adapter chooses it"
+
+[[internal]]
+operation = "GET /api/processed_mail/"
+fields = ["query:ordering"]
+reason = "the adapter chooses it"
+
+[[internal]]
+operation = "GET /api/documents/"
+fields = ["query:fields"]
+reason = "the projection is chosen by the adapter; PLMCP-80 AC 3 wants the fields selectable"
+
+[[internal]]
+operation = "POST /api/share_link_bundles/{id}/rebuild/"
+fields = ["body:document_ids"]
+reason = "the stored bundle's documents are sent back; rebuilding with other documents is not offered (PLMCP-83)"
+
+[[internal]]
+operation = "POST /api/mail_accounts/test/"
+fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security", "body:username", "body:password", "body:character_set", "body:is_token"]
+reason = "the stored account is sent back; testing an unsaved account is open (PLMCP-81)"
+
+[[open_fields]]
+operation = "GET /api/correspondents/"
+fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/correspondents/{id}/"
+fields = ["query:full_perms"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/custom_fields/"
+fields = ["query:id", "query:id__in", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/document_types/"
+fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/document_types/{id}/"
+fields = ["query:full_perms"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/documents/"
+fields = ["query:fields"]
+task = "PLMCP-80"
+
+[[open_fields]]
+operation = "GET /api/documents/"
+fields = ["query:added__day", "query:added__gt", "query:added__gte", "query:added__lt", "query:added__lte", "query:added__month", "query:added__year", "query:all", "query:archive_serial_number__gte", "query:archive_serial_number__lte", "query:checksum__icontains", "query:checksum__iendswith", "query:checksum__iexact", "query:checksum__istartswith", "query:content__iendswith", "query:content__iexact", "query:content__istartswith", "query:correspondent__name__icontains", "query:correspondent__name__iendswith", "query:correspondent__name__iexact", "query:correspondent__name__istartswith", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:document_type__name__icontains", "query:document_type__name__iendswith", "query:document_type__name__iexact", "query:document_type__name__istartswith", "query:id", "query:modified__date__gte", "query:modified__date__lte", "query:modified__day", "query:modified__gt", "query:modified__gte", "query:modified__lt", "query:modified__lte", "query:modified__month", "query:modified__year", "query:original_filename__icontains", "query:original_filename__iendswith", "query:original_filename__iexact", "query:original_filename__istartswith", "query:search", "query:storage_path__name__icontains", "query:storage_path__name__iendswith", "query:storage_path__name__iexact", "query:storage_path__name__istartswith", "query:tags__id", "query:tags__name__icontains", "query:tags__name__iendswith", "query:tags__name__iexact", "query:tags__name__istartswith", "query:title__iendswith", "query:title__iexact", "query:title__istartswith", "query:title_content"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/documents/"
+fields = ["query:shared_by__id=false", "query:shared_by__id=true"]
+task = "PLMCP-83"
+reason = "the schema declares a boolean, Paperless takes a user id; a tool sends the id (PLMCP-25)"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/"
+fields = ["query:version"]
+task = "PLMCP-75"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/"
+fields = ["query:full_perms"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/download/"
+fields = ["query:version"]
+task = "PLMCP-76"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/download/"
+fields = ["query:follow_formatting"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/history/"
+fields = ["query:page", "query:page_size"]
+task = "PLMCP-89"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/metadata/"
+fields = ["query:version"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/notes/"
+fields = ["query:id"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/documents/{id}/thumb/"
+fields = ["query:version"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/groups/"
+fields = ["query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/processed_mail/"
+fields = ["query:ordering"]
+task = "PLMCP-81"
+
+[[open_fields]]
+operation = "GET /api/saved_views/"
+fields = ["query:full_perms", "query:ordering"]
+task = "PLMCP-88"
+
+[[open_fields]]
+operation = "GET /api/share_link_bundles/"
+fields = ["query:created__date__gt", "query:created__date__gte", "query:created__date__lt", "query:created__date__lte", "query:created__day", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:created__month", "query:created__year", "query:documents", "query:expiration__date__gt", "query:expiration__date__gte", "query:expiration__date__lt", "query:expiration__date__lte", "query:expiration__day", "query:expiration__gt", "query:expiration__gte", "query:expiration__lt", "query:expiration__lte", "query:expiration__month", "query:expiration__year", "query:ordering", "query:status"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/share_links/"
+fields = ["query:created__date__gt", "query:created__date__gte", "query:created__date__lt", "query:created__date__lte", "query:created__day", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:created__month", "query:created__year", "query:expiration__date__gt", "query:expiration__date__gte", "query:expiration__date__lt", "query:expiration__date__lte", "query:expiration__day", "query:expiration__gt", "query:expiration__gte", "query:expiration__lt", "query:expiration__lte", "query:expiration__month", "query:expiration__year", "query:ordering"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/storage_paths/"
+fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering", "query:path__icontains", "query:path__iendswith", "query:path__iexact", "query:path__istartswith"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/storage_paths/{id}/"
+fields = ["query:full_perms"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/tags/"
+fields = ["query:id", "query:is_root", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/tags/{id}/"
+fields = ["query:full_perms"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/tasks/"
+fields = ["query:date_created_after", "query:date_created_before", "query:is_complete", "query:name", "query:ordering", "query:owner", "query:result", "query:trigger_source"]
+task = "PLMCP-89"
+
+[[open_fields]]
+operation = "GET /api/users/"
+fields = ["query:ordering", "query:username__iendswith", "query:username__iexact", "query:username__istartswith"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "PATCH /api/config/{id}/"
+fields = ["body:app_logo"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "PATCH /api/custom_fields/{id}/"
+fields = ["body:data_type"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "PATCH /api/documents/{id}/"
+fields = ["body:content", "query:version"]
+task = "PLMCP-75"
+
+[[open_fields]]
+operation = "PATCH /api/documents/{id}/"
+fields = ["body:created_date", "body:remove_inbox_tags"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "PATCH /api/mail_accounts/{id}/"
+fields = ["body:account_type", "body:expiration", "body:is_token", "body:owner", "body:set_permissions"]
+task = "PLMCP-81"
+
+[[open_fields]]
+operation = "PATCH /api/mail_rules/{id}/"
+fields = ["body:set_permissions"]
+task = "PLMCP-81"
+
+[[open_fields]]
+operation = "PATCH /api/saved_views/{id}/"
+fields = ["body:display_fields", "body:display_mode", "body:icon", "body:owner", "body:set_permissions"]
+task = "PLMCP-88"
+
+[[open_fields]]
+operation = "PATCH /api/users/{id}/"
+fields = ["body:date_joined"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "PATCH /api/workflows/{id}/"
+fields = ["body:actions[].ai_create_missing", "body:actions[].ai_overwrite_existing", "body:actions[].ai_suggestion_fields", "body:actions[].email.id", "body:actions[].id", "body:actions[].passwords", "body:actions[].webhook.id", "body:triggers[].id"]
+task = "PLMCP-87"
+
+[[open_fields]]
+operation = "PATCH /api/workflows/{id}/"
+fields = ["body:actions[].type=5", "body:actions[].type=8"]
+task = "PLMCP-87"
+reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them"
+
+[[open_fields]]
+operation = "POST /api/bulk_edit_objects/"
+fields = ["body:all", "body:filters"]
+task = "PLMCP-80"
+
+[[open_fields]]
+operation = "POST /api/correspondents/"
+fields = ["body:owner", "body:set_permissions"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/document_types/"
+fields = ["body:owner", "body:set_permissions"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_download/"
+fields = ["body:all", "body:excluded_documents", "body:filters"]
+task = "PLMCP-80"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:all", "body:excluded_documents", "body:filters"]
+task = "PLMCP-80"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:method=add_tag", "body:method=remove_tag"]
+task = "PLMCP-80"
+reason = "modify_tags adds and removes tags in one call, so the tool never sends the single-tag methods"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:method=set_permissions"]
+task = "PLMCP-80"
+reason = "permissions are changed by the set_permissions tool (bulk_edit_objects and set_permissions of the document), not by bulk_edit_documents"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:method=delete_pages", "body:method=split"]
+task = "PLMCP-80"
+reason = "split_document and delete_pages send the edit_pdf endpoint of the pdf toolset (they have none of their own), so bulk_edit_documents never sends it"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:method=edit_pdf", "body:method=merge", "body:method=remove_password", "body:method=rotate"]
+task = "PLMCP-80"
+reason = "the pdf toolset has an endpoint of its own for it (API 10 deprecates this bulk_edit form), so bulk_edit_documents never sends it"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:from_webui"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/documents/edit_pdf/"
+fields = ["body:include_metadata", "body:source_mode"]
+task = "PLMCP-79"
+
+[[open_fields]]
+operation = "POST /api/documents/edit_pdf/"
+fields = ["body:from_webui"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/documents/merge/"
+fields = ["body:archive_fallback", "body:source_mode"]
+task = "PLMCP-79"
+
+[[open_fields]]
+operation = "POST /api/documents/merge/"
+fields = ["body:from_webui"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/documents/post_document/"
+fields = ["body:from_webui"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/documents/remove_password/"
+fields = ["body:include_metadata", "body:source_mode"]
+task = "PLMCP-79"
+
+[[open_fields]]
+operation = "POST /api/documents/remove_password/"
+fields = ["body:from_webui"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/documents/reprocess/"
+fields = ["body:all", "body:excluded_documents", "body:filters"]
+task = "PLMCP-79"
+
+[[open_fields]]
+operation = "POST /api/documents/rotate/"
+fields = ["body:all", "body:excluded_documents", "body:filters", "body:source_mode"]
+task = "PLMCP-79"
+
+[[open_fields]]
+operation = "POST /api/documents/rotate/"
+fields = ["body:from_webui"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/documents/{id}/notes/"
+fields = ["query:id"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/mail_accounts/"
+fields = ["body:account_type", "body:expiration", "body:is_token", "body:owner", "body:set_permissions"]
+task = "PLMCP-81"
+
+[[open_fields]]
+operation = "POST /api/mail_accounts/test/"
+fields = ["body:account_type", "body:character_set", "body:expiration", "body:imap_port", "body:imap_security", "body:imap_server", "body:is_token", "body:name", "body:owner", "body:password", "body:set_permissions", "body:username"]
+task = "PLMCP-81"
+
+[[open_fields]]
+operation = "POST /api/mail_accounts/{id}/process/"
+fields = ["body:account_type", "body:expiration", "body:owner", "body:set_permissions"]
+task = "PLMCP-81"
+
+[[open_fields]]
+operation = "POST /api/mail_rules/"
+fields = ["body:set_permissions"]
+task = "PLMCP-81"
+
+[[open_fields]]
+operation = "POST /api/saved_views/"
+fields = ["body:display_fields", "body:display_mode", "body:icon", "body:owner", "body:set_permissions"]
+task = "PLMCP-88"
+
+[[open_fields]]
+operation = "POST /api/share_link_bundles/{id}/rebuild/"
+fields = ["body:document_ids", "body:expiration_days", "body:file_version"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/storage_paths/"
+fields = ["body:owner", "body:set_permissions"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/tags/"
+fields = ["body:owner", "body:set_permissions"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/tasks/acknowledge/"
+fields = ["body:all"]
+task = "PLMCP-89"
+
+[[open_fields]]
+operation = "POST /api/tasks/run/"
+fields = ["body:task_type=apply_ai_suggestions", "body:task_type=build_share_link", "body:task_type=bulk_delete", "body:task_type=bulk_update", "body:task_type=check_workflows", "body:task_type=consume_file", "body:task_type=empty_trash", "body:task_type=index_optimize", "body:task_type=mail_fetch", "body:task_type=reprocess_document"]
+task = "PLMCP-89"
+reason = "run_task offers train_classifier, sanity_check and llm_index; which of the other types Paperless lets a user start is PLMCP-89 AC 3"
+
+[[open_fields]]
+operation = "POST /api/users/"
+fields = ["body:date_joined"]
+task = "PLMCP-83"
+
+[[open_fields]]
+operation = "POST /api/workflows/"
+fields = ["body:actions[].ai_create_missing", "body:actions[].ai_overwrite_existing", "body:actions[].ai_suggestion_fields", "body:actions[].email.id", "body:actions[].id", "body:actions[].passwords", "body:actions[].webhook.id", "body:triggers[].id"]
+task = "PLMCP-87"
+
+[[open_fields]]
+operation = "POST /api/workflows/"
+fields = ["body:actions[].type=5", "body:actions[].type=8"]
+task = "PLMCP-87"
+reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them"

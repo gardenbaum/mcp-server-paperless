@@ -61,6 +61,26 @@ description or its annotations changed. Tests fail when it is stale, when the RE
 tool or toolset count the catalogue does not have, when a setting is documented nowhere under
 `docs/`, or when a relative link leads nowhere.
 
+`docs/api-coverage.md` shows, operation by operation of the vendored Paperless schema, which
+tools cover it, which query parameters, body fields (nested ones too) and enum values no tool
+sends, and for the rest the open task. It is derived from the scenarios of
+`tests/tools/test_arguments.py`: they call every tool with all its arguments, with the ports
+recorded, and each recorded call is handed to the real adapter, which builds the request. The
+derivation runs inside the coverage test (about 20 s), so the test works alone and in CI.
+
+Only `docs/api-coverage.toml` is written by hand: the open tasks, owner-approved exclusions (a
+quote and its date, found in a paragraph of a Markdown file under `backlog/` that says the owner
+approved it), the fields the adapter chooses for itself that a task wants as an argument
+(`[[internal]]`) and those no task is known to want (`[[plumbing]]`, shown apart).
+
+Run `just docs-coverage` after a tool, a scenario or the schema changed. Give a new tool argument
+a scenario in `tests/tools/test_arguments.py`, or its field shows up as open. The tests fail
+when:
+
+- an operation, field or value is neither covered nor listed, or an entry is stale;
+- an open entry's task does not exist or is done;
+- a tool or an argument is in no scenario, or a tool that writes makes no write call.
+
 ### Demo recording
 
 `just demo` records `docs/demo/demo.gif`, the recording at the top of the README. It needs only

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:22:02Z'
-updated_date: '2026-11-23T12:25:17Z'
+updated_date: '2026-11-23T17:23:23Z'
 labels: []
 dependencies:
   - PLMCP-91
@@ -37,3 +37,9 @@ The toolset views (off by default) reads and writes name, rules, sort and page s
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+From PLMCP-91 (coverage table): POST /api/ui_settings/ is listed open under this task for the saved-view part (dashboard and sidebar visibility of a view, AC 2). The rest of /api/ui_settings/ beyond saved views belongs to PLMCP-83; one table entry cannot name both. Also: a covered GET /api/ui_settings/ does not mean the view visibility in its answer is shown.
+<!-- SECTION:NOTES:END -->
