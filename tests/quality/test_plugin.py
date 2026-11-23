@@ -24,6 +24,7 @@ from mcp_server_paperless.tools.prompts import (
     mentioned_tools,
     triage_inbox,
 )
+from mcp_server_paperless.tools.selection import ENABLE
 
 if TYPE_CHECKING:
     from pydantic_settings import BaseSettings
@@ -504,3 +505,16 @@ def test_the_claude_listing_links_the_privacy_policy_of_the_repository() -> None
 
     assert manifest(CLAUDE)["privacyPolicyUrl"] == link
     assert (ROOT / "PRIVACY.md").is_file()
+
+
+def test_the_toolset_guide_names_the_option_claude_has_and_says_cursor_has_none() -> None:
+    """The text the server gives the assistant (PLMCP-82) matches what each plugin offers."""
+    claude = mapping(server(CLAUDE)["env"])
+    option = re.fullmatch(r"\$\{user_config\.(\w+)\}", str(claude["PAPERLESS_MCP_TOOLSETS"]))
+    assert option is not None
+    title = options()[option[1]]["title"]
+    cursor = mapping(server(CURSOR)["env"])
+
+    assert f"Claude Code plugin: option {title}," in ENABLE
+    assert "PAPERLESS_MCP_TOOLSETS" not in cursor
+    assert "Cursor plugin: no such option" in ENABLE

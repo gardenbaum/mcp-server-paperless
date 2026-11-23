@@ -10,7 +10,7 @@ calls on ``Services``. The registry tests
 import functools
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, Final, cast
+from typing import TYPE_CHECKING, Annotated, Final, Protocol, cast
 
 from fastmcp.exceptions import ResourceError, ToolError
 from mcp.types import ToolAnnotations
@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
     from fastmcp import Context
 
+    from mcp_server_paperless.domain.instance import ToolsetGuide
     from mcp_server_paperless.services.admin_accounts import AccountAdmin
     from mcp_server_paperless.services.admin_system import SystemAdmin
     from mcp_server_paperless.services.ai import AiService
@@ -67,6 +68,24 @@ TOOLSETS: Final = frozenset(
         "admin",
     }
 )
+
+# What each toolset is for, in a few words: the server instructions and the overview say it of every
+# toolset that is off (PLMCP-82). A toolset that is cut down is described by its tools instead.
+TOOLSET_SUMMARIES: Final[Mapping[str, str]] = {
+    "core": "documents and taxonomy",
+    "ai": "Paperless AI questions and suggestions",
+    "bulk": "change many documents at once",
+    "versions": "document versions",
+    "views": "saved views",
+    "trash": "restore and empty deleted documents",
+    "pdf": "PDF edits",
+    "sharing": "share links, bundles, email",
+    "permissions": "permissions, users, groups",
+    "mail": "mail accounts and rules",
+    "raw": "other API endpoints, read-only",
+    "workflows": "workflows",
+    "admin": "users, groups, settings, logs, tasks",
+}
 
 # What the prompts, the server instructions and every core tool and resource that can return such
 # text say once; docstrings repeat it literally (registry test).
@@ -867,8 +886,9 @@ def check_transport(transport: str | None) -> None:
         raise Validation(message, hint="Send the file as content_base64.")
 
 
-# Key of the ``Services`` in the server's lifespan context.
+# Keys of the ``Services`` and of the toolset guide in the server's lifespan context.
 SERVICES: Final = "services"
+GUIDE: Final = "toolset_guide"
 
 
 @dataclass(frozen=True, slots=True)
@@ -906,6 +926,17 @@ class Services:
 def services(ctx: Context) -> Services:
     """The services of the running server (set up by its lifespan)."""
     return cast("Services", ctx.lifespan_context[SERVICES])
+
+
+class GuideFor(Protocol):
+    """Builds the guide to the toolsets for what Paperless says about AI now."""
+
+    def __call__(self, *, now: bool | None) -> ToolsetGuide: ...
+
+
+def guide_for(ctx: Context, *, ai_enabled: bool | None) -> ToolsetGuide:
+    """The toolsets on and off: what is on as the start found it, what is off by ``ai_enabled``."""
+    return cast("GuideFor", ctx.lifespan_context[GUIDE])(now=ai_enabled)
 
 
 def boundary[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
