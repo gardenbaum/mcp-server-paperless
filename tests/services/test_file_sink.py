@@ -341,6 +341,16 @@ async def test_every_unusable_directory_gets_the_same_answer(tree: Tree) -> None
     assert list(tree.out.iterdir()) == []
 
 
+async def test_the_answer_names_every_allowed_directory(tree: Tree) -> None:
+    both = FileSink([str(tree.allowed), str(tree.out)])
+
+    with pytest.raises(NotFound) as raised:
+        async with both.open("/nowhere"):
+            raise AssertionError
+
+    assert (raised.value.hint or "").endswith(f"inside one of: {tree.allowed}, {tree.out}.")
+
+
 async def test_a_link_to_a_directory_inside_is_followed(tree: Tree) -> None:
     (tree.allowed / "short").symlink_to(tree.sub)
 
@@ -491,6 +501,16 @@ def test_a_name_with_control_or_direction_characters_is_refused(save_as: str) ->
         _ = file_name(save_as, "2026.pdf", PDF)
 
 
+def test_a_name_that_cannot_be_encoded_is_refused_and_a_proposed_one_cleaned() -> None:
+    lone = chr(0xD800)
+    with pytest.raises(Validation) as raised:
+        _ = file_name(f"a{lone}.pdf", "2026.pdf", PDF)
+
+    assert raised.value.message == "The file name has characters that cannot be stored."
+    assert raised.value.hint == "Give another name with save_as."
+    assert file_name(None, f"a{lone}.pdf", PDF) == "a.pdf"
+
+
 def test_a_given_name_that_is_too_long_is_refused_and_a_proposed_one_shortened() -> None:
     with pytest.raises(Validation, match="longer than 255 bytes"):
         _ = file_name("x" * 252 + ".pdf", "2026.pdf", PDF)
@@ -573,6 +593,7 @@ async def test_a_file_that_appears_meanwhile_is_not_replaced(tree: Tree) -> None
         assert raised.value.message == (
             "A file of that name appeared meanwhile; nothing was replaced."
         )
+        assert raised.value.hint == "Look at the directory, then try again."
         assert (tree.sub / NAME).read_bytes() == b"theirs"
         assert tree.names() == [NAME]
         (tree.sub / NAME).unlink()
@@ -642,6 +663,33 @@ async def test_a_temporary_file_that_was_swapped_is_not_committed(tree: Tree, ho
         _ = await save(tree, at=when("written", swap))
 
     assert NAME not in tree.names()
+
+
+async def test_a_temporary_file_that_became_a_link_to_itself_is_not_committed(tree: Tree) -> None:
+    """The bytes are the right ones, but what would get the name is a link that leads out."""
+
+    def swap() -> None:
+        [temporary] = [p for p in tree.sub.iterdir() if p.name.startswith(".mcp-")]
+        _ = temporary.rename(tree.out / "moved")
+        temporary.symlink_to(tree.out / "moved")
+
+    with pytest.raises(PaperlessMcpError, match="changed meanwhile"):
+        _ = await save(tree, at=when("written", swap))
+
+    assert tree.names() == []
+
+
+async def test_the_link_is_made_to_the_file_itself(tree: Tree) -> None:
+    _ = (tree.out / "victim").write_bytes(b"victim")
+    (tree.sub / "source").symlink_to(tree.out / "victim")
+    fd = os.open(tree.sub, os.O_RDONLY)
+    try:
+        System().link("source", "target", fd)
+    finally:
+        os.close(fd)
+
+    assert (tree.sub / "target").is_symlink()
+    assert (tree.out / "victim").stat().st_nlink == 1
 
 
 async def test_the_temporary_file_is_hidden_private_and_random(tree: Tree) -> None:
@@ -794,6 +842,11 @@ async def test_a_failing_disk_is_a_plain_message_and_leaves_nothing(
         _ = await save(tree, confirm=True, system=Failing())
 
     assert raised.value.message == FAILURES[code]
+    assert raised.value.hint == (
+        "Make room or choose another directory; 256 MiB stay free in any case."
+        if FAILURES[code] == FULL
+        else "Choose another directory, or ask the operator."
+    )
     assert (tree.sub / NAME).read_bytes() == b"old"
     assert tree.names() == [NAME]
     assert "secret" not in raised.value.describe()
@@ -915,6 +968,27 @@ async def test_without_any_room_not_even_the_temporary_file_is_made(tree: Tree) 
     assert stages == ["resolved"]
 
 
+async def test_an_empty_file_needs_only_the_reserve(tree: Tree) -> None:
+    class Exact(System):
+        @override
+        def free(self, directory: int) -> int:
+            return RESERVE
+
+    saved = await save(tree, data=chunks(), system=Exact(), expected=Expected(0, None))
+
+    assert saved.size == 0
+
+
+async def test_a_temporary_file_that_cannot_be_removed_hides_nothing(tree: Tree) -> None:
+    class Stuck(System):
+        @override
+        def unlink(self, name: str, directory: int) -> None:
+            raise OSError(errno.EIO, "stuck")
+
+    with pytest.raises(PaperlessMcpError, match="other bytes"):
+        _ = await save(tree, system=Stuck(), expected=Expected(1, None))
+
+
 async def test_the_space_of_the_directory_is_read(tree: Tree) -> None:
     fd = os.open(tree.sub, os.O_RDONLY)
     try:
@@ -1024,7 +1098,9 @@ async def test_an_archive_needs_its_end(tree: Tree) -> None:
 
 async def test_a_file_over_the_limit_is_given_up_and_leaves_nothing(tree: Tree) -> None:
     small = FileSink([str(tree.allowed)], max_bytes=len(DATA))
-    assert (await save(tree, expected=Expected(), through=small)).size == len(DATA)
+    exact = Expected(len(DATA), None)
+    assert (await save(tree, expected=exact, through=small)).size == len(DATA)
+    assert (await save(tree, confirm=True, expected=Expected(), through=small)).size == len(DATA)
     for data, expected in (
         (chunks(DATA, b"z"), Expected()),
         (chunks(), Expected(len(DATA) + 1)),

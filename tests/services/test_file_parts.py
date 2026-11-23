@@ -238,6 +238,10 @@ async def test_a_whole_file_of_a_named_version_is_attached_and_says_which() -> N
     old = await files(fake, 100).download(7, "original", version_id=7)
     new = await files(fake, 100).download(7, "original")
 
+    # The facts of that version decide, not those of the newest (24 bytes, which would fit).
+    large = await files(fake, 30).download(7, "original", version_id=7)
+    assert (large.data, large.report.size_bytes) == (None, len(ORIGINAL))
+    assert (large.report.filename, large.report.mime_type) != (None, "text/plain")
     assert (old.data, old.report.version_id) == (ORIGINAL, 7)
     assert (new.data, new.report.version_id) == (b"the newest version of it", None)
     assert old.report.mime_type == "application/pdf"
@@ -254,10 +258,13 @@ async def test_the_note_over_the_limit_says_how_to_read_the_parts() -> None:
 async def test_a_later_part_needs_the_version_and_the_checksum_of_the_first() -> None:
     service = files(fake_with())
 
-    with pytest.raises(Validation, match="needs the checksum") as raised:
+    with pytest.raises(Validation, match=r"^A part after .* needs the checksum") as raised:
         _ = await service.part(7, "original", version_id=7, offset=1)
     assert raised.value.hint == "Repeat the arguments that next in the report names."
-    with pytest.raises(Validation, match="needs the version_id") as raised:
+    with pytest.raises(
+        Validation,
+        match=r"^A part after the first needs the version_id of the first part's report.$",
+    ) as raised:
         _ = await service.part(7, "original", offset=1, checksum=sha(ORIGINAL))
     assert raised.value.hint == "Repeat the arguments that next in the report names."
 
@@ -291,10 +298,28 @@ async def test_a_file_that_changes_while_its_part_is_read_is_refused() -> None:
 async def test_a_file_shorter_than_its_metadata_says_is_not_delivered() -> None:
     fake = fake_with(None, {"original_size": 38})
 
-    with pytest.raises(PaperlessMcpError, match="other bytes than it says") as raised:
+    with pytest.raises(
+        PaperlessMcpError,
+        match=r"^Paperless sent other bytes than it says the file has, so they are not used\.$",
+    ) as raised:
         _ = await files(fake, 100).part(7, "original", offset=0)
 
+    assert raised.value.message == (
+        "Paperless sent other bytes than it says the file has, so they are not used."
+    )
     assert raised.value.hint == "Try again; the file may just have changed."
+
+
+async def test_an_original_without_checksum_is_named_as_such() -> None:
+    with pytest.raises(PaperlessMcpError, match="of the original of document 7"):
+        _ = await files(fake_with(None, {"original_checksum": None})).part(7, "original", offset=0)
+
+
+async def test_an_impossible_size_is_refused_by_both_services() -> None:
+    with pytest.raises(Validation, match="max_bytes 1 or more"):
+        _ = await files(fake_with()).part(7, "original", offset=0, max_bytes=-1)
+    with pytest.raises(Validation, match="max_bytes 1 or more"):
+        _ = await part_of(fake_with(), 0, max_bytes=-1)
 
 
 @pytest.mark.parametrize("facts", [{"archive_size": None}, {"archive_checksum": None}])
@@ -351,7 +376,9 @@ def test_the_arguments_of_a_part_need_an_offset(
 
 @pytest.mark.parametrize(("offset", "max_bytes"), [(-1, None), (0, 0), (0, -1)])
 def test_an_impossible_window_is_refused(offset: int, max_bytes: int | None) -> None:
-    with pytest.raises(Validation, match="0 or more and max_bytes 1 or more") as raised:
+    with pytest.raises(
+        Validation, match=r"^offset must be 0 or more and max_bytes 1 or more\.$"
+    ) as raised:
         check_part(offset, max_bytes, None)
 
     assert raised.value.hint == "The first part starts at offset=0."

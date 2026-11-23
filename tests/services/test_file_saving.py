@@ -331,6 +331,23 @@ async def test_an_archive_is_saved_with_its_proof(tmp_path: Path) -> None:
     assert (SAVE_WAIT_SECONDS, PART_WAIT_SECONDS) == (600, 120)
 
 
+async def test_an_archive_in_parts_is_asked_for_as_given_and_with_its_own_wait(
+    tmp_path: Path,
+) -> None:
+    fake = fake_with()
+
+    first = await system(fake, tmp_path).part(
+        [1, 7], content="both", compression="lzma", follow_formatting=True, offset=0
+    )
+    plain = await system(fake, tmp_path).part([7], offset=0, max_bytes=10_000)
+
+    assert fake.opened == (
+        ((1, 7), "both", "lzma", True, PART_WAIT_SECONDS),
+        ((7,), "archive", "none", False, PART_WAIT_SECONDS),
+    )
+    assert (first.report.content, plain.report.content) == ("both", "archive")
+
+
 async def test_an_archive_that_would_replace_a_file_is_not_built_unless_confirmed(
     tmp_path: Path,
 ) -> None:
