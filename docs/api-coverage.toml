@@ -6,12 +6,14 @@
 #                 tool sends. A field under an unsent parent is not listed on its own. A listed
 #                 value of a field that is sent carries a `reason`, so that the owner can decide on
 #                 an exclusion. A field a tool supports that no tool test sends is listed too.
-# [[internal]]    fields the adapter chooses itself although a tool causes the request: fixed
-#                 constants (ordering, a projection, full_perms, owner), a filter the adapter
-#                 adds, and the stored object it sends back (the body of mail_accounts/test and
-#                 /process/, document_ids of a bundle rebuild). No argument of any tool can set
-#                 them, so they stay open although they are sent. A value or id a tool argument
-#                 decides (id__in, task_type) is not internal.
+# [[internal]]    fields the adapter chooses itself although a task wants them as a tool argument
+#                 (tasks owner, ordering, date_created_after; processed_mail ordering; the body
+#                 of mail_accounts/test, for testing an unsaved account). They stay open under
+#                 that task although they are sent.
+# [[plumbing]]    fields the adapter chooses itself and nobody wants as an argument: full_perms,
+#                 projections, constants of helpers that read every page, the stored object sent
+#                 back. No feature, no open work; shown apart, checked against the schema. A value
+#                 or id a tool argument decides (id__in, task_type) is neither.
 # [[exclusion]]   an owner-approved exclusion: quote, date and a Markdown file under backlog/
 # [[undeclared]]  query parameters the generated schema omits (listed by hand)
 
@@ -127,6 +129,76 @@ params = ["version"]
 operation = "GET /api/documents/{id}/preview/"
 params = ["version"]
 
+[[plumbing]]
+operation = "POST /api/mail_accounts/{id}/process/"
+fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security", "body:username", "body:password", "body:character_set", "body:is_token"]
+reason = "the stored account is sent back; the tool takes only its id"
+
+[[plumbing]]
+operation = "POST /api/share_link_bundles/{id}/rebuild/"
+fields = ["body:document_ids"]
+reason = "the stored bundle's documents are sent back; the tool takes only its id"
+
+[[plumbing]]
+operation = "GET /api/tags/"
+fields = ["query:full_perms"]
+reason = "reads the grants: sent as true whenever the adapter needs them, no tool argument sets it"
+
+[[plumbing]]
+operation = "PATCH /api/tags/{id}/"
+fields = ["query:full_perms"]
+reason = "reads the grants back: sent as true, no tool argument sets it"
+
+[[plumbing]]
+operation = "GET /api/correspondents/"
+fields = ["query:full_perms"]
+reason = "reads the grants: sent as true whenever the adapter needs them, no tool argument sets it"
+
+[[plumbing]]
+operation = "PATCH /api/correspondents/{id}/"
+fields = ["query:full_perms"]
+reason = "reads the grants back: sent as true, no tool argument sets it"
+
+[[plumbing]]
+operation = "GET /api/document_types/"
+fields = ["query:full_perms"]
+reason = "reads the grants: sent as true whenever the adapter needs them, no tool argument sets it"
+
+[[plumbing]]
+operation = "PATCH /api/document_types/{id}/"
+fields = ["query:full_perms"]
+reason = "reads the grants back: sent as true, no tool argument sets it"
+
+[[plumbing]]
+operation = "GET /api/storage_paths/"
+fields = ["query:full_perms"]
+reason = "reads the grants: sent as true whenever the adapter needs them, no tool argument sets it"
+
+[[plumbing]]
+operation = "PATCH /api/storage_paths/{id}/"
+fields = ["query:full_perms"]
+reason = "reads the grants back: sent as true, no tool argument sets it"
+
+[[plumbing]]
+operation = "GET /api/documents/"
+fields = ["query:full_perms", "query:fields"]
+reason = "full_perms reads the grants and fields is a projection that keeps the OCR text out; no tool argument sets them"
+
+[[plumbing]]
+operation = "PATCH /api/documents/{id}/"
+fields = ["query:full_perms", "query:fields"]
+reason = "full_perms reads the grants back and fields is a projection; no tool argument sets them"
+
+[[plumbing]]
+operation = "GET /api/documents/{id}/"
+fields = ["query:fields"]
+reason = "a projection that keeps the OCR text out of the answer; no tool argument sets it"
+
+[[plumbing]]
+operation = "GET /api/workflows/"
+fields = ["query:page", "query:page_size"]
+reason = "page and page_size are constants of a helper that reads every page; no tool argument sets them"
+
 [[internal]]
 operation = "GET /api/tasks/"
 fields = ["query:owner", "query:ordering", "query:date_created_after"]
@@ -142,74 +214,9 @@ operation = "POST /api/mail_accounts/test/"
 fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security", "body:username", "body:password", "body:character_set", "body:is_token"]
 reason = "the stored account is sent back; testing an unsaved account is open (PLMCP-81)"
 
-[[internal]]
-operation = "POST /api/mail_accounts/{id}/process/"
-fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security", "body:username", "body:password", "body:character_set", "body:is_token"]
-reason = "the stored account is sent back; testing an unsaved account is open (PLMCP-81)"
-
-[[internal]]
-operation = "POST /api/share_link_bundles/{id}/rebuild/"
-fields = ["body:document_ids"]
-reason = "the stored bundle's documents are sent back"
-
-[[internal]]
-operation = "GET /api/tags/"
-fields = ["query:full_perms"]
-reason = "the adapter chooses it"
-
-[[internal]]
-operation = "PATCH /api/tags/{id}/"
-fields = ["query:full_perms"]
-reason = "the adapter chooses it"
-
-[[internal]]
-operation = "GET /api/correspondents/"
-fields = ["query:full_perms"]
-reason = "the adapter chooses it"
-
-[[internal]]
-operation = "PATCH /api/correspondents/{id}/"
-fields = ["query:full_perms"]
-reason = "the adapter chooses it"
-
-[[internal]]
-operation = "GET /api/document_types/"
-fields = ["query:full_perms"]
-reason = "the adapter chooses it"
-
-[[internal]]
-operation = "PATCH /api/document_types/{id}/"
-fields = ["query:full_perms"]
-reason = "the adapter chooses it"
-
-[[internal]]
-operation = "GET /api/storage_paths/"
-fields = ["query:full_perms"]
-reason = "the adapter chooses it"
-
-[[internal]]
-operation = "PATCH /api/storage_paths/{id}/"
-fields = ["query:full_perms"]
-reason = "the adapter chooses it"
-
-[[internal]]
-operation = "GET /api/documents/"
-fields = ["query:full_perms", "query:fields"]
-reason = "the adapter chooses it"
-
-[[internal]]
-operation = "PATCH /api/documents/{id}/"
-fields = ["query:full_perms", "query:fields"]
-reason = "the adapter chooses it"
-
-[[internal]]
-operation = "GET /api/documents/{id}/"
-fields = ["query:fields"]
-reason = "the adapter chooses it"
-
 [[open_fields]]
 operation = "GET /api/correspondents/"
-fields = ["query:full_perms", "query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -224,7 +231,7 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/document_types/"
-fields = ["query:full_perms", "query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -234,7 +241,7 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/documents/"
-fields = ["query:added__day", "query:added__gt", "query:added__gte", "query:added__lt", "query:added__lte", "query:added__month", "query:added__year", "query:all", "query:archive_serial_number__gte", "query:archive_serial_number__lte", "query:checksum__icontains", "query:checksum__iendswith", "query:checksum__iexact", "query:checksum__istartswith", "query:content__iendswith", "query:content__iexact", "query:content__istartswith", "query:correspondent__name__icontains", "query:correspondent__name__iendswith", "query:correspondent__name__iexact", "query:correspondent__name__istartswith", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:document_type__name__icontains", "query:document_type__name__iendswith", "query:document_type__name__iexact", "query:document_type__name__istartswith", "query:fields", "query:full_perms", "query:id", "query:modified__date__gte", "query:modified__date__lte", "query:modified__day", "query:modified__gt", "query:modified__gte", "query:modified__lt", "query:modified__lte", "query:modified__month", "query:modified__year", "query:original_filename__icontains", "query:original_filename__iendswith", "query:original_filename__iexact", "query:original_filename__istartswith", "query:search", "query:storage_path__name__icontains", "query:storage_path__name__iendswith", "query:storage_path__name__iexact", "query:storage_path__name__istartswith", "query:tags__id", "query:tags__name__icontains", "query:tags__name__iendswith", "query:tags__name__iexact", "query:tags__name__istartswith", "query:title__iendswith", "query:title__iexact", "query:title__istartswith", "query:title_content"]
+fields = ["query:added__day", "query:added__gt", "query:added__gte", "query:added__lt", "query:added__lte", "query:added__month", "query:added__year", "query:all", "query:archive_serial_number__gte", "query:archive_serial_number__lte", "query:checksum__icontains", "query:checksum__iendswith", "query:checksum__iexact", "query:checksum__istartswith", "query:content__iendswith", "query:content__iexact", "query:content__istartswith", "query:correspondent__name__icontains", "query:correspondent__name__iendswith", "query:correspondent__name__iexact", "query:correspondent__name__istartswith", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:document_type__name__icontains", "query:document_type__name__iendswith", "query:document_type__name__iexact", "query:document_type__name__istartswith", "query:id", "query:modified__date__gte", "query:modified__date__lte", "query:modified__day", "query:modified__gt", "query:modified__gte", "query:modified__lt", "query:modified__lte", "query:modified__month", "query:modified__year", "query:original_filename__icontains", "query:original_filename__iendswith", "query:original_filename__iexact", "query:original_filename__istartswith", "query:search", "query:storage_path__name__icontains", "query:storage_path__name__iendswith", "query:storage_path__name__iexact", "query:storage_path__name__istartswith", "query:tags__id", "query:tags__name__icontains", "query:tags__name__iendswith", "query:tags__name__iexact", "query:tags__name__istartswith", "query:title__iendswith", "query:title__iexact", "query:title__istartswith", "query:title_content"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -250,7 +257,7 @@ task = "PLMCP-75"
 
 [[open_fields]]
 operation = "GET /api/documents/{id}/"
-fields = ["query:fields", "query:full_perms"]
+fields = ["query:full_perms"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -310,7 +317,7 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/storage_paths/"
-fields = ["query:full_perms", "query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering", "query:path__icontains", "query:path__iendswith", "query:path__iexact", "query:path__istartswith"]
+fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering", "query:path__icontains", "query:path__iendswith", "query:path__iexact", "query:path__istartswith"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -320,7 +327,7 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "GET /api/tags/"
-fields = ["query:full_perms", "query:id", "query:is_root", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+fields = ["query:id", "query:is_root", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -344,18 +351,8 @@ fields = ["body:app_logo"]
 task = "PLMCP-83"
 
 [[open_fields]]
-operation = "PATCH /api/correspondents/{id}/"
-fields = ["query:full_perms"]
-task = "PLMCP-83"
-
-[[open_fields]]
 operation = "PATCH /api/custom_fields/{id}/"
 fields = ["body:data_type"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "PATCH /api/document_types/{id}/"
-fields = ["query:full_perms"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -365,7 +362,7 @@ task = "PLMCP-75"
 
 [[open_fields]]
 operation = "PATCH /api/documents/{id}/"
-fields = ["body:created_date", "body:remove_inbox_tags", "query:fields", "query:full_perms"]
+fields = ["body:created_date", "body:remove_inbox_tags"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -382,16 +379,6 @@ task = "PLMCP-81"
 operation = "PATCH /api/saved_views/{id}/"
 fields = ["body:display_fields", "body:display_mode", "body:icon", "body:owner", "body:set_permissions"]
 task = "PLMCP-88"
-
-[[open_fields]]
-operation = "PATCH /api/storage_paths/{id}/"
-fields = ["query:full_perms"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "PATCH /api/tags/{id}/"
-fields = ["query:full_perms"]
-task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/users/{id}/"
@@ -448,7 +435,13 @@ reason = "permissions are changed by the set_permissions tool (bulk_edit_objects
 
 [[open_fields]]
 operation = "POST /api/documents/bulk_edit/"
-fields = ["body:method=delete_pages", "body:method=edit_pdf", "body:method=merge", "body:method=remove_password", "body:method=rotate", "body:method=split"]
+fields = ["body:method=delete_pages", "body:method=split"]
+task = "PLMCP-80"
+reason = "split_document and delete_pages send the edit_pdf endpoint of the pdf toolset (they have none of their own), so bulk_edit_documents never sends it"
+
+[[open_fields]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:method=edit_pdf", "body:method=merge", "body:method=remove_password", "body:method=rotate"]
 task = "PLMCP-80"
 reason = "the pdf toolset has an endpoint of its own for it (API 10 deprecates this bulk_edit form), so bulk_edit_documents never sends it"
 
@@ -524,7 +517,7 @@ task = "PLMCP-81"
 
 [[open_fields]]
 operation = "POST /api/mail_accounts/{id}/process/"
-fields = ["body:account_type", "body:character_set", "body:expiration", "body:imap_port", "body:imap_security", "body:imap_server", "body:is_token", "body:name", "body:owner", "body:password", "body:set_permissions", "body:username"]
+fields = ["body:account_type", "body:expiration", "body:owner", "body:set_permissions"]
 task = "PLMCP-81"
 
 [[open_fields]]
@@ -539,7 +532,7 @@ task = "PLMCP-88"
 
 [[open_fields]]
 operation = "POST /api/share_link_bundles/{id}/rebuild/"
-fields = ["body:document_ids", "body:expiration_days", "body:file_version"]
+fields = ["body:expiration_days", "body:file_version"]
 task = "PLMCP-83"
 
 [[open_fields]]

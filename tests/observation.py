@@ -57,6 +57,8 @@ PORT_CALLS: list[PortCall] = []
 CURRENT_TOOL: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_tool", default=None
 )
+GIVEN: dict[str, set[str]] = {}  # the arguments the scenarios gave each tool
+TOOL_ARGUMENTS: dict[str, frozenset[str]] = {}  # the arguments each tool has
 RECORDING = False  # the tool tests record port calls only while the coverage test runs them
 
 

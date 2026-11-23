@@ -10,10 +10,12 @@ this file proves the checks on synthetic violations, so they cannot pass by look
 """
 
 import json
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+import observation
 import pytest
 from adapter import schema_guard
 from observation import Observation, Operation
@@ -22,10 +24,12 @@ from quality.api_coverage import (
     Approval,
     Entry,
     Fields,
+    Plumbing,
     Usage,
     backlog_statuses,
     covering,
     load_entries,
+    missing_scenarios,
     problems,
     render,
     schema_fields,
@@ -72,10 +76,17 @@ def check(  # noqa: PLR0913, PLR0917 -- one keyword per input a case varies
     root: Path | None = None,
     internal: Mapping[Operation, frozenset[str]] | None = None,
     schema: Mapping[Operation, Fields] | None = None,
+    plumbing: Mapping[Operation, Plumbing] | None = None,
 ) -> list[str]:
     known = {"PLMCP-83": "To Do"} if statuses is None else statuses
     return problems(
-        schema or SCHEMA, covered, entries, known, root=root or Path(), internal=internal or {}
+        schema or SCHEMA,
+        covered,
+        entries,
+        known,
+        root=root or Path(),
+        internal=internal or {},
+        plumbing=plumbing or {},
     )
 
 
@@ -350,6 +361,61 @@ def test_the_values_of_a_field_that_is_sent_are_listed_with_a_reason() -> None:
 
 
 # Fields the adapter sends by itself stay open although a tool is credited with them.
+def test_the_value_of_an_array_hangs_under_the_array() -> None:
+    schema = {NESTED: Fields(query=NONE, body=names("xs"), enums={"body:xs[]": names("1", "2")})}
+
+    found = check({NESTED: used()}, [], schema=schema)
+
+    assert found == ["POST /api/nested/: body:xs is used by no tool and not listed"]
+
+
+# Plumbing: what the adapter chooses for itself, no feature and no open work.
+def test_plumbing_is_neither_open_work_nor_a_gap() -> None:
+    partly = {**FULL, GET_ONE: used("query:fields")}
+    plumbing = {GET_ONE: Plumbing(names("query:page"), "a constant of the list helper")}
+
+    assert check(partly, [], plumbing=plumbing) == []
+
+
+def test_plumbing_the_schema_lacks_is_stale() -> None:
+    plumbing = {GET_ONE: Plumbing(names("query:nope"), "x")}
+
+    found = check(FULL, [], plumbing=plumbing)
+
+    assert len(found) == 1
+    assert "query:nope" in found[0]
+    assert "plumbing" in found[0]
+
+
+def test_a_field_cannot_be_plumbing_and_listed_as_open() -> None:
+    partly = {**FULL, GET_ONE: used("query:fields")}
+    plumbing = {GET_ONE: Plumbing(names("query:page"), "x")}
+    listed = entry(GET_ONE, fields=names("query:page"), task="PLMCP-83")
+
+    found = check(partly, [listed], plumbing=plumbing)
+
+    assert len(found) == 1
+    assert "query:page is listed" in found[0]
+
+
+def test_plumbing_needs_a_reason() -> None:
+    plumbing = {GET_ONE: Plumbing(names("query:page"), " ")}
+
+    found = check(FULL, [], plumbing=plumbing)
+
+    assert len(found) == 1
+    assert "needs a reason" in found[0]
+
+
+def test_every_tool_and_every_argument_needs_a_scenario() -> None:
+    tools = {"get_thing": names("a", "b"), "other": names("c")}
+
+    found = missing_scenarios(tools, {"get_thing": {"a"}})
+
+    assert found == ["get_thing.b", "other.c"]
+    assert missing_scenarios(tools, {"get_thing": {"a", "b"}, "other": {"c", "extra"}}) == []
+
+
 def test_an_internal_field_is_open_even_though_a_tool_sends_it() -> None:
     internal = {GET_ONE: names("query:page")}
 
@@ -647,6 +713,11 @@ operation = "GET /api/things/{id}/"
 fields = ["query:fields"]
 reason = "the adapter always sends it"
 
+[[plumbing]]
+operation = "GET /api/things/{id}/"
+fields = ["query:page"]
+reason = "a constant of the list helper"
+
 [[exclusion]]
 operation = "DELETE /api/things/{id}/"
 quote = "approved leaving it out"
@@ -670,6 +741,9 @@ def test_entries_are_read_from_their_file(tmp_path: Path) -> None:
     ]
     assert found.undeclared == {GET_ONE: names("version")}
     assert found.internal == {GET_ONE: names("query:fields")}
+    assert found.plumbing == {
+        GET_ONE: Plumbing(names("query:page"), "a constant of the list helper")
+    }
 
 
 def test_the_status_of_a_task_comes_from_its_file_and_an_archived_task_is_closed(
@@ -704,10 +778,24 @@ def test_the_table_names_the_covering_tools_the_open_tasks_and_the_unused_fields
     assert "| `GET /api/things/{id}/` | `query:page` | PLMCP-84 |" in page
 
 
+def test_the_table_shows_plumbing_apart_from_the_open_work() -> None:
+    partly = {**FULL, GET_ONE: used("query:fields")}
+    plumbing = {GET_ONE: Plumbing(names("query:page"), "a constant of the list helper")}
+
+    page = render(SCHEMA, partly, [], {}, plumbing)
+
+    open_work, own_section = page.split("## Fields the adapter chooses for itself")
+    assert "query:page" not in open_work.split("## Query parameters")[1]
+    assert (
+        "| `GET /api/things/{id}/` | `query:page` | a constant of the list helper |" in own_section
+    )
+    assert "no feature" in " ".join(own_section.split())
+
+
 def test_the_table_lists_an_internal_field_as_open() -> None:
     entries = [entry(GET_ONE, fields=names("query:page"), task="PLMCP-84")]
 
-    page = render(SCHEMA, FULL, entries, {GET_ONE: names("query:page")})
+    page = render(SCHEMA, FULL, entries, {GET_ONE: names("query:page")}, {})
 
     assert "| `GET /api/things/{id}/` | `query:page` | PLMCP-84 |" in page
 
@@ -751,11 +839,13 @@ def test_an_exclusion_is_shown_with_its_quote_and_date() -> None:
 def test_the_page_says_what_it_does_not_check() -> None:
     page = " ".join(render(SCHEMA, FULL, [], {}).split())
 
-    assert "The tool tests" in page
+    assert "The scenarios of tests/tools/test_arguments.py" in page
+    assert "hides the children a schema refresh adds below it" in page
     assert "not checked against the schema" in page
     assert "does not mean that the whole answer is shown" in page
     assert "copies from the stored object" in page
     assert "[[internal]]" in page
+    assert "[[plumbing]]" in page
 
 
 # The real thing: what the tools ask of the ports, and what the adapters send for it.
@@ -774,35 +864,34 @@ def schema() -> dict[str, object]:
     return cast("dict[str, object]", json.loads(SCHEMA_FILE.read_text(encoding="utf-8")))
 
 
-def hand_listed() -> tuple[
-    list[str], dict[Operation, Fields], list[Entry], dict[Operation, frozenset[str]]
-]:
-    """Problems with the hand-written file, the schema fields, the entries and the internal ones."""
-    found = load_entries(ENTRIES)
-    undeclared = {
-        operation: frozenset(params) | found.undeclared.get(operation, frozenset())
+@dataclass(frozen=True)
+class Real:
+    """The real schema, the hand-written file and what is wrong with them."""
+
+    found: list[str]
+    fields: dict[Operation, Fields]
+    entries: list[Entry]
+    internal: dict[Operation, frozenset[str]]
+    plumbing: dict[Operation, Plumbing]
+
+
+def real_problems(covered: dict[Operation, Usage]) -> Real:
+    listed = load_entries(ENTRIES)
+    guarded = {
+        operation: frozenset(params) | listed.undeclared.get(operation, frozenset())
         for operation, params in schema_guard.UNDECLARED_QUERY_PARAMETERS.items()
     }
-    undeclared = found.undeclared | undeclared
-    return (
-        undeclared_problems(schema(), found.undeclared),
-        schema_fields(schema(), undeclared),
-        found.entries,
-        found.internal,
-    )
-
-
-def real_problems(
-    covered: dict[Operation, Usage],
-) -> tuple[list[str], dict[Operation, Fields], list[Entry], dict[Operation, frozenset[str]]]:
-    bad, fields, entries, internal = hand_listed()
-    return (
-        bad
-        + problems(fields, covered, entries, backlog_statuses(ROOT), root=ROOT, internal=internal),
+    fields = schema_fields(schema(), listed.undeclared | guarded)
+    found = undeclared_problems(schema(), listed.undeclared) + problems(
         fields,
-        entries,
-        internal,
+        covered,
+        listed.entries,
+        backlog_statuses(ROOT),
+        root=ROOT,
+        internal=listed.internal,
+        plumbing=listed.plumbing,
     )
+    return Real(found, fields, listed.entries, listed.internal, listed.plumbing)
 
 
 def test_the_derivation_sees_the_tools_nested_fields_enum_values_and_saved_views(
@@ -824,17 +913,24 @@ def test_the_derivation_sees_the_tools_nested_fields_enum_values_and_saved_views
 def test_no_endpoint_or_field_is_neither_covered_nor_listed_and_no_entry_is_stale(
     covered: dict[Operation, Usage],
 ) -> None:
-    found, _, _, _ = real_problems(covered)
+    assert real_problems(covered).found == []
 
-    assert found == []
+
+def test_every_tool_and_every_argument_of_it_is_in_a_scenario(
+    covered: dict[Operation, Usage],
+) -> None:
+    """After the derivation, which ran the scenarios of tests/tools/test_arguments.py."""
+    assert covered
+    assert observation.TOOL_ARGUMENTS
+    assert missing_scenarios(observation.TOOL_ARGUMENTS, observation.GIVEN) == []
 
 
 def test_the_coverage_table_is_current(
     request: pytest.FixtureRequest, covered: dict[Operation, Usage]
 ) -> None:
-    found, fields, entries, internal = real_problems(covered)
-    assert found == [], "fix the gaps before the table is written"
-    page = render(fields, covered, entries, internal)
+    real = real_problems(covered)
+    assert real.found == [], "fix the gaps before the table is written"
+    page = render(real.fields, covered, real.entries, real.internal, real.plumbing)
 
     if request.config.getoption("--write-docs") and PAGE.read_text(encoding="utf-8") != page:
         _ = PAGE.write_text(page, encoding="utf-8")

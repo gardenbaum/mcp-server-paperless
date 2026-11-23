@@ -64,6 +64,14 @@ class Approval:
 
 
 @dataclass(frozen=True)
+class Plumbing:
+    """Fields the adapter chooses for itself: no feature, so neither open work nor a gap."""
+
+    fields: frozenset[str]
+    reason: str
+
+
+@dataclass(frozen=True)
 class Entry:
     """An endpoint (or some of its fields) no tool covers: open under a task, or excluded."""
 
@@ -182,26 +190,42 @@ def field_keys(fields: Fields) -> set[str]:
 
 
 def _ancestors(key: str) -> list[str]:
-    """The keys a key hangs under: the field of a value, then the objects around the field."""
+    """The keys a key hangs under: the field of a value, then the arrays and objects around it."""
     kind, _, rest = key.partition(":")
     found: list[str] = []
     if "=" in rest:
         rest = rest.split("=", 1)[0]
         found.append(f"{kind}:{rest}")
-    path = rest.removesuffix("[]")
-    while "." in path:
-        path = path.rsplit(".", 1)[0].removesuffix("[]")
+    path = rest
+    while True:
+        if path.endswith("[]"):
+            path = path.removesuffix("[]")
+            found.append(f"{kind}:{path}")
+        if "." not in path:
+            return found
+        path = path.rsplit(".", 1)[0]
         found.append(f"{kind}:{path}")
-    return found
 
 
-def unused(fields: Fields, usage: Usage, internal: frozenset[str] | None = None) -> set[str]:
+def unused(
+    fields: Fields,
+    usage: Usage,
+    internal: frozenset[str] | None = None,
+    plumbing: frozenset[str] | None = None,
+) -> set[str]:
     """What the schema offers and no tool sends; `internal` fields count as unsent.
 
     A field that hangs under an unsent one (a child, or a value) is left out: it is listed once its
-    parent is sent. Values of a field that is sent are listed.
+    parent is sent, so an unsent or excluded parent hides what a schema refresh adds below it.
+    Values of a field that is sent are listed. `plumbing` fields, and what hangs under them, are
+    nobody's work and are left out.
     """
-    keys = field_keys(fields)
+    hidden = plumbing or frozenset()
+    keys = {
+        key
+        for key in field_keys(fields)
+        if key not in hidden and not any(parent in hidden for parent in _ancestors(key))
+    }
     raw = (keys - set(usage.used)) | (keys & (internal or frozenset()))
     return {key for key in raw if not any(parent in raw for parent in _ancestors(key))}
 
@@ -293,9 +317,11 @@ def problems(  # noqa: PLR0913 -- the inputs of the check
     *,
     root: Path,
     internal: Mapping[Operation, frozenset[str]] | None = None,
+    plumbing: Mapping[Operation, Plumbing] | None = None,
 ) -> list[str]:
     """Everything that is wrong: gaps, stale entries, missing tasks, approvals not in the repo."""
     internal = internal or {}
+    plumbing = plumbing or {}
     found = _entry_problems(schema, covered, entries)
     for entry in entries:
         found += _owner(entry, statuses, root)
@@ -318,7 +344,17 @@ def problems(  # noqa: PLR0913 -- the inputs of the check
             f"{_text(operation)}: {name} is listed as internal, but the schema lacks it"
             for name in sorted(sent - field_keys(fields))
         ]
-        free = unused(fields, covered[operation], sent)
+        piping = plumbing.get(operation, Plumbing(frozenset(), ""))
+        found += [
+            f"{_text(operation)}: {name} is listed as plumbing, but the schema lacks it"
+            for name in sorted(piping.fields - field_keys(fields))
+        ]
+        found += [
+            f"{_text(operation)}: plumbing needs a reason: why the adapter chooses it"
+            for _ in piping.fields
+            if not piping.reason.strip()
+        ][:1]
+        free = unused(fields, covered[operation], sent, piping.fields)
         listed = named.get(operation, set())
         found += [
             f"{_text(operation)}: {name} is used by no tool and not listed"
@@ -353,6 +389,7 @@ class Entries:
     entries: list[Entry]
     undeclared: dict[Operation, frozenset[str]]
     internal: dict[Operation, frozenset[str]]
+    plumbing: dict[Operation, Plumbing]
 
 
 def _operation(text: str) -> Operation:
@@ -361,7 +398,7 @@ def _operation(text: str) -> Operation:
 
 
 def load_entries(path: Path) -> Entries:
-    """Read the sections `open`, `open_fields`, `exclusion`, `undeclared` and `internal`."""
+    """Read the sections open, open_fields, exclusion, undeclared, internal and plumbing."""
     data = cast("dict[str, list[Json]]", tomllib.loads(path.read_text(encoding="utf-8")))
     entries = [
         Entry(_operation(op), None, str(row["task"]), None)
@@ -395,7 +432,13 @@ def load_entries(path: Path) -> Entries:
         _operation(str(row["operation"])): frozenset(cast("list[str]", row["fields"]))
         for row in data.get("internal", [])
     }
-    return Entries(entries, undeclared, internal)
+    plumbing = {
+        _operation(str(row["operation"])): Plumbing(
+            frozenset(cast("list[str]", row["fields"])), str(row["reason"])
+        )
+        for row in data.get("plumbing", [])
+    }
+    return Entries(entries, undeclared, internal, plumbing)
 
 
 _FRONT = re.compile(r"^---\n(.*?)\n---", re.DOTALL)
@@ -436,8 +479,10 @@ def render(
     covered: Mapping[Operation, Usage],
     entries: Sequence[Entry],
     internal: Mapping[Operation, frozenset[str]],
+    plumbing: Mapping[Operation, Plumbing] | None = None,
 ) -> str:
     """The coverage page: every operation with its tools or owner, then the fields no tool sends."""
+    plumbing = plumbing or {}
     whole = {e.operation: e for e in entries if e.fields is None}
     endpoints: list[str] = []
     fields: list[str] = []
@@ -450,7 +495,8 @@ def render(
         if usage is None:
             continue
         sent = internal.get(operation, frozenset())
-        rest = sorted(unused(schema[operation], usage, sent))
+        piping = plumbing.get(operation, Plumbing(frozenset(), ""))
+        rest = sorted(unused(schema[operation], usage, sent, piping.fields))
         for entry in (e for e in entries if e.operation == operation and e.fields is not None):
             mine = [f for f in rest if f in (entry.fields or ())]
             rest = [f for f in rest if f not in mine]
@@ -464,6 +510,11 @@ def render(
         )
         if only:
             views.append(f"| `{_text(operation)}` | {', '.join(f'`{k}`' for k in only)} |")
+    pipes = [
+        f"| `{_text(operation)}` | {', '.join(f'`{k}`' for k in sorted(p.fields))} | {p.reason} |"
+        for operation, p in sorted(plumbing.items(), key=lambda i: (i[0][1], i[0][0]))
+        if operation in covered
+    ]
     return (
         PAGE_HEAD
         + "\n".join(endpoints)
@@ -471,6 +522,8 @@ def render(
         + "\n".join(fields)
         + VIEWS_HEAD
         + "\n".join(views)
+        + PLUMBING_HEAD
+        + "\n".join(pipes)
         + "\n"
     )
 
@@ -478,35 +531,38 @@ def render(
 PAGE_HEAD = """\
 # Paperless API coverage
 
-<!-- Generated from the tool tests by `just docs-coverage`. Do not edit by hand. -->
+<!-- Generated by `just docs-coverage` from tests/tools/test_arguments.py. Do not edit by hand. -->
 
 Every operation of the vendored schema (`docs/vendor/paperless/openapi.json`, Paperless-ngx
-3.4.x) and the tools that cover it. The tool tests run every tool with its arguments; each call a
-tool makes to a port is recorded and handed to the real adapter, which builds the request. A tool
-covers an operation when one of its calls leads to that request. `paperless_api_get` (raw) never
-counts. An operation without a tool has the task under which it is still open, or an exclusion the
-owner approved, quoted with its date from the repository. A tool that only looks up names (tags,
-correspondents) is named too; at most five tools are shown. The entries are in
-[api-coverage.toml](api-coverage.toml); `tests/quality/test_api_coverage.py` fails when an
-operation, field or enum value is neither covered nor listed, and when an open entry's task is
-missing or done.
+3.4.x) and the tools that cover it. The scenarios of tests/tools/test_arguments.py call every
+tool with its arguments; each call a tool makes to a port is recorded and handed to the real
+adapter, which builds the request. A tool covers an operation when one of its calls leads to that
+request. `paperless_api_get` (raw) never counts. An operation without a tool has the task under
+which it is still open, or an exclusion the owner approved, quoted with its date from the
+repository. A tool that only looks up names (tags, correspondents) is named too; at most five
+tools are shown. The entries are in [api-coverage.toml](api-coverage.toml);
+`tests/quality/test_api_coverage.py` fails when an operation, field or enum value is neither
+covered nor listed, and when an open entry's task is missing or done.
 
 Limits.
 
-- A field or value counts as sent only when some tool test makes a tool send it, so a field a
-  tool supports and no tool test uses is listed as open. A field under an unsent parent is not
-  listed on its own: it appears once the parent is sent.
+- A field or value counts as sent only when a scenario makes a tool send it, so a field a tool
+  supports and no scenario uses is listed as open. A field under an unsent parent is not listed
+  on its own: it appears once the parent is sent. An unsent or excluded parent hides the children
+  a schema refresh adds below it.
 - The requests are built from recorded port calls and answered with responses taken from the
   adapter tests. A request that depends on a later answer of Paperless may be missed, and a
   value the adapter copies from the stored object (the answer it is given) is credited too,
   although no tool chose it.
-- A request that is the adapter's own is listed under `[[internal]]` in the TOML file: fields no
-  argument of any tool can choose (a fixed `ordering`, a filter the adapter adds, the settings of
-  the saved account that a test sends back). They stay open although a tool causes the request.
+- Fields the adapter chooses itself are `[[internal]]` in the TOML file when a task wants them as
+  a tool argument (a fixed `ordering`, a filter the adapter adds, the saved account that is sent
+  back to test it): they stay open although a tool causes the request. Those nobody wants are
+  `[[plumbing]]` (a projection, a flag that reads the grants, a constant of a list helper): they
+  are shown apart, below, as no feature.
 - A covered GET does not mean that the whole answer is shown: a tool may read an answer and show
   only part of it (for example the view visibility in `GET /api/ui_settings/`, PLMCP-88).
-- The adapter's own requests, and those of streamed bodies, are recorded but not checked against
-  the schema; the adapter tests check the others.
+- Requests of streamed bodies are recorded but not checked against the schema; the adapter tests
+  check the others.
 
 ## Endpoints
 
@@ -537,3 +593,29 @@ an argument.
 | Operation | Fields |
 |---|---|
 """
+
+
+PLUMBING_HEAD = """
+
+## Fields the adapter chooses for itself
+
+Plumbing, no feature and no open work: the adapter sends these on its own (a constant of a list
+helper, a projection, a flag that reads the grants, the stored object it sends back). No tool
+argument could set them, and nobody has asked for one. They are checked against the schema, and
+what hangs under them is left out of the table above.
+
+| Operation | Fields | Why |
+|---|---|---|
+"""
+
+
+def missing_scenarios(
+    tools: Mapping[str, frozenset[str]], given: Mapping[str, set[str]]
+) -> list[str]:
+    """`tool.argument` for every argument of every tool that no scenario gave."""
+    return [
+        f"{tool}.{name}"
+        for tool, names in sorted(tools.items())
+        for name in sorted(names)
+        if name not in given.get(tool, set())
+    ]

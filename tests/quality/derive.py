@@ -3,8 +3,9 @@
 1. The adapter tests run once more, only to keep an answer per operation (the schema guard saves
    it): the replay below needs something the adapters can read.
 2. The scenarios of tests/tools/test_arguments.py run with their ports recorded: every call a tool
-   makes to a port, with its arguments and the tool's name. (The other tool tests add no
-   field, value or covering tool the scenarios lack, apart from tools that only look up names.)
+   makes to a port, with its arguments and the tool's name. (The other tool tests add no field
+   or value the scenarios lack; they add only tools to the reads that look names up: tags, users,
+   correspondents and mail rules.)
 3. Each recorded call is handed to the real adapter on a transport that answers with the saved
    answers; the adapter records the request it builds (before it reads the answer).
 
@@ -93,6 +94,8 @@ def derive(root: Path) -> list[observation.Observation]:
     observation.RESPONSES.clear()
     _run(root, "tests/adapter")
     observation.PORT_CALLS.clear()
+    observation.GIVEN.clear()
+    observation.TOOL_ARGUMENTS.clear()
     observation.RECORDING = True
     try:
         _run(root, "tests/tools/test_arguments.py")

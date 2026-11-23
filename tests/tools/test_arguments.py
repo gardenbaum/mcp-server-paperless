@@ -4,11 +4,11 @@ The coverage table (docs/api-coverage.md) credits a tool only with what its test
 and the coverage test derives it from this file alone. Each scenario calls a tool with its
 arguments, then once more for each value of the enums and flags it varies, on the seeded fake,
 from a state where the value is a change (the services leave unchanged values out). A call must
-succeed, and a tool that writes must make a write call. The last test checks that every tool and
-every argument of its schema is in some scenario.
-
-The record of what was given (`GIVEN`) is a global of the process: run the file as a whole, and
-not under xdist, which would give each worker a part of it.
+succeed, and a tool that is not read-only must make a write call, on any `*_writes` port (the check
+is per call: it does not tell which argument was written). That every tool and every argument of its
+schema is in some scenario is checked by the coverage test (tests/quality/test_api_coverage.py),
+which reads what the scenarios gave (`observation.GIVEN`) after it ran them; so each test of this
+file passes alone and in any order.
 """
 
 from collections.abc import AsyncIterator, Callable
@@ -82,16 +82,26 @@ async def _session() -> AsyncIterator[None]:
     fake = admin()
     before = observation.RECORDING
     observation.RECORDING = True  # the ports note their calls, to tell a write from none
-    async with Client(serve(fake, toolsets=["all"])) as client:
-        tools = await client.list_tools()
-        reads = frozenset(t.name for t in tools if t.annotations and t.annotations.read_only_hint)
-        SESSIONS.append(Session(fake, client, {t.name: t.input_schema for t in tools}, reads))
-        yield
-    _ = SESSIONS.pop()
-    observation.RECORDING = before
-
-
-GIVEN: dict[str, set[str]] = {}  # the arguments each tool was given (per process: not for xdist)
+    try:
+        async with Client(serve(fake, toolsets=["all"])) as client:
+            tools = await client.list_tools()
+            reads = frozenset(
+                t.name for t in tools if t.annotations and t.annotations.read_only_hint
+            )
+            schemas = {t.name: t.input_schema for t in tools}
+            observation.TOOL_ARGUMENTS.update(
+                {
+                    name: frozenset(cast("Json", s.get("properties", {})))
+                    for name, s in schemas.items()
+                }
+            )
+            SESSIONS.append(Session(fake, client, schemas, reads))
+            yield
+    finally:
+        _ = SESSIONS.pop() if SESSIONS else None
+        observation.RECORDING = before
+        if not before:  # a normal run: the notes of this test are of no use to any other
+            observation.PORT_CALLS.clear()
 
 
 async def step(tool: str, arguments: Json) -> Json:
@@ -99,7 +109,7 @@ async def step(tool: str, arguments: Json) -> Json:
     session = SESSIONS[-1]
     confirms = "confirm" in cast("Json", session.schemas[tool].get("properties", {}))
     given = {**arguments, "confirm": True} if confirms else arguments
-    GIVEN.setdefault(tool, set()).update(given)
+    observation.GIVEN.setdefault(tool, set()).update(given)
     start = len(observation.PORT_CALLS)
     result = await session.client.call_tool(tool, given, raise_on_error=False)
     if result.is_error:
@@ -365,6 +375,11 @@ async def test_documents_are_searched_changed_and_uploaded_with_every_argument()
         prepare=bare,
     )
     await sweep("update_document", {"document_id": 1, "tags_set": [1, 2]}, ())
+    await sweep(
+        "update_document",
+        {"document_id": 1, "tags_add": ["A brand new tag"], "create_missing_tags": True},
+        (),
+    )
     for field in (
         "correspondent",
         "document_type",
@@ -1185,15 +1200,3 @@ async def test_the_remaining_tools_have_a_scenario_with_all_their_arguments() ->
 
 def with_logs(state: FakeState) -> None:
     state.logs["mail"] = ["one", "two", "three"]
-
-
-async def test_every_tool_and_every_argument_of_it_is_in_a_scenario() -> None:
-    """The last test of the file: it reads what the scenarios above gave (not under xdist)."""
-    schemas = SESSIONS[-1].schemas
-    missing = [
-        f"{tool}.{name}"
-        for tool, schema in sorted(schemas.items())
-        for name in cast("Json", schema.get("properties", {}))
-        if name not in GIVEN.get(tool, set())
-    ]
-    assert not missing, missing
