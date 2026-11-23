@@ -242,3 +242,13 @@ def test_what_follows_a_phrase_is_named_as_written() -> None:
     [notice] = query_notices('"abc" [x to y] -d')
 
     assert "'-d'" in notice
+
+
+@pytest.mark.parametrize("bracket", ["[", "{"])
+def test_an_unclosed_range_is_read_in_linear_time(bracket: str) -> None:
+    query = bracket + "to " * 50_000
+
+    started = time.perf_counter()
+    _ = query_notices(query)
+
+    assert time.perf_counter() - started < 2

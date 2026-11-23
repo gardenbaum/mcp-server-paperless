@@ -23,7 +23,8 @@ SYMBOLS = {"&&": "AND", "||": "OR"}
 
 _OPEN = re.compile(r"\"|(?<!\w)'|[\[{]")
 _CLOSE = {'"': re.compile('"'), "'": re.compile(r"'(?!\w)")}
-_RANGE = re.compile(r"\[[^\[\]]*?\bto\b[^\[\]]*\]|\{[^{}]*?\bto\b[^{}]*\}")
+_BRACKETS = re.compile(r"\[[^\[\]]*\]|\{[^{}]*\}")
+_TO = re.compile(r"\bto\b")
 _TOKEN = re.compile(r"[()]|[^\s()]+")
 # A field prefix, also behind a sign; "10:30" and URLs are none.
 _FIELD = re.compile(r"[-!\N{EN DASH}\N{MINUS SIGN}]*((?=\w*[^\W\d])\w[\w.]*):(?!//)")
@@ -46,7 +47,8 @@ def _masked(query: str) -> str:
             closed = _CLOSE[mark].search(query, start + 1)
             unclosed |= set() if closed else {mark}
         elif mark not in _CLOSE:
-            closed = _RANGE.match(query, start)
+            closed = _BRACKETS.match(query, start)
+            closed = closed if closed and _TO.search(closed[0]) else None
         end = closed.end() if closed else start + 1
         parts += query[at:start], _OPAQUE * (end - start) if closed else mark
         at = end
