@@ -649,7 +649,7 @@ class MailService:
             acts = "deletes each mail from the mail server"
             note = "; a deleted mail cannot be put back by this server"
         else:
-            folder = destination(rule.action_parameter or "", "folder", "folder")
+            folder = destination(rule.action_parameter or "", "folder", "text")
             acts = f"moves each mail to the folder {folder} on the mail server"
             note = ""
         later = "then " if then else ""
@@ -683,9 +683,7 @@ class MailService:
         written = MailRuleValues.model_validate(values)
         enabled = bool(values.get("enabled", True))
         if enabled and written.action == "move":
-            _ = destination(
-                written.action_parameter or "", "folder", "folder"
-            )  # confirm=true or not
+            _ = destination(written.action_parameter or "", "folder", "text")  # confirm=true or not
         if not confirm:
             effects = await self._create_effects(settings.name, account.name, written, values)
             if effects:

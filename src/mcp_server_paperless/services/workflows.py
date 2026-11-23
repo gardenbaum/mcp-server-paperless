@@ -268,7 +268,7 @@ def _webhook(url: str) -> str:
         host = port = None
         parts = urlsplit("")
     usual = USUAL_PORTS.get(parts.scheme)
-    if not host or usual is None or "\\" in url:
+    if not host or usual is None or "\\" in re.split("[?#]", url)[0]:
         cause = "it is not certain which host it leads to"
         refused = not_shown("URL of the webhook", cause)
         raise refused

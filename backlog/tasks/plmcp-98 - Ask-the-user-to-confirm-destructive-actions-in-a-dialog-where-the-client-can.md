@@ -4,7 +4,7 @@ title: Ask the user to confirm destructive actions in a dialog where the client 
 status: In Progress
 assignee: []
 created_date: '2026-11-23T18:44:53Z'
-updated_date: '2026-11-23T23:10:58Z'
+updated_date: '2026-11-23T23:41:26Z'
 labels:
   - tools
   - safety
@@ -86,4 +86,8 @@ A rule whose account its owner cannot see can be changed without confirm again (
 Security review of destination(): destinations use a stricter check than quoted text (no separator, control, format, private, unassigned or default-ignorable character), and a host beyond ASCII is followed by its xn-- form; a host that would be looked up as another text is refused. Standard library only: the punycode codec per label, not the idna codec, whose 2003 rules turn a sharp s into ss. Look-alike letters before the @ of an address are not marked. main 4a05d7c (#110) merged.
 
 Second delta review of ba7e1b4 fixed: a host is refused unless the 2003 and 2008 rules agree on it, odd forms of e-mail addresses, hosts and URLs are refused, webhooks show scheme and an unusual port, refusals name their cause, the update_user description says what needs confirm. Corrects the note above: the origin of the destination rule is the instruction of 2026-11-23 "merge bitte selbstständig. Wähle bei Entscheidungen deine Empfehlung.", not a standing delegation and not an approval of the rule; reported to the owner the same evening, no objection so far. E2E runs on GitHub only from now on (owner).
+
+Third delta review, follow-up: an empty AI or OCR setting is called empty, only the three endpoints are read as URLs, a service URL may hold plain credentials again (never shown, bound by the scope), and a webhook URL may hold a backslash after its query starts.
+
+Confirmations of an AI or OCR endpoint say that a URL has credentials and whether a change only adds, replaces or removes them, without showing them.
 <!-- SECTION:NOTES:END -->

@@ -143,6 +143,8 @@ async def test_hosts_that_differ_only_at_their_end_are_told_apart(host: str) -> 
         ("http://h.example:443/p", "'http://h.example:443'"),
         ("https://user:secret@h.example:8443/p", "'https://h.example:8443'"),
         ("http://[::1]:9000/p", "'http://[::1]:9000'"),
+        ("https://h.example/p?q=a" + chr(92) + "b", "'h.example'"),
+        ("https://h.example/p#a" + chr(92) + "b", "'h.example'"),
     ],
 )
 async def test_a_webhook_shows_its_port_unless_it_is_the_usual_one(url: str, shown: str) -> None:
@@ -161,6 +163,7 @@ async def test_a_webhook_shows_its_port_unless_it_is_the_usual_one(url: str, sho
         "https://[bad",
         "no-scheme.example/x",
         "https://good.example" + chr(92) + "@evil.example/",
+        "https://good.example/a" + chr(92) + "b?c",
         "https://h.example:99999/",
         "ftp://h.example/",
         "https://user:secret@/",
@@ -347,6 +350,96 @@ async def test_a_bad_service_address_can_be_replaced_and_reset() -> None:
     assert "'https://good.example'" in replaced
     assert "evil.example'" in replaced
     assert "evil.example'" in reset
+
+
+async def test_a_service_url_with_credentials_is_shown_without_them() -> None:
+    setup = Setup()
+    old, new = "https://u:s3cret@old.example/v1", "https://u:n3wer@new.example/v1"
+    endpoint = "llm_endpoint"
+    set_first = await asked(setup.system.update_config({endpoint: new}))
+    setup.state.config = {endpoint: old}
+    replaced = await asked(setup.system.update_config({endpoint: new}))
+    reset = await asked(setup.system.update_config({endpoint: None}))
+    setup.state.config = {endpoint: "https://a:s3cret@b@old.example/"}
+    odd = await asked(setup.system.update_config({endpoint: None}))
+
+    tail = " with credentials (not shown)"
+    assert f"to 'https://new.example/v1'{tail} (it follows" in set_first
+    assert f"from 'https://old.example/v1'{tail} to 'https://new.example/v1'{tail};" in replaced
+    assert f"now 'https://old.example/v1'{tail})" in reset
+    assert "now a URL that is not shown" in odd
+    assert not [m for m in (set_first, replaced, reset, odd) if "s3cret" in m or "n3wer" in m]
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "what"),
+    [
+        ("https://e.x/v1", "https://u:s3cret@e.x/v1", "add credentials to"),
+        ("https://u:s3cret@e.x/v1", "https://u:n3wer@e.x/v1", "replace the credentials of"),
+        ("https://u:s3cret@e.x/v1", "https://e.x/v1", "remove the credentials of"),
+    ],
+)
+async def test_a_change_of_only_the_credentials_says_so(old: str, new: str, what: str) -> None:
+    setup = Setup()
+    setup.state.config = {"llm_endpoint": old}
+
+    message = await asked(setup.system.update_config({"llm_endpoint": new}))
+
+    assert f"Confirming would {what} llm_endpoint 'https://e.x/v1' (not shown)" in message
+    assert "s3cret" not in message
+    assert "n3wer" not in message
+
+
+async def test_a_change_between_empty_and_an_address_names_its_credentials_once() -> None:
+    setup = Setup()
+    setup.state.config = {"llm_endpoint": ""}
+
+    message = await asked(setup.system.update_config({"llm_endpoint": "https://u:s3cret@e.x"}))
+
+    assert "from empty to 'https://e.x' with credentials (not shown);" in message
+
+
+async def test_an_acceptance_binds_the_credentials_that_are_not_shown() -> None:
+    setup = Setup()
+    prints: list[str] = []
+    for stored in ("https://u:one@old.example", "https://u:two@old.example"):
+        setup.state.config = {"llm_endpoint": stored}
+        with pytest.raises(ConfirmationRequired) as raised:
+            _ = await setup.system.update_config({"llm_endpoint": None})
+        prints.append(raised.value.fingerprint)
+
+    assert prints[0] != prints[1]
+
+
+async def test_only_the_endpoints_are_read_as_urls() -> None:
+    setup = Setup()
+    engine = "azure ai/" + "x" * 80 + "@end"
+    message = await asked(
+        setup.system.update_config(
+            {
+                "llm_backend": engine,
+                "llm_embedding_backend": "a/b",
+                "remote_ocr_engine": "c#d",
+                "remote_ocr_mode": "e@f",
+                "ai_enabled": True,
+            }
+        )
+    )
+
+    for shown in (engine, "a/b", "c#d", "e@f"):
+        assert f"to '{shown}'" in message
+    for endpoint in ("llm_endpoint", "llm_embedding_endpoint", "remote_ocr_endpoint"):
+        assert HIDING in await refused(setup.system.update_config({endpoint: "a/b"}))
+
+
+@pytest.mark.parametrize("name", ["llm_endpoint", "llm_backend"])
+async def test_a_setting_can_be_made_empty(name: str) -> None:
+    setup = Setup()
+    setup.state.config = {name: "https://old.example"}
+
+    assert "to empty" in await asked(setup.system.update_config({name: ""}))
+    setup.state.config = {name: ""}
+    assert "from empty to" in await asked(setup.system.update_config({name: "https://n.example"}))
 
 
 # --- a read for the scope breaks nothing --------------------------------------------------------
