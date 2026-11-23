@@ -16,7 +16,13 @@ from fastmcp.exceptions import ResourceError, ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from mcp_server_paperless.domain.errors import ConfirmationRequired, PaperlessMcpError, Validation
+from mcp_server_paperless.domain.errors import (
+    ConfirmationRequired,
+    NotConfirmed,
+    PaperlessMcpError,
+    Validation,
+)
+from mcp_server_paperless.tools.confirmation import confirmed
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping
@@ -940,7 +946,9 @@ def guide_for(ctx: Context, *, ai_enabled: bool | None) -> ToolsetGuide:
 
 
 def boundary[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
-    """The error boundary of a tool: every exception becomes a ``ToolError`` the client sees.
+    """The boundary of a tool: confirmation dialogs, and every exception as a ``ToolError``.
+
+    A tool that needs a confirmation runs again once the user gave it in a dialog (``confirmed``).
 
     A domain error's message and hint are client-safe by contract and reach the client. Any
     other exception is a bug: the client gets a generic message, and the log at ERROR gets only
@@ -953,11 +961,11 @@ def boundary[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R
     @functools.wraps(tool)
     async def guarded(*args: P.args, **kwargs: P.kwargs) -> R:
         try:
-            return await tool(*args, **kwargs)
+            return await confirmed(lambda: tool(*args, **kwargs))
         except ToolError:
             raise
-        except ConfirmationRequired as refusal:
-            # The normal first step of a two-step flow, not a failure (decision-15).
+        except (ConfirmationRequired, NotConfirmed) as refusal:
+            # The normal first step of a two-step flow, or the user's no (decision-15).
             raise ToolError(refusal.describe(), log_level=logging.INFO) from None
         except PaperlessMcpError as error:
             raise ToolError(error.describe()) from None

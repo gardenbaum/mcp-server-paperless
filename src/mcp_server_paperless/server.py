@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Final
 from fastmcp import FastMCP
 from fastmcp.server.lifespan import lifespan
 from fastmcp.server.transforms.visibility import Visibility
+from mcp.server.request_state import RequestStateSecurity
 
 from mcp_server_paperless import __version__
 from mcp_server_paperless.domain.errors import InvalidConfiguration
@@ -100,6 +101,7 @@ from mcp_server_paperless.tools._shared import (
     GuideFor,
     Services,
 )
+from mcp_server_paperless.tools.confirmation import DIALOGS, Dialogs
 from mcp_server_paperless.tools.selection import (
     guide_text,
     hidden_tools,
@@ -333,6 +335,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     clock: Callable[[], float] = time.monotonic,
     stdio: bool = False,
     auth: AuthProvider | None = None,
+    dialogs: Dialogs | None = None,
 ) -> FastMCP:
     """Assemble the MCP server.
 
@@ -348,6 +351,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
             case that parameter is in no schema (decision-7).
         auth: Authentication of the HTTP endpoint (the HTTP app's static bearer tokens); ``None``
             for stdio and for the flagged unauthenticated loopback mode.
+        dialogs: The times and the clock of the confirmation dialogs; tests pass short ones.
 
     Returns:
         The server. Starting it (its lifespan) raises the probe's ``PaperlessMcpError`` when
@@ -358,6 +362,8 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
         InvalidConfiguration: A toolset or a disabled tool in the settings does not exist, or
             the settings alone leave no tool.
     """
+    # Outlives the lifespan: a state stays used up when the server's last connection closes.
+    dialogs = dialogs or Dialogs()
     credentials = StaticTokenProvider(paperless.token.get_secret_value())
     web_url = str(paperless.public_url or paperless.url)
     by_path = stdio and bool(settings.upload_dirs)
@@ -478,7 +484,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 hidden=hidden,
                 selected=selected,
             )
-            yield {SERVICES: services, GUIDE: guide_for}
+            yield {SERVICES: services, GUIDE: guide_for, DIALOGS: dialogs}
 
     # Until Paperless answers no capability is known; the start replaces these instructions.
     instructions, _ = describe_toolsets(catalogue, enabled, hidden, started=None, now=None)
@@ -490,6 +496,8 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
         middleware=[CallLogging()],
         lifespan=start,
         auth=auth,
+        # Longer than a dialog: one that expired is told so, instead of a refused state.
+        request_state_security=RequestStateSecurity.ephemeral(ttl=2 * dialogs.timeout),
         # Only ToolError messages reach the client; any other exception becomes a generic error.
         mask_error_details=True,
     )
