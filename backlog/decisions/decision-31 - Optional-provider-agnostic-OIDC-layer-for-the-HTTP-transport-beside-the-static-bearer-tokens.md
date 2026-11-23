@@ -1,11 +1,12 @@
 ---
-updated_date: '2026-11-22T19:43:20Z'
+superseded_by: decision-36
+updated_date: '2026-11-23T09:34:57Z'
 id: decision-31
 title: >-
   Optional provider-agnostic OIDC layer for the HTTP transport, beside the
   static bearer tokens
 date: '2026-11-22T19:43:16Z'
-status: accepted
+status: superseded
 ---
 ## Context
 

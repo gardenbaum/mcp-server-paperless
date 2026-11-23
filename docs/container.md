@@ -1,7 +1,8 @@
 # Run in a container
 
-Version tags (`v*`) publish an image to `ghcr.io/gardenbaum/mcp-server-paperless`, with a provenance and
-an SBOM attestation (the first image is 0.3.0; the images of earlier releases were removed). It runs
+Version tags (`v*`) publish an image to `ghcr.io/gardenbaum/mcp-server-paperless`, for
+linux/amd64 and linux/arm64 (arm64 from 0.3.1), with a provenance and an SBOM attestation (the first
+image is 0.3.0; the images of earlier releases were removed). It runs
 `mcp-server-paperless-http` as a non-root user (uid 10001) from a read-only filesystem, listens on
 `0.0.0.0:8000` inside the container and, like the plain command, **does not start without
 `PAPERLESS_MCP_HTTP_AUTH_TOKENS` (or the [optional OIDC layer](claude-ai-connector.md)) and
@@ -92,4 +93,4 @@ Paperless is reachable: the tools report that. All other [settings](configuratio
 unchanged as environment variables. To build the image yourself, `just image` builds it and
 `just image-smoke` also checks that it refuses to start without tokens, runs read-only as
 non-root, becomes healthy and answers 401 without a token, 421 for a foreign `Host` and an MCP initialize with a token. The rules
-are decision-28, carried over into decision-31.
+are decision-28, carried over into decision-36.

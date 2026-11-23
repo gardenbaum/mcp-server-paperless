@@ -1,0 +1,294 @@
+# serializer version: 1
+# name: test_the_workflow_is_exactly_the_reviewed_one
+  dict({
+    'concurrency': dict({
+      'cancel-in-progress': "${{ !startsWith(github.ref, 'refs/tags/') }}",
+      'group': 'image-${{ github.ref }}',
+    }),
+    'env': dict({
+      'IMAGE': 'ghcr.io/${{ github.repository }}',
+    }),
+    'jobs': dict({
+      'build': dict({
+        'runs-on': '${{ matrix.runner }}',
+        'steps': list([
+          dict({
+            'uses': 'actions/checkout',
+            'with': dict({
+              'persist-credentials': False,
+            }),
+          }),
+          dict({
+            'uses': 'docker/setup-buildx-action',
+          }),
+          dict({
+            'name': 'Build the image (loaded locally, not pushed)',
+            'uses': 'docker/build-push-action',
+            'with': dict({
+              'build-args': '''
+                REVISION=${{ github.sha }}
+  
+              ''',
+              'cache-from': 'type=gha,scope=${{ matrix.arch }}',
+              'cache-to': 'type=gha,mode=max,scope=${{ matrix.arch }}',
+              'context': '.',
+              'load': True,
+              'platforms': 'linux/${{ matrix.arch }}',
+              'push': False,
+              'tags': 'mcp-server-paperless:ci',
+            }),
+          }),
+          dict({
+            'env': dict({
+              'TRIVY_PLATFORM': 'linux/${{ matrix.arch }}',
+            }),
+            'name': 'Scan for known vulnerabilities (HIGH and CRITICAL fail the job)',
+            'uses': 'aquasecurity/trivy-action',
+            'with': dict({
+              'exit-code': '1',
+              'format': 'table',
+              'ignore-unfixed': True,
+              'image-ref': 'mcp-server-paperless:ci',
+              'scanners': 'vuln',
+              'severity': 'HIGH,CRITICAL',
+              'trivyignores': '.trivyignore',
+            }),
+          }),
+          dict({
+            'name': 'Smoke test (refusal without tokens, read-only, non-root, healthy, 401 and initialize)',
+            'run': 'scripts/image_smoke.sh mcp-server-paperless:ci',
+          }),
+        ]),
+        'strategy': dict({
+          'matrix': dict({
+            'include': list([
+              dict({
+                'arch': 'amd64',
+                'runner': 'ubuntu-24.04',
+              }),
+              dict({
+                'arch': 'arm64',
+                'runner': 'ubuntu-24.04-arm',
+              }),
+            ]),
+          }),
+        }),
+        'timeout-minutes': 20,
+      }),
+      'publish': dict({
+        'if': "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
+        'needs': 'build',
+        'permissions': dict({
+          'contents': 'read',
+          'packages': 'write',
+        }),
+        'runs-on': '${{ matrix.runner }}',
+        'steps': list([
+          dict({
+            'uses': 'actions/checkout',
+            'with': dict({
+              'fetch-depth': 0,
+              'persist-credentials': False,
+            }),
+          }),
+          dict({
+            'env': dict({
+              'TAGGED_SHA': '${{ github.sha }}',
+            }),
+            'name': 'Require the tagged commit to be on main',
+            'run': '''
+              git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+              git merge-base --is-ancestor "$TAGGED_SHA" origin/main
+  
+            ''',
+          }),
+          dict({
+            'uses': 'docker/setup-buildx-action',
+          }),
+          dict({
+            'uses': 'docker/login-action',
+            'with': dict({
+              'password': '${{ secrets.GITHUB_TOKEN }}',
+              'registry': 'ghcr.io',
+              'username': '${{ github.actor }}',
+            }),
+          }),
+          dict({
+            'id': 'meta',
+            'uses': 'docker/metadata-action',
+            'with': dict({
+              'images': '${{ env.IMAGE }}',
+              'tags': '''
+                type=semver,pattern={{version}}
+                type=semver,pattern={{major}}.{{minor}}
+                type=semver,pattern={{major}}
+  
+              ''',
+            }),
+          }),
+          dict({
+            'id': 'push',
+            'uses': 'docker/build-push-action',
+            'with': dict({
+              'build-args': '''
+                VERSION=${{ steps.meta.outputs.version }}
+                REVISION=${{ github.sha }}
+  
+              ''',
+              'cache-from': 'type=gha,scope=${{ matrix.arch }}',
+              'context': '.',
+              'labels': '${{ steps.meta.outputs.labels }}',
+              'outputs': 'type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true',
+              'platforms': 'linux/${{ matrix.arch }}',
+              'provenance': 'mode=max',
+              'sbom': True,
+            }),
+          }),
+          dict({
+            'env': dict({
+              'TRIVY_PLATFORM': 'linux/${{ matrix.arch }}',
+            }),
+            'name': 'Scan the pushed digest (HIGH and CRITICAL fail the job)',
+            'uses': 'aquasecurity/trivy-action',
+            'with': dict({
+              'exit-code': '1',
+              'format': 'table',
+              'ignore-unfixed': True,
+              'image-ref': '${{ env.IMAGE }}@${{ steps.push.outputs.digest }}',
+              'scanners': 'vuln',
+              'severity': 'HIGH,CRITICAL',
+              'trivyignores': '.trivyignore',
+            }),
+          }),
+          dict({
+            'env': dict({
+              'DIGEST_REF': '${{ env.IMAGE }}@${{ steps.push.outputs.digest }}',
+            }),
+            'name': 'Smoke test the pushed digest',
+            'run': 'scripts/image_smoke.sh "$DIGEST_REF"',
+          }),
+          dict({
+            'env': dict({
+              'ARCH': '${{ matrix.arch }}',
+              'DIGEST': '${{ steps.push.outputs.digest }}',
+            }),
+            'name': 'Record the scanned digest',
+            'run': 'printf \'%s\' "$DIGEST" > "$ARCH"',
+          }),
+          dict({
+            'uses': 'actions/upload-artifact',
+            'with': dict({
+              'if-no-files-found': 'error',
+              'name': 'digest-${{ matrix.arch }}',
+              'path': '${{ matrix.arch }}',
+              'retention-days': 7,
+            }),
+          }),
+        ]),
+        'strategy': dict({
+          'matrix': dict({
+            'include': list([
+              dict({
+                'arch': 'amd64',
+                'runner': 'ubuntu-24.04',
+              }),
+              dict({
+                'arch': 'arm64',
+                'runner': 'ubuntu-24.04-arm',
+              }),
+            ]),
+          }),
+        }),
+        'timeout-minutes': 30,
+      }),
+      'tag': dict({
+        'if': "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
+        'needs': 'publish',
+        'permissions': dict({
+          'packages': 'write',
+        }),
+        'runs-on': 'ubuntu-24.04',
+        'steps': list([
+          dict({
+            'uses': 'docker/setup-buildx-action',
+          }),
+          dict({
+            'uses': 'docker/login-action',
+            'with': dict({
+              'password': '${{ secrets.GITHUB_TOKEN }}',
+              'registry': 'ghcr.io',
+              'username': '${{ github.actor }}',
+            }),
+          }),
+          dict({
+            'id': 'meta',
+            'uses': 'docker/metadata-action',
+            'with': dict({
+              'images': '${{ env.IMAGE }}',
+              'tags': '''
+                type=semver,pattern={{version}}
+                type=semver,pattern={{major}}.{{minor}}
+                type=semver,pattern={{major}}
+  
+              ''',
+            }),
+          }),
+          dict({
+            'uses': 'actions/download-artifact',
+            'with': dict({
+              'merge-multiple': True,
+              'path': 'digests',
+              'pattern': 'digest-*',
+            }),
+          }),
+          dict({
+            'name': 'Tag the scanned digests as one image',
+            'run': '''
+              set -euo pipefail
+              refs=()
+              for arch in amd64 arm64; do
+                digest="$(cat "digests/$arch")"
+                [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+                refs+=("$IMAGE@$digest")
+              done
+              mapfile -t names < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+              ((${#names[@]} > 0))
+              docker buildx imagetools create "${names[@]/#/--tag=}" "${refs[@]}"
+  
+            ''',
+          }),
+        ]),
+        'timeout-minutes': 10,
+      }),
+    }),
+    'name': 'Image',
+    'on': dict({
+      'pull_request': dict({
+        'branches': list([
+          'main',
+        ]),
+        'paths': list([
+          'Dockerfile',
+          '.dockerignore',
+          '.trivyignore',
+          'pyproject.toml',
+          'uv.lock',
+          'src/**',
+          'scripts/image_smoke.sh',
+          '.github/workflows/image.yml',
+        ]),
+      }),
+      'push': dict({
+        'branches': list([
+          'main',
+        ]),
+        'tags': list([
+          'v*',
+        ]),
+      }),
+    }),
+    'permissions': dict({
+      'contents': 'read',
+    }),
+  })
+# ---
