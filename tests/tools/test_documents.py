@@ -67,6 +67,22 @@ async def test_has_tags_false_finds_the_untagged_documents() -> None:
     assert [row["title"] for row in cast("list[Json]", output["documents"])] == ["bare"]
 
 
+async def test_unsupported_query_syntax_is_named_in_the_notices() -> None:
+    output = await call({"query": "acme -zebra"})
+
+    assert [n for n in cast("list[str]", output["notices"]) if "-zebra" in n]
+    assert (await call({"query": "acme"}))["notices"] == []
+
+
+async def test_the_query_description_states_the_operator_rules() -> None:
+    async with Client(serve(admin())) as client:
+        tool = next(t for t in await client.list_tools() if t.name == "search_documents")
+
+    properties = cast("dict[str, Json]", tool.input_schema["properties"])
+    text = str(properties["query"]["description"])
+    assert all(rule in text for rule in ("uppercase", "leading minus does not exclude", "field:*"))
+
+
 async def test_the_default_page_holds_25_documents() -> None:
     state = seeded()
     state.documents.extend(FakeDocument(id=n, title=f"bulk-{n}") for n in range(10, 40))
