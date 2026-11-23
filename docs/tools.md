@@ -32,6 +32,7 @@ effect first.
 | `create_taxonomy_item` | write | Create a tag, correspondent, document type, storage path or custom field. |
 | `update_taxonomy_item` | write, confirm | Change a tag, correspondent, document type, storage path or custom field. |
 | `delete_taxonomy_item` | destructive, confirm | Delete a tag, correspondent, document type, storage path or custom field for good. |
+| `run_saved_view` | read | Find the documents of a saved view, as the Paperless web UI lists them. |
 
 ## `ai` (on by default)
 
@@ -152,7 +153,6 @@ effect first.
 | `create_saved_view` | write | Create a saved view: a named document filter that run_saved_view can run. |
 | `update_saved_view` | write | Change a saved view; only the settings you name change. |
 | `delete_saved_view` | destructive, confirm | Delete a saved view for good: it has no trash. |
-| `run_saved_view` | read | Find the documents of a saved view, as the Paperless web UI lists them. |
 
 ## `workflows`
 
