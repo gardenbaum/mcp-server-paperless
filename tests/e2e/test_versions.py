@@ -235,8 +235,8 @@ async def test_the_console_script_uploads_a_version_by_path_over_stdio(
     folder.mkdir()
     _ = (folder / "plmcp24 März.txt").write_bytes(b"plmcp24 version from disk")
     _ = (tmp_path / "outside.txt").write_bytes(b"outside")
-    script = shutil.which("paperless-mcp")
-    assert script, "the paperless-mcp console script is not installed (uv sync)"
+    script = shutil.which("mcp-server-paperless")
+    assert script, "the mcp-server-paperless console script is not installed (uv sync)"
     transport = StdioTransport(
         script,
         [],

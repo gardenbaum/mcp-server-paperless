@@ -1,4 +1,4 @@
-"""Command-line entrypoints: ``paperless-mcp`` (stdio) and ``paperless-mcp-http`` (HTTP).
+"""Command-line entrypoints: ``mcp-server-paperless`` (stdio) and ``…-http`` (HTTP).
 
 Configuration errors and a Paperless that rejects the token or API version end the process
 with exit code 1 and one line on stderr, without a traceback.
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 
 def _fail(message: str) -> NoReturn:
-    print(f"paperless-mcp: {message}", file=sys.stderr)  # noqa: T201 -- the user-facing exit message
+    print(f"mcp-server-paperless: {message}", file=sys.stderr)  # noqa: T201 -- the user-facing exit message
     raise SystemExit(1)
 
 

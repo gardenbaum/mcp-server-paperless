@@ -1,4 +1,4 @@
-"""Smoke test of the installed `paperless-mcp` console script over stdio against Paperless 3.4.2.
+"""Smoke test of the installed `mcp-server-paperless` script over stdio against Paperless 3.4.2.
 
 This is how Claude Code runs the server (`claude mcp add`): a subprocess speaking MCP on
 stdin/stdout, configured by environment variables, logging to stderr.
@@ -21,8 +21,8 @@ pytestmark = [pytest.mark.e2e, pytest.mark.anyio]
 
 
 def console_script() -> str:
-    path = shutil.which("paperless-mcp")
-    assert path, "the paperless-mcp console script is not installed (uv sync)"
+    path = shutil.which("mcp-server-paperless")
+    assert path, "the mcp-server-paperless console script is not installed (uv sync)"
     return path
 
 
@@ -58,7 +58,7 @@ def test_a_wrong_token_stops_the_console_script_with_a_clear_message(stack: Stac
 
     assert finished.returncode == 1
     assert finished.stdout == ""
-    assert "paperless-mcp: Paperless rejected the credentials" in finished.stderr
+    assert "mcp-server-paperless: Paperless rejected the credentials" in finished.stderr
     assert "Traceback" not in finished.stderr
 
 

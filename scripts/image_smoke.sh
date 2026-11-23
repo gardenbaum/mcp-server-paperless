@@ -7,7 +7,7 @@
 set -euo pipefail
 
 image="${1:?usage: image_smoke.sh IMAGE}"
-name="paperless-mcp-smoke-$$"
+name="mcp-server-paperless-smoke-$$"
 secret="smoke-$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 trap 'docker rm -f "$name" >/dev/null 2>&1 || true' EXIT
 

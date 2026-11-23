@@ -86,7 +86,7 @@ def test_the_image_runs_as_a_numeric_non_root_user() -> None:
 def test_the_image_runs_the_http_entrypoint_and_probes_the_port_without_a_route() -> None:
     text = DOCKERFILE.read_text(encoding="utf-8")
 
-    assert re.search(r'^ENTRYPOINT \["paperless-mcp-http"\]$', text, re.MULTILINE)
+    assert re.search(r'^ENTRYPOINT \["mcp-server-paperless-http"\]$', text, re.MULTILINE)
     assert "PAPERLESS_MCP_HTTP_HOST=0.0.0.0" in text
     health = re.search(r"^HEALTHCHECK (?:.*\\\n)*.*$", text, re.MULTILINE)
     assert health, "the image needs a HEALTHCHECK"
