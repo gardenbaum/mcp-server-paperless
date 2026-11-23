@@ -176,7 +176,9 @@ class TrashService:
                     document_ids=(), count=0, message="The trash is empty: nothing was deleted."
                 )
         if not confirm:
-            raise ConfirmationRequired.for_effect(self._effect(entries, everything=everything))
+            ConfirmationRequired.require(
+                self._effect(entries, everything=everything), scope=sorted(e.id for e in entries)
+            )
         await self._writer.empty_trash([e.id for e in entries])
         deleted = tuple(e.id for e in entries)
         if everything:

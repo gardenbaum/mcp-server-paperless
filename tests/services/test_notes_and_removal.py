@@ -101,7 +101,7 @@ async def test_deleting_a_note_without_confirm_changes_nothing_and_says_what_wou
 
     message = raised.value.message
     assert message == (
-        "Nothing was changed. Confirming would delete note 1 (by admin, "
+        "Nothing was changed. Confirming would delete note 1 (by 'admin', "
         f"{len(PUBLIC_NOTE)} characters, starting '{PUBLIC_NOTE}') from document 1 "
         f"'{PUBLIC_TITLE}' for good; notes have no trash."
     )

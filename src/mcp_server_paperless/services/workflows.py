@@ -17,6 +17,8 @@ from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     PermissionDenied,
     Validation,
+    destination,
+    not_shown,
     quoted,
 )
 from mcp_server_paperless.domain.taxonomy import TaxonomyItem
@@ -250,21 +252,71 @@ def _object(value: JsonValue) -> dict[str, JsonValue]:
     return cast("dict[str, JsonValue]", value) if isinstance(value, dict) else {}
 
 
-def _host(url: JsonValue) -> str:
-    """The host of a webhook URL: never its credentials, path or query."""
-    text = str(url)
-    return urlsplit(text).hostname or text
+USUAL_PORTS: Final[Mapping[str, int]] = {"http": 80, "https": 443}
+
+
+def _webhook(url: str) -> str:
+    """Where a webhook goes, for a message: never its credentials, path or query.
+
+    Raises:
+        Validation: It is not certain where, or it cannot be shown in full.
+    """
+    try:
+        parts = urlsplit(url)
+        host, port = parts.hostname, parts.port
+    except ValueError:
+        host = port = None
+        parts = urlsplit("")
+    usual = USUAL_PORTS.get(parts.scheme)
+    if not host or usual is None or "\\" in re.split("[?#]", url)[0]:
+        cause = "it is not certain which host it leads to"
+        refused = not_shown("URL of the webhook", cause)
+        raise refused
+    shown = destination(host, "webhook host")
+    if port in {None, usual}:
+        return shown
+    bracketed = f"[{host}]" if ":" in host else host
+    return destination(f"{parts.scheme}://{bracketed}:{port}", "webhook host", "url")
 
 
 def _origin(url: JsonValue) -> tuple[str, str | None, int | None]:
     """Scheme, host and port of a URL, as a webhook's destination."""
-    parts = urlsplit(str(url))
-    return parts.scheme.lower(), parts.hostname, parts.port
+    try:
+        parts = urlsplit(str(url))
+        return parts.scheme.lower(), parts.hostname, parts.port
+    except ValueError:
+        return str(url), None, None  # unreadable: the same only as itself
+
+
+# Most recipients and webhook hosts of one workflow a confirmation lists; with more, nobody reads
+# them. The same number as the recipients of one e-mail (services/sharing.py).
+MAX_DESTINATIONS: Final = 20
+
+
+def _few(count: int) -> int:
+    """``count`` destinations, if a user can be expected to read them.
+
+    Raises:
+        Validation: There are more than ``MAX_DESTINATIONS``.
+    """
+    if count > MAX_DESTINATIONS:
+        message = (
+            f"Nothing was changed: the workflow has {count} destinations or more; at most "
+            f"{MAX_DESTINATIONS} can be shown to the user to confirm."
+        )
+        raise Validation(message, hint="Use a mailing list, or the Paperless web UI.")
+    return count
 
 
 def _acts(actions: Sequence[WorkflowAction]) -> list[str]:
-    """What the actions do that reaches beyond tagging: the reason a workflow needs confirm."""
+    """What the actions do that reaches beyond tagging: the reason a workflow needs confirm.
+
+    Raises:
+        Validation: There are more destinations than ``MAX_DESTINATIONS``, or one that cannot be
+            shown in full.
+    """
     found: list[str] = []
+    reached = 0
     for action in actions:
         settings = action.settings
         if action.type in FIXED_ACTS:
@@ -274,11 +326,16 @@ def _acts(actions: Sequence[WorkflowAction]) -> list[str]:
         elif action.type == EMAIL:
             mail = _object(settings.get("email"))
             attached = " with the document attached" if mail.get("include_document") else ""
-            found.append(f"send an e-mail to {mail.get('to')}{attached}")
+            to = [part.strip() for part in str(mail.get("to")).split(",")]
+            reached = _few(reached + len(to))
+            shown = ", ".join(destination(address, "e-mail address", "email") for address in to)
+            found.append(f"send an e-mail to {shown}{attached}")
         elif action.type == WEBHOOK:
             hook = _object(settings.get("webhook"))
             attached = " with the document" if hook.get("include_document") else ""
-            found.append(f"send a POST request to {_host(hook.get('url'))}{attached}")
+            reached = _few(reached + 1)
+            host = _webhook(str(hook.get("url")))
+            found.append(f"send a POST request to {host}{attached}")
         elif action.type == 2:  # noqa: PLR2004 -- removal
             removed = [
                 name.removeprefix("remove_").replace("_", " ")
@@ -375,10 +432,12 @@ class WorkflowService:
         _writable_triggers(spec.triggers)
         triggers = tuple([await self._trigger(t) for t in spec.triggers])
         actions = tuple([await self._action(a, {}) for a in spec.actions])
-        acts = _acts(actions)
-        if spec.enabled and acts and not confirm:
-            raise ConfirmationRequired.for_effect(
-                _effect(f"create the workflow {quoted(name)}", triggers, acts)
+        # A disabled workflow reaches nobody; it is checked when it is switched on.
+        acts = _acts(actions) if spec.enabled else []
+        if acts and not confirm:
+            ConfirmationRequired.require(
+                _effect(f"create the workflow {quoted(name)}", triggers, acts),
+                scope=(triggers, actions),
             )
         fields: dict[str, object] = {
             "enabled": spec.enabled,
@@ -432,10 +491,11 @@ class WorkflowService:
         enabled = found.enabled if values.enabled is None else values.enabled
         switched_on = values.enabled is True and not found.enabled
         reshaped = values.triggers is not None or values.actions is not None
-        acts = _acts(actions)
-        if enabled and acts and (reshaped or switched_on) and not confirm:
+        # Switching off, renaming and reordering must work whatever the actions hold.
+        acts = _acts(actions) if enabled and (reshaped or switched_on) else []
+        if acts and not confirm:
             lead = f"change the workflow {quoted(found.name)} (id {found.id})"
-            raise ConfirmationRequired.for_effect(_effect(lead, triggers, acts))
+            ConfirmationRequired.require(_effect(lead, triggers, acts), scope=(triggers, actions))
         done = await self._writer.update_workflow(found.id, values)
         return self._info(done, await self._names([done]))
 
@@ -459,7 +519,7 @@ class WorkflowService:
                 f"delete {subject} for good: it stops running at once and its {parts} are lost; "
                 "no document is touched"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=found)
         await self._writer.delete_workflow(found.id)
         message = f"{subject[0].upper()}{subject[1:]} was deleted; no document was touched."
         return WorkflowDeletion(id=found.id, name=found.name, message=message)

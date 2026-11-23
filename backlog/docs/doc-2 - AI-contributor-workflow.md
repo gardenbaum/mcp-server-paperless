@@ -3,7 +3,7 @@ id: doc-2
 title: AI contributor workflow
 type: guide
 created_date: '2026-11-12T16:23:00Z'
-updated_date: '2026-11-23T19:33:11Z'
+updated_date: '2026-11-23T21:01:15Z'
 ---
 # AI contributor workflow
 
@@ -56,7 +56,7 @@ At most two tasks at a time, chosen for independent dependencies and little file
 - Python 3.14 baseline; CI also runs 3.15.
 - Layers: entrypoints → server.py (composition root, the only module importing both tools/ and paperless/) → tools/ and paperless/ → services/ → domain/. domain imports nothing from the package and no I/O or MCP library; services import domain only; paperless imports domain, never fastmcp/mcp/services/tools; tools import services and domain, never httpx2/paperless; only paperless imports httpx2. Toolset modules in tools/ are independent.
 - Every request sends `Accept: application/json; version=10` and the auth header of the current credential.
-- Tools: snake_case verb-first names, title, LLM-oriented description, typed and described parameters, annotations from the central table, exactly one toolset tag, typed return model. Destructive tools take `confirm: bool = False`; no elicitation. Domain errors become ToolError with message and hint through one boundary.
+- Tools: snake_case verb-first names, title, LLM-oriented description, typed and described parameters, annotations from the central table, exactly one toolset tag, typed return model. Destructive tools take `confirm: bool = False`; services ask for the confirmation with `ConfirmationRequired.require(effect, scope=...)` and never raise it themselves, and the boundary shows the dialog (decision-44). Domain errors become ToolError with message and hint through one boundary.
 - Token economy: default page size 25, max 100; content slices of 20 000 characters; aggregated fetches capped with `truncated`.
 - Logging to stderr only; never document content, tokens or full query text at INFO or above.
 - Tests: fakes over mocks, `unittest.mock` and patching banned; seams are constructor injection and the httpx2 transport. Adapter requests and responses are validated against the vendored OpenAPI schema. Branch coverage ≥ 95 % overall, 100 % on changed lines; mutation score ≥ 80 % on services/ and paperless/ (enforced from PLMCP-21).

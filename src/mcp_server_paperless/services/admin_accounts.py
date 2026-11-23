@@ -26,6 +26,7 @@ from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     PaperlessMcpError,
     Validation,
+    destination,
     quoted,
 )
 from mcp_server_paperless.domain.permissions import Principal
@@ -64,10 +65,6 @@ RENAME_TAIL: Final = "they sign in under the new name"
 EMAIL_TAIL: Final = "whoever controls it can reset the password and take the account over"
 SELF_HINT: Final = "Ask another administrator to do this in the Paperless web UI."
 NOTHING_GIVEN: Final = "Nothing to change: no field was given."
-
-
-def _names(values: Sequence[str]) -> str:
-    return ", ".join(values)
 
 
 def _quoted(values: Sequence[str]) -> str:
@@ -200,10 +197,10 @@ class AccountAdmin:
         if group_ids:
             parts.append(f"in the groups {_quoted(await self._group_names(group_ids))}")
         if permissions:
-            parts.append(f"with the permissions {_names(permissions)}")
+            parts.append(f"with the permissions {_quoted(permissions)}")
         if parts and not confirm:
             effect = f"create user {quoted(username)} {'; '.join(parts)}"
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=group_ids)
         given = {
             "username": username,
             "password": password,
@@ -283,7 +280,7 @@ class AccountAdmin:
                 message=f"User {who} already is as asked; nothing was changed.",
             )
         if effects and not confirm:
-            raise ConfirmationRequired.for_effect("; ".join(effects))
+            ConfirmationRequired.require("; ".join(effects), scope=(current, changes))
         made = await self._writer.update_user(number, UserValues.model_validate(changes))
         self._taxonomy.invalidate("user")
         shown = ", ".join(changes)
@@ -328,7 +325,7 @@ class AccountAdmin:
             effects.append(f"rename user {who} to {new_name}; {RENAME_TAIL}")
         if "email" in changes and changes["email"] is not None:
             verb = "change" if current.email else "set"
-            address = quoted(str(changes["email"]))
+            address = destination(str(changes["email"]), "e-mail address", "email")
             effects.append(f"{verb} the e-mail address of {who} to {address}; {EMAIL_TAIL}")
         if "is_superuser" in changes:
             effects.append(
@@ -356,9 +353,9 @@ class AccountAdmin:
             added = [p for p in permissions if p not in current.permissions]
             removed = [p for p in current.permissions if p not in permissions]
             if added:
-                effects.append(f"grant {who} the permissions {_names(added)}")
+                effects.append(f"grant {who} the permissions {_quoted(added)}")
             if removed:
-                effects.append(f"take the permissions {_names(removed)} away from {who}")
+                effects.append(f"take the permissions {_quoted(removed)} away from {who}")
         if password is not None:
             changes["password"] = password
         return changes, effects
@@ -384,7 +381,7 @@ class AccountAdmin:
                 "owner (every user with the permission may then see them), their grants are "
                 f"removed and they can no longer sign in{rank}"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=current)
         await self._writer.delete_user(number)
         self._taxonomy.invalidate("user")
         return Deletion(id=number, name=current.username, message=f"Deleted user {who}.")
@@ -405,9 +402,10 @@ class AccountAdmin:
         if permissions and not confirm:
             effect = (
                 f"create group {quoted(name)} that grants its members the permissions "
-                f"{_names(permissions)}"
+                f"{_quoted(permissions)}"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            # scope: the text names the group and every permission; nothing is stored yet.
+            ConfirmationRequired.require(effect, scope=None)
         values = GroupValues(name=name, permissions=tuple(permissions or ()))
         made = await self._writer.create_group(values)
         self._taxonomy.invalidate("group")
@@ -446,9 +444,9 @@ class AccountAdmin:
             added = [p for p in permissions if p not in current.permissions]
             removed = [p for p in current.permissions if p not in permissions]
             if added:
-                effects.append(f"give the members of {who} the permissions {_names(added)}")
+                effects.append(f"give the members of {who} the permissions {_quoted(added)}")
             if removed:
-                effects.append(f"take the permissions {_names(removed)} away from them")
+                effects.append(f"take the permissions {_quoted(removed)} away from them")
         if not changes:
             return GroupOutcome(
                 group=self._group_detail(current),
@@ -456,7 +454,7 @@ class AccountAdmin:
                 message=f"Group {who} already is as asked; nothing was changed.",
             )
         if effects and not confirm:
-            raise ConfirmationRequired.for_effect("; ".join(effects))
+            ConfirmationRequired.require("; ".join(effects), scope=(current, changes))
         made = await self._writer.update_group(number, GroupValues.model_validate(changes))
         self._taxonomy.invalidate("group")
         return GroupOutcome(
@@ -480,7 +478,7 @@ class AccountAdmin:
                 f"delete group {who} for good; its members lose the permissions it grants and "
                 "objects shared with the group are no longer shared with them"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=current)
         await self._writer.delete_group(number)
         self._taxonomy.invalidate("group")
         return Deletion(id=number, name=current.name, message=f"Deleted group {who}.")

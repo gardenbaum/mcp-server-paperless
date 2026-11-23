@@ -13,9 +13,10 @@ pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 type Json = dict[str, object]
 
 CONFIRM_DESCRIPTION = (
-    "Must be true to go ahead. Without it nothing changes and the error says what would "
-    "happen. Describe that to the user and pass true only once they agree, or if they "
-    "already asked for exactly this."
+    "Must be true to go ahead at once. Without it a client that can show dialogs asks the "
+    "user, and the tool runs only if they accept; with any other nothing changes and the "
+    "error says what would happen. Describe that to the user and pass true only once they "
+    "agree, or if they already asked for exactly this."
 )
 
 TOOLS = ("add_note", "delete_note", "delete_document")

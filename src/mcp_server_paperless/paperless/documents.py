@@ -143,6 +143,11 @@ class _Title(BaseModel):
     title: str
 
 
+class _Versions(BaseModel):
+    id: int
+    versions: list[_Version]
+
+
 class _Content(BaseModel):
     content: str
 
@@ -510,6 +515,19 @@ class PaperlessDocumentReader:
         }
         found = await self._client.get(PATH, Page[_Title], params=sent)
         return {row.id: row.title for row in found.results}
+
+    async def get_newest_versions(self, document_ids: Collection[int]) -> dict[int, int]:
+        """See ``DocumentReader.get_newest_versions``; Paperless lists the newest version first."""
+        wanted = sorted(set(document_ids))
+        if not wanted:
+            return {}
+        sent: Params = {
+            "id__in": ",".join(map(str, wanted)),
+            "fields": "id,versions",
+            "page_size": len(wanted),
+        }
+        found = await self._client.get(PATH, Page[_Versions], params=sent)
+        return {row.id: row.versions[0].id if row.versions else row.id for row in found.results}
 
     async def _file(
         self, document_id: int, tail: str, max_bytes: int, params: Params | None = None

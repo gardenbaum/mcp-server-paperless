@@ -56,6 +56,7 @@ if TYPE_CHECKING:
         WorkflowWriter,
     )
     from mcp_server_paperless.domain.rendering import PageRenderer
+    from mcp_server_paperless.tools.confirmation import Dialogs
 
 URL = "http://paperless.test"
 TOKEN = "harness-token-0123456789"
@@ -131,6 +132,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     upload_dirs: Sequence[str] = (),
     stdio: bool = False,
     auth: AuthProvider | None = None,
+    dialogs: Dialogs | None = None,
 ) -> FastMCP:
     """The assembled server, with `reader` in place of the Paperless adapter.
 
@@ -143,6 +145,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     offers, to try toolsets that do not exist yet. `max_download_bytes` replaces the download
     limit. `max_upload_bytes` and `upload_dirs` are the upload settings; `stdio` says the server
     runs over stdio (the only mode that offers uploads by path, and then only with `upload_dirs`).
+    `dialogs` replaces the confirmation dialogs' times and clock.
     """
     fake = reader if isinstance(reader, FakePaperless) else admin()
     server = create_server(
@@ -159,6 +162,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
         catalogue=catalogue,
         stdio=stdio,
         auth=auth,
+        dialogs=dialogs,
         ports=lambda _client: recorded(
             Ports(
                 instance=reader,

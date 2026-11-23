@@ -188,7 +188,7 @@ async def test_an_email_without_confirm_names_recipients_and_documents_and_sends
     assert "send an e-mail with the archive file (the original where there is none)" in text
     assert "'e2e-public-invoice' (id 1)" in text
     assert "subject 'Invoice', message 'Attached.'" in text
-    assert "to a@example.com" in text
+    assert "to 'a@example.com'" in text
     assert "confirm=true" in text
     assert state.outbox == []
 

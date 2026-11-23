@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Final, cast, override
 
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.tools import InputRequiredToolResult
 
 if TYPE_CHECKING:
     from fastmcp.tools import ToolResult
@@ -71,7 +72,11 @@ def configure_logging(level: str) -> None:
 
 
 class CallLogging(Middleware):
-    """Log each tool call with a fresh request id, the tool name, its duration and outcome."""
+    """Log each tool call with a fresh request id, the tool name, its duration and outcome.
+
+    The outcome is ``ok``, ``error``, or ``asked``: the result is a question to the user, and the
+    answer comes with another call (decision-44).
+    """
 
     @override
     async def on_call_tool(
@@ -83,13 +88,17 @@ class CallLogging(Middleware):
         started = time.perf_counter()
         outcome: dict[str, object] = {"outcome": "ok"}
         try:
-            return await call_next(context)
+            result = await call_next(context)
         except Exception as error:
             # The boundary raises ToolError from None and FastMCP masks with `from error`:
             # name the original error's type, never its message.
             cause = error.__cause__ or error.__context__ or error
             outcome = {"outcome": "error", "error": type(cause).__name__}
             raise
+        else:
+            if isinstance(result, InputRequiredToolResult):
+                outcome = {"outcome": "asked"}
+            return result
         finally:
             duration_ms = round((time.perf_counter() - started) * 1000, 1)
             logger.info(

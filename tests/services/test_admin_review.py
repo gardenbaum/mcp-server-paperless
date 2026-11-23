@@ -70,7 +70,7 @@ async def test_creating_a_user_with_a_password_groups_or_permissions_needs_confi
     )
     assert permissions == (
         "Nothing was changed. Confirming would create user 'mallory' with the permissions "
-        "add_user, change_user."
+        "'add_user', 'change_user'."
     )
     assert [u.username for u in setup.state.users] == ["admin", "e2e-reader", "e2e-blind"]
 
@@ -96,7 +96,7 @@ async def test_all_effects_of_a_new_user_are_listed_in_one_refusal() -> None:
     assert text == (
         "Nothing was changed. Confirming would create user 'm' with staff status, which lets "
         "them sign in to the Django admin site and read the logs; with a password, with which "
-        "whoever knows it signs in; in the groups 'e2e-group'; with the permissions view_tag."
+        "whoever knows it signs in; in the groups 'e2e-group'; with the permissions 'view_tag'."
     )
 
 
@@ -109,7 +109,7 @@ async def test_creating_a_group_that_grants_permissions_needs_confirm() -> None:
 
     assert text == (
         "Nothing was changed. Confirming would create group 'powers' that grants its members "
-        "the permissions add_user, change_user."
+        "the permissions 'add_user', 'change_user'."
     )
     assert [g.name for g in setup.state.groups] == ["e2e-group"]
     assert (await Setup().accounts.create_group("empty")).changed

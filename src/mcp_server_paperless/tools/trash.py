@@ -102,14 +102,13 @@ async def empty_trash(
     """Delete trash entries for good: documents, their files, text, notes and metadata are lost.
 
     This cannot be undone. It never empties everything by default: name document_ids from
-    list_trash, or pass all=true for the whole trash, and in both cases confirm. Two steps: call
-    without confirm first. Nothing is deleted and the error lists the entries that would go
-    (the first ten, then a count), with confirm=true to pass. all=true empties whatever the trash
-    holds when the confirmed call runs, which can differ from what the refusal listed: when the
-    trash holds at most 100 entries, list it with list_trash and pass their ids as document_ids
-    instead, so exactly the reviewed entries go. Only name what the user asked to delete; to get
-    documents back, use restore_from_trash. All or none: an id that is not in the trash is an
-    error. Needs the permission to delete documents and ownership of every document (or no
-    owner).
+    list_trash, or pass all=true for the whole trash, and in both cases confirm. Without it a
+    dialog, or an error for you to show the user, first lists the entries that would go: the first
+    ten, then a count (see confirm). With confirm=true, all=true empties whatever the trash holds
+    then, which can differ from what was listed: when the trash holds at most 100 entries, list it
+    with list_trash and pass their ids as document_ids instead, so exactly the reviewed entries go.
+    Only name what the user asked to delete; to get documents back, use restore_from_trash. All or
+    none: an id that is not in the trash is an error. Needs the permission to delete documents and
+    ownership of every document (or no owner).
     """
     return await services(ctx).trash.empty(document_ids, everything=all, confirm=confirm)

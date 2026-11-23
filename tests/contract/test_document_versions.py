@@ -403,3 +403,15 @@ async def test_an_owner_without_admin_rights_deletes_a_version_and_merges(backen
     ]
     with pytest.raises(NotFound):
         _ = await user.documents.get_document(source)
+
+
+@pytest.mark.contract("DocumentReader.get_newest_versions")
+async def test_an_added_version_is_the_newest_until_it_is_deleted(backend: Backend) -> None:
+    document = backend.new_document()
+    reader = backend.admin.documents
+
+    added = await add_version(backend, document, "newer")
+    assert await reader.get_newest_versions([document]) == {document: added}
+
+    _ = await backend.admin.document_writes.delete_version(document, added)
+    assert await reader.get_newest_versions([document]) == {document: document}

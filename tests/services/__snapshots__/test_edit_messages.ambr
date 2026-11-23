@@ -18,7 +18,7 @@
     'no change permission': "The Paperless user may not change this document. Hint: Ask the document's owner for change permission.",
     'nothing': 'Nothing to change: no field was given. Hint: Pass at least one field to change, e.g. title or tags_add.',
     'owner name unlistable': "The Paperless user may not perform this action. Hint: Pass the owner's user id instead of the username.",
-    'owner without confirm': 'Changing the owner needs confirm=true: the new owner (or, with no owner, every user who may view documents) takes over the document and you may lose access to it. Hint: Pass confirm=true to change the owner.',
+    'owner without confirm': "Nothing was changed. Confirming would change the owner of document 1 'e2e-public-invoice' to 'admin' (id 2): the new owner takes it over and you may lose access to it. Hint: Describe the effect to the user and call the tool again with the same arguments and confirm=true only once they agree, or if they already asked for exactly this.",
     'parent removal': "Removing 'e2e-finance' also removes its child tags 'e2e-invoices'. Hint: List them in tags_remove too, or keep 'e2e-finance'.",
     'parent removal with two children': "Removing 'e2e-finance' also removes its child tags 'e2e-invoices', 'e2e-receipts'. Hint: List them in tags_remove too, or keep 'e2e-finance'.",
     'tag added and removed': 'A tag is both added and removed. Hint: Name each tag once, in tags_add or in tags_remove.',

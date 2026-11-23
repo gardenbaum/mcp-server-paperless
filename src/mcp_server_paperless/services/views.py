@@ -216,7 +216,7 @@ class ViewService:
             rules = plural(len(found.filter_rules), "filter rule")
             effect = f"delete {subject} for good: its {rules} and its sort order are lost"
             effect = f"{effect}; no document is touched"
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=found.filter_rules)
         await self._write(lambda: self._writer.delete_saved_view(found.id))
         message = f"{subject[0].upper()}{subject[1:]} was deleted; no document was touched."
         return ViewDeletion(id=found.id, name=found.name, message=message)

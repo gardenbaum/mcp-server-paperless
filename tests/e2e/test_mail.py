@@ -149,7 +149,9 @@ async def test_pointing_an_account_elsewhere_needs_confirm_unless_the_password_i
         client, "update_mail_account", account_id=made["id"], imap_server="mail.other.example"
     )
 
-    assert f"point mail account '{PREFIX}redirect' (id {made['id']}) at mail.other.example" in text
+    assert (
+        f"point mail account '{PREFIX}redirect' (id {made['id']}) at 'mail.other.example'" in text
+    )
     assert "sends it to the new server" in text
     assert obj(parse(stack.admin.get(f"/api/mail_accounts/{made['id']}/")))["imap_server"] == (
         REFUSING
