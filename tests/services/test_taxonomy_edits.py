@@ -14,7 +14,7 @@ from fakes.paperless import (
     seeded,
 )
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     Ambiguous,
     ConfirmationRequired,
@@ -23,17 +23,17 @@ from paperless_mcp.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from paperless_mcp.domain.taxonomy import SelectOption, TaxonomyValues
-from paperless_mcp.domain.taxonomy_edits import TaxonomyCreate, TaxonomyEdit
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.taxonomy import TaxonomyResolver
-from paperless_mcp.services.taxonomy_edits import PATH_HINT, TaxonomyEditor
+from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyValues
+from mcp_server_paperless.domain.taxonomy_edits import TaxonomyCreate, TaxonomyEdit
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.taxonomy_edits import PATH_HINT, TaxonomyEditor
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Collection
 
-    from paperless_mcp.domain.documents import DocumentPage, DocumentQuery
-    from paperless_mcp.domain.taxonomy import (
+    from mcp_server_paperless.domain.documents import DocumentPage, DocumentQuery
+    from mcp_server_paperless.domain.taxonomy import (
         TaxonomyDetail,
         TaxonomyItem,
         TaxonomyKind,

@@ -9,8 +9,8 @@ from hypothesis import strategies as st
 from pydantic import BaseModel
 
 from adapter.conftest import BASE_URL, ClientFactory, tag
-from paperless_mcp.domain.errors import PaperlessMcpError
-from paperless_mcp.paperless.pagination import MAX_ITEMS, Page, collect, page_number
+from mcp_server_paperless.domain.errors import PaperlessMcpError
+from mcp_server_paperless.paperless.pagination import MAX_ITEMS, Page, collect, page_number
 
 pytestmark = pytest.mark.anyio
 

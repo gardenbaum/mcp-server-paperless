@@ -18,8 +18,8 @@ import pytest
 from fakes.paperless import FakePaperless, is_write, write
 
 from contract.conftest import Ports, live_ports
-from paperless_mcp.domain import ports
-from paperless_mcp.domain.ports import (
+from mcp_server_paperless.domain import ports
+from mcp_server_paperless.domain.ports import (
     AdminReader,
     AdminWriter,
     AiReader,
@@ -45,8 +45,8 @@ from paperless_mcp.domain.ports import (
     WorkflowReader,
     WorkflowWriter,
 )
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.paperless.client import PaperlessClient, RetryPolicy
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

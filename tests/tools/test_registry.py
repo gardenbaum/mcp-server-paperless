@@ -16,16 +16,16 @@ from harness import admin, paperless_settings, serve
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, SecretStr
 
-from paperless_mcp.app import create_app
-from paperless_mcp.settings import HttpSettings, ServerSettings
-from paperless_mcp.tools._shared import (
+from mcp_server_paperless.app import create_app
+from mcp_server_paperless.settings import HttpSettings, ServerSettings
+from mcp_server_paperless.tools._shared import (
     ANNOTATIONS,
     MEDIA_TOOLS,
     TOOL_TOOLSETS,
     TOOLSETS,
     boundary,
 )
-from paperless_mcp.tools.selection import hidden_tools
+from mcp_server_paperless.tools.selection import hidden_tools
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence

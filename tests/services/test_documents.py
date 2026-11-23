@@ -6,7 +6,7 @@ import pytest
 from fakes.accounts import ADMIN, PUBLIC_NOTE, READER
 from fakes.paperless import FakePaperless, FakeTaxonomy, FakeUser, seeded
 
-from paperless_mcp.domain.documents import (
+from mcp_server_paperless.domain.documents import (
     DocumentQuery,
     FieldValue,
     HistoryEntry,
@@ -15,10 +15,10 @@ from paperless_mcp.domain.documents import (
     SuggestionNames,
     Suggestions,
 )
-from paperless_mcp.domain.errors import Ambiguous, NotFound, PermissionDenied, Validation
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.documents import DEFAULT_SLICE, DocumentService, document_link
-from paperless_mcp.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.domain.errors import Ambiguous, NotFound, PermissionDenied, Validation
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.documents import DEFAULT_SLICE, DocumentService, document_link
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 pytestmark = pytest.mark.anyio
 

@@ -13,7 +13,7 @@ from typing import cast
 import pytest
 import yaml
 
-import paperless_mcp
+import mcp_server_paperless
 
 ROOT = Path(__file__).parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "pypi.yml"
@@ -85,14 +85,33 @@ def test_the_distribution_has_a_console_script_of_its_own_name_beside_the_old_on
 
     assert meta["name"] == DISTRIBUTION
     # `uvx mcp-server-paperless@latest` runs the script named like the distribution.
-    assert scripts[DISTRIBUTION] == scripts["paperless-mcp"] == "paperless_mcp.cli:main"
-    assert scripts["paperless-mcp-http"] == "paperless_mcp.cli:main_http"
+    assert scripts[DISTRIBUTION] == scripts["paperless-mcp"] == "mcp_server_paperless.cli:main"
+    assert scripts["paperless-mcp-http"] == "mcp_server_paperless.cli:main_http"
     # PyPI marks this URL verified because it is the Trusted Publisher's repository.
     assert mapping(meta["urls"])["Repository"] == REPOSITORY
 
 
 def test_the_version_is_read_from_the_renamed_distribution() -> None:
-    assert paperless_mcp.__version__ == importlib.metadata.version(DISTRIBUTION)
+    assert mcp_server_paperless.__version__ == importlib.metadata.version(DISTRIBUTION)
+
+
+def test_the_import_package_is_named_after_the_distribution_without_an_override() -> None:
+    """PyPI's unrelated `paperless-mcp` installs `paperless_mcp`, so ours must not (PLMCP-54)."""
+    with (ROOT / "pyproject.toml").open("rb") as file:
+        uv = mapping(mapping(cast("object", tomllib.load(file)["tool"])).get("uv", {}))
+
+    assert "build-backend" not in uv  # uv_build derives mcp_server_paperless from the name
+    assert (ROOT / "src" / "mcp_server_paperless" / "__init__.py").is_file()
+    assert not (ROOT / "src" / "paperless_mcp").exists()
+
+
+@pytest.mark.parametrize("page", ["README.md", "docs/http.md"])
+def test_the_docs_start_the_released_server_and_warn_about_the_other_project(page: str) -> None:
+    text = (ROOT / page).read_text(encoding="utf-8")
+
+    assert "mcp-server-paperless@latest" in text
+    assert "git+https://" not in text
+    assert "https://pypi.org/project/paperless-mcp/" in text, "warn about the unrelated project"
 
 
 def test_every_action_in_the_pypi_workflow_is_pinned_to_a_commit() -> None:
@@ -205,7 +224,7 @@ def test_the_build_smoke_tests_the_console_script_of_the_built_wheel() -> None:
     assert ".smoke/bin/mcp-server-paperless" in smoke
     assert 'grep -q "invalid configuration"' in smoke
     # On a tag this is the version just taken from it (decision-33).
-    assert 'print(paperless_mcp.__version__)\')" = "$(uv version --short)"' in smoke
+    assert 'print(mcp_server_paperless.__version__)\')" = "$(uv version --short)"' in smoke
     order = [position("build", name) for name in ("Build the sdist", "Smoke", "upload-artifact")]
     assert order == sorted(order)
 

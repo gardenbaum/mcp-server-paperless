@@ -12,7 +12,7 @@ from mcp.shared.exceptions import MCPError
 from mcp.types import TextResourceContents
 
 from e2e.helpers import consume_text, obj, parse
-from paperless_mcp.server import create_server
+from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

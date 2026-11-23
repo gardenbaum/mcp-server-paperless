@@ -8,14 +8,14 @@ import httpx2
 import pytest
 
 from adapter.conftest import streaming
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
     UpstreamUnavailable,
     Validation,
 )
-from paperless_mcp.paperless.documents import PaperlessDocumentWriter
+from mcp_server_paperless.paperless.documents import PaperlessDocumentWriter
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory

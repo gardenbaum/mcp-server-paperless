@@ -22,12 +22,12 @@ from typing import TYPE_CHECKING
 import pytest
 
 from contract.test_document_versions import add_version
-from paperless_mcp.domain.documents import DocumentPatch
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.documents import DocumentPatch
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
-    from paperless_mcp.domain.trash import TrashedDocument
+    from mcp_server_paperless.domain.trash import TrashedDocument
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 

@@ -13,15 +13,15 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from paperless_mcp.domain.documents import DocumentPatch
-from paperless_mcp.domain.errors import PermissionDenied, Validation
-from paperless_mcp.domain.pdf import PageSlot
+from mcp_server_paperless.domain.documents import DocumentPatch
+from mcp_server_paperless.domain.errors import PermissionDenied, Validation
+from mcp_server_paperless.domain.pdf import PageSlot
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from contract.conftest import Backend
-    from paperless_mcp.domain.pdf import StartedTasks
+    from mcp_server_paperless.domain.pdf import StartedTasks
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 

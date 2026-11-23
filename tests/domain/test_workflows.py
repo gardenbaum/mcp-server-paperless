@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-from paperless_mcp.domain.workflows import (
+from mcp_server_paperless.domain.workflows import (
     ACTION_FIELDS,
     ACTION_TYPES,
     MATCHING_ALGORITHMS,

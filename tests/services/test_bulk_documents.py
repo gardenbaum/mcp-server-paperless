@@ -12,7 +12,7 @@ import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
 
-from paperless_mcp.domain.bulk import (
+from mcp_server_paperless.domain.bulk import (
     MAX_DOCUMENTS,
     SAMPLE_SIZE,
     AddTags,
@@ -30,7 +30,7 @@ from paperless_mcp.domain.bulk import (
     TagsChange,
     TrashDocuments,
 )
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     Ambiguous,
     ConfirmationRequired,
@@ -39,16 +39,16 @@ from paperless_mcp.domain.errors import (
     UpstreamTimeout,
     Validation,
 )
-from paperless_mcp.domain.tasks import Unconfirmed
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.bulk_documents import BulkDocumentEditor
-from paperless_mcp.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.domain.tasks import Unconfirmed
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from paperless_mcp.domain.bulk import BulkOperation, DocumentBulkReport, DocumentChange
-    from paperless_mcp.domain.documents import DocumentPage, DocumentQuery
+    from mcp_server_paperless.domain.bulk import BulkOperation, DocumentBulkReport, DocumentChange
+    from mcp_server_paperless.domain.documents import DocumentPage, DocumentQuery
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 

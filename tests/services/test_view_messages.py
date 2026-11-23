@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING
 import pytest
 from fakes.paperless import FakeSavedView
 
-from paperless_mcp.domain.errors import PaperlessMcpError
-from paperless_mcp.domain.views import FilterRule, RuleInput, ViewCreate, ViewEdit
-from paperless_mcp.services.filter_rules import translate
-from paperless_mcp.services.views import rule_type
+from mcp_server_paperless.domain.errors import PaperlessMcpError
+from mcp_server_paperless.domain.views import FilterRule, RuleInput, ViewCreate, ViewEdit
+from mcp_server_paperless.services.filter_rules import translate
+from mcp_server_paperless.services.views import rule_type
 from services.test_views import Setup
 
 if TYPE_CHECKING:

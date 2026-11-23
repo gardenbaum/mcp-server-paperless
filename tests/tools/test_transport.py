@@ -15,8 +15,8 @@ from fastmcp.server.context import (
 )
 from harness import serve
 
-from paperless_mcp.domain.errors import Validation
-from paperless_mcp.tools._shared import check_transport
+from mcp_server_paperless.domain.errors import Validation
+from mcp_server_paperless.tools._shared import check_transport
 
 if TYPE_CHECKING:
     from pathlib import Path

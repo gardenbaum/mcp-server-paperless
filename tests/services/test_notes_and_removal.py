@@ -10,7 +10,7 @@ import pytest
 from fakes.accounts import ADMIN, PUBLIC_NOTE, READER
 from fakes.paperless import FakePaperless, FakeState, seeded
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     ConfirmationRequired,
     NotFound,
@@ -18,10 +18,10 @@ from paperless_mcp.domain.errors import (
     Validation,
     quoted,
 )
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.notes import EXCERPT_CHARS, MAX_NOTE_CHARS, NoteService
-from paperless_mcp.services.removal import DocumentRemoval
-from paperless_mcp.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.notes import EXCERPT_CHARS, MAX_NOTE_CHARS, NoteService
+from mcp_server_paperless.services.removal import DocumentRemoval
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 

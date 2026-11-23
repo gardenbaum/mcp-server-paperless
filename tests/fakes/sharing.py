@@ -23,14 +23,14 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from fakes.document_values import reject
-from paperless_mcp.domain.errors import PermissionDenied
-from paperless_mcp.domain.sharing import ShareBundle, ShareLink
-from paperless_mcp.paperless.sharing import send_failed, unseen_bundle, unseen_link
+from mcp_server_paperless.domain.errors import PermissionDenied
+from mcp_server_paperless.domain.sharing import ShareBundle, ShareLink
+from mcp_server_paperless.paperless.sharing import send_failed, unseen_bundle, unseen_link
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from paperless_mcp.domain.sharing import BundleStatus, FileVersionKind
+    from mcp_server_paperless.domain.sharing import BundleStatus, FileVersionKind
 
 NOW = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
 SLUG_LENGTH = 50

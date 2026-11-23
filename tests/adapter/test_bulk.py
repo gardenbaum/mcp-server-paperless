@@ -8,7 +8,7 @@ import pytest
 
 from adapter.conftest import streaming
 from adapter.test_queued import row as task_row
-from paperless_mcp.domain.bulk import (
+from mcp_server_paperless.domain.bulk import (
     FieldsChange,
     ObjectPermissions,
     PermissionsChange,
@@ -17,17 +17,17 @@ from paperless_mcp.domain.bulk import (
     TagsChange,
     TrashDocuments,
 )
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     PaperlessMcpError,
     PermissionDenied,
     UpstreamUnavailable,
     Validation,
 )
-from paperless_mcp.paperless.bulk import PaperlessBulkWriter
+from mcp_server_paperless.paperless.bulk import PaperlessBulkWriter
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory, RecordingSleep
-    from paperless_mcp.domain.bulk import BulkKind, DocumentChange
+    from mcp_server_paperless.domain.bulk import BulkKind, DocumentChange
 
 pytestmark = pytest.mark.anyio
 

@@ -12,17 +12,17 @@ from fakes.accounts import ADMIN
 from fakes.paperless import FakePaperless, FakeState, seeded
 from pydantic import SecretStr
 
-from paperless_mcp.domain.admin import ArchiveFile
-from paperless_mcp.domain.errors import ConfirmationRequired, PaperlessMcpError, Validation
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.admin_accounts import AccountAdmin
-from paperless_mcp.services.admin_system import SystemAdmin
-from paperless_mcp.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.domain.admin import ArchiveFile
+from mcp_server_paperless.domain.errors import ConfirmationRequired, PaperlessMcpError, Validation
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.admin_accounts import AccountAdmin
+from mcp_server_paperless.services.admin_system import SystemAdmin
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from paperless_mcp.domain.admin import ArchiveContent, Compression
+    from mcp_server_paperless.domain.admin import ArchiveContent, Compression
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-26")]
 READER_ID, GROUP = 3, 1

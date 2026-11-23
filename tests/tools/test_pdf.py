@@ -7,7 +7,7 @@ from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
 from fastmcp import Client
 from harness import admin, serve
 
-from paperless_mcp.services.pdf import MAX_DOCUMENTS, MAX_PAGES, MAX_PARTS
+from mcp_server_paperless.services.pdf import MAX_DOCUMENTS, MAX_PAGES, MAX_PARTS
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

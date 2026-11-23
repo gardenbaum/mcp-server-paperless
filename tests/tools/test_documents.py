@@ -12,7 +12,7 @@ from mcp.shared.exceptions import MCPError
 from mcp.types import TextResourceContents
 
 if TYPE_CHECKING:
-    from paperless_mcp.domain.documents import DocumentRecord
+    from mcp_server_paperless.domain.documents import DocumentRecord
 
 pytestmark = pytest.mark.anyio
 

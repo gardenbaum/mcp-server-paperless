@@ -9,9 +9,9 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from paperless_mcp.domain.errors import Ambiguous, Validation
-from paperless_mcp.domain.taxonomy import SelectOption, TaxonomyItem
-from paperless_mcp.services.custom_values import normalise
+from mcp_server_paperless.domain.errors import Ambiguous, Validation
+from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyItem
+from mcp_server_paperless.services.custom_values import normalise
 
 if TYPE_CHECKING:
     from pydantic import JsonValue

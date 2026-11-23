@@ -11,10 +11,15 @@ import pytest
 
 from adapter.conftest import tag
 from adapter.test_documents import DETAIL
-from paperless_mcp.domain.documents import CustomFieldValue, DocumentPatch, DocumentUpload
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, UpstreamUnavailable, Validation
-from paperless_mcp.paperless.documents import DETAIL_FIELDS, PaperlessDocumentWriter
-from paperless_mcp.paperless.taxonomy import PaperlessTaxonomyWriter
+from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch, DocumentUpload
+from mcp_server_paperless.domain.errors import (
+    NotFound,
+    PermissionDenied,
+    UpstreamUnavailable,
+    Validation,
+)
+from mcp_server_paperless.paperless.documents import DETAIL_FIELDS, PaperlessDocumentWriter
+from mcp_server_paperless.paperless.taxonomy import PaperlessTaxonomyWriter
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory

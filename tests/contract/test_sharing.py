@@ -13,13 +13,18 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from paperless_mcp.domain.errors import DeliveryUnknown, NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.errors import (
+    DeliveryUnknown,
+    NotFound,
+    PermissionDenied,
+    Validation,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
     from contract.conftest import Backend, Ports
-    from paperless_mcp.domain.sharing import ShareBundle
+    from mcp_server_paperless.domain.sharing import ShareBundle
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
 

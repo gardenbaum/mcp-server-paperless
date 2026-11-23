@@ -23,8 +23,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from fakes.document_values import reject
-from paperless_mcp.domain.errors import PermissionDenied, Validation
-from paperless_mcp.domain.mail import (
+from mcp_server_paperless.domain.errors import PermissionDenied, Validation
+from mcp_server_paperless.domain.mail import (
     MailAccount,
     MailAccountTestResult,
     MailRule,
@@ -32,7 +32,7 @@ from paperless_mcp.domain.mail import (
     ProcessedMailPage,
     check_password,
 )
-from paperless_mcp.paperless.mail import (
+from mcp_server_paperless.paperless.mail import (
     beyond_last_page,
     connected,
     failed_login,
@@ -45,7 +45,7 @@ from paperless_mcp.paperless.mail import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection
 
-    from paperless_mcp.domain.mail import (
+    from mcp_server_paperless.domain.mail import (
         AccountType,
         AttachmentScope,
         CorrespondentSource,

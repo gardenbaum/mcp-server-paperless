@@ -7,7 +7,7 @@ from fakes.paperless import FakePaperless, FakeTag, seeded
 from fastmcp import Client
 from harness import admin, serve
 
-from paperless_mcp.server import CATALOGUE
+from mcp_server_paperless.server import CATALOGUE
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-25")]
 

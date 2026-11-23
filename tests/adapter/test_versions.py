@@ -9,9 +9,17 @@ import pytest
 from adapter.test_document_writes import TASK_ID, Form, Uploaded
 from adapter.test_documents import DETAIL
 from adapter.test_queued import row as task_row
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, UpstreamUnavailable, Validation
-from paperless_mcp.domain.versions import VersionUpload
-from paperless_mcp.paperless.documents import PaperlessDocumentReader, PaperlessDocumentWriter
+from mcp_server_paperless.domain.errors import (
+    NotFound,
+    PermissionDenied,
+    UpstreamUnavailable,
+    Validation,
+)
+from mcp_server_paperless.domain.versions import VersionUpload
+from mcp_server_paperless.paperless.documents import (
+    PaperlessDocumentReader,
+    PaperlessDocumentWriter,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -10,7 +10,7 @@ import string
 from typing import cast
 
 from fakes.document_values import reject
-from paperless_mcp.domain.taxonomy import MatchingAlgorithm, OptionInput, SelectOption
+from mcp_server_paperless.domain.taxonomy import MatchingAlgorithm, OptionInput, SelectOption
 
 MAX_NAME = 128
 MAX_MATCH = 256

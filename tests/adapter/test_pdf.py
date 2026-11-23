@@ -12,10 +12,10 @@ import httpx2
 import pytest
 
 from adapter.test_instance import UI_SETTINGS
-from paperless_mcp.domain.errors import PermissionDenied, UpstreamUnavailable, Validation
-from paperless_mcp.domain.pdf import PageSlot, StartedTasks
-from paperless_mcp.paperless.client import RetryPolicy
-from paperless_mcp.paperless.pdf import PaperlessPdfWriter
+from mcp_server_paperless.domain.errors import PermissionDenied, UpstreamUnavailable, Validation
+from mcp_server_paperless.domain.pdf import PageSlot, StartedTasks
+from mcp_server_paperless.paperless.client import RetryPolicy
+from mcp_server_paperless.paperless.pdf import PaperlessPdfWriter
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable

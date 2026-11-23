@@ -6,10 +6,13 @@ from typing import TYPE_CHECKING
 import httpx2
 import pytest
 
-from paperless_mcp.domain.bulk import ObjectPermissions
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
-from paperless_mcp.domain.permissions import AccessChange
-from paperless_mcp.paperless.permissions import PaperlessPermissionReader, PaperlessPermissionWriter
+from mcp_server_paperless.domain.bulk import ObjectPermissions
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.permissions import AccessChange
+from mcp_server_paperless.paperless.permissions import (
+    PaperlessPermissionReader,
+    PaperlessPermissionWriter,
+)
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory

@@ -9,8 +9,8 @@ whole request.
 from typing import TYPE_CHECKING, Protocol
 
 from fakes.document_values import reject
-from paperless_mcp.domain.bulk import ObjectPermissions
-from paperless_mcp.domain.permissions import ObjectAccess
+from mcp_server_paperless.domain.bulk import ObjectPermissions
+from mcp_server_paperless.domain.permissions import ObjectAccess
 
 if TYPE_CHECKING:
     from collections.abc import Collection

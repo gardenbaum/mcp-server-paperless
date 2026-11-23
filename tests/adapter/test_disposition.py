@@ -2,7 +2,7 @@
 
 import pytest
 
-from paperless_mcp.paperless.disposition import filename
+from mcp_server_paperless.paperless.disposition import filename
 
 
 @pytest.mark.parametrize(

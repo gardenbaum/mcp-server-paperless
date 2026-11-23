@@ -7,7 +7,7 @@ from e2e.helpers import SEEDED_OBJECTS
 
 if TYPE_CHECKING:
     from contract.conftest import Backend
-    from paperless_mcp.domain.instance import InstanceStatistics
+    from mcp_server_paperless.domain.instance import InstanceStatistics
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
 

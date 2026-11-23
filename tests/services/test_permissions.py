@@ -13,7 +13,7 @@ import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     Ambiguous,
     ConfirmationRequired,
@@ -24,25 +24,25 @@ from paperless_mcp.domain.errors import (
     UpstreamUnavailable,
     Validation,
 )
-from paperless_mcp.domain.permissions import (
+from mcp_server_paperless.domain.permissions import (
     MAX_OBJECTS,
     AccessChange,
     PermissionsRequest,
 )
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.permissions import PermissionService
-from paperless_mcp.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.permissions import PermissionService
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
-    from paperless_mcp.domain.documents import NameOrId
-    from paperless_mcp.domain.instance import InstanceOverview
-    from paperless_mcp.domain.permissions import (
+    from mcp_server_paperless.domain.documents import NameOrId
+    from mcp_server_paperless.domain.instance import InstanceOverview
+    from mcp_server_paperless.domain.permissions import (
         Mode,
         ObjectAccess,
         PermissionKind,
         PermissionsResult,
     )
-    from paperless_mcp.domain.taxonomy import TaxonomyItem, TaxonomyKind
+    from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
 
 pytestmark = [
     pytest.mark.anyio,

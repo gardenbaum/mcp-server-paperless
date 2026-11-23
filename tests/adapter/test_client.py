@@ -20,7 +20,7 @@ from adapter.conftest import (
     streaming,
     tag,
 )
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     AuthenticationFailed,
     Conflict,
     FeatureUnavailable,
@@ -33,8 +33,8 @@ from paperless_mcp.domain.errors import (
     UpstreamUnreachable,
     Validation,
 )
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.paperless.client import (
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.client import (
     ERROR_BODY_LIMIT,
     Method,
     PaperlessClient,
@@ -598,7 +598,7 @@ async def test_an_error_response_whose_body_fails_is_still_the_transport_error()
 
 # --- Mutation-testing additions (PLMCP-21)
 
-CLIENT_LOGGER = "paperless_mcp.paperless.client"
+CLIENT_LOGGER = "mcp_server_paperless.paperless.client"
 
 
 async def test_form_data_and_files_reach_the_wire_through_request(

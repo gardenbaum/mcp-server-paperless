@@ -14,13 +14,13 @@ from typing import TYPE_CHECKING
 import pytest
 from fakes.paperless import FakeDocument, FakePaperless, seeded
 
-from paperless_mcp.domain.ai import AiSuggestions
-from paperless_mcp.domain.documents import DocumentQuery
-from paperless_mcp.domain.errors import FeatureUnavailable, NotFound, PermissionDenied
+from mcp_server_paperless.domain.ai import AiSuggestions
+from mcp_server_paperless.domain.documents import DocumentQuery
+from mcp_server_paperless.domain.errors import FeatureUnavailable, NotFound, PermissionDenied
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
-    from paperless_mcp.domain.taxonomy import TaxonomyKind
+    from mcp_server_paperless.domain.taxonomy import TaxonomyKind
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
 

@@ -11,7 +11,7 @@ import pytest
 from fakes.accounts import ADMIN
 from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     ConfirmationRequired,
     NotFound,
@@ -19,15 +19,15 @@ from paperless_mcp.domain.errors import (
     UpstreamTimeout,
     Validation,
 )
-from paperless_mcp.domain.pdf import PageSlot, StartedTasks
-from paperless_mcp.services.pdf import MAX_DOCUMENTS, PdfService
-from paperless_mcp.services.tasks import TaskService
+from mcp_server_paperless.domain.pdf import PageSlot, StartedTasks
+from mcp_server_paperless.services.pdf import MAX_DOCUMENTS, PdfService
+from mcp_server_paperless.services.tasks import TaskService
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Sequence
 
-    from paperless_mcp.domain.pdf import Output
-    from paperless_mcp.domain.tasks import TaskStatus
+    from mcp_server_paperless.domain.pdf import Output
+    from mcp_server_paperless.domain.tasks import TaskStatus
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 

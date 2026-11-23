@@ -9,15 +9,20 @@ import httpx2
 import pytest
 from pydantic import SecretStr
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
     UpstreamUnavailable,
     Validation,
 )
-from paperless_mcp.domain.mail import MailAccount, MailAccountValues, MailRule, MailRuleValues
-from paperless_mcp.paperless.mail import (
+from mcp_server_paperless.domain.mail import (
+    MailAccount,
+    MailAccountValues,
+    MailRule,
+    MailRuleValues,
+)
+from mcp_server_paperless.paperless.mail import (
     TEST_TIMEOUT,
     PaperlessMailReader,
     PaperlessMailWriter,
@@ -26,7 +31,7 @@ from paperless_mcp.paperless.mail import (
     silent_server,
     unreachable_server,
 )
-from paperless_mcp.paperless.pagination import MAX_ITEMS
+from mcp_server_paperless.paperless.pagination import MAX_ITEMS
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable

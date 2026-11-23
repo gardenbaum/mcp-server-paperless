@@ -14,15 +14,15 @@ from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakePaperless, FakeState, FakeTask, seeded
 from pydantic import SecretStr
 
-from paperless_mcp.domain.admin import NotText
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.admin import NotText
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     ConfirmationRequired,
     NotFound,
     PermissionDenied,
     Validation,
 )
-from paperless_mcp.services.admin_system import (
+from mcp_server_paperless.services.admin_system import (
     ARCHIVE_NAME,
     MAX_DOCUMENTS,
     MAX_LOG_CHARS,
