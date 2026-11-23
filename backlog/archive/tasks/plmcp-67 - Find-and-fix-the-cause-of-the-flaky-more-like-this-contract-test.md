@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:08:14Z'
-updated_date: '2026-11-23T11:42:47Z'
+updated_date: '2026-11-23T15:33:39Z'
 labels: []
 dependencies: []
 priority: medium
@@ -31,7 +31,7 @@ test_more_like_finds_other_documents[live] failed twice in the full E2E suite on
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
