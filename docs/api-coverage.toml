@@ -8,9 +8,11 @@
 #                 an exclusion. A field a tool supports that no tool test sends is listed too.
 # [[internal]]    fields the adapter chooses itself although a task wants them as a tool argument
 #                 (tasks owner, ordering, date_created_after; processed_mail ordering; the body
-#                 of mail_accounts/test, for testing an unsaved account). They stay open under
+#                 of mail_accounts/test, for testing an unsaved account; the documents `fields`
+#                 projection, PLMCP-80 AC 3; the documents of a bundle rebuild, PLMCP-83). They stay open under
 #                 that task although they are sent.
-# [[plumbing]]    fields the adapter chooses itself and nobody wants as an argument: full_perms,
+# [[plumbing]]    fields the adapter chooses itself and no task is known to want as an argument
+#                 (applied where it was noticed, not a census of every constant): full_perms,
 #                 projections, constants of helpers that read every page, the stored object sent
 #                 back. No feature, no open work; shown apart, checked against the schema. A value
 #                 or id a tool argument decides (id__in, task_type) is neither.
@@ -135,11 +137,6 @@ fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security
 reason = "the stored account is sent back; the tool takes only its id"
 
 [[plumbing]]
-operation = "POST /api/share_link_bundles/{id}/rebuild/"
-fields = ["body:document_ids"]
-reason = "the stored bundle's documents are sent back; the tool takes only its id"
-
-[[plumbing]]
 operation = "GET /api/tags/"
 fields = ["query:full_perms"]
 reason = "reads the grants: sent as true whenever the adapter needs them, no tool argument sets it"
@@ -181,8 +178,8 @@ reason = "reads the grants back: sent as true, no tool argument sets it"
 
 [[plumbing]]
 operation = "GET /api/documents/"
-fields = ["query:full_perms", "query:fields"]
-reason = "full_perms reads the grants and fields is a projection that keeps the OCR text out; no tool argument sets them"
+fields = ["query:full_perms"]
+reason = "full_perms reads the grants back; no tool argument sets it"
 
 [[plumbing]]
 operation = "PATCH /api/documents/{id}/"
@@ -208,6 +205,16 @@ reason = "the adapter chooses it"
 operation = "GET /api/processed_mail/"
 fields = ["query:ordering"]
 reason = "the adapter chooses it"
+
+[[internal]]
+operation = "GET /api/documents/"
+fields = ["query:fields"]
+reason = "the projection is chosen by the adapter; PLMCP-80 AC 3 wants the fields selectable"
+
+[[internal]]
+operation = "POST /api/share_link_bundles/{id}/rebuild/"
+fields = ["body:document_ids"]
+reason = "the stored bundle's documents are sent back; rebuilding with other documents is not offered (PLMCP-83)"
 
 [[internal]]
 operation = "POST /api/mail_accounts/test/"
@@ -238,6 +245,11 @@ task = "PLMCP-83"
 operation = "GET /api/document_types/{id}/"
 fields = ["query:full_perms"]
 task = "PLMCP-83"
+
+[[open_fields]]
+operation = "GET /api/documents/"
+fields = ["query:fields"]
+task = "PLMCP-80"
 
 [[open_fields]]
 operation = "GET /api/documents/"
@@ -532,7 +544,7 @@ task = "PLMCP-88"
 
 [[open_fields]]
 operation = "POST /api/share_link_bundles/{id}/rebuild/"
-fields = ["body:expiration_days", "body:file_version"]
+fields = ["body:document_ids", "body:expiration_days", "body:file_version"]
 task = "PLMCP-83"
 
 [[open_fields]]

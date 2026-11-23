@@ -220,6 +220,7 @@ TOML file.
 | `GET /api/document_types/` | `query:id`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
 | `POST /api/document_types/` | `body:owner`, `body:set_permissions` | PLMCP-83 |
 | `GET /api/document_types/{id}/` | `query:full_perms` | PLMCP-83 |
+| `GET /api/documents/` | `query:fields` | PLMCP-80 |
 | `GET /api/documents/` | `query:added__day`, `query:added__gt`, `query:added__gte`, `query:added__lt`, `query:added__lte`, `query:added__month`, `query:added__year`, `query:all`, `query:archive_serial_number__gte`, `query:archive_serial_number__lte`, `query:checksum__icontains`, `query:checksum__iendswith`, `query:checksum__iexact`, `query:checksum__istartswith`, `query:content__iendswith`, `query:content__iexact`, `query:content__istartswith`, `query:correspondent__name__icontains`, `query:correspondent__name__iendswith`, `query:correspondent__name__iexact`, `query:correspondent__name__istartswith`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:document_type__name__icontains`, `query:document_type__name__iendswith`, `query:document_type__name__iexact`, `query:document_type__name__istartswith`, `query:id`, `query:modified__date__gte`, `query:modified__date__lte`, `query:modified__day`, `query:modified__gt`, `query:modified__gte`, `query:modified__lt`, `query:modified__lte`, `query:modified__month`, `query:modified__year`, `query:original_filename__icontains`, `query:original_filename__iendswith`, `query:original_filename__iexact`, `query:original_filename__istartswith`, `query:search`, `query:storage_path__name__icontains`, `query:storage_path__name__iendswith`, `query:storage_path__name__iexact`, `query:storage_path__name__istartswith`, `query:tags__id`, `query:tags__name__icontains`, `query:tags__name__iendswith`, `query:tags__name__iexact`, `query:tags__name__istartswith`, `query:title__iendswith`, `query:title__iexact`, `query:title__istartswith`, `query:title_content` | PLMCP-83 |
 | `GET /api/documents/` | `query:shared_by__id=false`, `query:shared_by__id=true` | PLMCP-83 |
 | `POST /api/documents/bulk_download/` | `body:all`, `body:excluded_documents`, `body:filters` | PLMCP-80 |
@@ -262,7 +263,7 @@ TOML file.
 | `POST /api/saved_views/` | `body:display_fields`, `body:display_mode`, `body:icon`, `body:owner`, `body:set_permissions` | PLMCP-88 |
 | `PATCH /api/saved_views/{id}/` | `body:display_fields`, `body:display_mode`, `body:icon`, `body:owner`, `body:set_permissions` | PLMCP-88 |
 | `GET /api/share_link_bundles/` | `query:created__date__gt`, `query:created__date__gte`, `query:created__date__lt`, `query:created__date__lte`, `query:created__day`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:created__month`, `query:created__year`, `query:documents`, `query:expiration__date__gt`, `query:expiration__date__gte`, `query:expiration__date__lt`, `query:expiration__date__lte`, `query:expiration__day`, `query:expiration__gt`, `query:expiration__gte`, `query:expiration__lt`, `query:expiration__lte`, `query:expiration__month`, `query:expiration__year`, `query:ordering`, `query:status` | PLMCP-83 |
-| `POST /api/share_link_bundles/{id}/rebuild/` | `body:expiration_days`, `body:file_version` | PLMCP-83 |
+| `POST /api/share_link_bundles/{id}/rebuild/` | `body:document_ids`, `body:expiration_days`, `body:file_version` | PLMCP-83 |
 | `GET /api/share_links/` | `query:created__date__gt`, `query:created__date__gte`, `query:created__date__lt`, `query:created__date__lte`, `query:created__day`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:created__month`, `query:created__year`, `query:expiration__date__gt`, `query:expiration__date__gte`, `query:expiration__date__lt`, `query:expiration__date__lte`, `query:expiration__day`, `query:expiration__gt`, `query:expiration__gte`, `query:expiration__lt`, `query:expiration__lte`, `query:expiration__month`, `query:expiration__year`, `query:ordering` | PLMCP-83 |
 | `GET /api/storage_paths/` | `query:id`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering`, `query:path__icontains`, `query:path__iendswith`, `query:path__iexact`, `query:path__istartswith` | PLMCP-83 |
 | `POST /api/storage_paths/` | `body:owner`, `body:set_permissions` | PLMCP-83 |
@@ -294,8 +295,11 @@ an argument.
 
 Plumbing, no feature and no open work: the adapter sends these on its own (a constant of a list
 helper, a projection, a flag that reads the grants, the stored object it sends back). No tool
-argument could set them, and nobody has asked for one. They are checked against the schema, and
-what hangs under them is left out of the table above.
+argument could set them, and no task asks for one where it was noticed: the rule is applied
+where somebody looked (the `page` and `page_size` of the workflows helper), not as a census of
+every constant an adapter sends. A row is checked: the operation is in the schema and covered,
+each field is in the schema and some tool sends it, there is one row per operation, and no
+field is also `[[internal]]`. What hangs under a plumbing field is left out of the table above.
 
 | Operation | Fields | Why |
 |---|---|---|
@@ -303,11 +307,10 @@ what hangs under them is left out of the table above.
 | `PATCH /api/correspondents/{id}/` | `query:full_perms` | reads the grants back: sent as true, no tool argument sets it |
 | `GET /api/document_types/` | `query:full_perms` | reads the grants: sent as true whenever the adapter needs them, no tool argument sets it |
 | `PATCH /api/document_types/{id}/` | `query:full_perms` | reads the grants back: sent as true, no tool argument sets it |
-| `GET /api/documents/` | `query:fields`, `query:full_perms` | full_perms reads the grants and fields is a projection that keeps the OCR text out; no tool argument sets them |
+| `GET /api/documents/` | `query:full_perms` | full_perms reads the grants back; no tool argument sets it |
 | `GET /api/documents/{id}/` | `query:fields` | a projection that keeps the OCR text out of the answer; no tool argument sets it |
 | `PATCH /api/documents/{id}/` | `query:fields`, `query:full_perms` | full_perms reads the grants back and fields is a projection; no tool argument sets them |
 | `POST /api/mail_accounts/{id}/process/` | `body:character_set`, `body:imap_port`, `body:imap_security`, `body:imap_server`, `body:is_token`, `body:name`, `body:password`, `body:username` | the stored account is sent back; the tool takes only its id |
-| `POST /api/share_link_bundles/{id}/rebuild/` | `body:document_ids` | the stored bundle's documents are sent back; the tool takes only its id |
 | `GET /api/storage_paths/` | `query:full_perms` | reads the grants: sent as true whenever the adapter needs them, no tool argument sets it |
 | `PATCH /api/storage_paths/{id}/` | `query:full_perms` | reads the grants back: sent as true, no tool argument sets it |
 | `GET /api/tags/` | `query:full_perms` | reads the grants: sent as true whenever the adapter needs them, no tool argument sets it |

@@ -370,11 +370,55 @@ def test_the_value_of_an_array_hangs_under_the_array() -> None:
 
 
 # Plumbing: what the adapter chooses for itself, no feature and no open work.
-def test_plumbing_is_neither_open_work_nor_a_gap() -> None:
-    partly = {**FULL, GET_ONE: used("query:fields")}
+def test_plumbing_that_is_sent_is_neither_open_work_nor_a_gap() -> None:
     plumbing = {GET_ONE: Plumbing(names("query:page"), "a constant of the list helper")}
 
-    assert check(partly, [], plumbing=plumbing) == []
+    assert check(FULL, [], plumbing=plumbing) == []
+
+
+def test_plumbing_that_no_tool_sends_is_a_problem() -> None:
+    partly = {**FULL, GET_ONE: used("query:fields")}
+    plumbing = {GET_ONE: Plumbing(names("query:page"), "x")}
+
+    found = check(partly, [], plumbing=plumbing)
+
+    assert found == [
+        "GET /api/things/{id}/: query:page is listed as plumbing, but no tool sends it"
+    ]
+
+
+def test_plumbing_of_an_operation_no_tool_covers_or_the_schema_lacks_is_a_problem() -> None:
+    plumbing = {
+        PATCH_ONE: Plumbing(names("body:name"), "x"),
+        ("GET", "/api/gone/"): Plumbing(names("query:a"), "x"),
+    }
+
+    found = check(ONLY_GET, [entry(PATCH_ONE, task="PLMCP-83")], plumbing=plumbing)
+
+    assert sorted(found) == [
+        "GET /api/gone/: plumbing for an operation the schema lacks",
+        "PATCH /api/things/{id}/: plumbing for an operation no tool covers",
+    ]
+
+
+def test_a_field_cannot_be_plumbing_and_internal() -> None:
+    plumbing = {GET_ONE: Plumbing(names("query:page"), "x")}
+    listed = entry(GET_ONE, fields=names("query:page"), task="PLMCP-83")
+
+    found = check(FULL, [listed], internal={GET_ONE: names("query:page")}, plumbing=plumbing)
+
+    assert any("both plumbing and internal" in line for line in found)
+
+
+def test_internal_fields_of_an_operation_no_tool_covers_or_the_schema_lacks_are_problems() -> None:
+    internal = {PATCH_ONE: names("body:name"), ("GET", "/api/gone/"): names("query:a")}
+
+    found = check(ONLY_GET, [entry(PATCH_ONE, task="PLMCP-83")], internal=internal)
+
+    assert sorted(found) == [
+        "GET /api/gone/: internal fields for an operation the schema lacks",
+        "PATCH /api/things/{id}/: internal fields for an operation no tool covers",
+    ]
 
 
 def test_plumbing_the_schema_lacks_is_stale() -> None:
@@ -388,7 +432,7 @@ def test_plumbing_the_schema_lacks_is_stale() -> None:
 
 
 def test_a_field_cannot_be_plumbing_and_listed_as_open() -> None:
-    partly = {**FULL, GET_ONE: used("query:fields")}
+    partly = FULL
     plumbing = {GET_ONE: Plumbing(names("query:page"), "x")}
     listed = entry(GET_ONE, fields=names("query:page"), task="PLMCP-83")
 
@@ -744,6 +788,23 @@ def test_entries_are_read_from_their_file(tmp_path: Path) -> None:
     assert found.plumbing == {
         GET_ONE: Plumbing(names("query:page"), "a constant of the list helper")
     }
+    assert found.duplicate_rows == []
+
+
+def test_two_rows_of_plumbing_or_internal_for_one_operation_are_reported(tmp_path: Path) -> None:
+    path = tmp_path / "entries.toml"
+    twice = (
+        '[[plumbing]]\noperation = "GET /api/a/"\nfields = ["query:x"]\nreason = "r"\n'
+        '[[plumbing]]\noperation = "GET /api/a/"\nfields = ["query:y"]\nreason = "r"\n'
+        '[[internal]]\noperation = "GET /api/b/"\nfields = ["query:x"]\n'
+        '[[internal]]\noperation = "GET /api/b/"\nfields = ["query:y"]\n'
+    )
+    _ = path.write_text(twice, encoding="utf-8")
+
+    assert load_entries(path).duplicate_rows == [
+        "GET /api/a/: two plumbing rows",
+        "GET /api/b/: two internal rows",
+    ]
 
 
 def test_the_status_of_a_task_comes_from_its_file_and_an_archived_task_is_closed(
@@ -790,6 +851,7 @@ def test_the_table_shows_plumbing_apart_from_the_open_work() -> None:
         "| `GET /api/things/{id}/` | `query:page` | a constant of the list helper |" in own_section
     )
     assert "no feature" in " ".join(own_section.split())
+    assert "where it was noticed" in " ".join(own_section.split())
 
 
 def test_the_table_lists_an_internal_field_as_open() -> None:
@@ -891,7 +953,9 @@ def real_problems(covered: dict[Operation, Usage]) -> Real:
         internal=listed.internal,
         plumbing=listed.plumbing,
     )
-    return Real(found, fields, listed.entries, listed.internal, listed.plumbing)
+    return Real(
+        found + listed.duplicate_rows, fields, listed.entries, listed.internal, listed.plumbing
+    )
 
 
 def test_the_derivation_sees_the_tools_nested_fields_enum_values_and_saved_views(

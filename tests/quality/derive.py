@@ -5,7 +5,7 @@
 2. The scenarios of tests/tools/test_arguments.py run with their ports recorded: every call a tool
    makes to a port, with its arguments and the tool's name. (The other tool tests add no field
    or value the scenarios lack; they add only tools to the reads that look names up: tags, users,
-   correspondents and mail rules.)
+   correspondents, document types, groups, documents and mail rules.)
 3. Each recorded call is handed to the real adapter on a transport that answers with the saved
    answers; the adapter records the request it builds (before it reads the answer).
 

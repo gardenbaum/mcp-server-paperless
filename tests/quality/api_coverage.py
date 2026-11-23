@@ -323,6 +323,20 @@ def problems(  # noqa: PLR0913 -- the inputs of the check
     internal = internal or {}
     plumbing = plumbing or {}
     found = _entry_problems(schema, covered, entries)
+    for kind, rows in (
+        ("plumbing", {o: p.fields for o, p in plumbing.items()}),
+        ("internal fields", internal),
+    ):
+        for operation in sorted(rows):
+            if operation not in schema:
+                found.append(f"{_text(operation)}: {kind} for an operation the schema lacks")
+            elif operation not in covered:
+                found.append(f"{_text(operation)}: {kind} for an operation no tool covers")
+    found += [
+        f"{_text(operation)}: {name} is both plumbing and internal"
+        for operation in sorted(plumbing.keys() & internal.keys())
+        for name in sorted(plumbing[operation].fields & internal[operation])
+    ]
     for entry in entries:
         found += _owner(entry, statuses, root)
         found += [
@@ -348,6 +362,10 @@ def problems(  # noqa: PLR0913 -- the inputs of the check
         found += [
             f"{_text(operation)}: {name} is listed as plumbing, but the schema lacks it"
             for name in sorted(piping.fields - field_keys(fields))
+        ]
+        found += [
+            f"{_text(operation)}: {name} is listed as plumbing, but no tool sends it"
+            for name in sorted(piping.fields & field_keys(fields) - set(covered[operation].used))
         ]
         found += [
             f"{_text(operation)}: plumbing needs a reason: why the adapter chooses it"
@@ -390,6 +408,7 @@ class Entries:
     undeclared: dict[Operation, frozenset[str]]
     internal: dict[Operation, frozenset[str]]
     plumbing: dict[Operation, Plumbing]
+    duplicate_rows: list[str]  # two rows of [[plumbing]] or [[internal]] for one operation
 
 
 def _operation(text: str) -> Operation:
@@ -438,7 +457,15 @@ def load_entries(path: Path) -> Entries:
         )
         for row in data.get("plumbing", [])
     }
-    return Entries(entries, undeclared, internal, plumbing)
+    twice = [
+        f"{operation}: two {kind} rows"
+        for kind, section in (("plumbing", "plumbing"), ("internal", "internal"))
+        for operation, count in sorted(
+            Counter(str(r["operation"]) for r in data.get(section, [])).items()
+        )
+        if count > 1
+    ]
+    return Entries(entries, undeclared, internal, plumbing, twice)
 
 
 _FRONT = re.compile(r"^---\n(.*?)\n---", re.DOTALL)
@@ -601,8 +628,11 @@ PLUMBING_HEAD = """
 
 Plumbing, no feature and no open work: the adapter sends these on its own (a constant of a list
 helper, a projection, a flag that reads the grants, the stored object it sends back). No tool
-argument could set them, and nobody has asked for one. They are checked against the schema, and
-what hangs under them is left out of the table above.
+argument could set them, and no task asks for one where it was noticed: the rule is applied
+where somebody looked (the `page` and `page_size` of the workflows helper), not as a census of
+every constant an adapter sends. A row is checked: the operation is in the schema and covered,
+each field is in the schema and some tool sends it, there is one row per operation, and no
+field is also `[[internal]]`. What hangs under a plumbing field is left out of the table above.
 
 | Operation | Fields | Why |
 |---|---|---|
