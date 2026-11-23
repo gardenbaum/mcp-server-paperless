@@ -1,9 +1,11 @@
 ---
 id: PLMCP-68
 title: Ship a plugin for Claude and Cursor that installs the server
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T11:37:49Z'
+updated_date: '2026-11-23T11:47:53Z'
 labels: []
 dependencies: []
 priority: medium
@@ -33,3 +35,19 @@ The Claude directory takes local MCP servers only inside a plugin, and the Curso
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Red: tests/quality/test_plugin.py (manifests vs. package name, settings, pin, license, README, marketplaces); plugin/README.md joins the doc link and name guards.
+2. plugin/ with .claude-plugin/plugin.json (userConfig, token sensitive), .cursor-plugin/plugin.json (variables), README, LICENSE; uvx pinned to the released version (the directory blocks unpinned launchers).
+3. Root marketplace files (.claude-plugin, .cursor-plugin): needed because the plugin is a subfolder and users install by name from GitHub.
+4. README, docs/configuration.md, docs/development.md (release step).
+5. Verify: claude plugin validate --strict --profile directory; install, configure and start in an isolated CLAUDE_CONFIG_DIR; just check.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented plugin/ for Claude Code and Cursor plus root marketplace files. Verified in a Linux container with Claude Code 2.1.330 and an empty CLAUDE_CONFIG_DIR: install, /plugin options, the released server connects through uvx, defaults reach the server, the token is only in .credentials.json. Red: 18 failed, green: 82 passed (test_plugin.py, test_docs.py). Cursor is not installed here: checked against its docs only. Pinned to 0.3.2 because the directory blocks unpinned launchers; a release needs a follow-up PR (docs/development.md). Open for the owner: listing icon (only taken on the first save or submission), Cursor options beyond URL and token, Cowork (ignores servers whose options have no default), automatic pin updates through Renovate.
+<!-- SECTION:NOTES:END -->

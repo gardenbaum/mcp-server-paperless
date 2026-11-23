@@ -91,3 +91,9 @@ The same tag also runs `registry.yml` (decision-35): once PyPI serves the versio
 version into `server.json` and publishes the listing `io.github.gardenbaum/mcp-server-paperless`
 to the [MCP Registry](https://registry.modelcontextprotocol.io) by GitHub OIDC; Glama claims it
 through `glama.json`. Check a changed `server.json` with `mcp-publisher validate`.
+
+The plugin in `plugin/` pins the release it runs, because the Claude directory refuses an unpinned
+`uvx`. After PyPI serves a new release, raise `version` and the `mcp-server-paperless==` pin in both
+`plugin/.claude-plugin/plugin.json` and `plugin/.cursor-plugin/plugin.json` (a test keeps the four in
+step) in a pull request; until then plugin users stay on the release before. Check with
+`claude plugin validate --profile directory plugin` and `claude plugin validate .`.

@@ -1,0 +1,48 @@
+{
+  "name": "mcp-server-paperless",
+  "version": "0.3.2",
+  "description": "Search, read, file, tag and upload documents in your paperless-ngx 3.x archive, by name and with a confirmation step before anything final.",
+  "author": {
+    "name": "gardenbaum"
+  },
+  "homepage": "https://github.com/gardenbaum/mcp-server-paperless#readme",
+  "repository": "https://github.com/gardenbaum/mcp-server-paperless",
+  "license": "MIT",
+  "keywords": [
+    "paperless-ngx",
+    "documents",
+    "document-management",
+    "mcp"
+  ],
+  "mcpServers": {
+    "paperless": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-paperless==0.3.2"
+      ],
+      "env": {
+        "PAPERLESS_URL": "${PAPERLESS_URL}",
+        "PAPERLESS_TOKEN": "${PAPERLESS_TOKEN}"
+      }
+    }
+  },
+  "variables": {
+    "type": "object",
+    "properties": {
+      "PAPERLESS_URL": {
+        "type": "string",
+        "title": "Paperless URL",
+        "description": "Base URL of your paperless-ngx 3.x instance, e.g. https://paperless.example.org"
+      },
+      "PAPERLESS_TOKEN": {
+        "type": "string",
+        "title": "Paperless API token",
+        "description": "Create it in Paperless under your profile menu, My Profile. The server acts as this user"
+      }
+    },
+    "required": [
+      "PAPERLESS_URL",
+      "PAPERLESS_TOKEN"
+    ]
+  }
+}
