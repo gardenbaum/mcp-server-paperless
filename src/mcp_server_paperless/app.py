@@ -6,6 +6,7 @@ both); ``build_app`` wraps a server in the ASGI app with that authentication, th
 guard, a request id and a body limit.
 """
 
+import base64
 import hashlib
 import hmac
 import ipaddress
@@ -20,6 +21,7 @@ from cryptography.fernet import Fernet
 from fastmcp.server.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
 from fastmcp.server.auth.jwt_issuer import derive_jwt_key
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration, OIDCProxy
+from fastmcp.utilities.ui import FASTMCP_LOGO_URL
 from key_value.aio.stores.filetree import (
     FileTreeStore,
     FileTreeV1CollectionSanitizationStrategy,
@@ -371,6 +373,53 @@ class BodyLimit:
             await _reply(send, 413, "request body too large")
 
 
+ICON = base64.b64encode(Path(__file__).with_name("icon.svg").read_bytes())
+ICON_URL = b"data:image/svg+xml;base64," + ICON
+
+
+class OwnIcon:
+    """ASGI middleware: HTML pages show this project's icon instead of FastMCP's logo.
+
+    FastMCP's sign-in pages load that logo from its website, which would see the user's browser.
+    Its ``icons`` setting would not do: the error pages of the callback ignore it, and it would
+    send the icon to every MCP client.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        """Wrap ``app``."""
+        self.app: ASGIApp = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Serve one ASGI connection."""
+        start: Message | None = None
+        page = b""
+
+        async def shown(message: Message) -> None:
+            nonlocal start, page
+            if message["type"] == "http.response.start":
+                headers = dict(cast("list[tuple[bytes, bytes]]", message["headers"]))
+                if headers.get(b"content-type", b"").startswith(b"text/html"):
+                    start = message
+                    return
+            if start is None:
+                await send(message)
+                return
+            # The whole page first: its length changes, and the URL may span two chunks.
+            page += cast("bytes", message.get("body", b""))
+            if message.get("more_body", False):
+                return
+            page = page.replace(FASTMCP_LOGO_URL.encode(), ICON_URL)
+            kept = cast("list[tuple[bytes, bytes]]", start["headers"])
+            start["headers"] = [
+                *(header for header in kept if header[0] != b"content-length"),
+                (b"content-length", str(len(page)).encode()),
+            ]
+            await send(start)
+            await send({"type": "http.response.body", "body": page})
+
+        await self.app(scope, receive, shown)
+
+
 PROXY_HEADERS = (b"forwarded", b"x-forwarded-for", b"x-forwarded-host", b"x-real-ip")
 
 
@@ -451,6 +500,8 @@ def build_app(
     # wrong port and scheme behind a proxy.
     app.router.redirect_slashes = False
     app.add_middleware(BodyLimit, limit=body_limit(max_upload_bytes))
+    if with_oidc:
+        app.add_middleware(OwnIcon)
     if not authenticated:
         app.add_middleware(LoopbackOnly)
     # Outermost, so that a refusal by the host guard or the authentication has an id and a record.
