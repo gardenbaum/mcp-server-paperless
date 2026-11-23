@@ -15,8 +15,9 @@ the rules below make it read nothing but a regular file inside a directory the o
   symlink is refused. At most ``max_bytes`` + 1 are read, so a file that grows is still bounded.
 - A file with more than one hard link is refused: a link can name a file outside the allowlist,
   and there is no telling where it came from. Names below the allowlist that start with a dot
-  (``.ssh``, ``.env``, ``.git``) are refused: credentials live there. So are names with characters
-  nobody sees (format characters): HFS+ ignores some, and then such a name is a dot name.
+  (``.ssh``, ``.env``, ``.git``) are refused: credentials live there. So are names that start
+  with a dot behind format characters (HFS+ ignores some) and names with control or line-break
+  characters.
 - A path with a ``..`` component is refused before anything is resolved. Resolving it first would
   answer differently depending on what exists outside the allowlist.
 - A path outside the allowlist, a missing one, an unreadable one and all of the above get the
@@ -42,7 +43,7 @@ from mcp_server_paperless.services.allowed_paths import (
     Refused,
     inside,
     open_directory,
-    untouched,
+    unreadable,
 )
 
 if TYPE_CHECKING:
@@ -182,7 +183,7 @@ def read_allowed(
     try:
         resolved = os.path.realpath(path)
         found = inside(resolved, roots)
-        if found is None or not found[1] or untouched(found[1]):
+        if found is None or not found[1] or unreadable(found[1]):
             raise Refused  # noqa: TRY301 -- one answer for every refusal
         at("resolved")
         data = _open_regular(found[0], found[1], max_bytes, at)

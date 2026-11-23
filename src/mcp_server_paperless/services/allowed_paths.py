@@ -18,7 +18,8 @@ if TYPE_CHECKING:
 MAX_NAME_BYTES: Final = 255
 # Unicode categories no file name may hold: controls, format characters (bidirectional
 # overrides, zero-width and byte order marks) and line and paragraph separators.
-FORBIDDEN_CATEGORIES: Final = frozenset({"Cc", "Cf", "Zl", "Zp"})
+FORMAT: Final = "Cf"
+FORBIDDEN_CATEGORIES: Final = frozenset({"Cc", FORMAT, "Zl", "Zp"})
 # `dir_fd` and `O_NOFOLLOW` are what make the walk safe; Windows has neither.
 SECURE: Final = os.open in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW")
 
@@ -56,8 +57,18 @@ def unseen(name: str) -> bool:
     return any(unicodedata.category(c) in FORBIDDEN_CATEGORIES for c in name)
 
 
-def untouched(parts: Sequence[str]) -> bool:
-    """Whether a path below an allowed directory is left alone: credentials live in dot names."""
+def unreadable(parts: Sequence[str]) -> bool:
+    """Whether a path below an allowed directory is not read: credentials live in dot names.
+
+    A dot name counts as one behind format characters, too (see ``unseen``); elsewhere in a name
+    they are fine (the joiner in an emoji), other characters that are not shown never are.
+    """
+    plain = ["".join(c for c in part if unicodedata.category(c) != FORMAT) for part in parts]
+    return any(part.startswith(".") or unseen(part) for part in plain)
+
+
+def unwritable(parts: Sequence[str]) -> bool:
+    """Whether nothing is saved below a path: dot names and everything that is not shown."""
     return any(part.startswith(".") or unseen(part) for part in parts)
 
 

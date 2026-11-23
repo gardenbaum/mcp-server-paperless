@@ -36,11 +36,14 @@ from mcp_server_paperless.domain.files import ArchivePartReport, FilePart, Saved
 from mcp_server_paperless.services.file_sink import NO_SINK, Expected, file_name
 from mcp_server_paperless.services.transfer import (
     APPEND,
+    HEAD_BYTES,
     MAX_SECONDS,
     PART_WAIT_SECONDS,
+    TAIL_BYTES,
     changed,
     check_archive_type,
     check_part,
+    is_archive,
     no_archive,
     read_all,
     time_limit,
@@ -375,6 +378,9 @@ class SystemAdmin:
             max_bytes=self._max_bytes,
         )
         delivered = not found.truncated
+        whole = found.content
+        if delivered and not is_archive(whole[:HEAD_BYTES], whole[-TAIL_BYTES:], len(whole)):
+            raise no_archive()
         report = ArchiveReport(
             document_ids=tuple(document_ids),
             content=content,

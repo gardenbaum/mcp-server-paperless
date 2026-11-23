@@ -296,8 +296,8 @@ model names the file instead of encoding it.
   HTTP callers send base64 content.
 - Symlinks are resolved and must end inside these directories; only regular files with a single
   hard link are read, `..` in a path is refused, and files or folders whose name starts with a
-  dot below an entry (`.ssh`, `.env`) are never read, nor any with characters nobody sees
-  (zero-width, direction marks, line breaks).
+  dot below an entry (`.ssh`, `.env`) are never read, also when zero-width or direction
+  marks stand before the dot, nor any with control or line-break characters.
 - The server runs these tools over stdio only, whatever `FASTMCP_TRANSPORT` says.
 
 **Downloads.** `download_document` attaches the original or archive file up to

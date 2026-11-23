@@ -52,7 +52,7 @@ from mcp_server_paperless.services.allowed_paths import (
     inside,
     open_directory,
     unseen,
-    untouched,
+    unwritable,
 )
 from mcp_server_paperless.services.transfer import (
     HEAD_BYTES,
@@ -378,7 +378,7 @@ class Target:
             raise nowhere
         try:
             found = inside(os.path.realpath(self._given), self._sink.roots)
-            if found is None or untouched(found[1]):
+            if found is None or unwritable(found[1]):
                 raise nowhere
             self._root, self._parts = found
             self._sink.at("resolved")

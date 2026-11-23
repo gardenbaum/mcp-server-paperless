@@ -12,6 +12,7 @@ import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakeDocument, FakeFile, FakePaperless, seeded
 
+from mcp_server_paperless.domain.admin import ArchiveFile
 from mcp_server_paperless.domain.documents import DocumentVersion
 from mcp_server_paperless.domain.errors import (
     NotFound,
@@ -563,6 +564,18 @@ class Sending(FakePaperless):
     mime_type: str = "application/zip"
 
     @override
+    async def download_documents(
+        self,
+        document_ids: Sequence[int],
+        *,
+        content: ArchiveContent,
+        compression: Compression,
+        follow_formatting: bool,
+        max_bytes: int,
+    ) -> ArchiveFile:
+        return ArchiveFile(content=self.content, truncated=False)
+
+    @override
     @asynccontextmanager
     async def open_archive(
         self,
@@ -615,6 +628,8 @@ async def test_what_is_no_whole_archive_is_no_part_even_with_status_200(
     )
     with pytest.raises(PaperlessMcpError, match="complete ZIP archive"):
         _ = await saver(fake, tmp_path).save([7], directory=str(tmp_path))
+    with pytest.raises(PaperlessMcpError, match="complete ZIP archive"):
+        _ = await SystemAdmin(fake, fake, max_bytes=10**6).download([7])
     assert list(tmp_path.iterdir()) == []  # noqa: ASYNC240 -- a test looking at its directory
 
 
