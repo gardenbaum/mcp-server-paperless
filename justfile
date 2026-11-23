@@ -90,6 +90,19 @@ backlog-update: backlog-install
 docs-tools:
     uv run pytest tests/tools/test_tools_doc.py --write-docs --no-cov -q
 
+# Record the demo of the README (docs/demo/demo.gif): the released server against a throwaway
+# Paperless with invented documents, in containers only. Own compose project and port (8013), so a
+# stack from `e2e-up` is untouched: `-p` beats COMPOSE_PROJECT_NAME, which must not choose what
+# `down --volumes` deletes. What a killed run left is removed first, the stack itself afterwards.
+demo:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PAPERLESS_E2E_PORT="${PAPERLESS_E2E_PORT:-8013}"
+    compose=(docker compose -p mcp-server-paperless-demo -f docs/demo/compose.yaml --profile record)
+    trap '"${compose[@]}" down --volumes --remove-orphans' EXIT
+    "${compose[@]}" down --volumes --remove-orphans
+    "${compose[@]}" run --rm --build recorder
+
 # Lint: ruff, then the suppression and patching rules ruff cannot express.
 lint: && hygiene
     uv run ruff check .
@@ -187,6 +200,13 @@ image tag="mcp-server-paperless:dev":
 # non-root, becomes healthy, answers 401 without a token and an MCP initialize with one.
 image-smoke tag="mcp-server-paperless:dev": (image tag)
     scripts/image_smoke.sh {{tag}}
+
+# Build the stdio target the Docker MCP Catalog uses (decision-38) and run
+# scripts/image_stdio_smoke.sh on it: refuses without a token, runs read-only as uid 10001, answers
+# an MCP initialize and tools/list. Needs jq.
+image-stdio-smoke tag="mcp-server-paperless-stdio:dev":
+    docker build --target stdio --tag {{tag}} .
+    scripts/image_stdio_smoke.sh {{tag}}
 
 # Start the Paperless 3.4.2 E2E stack (tests/e2e/compose.yaml) on 127.0.0.1:${PAPERLESS_E2E_PORT:-8010}.
 # Readiness and seeding are the test session's job, so this returns as soon as the containers run.
