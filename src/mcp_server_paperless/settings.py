@@ -92,8 +92,9 @@ class ServerSettings(BaseSettings):
             third larger than the file and arrives in one tool call that the caller's model has
             to write out, so real uploads are far smaller; the default of 10 MiB covers a scan
             of many pages. Decoding is linear (about a gigabyte a second), but the text, the
-            decoded bytes and the request body are all in memory at once, over HTTP about 6 to 9
-            times the file (measured): the limit is checked on the text before anything is decoded.
+            decoded bytes and the request body are all in memory at once, for one upload over HTTP
+            about 6 to 9 times the file (measured): the limit is checked on the text before
+            anything is decoded.
         upload_dirs: Directories ``upload_document`` may read files from, by path
             (``PAPERLESS_MCP_UPLOAD_DIRS``): absolute paths, comma-separated or a JSON array.
             Empty (the default) switches uploading by path off. Only the stdio transport ever
