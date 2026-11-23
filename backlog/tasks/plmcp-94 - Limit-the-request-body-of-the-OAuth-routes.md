@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T13:16:43Z'
-updated_date: '2026-11-23T13:26:18Z'
+updated_date: '2026-11-23T13:46:03Z'
 labels: []
 dependencies: []
 priority: high
@@ -48,4 +48,6 @@ With OIDC, the unauthenticated OAuth routes accept bodies up to the upload limit
 <!-- SECTION:NOTES:BEGIN -->
 BodyLimit is deny by default: 64 KiB on every path except exactly the MCP path, so no list of routes exists; an MCP path colliding with another route also gets the small limit. FastMCP's POST /authorize swallowed the cut-off error, so BodyLimit now sends 413 itself while no response has begun. Decision-39 supersedes decision-38 and carries everything else over; carrier references updated. PLMCP-92's page-size test now uses a 58 KB name, because the former 960 KB name gets 413. Also asserts the exact icon tag (PLMCP-92 re-review).
 Found, not changed: the MCP SDK limits the MCP endpoint itself to 4 MiB (StreamableHTTPSessionManager default, which FastMCP does not set), so HTTP uploads over about 3 MiB get 413 whatever PAPERLESS_MCP_MAX_UPLOAD_BYTES says. Needs its own task.
+
+Review fixes, replacing parts of the notes above: BodyLimit is back to its form before this task. SmallBodies puts the MCP SDK's RequestBodyLimitMiddleware (64 KiB) in front of every path but exactly the MCP path; it refuses before any handler runs, so nothing can swallow the 413 and the SDK no longer logs a traceback for an oversized chunked POST /authorize (tested). Trade-off: off the MCP endpoint up to 64 KiB is read before the host and origin guard answers, and the 413 text is the SDK's. Memory figures in decision-39 re-measured (tracemalloc): 65 KB body retains 67 KB (ASCII), 196 KB (accented) or 390 KB (DEL characters), a transaction 65 to 385 KB. docs/http.md, docs/configuration.md and decision-39 state the 4 MiB SDK cap over HTTP; the '10 MiB by default' tool descriptions in tools/upload.py and tools/versions.py are for the follow-up.
 <!-- SECTION:NOTES:END -->

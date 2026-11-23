@@ -13,25 +13,25 @@ Decision-27 bounds every request body by the upload limit (14 046 552 bytes at t
 ## Decision
 
 <!-- SECTION:DECISION:BEGIN -->
-**Supersedes decision-38.** Everything in decision-38, and what it carries over from decision-27, decision-28, decision-31, decision-32, decision-33, decision-36 and decision-37, is carried over unchanged (including its consequences and enforcement), except that the body limit of decision-27 (carried over by decision-31) becomes:
+**Supersedes decision-38.** Everything in decision-38, and what it carries over from decision-27, decision-28, decision-31, decision-32, decision-33, decision-36 and decision-37, is carried over (including its consequences and enforcement). One rule changes: the body limit of decision-27, which decision-31 carried over, becomes:
 
-- A request body over the base64 size of `PAPERLESS_MCP_MAX_UPLOAD_BYTES` plus 64 KiB gets 413 at the MCP endpoint, as before. Everywhere else a body over 64 KiB (65 536 bytes) gets 413. Both by declared length without reading, or cut off while streaming.
+- A request body over the base64 size of `PAPERLESS_MCP_MAX_UPLOAD_BYTES` plus 64 KiB gets 413 from this server at the MCP endpoint (by declared length without reading, or cut off while streaming). The MCP SDK refuses a body over 4 MiB there as well, and FastMCP leaves that at its default, so with the default upload limit its cap is the effective one and a file of at most about 3 MiB fits. Everywhere else a body over 64 KiB (65 536 bytes) gets 413: by declared length without reading, or once reading passes the limit, before any handler runs (`app.SmallBodies`, the SDK's `RequestBodyLimitMiddleware`).
 - The small limit is the default and the large one the exception: it applies only to the path that equals `PAPERLESS_MCP_HTTP_PATH` exactly. There is no list of OAuth routes, so a route FastMCP adds, a trailing slash or another spelling of a path gets the small limit. If the MCP path is also the path of an OAuth route, that path gets the small limit, too.
 - The limit holds with and without the OIDC layer; without it the server has no other route, so only requests that get 404 anyway are affected.
-- A handler that catches the error of a body cut off while streaming, as FastMCP's `/authorize` does, does not decide the answer: it is 413 as long as no response has begun.
 <!-- SECTION:DECISION:END -->
 
 ## Consequences
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
 - A registration of a client with about a thousand redirect URIs still fits. The limit is not configurable.
-- The in-memory store is bounded in bytes only indirectly: 10 000 registrations of at most 64 KiB are still about 650 MB, and authorization transactions come on top. A storage directory stays unbounded. Rate limiting `/register` and `/authorize` at the reverse proxy (decision-31) stays necessary.
-- The query string and headers are not part of the body; uvicorn bounds them.
+- The in-memory store is bounded in bytes only indirectly, and an entry can be larger than the body it came from, because the stored JSON escapes characters: a body of 65 KB retained 67 KB with ASCII text, 196 KB with other text such as accented letters and 390 KB in the worst case found (control characters, raw bytes). 10 000 registrations can therefore hold up to about 4 GB, and as many authorization transactions (a `state` of 64 000 bytes retained 65 to 385 KB) as much again. A storage directory stays unbounded. Rate limiting `/register` and `/authorize` at the reverse proxy (decision-31) stays necessary.
+- Off the MCP endpoint the body, at most 64 KiB, is read before the host and origin guard answers.
+- The query string and headers are not part of the body; this limit does not bound them.
 <!-- SECTION:CONSEQUENCES:END -->
 
 
 ## Enforcement
 
-- `tests/test_oidc.py` (marker decision-39): every method and path of the running app except the MCP endpoint, read from its routes, refuses a declared body of 64 KiB + 1 and takes one of 64 KiB, and stops reading a chunked one at the limit, with 413 from every POST route; unknown paths, trailing slashes and other spellings of the MCP path get the small limit; so does an MCP path that collides with `/register`; the MCP endpoint keeps the upload limit on the default and on another path; a registration with a thousand redirect URIs passes.
-- `tests/test_app.py` (marker decision-27): the body limit of the MCP endpoint, unchanged.
-- Everything decision-38 lists under Enforcement still runs unchanged.
+- `tests/test_oidc.py` (marker decision-39): every method and path of the running app except the MCP endpoint, read from its routes, refuses a declared body of 64 KiB + 1 and takes one of 64 KiB, and answers a chunked one over the limit with 413 after reading no more than the limit and a chunk or two, without a traceback in the log; unknown paths, trailing slashes and other spellings of the MCP path get the small limit; so does an MCP path that collides with `/register`; the MCP endpoint keeps the upload limit on the default and on another path; a registration with a thousand redirect URIs passes.
+- `tests/test_app.py` (marker decision-27): this server's own body limit of the MCP endpoint.
+- Everything decision-38 lists under Enforcement still runs.

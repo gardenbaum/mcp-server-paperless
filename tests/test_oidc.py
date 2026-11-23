@@ -1051,20 +1051,28 @@ async def test_every_oauth_route_refuses_a_declared_body_over_64_kib(issuer: Iss
 
 @pytest.mark.anyio
 @pytest.mark.decision("decision-39")
-async def test_every_oauth_route_cuts_off_a_chunked_body_at_64_kib(issuer: Issuer) -> None:
+async def test_every_oauth_route_cuts_off_a_chunked_body_at_64_kib(
+    issuer: Issuer, caplog: pytest.LogCaptureFixture
+) -> None:
     app = make_app(http_settings(), oidc_settings(issuer.url))
-    answers: dict[tuple[str, str], int] = {}
+    routes = served(app)
+    over: dict[tuple[str, str], int] = {}
+    exact: set[int] = set()
 
     async with running(app) as client:
-        for method, path in served(app):
+        for route in routes:
             upload = Upload(1024 * 1024)
-            response = await client.request(method, path, content=upload, headers=FORM)
-            answers[method, path] = response.status_code
-            assert upload.pulled <= SMALL + 2 * 8192, (method, path)
+            response = await client.request(*route, content=upload, headers=FORM)
+            over[route] = response.status_code
+            assert upload.pulled <= SMALL + 2 * 8192, route
+        # Refused before any handler: none can catch the refusal or log a traceback of it.
+        assert not [record for record in caplog.records if record.exc_info]
+        for route in routes:
+            response = await client.request(*route, content=Upload(SMALL), headers=FORM)
+            exact.add(response.status_code)
 
-    # Other requests, such as a GET, may be answered without reading the body.
-    reading = {("POST", path) for path in ("/authorize", "/consent", "/register", "/token")}
-    assert {route for route, status in answers.items() if status == 413} >= reading
+    assert over == dict.fromkeys(routes, 413)
+    assert 413 not in exact
 
 
 @pytest.mark.anyio
