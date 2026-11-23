@@ -52,24 +52,32 @@ CONFIRM_HINT = (
 )
 
 
-# Fillers that show as nothing though Unicode calls them letters or symbols, and the variation
-# selectors beyond the 16 that emoji use.
-_FILLERS: Final = frozenset({0x115F, 0x1160, 0x2800, 0x3164, 0xFFA0, *range(0xE0100, 0xE01F0)})
-# The zero-width non-joiner and joiner: some scripts and emoji need them.
-_JOINERS: Final = frozenset({0x200C, 0x200D})
+# Fillers and selectors that show as nothing though Unicode calls them letters or marks; not
+# U+FE0F, which emoji use.
+_FILLERS: Final = frozenset(
+    {0x034F, 0x115F, 0x1160, 0x3164, 0xFFA0, *range(0xFE00, 0xFE0F), *range(0xE0100, 0xE01F0)}
+)
+# Format characters that stay: the zero-width non-joiner and joiner, which some scripts and emoji
+# need, and the marks that are visible signs before a number or word.
+_FORMATS_KEPT: Final = frozenset(
+    {0x200C, 0x200D, *range(0x0600, 0x0606), 0x06DD, 0x070F}
+    | {0x0890, 0x0891, 0x08E2, 0x110BD, 0x110CD}
+)
+# Looks like a space but is none to Python.
+_BLANK_BRAILLE: Final = chr(0x2800)
 
 
 def _hidden(character: str) -> bool:
     """Whether ``character`` hides or reorders text: controls, format characters and fillers."""
     code = ord(character)
     if unicodedata.category(character) in {"Cc", "Cf"}:
-        return code not in _JOINERS and not character.isspace()
+        return code not in _FORMATS_KEPT and not character.isspace()
     return code in _FILLERS
 
 
 def _line(text: str) -> str:
     """``text`` on one line, without characters that hide or reorder it."""
-    return " ".join("".join(c for c in text if not _hidden(c)).split())
+    return " ".join("".join(c for c in text if not _hidden(c)).replace(_BLANK_BRAILLE, " ").split())
 
 
 # The fingerprint of the refusal the user has accepted, while the accepted call runs.
@@ -155,6 +163,35 @@ def quoted(text: str, limit: int = 60) -> str:
     if '"' not in shown:
         return f'"{shown}"'
     return f"'{shown.replace(chr(39), chr(0x2019))}'"
+
+
+# The longest host name has 253 characters, the longest e-mail address 254.
+DESTINATION_LIMIT: Final = 254
+
+
+def both_ends(text: str, limit: int = 60) -> str:
+    """``text`` like ``quoted``, but cut in its middle: what decides about a host is its end."""
+    line = _line(text)
+    if len(line) > limit:
+        line = f"{line[: limit // 3]}…{line[-(limit - limit // 3 - 1) :]}"
+    return quoted(line, limit)
+
+
+def destination(text: str, what: str) -> str:
+    """``text``, where something would be sent, quoted and in full.
+
+    Raises:
+        Validation: It is too long or holds characters a message does not show, so the user could
+            not see where it leads. ``confirm=true`` does not get past this.
+    """
+    shown = quoted(text, DESTINATION_LIMIT)
+    if shown[1:-1] != text:
+        message = (
+            f"Nothing was changed: the {what} {both_ends(text)} cannot be shown to the user in "
+            f"full (over {DESTINATION_LIMIT} characters, or with characters that do not show)."
+        )
+        raise Validation(message, hint="Correct it, or make this change in the Paperless web UI.")
+    return shown
 
 
 def listed(names: Sequence[str], limit: int = 5) -> str:

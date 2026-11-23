@@ -17,6 +17,7 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     PermissionDenied,
     Validation,
+    destination,
     quoted,
 )
 from mcp_server_paperless.domain.sharing import (
@@ -270,7 +271,7 @@ class SharingService:
             subject += f" for the document {quoted(link.document_title)} (id {link.document_id})"
         if not confirm:
             effect = f"delete {subject}: its URL stops working for everyone who has it"
-            # The text names the link and its document, which a link never changes.
+            # scope: the text names the link and its document, which a link never changes.
             ConfirmationRequired.require(effect, scope=None)
         await self._writer.delete_share_link(link_id)
         message = f"{subject[0].upper()}{subject[1:]} was deleted; its URL no longer works."
@@ -390,6 +391,7 @@ class SharingService:
             raise mail_disabled()
         titles = await self._titles(ids)
         kind: FileVersionKind = "archive" if use_archive_version else "original"
+        shown = [destination(address, "e-mail address") for address in addresses]
         if not confirm:
             named = joined([f"{quoted(titles[number])} (id {number})" for number in ids])
             together = (
@@ -399,7 +401,7 @@ class SharingService:
             )
             effect = (
                 f"send an e-mail with the {file_phrase(kind, len(ids))} of {named} to "
-                f"{joined([quoted(a) for a in addresses])}{together}, subject {quoted(subject)}, "
+                f"{joined(shown)}{together}, subject {quoted(subject)}, "
                 f"message {quoted(message, EXCERPT)}; it leaves Paperless and cannot be recalled"
             )
             ConfirmationRequired.require(effect, scope=await self._files(ids))

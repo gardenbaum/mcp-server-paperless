@@ -17,7 +17,7 @@ from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     PermissionDenied,
     Validation,
-    listed,
+    destination,
     quoted,
 )
 from mcp_server_paperless.domain.taxonomy import TaxonomyItem
@@ -263,9 +263,35 @@ def _origin(url: JsonValue) -> tuple[str, str | None, int | None]:
     return parts.scheme.lower(), parts.hostname, parts.port
 
 
+# Most recipients and webhook hosts of one workflow a confirmation lists; with more, nobody reads
+# them. The same number as the recipients of one e-mail (services/sharing.py).
+MAX_DESTINATIONS: Final = 20
+
+
+def _few(count: int) -> int:
+    """``count`` destinations, if a user can be expected to read them.
+
+    Raises:
+        Validation: There are more than ``MAX_DESTINATIONS``.
+    """
+    if count > MAX_DESTINATIONS:
+        message = (
+            f"Nothing was changed: the workflow has {count} destinations or more; at most "
+            f"{MAX_DESTINATIONS} can be shown to the user to confirm."
+        )
+        raise Validation(message, hint="Use a mailing list, or the Paperless web UI.")
+    return count
+
+
 def _acts(actions: Sequence[WorkflowAction]) -> list[str]:
-    """What the actions do that reaches beyond tagging: the reason a workflow needs confirm."""
+    """What the actions do that reaches beyond tagging: the reason a workflow needs confirm.
+
+    Raises:
+        Validation: There are more destinations than ``MAX_DESTINATIONS``, or one that cannot be
+            shown in full.
+    """
     found: list[str] = []
+    reached = 0
     for action in actions:
         settings = action.settings
         if action.type in FIXED_ACTS:
@@ -276,11 +302,15 @@ def _acts(actions: Sequence[WorkflowAction]) -> list[str]:
             mail = _object(settings.get("email"))
             attached = " with the document attached" if mail.get("include_document") else ""
             to = [part.strip() for part in str(mail.get("to")).split(",")]
-            found.append(f"send an e-mail to {listed(to)}{attached}")
+            reached = _few(reached + len(to))
+            shown = ", ".join(destination(address, "e-mail address") for address in to)
+            found.append(f"send an e-mail to {shown}{attached}")
         elif action.type == WEBHOOK:
             hook = _object(settings.get("webhook"))
             attached = " with the document" if hook.get("include_document") else ""
-            found.append(f"send a POST request to {quoted(_host(hook.get('url')))}{attached}")
+            reached = _few(reached + 1)
+            host = destination(_host(hook.get("url")), "webhook host")
+            found.append(f"send a POST request to {host}{attached}")
         elif action.type == 2:  # noqa: PLR2004 -- removal
             removed = [
                 name.removeprefix("remove_").replace("_", " ")
@@ -377,8 +407,9 @@ class WorkflowService:
         _writable_triggers(spec.triggers)
         triggers = tuple([await self._trigger(t) for t in spec.triggers])
         actions = tuple([await self._action(a, {}) for a in spec.actions])
-        acts = _acts(actions)
-        if spec.enabled and acts and not confirm:
+        # A disabled workflow reaches nobody; it is checked when it is switched on.
+        acts = _acts(actions) if spec.enabled else []
+        if acts and not confirm:
             ConfirmationRequired.require(
                 _effect(f"create the workflow {quoted(name)}", triggers, acts),
                 scope=(triggers, actions),
@@ -435,8 +466,9 @@ class WorkflowService:
         enabled = found.enabled if values.enabled is None else values.enabled
         switched_on = values.enabled is True and not found.enabled
         reshaped = values.triggers is not None or values.actions is not None
-        acts = _acts(actions)
-        if enabled and acts and (reshaped or switched_on) and not confirm:
+        # Switching off, renaming and reordering must work whatever the actions hold.
+        acts = _acts(actions) if enabled and (reshaped or switched_on) else []
+        if acts and not confirm:
             lead = f"change the workflow {quoted(found.name)} (id {found.id})"
             ConfirmationRequired.require(_effect(lead, triggers, acts), scope=(triggers, actions))
         done = await self._writer.update_workflow(found.id, values)

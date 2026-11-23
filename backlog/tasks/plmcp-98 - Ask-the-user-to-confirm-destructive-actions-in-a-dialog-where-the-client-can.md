@@ -4,7 +4,7 @@ title: Ask the user to confirm destructive actions in a dialog where the client 
 status: In Progress
 assignee: []
 created_date: '2026-11-23T18:44:53Z'
-updated_date: '2026-11-23T22:19:02Z'
+updated_date: '2026-11-23T22:32:50Z'
 labels:
   - tools
   - safety
@@ -29,7 +29,7 @@ Every confirmation today is an error plus a second call with confirm=true (decis
 - [ ] #1 A new decision records the choice and supersedes the parts of decision-6 and decision-15 that rule elicitation out; doc-1 5.5, doc-2, docs/fastmcp-reading-guide.md, domain/errors.py, the confirm parameter description, README.md and docs/configuration.md agree with it
 - [ ] #2 A call without confirm on a client that declares form elicitation shows the user the same effect text as the refusal, and runs only after the user accepts, on both protocol eras
 - [ ] #3 Decline, cancel and a malformed answer change nothing and return an error that tells the assistant not to retry on its own; a timeout, a disconnect, or an expired or invalid state changes nothing
-- [ ] #4 Clients that do not declare form elicitation get exactly the present refusal and confirm=true flow, except for two message changes the owner approved on 2026-11-23: the owner-change refusal of update_document names the document and the new owner, and messages lose control, bidirectional and tag characters
+- [ ] #4 Clients that do not declare form elicitation get exactly the present refusal and confirm=true flow, except for three message changes the owner approved: the owner-change refusal of update_document names the document and the new owner, messages lose control, format and other hidden characters, and text the server did not write (mail hosts, e-mail recipients, webhook hosts, note authors, permission names, list or object settings) is quoted; destinations are shown in full and refused where that is not possible
 - [ ] #5 An acceptance applies only to the call and the effect that was shown: with changed arguments it changes nothing, and a target whose effect changed in between asks again and changes nothing
 - [ ] #6 On 2026-07-28, an answer without valid server-issued state for this effect, or with state already used, changes nothing
 - [ ] #7 One mechanism covers every tool with a confirm parameter, guarded by a registry test with a self-test; no tool is added to the default profile
@@ -79,4 +79,7 @@ Steps for criterion 10 (nothing below changes a client configuration; run in the
 
 Review findings on 2135d9f fixed (2026-11-23). Goes beyond criterion 4's two exceptions: refusals for clients without dialogs now also quote and cut mail hosts, e-mail recipients (sharing and workflows), webhook hosts, note authors, permission names and list or object settings. A hardening accepted by the main agent, to be reported to the owner. Snapshots test_sharing_messages and test_workflow_messages and the pinned texts of the service, tool and e2e tests were updated for exactly this.
 Acceptance now binds the newest file version (pdf, sharing, versions, delete_document, bulk trash and reprocess) through a new port method DocumentReader.get_newest_versions (one list request, contract tests on fake and live), the mailbox (mail accounts and rules), and the whole user, group, note or rule that is changed. scope is a required keyword; the site guard wants a comment with every None. Hidden characters: Unicode Cf and invisible fillers too. The number of open dialogs stays unlimited (decision-44).
+
+Delta review of 07b1f76 and security review fixed (2026-11-23). Owner approval of the third exception of criterion 4: reported with the invitation to object, answer 2026-11-23 "Bitte wie von dir empfohlen vorgehen"; criterion 4 names it now. Destinations in full and the refusal above a bound (20 recipients and webhook hosts per workflow, the number of recipients one e-mail takes) are decided by the main agent under the owner's standing delegation and reported to the owner; criterion 4 and decision-44 say so.
+A rule whose account its owner cannot see can be changed without confirm again (the account read for the scope treats NotFound and PermissionDenied as no account). The scope of users and groups stays the whole record (N5: safe, left). Tool descriptions and dry-run answers fit clients with dialogs (c5e92b3).
 <!-- SECTION:NOTES:END -->

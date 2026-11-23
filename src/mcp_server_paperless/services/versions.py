@@ -158,7 +158,7 @@ class VersionService:
                 f"of document {document_id} {quoted(document.title)}; it moves to the Paperless "
                 f"trash and can be restored from there; {after}"
             )
-            # The text names the version and the one the document shows afterwards.
+            # scope: the text names the version and the one the document shows afterwards.
             ConfirmationRequired.require(effect, scope=None)
         current_id = await self._writer.delete_version(document_id, version_id)
         return VersionDeleted(

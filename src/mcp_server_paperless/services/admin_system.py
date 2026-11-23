@@ -30,7 +30,13 @@ from mcp_server_paperless.domain.admin import (
     TaskList,
     check_secret,
 )
-from mcp_server_paperless.domain.errors import ConfirmationRequired, Validation, quoted
+from mcp_server_paperless.domain.errors import (
+    ConfirmationRequired,
+    Validation,
+    both_ends,
+    destination,
+    quoted,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -66,6 +72,10 @@ TASK_EFFECTS: Final[dict[str, str]] = {
         "Paperless is configured with, at that service's cost and for a long time"
     ),
 }
+
+
+def _text(value: JsonValue) -> str:
+    return value if isinstance(value, str) else json.dumps(value)
 
 
 def _shown(value: JsonValue) -> str:
@@ -165,14 +175,17 @@ class SystemAdmin:
             if value == now:
                 continue
             changes[name] = value
+            outbound = name in CONFIG_OUTBOUND
+            new = (
+                destination(_text(value), name) if outbound and value is not None else _shown(value)
+            )
+            old = both_ends(_text(now)) if outbound and now is not None else _shown(now)
             if value is None:
-                effects.append(f"reset {name} (now {_shown(now)}) to the server's environment")
+                effects.append(f"reset {name} (now {old}) to the server's environment")
             elif now is None:
-                effects.append(
-                    f"set {name} to {_shown(value)} (it follows the server's environment now)"
-                )
+                effects.append(f"set {name} to {new} (it follows the server's environment now)")
             else:
-                effects.append(f"change {name} from {_shown(now)} to {_shown(value)}")
+                effects.append(f"change {name} from {old} to {new}")
         effects.extend(
             f"save the {name} you gave (its value is never shown)"
             if name not in current.keys_configured
@@ -200,9 +213,15 @@ class SystemAdmin:
 
     @staticmethod
     def _effect(effects: list[str], names: list[str]) -> str:
-        shown = "; ".join(effects[:SHOWN])
-        if len(effects) > SHOWN:
-            shown += f"; and {len(effects) - SHOWN} more settings"
+        # Where document text goes is always named.
+        kept = [
+            effect
+            for number, (effect, name) in enumerate(zip(effects, names, strict=True))
+            if number < SHOWN or name in CONFIG_OUTBOUND
+        ]
+        shown = "; ".join(kept)
+        if len(effects) > len(kept):
+            shown += f"; and {len(effects) - len(kept)} more settings"
         if CONFIG_OUTBOUND.intersection(names):
             shown += (
                 "; this changes where Paperless sends document text or how it reaches the "
@@ -293,7 +312,7 @@ class SystemAdmin:
             PermissionDenied: Only a superuser may start tasks.
         """
         if task_type in TASK_EFFECTS and not confirm:
-            # The task is the argument; it has no other target.
+            # scope: the task is the argument; it has no other target.
             ConfirmationRequired.require(TASK_EFFECTS[task_type], scope=None)
         task_id = await self._writer.run_task(task_type)
         return StartedTask(

@@ -21,10 +21,13 @@ the ``TaxonomyResolver`` (decision-5). Updates are diffs against the rule read r
 from typing import TYPE_CHECKING, Final, cast
 
 from mcp_server_paperless.domain.errors import (
+    DESTINATION_LIMIT,
     ConfirmationRequired,
     NotFound,
     PermissionDenied,
     Validation,
+    both_ends,
+    destination,
     quoted,
 )
 from mcp_server_paperless.domain.mail import (
@@ -134,7 +137,8 @@ def _blank(value: str | None) -> str | None:
 
 
 def _connection(server: str, port: int, security: ImapSecurity) -> str:
-    return f"{quoted(server)} port {port} ({SECURITY_LABEL[security]})"
+    """A connection in words; ``server`` is already quoted."""
+    return f"{server} port {port} ({SECURITY_LABEL[security]})"
 
 
 def _mailbox(account: MailAccount) -> object:
@@ -342,10 +346,15 @@ class MailService:
         label = f"mail account {quoted(current.name)} (id {current.id})"
         effects: list[str] = []
         moved = {"imap_server", "imap_port", "imap_security"} & set(changes)
+        # A stored host stays as it is when only its encryption is switched on or it is left, so
+        # it may be one that cannot be shown in full.
+        stored = both_ends(current.imap_server, DESTINATION_LIMIT)
+        goes = {"imap_server", "imap_port"} & moved
         if moved and not new_password:
-            old = _connection(current.imap_server, current.imap_port, current.imap_security)
+            old = _connection(stored, current.imap_port, current.imap_security)
+            new = destination(server, "mail server") if goes else stored
             moving = (
-                f"point {label} at {_connection(server, port, security)} instead of {old}: "
+                f"point {label} at {_connection(new, port, security)} instead of {old}: "
                 "Paperless keeps the saved password and sends it to the new server from its "
                 "next fetch on"
             )
@@ -353,7 +362,7 @@ class MailService:
         if security == "none" and current.imap_security != "none":
             plain = (
                 f"turn off the encryption of {label}: the password and the mail then travel "
-                f"as plain text to {quoted(server)} port {port}"
+                f"as plain text to {destination(server, 'mail server')} port {port}"
             )
             effects.append(plain)
         return "; and ".join(effects) or None
@@ -431,12 +440,10 @@ class MailService:
         """
         account = await self._reader.get_mail_account(account_id)
         label = quoted(account.name)
+        host = destination(account.imap_server, "mail server")
         if not confirm:
             rules = await self._rules_of(account_id)
-            effect = (
-                f"fetch the mail of account {label} ({quoted(account.imap_server)}) now: "
-                f"{self._fetch_effect(rules)}"
-            )
+            effect = f"fetch the mail of account {label} ({host}) now: {self._fetch_effect(rules)}"
             _, superuser = await self._caller()
             if not superuser:
                 effect += ". Rules of other users on this account that you cannot see run too"
@@ -603,6 +610,13 @@ class MailService:
             found["owner"] = await owner_id(self._taxonomy, settings.owner)
         return found
 
+    async def _mailbox(self, account_id: int) -> object:
+        """The mailbox of a rule's account; None if the caller, who may own the rule, sees none."""
+        try:
+            return _mailbox(await self._reader.get_mail_account(account_id))
+        except NotFound, PermissionDenied:
+            return None
+
     async def _account_name(self, account_id: int) -> str:
         return (await self._reader.get_mail_account(account_id)).name
 
@@ -635,7 +649,7 @@ class MailService:
             acts = "deletes each mail from the mail server"
             note = "; a deleted mail cannot be put back by this server"
         else:
-            folder = quoted(rule.action_parameter or "")
+            folder = destination(rule.action_parameter or "", "folder")
             acts = f"moves each mail to the folder {folder} on the mail server"
             note = ""
         later = "then " if then else ""
@@ -667,6 +681,9 @@ class MailService:
         action = settings.action
         self._check_action(action, values.get("action_parameter"))  # pyright: ignore[reportArgumentType] -- from a typed setting
         written = MailRuleValues.model_validate(values)
+        enabled = bool(values.get("enabled", True))
+        if enabled and written.action == "move":
+            _ = destination(written.action_parameter or "", "folder")  # confirm=true or not
         if not confirm:
             effects = await self._create_effects(settings.name, account.name, written, values)
             if effects:
@@ -729,12 +746,8 @@ class MailService:
         label = f"mail rule {quoted(current.name)} (id {current.id})"
         effects = await self._update_effects(current, changes, label)
         if effects and not confirm:
-            account = await self._reader.get_mail_account(
-                current.model_copy(update=changes).account_id
-            )
-            ConfirmationRequired.require(
-                "; and ".join(effects), scope=(current, changes, _mailbox(account))
-            )
+            mailbox = await self._mailbox(current.model_copy(update=changes).account_id)
+            ConfirmationRequired.require("; and ".join(effects), scope=(current, changes, mailbox))
         written = await self._writer.update_mail_rule(
             rule_id, MailRuleValues.model_validate(changes)
         )

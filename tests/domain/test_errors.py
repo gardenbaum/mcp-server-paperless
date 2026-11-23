@@ -129,11 +129,24 @@ def test_quoted_text_drops_characters_that_hide_or_reorder_text() -> None:
     "code",
     [
         *(0xAD, 0x200B, 0x2060, 0x2063, 0xFEFF, 0xFFF9, 0x180E, 0x1D173),
-        *(0x3164, 0x115F, 0x1160, 0xFFA0, 0x2800, 0xE0100, 0xE01EF),
+        *(0x3164, 0x115F, 0x1160, 0xFFA0, 0x034F, 0xFE00, 0xFE0E, 0xE0100, 0xE01EF),
     ],
 )
 def test_invisible_characters_are_dropped(code: int) -> None:
     assert quoted(f"a{chr(code)}b") == "'ab'"
+
+
+@pytest.mark.decision("decision-44")
+def test_a_blank_braille_cell_is_a_space() -> None:
+    assert quoted("a\u2800b") == "'a b'"
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize(
+    "code", [0x0600, 0x0605, 0x06DD, 0x070F, 0x0890, 0x0891, 0x08E2, 0x110BD, 0x110CD]
+)
+def test_visible_format_characters_stay(code: int) -> None:
+    assert quoted(f"a{chr(code)}b") == f"'a{chr(code)}b'"
 
 
 @pytest.mark.decision("decision-44")

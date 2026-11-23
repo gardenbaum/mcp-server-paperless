@@ -4,6 +4,7 @@ A service that raised it itself could not be let past it by the user's answer in
 """
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -26,7 +27,7 @@ def own_refusals(source: str) -> list[int]:
 
 
 def unexplained(source: str) -> list[int]:
-    """The lines of `require` calls without a scope, or with None and no comment that says why."""
+    """The lines of `require` calls without a scope, or with None and no `# scope: <reason>`."""
     lines = source.splitlines()
     found: list[int] = []
     for node in ast.walk(ast.parse(source)):
@@ -39,7 +40,7 @@ def unexplained(source: str) -> list[int]:
             found.append(node.lineno)
         elif isinstance(scopes[0], ast.Constant):
             around = lines[node.lineno - 2 : node.end_lineno]
-            if not any("# " in line for line in around):
+            if not any(re.search(r"# scope: \S", line) for line in around):
                 found.append(node.lineno)
     return found
 
@@ -82,9 +83,11 @@ ConfirmationRequired.require("x")
 
 ConfirmationRequired.require("x", scope=None)
 
-# The text names everything.
+# scope: the text names everything.
 ConfirmationRequired.require("x", scope=None)
+
+ConfirmationRequired.require("x", scope=None)  # noqa: E501 -- long
 
 ConfirmationRequired.require("x", scope=[1])
 """
-    assert unexplained(source) == [2, 4]
+    assert unexplained(source) == [2, 4, 9]

@@ -26,6 +26,7 @@ from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     PaperlessMcpError,
     Validation,
+    destination,
     quoted,
 )
 from mcp_server_paperless.domain.permissions import Principal
@@ -324,7 +325,7 @@ class AccountAdmin:
             effects.append(f"rename user {who} to {new_name}; {RENAME_TAIL}")
         if "email" in changes and changes["email"] is not None:
             verb = "change" if current.email else "set"
-            address = quoted(str(changes["email"]))
+            address = destination(str(changes["email"]), "e-mail address")
             effects.append(f"{verb} the e-mail address of {who} to {address}; {EMAIL_TAIL}")
         if "is_superuser" in changes:
             effects.append(
@@ -403,7 +404,7 @@ class AccountAdmin:
                 f"create group {quoted(name)} that grants its members the permissions "
                 f"{_quoted(permissions)}"
             )
-            # The text names the group and every permission; nothing is stored yet.
+            # scope: the text names the group and every permission; nothing is stored yet.
             ConfirmationRequired.require(effect, scope=None)
         values = GroupValues(name=name, permissions=tuple(permissions or ()))
         made = await self._writer.create_group(values)
