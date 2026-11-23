@@ -75,7 +75,7 @@ SHIPPED_VERSIONS = {name for name, toolset in TOOL_TOOLSETS.items() if toolset =
 SHIPPED_BULK = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "bulk"}
 VIEWS = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "views"}
 SHIPPED_PDF = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "pdf"}
-READ_VIEWS = {"list_saved_views", "get_saved_view", "run_saved_view"}
+READ_VIEWS = {"list_saved_views", "get_saved_view"}
 SHIPPED_TRASH = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "trash"}
 SHARING = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "sharing"}
 READ_SHARING = {"list_share_links", "list_share_bundles"}

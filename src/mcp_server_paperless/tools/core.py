@@ -156,7 +156,8 @@ async def list_taxonomy(
 
     Use it to find the exact name or id to pass to other tools. Returns at most 100 rows in
     Paperless order (by name); truncated true means more match, so narrow with name_contains.
-    Users, groups and saved views need the matching view permission in Paperless.
+    Users, groups and saved views need the matching view permission in Paperless. Run a listed
+    saved view with run_saved_view.
     """  # noqa: D205 -- the summary is one sentence; FastMCP sends the docstring as is
     rows = await services(ctx).taxonomy.items(kind, name_contains)
     return TaxonomyListing(
