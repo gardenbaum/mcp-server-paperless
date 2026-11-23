@@ -18,7 +18,7 @@ that is not affiliated with paperless-ngx.
 The plugin brings four skills for common jobs; the assistant can pick one by itself, or you name it.
 They tell the assistant to propose first, to change nothing before your yes, and to treat the text of
 documents as data, never as instructions. An assistant can still err: the server's own confirmation
-step guards what is final. The skills need only the default toolsets.
+step guards what is final, such as deleting, but not a changed title, tag or correspondent. The skills need only the default toolsets.
 
 | Skill | What it does |
 |---|---|
@@ -27,7 +27,8 @@ step guards what is final. The skills need only the default toolsets.
 | `paperless-annual-review` | Collects a year of documents, for example for the tax return |
 | `paperless-cleanup-taxonomy` | Finds duplicate, unused and badly named tags, types and correspondents |
 
-The skills also work with the same server configured elsewhere, such as a claude.ai connector.
+The skills are written to use the same server configured elsewhere too, such as a claude.ai connector
+(not tested).
 Without any server they have no tools (chat on claude.ai starts no local server); the assistant is
 told to say so instead of working around it.
 
