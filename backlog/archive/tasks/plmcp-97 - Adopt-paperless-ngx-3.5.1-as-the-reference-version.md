@@ -1,10 +1,10 @@
 ---
 id: PLMCP-97
 title: Adopt paperless-ngx 3.5.1 as the reference version
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-23T18:13:36Z'
-updated_date: '2026-11-23T20:35:48Z'
+updated_date: '2026-11-23T20:43:00Z'
 labels: []
 dependencies: []
 references:
@@ -35,7 +35,7 @@ The weekly drift workflow reports that the vendored reference (3.4.2) differs fr
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -91,7 +91,7 @@ Behaviour against 3.4 today: the server has no version gate. X-Version is read o
 
 Probe on live 3.5.1 (2026-11-23), with the exception of each entry removed from the guard:
 - Still deviating, so kept and relabelled 3.5.1: created tag, correspondent, document type, storage path and custom field without document_count (and last_correspondence, permissions where listed); GET and PATCH of a correspondent and a document type without last_correspondence and permissions; document history as a bare list with a null actor; /api/status/ with nested tasks and null errors; /api/ui_settings/ without id; saved views without permissions unless full_perms; workflow actions with null email and webhook; full_perms answers carrying permissions instead of user_can_change (tags list, tag PATCH); DELETE of a version answering 200 {"result": "OK", "current_version_id": ...} where the schema documents 204. The undeclared query parameters (more_like_id, all, fields, full_perms on PATCH) and shared_by__id as boolean are still as in the 3.5.1 schema. The HTML error bodies (403, 400) are exercised by the live contract suite, not probed one by one.
-- more_like_id: no longer reproduced. Tantivy in the 3.5.1 image is 0.26.2. On a stack with the stale index entries of hundreds of tests, more_like_id of the private seed document found the public one without a rebuild, and after 4 documents with 6 edits each and one deletion every search answered 2 hits, before and after a rebuild; no "More Like This scoring panicked" in the log. So the README limitation, the tool description sentence, the contract suite's reindex step and its helper (with wait_for_index_reload and its tests) are removed; the contract test now only waits for the index-writing tasks. One stack, one run: if the hosted full run shows an empty more-like result, put the rebuild back.
+- more_like_id: one probe did not show the panic; see the correction at the end, the limitation stays.
 - Added after review: an unexpected answer to a write (also add_note answered with an empty list) carries the hint that it may have been applied.
 - The local full E2E run (on 579d293) was stopped at about 60% on the coordinator's request; the hosted run decides AC 3, AC 6 and the DoD.
 
@@ -99,3 +99,9 @@ Correction to the more_like_id probe (controller, 2026-11-23): the limitation is
 
 Precision on the schema_guard probe: the HTML error bodies (403, 400) were not probed one by one, and full_perms only on the tags list and the tag PATCH; "all still exist" above holds for the probed entries.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in #107 and #108. The repository uses paperless-ngx 3.5.1 as reference and minimum (owner, 2026-11-23; decision-43 supersedes decision-29). Code, fake and tests for older releases are removed. Workflows with manual triggers are read, never silently deleted and described correctly; a queued answer without a task id is an error with a hint. The more_like_id limitation stays. Hosted full E2E green on 517ac8e. Not verified: AI chat on 3.5.1.
+<!-- SECTION:FINAL_SUMMARY:END -->

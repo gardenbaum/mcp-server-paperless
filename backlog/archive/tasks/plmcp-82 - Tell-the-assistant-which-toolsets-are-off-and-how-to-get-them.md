@@ -1,10 +1,10 @@
 ---
 id: PLMCP-82
 title: Tell the assistant which toolsets are off and how to get them
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-23T12:14:52Z'
-updated_date: '2026-11-23T17:51:02Z'
+updated_date: '2026-11-23T20:43:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -31,8 +31,8 @@ An assistant saw only the default profile and reported trash, PDF tools, bulk ch
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -62,3 +62,9 @@ CI weights (scripts/e2e_ci.py MODULE_SECONDS and HOSTED_SECONDS in tests/quality
 
 Not verified: Claude Code and Cursor running the plugin; the hosted-runner time of the changed live modules beyond that one run; token counts with a real tokenizer. DoD 1 stays unchecked (the contract, live and quality tests were written after the code and shown red against main afterwards), DoD 2 (macOS-only failure test_the_menu_driver_reports_a_failing_cli), DoD 3 and 4 (PR).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in #104. The server instructions and get_instance_overview name the toolsets that are off, what they do and how the operator turns them on, per install channel; only the operator switches toolsets (decision-41). Byte limits are tested; the default profile stays 19 of 20. Not verified: the plugin inside Claude Code and Cursor.
+<!-- SECTION:FINAL_SUMMARY:END -->
