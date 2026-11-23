@@ -1,11 +1,11 @@
 ---
 id: PLMCP-92
 title: Serve the sign-in pages without a third party's logo
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:54:26Z'
-updated_date: '2026-11-23T13:14:05Z'
+updated_date: '2026-11-23T13:14:42Z'
 labels: []
 dependencies: []
 priority: high
@@ -21,17 +21,17 @@ FastMCP's OIDC consent and error pages load a logo from gofastmcp.com because th
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The consent and error pages make no request to a third party, proven by a test on the rendered pages
-- [ ] #2 They show the project's own icon, embedded
-- [ ] #3 The server's icon in initialize, if it is set by this, is deliberate, small, and noted
-- [ ] #4 PRIVACY.md no longer names gofastmcp.com
+- [x] #1 The consent and error pages make no request to a third party, proven by a test on the rendered pages
+- [x] #2 They show the project's own icon, embedded
+- [x] #3 The server's icon in initialize, if it is set by this, is deliberate, small, and noted
+- [x] #4 PRIVACY.md no longer names gofastmcp.com
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -51,4 +51,12 @@ FastMCP's icons setting was not used: the callback error pages (create_error_htm
 icon.svg (667 bytes) is in wheel and sdist (checked by building and importing the wheel); a test keeps it equal to assets/icon.svg. Red: six rendered pages, the HTML unit test and the icon copy failed; green after.
 
 Review fix (I1): OwnIcon replaces only the first src="<logo URL>" attribute, quotes included. FastMCP escapes quotes in client and provider text, so that text stays unchanged and the page does not grow (before: a 960 KB client name gave a 36.7 MB page). Tests added for client_name, redirect_uri, error_description, page size, no OwnIcon without OIDC, and repeated Set-Cookie headers. The body limit covers /register (tested), but at the default upload limit it is 14046552 bytes: a 14 MB client name registers unauthenticated and its consent page is 28 MB. That is FastMCP's own behaviour and needs an owner decision; not changed. Alt text stays disclosed.
+
+Opus review: 0 Critical, 1 Important (I1, also found by the automated security review), fixed. Known: plain consent errors show no icon, callback error pages keep FastMCP's alt text, tooltip links load only on a click. Owner decision open: a small body limit for the OAuth routes.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+With OIDC, OwnIcon replaces FastMCP's logo attribute in HTML pages with the embedded own icon, so the sign-in pages load nothing from a third party. Only the first src attribute is replaced; attacker-supplied text stays as it is. DoD 2: one known macOS-only local failure.
+<!-- SECTION:FINAL_SUMMARY:END -->
