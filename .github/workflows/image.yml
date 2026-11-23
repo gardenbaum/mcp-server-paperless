@@ -1,6 +1,6 @@
 name: Image
 
-# Container image (decision-28, carried over by decision-37; linux/amd64 and linux/arm64).
+# Container image (decision-28, carried over by decision-38; linux/amd64 and linux/arm64).
 # Separate from ci.yml and not a required check: it never slows a merge. Pull requests and main
 # build, scan and smoke-test the image without pushing it. Only a pushed version tag (v*) publishes
 # to GHCR, from the `publish` and `tag` jobs, the only ones allowed to write packages. Nothing
@@ -19,6 +19,7 @@ on:
       - uv.lock
       - src/**
       - scripts/image_smoke.sh
+      - scripts/image_stdio_smoke.sh
       - .github/workflows/image.yml
 
 permissions:
@@ -80,6 +81,23 @@ jobs:
 
       - name: Smoke test (refusal without tokens, read-only, non-root, healthy, 401 and initialize)
         run: scripts/image_smoke.sh mcp-server-paperless:ci
+
+      # For the Docker MCP Catalog, which builds it from the repository (decision-38). The same
+      # filesystem as the scanned image, only other metadata; never pushed. No cache-to: it would
+      # replace the cache of the full build.
+      - name: Build the stdio target (loaded locally, never pushed)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: stdio
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          push: false
+          tags: mcp-server-paperless-stdio:ci
+          cache-from: type=gha,scope=${{ matrix.arch }}
+
+      - name: Smoke test the stdio target (refusal, read-only, non-root, initialize and tools/list)
+        run: scripts/image_stdio_smoke.sh mcp-server-paperless-stdio:ci
 
   # Version tags only. Pushes the image under its digest alone, scans and smoke-tests exactly that
   # digest; the `tag` job gives the digests of all platforms their version tags only after each

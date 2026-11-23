@@ -58,6 +58,23 @@
             'name': 'Smoke test (refusal without tokens, read-only, non-root, healthy, 401 and initialize)',
             'run': 'scripts/image_smoke.sh mcp-server-paperless:ci',
           }),
+          dict({
+            'name': 'Build the stdio target (loaded locally, never pushed)',
+            'uses': 'docker/build-push-action',
+            'with': dict({
+              'cache-from': 'type=gha,scope=${{ matrix.arch }}',
+              'context': '.',
+              'load': True,
+              'platforms': 'linux/${{ matrix.arch }}',
+              'push': False,
+              'tags': 'mcp-server-paperless-stdio:ci',
+              'target': 'stdio',
+            }),
+          }),
+          dict({
+            'name': 'Smoke test the stdio target (refusal, read-only, non-root, initialize and tools/list)',
+            'run': 'scripts/image_stdio_smoke.sh mcp-server-paperless-stdio:ci',
+          }),
         ]),
         'strategy': dict({
           'matrix': dict({
@@ -275,6 +292,7 @@
           'uv.lock',
           'src/**',
           'scripts/image_smoke.sh',
+          'scripts/image_stdio_smoke.sh',
           '.github/workflows/image.yml',
         ]),
       }),
