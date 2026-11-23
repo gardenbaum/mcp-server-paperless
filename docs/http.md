@@ -67,12 +67,12 @@ Every other [setting](configuration.md) works the same over HTTP.
 
 Over HTTP callers upload by sending base64 content: no tool takes a server-side file path,
 whatever `PAPERLESS_MCP_UPLOAD_DIRS` says, and request bodies larger than the base64 size of
-`PAPERLESS_MCP_MAX_UPLOAD_BYTES` plus 64 KiB get 413. The MCP library also refuses any request over
-4 MiB, so a file of at most about 3 MiB can be uploaded over HTTP, whatever that setting says. Off the MCP endpoint, so on every route of the
+`PAPERLESS_MCP_MAX_UPLOAD_BYTES` plus 64 KiB get 413. An MCP client is told the
+limit in bytes. Off the MCP endpoint, so on every route of the
 [OIDC layer](claude-ai-connector.md), the limit is 64 KiB. Every response carries an `X-Request-ID`
 (yours if it is short and made of letters, digits, `.`, `_` or `-`); one JSON log line per request
 (method, path, status, duration) goes to stderr, without query strings, headers or bodies. The
-rules are decision-27, carried over into decision-39 (`backlog/decisions/`). What the operator of a
+rules are decision-27, carried over into decision-40 (`backlog/decisions/`). What the operator of a
 deployment sees is in the [privacy policy](../PRIVACY.md#if-someone-else-runs-the-server).
 
 ## Sign in through an identity provider

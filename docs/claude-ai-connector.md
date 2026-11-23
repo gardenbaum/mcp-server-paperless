@@ -8,7 +8,7 @@ signs in through your provider while Claude Code keeps using its bearer token on
 every client still works with the one Paperless token of `PAPERLESS_TOKEN` (per-user Paperless
 credentials are not supported yet). The server shows its own consent page before it sends the
 browser to the provider, forwards PKCE, verifies the provider's signed ID token and issues its own
-tokens to clients. The rules are decision-31, carried over into decision-39 (`backlog/decisions/`).
+tokens to clients. The rules are decision-31, carried over into decision-40 (`backlog/decisions/`).
 
 ## Variables
 

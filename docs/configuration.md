@@ -36,7 +36,7 @@ supported.
 | `PAPERLESS_MCP_READ_ONLY` | `true` to offer only tools that change nothing (default `false`). See [What the model can do](#what-the-model-can-do) |
 | `PAPERLESS_MCP_DISABLED_TOOLS` | Tools never offered, whatever the toolsets say, e.g. `ask_paperless_ai,get_ai_suggestions` |
 | `PAPERLESS_MCP_UPLOAD_DIRS` | Directories the upload tools may read files from by path (default empty: uploading by path is off). See [Uploads and downloads](#uploads-and-downloads) |
-| `PAPERLESS_MCP_MAX_UPLOAD_BYTES` | Largest file the upload tools take, in bytes (default 10485760 = 10 MiB, at most 104857600); over HTTP at most about 3 MiB whatever this says, see [Uploads and downloads](#uploads-and-downloads) |
+| `PAPERLESS_MCP_MAX_UPLOAD_BYTES` | Largest file the upload tools take, in bytes (default 10485760 = 10 MiB, at most 104857600) |
 | `PAPERLESS_MCP_MAX_DOWNLOAD_BYTES` | Largest file `download_document` attaches, in bytes (default 524288, at most 33554432) |
 | `PAPERLESS_MCP_LOG_LEVEL` | `DEBUG`, `INFO` (default), `WARNING`, `ERROR` or `CRITICAL` |
 | `PAPERLESS_MCP_STARTUP_TIMEOUT` | Seconds the startup check may take (default 5) |
@@ -239,11 +239,14 @@ The rules are decision-25 (`backlog/decisions/`).
 ## Uploads and downloads
 
 **Uploads.** `upload_document` and `upload_document_version` take a file as base64 content. The
-size limit is `PAPERLESS_MCP_MAX_UPLOAD_BYTES`; over HTTP the MCP library refuses requests over 4 MiB,
-so a file of at most about 3 MiB fits, whatever that setting says. Base64 content is a third larger than the file
-and must be written out by the caller in one tool call, so real uploads are far smaller; the
-text, the decoded bytes and the request body are in memory at once (about three times the file),
-and the size is checked on the text before anything is decoded.
+size limit is `PAPERLESS_MCP_MAX_UPLOAD_BYTES`, over stdio and over HTTP. Base64 content is a third
+larger than the file and must be written out by the caller in one tool call, so real uploads are
+far smaller. The size is checked on the text before anything is decoded, but the request body, its
+text and the decoded bytes are in memory together, over HTTP in several copies. Measured on a real
+HTTP server with a stand-in for Paperless (the peak of single runs on macOS, above about 125 MB
+when idle): a 10 MiB file took about 70 MB, four at once about 145 MB, and a 100 MiB file 640 MB on
+a fresh server and up to about 890 MB after an earlier upload. Nothing limits how many uploads run at once, so
+give a container the memory for the limit you set.
 
 **Uploads by path.** With `PAPERLESS_MCP_UPLOAD_DIRS` set, the two tools also take a `path` on
 the machine the server runs on, which is what you want with Claude Code or Claude Desktop: the
