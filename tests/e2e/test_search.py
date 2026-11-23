@@ -37,6 +37,15 @@ async def test_name_filters_resolve_on_live_paperless(stack: Stack) -> None:
     assert await titles(stack, owner="admin", tags_none=["e2e-inbox"]) == {"e2e-private-note"}
 
 
+async def test_has_filters_find_documents_without_a_correspondent_or_type(stack: Stack) -> None:
+    assert await titles(stack, has_correspondent=False, has_document_type=False) == {
+        "e2e-private-note"
+    }
+    assert await titles(stack, has_correspondent=True, has_document_type=True) == {
+        "e2e-public-invoice"
+    }
+
+
 async def test_date_ranges_on_live_paperless(stack: Stack) -> None:
     [row] = await search(stack, stack.admin_token, title_contains="e2e-public-invoice")
     created = date.fromisoformat(str(row["created"]))

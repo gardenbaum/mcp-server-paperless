@@ -1,9 +1,11 @@
 ---
 id: PLMCP-56
 title: Filter documents without a correspondent, document type, storage path or tags
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T00:52:07Z'
+updated_date: '2026-11-23T00:55:24Z'
 labels: []
 dependencies: []
 type: feature
@@ -31,3 +33,9 @@ User feedback (2026-11-23): an agent could not find documents that lack a docume
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Tests first: tool tests (has_* find and exclude, conflicts), service tests (contradictions), live e2e. 2. search_documents gets has_correspondent, has_document_type, has_storage_path and has_tags, mapped onto the existing DocumentQuery isnull and tagged fields (adapter unchanged). 3. DocumentService.search rejects has_x=false combined with the named filter of the same field. 4. Tool description names the filters; regenerate the surface snapshot deliberately. 5. just check, e2e under flock, mutmut on services.documents.
+<!-- SECTION:PLAN:END -->
