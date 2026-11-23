@@ -20,6 +20,10 @@ DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
 SHA_PIN = re.compile(r"^[\w./-]+@[0-9a-f]{40}$")
 JOBS = ("build", "publish", "tag")
 TAG_GATE = "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')"
+TAG_LOOP = (
+    'while read -r name; do tags+=(-t "$name"); done'
+    + """ < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")"""
+)
 COPY_SOURCES = {
     "pyproject.toml",
     "uv.lock",
@@ -239,8 +243,7 @@ def test_the_tag_job_tags_exactly_the_two_scanned_digests() -> None:
         '  refs+=("$IMAGE@$digest")',
         "done",
         "tags=()",
-        'while read -r name; do tags+=(-t "$name"); done'
-        " < <(jq -r '.tags[]' <<< \"$DOCKER_METADATA_OUTPUT_JSON\")",
+        TAG_LOOP,
         "((${#tags[@]} > 0))",
         'docker buildx imagetools create "${tags[@]}" "${refs[@]}"',
     ]
