@@ -429,6 +429,11 @@ class DocumentRecord(BaseModel):
         ),
     ]
 
+    @property
+    def newest_file(self) -> tuple[int, int | None]:
+        """The document and the version it shows: what a confirmation of a file operation binds."""
+        return self.id, self.versions[0].id if self.versions else None
+
 
 class SuggestionNames(BaseModel):
     """Suggestions with names; a name is null if the user may not see that object."""

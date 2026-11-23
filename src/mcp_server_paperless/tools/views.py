@@ -186,9 +186,8 @@ async def update_saved_view(  # noqa: PLR0913 -- one parameter per setting of a 
 async def delete_saved_view(ctx: Context, view: View, *, confirm: Confirm = False) -> ViewDeletion:
     """Delete a saved view for good: it has no trash. No document is touched.
 
-    Without confirm it deletes nothing and fails with an error that says the effect (the rules
-    and sort order that are lost); describe that to the user and call again with confirm=true once
-    they agree.
+    Without confirm a dialog, or an error for you to show the user, first says the effect: the
+    rules and sort order that are lost (see confirm).
     """
     return await services(ctx).views.delete(view, confirm=confirm)
 

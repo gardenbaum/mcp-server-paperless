@@ -447,6 +447,22 @@ async def test_titles_are_given_for_the_documents_the_user_may_see(backend: Back
     assert await backend.reader.documents.get_document_titles([]) == {}
 
 
+@pytest.mark.contract("DocumentReader.get_newest_versions")
+async def test_the_newest_version_is_given_for_the_documents_the_user_may_see(
+    backend: Backend,
+) -> None:
+    public = await document(backend.admin, PUBLIC)
+    private = await document(backend.admin, PRIVATE)
+    wanted = [public.id, private.id, MISSING]
+
+    assert await backend.admin.documents.get_newest_versions(wanted) == {
+        public.id: public.id,
+        private.id: private.id,
+    }
+    assert await backend.reader.documents.get_newest_versions(wanted) == {public.id: public.id}
+    assert await backend.reader.documents.get_newest_versions([]) == {}
+
+
 # --- Files: thumbnails, originals and archive versions -----------------------------------------
 
 MAX = 1_000_000

@@ -168,7 +168,7 @@ async def test_the_refusal_of_several_changes_joins_them_with_semicolons() -> No
         "Nothing was changed. Confirming would make 'e2e-reader' a superuser, who sees and "
         "changes everything whatever is granted; give 'e2e-reader' staff status, which lets them "
         "sign in to the Django admin site and read the logs; grant 'e2e-reader' the permissions "
-        "add_tag, add_note; take the permissions "
+        "'add_tag', 'add_note'; take the permissions "
     )
     assert text.startswith(expected)
 
@@ -266,7 +266,7 @@ async def test_the_group_refusals_are_exact() -> None:
     ) == (
         (
             "Nothing was changed. Confirming would give the members of 'e2e-group' the permissions "
-            "add_tag, add_note; take the permissions view_tag away from them."
+            "'add_tag', 'add_note'; take the permissions 'view_tag' away from them."
         )
         + tail
     )
@@ -381,9 +381,9 @@ async def test_values_are_shown_whole_up_to_sixty_characters_and_cut_after() -> 
         return await failure(setup.system.update_config({"user_args": value}), ConfirmationRequired)  # pyright: ignore[reportArgumentType] -- any JSON value
 
     assert len(json.dumps(exact)) == 60
-    assert f"set user_args to {json.dumps(exact)} (" in await shown(exact)
+    assert f"set user_args to '{json.dumps(exact)}' (" in await shown(exact)
     cut = json.dumps(longer)[:59] + "…"
-    assert f"set user_args to {cut} (" in await shown(longer)
+    assert f"set user_args to '{cut}' (" in await shown(longer)
     assert f"to '{text_60}' (" in await shown(text_60)
     assert f"to '{'a' * 59}…'" in await shown(text_61)
 

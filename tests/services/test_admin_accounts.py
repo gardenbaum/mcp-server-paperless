@@ -265,7 +265,7 @@ async def test_nothing_given_is_a_validation_error() -> None:
         ({"is_active": False}, "deactivate 'e2e-reader'"),
         ({"password": SecretStr(PASSWORD)}, "set a new password for 'e2e-reader'"),
         ({"groups": ["e2e-group"]}, "add 'e2e-reader' to the groups 'e2e-group'"),
-        ({"permissions": ["add_tag"]}, "grant 'e2e-reader' the permissions add_tag"),
+        ({"permissions": ["add_tag"]}, "grant 'e2e-reader' the permissions 'add_tag'"),
     ],
 )
 async def test_every_change_of_access_needs_confirm_and_names_its_effect(
@@ -309,7 +309,7 @@ async def test_taking_away_access_names_what_goes() -> None:
     assert "remove superuser status from 'e2e-reader'" in message
     assert "remove staff status from 'e2e-reader'" in message
     assert "remove 'e2e-reader' from the groups 'e2e-group'" in message
-    assert "take the permissions view_document away from 'e2e-reader'" in message
+    assert "take the permissions 'view_document' away from 'e2e-reader'" in message
 
 
 async def test_a_confirmed_change_is_written_and_unchanged_flags_need_no_confirm() -> None:
@@ -431,8 +431,8 @@ async def test_changing_what_a_group_grants_needs_confirm_and_names_it() -> None
 
     message = await refusal(setup.service.update_group(GROUP, permissions=["view_tag", "add_tag"]))
 
-    assert "give the members of 'e2e-group' the permissions add_tag" in message
-    assert "take the permissions view_document away from them" in message
+    assert "give the members of 'e2e-group' the permissions 'add_tag'" in message
+    assert "take the permissions 'view_document' away from them" in message
 
 
 async def test_a_confirmed_permission_change_is_written() -> None:
@@ -495,7 +495,7 @@ async def test_granting_on_top_of_what_a_user_has_names_only_the_new_permissions
         setup.service.update_user(READER_ID, permissions=["view_tag", "add_tag"])
     )
 
-    assert "grant 'e2e-reader' the permissions add_tag" in message
+    assert "grant 'e2e-reader' the permissions 'add_tag'" in message
     assert "away" not in message
 
 
@@ -507,5 +507,5 @@ async def test_granting_on_top_of_what_a_group_has_names_only_the_new_permission
 
     message = await refusal(setup.service.update_group(GROUP, permissions=["view_tag", "add_tag"]))
 
-    assert "the permissions add_tag" in message
+    assert "the permissions 'add_tag'" in message
     assert "away" not in message

@@ -61,9 +61,9 @@ A 'manual' trigger (run by hand) is listed but cannot be written here either.
 A workflow runs by itself on every matching document once it is enabled (one with only manual
 triggers runs when a user runs it by hand). Without confirm, an
 enabled workflow that moves to trash, e-mails, calls a webhook, removes things or changes owner or
-permissions is refused with an error that says what it would do; describe that to the user and
-call again with confirm=true once they agree. Disabled workflows and plain filing (tags, title,
-correspondent and so on) need no confirm. Needs the workflow permissions in Paperless.
+permissions needs the user's yes: a dialog, or an error for you to show the user, first says what
+it would do (see confirm). Disabled workflows and plain filing (tags, title, correspondent and so
+on) need no confirm. Needs the workflow permissions in Paperless.
 """
 
 CREATE_DESCRIPTION = (
@@ -169,8 +169,7 @@ async def delete_workflow(
 ) -> WorkflowDeletion:
     """Delete a workflow for good: it has no trash. No document is touched.
 
-    The workflow stops running at once. Without confirm it deletes nothing and fails with an error
-    that says the effect (how many triggers and actions are lost); describe that to the user and
-    call again with confirm=true once they agree.
+    The workflow stops running at once. Without confirm a dialog, or an error for you to show the
+    user, first says how many triggers and actions are lost (see confirm).
     """
     return await services(ctx).workflows.delete(workflow, confirm=confirm)

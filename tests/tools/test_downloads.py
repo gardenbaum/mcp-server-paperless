@@ -6,6 +6,7 @@ import json
 from typing import TYPE_CHECKING, Literal, cast
 
 import pytest
+from confirmation import YES, answering
 from fakes.paperless import FakeDocument, FakePaperless, seeded
 from fastmcp import Client
 from fastmcp.server.context import (
@@ -14,6 +15,7 @@ from fastmcp.server.context import (
 from harness import serve
 from mcp.types import BlobResourceContents, EmbeddedResource, TextContent
 
+from mcp_server_paperless.domain.errors import CONFIRM_HINT
 from mcp_server_paperless.tools._shared import ANNOTATIONS, SAVING_ANNOTATIONS
 
 if TYPE_CHECKING:
@@ -224,6 +226,42 @@ async def test_an_archive_is_saved_and_replaced_only_with_confirm(tmp_path: Path
     assert "Confirming would replace the file 'documents.zip'" in text
     assert again["replaced"] is True
     assert hashlib.sha256((tmp_path / "documents.zip").read_bytes()).hexdigest() == again["sha256"]
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("name", ["download_document", "bulk_download"])
+async def test_a_replacement_is_asked_for_in_a_dialog_where_the_client_can(
+    name: str, mode: str, tmp_path: Path
+) -> None:
+    saved = tmp_path / ("x.pdf" if name == "download_document" else "documents.zip")
+    _ = saved.write_bytes(b"old")
+    of = {**DOCUMENT, "save_as": "x.pdf"} if name == "download_document" else ARCHIVE
+    arguments: Json = {**of, "save_dir": str(tmp_path)}
+    shown = (await refused(saving(tmp_path), name, arguments)).removesuffix(
+        f" Hint: {CONFIRM_HINT}"
+    )
+
+    for handler, message in (
+        (answering("decline", seen=(declined := [])), "the user declined"),
+        (answering("cancel"), "the user closed the dialog without answering"),
+    ):
+        async with Client(saving(tmp_path), mode=mode, elicitation_handler=handler) as client:
+            result = await client.call_tool(name, arguments, raise_on_error=False)
+        assert result.is_error
+        assert message in str(result.content)
+        assert saved.read_bytes() == b"old"
+
+    accept = answering("accept", YES)
+    async with Client(saving(tmp_path), mode=mode, elicitation_handler=accept) as client:
+        result = await client.call_tool(name, arguments)
+
+    assert declined == [shown]
+    [report] = result.content
+    assert isinstance(report, TextContent)
+    assert '"replaced":true' in report.text
+    assert saved.read_bytes() != b"old"
+    assert [p.name for p in tmp_path.iterdir()] == [saved.name]  # noqa: ASYNC240 -- a test looking at its directory
 
 
 @pytest.mark.parametrize("name", ["download_document", "bulk_download"])

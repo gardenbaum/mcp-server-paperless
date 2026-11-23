@@ -20,9 +20,10 @@ type Json = dict[str, object]
 
 TOOLS = frozenset({"list_trash", "restore_from_trash", "empty_trash"})
 CONFIRM_DESCRIPTION = (
-    "Must be true to go ahead. Without it nothing changes and the error says what would "
-    "happen. Describe that to the user and pass true only once they agree, or if they "
-    "already asked for exactly this."
+    "Must be true to go ahead at once. Without it a client that can show dialogs asks the "
+    "user, and the tool runs only if they accept; with any other nothing changes and the "
+    "error says what would happen. Describe that to the user and pass true only once they "
+    "agree, or if they already asked for exactly this."
 )
 
 
@@ -102,7 +103,7 @@ async def test_empty_trash_takes_a_described_confirm_that_defaults_to_false() ->
     assert properties["document_ids"]["default"] is None
     description = " ".join((tools["empty_trash"].description or "").split())
     assert "never empties everything by default" in description
-    assert "whatever the trash holds when the confirmed call runs" in description
+    assert "whatever the trash holds then" in description
     assert "at most 100" in description
 
 

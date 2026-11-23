@@ -273,7 +273,8 @@ class FileService:
                 proposed = opened.filename or facts.name or f"document-{document_id}"
                 # The name is known only now; the bytes are not read yet.
                 name = file_name(save_as, proposed, facts.mime_type)
-                await target.claim(name, confirm=confirm)
+                source = ("document", document_id, version, shown, facts.checksum)
+                await target.claim(name, confirm=confirm, source=source)
                 saved = await target.write(opened.chunks, Expected(facts.size, facts.checksum))
         return SavedFileReport(
             document_id=document_id,

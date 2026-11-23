@@ -69,7 +69,8 @@ type SaveAs = Annotated[
 
 SAVED = (
     "; with save_dir it is saved in that directory instead, and only the report comes back. "
-    "An existing file is replaced only with confirm=true; ask the user first. "
+    "An existing file is replaced only after a confirmation: without confirm a dialog, or an error "
+    "for you to show the user, names it (see confirm). "
 )
 HTTP_HINT = "Read the file in parts with offset."
 

@@ -158,7 +158,8 @@ async def test_a_dry_run_reports_what_would_change_and_writes_nothing() -> None:
     assert report.message == (
         "Dry run, nothing was changed. Confirming would add the tags 'e2e-inbox' to 1 document "
         "('Second invoice'); 2 documents already are as asked. To go ahead, call again without "
-        "dry_run and with confirm=true."
+        "dry_run; "
+        "pass confirm=true only if the user already agreed."
     )
     assert setup.fake.calls == []
 
@@ -671,7 +672,8 @@ async def test_a_delete_dry_run_previews_the_trash_without_writing() -> None:
     assert report.message == (
         "Dry run, nothing was changed. Confirming would move 1 document ('e2e-public-invoice') "
         "to the Paperless trash (they can be restored from there). To go ahead, call again "
-        "without dry_run and with confirm=true."
+        "without dry_run; "
+        "pass confirm=true only if the user already agreed."
     )
 
 
@@ -820,7 +822,8 @@ async def test_one_document_that_is_as_asked_is_counted_in_the_singular() -> Non
     assert report.message == (
         "Dry run, nothing was changed. Confirming would add the tags 'e2e-inbox' to 1 document "
         "('Second invoice'); 1 document already is as asked. To go ahead, call again without "
-        "dry_run and with confirm=true."
+        "dry_run; "
+        "pass confirm=true only if the user already agreed."
     )
 
 
@@ -961,7 +964,8 @@ async def test_a_document_link_names_the_documents_that_are_changed_by_mirroring
         "Dry run, nothing was changed. Confirming would set the custom fields 'e2e-documentlink' "
         "on 1 document ('Second invoice') and, because document links are mirrored, also "
         "changes 1 document that is not selected ('Third invoice'). To go ahead, call again "
-        "without dry_run and with confirm=true."
+        "without dry_run; "
+        "pass confirm=true only if the user already agreed."
     )
     with pytest.raises(ConfirmationRequired, match="also changes 1 document that is not selected"):
         _ = await setup.run([SECOND], link, confirm=False)

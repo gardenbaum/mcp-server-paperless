@@ -242,4 +242,4 @@ async def test_confirm_is_the_shared_parameter_that_defaults_to_false(tool: str)
 
     confirm = cast("Json", cast("Json", found.input_schema["properties"])["confirm"])
     assert confirm["default"] is False
-    assert str(confirm["description"]).startswith("Must be true to go ahead.")
+    assert str(confirm["description"]).startswith("Must be true to go ahead at once.")

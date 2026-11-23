@@ -19,6 +19,7 @@ from hypothesis import strategies as st
 
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentEdit, DocumentPatch
 from mcp_server_paperless.domain.errors import (
+    CONFIRM_HINT,
     Ambiguous,
     ConfirmationRequired,
     NotFound,
@@ -634,14 +635,23 @@ async def test_a_failure_after_tags_were_created_names_them() -> None:
 async def test_changing_the_owner_needs_confirm_and_writes_nothing_without_it() -> None:
     setup = Setup()
 
-    with pytest.raises(ConfirmationRequired, match="confirm") as raised:
+    with pytest.raises(ConfirmationRequired) as raised:
         _ = await setup.update(owner="admin", title="never")
     setup.document.owner = 2
-    with pytest.raises(ConfirmationRequired, match="confirm"):
+    with pytest.raises(ConfirmationRequired) as removed:
         _ = await setup.update(clear=["owner"])
 
-    assert "owner" in raised.value.message
-    assert raised.value.hint
+    assert raised.value.message == (
+        "Nothing was changed. Confirming would change the owner of document 1 "
+        "'e2e-public-invoice' to 'admin' (id 2): the new owner takes it over and you may lose "
+        "access to it."
+    )
+    assert removed.value.message == (
+        "Nothing was changed. Confirming would remove the owner of document 1 "
+        "'e2e-public-invoice': every user who may view documents takes it over and you may lose "
+        "access to it."
+    )
+    assert raised.value.hint == CONFIRM_HINT
     assert setup.fake.patches == []
     assert setup.document.owner == 2
 
@@ -661,7 +671,7 @@ async def test_an_owner_that_is_already_right_needs_no_confirm() -> None:
 async def test_the_owner_check_comes_before_a_tag_is_created() -> None:
     setup = Setup()
 
-    with pytest.raises(Validation, match="confirm"):
+    with pytest.raises(ConfirmationRequired):
         _ = await setup.update(owner="admin", tags_add=["e2e-new"], create_missing_tags=True)
 
     assert len(setup.state.tags) == 4

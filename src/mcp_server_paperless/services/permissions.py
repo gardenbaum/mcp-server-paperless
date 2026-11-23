@@ -124,6 +124,12 @@ class _Plan:
         return _normalised(self.grants) != _normalised(self.current.permissions)
 
     @property
+    def scope(self) -> object:
+        """The object with its access now and then: what a confirmation is about."""
+        before, after = _normalised(self.current.permissions), _normalised(self.grants)
+        return (self.current.id, self.current.owner, before, self.owner, after)
+
+    @property
     def changes(self) -> bool:
         """Whether anything is sent for the object."""
         return self.owner_changes or self.grants_change
@@ -274,8 +280,9 @@ class PermissionService:
         names = await self._names(plans, [plan.grants for plan in changing])
         if changing and not confirm:
             caller = await self._caller()
-            raise ConfirmationRequired.for_effect(
-                self._effect(kind, request.mode, changing, names, caller)
+            ConfirmationRequired.require(
+                self._effect(kind, request.mode, changing, names, caller),
+                scope=[plan.scope for plan in changing],
             )
         written = await self._write(kind, changing)
         return self._result(kind, request.mode, plans, written, names)

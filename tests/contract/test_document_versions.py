@@ -442,3 +442,15 @@ async def test_paperless_still_opens_a_deleted_version_but_not_one_of_another_do
         with pytest.raises(NotFound):
             async with ports.documents.open_document_file(document, "original", version_id=missing):
                 raise AssertionError
+
+
+@pytest.mark.contract("DocumentReader.get_newest_versions")
+async def test_an_added_version_is_the_newest_until_it_is_deleted(backend: Backend) -> None:
+    document = backend.new_document()
+    reader = backend.admin.documents
+
+    added = await add_version(backend, document, "newer")
+    assert await reader.get_newest_versions([document]) == {document: added}
+
+    _ = await backend.admin.document_writes.delete_version(document, added)
+    assert await reader.get_newest_versions([document]) == {document: document}

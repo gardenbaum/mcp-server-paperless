@@ -232,6 +232,13 @@ class DocumentReader(Protocol):
         """
         ...
 
+    async def get_newest_versions(self, document_ids: Collection[int]) -> dict[int, int]:
+        """The newest file version of those documents the user may see, by document id.
+
+        The root version has the id of its document. One request, like ``get_document_titles``.
+        """
+        ...
+
 
 class TaskReader(Protocol):
     """Background tasks (uploads, PDF operations) the current user may see."""

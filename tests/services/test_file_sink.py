@@ -24,6 +24,7 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     Validation,
+    accepting,
 )
 from mcp_server_paperless.services import file_sink, transfer
 from mcp_server_paperless.services.allowed_paths import MAX_NAME_BYTES
@@ -98,9 +99,10 @@ async def save(  # noqa: PLR0913 -- one keyword per thing a test varies
     system: System | None = None,
     expected: Expected | None = None,
     through: FileSink | None = None,
+    source: object = None,
 ) -> file_sink.Saved:
     async with (through or sink(tree, at, system)).open(str(directory or tree.sub)) as target:
-        await target.claim(name, confirm=confirm)
+        await target.claim(name, confirm=confirm, source=source)
         return await target.write(
             data or chunks(DATA[:10], DATA[10:]), expected or Expected(len(DATA), None)
         )
@@ -204,24 +206,80 @@ async def test_a_replacement_that_cannot_be_shown_is_refused_also_with_confirm(
     for confirm in (False, True):
         with pytest.raises(Validation) as raised:
             _ = await save(tree, name, directory=directory, confirm=confirm)
-        assert raised.value.message == (
-            "The directory or the file name has characters that a confirmation cannot show."
-        )
+        assert raised.value.message.startswith("Nothing was changed: the ")
+        assert "cannot be shown to the user in full" in raised.value.message
         assert raised.value.hint == "Choose another name with save_as, or another directory."
     assert (directory / name).read_bytes() == b"old"
     _ = await save(tree, "new.pdf", directory=directory)  # a new file needs no confirmation
 
 
-async def test_a_confirmation_shows_the_whole_name_and_directory(tree: Tree) -> None:
-    directory, name = tree.allowed / ("d" * 200), "n" * 200 + ".pdf"
-    directory.mkdir()
+async def test_a_confirmation_shows_the_whole_name_and_directory_or_is_refused(tree: Tree) -> None:
+    directory = tree.allowed / "d"
+    while len(str(directory)) < 200:
+        directory /= "d" * 20
+    directory.mkdir(parents=True)
+    name = "n" * 200 + ".pdf"
     _ = (directory / name).write_bytes(b"old")
 
     with pytest.raises(ConfirmationRequired) as raised:
         _ = await save(tree, name, directory=directory)
-
     assert f"replace the file '{name}' (3 bytes" in raised.value.message
     assert raised.value.message.endswith(f" in '{directory}'.")
+
+    deeper = directory / ("e" * 60)
+    deeper.mkdir()
+    _ = (deeper / NAME).write_bytes(b"old")
+    for confirm in (False, True):
+        with pytest.raises(Validation, match=r"directory .* it has more than 254 characters"):
+            _ = await save(tree, directory=deeper, confirm=confirm)
+
+
+async def fingerprint(tree: Tree, source: object = 1) -> str:
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await save(tree, source=source)
+    return raised.value.fingerprint
+
+
+@pytest.mark.decision("decision-44")
+async def test_an_acceptance_covers_the_file_the_directory_and_what_is_saved(tree: Tree) -> None:
+    """The text is the same each time; what it is about is not."""
+    target = tree.sub / NAME
+    _ = target.write_bytes(b"old")
+    stamp = target.stat().st_mtime_ns
+    accepted = await fingerprint(tree)
+    assert await fingerprint(tree) == accepted
+
+    assert await fingerprint(tree, 2) != accepted
+    # Another file of the same name, size and day.
+    target.unlink()
+    (tree.sub / "filler").touch()
+    _ = target.write_bytes(b"two")
+    os.utime(target, ns=(stamp, stamp))
+    other = await fingerprint(tree)
+    assert other != accepted
+    # The same file, written again in the same size.
+    os.utime(target, ns=(stamp, stamp + 1000))
+    assert await fingerprint(tree) != other
+    # Another directory at the same path, the file moved into it.
+    held = await fingerprint(tree)
+    _ = tree.sub.rename(tree.allowed / "gone")
+    tree.sub.mkdir()
+    _ = (tree.allowed / "gone" / NAME).rename(target)
+    assert await fingerprint(tree) != held
+
+
+@pytest.mark.decision("decision-44")
+async def test_the_accepted_replacement_runs_and_no_other_one(tree: Tree) -> None:
+    target = tree.sub / NAME
+    _ = target.write_bytes(b"old")
+    accepted = await fingerprint(tree)
+
+    with accepting(accepted), pytest.raises(ConfirmationRequired):
+        _ = await save(tree, source=2)
+    with accepting(accepted):
+        saved = await save(tree, source=1)
+
+    assert (saved.replaced, target.read_bytes()) == (True, DATA)
 
 
 async def test_the_refusal_comes_before_anything_is_read_or_written(tree: Tree) -> None:
@@ -925,7 +983,7 @@ async def data():
     yield b"x" * 5000
 async def main():
     async with FileSink([{str(tree.allowed)!r}]).open({str(tree.sub)!r}) as target:
-        await target.claim("a.pdf", confirm=False)
+        await target.claim("a.pdf", confirm=False, source=None)
         try:
             await target.write(data(), Expected(5000, None))
         except PaperlessMcpError as error:
@@ -1360,7 +1418,7 @@ async def data():
     os.kill(os.getpid(), signal.SIGKILL)
 async def main():
     async with FileSink([{str(tree.allowed)!r}]).open({str(tree.sub)!r}) as target:
-        await target.claim("a.pdf", confirm=False)
+        await target.claim("a.pdf", confirm=False, source=None)
         await target.write(data(), Expected())
 asyncio.run(main())
 """

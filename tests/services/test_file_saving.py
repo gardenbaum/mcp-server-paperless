@@ -26,7 +26,7 @@ from mcp_server_paperless.services.files import FileService
 from mcp_server_paperless.services.transfer import PART_WAIT_SECONDS
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Sequence
+    from collections.abc import AsyncGenerator, Awaitable, Sequence
     from pathlib import Path
 
     from mcp_server_paperless.domain.admin import ArchiveContent, Compression
@@ -399,3 +399,49 @@ async def test_an_archive_that_is_none_is_not_saved(tmp_path: Path) -> None:
         _ = await system(Empty(fake_with().state, user=ADMIN[0]), tmp_path).save(
             [7], directory=str(tmp_path)
         )
+
+
+async def refusal(call: Awaitable[object]) -> ConfirmationRequired:
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await call
+    return raised.value
+
+
+@pytest.mark.decision("decision-44")
+async def test_an_acceptance_names_the_document_the_kind_the_version_and_its_content(
+    tmp_path: Path,
+) -> None:
+    fake = fake_with()
+    _ = (tmp_path / "x.pdf").write_bytes(b"old")
+    where, service = str(tmp_path), files(fake, tmp_path)
+
+    def asked(kind: FileVersion, version_id: int | None) -> Awaitable[object]:
+        return service.save(7, kind, version_id=version_id, directory=where, save_as="x.pdf")
+
+    first = await refusal(asked("archive", 7))
+    others = [await refusal(asked("original", 7)), await refusal(asked("archive", 9))]
+    fake.state.documents[-1].version_files[7] = FakeFile(
+        ORIGINAL, b"reprocessed", "", "application/pdf"
+    )
+    others.append(await refusal(asked("archive", 7)))
+
+    assert {other.message for other in others} == {first.message}
+    assert len({first.fingerprint, *(other.fingerprint for other in others)}) == 4
+
+
+@pytest.mark.decision("decision-44")
+async def test_an_acceptance_names_the_documents_and_options_of_an_archive(tmp_path: Path) -> None:
+    service, where = system(fake_with(), tmp_path), str(tmp_path)
+    _ = (tmp_path / "documents.zip").write_bytes(b"old")
+
+    first = await refusal(service.save([7], directory=where))
+    others = [
+        await refusal(service.save([1], directory=where)),
+        await refusal(service.save([7, 1], directory=where)),
+        await refusal(service.save([7], directory=where, content="both")),
+        await refusal(service.save([7], directory=where, compression="lzma")),
+        await refusal(service.save([7], directory=where, follow_formatting=True)),
+    ]
+
+    assert {other.message for other in others} == {first.message}
+    assert len({first.fingerprint, *(other.fingerprint for other in others)}) == 6

@@ -193,7 +193,7 @@ class PdfService:
                     "move the originals to the Paperless trash (they can be restored from there); "
                     f"an original's {SERIAL}"
                 )
-                raise ConfirmationRequired.for_effect(effect)
+                ConfirmationRequired.require(effect, scope=[d.newest_file for d in documents])
             summary += " and move the originals to the Paperless trash"
         started = await self._writer.merge_documents(
             document_ids,
@@ -378,7 +378,7 @@ class PdfService:
         summary = f"remove the password of document {document_id} {where}"
         if output == "replace_original" and not confirm:
             what = f"remove the password of {_named([document])} {where}; the original's {SERIAL}"
-            raise ConfirmationRequired.for_effect(what)
+            ConfirmationRequired.require(what, scope=document.newest_file)
         started = await self._writer.remove_password(document_id, password, output=output)
         return await self._result(
             "remove_password",
@@ -412,7 +412,7 @@ class PdfService:
                 f"reprocess {_named(documents)} (OCR and archiving run again; the archived PDF "
                 "and the extracted text are replaced, so manual changes to the text are lost)"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=[d.newest_file for d in documents])
         started = await self._writer.reprocess_documents(document_ids, remote_ocr=remote_ocr)
         engine = "remote OCR" if remote_ocr else "local OCR"
         summary = f"reprocess {_plural(len(documents), 'document')} ({engine})"
@@ -488,7 +488,7 @@ class PdfService:
                     "shows a new version without them, and the earlier version with all pages "
                     "stays until that version is deleted"
                 )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=(plan.pages, document.newest_file))
         started = await self._writer.edit_pdf(document.id, slots, output=output)
         summary = f"{plan.summary} and {TRASH}" if trashes else plan.summary
         return await self._result(

@@ -43,6 +43,7 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     Validation,
+    destination,
     quoted,
 )
 from mcp_server_paperless.services.allowed_paths import (
@@ -236,18 +237,17 @@ def file_name(save_as: str | None, proposed: str, mime_type: str) -> str:
     return name
 
 
-def _shown(text: str) -> str:
+def _shown(text: str, what: str) -> str:
     """``text`` in quotes, whole and exactly as it is.
 
     Raises:
         Validation: That is not possible.
     """
-    shown = quoted(text, len(text))
-    if shown[1:-1] != text or not text.isprintable():
-        message = "The directory or the file name has characters that a confirmation cannot show."
+    try:
+        return destination(text, what, "text")
+    except Validation as refusal:
         hint = "Choose another name with save_as, or another directory."
-        raise Validation(message, hint=hint)
-    return shown
+        raise Validation(refusal.message, hint=hint) from None
 
 
 def _meanwhile() -> PaperlessMcpError:
@@ -408,8 +408,11 @@ class Target:
             system.close(self._fd)
         self._fd = None
 
-    async def claim(self, name: str, *, confirm: bool) -> None:
+    async def claim(self, name: str, *, confirm: bool, source: object) -> None:
         """Decide what becomes of ``name``, before anything is downloaded.
+
+        ``source`` is what would be saved: an acceptance in the dialog covers that only, and only
+        the file that was there.
 
         Raises:
             ConfirmationRequired: A file of that name exists and ``confirm`` is not set.
@@ -420,12 +423,14 @@ class Target:
         self._existing = await _blocking(self._look)
         if self._existing is None:
             return
-        file, directory = _shown(name), _shown(self._given)
+        file, directory = _shown(name, "file name"), _shown(self._given, "directory")
         if not confirm:
             _, _, size, changed = self._existing
             day = self._sink.system.date(changed / 1e9)
             effect = f"replace the file {file} ({size} bytes{day}) in {directory}"
-            raise ConfirmationRequired.for_effect(effect)
+            held = os.fstat(self._directory)
+            scope = (self._existing, (held.st_dev, held.st_ino), source)
+            ConfirmationRequired.require(effect, scope=scope)
 
     async def write(self, chunks: AsyncIterator[bytes], expected: Expected) -> Saved:
         """Save the bytes under the claimed name.

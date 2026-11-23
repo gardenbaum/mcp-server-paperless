@@ -680,6 +680,26 @@ async def test_no_titles_are_asked_for_without_ids(make_client: ClientFactory) -
     assert server.sent == []
 
 
+async def test_newest_versions_are_asked_for_by_id_in_one_request(
+    make_client: ClientFactory,
+) -> None:
+    root = {"id": 1, "added": "2026-11-11T19:47:00Z", "is_root": True}
+    newer = {"id": 9, "added": "2026-11-12T19:47:00Z", "is_root": False}
+    server = Documents({"id": 1, "versions": [newer, root]}, {"id": 2, "versions": []})
+
+    found = await PaperlessDocumentReader(make_client(server)).get_newest_versions([1, 2, 1])
+
+    assert found == {1: 9, 2: 2}
+    assert server.sent == [{"id__in": "1,2", "fields": "id,versions", "page_size": "2"}]
+
+
+async def test_no_newest_versions_are_asked_for_without_ids(make_client: ClientFactory) -> None:
+    server = Documents()
+
+    assert await PaperlessDocumentReader(make_client(server)).get_newest_versions([]) == {}
+    assert server.sent == []
+
+
 WEBP = b"RIFF\x1a\x00\x00\x00WEBPVP8L"
 PDF = b"%PDF-1.4 recorded"
 # Content-Disposition headers recorded from Paperless 3.4.2: `filename` is ASCII-folded (the

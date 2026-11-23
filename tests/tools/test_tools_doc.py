@@ -37,9 +37,9 @@ default; the others are switched on with
 
 **Kind** is what a tool tells the client about itself (its MCP annotations): `read` changes
 nothing, `write` adds or changes data, `destructive` can remove or overwrite data. **confirm**
-marks a tool with a confirmation step for its risky changes: without `confirm=true` such a call
-changes nothing and answers with what it would do. **dry run** marks a tool that can preview its
-effect first.
+marks a tool with a [confirmation step](configuration.md#confirmation) for its risky changes:
+without `confirm=true` such a call asks you in a dialog, or changes nothing and answers with what
+it would do. **dry run** marks a tool that can preview its effect first.
 """
 
 
