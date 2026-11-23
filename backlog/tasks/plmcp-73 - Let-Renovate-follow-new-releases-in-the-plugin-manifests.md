@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:57:05Z'
-updated_date: '2026-11-23T12:39:30Z'
+updated_date: '2026-11-23T12:53:58Z'
 labels: []
 dependencies: []
 priority: medium
@@ -47,4 +47,6 @@ Red: 3 failed; green: 22 passed. Proof: renovate 44.258.1 config validator --str
 Review fixes. Correction to the note above: the bot's own global configuration automerges (seen in the bodies of PR 54 and 55), so a last packageRule sets automerge false for this package; a 'force' block in the bot's configuration, which this repository cannot see, would still win. Observed in Dependency Dashboard #9: updates wait under Pending Approval until ticked, so the tick is a step of the release. allowedVersions takes only plain versions.
 
 Re-review: 0 Critical, 0 Important. AC 1 stays unchecked until the owner accepts that the PR needs a tick in the Dependency Dashboard first (the bot's own configuration), and until the first real PR. The first note's 'no automerge' means the repository's settings; the rule now sets automerge false for this package (force in the bot's config would still win). Known test gaps: groupName or minimumReleaseAge in an earlier rule, ignorePresets, :disableRenovate.
+
+Owner decision 2026-11-23: automerge false and the required tick in the Dependency Dashboard are accepted; AC 1 counts as met with that tick once the first real PR has appeared. Until then the task stays In Progress.
 <!-- SECTION:NOTES:END -->
