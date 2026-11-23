@@ -18,7 +18,7 @@ import mcp_server_paperless
 ROOT = Path(__file__).parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "pypi.yml"
 DISTRIBUTION = "mcp-server-paperless"
-REPOSITORY = "https://github.com/gardenbaum/paperless-mcp"
+REPOSITORY = "https://github.com/gardenbaum/mcp-server-paperless"
 SHA_PIN = re.compile(r"^[\w./-]+@[0-9a-f]{40}$")
 TAG_GATE = "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')"
 
@@ -87,6 +87,7 @@ def test_the_distribution_has_a_console_script_of_its_own_name_beside_the_old_on
     # `uvx mcp-server-paperless@latest` runs the script named like the distribution.
     assert scripts[DISTRIBUTION] == scripts["paperless-mcp"] == "mcp_server_paperless.cli:main"
     assert scripts["paperless-mcp-http"] == "mcp_server_paperless.cli:main_http"
+    assert scripts[f"{DISTRIBUTION}-http"] == "mcp_server_paperless.cli:main_http"
     # PyPI marks this URL verified because it is the Trusted Publisher's repository.
     assert mapping(meta["urls"])["Repository"] == REPOSITORY
 

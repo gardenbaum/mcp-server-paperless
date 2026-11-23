@@ -1,4 +1,4 @@
-# paperless-mcp over Streamable HTTP (decision-28). Two stages: the builder installs the locked
+# mcp-server-paperless over Streamable HTTP (decision-28). Two stages: the builder installs the locked
 # dependencies and the project into a virtual environment, the runtime copies only that.
 # Both base images are pinned by digest; Renovate bumps tag and digest together.
 
@@ -39,8 +39,8 @@ RUN apt-get update \
 
 # A fixed, unprivileged user without a home or a login shell. The environment belongs to root and
 # is read-only for the server, which writes nothing: the image runs with --read-only.
-RUN groupadd --system --gid 10001 paperless-mcp \
-    && useradd --system --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin paperless-mcp
+RUN groupadd --system --gid 10001 mcp-server-paperless \
+    && useradd --system --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin mcp-server-paperless
 COPY --from=builder /app/.venv /app/.venv
 
 # 0.0.0.0 is a remote bind, so the server refuses to start until PAPERLESS_MCP_HTTP_AUTH_TOKENS and
@@ -63,11 +63,11 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # layer that was scanned.
 ARG VERSION=dev
 ARG REVISION=unknown
-LABEL org.opencontainers.image.title="paperless-mcp" \
+LABEL org.opencontainers.image.title="mcp-server-paperless" \
       org.opencontainers.image.description="MCP server for paperless-ngx 3.x over Streamable HTTP" \
-      org.opencontainers.image.source="https://github.com/gardenbaum/paperless-mcp" \
+      org.opencontainers.image.source="https://github.com/gardenbaum/mcp-server-paperless" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}"
 
-ENTRYPOINT ["paperless-mcp-http"]
+ENTRYPOINT ["mcp-server-paperless-http"]

@@ -1,4 +1,4 @@
-# Paperless-ngx reading guide (relevance triage for paperless-mcp)
+# Paperless-ngx reading guide (relevance triage for mcp-server-paperless)
 
 Read this before any work on the Paperless adapter, fakes or tools, then open the specific
 source. Do not answer from memory: Paperless 3.x changed search (Tantivy), raised the API version

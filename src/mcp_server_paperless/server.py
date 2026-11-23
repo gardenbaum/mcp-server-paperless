@@ -435,7 +435,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
             yield {SERVICES: services}
 
     server = FastMCP(
-        name="paperless-mcp",
+        name="mcp-server-paperless",
         instructions=INSTRUCTIONS,
         version=__version__,
         providers=[*catalogue.providers, *variants],

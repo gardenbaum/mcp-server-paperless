@@ -466,7 +466,7 @@ def create_app(
     oidc: OidcSettings | None = None,
     resolve: Resolver = resolve_addresses,
 ) -> Starlette:
-    """The ASGI app of the paperless-mcp server (``paperless-mcp-http``).
+    """The ASGI app of the mcp-server-paperless server (``mcp-server-paperless-http``).
 
     Never offers a path parameter: HTTP callers upload base64 content (decision-7).
 

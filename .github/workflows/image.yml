@@ -48,7 +48,7 @@ jobs:
           context: .
           load: true
           push: false
-          tags: paperless-mcp:ci
+          tags: mcp-server-paperless:ci
           build-args: |
             REVISION=${{ github.sha }}
           cache-from: type=gha
@@ -59,7 +59,7 @@ jobs:
       - name: Scan for known vulnerabilities (HIGH and CRITICAL fail the job)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: paperless-mcp:ci
+          image-ref: mcp-server-paperless:ci
           scanners: vuln
           severity: "HIGH,CRITICAL"
           ignore-unfixed: true
@@ -68,7 +68,7 @@ jobs:
           format: table
 
       - name: Smoke test (refusal without tokens, read-only, non-root, healthy, 401 and initialize)
-        run: scripts/image_smoke.sh paperless-mcp:ci
+        run: scripts/image_smoke.sh mcp-server-paperless:ci
 
   # Version tags only. Pushes the image under its digest alone, scans and smoke-tests exactly that
   # digest, and only then gives it its version tags, so what is tagged is what was scanned. The

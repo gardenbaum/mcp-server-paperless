@@ -40,7 +40,11 @@ HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$", re.MULTILINE)
 FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 # PyPI renders the README on its own page, where a relative link leads nowhere, so the README
 # links files of the repository by their URL on main; they are checked like relative links.
-BLOB = "https://github.com/gardenbaum/paperless-mcp/blob/main/"
+BLOB = "https://github.com/gardenbaum/mcp-server-paperless/blob/main/"
+# The repository and image names before the rename to mcp-server-paperless (PLMCP-59).
+OLD_NAMES = re.compile(
+    r"github\.com/gardenbaum/paperless-mcp\b|ghcr\.io/gardenbaum/paperless-mcp(?!\w)"
+)
 
 
 def prose(page: Path) -> str:
@@ -131,6 +135,15 @@ def test_the_readme_links_every_page_written_for_users() -> None:
 
     assert pages, "docs/ holds no page for users"
     assert [name for name in pages if f"({BLOB}docs/{name}" not in text] == []
+
+
+@pytest.mark.parametrize("page", PAGES, ids=NAMES)
+def test_no_page_uses_the_old_repository_name(page: Path) -> None:
+    # The one allowed mention says which image name the releases up to 0.2.0 kept.
+    lines = page.read_text(encoding="utf-8").splitlines()
+    stale = [line for line in lines if OLD_NAMES.search(line) and "up to 0.2.0" not in line]
+
+    assert stale == []
 
 
 def test_the_readme_links_files_by_url_so_they_work_on_the_pypi_page() -> None:

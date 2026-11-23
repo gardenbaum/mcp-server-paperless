@@ -30,7 +30,7 @@ Backlog.md's CLI can set a decision's title and status but not its body. For dec
 (`backlog decision create` / `backlog decision edit`), then write the body (Context, Decision,
 Consequences, Enforcement) directly in the file. Never edit a decision's frontmatter by hand.
 
-## Project: paperless-mcp
+## Project: mcp-server-paperless
 
 MCP server for paperless-ngx 3.x (API version 10) on FastMCP 4. The approved design is
 `backlog/docs/doc-1 - paperless-mcp-design.md`; read it before architectural work.
