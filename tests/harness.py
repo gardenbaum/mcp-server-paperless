@@ -13,8 +13,10 @@ import threading
 import time
 from typing import TYPE_CHECKING, ClassVar, override
 
+import observation
 from fakes.accounts import ADMIN
 from fakes.paperless import FakePaperless, seeded
+from observation import recorded
 
 from mcp_server_paperless.server import CATALOGUE, Catalogue, Ports, create_server
 from mcp_server_paperless.settings import PaperlessSettings, ServerSettings
@@ -140,7 +142,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     runs over stdio (the only mode that offers uploads by path, and then only with `upload_dirs`).
     """
     fake = reader if isinstance(reader, FakePaperless) else admin()
-    return create_server(
+    server = create_server(
         paperless_settings(),
         server_settings(
             startup_timeout,
@@ -154,35 +156,40 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
         catalogue=catalogue,
         stdio=stdio,
         auth=auth,
-        ports=lambda _client: Ports(
-            instance=reader,
-            taxonomy=taxonomy or fake,
-            documents=documents or fake,
-            tasks=tasks or fake,
-            document_writes=document_writes or fake,
-            taxonomy_writes=taxonomy_writes or fake,
-            bulk_writes=bulk_writes or fake,
-            ai=ai or fake,
-            views=views or fake,
-            view_writes=view_writes or fake,
-            trash=trash or fake,
-            trash_writes=trash_writes or fake,
-            pdf_writes=pdf_writes or fake,
-            sharing=sharing or fake,
-            sharing_writes=sharing_writes or fake,
-            permissions=permissions or fake,
-            permission_writes=permission_writes or fake,
-            mail=mail or fake,
-            mail_writes=mail_writes or fake,
-            raw=raw or fake,
-            workflows=workflows or fake,
-            workflow_writes=workflow_writes or fake,
-            management=management or fake,
-            management_writes=management_writes or fake,
+        ports=lambda _client: recorded(
+            Ports(
+                instance=reader,
+                taxonomy=taxonomy or fake,
+                documents=documents or fake,
+                tasks=tasks or fake,
+                document_writes=document_writes or fake,
+                taxonomy_writes=taxonomy_writes or fake,
+                bulk_writes=bulk_writes or fake,
+                ai=ai or fake,
+                views=views or fake,
+                view_writes=view_writes or fake,
+                trash=trash or fake,
+                trash_writes=trash_writes or fake,
+                pdf_writes=pdf_writes or fake,
+                sharing=sharing or fake,
+                sharing_writes=sharing_writes or fake,
+                permissions=permissions or fake,
+                permission_writes=permission_writes or fake,
+                mail=mail or fake,
+                mail_writes=mail_writes or fake,
+                raw=raw or fake,
+                workflows=workflows or fake,
+                workflow_writes=workflow_writes or fake,
+                management=management or fake,
+                management_writes=management_writes or fake,
+            )
         ),
         sleep=sleep,
         clock=clock,
     )
+    if observation.RECORDING:  # the coverage test records which tool makes which port call
+        server.add_middleware(observation.ToolMarker())
+    return server
 
 
 def admin(*, ai_enabled: bool = False) -> FakePaperless:

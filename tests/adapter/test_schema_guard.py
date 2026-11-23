@@ -1,11 +1,13 @@
 """The schema guard rejects what the vendored schema does not allow (it must bite)."""
 
+import json
+
 import httpx2
 import pytest
-from quality.api_coverage import Observation
+from observation import OBSERVED, RESPONSES, Observation
 
 from adapter.conftest import BASE_URL, ClientFactory, streaming, tag
-from adapter.schema_guard import OBSERVED, SchemaViolationError, check_request, check_response
+from adapter.schema_guard import SchemaViolationError, check_request, check_response
 from mcp_server_paperless.domain.documents import DocumentUpload
 from mcp_server_paperless.paperless.admin import PaperlessAdminReader
 from mcp_server_paperless.paperless.documents import PaperlessDocumentWriter
@@ -566,10 +568,12 @@ async def test_a_request_is_recorded_with_the_port_method_that_sent_it(
 
     assert OBSERVED[start:] == [
         Observation(
+            tool=None,
             call=("TrashReader", "list_trash"),
             operation=("GET", "/api/trash/"),
             query=frozenset({"page", "page_size"}),
             body=frozenset(),
+            values=frozenset({"query:page=2", "query:page_size=5"}),
         )
     ]
 
@@ -629,3 +633,18 @@ async def test_a_streamed_request_is_recorded_although_the_guard_cannot_check_it
     assert seen.call == ("AdminReader", "download_documents")
     assert seen.operation == ("POST", "/api/documents/bulk_download/")
     assert seen.body == {"documents", "content", "compression", "follow_formatting"}
+
+
+@pytest.mark.anyio
+async def test_a_good_answer_is_kept_per_operation_for_the_replay(
+    make_client: ClientFactory,
+) -> None:
+    _ = RESPONSES.pop(("GET", "/api/trash/"), None)
+    reader = PaperlessTrashReader(make_client(lambda _: httpx2.Response(200, json=TRASH_PAGE)))
+
+    _ = await reader.list_trash(page=1, page_size=5)
+
+    status, headers, content = RESPONSES[("GET", "/api/trash/")]
+    assert (status, headers["content-type"]) == (200, "application/json")
+    assert "content-length" not in headers
+    assert json.loads(content) == TRASH_PAGE
