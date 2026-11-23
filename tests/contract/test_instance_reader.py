@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 from e2e.helpers import SEEDED_OBJECTS
+from guide_oracle import COMBINATIONS, Seen, check
+from harness import Recorded
 
 if TYPE_CHECKING:
     from contract.conftest import Backend
@@ -68,3 +70,33 @@ async def test_a_restricted_user_sees_shared_objects_and_no_system_status(
         False,
     )
     assert overview.paperless_version == backend.expected_version
+
+
+@pytest.mark.contract("InstanceReader.get_overview")
+async def test_a_user_without_the_ui_settings_permission_gets_no_ai_flag(backend: Backend) -> None:
+    overview = await backend.restricted(frozenset()).instance.get_overview()
+
+    assert (overview.ai_enabled, overview.current_user) == (None, None)
+
+
+@pytest.mark.contract("InstanceReader.get_overview")
+@pytest.mark.parametrize("who", ["admin", "reader", "blind", "no-settings"])
+async def test_the_guide_follows_what_the_reader_says_about_ai(backend: Backend, who: str) -> None:
+    """The capability the guide reads is the one each kind of user gets: false, or unknown.
+
+    The reader answers once; every combination of selection, disabled tools and read-only mode is
+    then started on that answer.
+    """
+    ports = backend.restricted(frozenset()) if who == "no-settings" else getattr(backend, who)
+    overview = await ports.instance.get_overview()
+    capability = "unknown" if who == "no-settings" else "missing"
+    assert (overview.ai_enabled is None) is (who == "no-settings")
+
+    ceilings: dict[tuple[str, bool], Seen | None] = {}
+    for combination in COMBINATIONS:
+        await check(
+            lambda: Recorded(overview),
+            capability=capability,
+            combination=combination,
+            ceilings=ceilings,
+        )

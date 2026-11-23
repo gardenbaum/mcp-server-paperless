@@ -56,6 +56,9 @@ Three settings narrow the tools a client is offered. A tool that is not offered 
   Only `core` and `ai` are on by default, so a client starts with a small set of tools and the
   model's context is not filled with tools you never use. Add what you need, for example
   `PAPERLESS_MCP_TOOLSETS=core,ai,pdf,trash`, or `all`.
+  The assistant is told which toolsets are off, what each is for and how to switch them on, in
+  the server instructions and in the result of `get_instance_overview`, which also lists their
+  tools (see [Switching a toolset on](#switching-a-toolset-on)).
 - **Read-only mode** (`PAPERLESS_MCP_READ_ONLY=true`). Offers only the tools that change nothing
   in Paperless, from whichever toolsets are selected: searching, reading, listing, downloading.
   The prompts that need a writing tool are not offered either.
@@ -67,6 +70,35 @@ change nothing and answer with what they would do, so the client can show it to 
 tool also tells the client whether it only reads or may change or remove data (its MCP
 annotations), which clients use for their own approval prompts. The [tool
 reference](tools.md) lists the kind of every tool.
+
+### Switching a toolset on
+
+Only you can: the assistant cannot change the selection, neither for the server nor for a session
+(decision-41), and is told to ask you. It is told which toolsets are off and what each adds, so
+that it can say what to set instead of calling a feature missing. The instructions give the
+setting first, as `PAPERLESS_MCP_TOOLSETS=core,ai,<name>` (what is on now plus the toolset needed,
+never `all`, which offers every tool), then the list of toolsets that are off. Nothing is listed
+that read-only mode, disabled tools or a Paperless without the capability (Paperless AI for `ai`)
+leaves out, and a toolset that read-only mode or disabled tools cut down is said to offer "some of
+its tools" (the overview names them). When Paperless did not say whether AI is on (the user may
+not view the UI settings, or it did not answer at startup), `ai` is marked "needs Paperless AI,
+not checked", whether it is on or off. The overview is built on each call from what Paperless
+says then: a toolset that Paperless now says it lacks is not offered, and one it cannot say
+about is marked "not checked", on or off, by the current answer; what is on stays as the start
+found it. A toolset that is selected but was hidden at the start (Paperless AI was off) and that Paperless
+now offers is listed in the overview under `offered_after_restart`; it is in neither list of
+toolsets to switch on, and a restart is all it needs. The instructions never say so: they are
+written at the start, when nothing has changed yet. The selection is read at startup, so the server must restart:
+
+| How you run it | Where to set `PAPERLESS_MCP_TOOLSETS` | What to restart |
+|---|---|---|
+| Claude Code plugin | The option Toolsets: `/plugin configure mcp-server-paperless@gardenbaum` | Claude Code |
+| Cursor plugin | Not offered (only the URL and the token are): add the server by hand instead | Cursor |
+| stdio (`claude mcp add`, Claude Desktop) | `env` of the server entry in the client's configuration; `-e` of `docker run -i` for the [stdio image](container.md) | The client (or reconnect the server in it) |
+| HTTP | The environment of the process | The process |
+| Container image | `environment` of the service, or `-e` | Recreate the container (`docker compose up -d`, or `docker run` again): a plain restart keeps the old environment |
+
+Give the full list (`core,ai,trash`), not just the new toolset; `all` offers every tool. The option of the plugin must not be empty.
 
 ## Toolsets
 

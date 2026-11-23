@@ -37,6 +37,10 @@ SHARDS = 3
 # lands in some shard without anyone editing this table; refresh the numbers when the balance
 # drifts (a test checks the split of the current table against the measured seconds). Keys are
 # paths relative to the repository.
+# PLMCP-82: test_toolset_guide 62 s, test_http 15 s and test_instance_reader 16 s are ONE
+# pull-request-tier run, 45223357290 (hosted, the timestamp gap of each module's progress line, as
+# above), not the median of several full runs; the next e2e-full runs should replace them
+# (PLMCP-44).
 MODULE_SECONDS: dict[str, float] = {
     "tests/contract/test_bulk.py": 284,
     "tests/contract/test_document_writer.py": 174,
@@ -65,18 +69,19 @@ MODULE_SECONDS: dict[str, float] = {
     "tests/e2e/test_mail.py": 15,
     "tests/e2e/test_files.py": 14,
     "tests/e2e/test_stdio.py": 14,
+    "tests/e2e/test_toolset_guide.py": 62,
     "tests/e2e/test_tasks.py": 12,
     "tests/contract/test_ai_reader.py": 10,
     "tests/e2e/test_sharing.py": 10,
     "tests/contract/test_workflows.py": 8,
     "tests/e2e/test_documents.py": 8,
     "tests/contract/test_views.py": 7,
-    "tests/e2e/test_http.py": 6,
+    "tests/e2e/test_http.py": 15,
     "tests/e2e/test_search.py": 6,
     "tests/e2e/test_views.py": 6,
     "tests/contract/test_mail.py": 5,
     "tests/e2e/test_workflows.py": 5,
-    "tests/contract/test_instance_reader.py": 3,
+    "tests/contract/test_instance_reader.py": 16,
     "tests/contract/test_view_filters.py": 3,
     "tests/e2e/test_ai.py": 2,
     "tests/e2e/test_stack.py": 2,
@@ -136,12 +141,14 @@ ALIASES: dict[str, tuple[str, ...]] = {
         "test_taxonomy_edits",
         "test_taxonomy_reader",
         "test_taxonomy_writer",
+        "test_toolset_guide",
         "test_update_document",
     ),
     # The entry points start the server the HTTP transport test talks to (decision-27).
     "app": ("test_http",),
     "cli": ("test_http",),
-    "server": ("test_http",),
+    # server.py composes the instructions and the guide to the toolsets (decision-41).
+    "server": ("test_http", "test_toolset_guide"),
     "documents": (
         "test_document_reader",
         "test_document_writer",
@@ -167,14 +174,14 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "filter_rules": ("test_search", "test_view_filters", "test_views"),
     "bulk_documents": ("test_bulk",),
     "bulk_taxonomy": ("test_bulk",),
-    "selection": ("test_bulk",),
+    "selection": ("test_bulk", "test_toolset_guide"),
     "page_ranges": ("test_pdf",),
     "task_outcome": ("test_tasks", "test_task_reader"),
     "tasks": ("test_task_reader",),
     "tag_hierarchy": ("test_taxonomy_edits",),
     "taxonomy": ("test_taxonomy_edits", "test_taxonomy_reader", "test_taxonomy_writer"),
     "taxonomy_edits": ("test_taxonomy_edits",),
-    "instance": ("test_instance_reader",),
+    "instance": ("test_instance_reader", "test_toolset_guide"),
     "ai": ("test_ai_reader",),
     "principals": ("test_admin", "test_permissions"),
     "admin_accounts": ("test_admin", "test_permissions"),

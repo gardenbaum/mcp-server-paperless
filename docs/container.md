@@ -39,6 +39,11 @@ services:
     security_opt: ["no-new-privileges:true"]
 ```
 
+To offer more than the default toolsets, add `PAPERLESS_MCP_TOOLSETS: core,ai,pdf,trash` (or `all`, which offers every tool)
+to `environment`. The selection is read at startup and `docker restart` keeps the old
+environment, so recreate the container (`docker compose up -d`) after a change; the assistant is
+told this when toolsets are off.
+
 ## With the OIDC layer
 
 The [OIDC layer](claude-ai-connector.md) is in images built from `main` and in releases after
@@ -107,6 +112,11 @@ docker build --target stdio --tag mcp-server-paperless-stdio .
 docker run --rm -i --init -e PAPERLESS_URL=https://paperless.example.org \
     -e PAPERLESS_TOKEN=your-api-token mcp-server-paperless-stdio
 ```
+
+Nothing is passed on by itself: to offer more than the default toolsets add
+`-e PAPERLESS_MCP_TOOLSETS=core,ai,pdf` to the `docker run` (in the Docker MCP Catalog, the
+server's configuration), and start the container again; the assistant is told this when toolsets
+are off.
 
 Uploading by path works only for directories you mount (`-v`, readable for uid 10001) and name in
 `PAPERLESS_MCP_UPLOAD_DIRS` by their path in the container. The rules are decision-38, carried over into decision-40.
