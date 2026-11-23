@@ -70,7 +70,7 @@ whatever `PAPERLESS_MCP_UPLOAD_DIRS` says, and request bodies larger than the ba
 `PAPERLESS_MCP_MAX_UPLOAD_BYTES` plus 64 KiB get 413. Every response carries an `X-Request-ID`
 (yours if it is short and made of letters, digits, `.`, `_` or `-`); one JSON log line per request
 (method, path, status, duration) goes to stderr, without query strings, headers or bodies. The
-rules are decision-27, carried over into decision-37 (`backlog/decisions/`). What the operator of a
+rules are decision-27, carried over into decision-38 (`backlog/decisions/`). What the operator of a
 deployment sees is in the [privacy policy](../PRIVACY.md#if-someone-else-runs-the-server).
 
 ## Sign in through an identity provider

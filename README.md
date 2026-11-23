@@ -23,6 +23,12 @@ your documents, by name, and nothing final happens without your yes.
 [Quick start](#quick-start) · [What you can ask](#what-you-can-ask) · [Comparison](#how-it-compares) ·
 [Toolsets](#toolsets) · [Safety](#how-it-keeps-your-archive-safe) · [Documentation](#documentation)
 
+![Terminal recording: the server finds three electricity bills by the name of the sender, files a new scan from the inbox like the others, and refuses to delete a correspondent for good until the call is repeated with confirm=true. Questions, the yes and tool calls are scripted, the answers are real, shortened, and the documents are invented.](https://raw.githubusercontent.com/gardenbaum/mcp-server-paperless/main/docs/demo/demo.gif)
+
+<sub>Version 0.3.2 against a real paperless-ngx 3.4.2 with invented documents. The questions, the
+yes and the tool calls are scripted, the answers are the server's own, shortened
+([how it is recorded](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/development.md#demo-recording)).</sub>
+
 </div>
 
 ```sh
@@ -282,8 +288,8 @@ takes more than a misunderstanding:
   tools that change nothing, and `PAPERLESS_MCP_DISABLED_TOOLS` takes single tools away.
 - **Paperless stays in charge.** The server acts as the user of its API token: the permissions
   set in Paperless apply to every call.
-- **Secrets stay secret.** Passwords and API keys are write-only, and tokens, document text and
-  search queries are not logged at the default log level.
+- **Secrets stay secret.** Passwords and API keys are write-only. Tool calls log neither tokens nor
+  document text nor search queries at the default log level; the [privacy policy](https://github.com/gardenbaum/mcp-server-paperless/blob/main/PRIVACY.md) names the exceptions.
 - **No reach beyond Paperless.** Callers cannot make the server read local files or reach other
   hosts. Uploading by file path exists only over stdio and only from directories you name.
 

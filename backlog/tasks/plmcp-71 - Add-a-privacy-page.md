@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:57:03Z'
-updated_date: '2026-11-23T12:39:40Z'
+updated_date: '2026-11-23T12:40:10Z'
 labels: []
 dependencies: []
 priority: medium
@@ -72,4 +72,6 @@ Review round (PR 93), each point verified before writing:
 - M1 mcp streamable_http_manager.py 277/305/325/366; FastMCP proxy.py 1215, 2807, 2849 (txn id is the state parameter), handlers/authorize.py 364, cimd.py 442. M2 proxy.py store keys (client_id, code, ids, token hashes), FernetEncryptionWrapper wraps values only. M3 proxy.py refresh fallback and refresh branch. M4 streamable_http.py _requests_in_flight. M5 vendored paperless usage.md (AI features, Remote OCR).
 - M6 gh api: private vulnerability reporting enabled. SECURITY.md added, linked from README, page guards cover it. M7 heading and line lengths guarded by test, M8 subject.
 Open: the code fix for the logo and the log findings are owner decisions. Not observed live: the logo request in a browser, OIDC log lines, Paperless's OCR and embedding services.
+
+README's safety list now limits the log statement to tool calls and links the policy. main merged (decision-38).
 <!-- SECTION:NOTES:END -->
