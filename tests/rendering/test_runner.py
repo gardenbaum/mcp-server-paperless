@@ -399,7 +399,8 @@ async def test_wide_and_tall_images_fit_into_the_memory_of_the_child(kind: str, 
 
     async def both(shape: tuple[int, int]) -> tuple[int | str, int | str]:
         content = await asyncio.to_thread(large, kind, mode, shape)
-        return await asyncio.gather(longest(content, 256), longest(content, 1568))
+        small, large_one = await asyncio.gather(longest(content, 256), longest(content, 1568))
+        return small, large_one
 
     found = await asyncio.gather(*(both(shape) for shape in SHAPES))
 
