@@ -374,7 +374,9 @@ class BodyLimit:
 
 
 ICON = base64.b64encode(Path(__file__).with_name("icon.svg").read_bytes())
-ICON_URL = b"data:image/svg+xml;base64," + ICON
+ICON_SRC = b'src="data:image/svg+xml;base64,' + ICON + b'"'
+# With the quotes: FastMCP escapes them in what a client or provider sent, so only its own tag fits.
+LOGO_SRC = f'src="{FASTMCP_LOGO_URL}"'.encode()
 
 
 class OwnIcon:
@@ -408,7 +410,7 @@ class OwnIcon:
             page += cast("bytes", message.get("body", b""))
             if message.get("more_body", False):
                 return
-            page = page.replace(FASTMCP_LOGO_URL.encode(), ICON_URL)
+            page = page.replace(LOGO_SRC, ICON_SRC, 1)
             kept = cast("list[tuple[bytes, bytes]]", start["headers"])
             start["headers"] = [
                 *(header for header in kept if header[0] != b"content-length"),

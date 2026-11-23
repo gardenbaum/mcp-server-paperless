@@ -38,6 +38,7 @@ from mcp_server_paperless.app import (
     OwnIcon,
     StaticBearerVerifier,
     authenticator,
+    body_limit,
     build_app,
     check_startup,
     oauth_storage,
@@ -588,12 +589,14 @@ async def test_a_wrong_token_gets_401_pointing_at_the_resource_metadata(issuer: 
     assert f"{BASE}/.well-known/oauth-protected-resource/mcp" in challenge
 
 
-async def register(client: httpx2.AsyncClient, redirect_uri: str) -> httpx2.Response:
+async def register(
+    client: httpx2.AsyncClient, redirect_uri: str, name: str = "connector"
+) -> httpx2.Response:
     return await client.post(
         "/register",
         json={
             "redirect_uris": [redirect_uri],
-            "client_name": "connector",
+            "client_name": name,
             "token_endpoint_auth_method": "none",
             "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"],
@@ -779,9 +782,14 @@ class Page(HTMLParser):
         self.images: list[str] = []
         self.loads: list[str] = []
         self.policy: str = ""
+        self.text: str = ""
         self.feed(text)
         # Style sheets, inline or in an attribute, load what url() and @import name.
         self.loads += cast("list[str]", re.findall(r"(?i)(?:url\s*\(|@import)[^;)]*", text))
+
+    @override
+    def handle_data(self, data: str) -> None:
+        self.text += data
 
     @override
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -797,7 +805,7 @@ class Page(HTMLParser):
             self.loads.append(given.get("content") or "")
 
 
-async def error_page(client: httpx2.AsyncClient, page: str) -> httpx2.Response:
+async def sign_in_page(client: httpx2.AsyncClient, page: str) -> httpx2.Response:
     """The named page of the sign-in, as the running app renders it."""
     html = {"Accept": "text/html"}
     if page == "unregistered client":
@@ -836,7 +844,7 @@ async def test_the_sign_in_pages_load_nothing_and_show_the_embedded_icon(
     app = make_app(http_settings(), oidc_settings(issuer.url))
 
     async with running(app) as client:
-        response = await error_page(client, page)
+        response = await sign_in_page(client, page)
 
     shown = Page(response.text)
     icon = f"data:image/svg+xml;base64,{base64.b64encode(ICON.read_bytes()).decode()}"
@@ -871,15 +879,99 @@ def test_the_icon_of_the_pages_is_not_sent_to_every_client(issuer: Issuer) -> No
     assert serve(admin(), auth=authenticator(http_settings(), oidc)).icons == []
 
 
+LOGO = "https://gofastmcp.com/assets/brand/blue-logo.png"
+
+
+async def consent_page(
+    client: httpx2.AsyncClient, redirect_uri: str, name: str = "connector"
+) -> httpx2.Response:
+    registered = await register(client, redirect_uri, name)
+    assert registered.status_code == 201, registered.text
+    client_id = cast("str", registered.json()["client_id"])
+    location = (await authorize(client, client_id, redirect_uri)).removeprefix("302 ")
+    return await client.get(location)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("name", [LOGO, f'src="{LOGO}"', f'<img src="{LOGO}"'])
+async def test_what_a_client_registers_is_shown_unchanged(issuer: Issuer, name: str) -> None:
+    app = make_app(http_settings(), oidc_settings(issuer.url))
+    redirect_uri = f"http://localhost:8000/callback?next={LOGO}"
+
+    async with running(app) as client:
+        response = await consent_page(client, redirect_uri, name)
+
+    shown = Page(response.text)
+    # Twice each: in the question or the yellow box, and in the details.
+    assert shown.text.count(redirect_uri) == 2
+    assert shown.text.count(name) >= 2
+    assert "data:image" not in shown.text
+    assert len(shown.images) == 1
+    assert shown.images[0].startswith("data:image/svg+xml;base64,")
+
+
+@pytest.mark.anyio
+async def test_the_error_of_the_identity_provider_is_shown_unchanged(issuer: Issuer) -> None:
+    app = make_app(http_settings(), oidc_settings(issuer.url))
+    query = {"error": f"denied {LOGO}", "error_description": f'see src="{LOGO}"'}
+
+    async with running(app) as client:
+        response = await client.get("/auth/callback", params=query)
+
+    shown = Page(response.text)
+    assert f'Authentication failed: see src="{LOGO}"' in shown.text
+    assert f"denied {LOGO}" in shown.text
+    assert "data:image" not in shown.text
+    assert len(shown.images) == 1
+
+
+@pytest.mark.anyio
+async def test_a_name_full_of_logos_does_not_inflate_the_page(issuer: Issuer) -> None:
+    app = make_app(http_settings(), oidc_settings(issuer.url))
+    name = LOGO * 20_000
+
+    async with running(app) as client:
+        response = await consent_page(client, CLAUDE_CALLBACK, name)
+
+    assert response.status_code == 200
+    # The page shows the name twice; everything else on it is small.
+    assert len(response.content) < 2 * len(name) + 20_000
+
+
+@pytest.mark.anyio
+async def test_the_body_limit_covers_the_registration(issuer: Issuer) -> None:
+    app = make_app(http_settings(), oidc_settings(issuer.url))
+
+    async with running(app) as client:
+        response = await register(client, CLAUDE_CALLBACK, "x" * body_limit(MAX_UPLOAD))
+
+    assert response.status_code == 413
+
+
+def test_without_the_oidc_layer_no_response_is_rewritten(issuer: Issuer) -> None:
+    bearer = http_settings(auth_tokens=BEARER_TOKEN)
+    server = serve(admin(), auth=authenticator(bearer))
+    plain = build_app(server, bearer, max_upload_bytes=MAX_UPLOAD)
+    with_oidc = make_app(http_settings(), oidc_settings(issuer.url))
+
+    assert OwnIcon not in {entry.cls for entry in plain.user_middleware}
+    assert OwnIcon in {entry.cls for entry in with_oidc.user_middleware}
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize("media", ["text/html; charset=utf-8", "text/event-stream"])
 async def test_only_html_is_held_back_and_changed(media: str) -> None:
-    logo = b"https://gofastmcp.com/assets/brand/blue-logo.png"
-    chunks = [b"<img src='" + logo[:9], logo[9:] + b"'>"]
+    logo = LOGO.encode()
+    chunks = [b'<img src="' + logo[:9], logo[9:] + b'"><img src="' + logo + b'">']
+    headers = [
+        (b"content-type", media.encode()),
+        (b"set-cookie", b"a=1"),
+        (b"set-cookie", b"b=2"),
+        (b"content-length", b"1"),
+    ]
 
     async def page(scope: Scope, receive: Receive, send: Send) -> None:
         _ = scope, receive
-        headers = [(b"content-type", media.encode()), (b"x-kept", b"1")]
         await send({"type": "http.response.start", "status": 200, "headers": headers})
         await send({"type": "http.response.body", "body": chunks[0], "more_body": True})
         await send({"type": "http.response.body", "body": chunks[1]})
@@ -895,10 +987,11 @@ async def test_only_html_is_held_back_and_changed(media: str) -> None:
     await OwnIcon(page)({"type": "http"}, receive, send)
 
     start, *bodies = sent
-    assert (b"x-kept", b"1") in start["headers"]
     if media == "text/event-stream":
+        assert start["headers"] == headers
         assert [message["body"] for message in bodies] == chunks
     else:
         [body] = [cast("bytes", message["body"]) for message in bodies]
-        assert body.startswith(b"<img src='data:image/svg+xml;base64,")
-        assert (b"content-length", str(len(body)).encode()) in start["headers"]
+        assert body.startswith(b'<img src="data:image/svg+xml;base64,')
+        assert body.endswith(b'"><img src="' + logo + b'">')  # only the first: FastMCP's one logo
+        assert start["headers"] == [*headers[:3], (b"content-length", str(len(body)).encode())]

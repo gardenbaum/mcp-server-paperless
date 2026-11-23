@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:54:26Z'
-updated_date: '2026-11-23T13:02:02Z'
+updated_date: '2026-11-23T13:14:05Z'
 labels: []
 dependencies: []
 priority: high
@@ -49,4 +49,6 @@ FastMCP's OIDC consent and error pages load a logo from gofastmcp.com because th
 <!-- SECTION:NOTES:BEGIN -->
 FastMCP's icons setting was not used: the callback error pages (create_error_html in oauth_proxy/proxy.py) ignore it and it would add a roughly 1 KB data URI to serverInfo for every client, stdio included. Server icons stay empty (tested). app.OwnIcon, added only with the OIDC layer, replaces FASTMCP_LOGO_URL in text/html responses; other responses, such as event streams, pass unchanged. Covers consent, unregistered client and all callback error pages. FastMCP's CSP already allows img-src data:; it is unchanged. The plain consent errors (an h1 and a p) never had a logo and still have none. Callback error pages keep FastMCP's alt text 'FastMCP'. The consent tooltip keeps its links to gofastmcp.com and modelcontextprotocol.io (loaded only on a click).
 icon.svg (667 bytes) is in wheel and sdist (checked by building and importing the wheel); a test keeps it equal to assets/icon.svg. Red: six rendered pages, the HTML unit test and the icon copy failed; green after.
+
+Review fix (I1): OwnIcon replaces only the first src="<logo URL>" attribute, quotes included. FastMCP escapes quotes in client and provider text, so that text stays unchanged and the page does not grow (before: a 960 KB client name gave a 36.7 MB page). Tests added for client_name, redirect_uri, error_description, page size, no OwnIcon without OIDC, and repeated Set-Cookie headers. The body limit covers /register (tested), but at the default upload limit it is 14046552 bytes: a 14 MB client name registers unauthenticated and its consent page is 28 MB. That is FastMCP's own behaviour and needs an owner decision; not changed. Alt text stays disclosed.
 <!-- SECTION:NOTES:END -->
