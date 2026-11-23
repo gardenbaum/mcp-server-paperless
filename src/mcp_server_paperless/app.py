@@ -7,6 +7,7 @@ guard, a request id and a body limit.
 """
 
 import base64
+import contextlib
 import hashlib
 import hmac
 import ipaddress
@@ -21,6 +22,7 @@ from cryptography.fernet import Fernet
 from fastmcp.server.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
 from fastmcp.server.auth.jwt_issuer import derive_jwt_key
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration, OIDCProxy
+from fastmcp.server.http import StreamableHTTPASGIApp
 from fastmcp.utilities.ui import FASTMCP_LOGO_URL
 from key_value.aio.stores.filetree import (
     FileTreeStore,
@@ -38,7 +40,7 @@ from mcp_server_paperless.observability import RequestContext, request_header
 from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import AsyncGenerator, Callable, Sequence
 
     from fastmcp import FastMCP
     from key_value.aio.protocols import AsyncKeyValue
@@ -329,7 +331,7 @@ async def _reply(send: Send, status: int, answer: object) -> None:
 
 
 async def _too_large(send: Send, limit: int) -> None:
-    """413 with a JSON-RPC error: MCP clients show its message, and nothing of any other body."""
+    """413 with a JSON-RPC error: the SDK's client shows its message, and no other body's."""
     message = (
         f"Request body too large: this server takes at most {limit} bytes. Upload a smaller file; "
         "the operator can raise PAPERLESS_MCP_MAX_UPLOAD_BYTES."
@@ -386,6 +388,44 @@ class BodyLimit:
             if started:
                 raise
             await _too_large(send, self.limit)
+
+
+NO_SDK_LIMIT = (
+    "cannot set the request body limit of the MCP endpoint: this version of FastMCP or the MCP SDK "
+    "keeps it elsewhere (decision-40)."
+)
+
+
+def raise_sdk_limit(app: Starlette, limit: int) -> None:
+    """Let the MCP endpoint of ``app`` take bodies of ``limit`` bytes (decision-40).
+
+    The MCP SDK refuses bodies over 4 MiB, and FastMCP has no option to change that. The manager
+    with the SDK's limit is made at each start of the app, so it is set right after.
+
+    Raises:
+        RuntimeError: FastMCP's endpoint is not among the routes. Starting the app raises it when
+            the limit is not where it is expected: a server with another limit never serves.
+    """
+    endpoints = [getattr(route, "endpoint", None) for route in app.routes]
+    # With authentication FastMCP wraps its endpoint.
+    inner = [getattr(endpoint, "app", endpoint) for endpoint in endpoints]
+    served = next((e for e in inner if isinstance(e, StreamableHTTPASGIApp)), None)
+    if served is None:
+        raise RuntimeError(NO_SDK_LIMIT)
+    start = app.router.lifespan_context
+
+    @contextlib.asynccontextmanager
+    async def raised(starting: Starlette) -> AsyncGenerator[None]:
+        async with start(starting):
+            limiter = getattr(served.session_manager, "asgi_app", None)
+            if not isinstance(limiter, RequestBodyLimitMiddleware) or not hasattr(
+                limiter, "max_body_size"
+            ):
+                raise RuntimeError(NO_SDK_LIMIT)
+            limiter.max_body_size = limit
+            yield
+
+    app.router.lifespan_context = raised
 
 
 class SmallBodies:
@@ -533,6 +573,7 @@ def build_app(
         session_idle_timeout="auto",
     )
     app.debug = False
+    raise_sdk_limit(app, body_limit(max_upload_bytes))
     # /mcp/ is not /mcp: a redirect would be answered before authentication, and with the
     # wrong port and scheme behind a proxy.
     app.router.redirect_slashes = False

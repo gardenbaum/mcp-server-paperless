@@ -1,6 +1,6 @@
 name: Image
 
-# Container image (decision-28, carried over by decision-39; linux/amd64 and linux/arm64).
+# Container image (decision-28, carried over by decision-40; linux/amd64 and linux/arm64).
 # Separate from ci.yml and not a required check: it never slows a merge. Pull requests and main
 # build, scan and smoke-test the image without pushing it. Only a pushed version tag (v*) publishes
 # to GHCR, from the `publish` and `tag` jobs, the only ones allowed to write packages. Nothing
