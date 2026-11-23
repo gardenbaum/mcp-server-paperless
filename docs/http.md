@@ -14,11 +14,15 @@ claude mcp add --transport http paperless http://127.0.0.1:8000/mcp \
     --header "Authorization: Bearer $PAPERLESS_MCP_HTTP_AUTH_TOKENS"
 ```
 
-The package is `mcp-server-paperless`; the PyPI project
-[`paperless-mcp`](https://pypi.org/project/paperless-mcp/) is a different server. From a clone,
-`just serve-http` or `.venv/bin/mcp-server-paperless-http` start the same server; the old command
-names `paperless-mcp` and `paperless-mcp-http` still work. For a
-container see [Run in a container](container.md).
+From a clone, `just serve-http` or `.venv/bin/mcp-server-paperless-http` start the same server. For
+a container see [Run in a container](container.md).
+
+> [!WARNING]
+> The package is `mcp-server-paperless`. Once it is installed, the old command names
+> `paperless-mcp` and `paperless-mcp-http` still work, but they are not package names of this
+> project. Do not run `uvx paperless-mcp` or `uvx paperless-mcp-http`: uvx takes the command for a
+> PyPI project, and [`paperless-mcp`](https://pypi.org/project/paperless-mcp/) is a different server
+> by someone else that would get your Paperless token.
 
 ## Authentication and allowed hosts
 
@@ -66,7 +70,7 @@ whatever `PAPERLESS_MCP_UPLOAD_DIRS` says, and request bodies larger than the ba
 `PAPERLESS_MCP_MAX_UPLOAD_BYTES` plus 64 KiB get 413. Every response carries an `X-Request-ID`
 (yours if it is short and made of letters, digits, `.`, `_` or `-`); one JSON log line per request
 (method, path, status, duration) goes to stderr, without query strings, headers or bodies. The
-rules are decision-27, carried over into decision-36 (`backlog/decisions/`).
+rules are decision-27, carried over into decision-37 (`backlog/decisions/`).
 
 ## Sign in through an identity provider
 

@@ -3,9 +3,9 @@ id: doc-1
 title: paperless-mcp design
 type: specification
 created_date: '2026-11-09T19:21:00Z'
-updated_date: '2026-11-23T01:10:46Z'
+updated_date: '2026-11-23T11:11:37Z'
 ---
-# paperless-mcp — Design
+# mcp-server-paperless — Design
 
 Status: approved 2026-11-09 · Plan: Backlog milestones m-0..m-6 (PLMCP-1..37) · Owner: Fabian
 
@@ -59,7 +59,7 @@ convention or memory.
 - FastMCP **4.1.x** (latest stable 4.1.6; Provider model, MCP SDK v2). Its HTTP stack is
   **httpx2**; this project uses httpx2 too (no `httpx`, no second HTTP library).
 - Python **3.14** baseline (`requires-python >=3.14`); CI also runs 3.15.
-- **Public** repository on GitHub (`gardenbaum/paperless-mcp`, personal account), CI on GitHub
+- **Public** repository on GitHub (`gardenbaum/mcp-server-paperless`, personal account), CI on GitHub
   Actions, dependency updates via Renovate. `main` is protected: changes land through one branch
   and one pull request per Backlog task, merge only with all required checks green.
 - Project management with **Backlog.md** only: this design is a Backlog document, decisions are
