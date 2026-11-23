@@ -30,7 +30,7 @@ from mcp_server_paperless.services.search_syntax import SEARCH_FIELDS, query_not
         ("a \u2013b", ("'\u2013b'", "NOT b")),
         ("a \u2212b", ("'\u2212b'", "NOT b")),
         ("a -(b (c) d) e", ("'-(b (c) d)'", "NOT (b (c) d).")),
-        ("a -(b", ("'-(b'", "NOT (b.")),
+        ("a -(b", ("'-('", "NOT (.")),
         ("rechnung [swisscom and migros]", ("'and'", "AND")),
         ('"terms" -x', ("-x", "NOT x")),
         ("a (-b)", ("'-b'", "NOT b")),
@@ -129,3 +129,14 @@ def test_a_long_query_is_read_in_linear_time() -> None:
 
 def test_every_search_field_is_accepted() -> None:
     assert query_notices(" ".join(f"{field}:x" for field in SEARCH_FIELDS)) == ()
+
+
+@pytest.mark.parametrize("query", ["-(" * 5_000, "-(" * 5_000 + "x" + ")" * 5_000])
+def test_nested_exclusions_do_not_multiply_the_notice(query: str) -> None:
+    assert sum(map(len, query_notices(query))) < 3 * len(query)
+
+
+def test_only_the_outermost_excluded_group_is_named() -> None:
+    [notice] = query_notices("-(a -b) -c")
+
+    assert "'-(a -b)', '-c'; write NOT (a -b), NOT c." in notice

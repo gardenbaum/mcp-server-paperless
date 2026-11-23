@@ -108,11 +108,15 @@ def _operators(words: list[_Word]) -> Iterator[str]:
 def _exclusions(query: str, plain: str, words: list[_Word]) -> Iterator[str]:
     excluded: dict[str, str] = {}
     ends = _group_ends(plain)
+    inside = 0  # the end of the last named group: what is nested in it is not named again
     for word in words:
-        if word.before == "NOT" or not _EXCLUDE.match(query, word.start, word.end):
+        if word.start < inside or word.before == "NOT":
+            continue
+        if not _EXCLUDE.match(query, word.start, word.end):
             continue
         if len(word.text) > 1 or word.opens_group:
-            end = word.end if len(word.text) > 1 else ends.get(word.end, len(plain))
+            end = word.end if len(word.text) > 1 else ends.get(word.end, word.end + 1)
+            inside = end
             excluded[query[word.start : end]] = query[word.start + 1 : end]
     if excluded:
         advice = ", ".join(f"NOT {term}" for term in excluded.values())
