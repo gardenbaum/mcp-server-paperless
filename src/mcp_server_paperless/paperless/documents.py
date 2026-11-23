@@ -32,6 +32,7 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
 )
+from mcp_server_paperless.paperless.client import MAY_BE_APPLIED
 from mcp_server_paperless.paperless.disposition import filename
 from mcp_server_paperless.paperless.pagination import Page
 from mcp_server_paperless.paperless.queued import Queued, TaskWaiter, not_applied
@@ -566,7 +567,7 @@ class PaperlessDocumentWriter:
             raise Validation(message, hint="Check the Paperless log for the reason.")
         if not answer.root:
             message = f"Paperless sent an unexpected response for POST {PATH}{document_id}/notes/."
-            raise PaperlessMcpError(message)
+            raise PaperlessMcpError(message, hint=MAY_BE_APPLIED)
         mine = [row for row in answer.root if row.note == text] or answer.root
         return _note(max(mine, key=lambda row: row.id))
 

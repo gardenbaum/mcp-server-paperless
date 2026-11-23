@@ -92,8 +92,10 @@ async def test_a_save_error_in_the_answer_is_a_validation_error() -> None:
 async def test_an_answer_without_notes_is_unexpected() -> None:
     client, _ = streaming(lambda _: httpx2.Response(200, json=[]))
 
-    with pytest.raises(PaperlessMcpError, match="unexpected response"):
+    with pytest.raises(PaperlessMcpError, match="unexpected response") as raised:
         _ = await PaperlessDocumentWriter(client).add_note(1, "x")
+
+    assert "may have been applied" in (raised.value.hint or "")
 
 
 @pytest.mark.parametrize(

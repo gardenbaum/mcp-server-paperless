@@ -38,7 +38,7 @@ EXPECTED_VERSION = os.environ.get("PAPERLESS_E2E_VERSION", "3.5.1")
 
 READY_TIMEOUT = 300.0
 CONSUME_TIMEOUT = 180.0
-# Every custom field data type of 3.4.2 except `select`, which needs options (see seed()).
+# Every custom field data type of 3.5.1 except `select`, which needs options (see seed()).
 DATA_TYPES = (
     *("string", "url", "date", "boolean", "integer", "float", "monetary"),
     *("documentlink", "longtext"),
@@ -541,7 +541,7 @@ def rebuild_search_index(api: httpx2.Client) -> None:
 
     Why: Tantivy keeps replaced and deleted documents in their segments until a merge, and counts
     them in a term's document frequency. A more-like-this query whose terms occur more often than
-    there are live documents makes Tantivy panic, and Paperless 3.4.2 then answers an empty list
+    there are live documents makes Tantivy panic, and Paperless 3.5.1 then answers an empty list
     (`more_like_this_ids` logs "More Like This scoring panicked"). Every update or deletion of a
     document leaves such an entry, so any test that runs after other writes (a contract suite, a
     long-lived stack) can hit it; a rebuild leaves exactly one entry per document. Paperless has no

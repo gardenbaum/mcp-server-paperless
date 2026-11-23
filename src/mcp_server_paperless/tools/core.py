@@ -334,7 +334,7 @@ async def search_documents(  # noqa: PLR0913 -- one parameter per filter, descri
         int | None,
         Field(
             description=(
-                "Find documents similar to this document id. On Paperless 3.4.2 an empty "
+                "Find documents similar to this document id. On Paperless 3.5.1 an empty "
                 "result can be a search-index fault; the admin fixes it with "
                 "`document_index reindex`."
             )
