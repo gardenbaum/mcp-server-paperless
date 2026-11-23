@@ -163,9 +163,9 @@ async def test_an_answer_of_exactly_the_limit_is_read() -> None:
 @pytest.mark.parametrize(
     ("code", "expected"),
     [
-        ("raise SystemExit(3)", "memory"),
-        ("raise SystemExit(4)", "timeout"),
-        ("raise SystemExit(9)", "crashed"),
+        ("raise SystemExit(73)", "memory"),
+        ("raise SystemExit(74)", "timeout"),
+        ("raise SystemExit(3)", "crashed"),
         ("import os\nos.abort()", "crashed"),
         ("raise ValueError('secret text of the document')", "crashed"),
         ("pass", "crashed"),
@@ -270,3 +270,13 @@ async def test_the_event_loop_stays_free_while_a_page_is_drawn() -> None:
     _ = ticker.cancel()
 
     assert ticks > 5
+
+
+@pytest.mark.parametrize("mode", ["RGB", "RGBA"])
+async def test_an_image_near_the_pixel_limit_fits_into_the_memory_of_the_child(mode: str) -> None:
+    content = saved(Image.new(mode, (8_300, 12_000), "white"), "PNG", compress_level=1)
+    request = REQUEST.model_copy(update={"mime_type": "image/png"})
+
+    [image] = (await ChildRenderer().render(content, request)).images
+
+    assert (image.width, image.height) == (277, 400)

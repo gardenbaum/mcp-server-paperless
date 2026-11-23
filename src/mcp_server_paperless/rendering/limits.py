@@ -16,10 +16,10 @@ from typing import TYPE_CHECKING, Final, NoReturn, Protocol, cast
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-# Exit codes of the child.
-MEMORY_EXIT: Final = 3
-TIME_EXIT: Final = 4
-WATCH_EXIT: Final = 5
+# Exit codes of the child. Not small numbers: abort() ends a Windows process with 3.
+MEMORY_EXIT: Final = 73
+TIME_EXIT: Final = 74
+WATCH_EXIT: Final = 75
 
 # Seconds between two looks at the memory of the child.
 INTERVAL: Final = 0.02
@@ -120,7 +120,8 @@ def watch(  # noqa: PLR0913 -- the limits, and one keyword per seam
     end(code)
 
 
-def _set_limit(name: str, value: int) -> None:
+def set_limit(name: str, value: int) -> None:
+    """Lower a limit of this process to ``value``, never above what it already is."""
     import resource  # noqa: PLC0415 -- does not exist on Windows
 
     kind = cast("int", vars(resource)[name])
@@ -129,10 +130,19 @@ def _set_limit(name: str, value: int) -> None:
     resource.setrlimit(kind, (lowest, lowest))
 
 
-def _control(option: int, value: int) -> None:
-    library = ctypes.CDLL(None, use_errno=True)
+class Libc(Protocol):
+    """The one function of the C library that is called."""
+
+    def prctl(self, option: int, *values: ctypes.c_ulong) -> int:
+        """0 on success."""
+        ...
+
+
+def control(option: int, value: int, library: Libc | None = None) -> None:
+    """Call prctl(2)."""
+    found = library or ctypes.CDLL(None, use_errno=True)
     zero = ctypes.c_ulong(0)
-    if library.prctl(option, ctypes.c_ulong(value), zero, zero, zero):
+    if found.prctl(option, ctypes.c_ulong(value), zero, zero, zero):
         raise OSError(ctypes.get_errno(), "prctl failed")
 
 
@@ -141,8 +151,8 @@ def lock_down(
     *,
     platform: str = sys.platform,
     fonts: Sequence[str] = SYSTEM_FONTS,
-    set_limit: Callable[[str, int], None] = _set_limit,
-    control: Callable[[int, int], None] = _control,
+    set_limit: Callable[[str, int], None] = set_limit,
+    control: Callable[[int, int], None] = control,
 ) -> None:
     """Take from this process what rendering does not need; it cannot get it back.
 
@@ -162,7 +172,8 @@ def lock_down(
         control(_PR_SET_NO_NEW_PRIVS, 1)
 
 
-def _start(target: Callable[[], None]) -> None:
+def start_thread(target: Callable[[], None]) -> None:
+    """Run ``target`` beside this thread; the process does not wait for it."""
     threading.Thread(target=target, daemon=True).start()
 
 
@@ -170,7 +181,7 @@ def guard(
     memory_bytes: int,
     seconds: float,
     *,
-    start: Callable[[Callable[[], None]], None] = _start,
+    start: Callable[[Callable[[], None]], None] = start_thread,
     lock: Callable[[int], None] = lock_down,
 ) -> None:
     """Bound this process: the watchdog first, because the limits forbid new threads."""
@@ -180,7 +191,7 @@ def guard(
 
 
 def protect_server(
-    *, platform: str = sys.platform, control: Callable[[int, int], None] = _control
+    *, platform: str = sys.platform, control: Callable[[int, int], None] = control
 ) -> None:
     """Keep other processes of this user, the child included, out of this one (Linux).
 

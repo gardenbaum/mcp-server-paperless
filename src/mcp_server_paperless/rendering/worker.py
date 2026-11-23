@@ -136,12 +136,11 @@ def _stored(region: Region, orientation: int) -> Region:
 
 def _flat(image: Image.Image) -> Image.Image:
     """The image in a mode that can be scaled, and transparency kept."""
-    if image.mode.startswith("I"):
-        # 16 bits per pixel (and Pillow's 32 bit form of them) to 8.
-        return image.convert("I").point(lambda value: value / 256).convert("L")
+    if image.mode in {"I", "I;16", "L", "RGB", "RGBA"} and "transparency" not in image.info:
+        return image  # convert() would copy it: 400 MB at the pixel limit
     if image.has_transparency_data:
         return image.convert("RGBA")
-    return image.convert("L" if image.mode in {"1", "L"} else "RGB")
+    return image.convert("L" if image.mode == "1" else "RGB")
 
 
 class _Picture(_Source):
@@ -183,6 +182,9 @@ class _Picture(_Source):
         _ = image.load()
         box = (left * image.width, top * image.height, right * image.width, bottom * image.height)
         shown = _flat(image).resize((width, height), Image.Resampling.LANCZOS, box=box)
+        if shown.mode.startswith("I"):
+            # 16 bits per pixel (and Pillow's 32 bit form of them) to 8.
+            shown = shown.convert("I").point(lambda value: value / 256).convert("L")
         if shown.mode == "RGBA":
             paper = Image.new("RGBA", shown.size, WHITE)
             paper.alpha_composite(shown)
@@ -226,8 +228,6 @@ def render(content: bytes, request: RenderRequest) -> Rendered:
     source: _Source = (
         _Pdf(content) if request.mime_type == PDF else _Picture(content, request.max_pixels)
     )
-    if source.page_count < 1:
-        raise RenderFailed(reason="damaged")
     try:
         pages = parse_pages(request.pages, page_count=source.page_count)
     except Validation as error:

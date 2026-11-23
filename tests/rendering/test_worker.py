@@ -138,6 +138,15 @@ def test_a_pdf_that_cannot_be_opened_says_why(content: bytes, reason: str) -> No
     assert raised.value.reason == reason
 
 
+def test_a_page_that_is_missing_in_the_file_is_damaged_and_the_others_are_shown() -> None:
+    document = pdf_of([QUADRANTS, ""]).replace(b"5 0 R] /Count 2", b"9 0 R] /Count 2")
+
+    assert render(document, request(pages="1")).page_count == 2
+    with pytest.raises(RenderFailed) as raised:
+        _ = render(document, request(pages="2"))
+    assert raised.value.reason == "damaged"
+
+
 IMAGES = {"image/jpeg": "JPEG", "image/png": "PNG", "image/tiff": "TIFF", "image/webp": "WEBP"}
 UPRIGHT = ["red", "green", "blue", "yellow"]
 

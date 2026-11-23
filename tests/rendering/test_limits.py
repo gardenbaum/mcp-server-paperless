@@ -4,6 +4,7 @@ import ctypes
 import os
 import subprocess
 import sys
+import threading
 from typing import TYPE_CHECKING, NoReturn, override
 
 import pytest
@@ -143,12 +144,13 @@ def test_more_memory_is_noticed() -> None:
     del block
 
 
+@pytest.mark.skipif(WINDOWS, reason="os.pread and os.sysconf are POSIX")
 def test_linux_memory_is_the_resident_part_of_statm(tmp_path: Path) -> None:
     statm = tmp_path / "statm"
     _ = statm.write_text("9000 25 12 1 0 4 0\n")
     read = limits.linux_memory(statm)
 
-    assert read() == 25 * os.sysconf("SC_PAGE_SIZE") if not WINDOWS else read
+    assert read() == 25 * os.sysconf("SC_PAGE_SIZE")
 
 
 class Kernel32:
@@ -228,6 +230,48 @@ def test_windows_has_none_of_these() -> None:
     windows = locked("win32")
 
     assert (windows.limits, windows.controls) == ({}, [])
+
+
+@pytest.mark.skipif(WINDOWS, reason="there are no resource limits on Windows")
+def test_a_limit_is_lowered_but_never_raised() -> None:
+    import resource  # noqa: PLC0415 -- does not exist on Windows
+
+    limits.set_limit("RLIMIT_CORE", 4096)
+    lowered = resource.getrlimit(resource.RLIMIT_CORE)
+    limits.set_limit("RLIMIT_CORE", 8192)
+
+    assert resource.getrlimit(resource.RLIMIT_CORE) == lowered
+    assert lowered[0] == lowered[1] <= 4096
+
+
+class Libc:
+    """Answers prctl."""
+
+    def __init__(self, answer: int) -> None:
+        self._answer: int = answer
+        self.asked: list[tuple[int, list[int]]] = []
+
+    def prctl(self, option: int, *values: ctypes.c_ulong) -> int:
+        self.asked.append((option, [value.value for value in values]))
+        return self._answer
+
+
+def test_a_process_control_that_fails_is_an_error() -> None:
+    works, fails = Libc(0), Libc(-1)
+
+    limits.control(38, 1, works)
+    with pytest.raises(OSError, match="prctl failed"):
+        limits.control(38, 1, fails)
+
+    assert works.asked == fails.asked == [(38, [1, 0, 0, 0])]
+
+
+def test_the_watchdog_runs_beside_the_renderer() -> None:
+    done = threading.Event()
+
+    limits.start_thread(done.set)
+
+    assert done.wait(10)
 
 
 def test_the_guard_locks_down_and_starts_the_watchdog() -> None:
