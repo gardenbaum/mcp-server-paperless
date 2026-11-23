@@ -1,11 +1,11 @@
 ---
 id: PLMCP-70
 title: Add a stdio build target to the Dockerfile for the Docker MCP Catalog
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:39:56Z'
-updated_date: '2026-11-23T12:12:19Z'
+updated_date: '2026-11-23T12:20:06Z'
 labels: []
 dependencies: []
 priority: medium
@@ -21,17 +21,17 @@ The Docker MCP Catalog builds a local server from its Dockerfile and runs the im
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A build target of the Dockerfile runs mcp-server-paperless over stdio as the same unprivileged user
-- [ ] #2 The published HTTP image is unchanged and stays the default target
-- [ ] #3 The stdio target is built and answers initialize and tools/list in CI, and its workflow and container guards cover it
-- [ ] #4 The catalog's own validate and build checks pass for an entry that uses the target
+- [x] #1 A build target of the Dockerfile runs mcp-server-paperless over stdio as the same unprivileged user
+- [x] #2 The published HTTP image is unchanged and stays the default target
+- [x] #3 The stdio target is built and answers initialize and tools/list in CI, and its workflow and container guards cover it
+- [x] #4 The catalog's own validate and build checks pass for an entry that uses the target
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -58,4 +58,12 @@ just check: everything passes except the known macOS-only test_the_menu_driver_r
 
 Review fixes: runtime holds metadata instructions only; FROM lines are read in any case and with flags, every FROM must be readable and every stage name unique; the build job compares RootFS.Layers of both images (deliberate snapshot change: one more step). Red first: of eleven Dockerfile mutations in a scratch copy eight passed the old guards, all eleven fail the new ones. The old smoke test accepted noise on stdout before and after the answers, a hang after stdin ends, exit status 3 and gid 0; the new one rejects each.
 Decided: the catalog secret keeps required: true. It is metadata for the configuration UI; a token that is missing anyway reaches the server as the literal <UNKNOWN> (docker/mcp-gateway), which a reachable Paperless rejects, so the server stops at startup with its message.
+
+Independent opus review and re-review: 0 Critical, 0 Important left. Both architectures built and passed the stdio smoke test and the layer comparison in the PR's CI. DoD 2 unchecked: one known macOS-only local failure, CI green. The catalog entry is submitted with the squash commit.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+A stdio build target runs mcp-server-paperless as uid 10001 with the HTTP image's layers; the HTTP image is unchanged and the default. CI smoke-tests it on both architectures and proves the layers are equal. decision-38 supersedes decision-37. Docker's validate and build pass for an entry that uses the target (19 tools).
+<!-- SECTION:FINAL_SUMMARY:END -->
