@@ -19,6 +19,8 @@ MAX_IMAGE_BYTES: Final = 720 * 1024
 MAX_IMAGES: Final = 5
 # Pixels of an image original; 117 megapixels of PNG took 568 MB to decode.
 MAX_PIXELS: Final = 100_000_000
+# Pages of a file: more than any real document has. The page specification is walked one by one.
+MAX_PAGES: Final = 200_000
 # The long side of an image: 2576 pixels is the most Claude reads without scaling down, 1568 the
 # most of its standard tier.
 MIN_SIZE: Final = 256
@@ -27,7 +29,9 @@ DEFAULT_SIZE: Final = 1568
 
 # Left, top, right and bottom edge, as fractions of the page as shown.
 type Region = tuple[float, float, float, float]
-type Reason = Literal["encrypted", "damaged", "pixels", "pages", "timeout", "memory", "crashed"]
+type Reason = Literal[
+    "encrypted", "damaged", "pixels", "pages", "count", "timeout", "memory", "crashed"
+]
 
 
 class RenderRequest(BaseModel):

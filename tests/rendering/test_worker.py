@@ -1,13 +1,15 @@
 """The renderer itself, in the process of the test: pages of PDFs and images."""
 
+import io
 import itertools
 from hashlib import shake_256
+from typing import cast
 
 import pytest
-from PIL import ExifTags, Image
+from PIL import ExifTags, Image, ImageChops
 
 from mcp_server_paperless.domain.rendering import RenderFailed, RenderRequest
-from mcp_server_paperless.rendering.worker import render
+from mcp_server_paperless.rendering.worker import LIBWEBP, decoded_webp, libwebp, render, resized
 from rendering.files import (
     BLUE,
     ENCRYPTED_PDF,
@@ -306,6 +308,127 @@ def test_a_large_jpeg_is_decoded_at_a_fraction_of_its_size() -> None:
 
     assert (image.width, image.height) == (400, 400)
     assert corners(opened(image.data)) == UPRIGHT
+
+
+def refuse(*_arguments: object) -> None:
+    """A libwebp that cannot decode."""
+
+
+@pytest.mark.parametrize("options", [{"lossless": True}, {"quality": 90}])
+@pytest.mark.parametrize("mode", ["RGB", "RGBA"])
+def test_a_webp_image_decoded_directly_is_the_one_pillow_decodes(
+    mode: str, options: dict[str, object]
+) -> None:
+    content = saved(quadrants(300, 400, mode), "WEBP", **options)
+    expected = Image.open(io.BytesIO(content)).convert("RGBA")
+
+    found = decoded_webp(content, (300, 400))
+
+    if found is None:  # Windows: there Pillow decodes it
+        assert LIBWEBP is None
+    else:
+        assert (found.mode, found.size) == ("RGBA", (300, 400))
+        assert found.tobytes() == expected.tobytes()
+
+
+@pytest.mark.parametrize("mode", ["RGB", "CMYK"])
+@pytest.mark.parametrize("orientation", [1, 6])
+def test_a_large_progressive_jpeg_looks_like_any_other(mode: str, orientation: int) -> None:
+    shown = quadrants(5_100, 5_000, mode)
+    exif = Image.Exif()
+    exif[ExifTags.Base.Orientation] = orientation
+    plain = saved(shown, "JPEG", exif=exif)
+    progressive = saved(shown, "JPEG", exif=exif, progressive=True)
+
+    for region in (None, (0.25, 0.5, 0.75, 1.0)):
+        [one] = render(plain, request("image/jpeg", region=region)).images
+        [other] = render(progressive, request("image/jpeg", region=region)).images
+        a, b = opened(one.data), opened(other.data)
+        assert a.size == b.size
+        # PDFium's colours of CMYK are duller than Pillow's, but the same colours.
+        assert dominant(a) == dominant(b)
+
+
+def dominant(image: Image.Image) -> list[tuple[bool, ...]]:
+    """Which channels are strong in each quarter."""
+    places = [(0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)]
+    found: list[tuple[bool, ...]] = []
+    for x, y in places:
+        pixel = image.getpixel((int(x * image.width), int(y * image.height)))
+        assert isinstance(pixel, tuple)
+        found.append(tuple(value > 140 for value in pixel))
+    return found
+
+
+@pytest.mark.parametrize("mode", ["L", "RGB", "RGBA"])
+@pytest.mark.parametrize("region", [None, (0.1, 0.3, 0.77, 0.9)])
+def test_scaling_in_bands_is_scaling_the_whole(
+    mode: str, region: tuple[float, float, float, float] | None
+) -> None:
+    data = shake_256(b"bands").digest(701 * 907)
+    picture = Image.frombytes("L", (701, 907), data).convert(mode)
+    left, top, right, bottom = region or (0.0, 0.0, 1.0, 1.0)
+    box = (left * 701, top * 907, right * 701, bottom * 907)
+
+    found = resized(picture, box, (310, 400))
+
+    whole = picture.resize((310, 400), Image.Resampling.LANCZOS, box=box)
+    difference = ImageChops.difference(found.convert("RGB"), whole.convert("RGB"))
+    assert all(extreme(band) <= 2 for band in difference.split())
+
+
+def extreme(band: Image.Image) -> int:
+    """The brightest value of a band."""
+    return max(value for value, count in enumerate(band.histogram()) if count)
+
+
+def test_a_webp_image_that_cannot_be_decoded_directly_is_left_to_pillow() -> None:
+    content = saved(quadrants(30, 40), "WEBP")
+
+    assert decoded_webp(content, (30, 40), None) is None
+    assert decoded_webp(content, (30, 40), refuse) is None
+    assert decoded_webp(content[:40], (30, 40)) is None
+    assert decoded_webp(content, (29, 40)) is None  # its buffer would be too small
+
+
+@pytest.mark.parametrize("module", ["PIL._imagingmorph", "json", "not_there"])
+def test_without_a_reachable_libwebp_pillow_decodes(module: str) -> None:
+    assert libwebp(module) is None
+
+
+def test_the_first_picture_of_an_animation_is_shown() -> None:
+    second = Image.new("RGB", (300, 400), BLUE)
+    content = saved(quadrants(300, 400), "WEBP", save_all=True, append_images=[second])
+
+    found = render(content, request("image/webp"))
+
+    assert found.page_count == 1
+    assert corners(opened(found.images[0].data)) == UPRIGHT
+
+
+@pytest.mark.parametrize("mode", ["RGB", "L", "P", "RGBA", "LA", "CMYK", "1", "I;16"])
+@pytest.mark.parametrize("size", [(2500, 3333), (601, 801), (399, 533)])
+def test_a_reduced_image_shows_the_same_place_as_the_whole(
+    mode: str, size: tuple[int, int]
+) -> None:
+    # A dark field in the lower right quarter, on light: for every mode and reduction.
+    grey = Image.new("L", size, 200)
+    grey.paste(20, (size[0] // 2, size[1] // 2, *size))
+    picture = grey.point(lambda v: v * 257, "I").convert("I;16") if mode == "I;16" else grey
+    picture = picture.convert(mode) if mode != "I;16" else picture
+    content = saved(picture, "TIFF")
+
+    [whole] = render(content, request("image/tiff", size=256)).images
+    [part] = render(content, request("image/tiff", size=256, region=(0.4, 0.4, 0.6, 0.6))).images
+
+    for image in (whole, part):
+        shown = opened(image.data).convert("L")
+        places = [(0.45, 0.45), (0.55, 0.45), (0.45, 0.55), (0.55, 0.55)]
+        values = [
+            cast("int", shown.getpixel((int(x * shown.width), int(y * shown.height))))
+            for x, y in places
+        ]
+        assert [value < 110 for value in values] == [False, False, False, True], values
 
 
 def noise(width: int = 400, height: int = 400) -> Image.Image:

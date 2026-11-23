@@ -156,7 +156,9 @@ def lock_down(
 ) -> None:
     """Take from this process what rendering does not need; it cannot get it back.
 
-    It can write no file and start no process or thread. Where there are no system fonts to read
+    It cannot write data into a file with ordinary writes and cannot fork or start a thread (root
+    on Linux still can). It can still change, empty, rename or delete what the user may (mmap,
+    truncate, rename, unlink) and replace itself by another program. Where there are no system fonts to read
     (as in the container image), it can open nothing at all: no file, no socket. With system fonts
     it still can, because PDFium reads them for text whose font is not embedded.
     """
@@ -194,6 +196,9 @@ def protect_server(
     *, platform: str = sys.platform, control: Callable[[int, int], None] = control
 ) -> None:
     """Keep other processes of this user, the child included, out of this one (Linux).
+
+    This one only: a launcher that passed the tokens on (uvx) or a client's configuration file
+    can still be read.
 
     They cannot read its environment (the tokens), its memory or its descriptors in /proc, nor
     attach to it. It also writes no core dump.

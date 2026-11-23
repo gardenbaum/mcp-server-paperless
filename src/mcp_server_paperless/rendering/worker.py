@@ -4,18 +4,20 @@ The file is untrusted: PDFium and Pillow read it with native code. `runner` star
 a process of its own for each call and bounds it.
 """
 
+import ctypes
+import importlib.util
 import io
 import math
 import struct
 import sys
-from typing import TYPE_CHECKING, BinaryIO, Final, Protocol, override
+from typing import TYPE_CHECKING, BinaryIO, Final, Protocol, cast, override
 
 import pypdfium2
 import pypdfium2.raw
 from PIL import ExifTags, Image, TiffImagePlugin, UnidentifiedImageError
 
 from mcp_server_paperless.domain.errors import Validation
-from mcp_server_paperless.domain.rendering import PageImage, Rendered, RenderFailed
+from mcp_server_paperless.domain.rendering import MAX_PAGES, PageImage, Rendered, RenderFailed
 from mcp_server_paperless.rendering import limits
 from mcp_server_paperless.rendering.limits import MEMORY_EXIT
 from mcp_server_paperless.rendering.wire import Job, answer
@@ -56,6 +58,10 @@ TURNS: Final[Mapping[int, Image.Transpose]] = {
     7: Image.Transpose.TRANSVERSE,
     8: Image.Transpose.ROTATE_90,
 }
+# Rows of the result that are scaled at a time.
+BAND: Final = 64
+# Megapixels above which a progressive JPEG is left to PDFium.
+LARGE_JPEG: Final = 25_000_000
 QUALITY = 80
 # A page that is too large alone: this quality first, then three quarters of the pixels per side,
 # again and again. Twelve steps take the largest image to about 100 pixels.
@@ -135,27 +141,134 @@ def _stored(region: Region, orientation: int) -> Region:
 
 
 def _flat(image: Image.Image) -> Image.Image:
-    """The image in a mode that can be scaled, and transparency kept."""
-    if image.mode in {"I", "I;16", "L", "RGB", "RGBA"} and "transparency" not in image.info:
-        return image  # convert() would copy it: 400 MB at the pixel limit
+    """The image in a mode that can be scaled, with its transparency."""
     if image.has_transparency_data:
-        return image.convert("RGBA")
+        return image if image.mode in {"LA", "RGBA"} else image.convert("RGBA")
+    if image.mode in {"L", "RGB"}:
+        return image  # convert() would copy it
+    if image.mode.startswith("I"):
+        return image.convert("I")
     return image.convert("L" if image.mode == "1" else "RGB")
+
+
+def resized(image: Image.Image, box: Region, size: tuple[int, int]) -> Image.Image:
+    """The box of an image, scaled to ``size``: what ``resize`` with this box gives.
+
+    A band of rows at a time, because converting and scaling a large image as a whole takes several
+    copies of it. Each band is cut with the rows around it that the filter looks at.
+    """
+    width, height = size
+    left, top, right, bottom = box
+    step = (bottom - top) / height
+    reach = 4 * max(1.0, step)  # LANCZOS looks at three rows, in pixels of the result
+    margin = 4 * max(1.0, (right - left) / width)
+    from_column = max(0, int(left - margin))
+    to_column = min(image.width, math.ceil(right + margin))
+    bands: list[Image.Image] = []
+    for start in range(0, height, BAND):
+        end = min(start + BAND, height)
+        first, last = top + start * step, min(top + end * step, image.height)
+        from_row = max(0, int(first - reach))
+        to_row = min(image.height, math.ceil(last + reach))
+        part = _flat(image.crop((from_column, from_row, to_column, to_row)))
+        place = (left - from_column, first - from_row, right - from_column, last - from_row)
+        bands.append(part.resize((width, end - start), Image.Resampling.LANCZOS, box=place))
+    shown = Image.new(bands[0].mode, size)
+    for number, band in enumerate(bands):
+        shown.paste(band, (0, number * BAND))
+    return shown
+
+
+class DecodeInto(Protocol):
+    """libwebp's ``WebPDecodeRGBAInto``."""
+
+    def __call__(
+        self,
+        data: bytes,
+        data_size: ctypes.c_size_t,
+        output: ctypes.Array[ctypes.c_ubyte],
+        output_size: ctypes.c_size_t,
+        stride: int,
+        /,
+    ) -> int | None:
+        """Decode into ``output``; None if it cannot."""
+        ...
+
+
+def libwebp(module: str = "PIL._webp") -> DecodeInto | None:
+    """From the libwebp that Pillow's own module is linked to; None if built in (Windows)."""
+    spec = importlib.util.find_spec(module)
+    try:
+        function = ctypes.CDLL(str(spec and spec.origin))["WebPDecodeRGBAInto"]
+    except OSError, AttributeError:
+        return None
+    function.restype = ctypes.c_void_p
+    return cast("DecodeInto", function)
+
+
+LIBWEBP: Final = libwebp()
+
+
+def decoded_webp(
+    content: bytes, size: tuple[int, int], decode: DecodeInto | None = LIBWEBP
+) -> Image.Image | None:
+    """A still WebP image, decoded into the one buffer that is kept.
+
+    Pillow decodes WebP through the animation decoder, which holds three to four copies of the
+    image (1.6 GB for 100 megapixels). None if this way does not work: animations, broken files,
+    and where libwebp cannot be reached.
+    """
+    if decode is None:
+        return None
+    width, height = size
+    buffer = bytearray(width * height * 4)
+    output = (ctypes.c_ubyte * len(buffer)).from_buffer(buffer)
+    length, space = ctypes.c_size_t(len(content)), ctypes.c_size_t(len(buffer))
+    if not decode(content, length, output, space, width * 4):
+        return None
+    return Image.frombuffer("RGBA", size, buffer, "raw", "RGBA", 0, 1)
+
+
+def _as_pdf(content: bytes, image: Image.Image) -> bytes:
+    """A JPEG as a PDF of one page. Pillow holds a large progressive one twice, PDFium once."""
+    side = f"{image.width} 0 0 {image.height} 0 0 cm /I Do".encode()
+    colours = b"/DeviceRGB"
+    if image.mode == "CMYK":
+        # Pillow inverts the values of a JPEG with an Adobe marker, as its writers mean them.
+        colours = b"/DeviceCMYK" + b" /Decode [1 0 1 0 1 0 1 0]" * ("adobe" in image.info)
+    size = (image.width, image.height)
+    page = b"/MediaBox [0 0 %d %d] /Resources << /XObject << /I 5 0 R >> >>" % size
+    look = b"/Width %d /Height %d /BitsPerComponent 8 /ColorSpace %b" % (*size, colours)
+    objects = (
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /Contents 4 0 R %b >>" % page,
+        b"<< /Length %d >>\nstream\n%b\nendstream" % (len(side), side),
+        b"<< /Type /XObject /Subtype /Image /Filter /DCTDecode %b /Length %d >>\n"
+        % (look, len(content))
+        + b"stream\n%b\nendstream" % content,
+    )
+    body = b"".join(b"%d 0 obj\n%b\nendobj\n" % one for one in enumerate(objects, start=1))
+    return b"%PDF-1.4\n" + body + b"trailer << /Size 6 /Root 1 0 R >>\n"
 
 
 class _Picture(_Source):
     """An image; the frames of a TIFF are its pages."""
 
     def __init__(self, content: bytes, max_pixels: int) -> None:
+        self._content: bytes = content
         self._max_pixels: int = max_pixels
         try:
-            image = Image.open(io.BytesIO(content), formats=FORMATS)
+            image = self._opened()
             tiff = isinstance(image, TiffImagePlugin.TiffImageFile)
             self.page_count: int = image.n_frames if tiff else 1
         except BROKEN as error:
             raise RenderFailed(reason="damaged") from error
         self._image: Image.Image = image
         self._tiff: bool = tiff
+
+    def _opened(self) -> Image.Image:
+        return Image.open(io.BytesIO(self._content), formats=FORMATS)
 
     @override
     def draw(self, page: int, size: int, region: Region) -> Image.Image:
@@ -177,17 +290,25 @@ class _Picture(_Source):
         left, top, right, bottom = _stored(region, orientation if turn is not None else 1)
         box_region = (left, top, right, bottom)
         scale, width, height = _scaled(image.width, image.height, box_region, size)
+        if image.format == "WEBP":
+            # The opened image holds copies of the file: it goes before this takes its own memory.
+            shape = image.size
+            image = self._image = Image.new("1", (1, 1))
+            image = decoded_webp(self._content, shape) or self._opened()
+        elif image.info.get("progressive") and pixels > LARGE_JPEG and image.mode != "L":
+            drawn = _Pdf(_as_pdf(self._content, image)).draw(1, size, box_region)
+            return drawn if turn is None else drawn.transpose(turn)
         # A JPEG can be decoded at 1/2, 1/4 or 1/8 of its size; never below what is shown.
         _ = image.draft(None, (math.ceil(image.width * scale), math.ceil(image.height * scale)))
         _ = image.load()
         box = (left * image.width, top * image.height, right * image.width, bottom * image.height)
-        shown = _flat(image).resize((width, height), Image.Resampling.LANCZOS, box=box)
+        shown = resized(image, box, (width, height))
         if shown.mode.startswith("I"):
             # 16 bits per pixel (and Pillow's 32 bit form of them) to 8.
-            shown = shown.convert("I").point(lambda value: value / 256).convert("L")
-        if shown.mode == "RGBA":
+            shown = shown.point(lambda value: value / 256).convert("L")
+        if shown.mode in {"LA", "RGBA"}:
             paper = Image.new("RGBA", shown.size, WHITE)
-            paper.alpha_composite(shown)
+            paper.alpha_composite(shown.convert("RGBA"))
             shown = paper.convert("RGB")
         return shown if turn is None else shown.transpose(turn)
 
@@ -228,6 +349,8 @@ def render(content: bytes, request: RenderRequest) -> Rendered:
     source: _Source = (
         _Pdf(content) if request.mime_type == PDF else _Picture(content, request.max_pixels)
     )
+    if source.page_count > MAX_PAGES:
+        raise RenderFailed(reason="count")
     try:
         pages = parse_pages(request.pages, page_count=source.page_count)
     except Validation as error:
@@ -251,8 +374,10 @@ def main(stdin: BinaryIO, stdout: BinaryIO, guard: Callable[[int, float], None])
 
     ``guard`` bounds the process by the memory and the seconds of the job.
     """
-    # All plugins now: the process may not be able to open their modules later.
+    # All plugins now, and what LAB images are converted with: the process may not be able to open
+    # their modules later.
     _ = Image.init()
+    _ = Image.new("LAB", (1, 1)).convert("RGB")
     job = Job.model_validate_json(stdin.readline())
     try:
         guard(job.memory_bytes, job.seconds)

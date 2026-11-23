@@ -25,7 +25,12 @@ from mcp_server_paperless.domain.rendering import (
 from mcp_server_paperless.services.pages import PageService
 
 if TYPE_CHECKING:
-    from mcp_server_paperless.domain.documents import DocumentFile, FileMetadata, FileVersion
+    from mcp_server_paperless.domain.documents import (
+        DocumentFile,
+        DocumentRecord,
+        FileMetadata,
+        FileVersion,
+    )
     from mcp_server_paperless.domain.rendering import Region
 
 pytestmark = pytest.mark.anyio
@@ -281,6 +286,20 @@ async def test_without_a_version_the_newest_one_is_shown_and_read_by_its_id() ->
     assert reader.served == [("original", LIMIT, 9)]
 
 
+class Versionless(FakePaperless):
+    """A Paperless that lists no version of a document."""
+
+    @override
+    async def get_document(self, document_id: int) -> DocumentRecord:
+        return (await super().get_document(document_id)).model_copy(update={"versions": ()})
+
+
+async def test_a_document_without_listed_versions_is_shown_as_its_own_root() -> None:
+    found = await service(fake(document(), Versionless)).show(7, "1")
+
+    assert found.report.version_id == 7
+
+
 async def test_a_version_has_its_own_files() -> None:
     renderer = Renderer()
 
@@ -392,6 +411,11 @@ UNLOCK = "remove_document_password (toolset pdf) makes a version without the pas
             RenderFailed(reason="memory"),
             "Rendering document 7 needed more than 1 GiB of memory and was stopped.",
             LESS,
+        ),
+        (
+            RenderFailed(reason="count"),
+            "The original of document 7 has more than 200000 pages, which cannot be shown.",
+            ELSEWHERE,
         ),
         (RenderFailed(reason="crashed"), "Document 7 could not be rendered.", ELSEWHERE),
     ],
@@ -512,7 +536,8 @@ async def test_a_call_that_waits_too_long_is_told_to_try_again() -> None:
         _ = await pages.show(7, "1")
 
     assert raised.value.describe() == (
-        "Another document is being rendered. Hint: Try again in a few seconds."
+        "Another document is being rendered. Hint: Try again in a moment; a large document can "
+        "take up to 150 seconds."
     )
     renderer.go.set()
     _ = await first

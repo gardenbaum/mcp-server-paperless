@@ -5,28 +5,27 @@ import hashlib
 import os
 import sys
 import time
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import anyio
 import pytest
-from PIL import Image
+from PIL import Image, PngImagePlugin
 
 from mcp_server_paperless.domain.rendering import PageRenderer, RenderFailed, RenderRequest
 from mcp_server_paperless.rendering.runner import ChildRenderer, child_environment
 from rendering.files import ENCRYPTED_PDF, QUADRANTS, corners, filled_form, opened, pdf_of, saved
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-42")]
 
 REQUEST = RenderRequest(mime_type="application/pdf", pages="1", size=400)
 WINDOWS = sys.platform == "win32"
+# On Windows Pillow has libwebp built in: its decoder needs three copies of the image.
+WEBP_NEEDS_SHARED_LIBRARY = pytest.mark.skipif(WINDOWS, reason="Pillow's WebP decoder copies")
 # A worker that reads its job and then does what the test is about.
 READ = "import sys, json\nhead = json.loads(sys.stdin.buffer.readline())\n"
 ANSWER = (
     """sys.stdout.buffer.write(json.dumps({"page_count": %s, "images": [{"page": 1, "width": 1, """
-    """"height": 1, "size_bytes": 1}]}).encode() + b"\\nx")\n"""
+    """"height": 1, "size_bytes": 12}]}).encode() + b"\\nRIFF....WEBP")\n"""
 )
 
 
@@ -113,6 +112,12 @@ if not os.path.samestat(os.fstat(2), os.stat(os.devnull)):
     assert found.page_count == 1
 
 
+async def test_a_child_that_cannot_be_started_is_a_failure_not_a_bug(tmp_path: Path) -> None:
+    missing = ChildRenderer(command=(str(tmp_path / "python"), "-I"))
+
+    assert await reason(missing) == "crashed"
+
+
 def test_windows_processes_get_the_one_variable_they_cannot_start_without() -> None:
     given = {"SystemRoot": "C:\\Windows", "PAPERLESS_TOKEN": "secret", "PATH": "x"}
 
@@ -147,11 +152,28 @@ async def test_a_child_that_floods_its_output_is_ended() -> None:
     assert await reason(worker(code)) == "crashed"
 
 
+@pytest.mark.skipif(WINDOWS, reason="/dev/fd is POSIX")
+async def test_a_child_that_is_ended_leaves_no_open_pipe() -> None:
+    flood = "while True: sys.stdout.buffer.write(b'x' * 65536)"
+    _ = await reason(worker("pass"))  # what the event loop opens once is open now
+    before = descriptors()
+
+    for _ in range(5):
+        assert await reason(worker(flood)) == "crashed"
+        assert await reason(worker(flood), b"x" * 5_000_000) == "crashed"
+
+    assert descriptors() == before
+
+
+def descriptors() -> int:
+    return len(list(Path("/dev/fd").iterdir()))
+
+
 async def test_an_answer_of_exactly_the_limit_is_read() -> None:
     code = (
         "head = json.dumps({'page_count': 1, 'images': [{'page': 1, 'width': 1, 'height': 1, "
         "'size_bytes': 99800}]}).ljust(199) + '\\n'\n"
-        "sys.stdout.buffer.write(head.encode() + b'x' * 99800)"
+        "sys.stdout.buffer.write(head.encode() + b'RIFF....WEBP' + b'x' * 99788)"
     )
 
     found = await worker(code, output_bytes=100_000).render(b"", REQUEST)
@@ -272,14 +294,75 @@ async def test_the_event_loop_stays_free_while_a_page_is_drawn() -> None:
     assert ticks > 5
 
 
-@pytest.mark.parametrize("mode", ["RGB", "RGBA"])
-async def test_an_image_near_the_pixel_limit_fits_into_the_memory_of_the_child(mode: str) -> None:
-    content = saved(Image.new(mode, (8_300, 12_000), "white"), "PNG", compress_level=1)
-    request = REQUEST.model_copy(update={"mime_type": "image/png"})
+# 99.6 megapixels of every mode a decoder gives, as large as the limit lets in.
+NEAR_LIMIT = [
+    ("PNG", "1"),
+    ("PNG", "L"),
+    ("PNG", "LA"),
+    ("PNG", "P"),
+    ("PNG", "RGB"),
+    ("PNG", "RGBA"),
+    ("PNG", "I;16"),
+    ("TIFF", "1"),
+    ("TIFF", "L"),
+    ("TIFF", "LA"),
+    ("TIFF", "P"),
+    ("TIFF", "RGB"),
+    ("TIFF", "RGBA"),
+    ("TIFF", "CMYK"),
+    ("TIFF", "LAB"),
+    ("TIFF", "I;16"),
+    ("JPEG", "L"),
+    ("JPEG", "RGB"),
+    ("JPEG", "CMYK"),
+    ("TIFF", "RGB turned"),
+    ("JPEG", "RGB progressive"),
+    ("JPEG", "CMYK progressive"),
+    pytest.param("WEBP", "RGB lossless", marks=WEBP_NEEDS_SHARED_LIBRARY),
+    pytest.param("WEBP", "RGB", marks=WEBP_NEEDS_SHARED_LIBRARY),
+    pytest.param("WEBP", "RGBA", marks=WEBP_NEEDS_SHARED_LIBRARY),
+]
+
+
+@pytest.mark.parametrize(("kind", "mode"), NEAR_LIMIT)
+async def test_an_image_near_the_pixel_limit_fits_into_the_memory_of_the_child(
+    kind: str, mode: str
+) -> None:
+    content = large(kind, mode)
+    request = REQUEST.model_copy(update={"mime_type": f"image/{kind.lower()}"})
 
     [image] = (await ChildRenderer().render(content, request)).images
 
-    assert (image.width, image.height) == (277, 400)
+    assert sorted((image.width, image.height)) == [277, 400]
+    assert opened(image.data).getpixel((200, 200)) != (0, 0, 0)
+
+
+def large(kind: str, mode: str) -> bytes:
+    """A light picture of 8 300 x 12 000 pixels."""
+    compression: dict[str, dict[str, object]] = {
+        "PNG": {"compress_level": 1},
+        "TIFF": {"compression": "tiff_lzw"},
+        "JPEG": {"quality": 50},
+        "WEBP": {"quality": 50, "method": 0},
+    }
+    options = compression[kind]
+    mode, _, special = mode.partition(" ")
+    if special == "turned":
+        options["tiffinfo"] = {0x0112: 6}
+    elif special == "progressive":
+        options |= {"progressive": True, "subsampling": 0}
+    elif special == "lossless":
+        options = {"lossless": True, "quality": 0, "method": 0}
+    if mode == "P":
+        picture = Image.new("P", (8_300, 12_000), 1)
+        picture.putpalette([0, 0, 0, 200, 200, 200])
+        if kind == "PNG":
+            options["transparency"] = 0
+    else:
+        light = {"I;16": 50_000, "LA": (200, 128), "RGBA": (200, 200, 200, 128)}
+        light |= {"CMYK": (50, 50, 50, 0), "LAB": (200, 128, 128), "RGB": (200, 200, 200)}
+        picture = Image.new(mode, (8_300, 12_000), light.get(mode, 1 if mode == "1" else 200))
+    return saved(picture, kind, **options)
 
 
 # The worker as it runs where there are no system fonts, as in the container image.
@@ -295,17 +378,33 @@ raise SystemExit(main(sys.stdin.buffer, sys.stdout.buffer, guard))
 
 @pytest.mark.skipif(WINDOWS, reason="there are no resource limits on Windows")
 @pytest.mark.parametrize(
-    "kind", ["PDF", "form", "JPEG", "PNG", "TIFF", "WEBP", "palette", "turned"]
+    "kind",
+    [
+        *("PDF", "form", "JPEG", "PNG", "TIFF", "WEBP", "palette", "turned", "LAB", "CMYK"),
+        *("I;16", "LZW", "deflate", "JPEG in TIFF", "animated", "two pictures", "text", "profile"),
+    ],
 )
 async def test_a_child_that_may_open_nothing_renders_all_the_same(kind: str) -> None:
     exif = Image.Exif()
     exif[0x0112] = 6
-    picture = Image.new("RGB", (60, 80), (255, 0, 0))
+    picture, blue = (Image.new("RGB", (60, 80), colour) for colour in ("red", "blue"))
+    text = PngImagePlugin.PngInfo()
+    text.add_itxt("Title", "Käse 日本語", zip=True)
     files = {
         "PDF": ("application/pdf", pdf_of([QUADRANTS])),
         "form": ("application/pdf", filled_form()),
         "palette": ("image/png", saved(picture.convert("P"), "PNG", transparency=0)),
         "turned": ("image/jpeg", saved(picture, "JPEG", exif=exif)),
+        "LAB": ("image/tiff", saved(Image.new("LAB", (60, 80), (200, 128, 128)), "TIFF")),
+        "CMYK": ("image/jpeg", saved(picture.convert("CMYK"), "JPEG")),
+        "I;16": ("image/png", saved(Image.new("I;16", (60, 80), 50_000), "PNG")),
+        "LZW": ("image/tiff", saved(picture, "TIFF", compression="tiff_lzw")),
+        "deflate": ("image/tiff", saved(picture, "TIFF", compression="tiff_deflate")),
+        "JPEG in TIFF": ("image/tiff", saved(picture, "TIFF", compression="jpeg")),
+        "animated": ("image/webp", saved(picture, "WEBP", save_all=True, append_images=[blue])),
+        "two pictures": ("image/jpeg", saved(picture, "MPO", save_all=True, append_images=[blue])),
+        "text": ("image/png", saved(picture, "PNG", pnginfo=text, exif=exif)),
+        "profile": ("image/jpeg", saved(picture, "JPEG", icc_profile=b"profile" * 40)),
     }
     if kind in {"JPEG", "PNG", "TIFF", "WEBP"}:
         files[kind] = (f"image/{kind.lower()}", saved(picture, kind))

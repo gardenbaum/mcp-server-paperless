@@ -136,12 +136,9 @@ def test_the_memory_of_this_process_is_read() -> None:
 
 
 def test_more_memory_is_noticed() -> None:
-    read = limits.memory_reader()
-    before = read()
-    block = bytearray(b"x") * 200_000_000
+    grown = child(GROWING)
 
-    assert read() - before > 100_000_000
-    del block
+    assert int(grown) > 100_000_000
 
 
 @pytest.mark.skipif(WINDOWS, reason="os.pread and os.sysconf are POSIX")
@@ -205,7 +202,7 @@ def locked(platform: str, *fonts: str) -> Posix:
     return posix
 
 
-def test_the_child_writes_no_file_and_starts_no_process() -> None:
+def test_the_child_may_not_write_data_into_files_or_fork() -> None:
     for platform in ("linux", "darwin"):
         found = locked(platform, "/").limits
 
@@ -325,6 +322,13 @@ with tempfile.TemporaryFile(buffering=0) as file:
         print(error.errno)
     print(open("/etc/hosts").close())
 """
+GROWING = """
+from mcp_server_paperless.rendering.limits import memory_reader
+read = memory_reader()
+before = read()
+block = bytearray(b"x") * 200_000_000
+print(read() - before)
+"""
 # A server that asks a child what it can read of it in /proc, before and after.
 PARENT = """
 import subprocess, sys
@@ -362,7 +366,7 @@ def child(code: str) -> str:
 
 
 @pytest.mark.skipif(WINDOWS, reason="there are no resource limits on Windows")
-def test_a_locked_down_process_cannot_open_connect_or_start_anything() -> None:
+def test_a_locked_down_process_cannot_open_connect_or_fork() -> None:
     found = child(LOCKED)
 
     assert found.split()[:3] == ["24", "24", "24"]  # EMFILE
@@ -371,7 +375,7 @@ def test_a_locked_down_process_cannot_open_connect_or_start_anything() -> None:
 
 
 @pytest.mark.skipif(WINDOWS, reason="there are no resource limits on Windows")
-def test_a_process_that_may_read_fonts_still_writes_nothing_to_disk() -> None:
+def test_a_process_that_may_read_fonts_cannot_write_data_into_a_file() -> None:
     assert child(WRITING).split() == ["27", "None"]  # EFBIG, and reading works
 
 

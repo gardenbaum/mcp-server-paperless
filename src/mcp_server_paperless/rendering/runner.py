@@ -2,8 +2,8 @@
 
 The child is the same interpreter with the worker module, isolated (``-I``). It gets the file on
 its stdin and answers on its stdout: both are pipes of its own, never the ones of the server, which
-over stdio carry the protocol. It inherits no environment variable (the tokens are there), no
-descriptor and no place to write to.
+over stdio carry the protocol. It inherits no environment variable (the tokens are there)
+and no descriptor.
 """
 
 import asyncio
@@ -87,14 +87,18 @@ class ChildRenderer:
             memory_bytes=self._memory_bytes,
             seconds=self._seconds,
         )
-        process = await asyncio.create_subprocess_exec(
-            *self._command,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-            env=child_environment(sys.platform, os.environ),
-            creationflags=_NO_WINDOW if os.name == "nt" else 0,
-        )
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *self._command,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                env=child_environment(sys.platform, os.environ),
+                creationflags=_NO_WINDOW if os.name == "nt" else 0,
+            )
+        except OSError as error:
+            # No process or descriptor left, or no such program.
+            raise RenderFailed(reason="crashed") from error
         # Both are pipes, as asked for.
         stdin, stdout = cast("StreamWriter", process.stdin), cast("StreamReader", process.stdout)
         feed = asyncio.create_task(_feed(stdin, encoded(head), content))
@@ -108,8 +112,11 @@ class ChildRenderer:
             _ = feed.cancel()
             if process.returncode is None:
                 process.kill()
-                # Killed is enough for a call that is cancelled again here; the loop reaps it.
+                # What it still had in the pipe is read, or the pipe would stay open. Killed is
+                # enough for a call that is cancelled again here: the loop does the rest.
+                while await stdout.read(_CHUNK):
+                    pass
                 _ = await process.wait()
         if code:
             raise RenderFailed(reason=_EXITS.get(code, "crashed"))
-        return answer_of(output)
+        return answer_of(output, request)

@@ -50,3 +50,6 @@ def test_the_image_renders_under_its_restrictions() -> None:
         assert option in text
     assert "os.getuid() == 10001" in text
     assert "set -euo pipefail" in text
+    assert text.count("docker run --rm -i --read-only --cap-drop ALL") == 2
+    assert "guard(2**30, 30.0)" in text
+    assert 'raise SystemExit("a process under the guard opened something")' in text

@@ -314,7 +314,8 @@ and not to the assistant:
 | Image original | 100 megapixels per page |
 | Images of one call | 5, together 720 KiB; the pages that did not fit are named |
 | Long side of an image | 256 to 2576 pixels, 1568 by default; a region of a page can be enlarged to it |
-| Renderer | 30 seconds and 1 GiB, one document at a time; another call waits up to 30 seconds |
+| Renderer | 30 seconds and 1 GiB, one document at a time |
+| Waiting | a call waits up to 30 seconds for the one before it, which can take 150 seconds (download and rendering), and is then told to try again |
 
 A page that does not fit alone is shown at a lower quality or smaller, and the report says so. Every
 call downloads the file again. Text whose font is not embedded can look different where the system

@@ -314,6 +314,84 @@ async def test_pages_over_the_bytes_of_a_call_come_with_the_next_calls(
     assert seen == [1, 2, 3]
 
 
+def two_pages(second: str, resources: str, objects: list[bytes]) -> bytes:
+    """A PDF whose first page is plain and whose second one is the problem.
+
+    Both pages have a text layer, so Paperless does not OCR them, and it draws only the first one
+    for the thumbnail. `objects` are numbered from 8.
+    """
+    font = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+    text = "BT /F1 18 Tf 72 720 Td (plmcp74 a page with enough text that nobody has to read) Tj ET"
+    parts: list[bytes] = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>",
+    ]
+    for number, stream, extra in ((4, text, ""), (6, f"{text} {second}", resources)):
+        page = (
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {number} 0 R "
+            f"/Resources << /Font << /F1 7 0 R >> {extra} >> >>"
+        )
+        parts += [
+            page.encode(),
+            f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream".encode(),
+        ]
+    out = b"%PDF-1.5\n"
+    offsets: list[int] = []
+    for number, body in enumerate([*parts, font, *objects], start=1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % number + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(offsets) + 1)
+    out += b"".join(b"%010d 00000 n \n" % offset for offset in offsets)
+    return out + b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (
+        len(offsets) + 1,
+        xref,
+    )
+
+
+def slow_pdf() -> bytes:
+    """A shading whose colour is a long calculation for each pixel, drawn a hundred times."""
+    steps = " ".join(["dup sin 2 mul exch"] * 60)
+    program = f"{{ {steps} {' '.join(['add'] * 60)} exch pop dup dup }}".encode()
+    function = (
+        b"<< /FunctionType 4 /Domain [0 612 0 792] /Range [0 1 0 1 0 1] /Length %d >>\n"
+        % len(program)
+        + b"stream\n%b\nendstream" % program
+    )
+    shading = b"<< /ShadingType 1 /ColorSpace /DeviceRGB /Domain [0 612 0 792] /Function 8 0 R >>"
+    return two_pages("/S sh " * 100, "/Shading << /S 9 0 R >>", [function, shading])
+
+
+def heavy_pdf() -> bytes:
+    """A progressive JPEG of 400 megapixels: its coefficients are decoded as a whole."""
+    jpeg = saved(Image.new("RGB", (20_000, 20_000), "white"), "JPEG", progressive=True)
+    image = (
+        b"<< /Type /XObject /Subtype /Image /Width 20000 /Height 20000 /ColorSpace /DeviceRGB "
+        b"/BitsPerComponent 8 /Filter /DCTDecode /Length %d >>\nstream\n%b\nendstream"
+    ) % (len(jpeg), jpeg)
+    return two_pages("q 600 0 0 600 0 0 cm /I Do Q", "/XObject << /I 8 0 R >>", [image])
+
+
+async def test_a_page_that_takes_too_long_is_stopped(stack: Stack, scope: Scope) -> None:
+    document = scope.document(unique(slow_pdf()), "slow.pdf")
+
+    first = await show(stack, document, source="original", size=256)
+    said = await refused(stack, document, source="original", pages="2")
+
+    assert len(images(first)) == 1
+    assert f"Rendering document {document} took longer than 30 seconds and was stopped." in said
+
+
+async def test_a_page_that_needs_too_much_memory_is_stopped(stack: Stack, scope: Scope) -> None:
+    document = scope.document(unique(heavy_pdf()), "heavy.pdf")
+
+    first = await show(stack, document, source="original", size=256)
+    said = await refused(stack, document, source="original", pages="2")
+
+    assert len(images(first)) == 1
+    assert f"Rendering document {document} needed more than 1 GiB of memory" in said
+
+
 async def test_pages_are_shown_by_the_console_script_over_stdio(stack: Stack) -> None:
     transport = StdioTransport(
         console_script(),
