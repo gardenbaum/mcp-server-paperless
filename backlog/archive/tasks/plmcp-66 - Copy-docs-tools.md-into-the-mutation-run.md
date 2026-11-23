@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T10:00:20Z'
-updated_date: '2026-11-23T11:06:04Z'
+updated_date: '2026-11-23T11:09:20Z'
 labels: []
 dependencies: []
 type: bug
@@ -37,6 +37,8 @@ tests/tools/test_tools_doc.py (PLMCP-51) reads docs/tools.md, but mutmut copies 
 Red: mutmut on Linux without the entry stops with test_the_tool_reference_matches_the_surface. Green: with it the run in ghcr.io/astral-sh/uv:python3.14-bookworm checks the mutants of search_syntax._named. No test: the mutation job itself is the check.
 
 Merged as PR 86 (5a8849a), CI green. The independent review ran the full mutation job in a container: all 16585 mutants checked, 99.9 %. DoD 2 stays unchecked: the local just check run is not recorded here.
+
+Correction: DoD 4 is now true, PR 86 is merged; DoD 2 stays unchecked although the final summary expected it. The first full E2E run on main after the merge (45157307609) failed in test_more_like_finds_other_documents, tracked as PLMCP-67; the next one was green. The mutation figures come from the session's independent review and have no public log.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

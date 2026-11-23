@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T09:17:46Z'
-updated_date: '2026-11-23T11:06:04Z'
+updated_date: '2026-11-23T11:09:20Z'
 labels: []
 dependencies: []
 priority: low
@@ -46,6 +46,8 @@ MCP clients that build a form from server.json (PLMCP-61) may pass optional vari
 env_ignore_empty on PaperlessSettings only (as OidcSettings). Decided: empty READ_ONLY and TOOLSETS stay refused, because unset would offer writes or more tools than meant; empty numbers and LOG_LEVEL stay refused with a clear error (server.json lists their defaults); empty DISABLED_TOOLS and UPLOAD_DIRS are empty lists.
 
 Merged as PR 85 (d2cea80), CI green, released in 0.3.2. DoD 2 stays unchecked: the local just check run is not recorded here.
+
+Correction: DoD 2 is unchecked because just check had one known macOS-only failure locally, as the final summary says; CI was green. DoD 4 is now true: PR 85 is merged.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

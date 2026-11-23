@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T09:00:10Z'
-updated_date: '2026-11-23T11:06:03Z'
+updated_date: '2026-11-23T11:09:20Z'
 labels: []
 dependencies: []
 type: feature
@@ -28,9 +28,9 @@ The 0.3.0 image has no linux/arm64 manifest, so it does not start natively on a 
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [x] #1 Tests written first (red, then green) at every test level the change touches
+- [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -48,6 +48,8 @@ decision-36 supersedes decision-31 (carry-over). Guard changes deliberate: taggi
 Opus review: Critical (Trivy scans linux/amd64 of an arm64-only index) fixed with TRIVY_PLATFORM, also Codex P1; guards now include a snapshot of the whole workflow (new snapshot, deliberate), 10 tried weakenings caught. Stays In Progress: AC 1 and 3 can only be proven by the 0.3.1 tag.
 
 Proven by the 0.3.1 and 0.3.2 tags: the index ghcr.io/gardenbaum/mcp-server-paperless lists linux/amd64 and linux/arm64; docker buildx imagetools inspect of 0.3.1 shows provenance and SBOM for both; the arm64 image was pulled on Apple Silicon and passed the smoke test. CI of PR 84 was green. DoD 2 stays unchecked: the local just check run is not recorded here.
+
+Correction after the review of PR 87: DoD 1 is unchecked because no red run is recorded; DoD 3 because the PR 84 description does not mention the new workflow snapshot (it is explained in commit 5a41022). Provenance and SBOM cover both platforms in 0.3.2 too.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
