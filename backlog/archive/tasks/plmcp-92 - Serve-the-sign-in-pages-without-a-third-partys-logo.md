@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:54:26Z'
-updated_date: '2026-11-23T13:14:42Z'
+updated_date: '2026-11-23T15:33:40Z'
 labels: []
 dependencies: []
 priority: high
@@ -32,7 +32,7 @@ FastMCP's OIDC consent and error pages load a logo from gofastmcp.com because th
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan

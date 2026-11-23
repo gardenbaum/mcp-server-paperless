@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T09:00:11Z'
-updated_date: '2026-11-23T11:27:12Z'
+updated_date: '2026-11-23T15:33:39Z'
 labels: []
 dependencies: []
 type: chore
@@ -32,7 +32,7 @@ The late independent review of PLMCP-59 (2026-11-23) found leftovers: doc-1 and 
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
