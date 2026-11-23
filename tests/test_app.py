@@ -4,7 +4,7 @@ import contextlib
 import json
 import logging
 import re
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, override
 from urllib.parse import urlsplit
 
 import fastmcp
@@ -13,6 +13,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from harness import admin, serve
+from mcp import MCPError
 from pydantic import SecretStr
 
 from mcp_server_paperless.app import (
@@ -482,6 +483,50 @@ async def test_a_body_larger_than_the_limit_is_refused_by_its_declared_length() 
 
     assert response.status_code == 413
     assert fits.status_code == 200
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("chunked", [False, True])
+async def test_a_client_learns_that_its_file_is_too_large(*, chunked: bool) -> None:
+    http = settings(auth_tokens=TOKEN)
+    server = serve(admin(), auth=authenticator(http), max_upload_bytes=1)
+    app = build_app(server, http, max_upload_bytes=1)
+
+    class Sends(httpx2.AsyncBaseTransport):
+        """Sends to the app in-process; with ``chunked`` without a declared length."""
+
+        inner: httpx2.ASGITransport = httpx2.ASGITransport(app=app)
+
+        @override
+        async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+            if chunked and "content-length" in request.headers:
+                del request.headers["content-length"]
+            return await self.inner.handle_async_request(request)
+
+    def factory(
+        headers: dict[str, str] | None = None,
+        timeout: httpx2.Timeout | None = None,
+        auth: httpx2.Auth | None = None,
+        **_given: object,
+    ) -> httpx2.AsyncClient:
+        return httpx2.AsyncClient(transport=Sends(), headers=headers, timeout=timeout, auth=auth)
+
+    transport = StreamableHttpTransport(
+        "http://localhost/mcp", headers=BEARER, httpx_client_factory=factory
+    )
+    async with app.router.lifespan_context(app), Client(transport) as client:
+        with pytest.raises(MCPError) as refused:
+            _ = await client.call_tool(
+                "upload_document", {"content_base64": "A" * SMALL_LIMIT, "filename": "a.pdf"}
+            )
+
+    message = str(refused.value)
+    assert f"at most {SMALL_LIMIT} bytes" in message
+    # True for any tool, not only an upload, and for an operator at the maximum.
+    assert "per request" in message
+    assert "PAPERLESS_MCP_MAX_UPLOAD_BYTES (at most 100 MiB)" in message
+    assert "can raise" not in message
+    assert "Upload" not in message
 
 
 @pytest.mark.anyio
