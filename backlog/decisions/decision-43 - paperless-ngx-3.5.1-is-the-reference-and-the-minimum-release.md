@@ -1,4 +1,5 @@
 ---
+updated_date: '2026-11-23T19:54:16Z'
 id: decision-43
 title: paperless-ngx 3.5.1 is the reference and the minimum release
 date: '2026-11-23T19:32:43Z'
@@ -15,10 +16,10 @@ decision-29 pinned 3.4.2 as the minimum supported release and covered the latest
 <!-- SECTION:DECISION:BEGIN -->
 - The reference release is paperless-ngx 3.5.1: `PAPERLESS_VERSION` in the justfile, the image digest in `tests/e2e/compose.yaml`, the vendored docs in `docs/vendor/paperless` and the E2E helpers name the same release.
 - 3.5.1 is the minimum supported release. Paperless-ngx 3.4.x, 3.5.0 and 2.x are not supported; the server does not check the version (a startup check is a separate proposal).
-- Every pull request and the nightly `e2e-full` run test 3.5.1; the weekly `e2e-latest` run and the weekly drift check cover the latest stable 3.x.
+- Pull requests run the fast, not required E2E tier on 3.5.1 (decision-23, decision-24); the full suite runs on 3.5.1 after every merge to main and nightly (`e2e-full`). The weekly `e2e-latest` run and the weekly drift check cover the latest stable 3.x.
 - The fake models 3.5.1 only; live tests do not branch on the release. A version comparison is added only when a later release changes behaviour that a test must tell apart.
 - The pin and the minimum move only by a new decision that supersedes this one.
-- Replaces decision-29 (minimum, fake default, vendored docs) and the statements of decision-2 that name 3.4.2 as the vendored and E2E release. Decisions that report what was probed on 3.4.2 stay as history; where they describe behaviour that 3.5.1 changed, 3.5.1 governs.
+- Replaces decision-29 (minimum, fake default, vendored docs) and the statements that name 3.4.2 as the vendored and E2E release in decision-2 and in the test-strategy level of decision-8. The 3.4.2 mentions in decisions 14, 16, 18, 21, 23, 24 and 26 report what was probed or measured then and stay as history; where they describe behaviour that 3.5.1 changed, 3.5.1 governs.
 - Extends decision-21 without changing its meaning: a manual workflow trigger (type 5, new in 3.5, run by hand from the web UI) is read and listed but not written, and an update that replaces the triggers of a workflow refuses to delete one this server cannot write, as it does for actions. The confirmation text of an enabled workflow with a manual trigger says that it runs when a user runs it by hand, not by itself. Writing manual triggers is PLMCP-87.
 <!-- SECTION:DECISION:END -->
 

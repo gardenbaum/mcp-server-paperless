@@ -305,7 +305,8 @@ where somebody looked (the `page` and `page_size` of the workflows helper), not 
 every constant an adapter sends. A row is checked: the operation is in the schema and covered,
 each field is in the schema and some tool sends it, there is one row per operation, and no
 field is also `[[internal]]`. What hangs under a plumbing field is left out of the table above;
-when no tool sends it (a value the adapter never chooses), the row names it, else it is a problem.
+when no tool sends it, it is a problem, unless it is a value (`name=value`, one the adapter never
+chooses) that the row names. A child field cannot be named away.
 
 | Operation | Fields | Why |
 |---|---|---|

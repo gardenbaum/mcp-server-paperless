@@ -339,7 +339,7 @@ class DocumentWriter(Protocol):
         retried: a repeat would answer 400 for sources that are gone.
 
         Returns:
-            None when the merge is made, or ``Unconfirmed`` when Paperless 3.5 queued it and the
+            None when the merge is made, or ``Unconfirmed`` when Paperless queued it and the
             task could not be followed to its end.
 
         Raises:
@@ -428,7 +428,7 @@ class BulkWriter(Protocol):
         reprocessing is queued and runs in the background.
 
         Returns:
-            None when the change is made (Paperless 3.5 queues it as a task and the writer
+            None when the change is made (Paperless queues it as a task and the writer
             waits for it), or ``Unconfirmed`` when the queued task could not be followed to its
             end: the change was accepted but may not be made yet.
 

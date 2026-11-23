@@ -16,9 +16,10 @@
 #                 projections, constants of helpers that read every page, the stored object sent
 #                 back. No feature, no open work; shown apart, checked against the schema. A value
 #                 or id a tool argument decides (id__in, task_type) is neither.
-#                 What hangs under a plumbing field and is sent by no tool (full_perms=false, a
-#                 value of the stored object that no scenario holds) is named in the row too, or
-#                 it counts as a problem.
+#                 What hangs under a plumbing field and is sent by no tool is a problem, unless it
+#                 is a value (full_perms=false, a value of the stored object that no scenario
+#                 holds) and the row names it as `name=value`. A child field cannot be named
+#                 away: a tool sends it, or it is open under a task.
 # [[exclusion]]   an owner-approved exclusion: quote, date and a Markdown file under backlog/
 #                 (an excluded value of a field that is sent also needs a `reason`)
 # [[undeclared]]  query parameters the generated schema omits (listed by hand)

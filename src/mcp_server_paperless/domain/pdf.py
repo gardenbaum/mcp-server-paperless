@@ -62,7 +62,7 @@ class StartedTasks(BaseModel):
             does not say (reprocessing). Empty when the caller does not know.
         problem: Why the lookup is incomplete beyond tasks that did not show up: the user may not
             view tasks (forbidden), reading them failed after the request was accepted (failed),
-            or the queued task of Paperless 3.5 could not be followed to its end (unconfirmed):
+            or the queued task of Paperless could not be followed to its end (unconfirmed):
             then ``ids`` holds that task alone.
         detail: For ``unconfirmed``: why the queued task could not be followed.
     """

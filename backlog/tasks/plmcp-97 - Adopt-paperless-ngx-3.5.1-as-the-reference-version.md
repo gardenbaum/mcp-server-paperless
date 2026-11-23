@@ -4,7 +4,7 @@ title: Adopt paperless-ngx 3.5.1 as the reference version
 status: In Progress
 assignee: []
 created_date: '2026-11-23T18:13:36Z'
-updated_date: '2026-11-23T19:43:48Z'
+updated_date: '2026-11-23T19:51:28Z'
 labels: []
 dependencies: []
 references:
@@ -27,14 +27,14 @@ The weekly drift workflow reports that the vendored reference (3.4.2) differs fr
 - [ ] #3 Changed by the owner on 2026-11-23: 3.5.1 is the minimum and 3.4.x and 3.5.0 are no longer supported; the code, tests and docs for them are removed and decision-43 supersedes decision-29
 - [x] #4 Every new or changed endpoint, field and value of 3.5.1 is in the coverage table under a task that includes it, and the task text is extended where none does
 - [x] #5 A plumbing row cannot hide an unsent field or value below it (left over from the PLMCP-91 review)
-- [x] #6 The full E2E suite is green on 3.5.1
+- [ ] #6 The full E2E suite is green on 3.5.1
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [x] #1 Tests written first (red, then green) at every test level the change touches
+- [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 

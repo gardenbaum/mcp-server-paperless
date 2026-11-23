@@ -2,10 +2,9 @@
 
 Paperless stores a view as numeric rule types with text values and never runs it: its web UI maps
 each type to a document list filter (``FILTER_RULE_TYPES`` of the web UI, read in its 3.4.2
-source). This module
-does the same, for every one of the 51 types (0 to 50). A rule is either translated or rejected
-with an error that names its type, never skipped: a view that ran on a part of its rules would
-return documents the user did not mean.
+source). This module does the same, for every one of the 51 types (0 to 50). A rule is either
+translated or rejected with an error that names its type, never skipped: a view that ran on a
+part of its rules would return documents the user did not mean.
 
 Deliberate differences from the web UI: it silently lets the last of two rules of a single-valued
 type win (we reject the view), and it sends a nonsense value on to Paperless (we reject it first).

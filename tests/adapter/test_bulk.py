@@ -133,8 +133,10 @@ async def test_an_answer_that_is_not_the_queued_result_is_unexpected(answer: Jso
     # Every document change names the task it queued; an answer without one is not believed.
     client, _ = streaming(lambda _: httpx2.Response(200, json=answer))
 
-    with pytest.raises(PaperlessMcpError, match="unexpected response"):
+    with pytest.raises(PaperlessMcpError, match="unexpected response") as raised:
         _ = await PaperlessBulkWriter(client).bulk_edit_documents((4,), TrashDocuments())
+
+    assert "may have been applied" in (raised.value.hint or "")
 
 
 async def test_a_refused_document_change_says_nothing_was_changed(

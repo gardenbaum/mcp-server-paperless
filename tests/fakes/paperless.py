@@ -14,7 +14,7 @@ runs the same tests against it and against the adapter on live Paperless, so it 
   tool that writes fails its own tests. tests/contract/test_coverage.py checks that every
   method of a `*Writer` port is decorated.
 
-Adding a port method: implement it here with Paperless 3.4.2's behaviour (read the view in the
+Adding a port method: implement it here with Paperless 3.5.1's behaviour (read the view in the
 Paperless source of the tag, not the docs alone), extend the state only as far as it needs, and
 write its contract tests.
 """
@@ -1573,7 +1573,8 @@ class FakePaperless:
     ) -> Unconfirmed | None:
         """`DocumentWriter.merge_as_versions`: the sources vanish, their files become versions.
 
-        Probed on 3.4.2: it merges at once; the sources are removed for good (no trash) and
+        Seen through the port it merges at once (the adapter waits for the task Paperless
+        queues); probed on 3.4.2: the sources are removed for good (no trash) and
         keep nothing but their file; the last source becomes the newest version; a source with
         versions, a version as source, a duplicate or an unknown id and a label with several
         sources are 400s. The form is checked first (it does not look at who may see what: a

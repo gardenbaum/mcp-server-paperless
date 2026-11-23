@@ -12,8 +12,14 @@ from typing import TYPE_CHECKING, override
 import httpx2
 import pytest
 
+from adapter.conftest import streaming
 from adapter.test_instance import UI_SETTINGS
-from mcp_server_paperless.domain.errors import PermissionDenied, UpstreamUnavailable, Validation
+from mcp_server_paperless.domain.errors import (
+    PaperlessMcpError,
+    PermissionDenied,
+    UpstreamUnavailable,
+    Validation,
+)
 from mcp_server_paperless.domain.pdf import PageSlot, StartedTasks
 from mcp_server_paperless.paperless.client import RetryPolicy
 from mcp_server_paperless.paperless.pdf import PaperlessPdfWriter
@@ -906,6 +912,19 @@ async def test_tasks_of_other_operations_know_their_one_document_and_reprocess_n
 
     assert edited.sources == (8,)
     assert again.sources == (None,)
+
+
+async def test_an_operation_answered_without_its_task_may_have_been_applied() -> None:
+    class NoTask(Paperless):
+        @override
+        def __call__(self, request: httpx2.Request) -> httpx2.Response:
+            seen = super().__call__(request)
+            return httpx2.Response(200, json={"result": "OK"}) if request.method == "POST" else seen
+
+    with pytest.raises(PaperlessMcpError, match="unexpected response") as raised:
+        _ = await PaperlessPdfWriter(streaming(NoTask(OLD, OLD))[0]).rotate_documents((7,), 90)
+
+    assert "may have been applied" in (raised.value.hint or "")
 
 
 async def test_a_merge_names_no_source_because_its_result_is_a_document_of_its_own(

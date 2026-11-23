@@ -25,7 +25,8 @@ The HTTP transport has its own variables in [Run over HTTP](http.md), the OIDC l
 | `PAPERLESS_PUBLIC_URL` | Base URL for links shown to users (`web_url`, share links), if it differs from `PAPERLESS_URL`, for example when the server reaches Paperless under a container name; an empty value counts as unset |
 
 Requires paperless-ngx 3.5.1 or later (API version 10). 3.5.1 is the oldest supported release and
-the one every change is tested against; the latest 3.x release is tested weekly. paperless-ngx
+the one the tests run against (a fast tier on every pull request, the whole suite after every
+merge and nightly); the latest 3.x release is tested weekly. paperless-ngx
 3.4.x, 3.5.0 and 2.x are not supported: the server does not check the version, so against an older
 release some tools fail or answer differently.
 

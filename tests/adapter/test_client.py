@@ -127,8 +127,23 @@ async def test_call_parses_any_method_through_one_path(make_client: ClientFactor
 async def test_an_unexpected_body_is_a_client_safe_error(make_client: ClientFactory) -> None:
     client = make_client(Script(answer(200, tag(7, "inbox"))))
 
-    with pytest.raises(PaperlessMcpError, match="unexpected response"):
+    with pytest.raises(PaperlessMcpError, match="unexpected response") as read:
         _ = await client.get("/api/tags/7/", BaseModelWithMissingField)
+
+    assert read.value.hint is None
+
+
+async def test_an_unexpected_answer_to_a_write_says_that_it_may_have_been_applied(
+    make_client: ClientFactory,
+) -> None:
+    client = make_client(Script(answer(201, tag(7, "inbox"))))
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await client.call("POST", "/api/tags/", BaseModelWithMissingField, json={"name": "x"})
+
+    assert raised.value.hint == (
+        "The request may have been applied: read the data again before repeating it."
+    )
 
 
 class BaseModelWithMissingField(BaseModel):

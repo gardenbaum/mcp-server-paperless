@@ -691,9 +691,8 @@ class PaperlessDocumentWriter:
         """See ``DocumentWriter.merge_as_versions``.
 
         The body lists the root first and names it again as ``root_document_id``. Paperless
-        merges within the request and answers ``{"result": "OK"}`` (3.5: it queues a task and
-        names it, which is awaited); a user who may not change one of the documents gets 403
-        with an HTML body.
+        queues a task and names it in the answer (``task_id``), which is awaited; a user who may not
+        change one of the documents gets 403 with an HTML body.
         """
         body: dict[str, object] = {"documents": [root_id, *source_ids], "root_document_id": root_id}
         if label is not None:

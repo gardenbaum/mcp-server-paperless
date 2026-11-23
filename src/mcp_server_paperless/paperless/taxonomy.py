@@ -168,7 +168,7 @@ class PaperlessTaxonomyWriter:
     async def delete_taxonomy_item(self, kind: WritableKind, item_id: int) -> None:
         """See ``TaxonomyWriter.delete_taxonomy_item``.
 
-        A refused tag deletion gets a hint: the 403 means a missing permission, or (from 3.5) a
+        A refused tag deletion gets a hint: the 403 means a missing permission, or a
         deletion that would take child tags of other users.
         """
         try:

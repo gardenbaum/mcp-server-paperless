@@ -6,11 +6,13 @@ from typing import TYPE_CHECKING, cast
 import httpx2
 import pytest
 
+from adapter.conftest import streaming
 from adapter.test_document_writes import TASK_ID, Form, Uploaded
 from adapter.test_documents import DETAIL
 from adapter.test_queued import row as task_row
 from mcp_server_paperless.domain.errors import (
     NotFound,
+    PaperlessMcpError,
     PermissionDenied,
     UpstreamUnavailable,
     Validation,
@@ -250,6 +252,15 @@ async def test_a_merge_names_the_root_first_among_the_documents(
     [request] = server.requests
     assert (request.method, request.url.path) == ("POST", "/api/documents/merge_as_versions/")
     assert server.sent() == {"documents": [5, 8, 9], "root_document_id": 5}
+
+
+async def test_a_merge_answered_without_its_task_may_have_been_applied() -> None:
+    client, _ = streaming(lambda _: httpx2.Response(200, json={"result": "OK"}))
+
+    with pytest.raises(PaperlessMcpError, match="unexpected response") as raised:
+        _ = await PaperlessDocumentWriter(client).merge_as_versions(5, (8,), None)
+
+    assert "may have been applied" in (raised.value.hint or "")
 
 
 async def test_a_merge_of_one_document_may_carry_a_label(make_client: ClientFactory) -> None:
