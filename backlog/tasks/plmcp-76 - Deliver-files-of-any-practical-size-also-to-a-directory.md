@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:47Z'
-updated_date: '2026-11-23T22:07:58Z'
+updated_date: '2026-11-23T22:46:34Z'
 labels: []
 dependencies: []
 priority: high
@@ -48,4 +48,13 @@ Follows the owner-approved design (design-plmcp-76.md). 1. Measure ZIP stability
 
 <!-- SECTION:NOTES:BEGIN -->
 From PLMCP-74: GET /api/documents/{id}/download/ takes version_id in the port (DocumentReader.get_document_file), sent as ?version=; the coverage row for query:version moved off this task. get_document_pages uses it. No tool delivers the file of a version yet, so AC 1 still covers versions. The core toolset has 20 of 20 tools since decision-42: a further default tool needs a removal or a new budget decision (AC 5 says 19 of 20).
+
+Probes on paperless-ngx 3.5.1 (2026-11-23): Range is ignored (200), answers are zstd-compressed without Content-Length; size and SHA-256 of the metadata match original and archive of a PDF, image and text, per version and after a reprocess; a version of another document is 404. ZIP: same bytes in four calls for 4 compressions x 3 contents on SQLite and PostgreSQL, whatever the order of the ids; after a metadata edit still the same on SQLite, on PostgreSQL 4 of 5 edits reordered documents of the same created date. Reported to the main agent, who decided for stateless parts (decision-45).
+
+Real clients (C1), still to run before decision-46 is accepted and criterion 4 is checked. Claude Code: the main agent. Cursor and Claude Desktop: the owner.
+Preparation: a throwaway Paperless (just e2e-up, http://127.0.0.1:8010, admin / e2e-admin-password), never the real one. Upload one PDF or image file of about 100 KiB, 512 KiB (at most 524288 bytes), 760 KiB, 1 MiB, 8 MiB and 16 MiB and note the document ids. Make an empty directory, e.g. ~/paperless-downloads.
+A. stdio (Cursor, Claude Desktop, Claude Code): add a second, temporary server entry that runs this branch, command 'uv', arguments 'run --directory <worktree> mcp-server-paperless', environment PAPERLESS_URL, PAPERLESS_TOKEN, PAPERLESS_MCP_TOOLSETS=core,admin, PAPERLESS_MCP_MAX_DOWNLOAD_BYTES=33554432, PAPERLESS_MCP_DOWNLOAD_DIRS=<that directory>. Restart the client, remove the entry afterwards.
+B. HTTP (Claude Code, Cursor): the same environment for 'uv run mcp-server-paperless-http' plus PAPERLESS_MCP_HTTP_ALLOW_UNAUTHENTICATED_LOOPBACK=true, client URL http://127.0.0.1:8000/mcp.
+For each file say: 'Download document <id> with download_document and tell me its size.' Note: worked, error text, cut off, saved to a file by the client, or the model did not see the file. Stop at the first size that fails.
+Then, once per client: (1) set PAPERLESS_MCP_MAX_DOWNLOAD_BYTES back to its default and say 'Read document <8 MiB id> in parts with offset and give me the first two parts and their checksums'; note whether the model repeats the arguments of next and whether it can join two parts. (2) stdio only: 'Save document <8 MiB id> to <directory>', then the same again (it must ask before it replaces), then 'Save it to <another directory>' (refused). Compare the file with Paperless (shasum -a 256). (3) Note whether the client asks for approval before each download call (expected with download directories: the tools are not read-only then).
 <!-- SECTION:NOTES:END -->
