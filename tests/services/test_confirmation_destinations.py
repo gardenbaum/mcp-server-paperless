@@ -363,11 +363,40 @@ async def test_a_service_url_with_credentials_is_shown_without_them() -> None:
     setup.state.config = {endpoint: "https://a:s3cret@b@old.example/"}
     odd = await asked(setup.system.update_config({endpoint: None}))
 
-    assert "to 'https://new.example/v1'" in set_first
-    assert "from 'https://old.example/v1' to 'https://new.example/v1'" in replaced
-    assert "now 'https://old.example/v1'" in reset
+    tail = " with credentials (not shown)"
+    assert f"to 'https://new.example/v1'{tail} (it follows" in set_first
+    assert f"from 'https://old.example/v1'{tail} to 'https://new.example/v1'{tail};" in replaced
+    assert f"now 'https://old.example/v1'{tail})" in reset
     assert "now a URL that is not shown" in odd
     assert not [m for m in (set_first, replaced, reset, odd) if "s3cret" in m or "n3wer" in m]
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "what"),
+    [
+        ("https://e.x/v1", "https://u:s3cret@e.x/v1", "add credentials to"),
+        ("https://u:s3cret@e.x/v1", "https://u:n3wer@e.x/v1", "replace the credentials of"),
+        ("https://u:s3cret@e.x/v1", "https://e.x/v1", "remove the credentials of"),
+    ],
+)
+async def test_a_change_of_only_the_credentials_says_so(old: str, new: str, what: str) -> None:
+    setup = Setup()
+    setup.state.config = {"llm_endpoint": old}
+
+    message = await asked(setup.system.update_config({"llm_endpoint": new}))
+
+    assert f"Confirming would {what} llm_endpoint 'https://e.x/v1' (not shown)" in message
+    assert "s3cret" not in message
+    assert "n3wer" not in message
+
+
+async def test_a_change_between_empty_and_an_address_names_its_credentials_once() -> None:
+    setup = Setup()
+    setup.state.config = {"llm_endpoint": ""}
+
+    message = await asked(setup.system.update_config({"llm_endpoint": "https://u:s3cret@e.x"}))
+
+    assert "from empty to 'https://e.x' with credentials (not shown);" in message
 
 
 async def test_an_acceptance_binds_the_credentials_that_are_not_shown() -> None:
