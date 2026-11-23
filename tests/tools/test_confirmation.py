@@ -448,8 +448,8 @@ async def test_a_dialog_nobody_answers_ends_and_closes_at_the_client() -> None:
         mode="legacy",
         elicitation_handler=never_answering(cancelled),
     ) as client:
-        result = await client.call_tool("delete_note", NOTE, raise_on_error=False)
-        with anyio.fail_after(5):
+        with anyio.fail_after(10):
+            result = await client.call_tool("delete_note", NOTE, raise_on_error=False)
             await cancelled.wait()
 
     assert text(result) == (
