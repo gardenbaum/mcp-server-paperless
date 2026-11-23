@@ -50,7 +50,9 @@ FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 BLOB = "https://github.com/gardenbaum/mcp-server-paperless/blob/main/"
 # The repository and image names before the rename to mcp-server-paperless (PLMCP-59), whatever
 # the host or scheme (web, SSH, API, raw, badge, image), also URL-encoded inside a badge's query.
-OLD_NAMES = re.compile(r"gardenbaum(?:/|%2F)paperless-mcp(?!\w)", re.IGNORECASE)
+OLD_NAMES = re.compile(
+    r"gardenbaum(?:/|%2F)(?:packages/container/(?:package/)?)?paperless-mcp(?!\w)", re.IGNORECASE
+)
 
 
 def prose(page: Path) -> str:
@@ -156,6 +158,8 @@ def test_the_readme_links_every_page_written_for_users() -> None:
         "ssh://git@github.com/gardenbaum/paperless-mcp.git",
         "https://api.github.com/repos/gardenbaum/paperless-mcp/pulls",
         "gh api -X PUT repos/gardenbaum/paperless-mcp/pulls/{n}/merge",
+        "https://github.com/users/gardenbaum/packages/container/package/paperless-mcp",
+        "https://api.github.com/users/gardenbaum/packages/container/paperless-mcp",
         "gh pr list -R Gardenbaum/Paperless-MCP",
     ],
 )
