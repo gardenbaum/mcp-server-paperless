@@ -54,6 +54,7 @@ from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
 from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
 from mcp_server_paperless.services.document_edits import DocumentEditor
 from mcp_server_paperless.services.documents import DocumentService
+from mcp_server_paperless.services.duplicates import DuplicateFinder
 from mcp_server_paperless.services.files import FileService
 from mcp_server_paperless.services.instance import InstanceService
 from mcp_server_paperless.services.mail import MailService
@@ -114,6 +115,7 @@ from mcp_server_paperless.tools.selection import (
     unchecked_toolsets,
     visible_tools,
 )
+from mcp_server_paperless.tools.upload_hint import PATH_OFF, UPLOAD_TOOLS, PathRefusal
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
@@ -183,10 +185,12 @@ class Catalogue:
 
     Attributes:
         providers: One FastMCP provider per toolset module.
-        remote_providers: Providers added when the server offers no uploads by path: the tools
-            that exist in every mode, in their form for HTTP (and for stdio without an allowlist).
+        remote_providers: Providers added over HTTP: the tools that exist in every mode, in their
+            form without a path.
         local_providers: Providers added instead of ``remote_providers`` when the server runs
             over stdio with an upload allowlist: the same tools in their form with a path.
+        stdio_providers: Providers added instead when it runs over stdio without an allowlist:
+            the form for HTTP, with the hint how a path is enabled.
         annotations: The central annotation table, keyed by tool name.
         tool_toolsets: The toolset of every tool, keyed by tool name.
         toolsets: Every toolset name.
@@ -205,6 +209,7 @@ class Catalogue:
     requires: Mapping[str, str]
     remote_providers: Sequence[Provider] = ()
     local_providers: Sequence[Provider] = ()
+    stdio_providers: Sequence[Provider] = ()
     prompt_specs: Mapping[str, prompts.PromptSpec] = field(
         default_factory=dict[str, prompts.PromptSpec]
     )
@@ -234,6 +239,7 @@ CATALOGUE: Final = Catalogue(
     requires=TOOLSET_REQUIRES,
     remote_providers=(upload.remote, versions.remote),
     local_providers=(upload_stdio.local, versions_stdio.local),
+    stdio_providers=(upload.hinted, versions.hinted),
     prompt_specs=prompts.SPECS,
     summaries=TOOLSET_SUMMARIES,
 )
@@ -376,7 +382,10 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     credentials = StaticTokenProvider(paperless.token.get_secret_value())
     web_url = str(paperless.public_url or paperless.url)
     by_path = stdio and bool(settings.upload_dirs)
-    variants = catalogue.local_providers if by_path else catalogue.remote_providers
+    variants = catalogue.remote_providers
+    if stdio:
+        variants = catalogue.local_providers if by_path else catalogue.stdio_providers
+    path_hint = PATH_OFF if stdio and not by_path else ""
 
     # Allowlist the selected toolsets (resources carry the tags too), then take out tools:
     # later visibility rules override earlier ones.
@@ -404,7 +413,8 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
             adapters = ports(client)
             taxonomy = TaxonomyResolver(adapters.taxonomy, credentials, ttl=TAXONOMY_TTL)
             documents = DocumentService(adapters.documents, taxonomy, web_url=web_url)
-            tasks = TaskService(adapters.tasks, sleep=sleep, clock=clock)
+            duplicates = DuplicateFinder(adapters.documents, adapters.trash, web_url=web_url)
+            tasks = TaskService(adapters.tasks, sleep=sleep, clock=clock, duplicates=duplicates)
             services = Services(
                 instance=InstanceService(adapters.instance),
                 taxonomy=taxonomy,
@@ -446,9 +456,11 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.document_writes,
                     taxonomy,
                     tasks,
+                    duplicates,
                     web_url=web_url,
                     max_bytes=settings.max_upload_bytes,
                     upload_dirs=settings.upload_dirs if by_path else (),
+                    path_hint=path_hint,
                 ),
                 versions=VersionService(
                     adapters.documents, adapters.document_writes, taxonomy, web_url=web_url
@@ -457,9 +469,11 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.documents,
                     adapters.document_writes,
                     tasks,
+                    duplicates,
                     web_url=web_url,
                     max_bytes=settings.max_upload_bytes,
                     upload_dirs=settings.upload_dirs if by_path else (),
+                    path_hint=path_hint,
                 ),
                 bulk_documents=BulkDocumentEditor(
                     adapters.documents, adapters.bulk_writes, taxonomy, web_url=web_url
@@ -503,7 +517,10 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
         instructions=instructions,
         version=__version__,
         providers=[*catalogue.providers, *variants],
-        middleware=[CallLogging()],
+        middleware=[
+            CallLogging(),
+            *([PathRefusal(UPLOAD_TOOLS & selected)] if path_hint else []),
+        ],
         lifespan=start,
         auth=auth,
         # Longer than a dialog: one that expired is told so, instead of a refused state.

@@ -481,3 +481,16 @@ def test_a_file_that_grows_by_one_byte_past_a_whole_chunk_is_still_refused(tmp_p
 
     with pytest.raises(Validation, match="larger than the limit"):
         _ = read_allowed(str(target), [str(root)], max_bytes=chunk, at=at_stage("opened", grow))
+
+
+@pytest.mark.parametrize("content", ["A" * 20_000, "%%%", ""])
+def test_a_path_hint_follows_the_hint_of_a_refusal(content: str) -> None:
+    def refusal(**hint: str) -> Validation:
+        with pytest.raises(Validation) as raised:
+            _ = decode_base64(content, max_bytes=LIMIT, **hint)
+        return raised.value
+
+    plain, hinted = refusal(), refusal(path_hint="Ask the operator.")
+
+    assert hinted.message == plain.message
+    assert hinted.hint == f"{plain.hint} Ask the operator."

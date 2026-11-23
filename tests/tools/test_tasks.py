@@ -1,9 +1,9 @@
 """get_task through the in-memory client on the seeded fake."""
 
-from typing import override
+from typing import cast, override
 
 import pytest
-from fakes.paperless import FakePaperless, FakeTask, seeded
+from fakes.paperless import FakeDocument, FakePaperless, FakeTask, seeded
 from fastmcp import Client
 from harness import admin, serve
 from services.test_tasks import ManualClock
@@ -123,3 +123,35 @@ async def test_a_user_who_may_not_view_tasks_gets_a_tool_error() -> None:
 
     assert result.is_error
     assert "may not" in str(result.content)
+
+
+@pytest.mark.decision("decision-47")
+async def test_a_finished_upload_reports_its_duplicates() -> None:
+    fake = with_task(status="success", document_ids=(1,))
+    fake.state.documents.append(
+        FakeDocument(id=9, title="Copy", original=fake.state.documents[0].original)
+    )
+
+    output = await call(fake, {"task_id": ID})
+
+    assert output["document_ids"] == [1]
+    found = cast("Json", output["duplicates"])
+    [match] = cast("list[Json]", found["after"])
+    assert (match["document_id"], match["title"], match["in_trash"]) == (9, "Copy", False)
+
+
+@pytest.mark.decision("decision-47")
+async def test_a_rejected_upload_names_the_existing_document_as_such_only() -> None:
+    fake = with_task(status="failure")
+    fake.state.tasks[-1].duplicate_of = 1
+
+    output = await call(fake, {"task_id": ID})
+
+    assert output["document_ids"] == []
+    assert "duplicate_of" not in output
+    assert output["message"] == (
+        "Paperless rejected the file: it already holds the same file, document 1 "
+        "'e2e-public-invoice'."
+    )
+    rejected = cast("Json", cast("Json", output["duplicates"])["rejected_for"])
+    assert rejected["document_id"] == 1

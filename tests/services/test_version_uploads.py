@@ -20,6 +20,7 @@ from mcp_server_paperless.domain.errors import (
     UpstreamTimeout,
     Validation,
 )
+from mcp_server_paperless.services.duplicates import DuplicateFinder
 from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.version_uploads import VersionUploadService
 
@@ -104,10 +105,14 @@ class Setup:
             ]
         self.fake: Recording = Recording(self.state, user=user, slow_reads=slow_reads)
         self.clock: Clock = Clock()
+        self.finder: DuplicateFinder = DuplicateFinder(self.fake, self.fake, web_url=WEB)
         self.service: VersionUploadService = VersionUploadService(
             self.fake,
             self.fake,
-            TaskService(self.fake, sleep=self.clock.sleep, clock=self.clock),
+            TaskService(
+                self.fake, sleep=self.clock.sleep, clock=self.clock, duplicates=self.finder
+            ),
+            self.finder,
             web_url=WEB,
             max_bytes=LIMIT,
             upload_dirs=upload_dirs,

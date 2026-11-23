@@ -10,14 +10,14 @@ than a wish.
 Paperless answers an upload with the id of a consumption task, and consumes later. A caller who
 wants the new document waits a bounded time (``TaskService``). Problems only consumption finds,
 such as an archive serial number that is taken, fail the task and come back as ``failure``.
-Uploading the same content twice makes two documents on Paperless; nothing here prevents
-or detects that.
+Uploading the same content twice makes two documents on Paperless, so a file it already
+holds is sent only when that is confirmed (``DuplicateFinder``).
 """
 
 from typing import TYPE_CHECKING
 
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentUpload, UploadResult
-from mcp_server_paperless.domain.errors import Validation
+from mcp_server_paperless.domain.errors import Validation, quoted
 from mcp_server_paperless.services.custom_values import linked, require_visible, resolve_values
 from mcp_server_paperless.services.document_edits import MAX_TITLE
 from mcp_server_paperless.services.documents import document_link
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.documents import NameOrId, UploadMetadata
     from mcp_server_paperless.domain.ports import DocumentReader, DocumentWriter
     from mcp_server_paperless.domain.taxonomy import TaxonomyKind
+    from mcp_server_paperless.services.duplicates import Before, DuplicateFinder
     from mcp_server_paperless.services.tasks import TaskService
     from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
@@ -61,22 +62,27 @@ class UploadService:
         writer: DocumentWriter,
         taxonomy: TaxonomyResolver,
         tasks: TaskService,
+        duplicates: DuplicateFinder,
         *,
         web_url: str,
         max_bytes: int,
         upload_dirs: Sequence[str] = (),
+        path_hint: str = "",
     ) -> None:
         """Upload through ``writer``, resolve names with ``taxonomy``, wait with ``tasks``.
 
         ``max_bytes`` bounds the file; ``upload_dirs`` is the allowlist for ``from_path``.
+        ``path_hint`` says, with refused content, how a path could be enabled.
         """
         self._reader: DocumentReader = reader
         self._writer: DocumentWriter = writer
         self._taxonomy: TaxonomyResolver = taxonomy
         self._tasks: TaskService = tasks
+        self._duplicates: DuplicateFinder = duplicates
         self._web_url: str = web_url
         self._max_bytes: int = max_bytes
         self._dirs: tuple[str, ...] = tuple(upload_dirs)
+        self._path_hint: str = path_hint
 
     async def from_content(
         self,
@@ -85,18 +91,20 @@ class UploadService:
         metadata: UploadMetadata,
         *,
         wait_seconds: float = 0,
+        confirm: bool = False,
     ) -> UploadResult:
         """Upload base64 ``content_base64`` under ``filename``.
 
         Raises:
+            ConfirmationRequired: Paperless already holds the file and ``confirm`` is not set.
             Validation: The content, its type, the name or a value is not acceptable.
             NotFound: A name or linked document matches nothing.
             Ambiguous: A name matches more than one object.
             PermissionDenied: The user may not add documents.
         """
         name = clean_filename(filename)
-        data = decode_base64(content_base64, max_bytes=self._max_bytes)
-        return await self._upload(data, name, metadata, wait_seconds)
+        data = decode_base64(content_base64, max_bytes=self._max_bytes, path_hint=self._path_hint)
+        return await self._upload(data, name, metadata, wait_seconds, confirm=confirm)
 
     async def from_path(
         self,
@@ -105,6 +113,7 @@ class UploadService:
         metadata: UploadMetadata,
         *,
         wait_seconds: float = 0,
+        confirm: bool = False,
     ) -> UploadResult:
         """Upload the file at ``path``, which must lie in an allowlisted directory.
 
@@ -113,18 +122,25 @@ class UploadService:
         """
         found, data = read_allowed(path, self._dirs, max_bytes=self._max_bytes)
         name = clean_filename(found if filename is None else filename)
-        return await self._upload(data, name, metadata, wait_seconds)
+        return await self._upload(data, name, metadata, wait_seconds, confirm=confirm)
 
     async def _upload(
-        self, data: bytes, name: str, metadata: UploadMetadata, wait_seconds: float
+        self,
+        data: bytes,
+        name: str,
+        metadata: UploadMetadata,
+        wait_seconds: float,
+        *,
+        confirm: bool,
     ) -> UploadResult:
         mime_type = sniff(data, name)
         if mime_type is None:
             message = "The file is not a type Paperless can consume."
             raise Validation(message, hint=f"Supported: {UNSUPPORTED}")
         upload = await self._prepared(data, name, mime_type, metadata)
+        before = await self._duplicates.cleared(data, f"upload {quoted(name)}", confirm=confirm)
         task_id = await self._writer.upload_document(upload)
-        return await self._result(task_id, upload, wait_seconds)
+        return await self._result(task_id, upload, wait_seconds, before)
 
     async def _prepared(
         self, data: bytes, name: str, mime_type: str, metadata: UploadMetadata
@@ -179,10 +195,12 @@ class UploadService:
         )
 
     async def _result(
-        self, task_id: str, upload: DocumentUpload, wait_seconds: float
+        self, task_id: str, upload: DocumentUpload, wait_seconds: float, before: Before
     ) -> UploadResult:
         """What the upload did, after the wait; the task id alone if the task cannot be read."""
-        outcome = await follow(self._tasks, task_id, wait_seconds, nothing_named=NO_DOCUMENT)
+        outcome = await follow(
+            self._tasks, task_id, wait_seconds, nothing_named=NO_DOCUMENT, duplicates=True
+        )
         document = outcome.document_id
         return UploadResult(
             task_id=task_id,
@@ -195,4 +213,5 @@ class UploadService:
             filename=upload.filename,
             mime_type=upload.mime_type,
             size_bytes=len(upload.content),
+            duplicates=before.checked(outcome.duplicates),
         )

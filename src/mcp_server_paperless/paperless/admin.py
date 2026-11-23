@@ -46,8 +46,9 @@ from mcp_server_paperless.domain.admin import (
     check_secret,
 )
 from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError, PermissionDenied
-from mcp_server_paperless.domain.tasks import TaskState
+from mcp_server_paperless.domain.tasks import REJECTED, TaskState
 from mcp_server_paperless.paperless.pagination import Page
+from mcp_server_paperless.paperless.tasks import duplicate_of
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -341,6 +342,7 @@ def _message(result: JsonValue) -> str | None:
 
 
 def _task(row: _Task) -> TaskRow:
+    rejected = duplicate_of(row.result_data) is not None
     return TaskRow(
         id=row.id,
         task_id=row.task_id,
@@ -351,9 +353,9 @@ def _task(row: _Task) -> TaskRow:
         started=row.date_started,
         finished=row.date_done,
         duration_seconds=row.duration_seconds,
-        document_ids=tuple(row.related_document_ids),
+        document_ids=() if rejected else tuple(row.related_document_ids),
         acknowledged=row.acknowledged,
-        message=_message(row.result_data),
+        message=REJECTED if rejected else _message(row.result_data),
     )
 
 

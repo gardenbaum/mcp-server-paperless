@@ -95,8 +95,10 @@ def clean_filename(name: str) -> str:
     return last
 
 
-def decode_base64(content: str, *, max_bytes: int) -> bytes:
+def decode_base64(content: str, *, max_bytes: int, path_hint: str = "") -> bytes:
     """The bytes of standard base64 ``content``, at most ``max_bytes`` of them.
+
+    ``path_hint`` is added to the hint of a refusal: how else the file could be sent.
 
     The length is checked before decoding, so an oversized payload costs a comparison, not a
     decode (decoding is linear, about a gigabyte per second, but allocates the whole result).
@@ -105,6 +107,14 @@ def decode_base64(content: str, *, max_bytes: int) -> bytes:
         Validation: Too large, empty, or not standard base64 (no whitespace, prefix or padding
             problems).
     """
+    try:
+        return _decoded(content, max_bytes)
+    except Validation as error:
+        hint = f"{error.hint or ''} {path_hint}".strip()
+        raise Validation(error.message, hint=hint or None) from None
+
+
+def _decoded(content: str, max_bytes: int) -> bytes:
     if len(content) > 4 * -(-max_bytes // 3):
         raise _too_large(max_bytes)
     try:

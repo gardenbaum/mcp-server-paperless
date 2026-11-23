@@ -333,6 +333,25 @@ e2e-office:
     "${compose[@]}" up -d
     uv run pytest -m office_e2e --no-cov --durations=20
 
+# Run the tests of rejected duplicates (marker `duplicates_e2e`) against the pinned Paperless with
+# PAPERLESS_CONSUMER_DELETE_DUPLICATES (tests/e2e/compose.duplicates.yaml). Own compose project and
+# port (8015), so a stack from `e2e-up` is untouched; the stack is removed afterwards, container
+# logs of a failed run land in e2e-duplicates-containers.log.
+e2e-duplicates:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PAPERLESS_E2E_PORT="${PAPERLESS_E2E_PORT:-8015}"
+    export PAPERLESS_E2E_DUPLICATES=1
+    compose=(docker compose -p paperless-mcp-e2e-duplicates -f tests/e2e/compose.yaml -f tests/e2e/compose.duplicates.yaml)
+    cleanup() {
+        local status=$?
+        if (( status != 0 )); then "${compose[@]}" logs --no-color > e2e-duplicates-containers.log || true; fi
+        "${compose[@]}" down --volumes --remove-orphans
+    }
+    trap cleanup EXIT
+    "${compose[@]}" up -d
+    uv run pytest -m duplicates_e2e --no-cov --durations=20
+
 # Stop the E2E stack and delete its volumes, so the next start is a fresh instance.
 e2e-down:
     docker compose -f tests/e2e/compose.yaml down --volumes --remove-orphans

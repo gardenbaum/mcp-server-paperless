@@ -15,7 +15,13 @@ from pydantic import Field
 
 from mcp_server_paperless.domain.documents import UploadMetadata, UploadResult
 from mcp_server_paperless.domain.errors import Validation
-from mcp_server_paperless.tools._shared import ANNOTATIONS, boundary, check_transport, services
+from mcp_server_paperless.tools._shared import (
+    ANNOTATIONS,
+    Confirm,
+    boundary,
+    check_transport,
+    services,
+)
 from mcp_server_paperless.tools.upload import (
     COMMON,
     TOOLSET,
@@ -80,6 +86,7 @@ async def upload_document(  # noqa: PLR0913 -- the file plus one parameter per m
     archive_serial_number: SerialNumber = None,
     custom_fields: CustomFields = None,
     wait_seconds: Wait = 0,
+    confirm: Confirm = False,
 ) -> UploadResult:
     """Upload a file by path or as base64 content; the tool description is DESCRIPTION."""
     if (path is None) == (content_base64 is None):
@@ -103,5 +110,5 @@ async def upload_document(  # noqa: PLR0913 -- the file plus one parameter per m
         message = "filename is required with content_base64."
         raise Validation(message, hint="Name the file, e.g. 'invoice.pdf'.")
     return await uploads.from_content(
-        content_base64 or "", filename, metadata, wait_seconds=wait_seconds
+        content_base64 or "", filename, metadata, wait_seconds=wait_seconds, confirm=confirm
     )

@@ -1,10 +1,11 @@
 ---
 id: PLMCP-77
 title: Check for duplicates before and after an upload
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T12:14:48Z'
-updated_date: '2026-11-23T19:32:26Z'
+updated_date: '2026-11-23T23:23:39Z'
 labels: []
 dependencies: []
 priority: high
@@ -35,3 +36,14 @@ By default Paperless keeps duplicates (with PAPERLESS_CONSUMER_DELETE_DUPLICATES
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Approved design (owner, 2026-11-23), part 77. Failing test first at each level.
+1. Fake: real checksums, duplicates, root, version rows, rejection (tests/fakes/duplicates.py); adapter and contract tests.
+2. Ports/adapters: DocumentQuery.checksum, get_root, get_duplicates, list_versions, TrashedDocument.checksum, TaskStatus.duplicate_of; a rejected task names no document (get_task, list_tasks).
+3. services/duplicates.py DuplicateFinder (bounded scan: 5,000 documents, 500 trash entries, 20 trashed versions); before/after/rejected; TaskService(duplicates=); uploads and versions with confirm.
+4. Path hints: third stdio form, middleware, errors.
+5. Decision 47, docs, snapshots, E2E, own stack for rejection (e2e-duplicates). No local E2E.
+<!-- SECTION:PLAN:END -->

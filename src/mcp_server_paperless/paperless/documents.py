@@ -25,6 +25,7 @@ from mcp_server_paperless.domain.documents import (
     Note,
     Suggestions,
 )
+from mcp_server_paperless.domain.duplicates import DuplicateRecord
 from mcp_server_paperless.domain.errors import (
     FeatureUnavailable,
     NotFound,
@@ -32,6 +33,7 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
 )
+from mcp_server_paperless.domain.versions import VersionPage, VersionRow
 from mcp_server_paperless.paperless.client import MAY_BE_APPLIED
 from mcp_server_paperless.paperless.disposition import filename
 from mcp_server_paperless.paperless.pagination import Page
@@ -146,6 +148,22 @@ class _Title(BaseModel):
 class _Versions(BaseModel):
     id: int
     versions: list[_Version]
+
+
+class _VersionRow(_Title):
+    versions: list[_Version]
+
+
+class _Duplicate(_Title):
+    deleted_at: datetime | None
+
+
+class _Duplicates(BaseModel):
+    duplicate_documents: list[_Duplicate]
+
+
+class _Root(BaseModel):
+    root_id: int
 
 
 class _Content(BaseModel):
@@ -272,6 +290,7 @@ def params(query: DocumentQuery) -> dict[str, str | int]:
         "custom_field_query": (
             None if query.custom_field_query is None else json.dumps(query.custom_field_query)
         ),
+        "checksum__iexact": query.checksum,
         "ordering": query.ordering,
         "id__in": _csv(query.ids),
     }
@@ -528,6 +547,44 @@ class PaperlessDocumentReader:
         }
         found = await self._client.get(PATH, Page[_Versions], params=sent)
         return {row.id: row.versions[0].id if row.versions else row.id for row in found.results}
+
+    async def get_root(self, document_id: int) -> int:
+        """See ``DocumentReader.get_root``; Paperless answers 403 to a hidden document."""
+        try:
+            return (await self._one(document_id, "root/", _Root)).root_id
+        except PermissionDenied:
+            raise unseen_document(document_id) from None
+
+    async def get_duplicates(self, document_id: int) -> tuple[DuplicateRecord, ...]:
+        """See ``DocumentReader.get_duplicates``; filled on a single read only, not in lists."""
+        row = await self._one(document_id, "", _Duplicates, {"fields": "duplicate_documents"})
+        return tuple(
+            DuplicateRecord(id=d.id, title=d.title, deleted_at=d.deleted_at)
+            for d in row.duplicate_documents
+        )
+
+    async def list_versions(self, *, page: int, page_size: int) -> VersionPage:
+        """See ``DocumentReader.list_versions``; the id breaks ties, so pages do not overlap."""
+        sent: Params = {
+            "fields": "id,title,versions",
+            "ordering": "-modified,-id",
+            "page": page,
+            "page_size": page_size,
+        }
+        try:
+            found = await self._client.get(PATH, Page[_VersionRow], params=sent)
+        except NotFound:
+            raise beyond_last_page(page) from None
+        return VersionPage(
+            count=found.count,
+            next_page=found.next_page,
+            rows=tuple(
+                VersionRow(
+                    id=row.id, title=row.title, versions=tuple(_version(v) for v in row.versions)
+                )
+                for row in found.results
+            ),
+        )
 
     async def _file(
         self, document_id: int, tail: str, max_bytes: int, params: Params | None = None

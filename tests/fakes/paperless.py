@@ -20,7 +20,6 @@ write its contract tests.
 """
 
 import functools
-import hashlib
 import re
 import uuid
 from dataclasses import dataclass, field, replace
@@ -52,6 +51,7 @@ from fakes.admin import (
 )
 from fakes.custom_field_query import compile_query
 from fakes.document_values import coerce, reject, tag_closure
+from fakes.duplicates import duplicates_of, rejected_for, root_checksum, sha256
 from fakes.mail import (
     FakeMailAccount,
     FakeMailRule,
@@ -97,6 +97,7 @@ from mcp_server_paperless.domain.documents import (
     Note,
     Suggestions,
 )
+from mcp_server_paperless.domain.duplicates import DuplicateRecord
 from mcp_server_paperless.domain.errors import (
     FeatureUnavailable,
     NotFound,
@@ -118,9 +119,10 @@ from mcp_server_paperless.domain.permissions import (
     UserPage,
     UserRow,
 )
-from mcp_server_paperless.domain.tasks import TaskState, TaskStatus, Unconfirmed
+from mcp_server_paperless.domain.tasks import REJECTED, TaskState, TaskStatus, Unconfirmed
 from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyDetail, TaxonomyItem
 from mcp_server_paperless.domain.trash import TrashedDocument, TrashPage
+from mcp_server_paperless.domain.versions import VersionPage, VersionRow
 from mcp_server_paperless.domain.views import FilterRule, SavedView
 from mcp_server_paperless.domain.workflows import Workflow
 from mcp_server_paperless.paperless.admin import (
@@ -431,9 +433,10 @@ class FakeDocument(Owned):
     ai_suggestions: AiSuggestions = field(default_factory=lambda: NO_AI_SUGGESTIONS)
     # The name of the uploaded file; the seed's files are named after the title.
     file_name: str | None = None
-    original: bytes = b"%PDF-1.4 fake original"
+    # By default every document has a file of its own.
+    original: bytes = b""
     # None: Paperless made no archive version (e.g. a plain text document).
-    archive: bytes | None = b"%PDF-1.4 fake archive version, longer than the original"
+    archive: bytes | None = b""
     thumbnail: bytes = THUMBNAIL
     # Set while the document is in the trash (state.trash): when it was deleted.
     deleted_at: datetime | None = None
@@ -453,6 +456,11 @@ class FakeDocument(Owned):
         A document made without versions gets its root version, as every Paperless document has.
         """
         self.file_name = self.file_name or f"{self.title}.pdf"
+        self.original = self.original or b"%%PDF-1.4 fake original %d" % self.id
+        if self.archive is not None:
+            self.archive = self.archive or b"%PDF-1.4 fake archive, longer than the original " + (
+                b"%d" % self.id
+            )
         if not self.versions:
             self.versions = [_root_version(self.id, self.original)]
 
@@ -481,6 +489,7 @@ class FakeTask:
         task_id: The Celery UUID clients look tasks up by.
         message: The error message of a failed task (its traceback is not modelled).
         document_ids: The task's related documents.
+        duplicate_of: What Paperless rejected the file for (`FakeState.delete_duplicates`).
     """
 
     id: int
@@ -491,6 +500,7 @@ class FakeTask:
     finished: datetime | None = None
     message: str | None = None
     document_ids: tuple[int, ...] = ()
+    duplicate_of: int | None = None
     trigger_source: str = "api_upload"
     acknowledged: bool = False
     started: datetime | None = None
@@ -508,6 +518,8 @@ class FakeState:
     document_types: list[FakeTaxonomy] = field(default_factory=list[FakeTaxonomy])
     storage_paths: list[FakeStoragePath] = field(default_factory=list[FakeStoragePath])
     custom_fields: list[FakeCustomField] = field(default_factory=list[FakeCustomField])
+    # PAPERLESS_CONSUMER_DELETE_DUPLICATES: a file any document or version has fails its task.
+    delete_duplicates: bool = False
     saved_views: list[FakeSavedView] = field(default_factory=list[FakeSavedView])
     groups: list[FakeGroup] = field(default_factory=list[FakeGroup])
     share_links: list[FakeShareLink] = field(default_factory=list[FakeShareLink])
@@ -600,13 +612,13 @@ def _created(document_id: int, title: str, content: str) -> HistoryEntry:
     )
 
 
-def _root_version(document_id: int, original: bytes = b"%PDF-1.4 fake original") -> DocumentVersion:
+def _root_version(document_id: int, original: bytes) -> DocumentVersion:
     return DocumentVersion(
         id=document_id,
         added=datetime(2026, 11, 11, 19, 47, tzinfo=UTC),
         version_label=None,
         is_root=True,
-        checksum=hashlib.sha256(original).hexdigest(),
+        checksum=sha256(original),
     )
 
 
@@ -681,7 +693,6 @@ def seeded() -> FakeState:
                     ),
                     _created(1, "e2e-public-invoice", "E2E public invoice ACME 2026"),
                 ],
-                versions=[_root_version(1)],
             ),
             FakeDocument(
                 id=2,
@@ -692,7 +703,6 @@ def seeded() -> FakeState:
                 tags=[3],
                 custom_fields={fields[7].id: [1]},  # the mirror of the public document's link
                 history=[_created(2, "e2e-private-note", PRIVATE_CONTENT)],
-                versions=[_root_version(2)],
             ),
         ],
     )
@@ -880,7 +890,11 @@ class FakePaperless:
             message = f"Paperless rejected the request: {ONLY_ONE_SEARCH}"
             raise Validation(message)
         documents = [d for d in self.state.documents if d.visible_to(self.user)]
-        matches: list[_Match] = [*_filters(query, self.state), *view_filters(query, self.state)]
+        matches: list[_Match] = [
+            *_filters(query, self.state),
+            *view_filters(query, self.state),
+            *self._duplicate_filters(query),
+        ]
         if query.custom_field_query is not None:
             test = compile_query(query.custom_field_query, self.state.custom_fields)
             matches.append(lambda d: test(d.custom_fields))
@@ -929,12 +943,74 @@ class FakePaperless:
                     task_id=task.task_id,
                     task_type=task.task_type,
                     state=task.status,
-                    message=task.message,
+                    message=task.message if task.duplicate_of is None else REJECTED,
                     document_ids=task.document_ids,
+                    duplicate_of=task.duplicate_of,
                     created=task.created,
                     finished=task.finished,
                 )
         raise not_found(task_id)
+
+    def _duplicates(self, document: FakeDocument) -> list[FakeDocument]:
+        """What `duplicate_documents` and `has_duplicates` compare with: the trash included."""
+        everything = (*self.state.documents, *self.state.trash)
+        return duplicates_of(document, [d for d in everything if d.visible_to(self.user)])
+
+    def _duplicate_filters(self, query: DocumentQuery) -> list[_Match]:
+        """`checksum__iexact` and `has_duplicates`."""
+        checksum = (query.checksum or "").lower()
+        checks: list[tuple[object, _Match]] = [
+            (query.checksum, lambda d: root_checksum(d) == checksum),
+            (
+                query.has_duplicates,
+                lambda d: bool(self._duplicates(d)) == query.has_duplicates,
+            ),
+        ]
+        return [match for value, match in checks if value is not None]
+
+    async def get_root(self, document_id: int) -> int:
+        """`DocumentReader.get_root` (the `root` action: 404 if missing, 403 if hidden)."""
+        for document in (*self.state.documents, *self.state.trash):
+            if document_id in {document.id, *(v.id for v in document.versions)}:
+                break
+        else:
+            raise unseen_document(document_id)
+        if not (self.user.has("view_document") and document.visible_to(self.user)):
+            raise unseen_document(document_id)
+        return document.root_id or document.id
+
+    async def get_duplicates(self, document_id: int) -> tuple[DuplicateRecord, ...]:
+        """`DocumentReader.get_duplicates` (the detail view, `duplicate_documents`)."""
+        return tuple(
+            DuplicateRecord(id=d.id, title=d.title, deleted_at=d.deleted_at)
+            for d in self._duplicates(self._seen(document_id))
+        )
+
+    async def list_versions(self, *, page: int, page_size: int) -> VersionPage:
+        """`DocumentReader.list_versions` (the list view, ordered by `-modified,-id`).
+
+        Raises:
+            NotFound: `page` is beyond the last page.
+            PermissionDenied: The user lacks the global `view_document` permission.
+        """
+        if not self.user.has("view_document"):
+            raise self._denied()
+        seen = sorted(
+            (d for d in self.state.documents if d.visible_to(self.user)),
+            key=lambda d: (d.modified, d.id),
+            reverse=True,
+        )
+        try:
+            shown, following = self._page(tuple(seen), page, page_size)
+        except NotFound:
+            raise beyond_last_page(page) from None
+        return VersionPage(
+            count=len(seen),
+            next_page=following,
+            rows=tuple(
+                VersionRow(id=d.id, title=d.title, versions=tuple(d.versions)) for d in shown
+            ),
+        )
 
     def _document(self, document_id: int) -> FakeDocument:
         """The document if it exists (`NotFound` otherwise); callers check visibility."""
@@ -1035,6 +1111,8 @@ class FakePaperless:
             id=len(state.tasks) + 1, task_id=str(uuid.uuid4()), created=now, finished=now
         )
         state.tasks.append(task)
+        if self._rejected(upload.content, task):
+            return task.task_id
         taken = upload.archive_serial_number is not None and any(
             d.archive_serial_number == upload.archive_serial_number for d in state.documents
         )
@@ -1045,7 +1123,7 @@ class FakePaperless:
                 f"Given ASN {upload.archive_serial_number} already exists!"
             )
             return task.task_id
-        number = max((d.id for d in state.documents), default=0) + 1
+        number = self._next_id()
         title = upload.title or PurePath(upload.filename).stem
         text = (
             upload.content.decode(errors="replace") if upload.mime_type.startswith("text/") else ""
@@ -1079,6 +1157,16 @@ class FakePaperless:
         task.status = "success"
         task.document_ids = (number,)
         return task.task_id
+
+    def _rejected(self, content: bytes, task: FakeTask) -> bool:
+        """Fail the task if duplicates are rejected and any user's document has the file."""
+        if not self.state.delete_duplicates:
+            return False
+        task.duplicate_of = rejected_for(content, self.state.documents, self.state.trash)
+        if task.duplicate_of is None:
+            return False
+        task.status = "failure"
+        return True
 
     def _values(self, upload: DocumentUpload) -> dict[int, JsonValue]:
         """The custom field values of an upload, checked like the form serializer does."""
@@ -1337,6 +1425,7 @@ class FakePaperless:
                     title=d.title,
                     deleted_at=d.deleted_at or datetime.min.replace(tzinfo=UTC),
                     version_of=d.root_id,
+                    checksum=root_checksum(d) if d.root_id is None else None,
                 )
                 for d in seen[start : start + page_size]
             ),
@@ -1462,7 +1551,7 @@ class FakePaperless:
                 added=now,
                 version_label=label,
                 is_root=False,
-                checksum=hashlib.sha256(file.original).hexdigest(),
+                checksum=sha256(file.original),
             ),
         )
         FakePaperless._show(document, file)
@@ -1499,18 +1588,16 @@ class FakePaperless:
             upload.content.decode(errors="replace") if upload.mime_type.startswith("text/") else ""
         )
         archive = upload.content + b"\n%archive" if upload.mime_type == "application/pdf" else None
+        task = FakeTask(
+            id=len(self.state.tasks) + 1, task_id=str(uuid.uuid4()), created=now, finished=now
+        )
+        self.state.tasks.append(task)
+        if self._rejected(upload.content, task):
+            return task.task_id
         version_id = self._next_id()
         file = FakeFile(upload.content, archive, text, upload.mime_type)
         self._push(document, version_id, file, upload.label or None, now)
-        task = FakeTask(
-            id=len(self.state.tasks) + 1,
-            task_id=str(uuid.uuid4()),
-            created=now,
-            finished=now,
-            status="success",
-            document_ids=(version_id,),
-        )
-        self.state.tasks.append(task)
+        task.status, task.document_ids = "success", (version_id,)
         return task.task_id
 
     @write
@@ -2981,7 +3068,7 @@ class FakePaperless:
                 duration_seconds=t.duration_seconds,
                 document_ids=t.document_ids,
                 acknowledged=t.acknowledged,
-                message=t.message,
+                message=t.message if t.duplicate_of is None else REJECTED,
             )
             for t in tasks
             if (state is None or t.status == state)
@@ -3269,11 +3356,11 @@ class FakePaperless:
             original_filename=document.original_filename,
             original_mime_type=file.mime_type,
             original_size=len(file.original),
-            original_checksum=f"{document.id:064x}",
+            original_checksum=sha256(file.original),
             media_filename=f"e2e/2026/{document.original_filename}",
             has_archive_version=file.archive is not None,
             archive_size=None if file.archive is None else len(file.archive),
-            archive_checksum=None if file.archive is None else f"{document.id + 1000:064x}",
+            archive_checksum=None if file.archive is None else sha256(file.archive),
             archive_media_filename=(
                 None if file.archive is None else f"e2e/2026/{document.original_filename}"
             ),

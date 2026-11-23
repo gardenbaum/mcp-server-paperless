@@ -9,6 +9,7 @@ from typing import Annotated, ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from mcp_server_paperless.domain.duplicates import DuplicateCheck
 from mcp_server_paperless.domain.tasks import TaskState, Wait
 
 # The most ``PAPERLESS_MCP_MAX_UPLOAD_BYTES`` may be set to (100 MiB); settings and the refusal
@@ -45,12 +46,14 @@ class DocumentQuery(BaseModel):
         custom_field_query: Paperless's ``custom_field_query`` expression, passed through.
         ids: Only these documents (those of them the user may see); empty means no restriction.
         shared_by: Documents this user owns and has shared with someone.
+        checksum: The SHA-256 of the original upload (not of later versions).
         ordering: A Paperless ordering field, ``-`` for descending.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     query: str | None = None
+    checksum: str | None = None
     more_like: int | None = None
     text: str | None = None
     title_search: str | None = None
@@ -670,3 +673,6 @@ class UploadResult(BaseModel):
     filename: Annotated[str, Field(description="The name the file was uploaded under.")]
     mime_type: Annotated[str, Field(description="The type found in the content.")]
     size_bytes: int
+    duplicates: Annotated[
+        DuplicateCheck, Field(description="Where Paperless already holds the same file.")
+    ]

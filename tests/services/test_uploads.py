@@ -24,6 +24,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.duplicates import DuplicateFinder
 from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.uploads import UploadService
@@ -104,11 +105,15 @@ class Setup:
         self.fake: Recording = Recording(self.state, user=user, slow_reads=slow_reads)
         self.clock: Clock = Clock()
         taxonomy = TaxonomyResolver(self.fake, StaticTokenProvider("t"), ttl=3600.0)
+        self.finder: DuplicateFinder = DuplicateFinder(self.fake, self.fake, web_url=WEB)
         self.service: UploadService = UploadService(
             self.fake,
             self.fake,
             taxonomy,
-            TaskService(self.fake, sleep=self.clock.sleep, clock=self.clock),
+            TaskService(
+                self.fake, sleep=self.clock.sleep, clock=self.clock, duplicates=self.finder
+            ),
+            self.finder,
             web_url=WEB,
             max_bytes=LIMIT,
             upload_dirs=upload_dirs,

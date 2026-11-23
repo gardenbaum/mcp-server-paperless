@@ -13,6 +13,7 @@ from mcp_server_paperless.domain.errors import PaperlessMcpError
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.documents import UploadState
+    from mcp_server_paperless.domain.duplicates import DuplicateReport
     from mcp_server_paperless.domain.tasks import Wait
     from mcp_server_paperless.services.tasks import TaskService
 
@@ -33,24 +34,26 @@ class Outcome:
     document_ids: tuple[int, ...]
     wait: Wait
     waited_seconds: float
+    duplicates: DuplicateReport | None = None
 
 
-async def follow(
+async def follow(  # noqa: PLR0913 -- one keyword per thing callers vary
     tasks: TaskService,
     task_id: str,
     wait_seconds: float,
     *,
     nothing_named: str = "",
     accepted: str = "the file",
+    duplicates: bool = False,
 ) -> Outcome:
     """The outcome of task ``task_id`` after waiting up to ``wait_seconds`` for it.
 
     ``nothing_named`` explains a task that succeeded without naming a document (by default it
     needs no explanation); ``accepted`` names what Paperless took, for the message of a task that
-    cannot be read.
+    cannot be read; ``duplicates`` asks for those of a consumed file.
     """
     try:
-        report = await tasks.get(task_id, wait_seconds=wait_seconds)
+        report = await tasks.get(task_id, wait_seconds=wait_seconds, duplicates=duplicates)
         named = report.document_ids if report.state == "success" else ()
         document = named[0] if named else None
     except Exception as error:  # noqa: BLE001 -- the file is in Paperless: the task id must get out
@@ -74,4 +77,5 @@ async def follow(
         document_ids=named,
         wait=report.wait,
         waited_seconds=report.waited_seconds,
+        duplicates=report.duplicates,
     )

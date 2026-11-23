@@ -74,7 +74,8 @@ reference](tools.md) lists the kind of every tool.
 
 ### Confirmation
 
-A tool that can lose data or widen access needs your consent for that, in one of two ways:
+A tool that can lose data or widen access, or that would upload a file Paperless already holds,
+needs your consent for that, in one of two ways:
 
 - **A dialog**, where your client can show one (it declares form elicitation of MCP). A call
   without `confirm` shows you what would happen and waits. Only if you accept does the call go
@@ -305,6 +306,15 @@ when idle): a 10 MiB file took about 70 MB, four at once about 145 MB, and a 100
 a fresh server and up to about 890 MB after an earlier upload. Nothing limits how many uploads run at once, so
 give a container the memory for the limit you set.
 
+**Duplicates.** Before anything is sent, both tools compare the file (its SHA-256) with what
+Paperless already holds: the originals of documents, the versions of the 5,000 most recently changed
+documents, and 500 trash entries. A file that is there already is sent only after a
+[confirmation](#confirmation) that names where it is. Archive files, versions of trashed documents
+and documents the Paperless user cannot see are not compared; the result lists every gap, and after
+consumption it, and `get_task`, report the duplicates Paperless found or the document it rejected the
+file for. If the check cannot run because Paperless does not answer, nothing is uploaded. The rules
+are decision-47 (`backlog/decisions/`).
+
 **Uploads by path.** With `PAPERLESS_MCP_UPLOAD_DIRS` set, the two tools also take a `path` on
 the machine the server runs on, which is what you want with Claude Code or Claude Desktop: the
 model names the file instead of encoding it.
@@ -312,7 +322,8 @@ model names the file instead of encoding it.
 - Directories are absolute, comma-separated or a JSON array. `/`, your home directory itself,
   `/proc`, `/sys`, `/dev` and `/run` are refused as entries.
 - Only the stdio transport ever offers the `path` parameter, and only when this is set; over
-  HTTP callers send base64 content.
+  HTTP callers send base64 content. Over stdio without it, the tools tell the assistant that the
+  operator can set it.
 - Symlinks are resolved and must end inside these directories; only regular files with a single
   hard link are read, `..` in a path is refused, and files or folders whose name starts with a
   dot below an entry (`.ssh`, `.env`) are never read.

@@ -1,0 +1,182 @@
+"""What the duplicate check reads, on answers as the source of Paperless 3.5.1 shapes them.
+
+The adapter sends what 3.5.1 documents (schema guard); a rejected upload is a failed task without
+an error message whose only related document is the existing one.
+"""
+
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, cast
+
+import pytest
+
+from adapter.test_admin import TASK_WIRE
+from adapter.test_tasks import FAILED, UUID, Tasks
+from adapter.test_trash import DOCUMENT, VERSION, Recorded, listing
+from mcp_server_paperless.domain.documents import DocumentQuery
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied
+from mcp_server_paperless.domain.tasks import REJECTED
+from mcp_server_paperless.paperless.admin import PaperlessAdminReader
+from mcp_server_paperless.paperless.documents import PaperlessDocumentReader
+from mcp_server_paperless.paperless.tasks import PaperlessTaskReader
+from mcp_server_paperless.paperless.trash import PaperlessTrashReader
+
+if TYPE_CHECKING:
+    from adapter.conftest import ClientFactory
+    from adapter.test_trash import Json
+
+pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-47")]
+
+SHA = "b5989a99fade41ed36af961e918ef43da955b8b08a4c8aa78430f2e6b7da43cb"
+REJECTION = {"duplicate_of": 12, "duplicate_in_trash": False}
+
+
+def empty() -> Recorded:
+    return Recorded({"count": 0, "next": None, "previous": None, "results": []})
+
+
+async def test_the_checksum_is_a_filter_of_the_search(make_client: ClientFactory) -> None:
+    server = empty()
+
+    _ = await PaperlessDocumentReader(make_client(server)).search_documents(
+        DocumentQuery(checksum=SHA), page=1, page_size=10
+    )
+
+    [(_, path, params, _)] = server.sent
+    assert (path, params["checksum__iexact"]) == ("/api/documents/", SHA)
+
+
+async def test_the_versions_are_listed_without_anything_else(make_client: ClientFactory) -> None:
+    row = {k: DOCUMENT[k] for k in ("id", "title", "versions")}
+    body = {
+        "count": 3,
+        "next": "http://p.test/api/documents/?page=3",
+        "previous": None,
+        "results": [row],
+    }
+    server = Recorded(body)
+
+    page = await PaperlessDocumentReader(make_client(server)).list_versions(page=2, page_size=1)
+
+    [(method, path, params, _)] = server.sent
+    assert (method, path) == ("GET", "/api/documents/")
+    assert params == {
+        "fields": "id,title,versions",
+        "ordering": "-modified,-id",
+        "page": "2",
+        "page_size": "1",
+    }
+    assert (page.count, page.next_page) == (3, 3)
+    [found] = page.rows
+    assert (found.id, found.title) == (3301, "plmcp27-probe-b")
+    [version] = found.versions
+    assert (version.id, version.is_root, version.checksum) == (3301, True, SHA)
+
+
+async def test_a_page_of_versions_beyond_the_last_is_not_found(make_client: ClientFactory) -> None:
+    reader = PaperlessDocumentReader(make_client(Recorded({"detail": "Invalid page."}, 404)))
+
+    with pytest.raises(NotFound, match="Page 9 is beyond the last page"):
+        _ = await reader.list_versions(page=9, page_size=1)
+
+
+async def test_the_duplicates_are_read_from_the_single_document(
+    make_client: ClientFactory,
+) -> None:
+    deleted = "2026-11-13T14:26:55.220835Z"
+    server = Recorded(
+        {
+            "duplicate_documents": [
+                {"id": 5, "title": "live", "deleted_at": None},
+                {"id": 6, "title": "gone", "deleted_at": deleted},
+            ]
+        }
+    )
+
+    found = await PaperlessDocumentReader(make_client(server)).get_duplicates(3)
+
+    assert server.sent == [
+        ("GET", "/api/documents/3/", {"fields": "duplicate_documents"}, None),
+    ]
+    assert [(d.id, d.title, d.deleted_at) for d in found] == [
+        (5, "live", None),
+        (6, "gone", datetime(2026, 11, 13, 14, 26, 55, 220835, tzinfo=UTC)),
+    ]
+
+
+async def test_the_root_is_read_by_the_id_of_a_version(make_client: ClientFactory) -> None:
+    server = Recorded({"root_id": 3})
+
+    assert await PaperlessDocumentReader(make_client(server)).get_root(5) == 3
+    assert server.sent[0][1] == "/api/documents/5/root/"
+
+
+async def test_a_hidden_root_reads_like_a_missing_one(make_client: ClientFactory) -> None:
+    texts: list[str] = []
+    for server in (
+        Recorded({"detail": "No Document matches the given query."}, 404),
+        Recorded("Insufficient permissions", 403, html=True),
+    ):
+        with pytest.raises(NotFound) as raised:
+            _ = await PaperlessDocumentReader(make_client(server)).get_root(5)
+        texts.append(raised.value.describe())
+    assert texts[0] == texts[1]
+    assert "No document 5" in texts[0]
+
+
+async def test_a_trashed_document_has_its_roots_checksum_and_a_version_none(
+    make_client: ClientFactory,
+) -> None:
+    newer = {"id": 3302, "added": "2026-11-13T14:26:54Z", "checksum": "c0", "is_root": False}
+    both = {**DOCUMENT, "versions": [newer, *cast("list[Json]", DOCUMENT["versions"])]}
+    server = Recorded(listing(both, VERSION, {**DOCUMENT, "versions": []}))
+
+    page = await PaperlessTrashReader(make_client(server)).list_trash(page=1, page_size=25)
+
+    assert [e.checksum for e in page.entries] == [SHA, None, None]
+
+
+async def test_a_rejected_upload_names_no_document_the_task_made(
+    make_client: ClientFactory,
+) -> None:
+    row = {**FAILED, "result_data": REJECTION, "related_document_ids": [12]}
+
+    status = await PaperlessTaskReader(make_client(Tasks(row))).get_task(UUID)
+
+    assert (status.state, status.message, status.document_ids) == ("failure", REJECTED, ())
+    assert status.duplicate_of == 12
+
+
+@pytest.mark.parametrize("result", [None, "x", {"duplicate_of": "12"}, {"document_id": 3}])
+async def test_other_results_are_no_rejection(make_client: ClientFactory, result: object) -> None:
+    row = {**FAILED, "result_data": result, "related_document_ids": [3]}
+
+    status = await PaperlessTaskReader(make_client(Tasks(row))).get_task(UUID)
+
+    assert (status.duplicate_of, status.document_ids) == (None, (3,))
+
+
+async def test_the_admin_list_does_not_show_the_existing_document(
+    make_client: ClientFactory,
+) -> None:
+    rejected = {
+        **TASK_WIRE,
+        "status": "failure",
+        "result_data": REJECTION,
+        "related_document_ids": [12],
+    }
+    server = Recorded({"count": 1, "next": None, "previous": None, "results": [rejected]})
+
+    page = await PaperlessAdminReader(make_client(server)).list_tasks(
+        state=None, task_type=None, acknowledged=None, page=1, page_size=25
+    )
+
+    [task] = page.rows
+    assert (task.document_ids, task.message) == ((), REJECTED)
+    assert "12" not in (task.message or "")
+
+
+async def test_a_listing_without_the_permission_is_denied(make_client: ClientFactory) -> None:
+    server = Recorded({"detail": "You do not have permission."}, 403)
+
+    with pytest.raises(PermissionDenied):
+        _ = await PaperlessDocumentReader(make_client(server)).list_versions(page=1, page_size=1)

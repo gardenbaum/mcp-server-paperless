@@ -1,0 +1,270 @@
+"""Contract of what the duplicate check reads: the same assertions on the fake and on 3.5.1.
+
+Every test works on files of its own with unique bytes. The facts come from the source of 3.5.1:
+the checksum is the SHA-256 of the file; the checksum filter knows the root file of documents
+that are not in the trash; `duplicate_documents` compares root and archive files of documents,
+includes the trash and what is shared with the user, and knows no versions.
+"""
+
+import hashlib
+import uuid
+from typing import TYPE_CHECKING
+
+import pytest
+
+from contract.test_document_upload import ended
+from contract.test_document_versions import add_version
+from contract.test_trash import find
+from mcp_server_paperless.domain.documents import DocumentQuery, DocumentUpload
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied
+
+if TYPE_CHECKING:
+    from contract.conftest import Backend, Ports
+    from mcp_server_paperless.domain.versions import VersionRow
+
+pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-47")]
+
+SEARCH = "DocumentReader.search_documents"
+ROOT = "DocumentReader.get_root"
+DUPLICATES = "DocumentReader.get_duplicates"
+ROWS = "DocumentReader.list_versions"
+MISSING = 999_999
+SEEDED = 1
+
+
+def unique() -> bytes:
+    return f"plmcp77 {uuid.uuid4().hex}".encode()
+
+
+def sha256(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+async def uploaded(backend: Backend, content: bytes) -> int:
+    """A text document of the admin with this file."""
+    name = f"plmcp77-{uuid.uuid4().hex}"
+    upload = DocumentUpload(
+        filename=f"{name}.txt", mime_type="text/plain", content=content, title=name
+    )
+    status = await ended(backend, await backend.admin.document_writes.upload_document(upload))
+    assert status.state == "success"
+    [document] = status.document_ids
+    return document
+
+
+async def with_checksum(ports: Ports, checksum: str) -> set[int]:
+    found = await ports.documents.search_documents(
+        DocumentQuery(checksum=checksum), page=1, page_size=25
+    )
+    assert found.count == len(found.hits)
+    return {hit.id for hit in found.hits}
+
+
+async def row_of(ports: Ports, document: int) -> VersionRow:
+    """The row of a document that has just changed, so it is among the first."""
+    page = await ports.documents.list_versions(page=1, page_size=100)
+    [row] = [r for r in page.rows if r.id == document]
+    return row
+
+
+@pytest.mark.contract(SEARCH)
+async def test_the_checksum_filter_finds_the_root_file_of_live_documents_in_any_case(
+    backend: Backend,
+) -> None:
+    content, other = unique(), unique()
+    first, second = [await uploaded(backend, content) for _ in range(2)]
+
+    assert await with_checksum(backend.admin, sha256(content)) == {first, second}
+    assert await with_checksum(backend.admin, sha256(content).upper()) == {first, second}
+    assert await with_checksum(backend.admin, sha256(other)) == set()
+
+    _ = await add_version(backend, first, other.decode())
+    await backend.admin.document_writes.delete_document(second)
+
+    assert await with_checksum(backend.admin, sha256(content)) == {first}
+    assert await with_checksum(backend.admin, sha256(other)) == set()
+
+
+@pytest.mark.contract(SEARCH)
+async def test_the_checksum_filter_tells_nothing_of_hidden_documents(backend: Backend) -> None:
+    content = unique()
+    _ = await uploaded(backend, content)
+
+    assert await with_checksum(backend.reader, sha256(content)) == set()
+    with pytest.raises(PermissionDenied):
+        _ = await with_checksum(backend.blind, sha256(content))
+
+
+@pytest.mark.contract(ROWS)
+async def test_the_rows_hold_the_checksums_of_live_versions_the_last_changed_first(
+    backend: Backend,
+) -> None:
+    content, newer = unique(), unique()
+    document = await uploaded(backend, content)
+    _ = await uploaded(backend, unique())
+
+    version = await add_version(backend, document, newer.decode())
+    row = await row_of(backend.admin, document)
+
+    record = await backend.admin.documents.get_document(document)
+    assert (row.title, row.versions) == (record.title, record.versions)
+    assert [(v.id, v.is_root, v.checksum) for v in row.versions] == [
+        (version, False, sha256(newer)),
+        (document, True, sha256(content)),
+    ]
+    _ = await backend.admin.document_writes.delete_version(document, version)
+    page = await backend.admin.documents.list_versions(page=1, page_size=500)
+    assert all(v.id != version for r in page.rows for v in r.versions)
+
+
+@pytest.mark.contract(ROWS)
+async def test_the_rows_are_paged_and_only_those_the_user_may_see(backend: Backend) -> None:
+    document = await uploaded(backend, unique())
+
+    first = await backend.admin.documents.list_versions(page=1, page_size=1)
+
+    assert (len(first.rows), first.next_page) == (1, 2)
+    assert first.count >= 2
+    seen = await backend.reader.documents.list_versions(page=1, page_size=100)
+    assert document not in {r.id for r in seen.rows}
+    with pytest.raises(NotFound):
+        _ = await backend.admin.documents.list_versions(page=first.count + 1000, page_size=1)
+    with pytest.raises(PermissionDenied):
+        _ = await backend.blind.documents.list_versions(page=1, page_size=1)
+
+
+@pytest.mark.contract("TrashReader.list_trash")
+async def test_a_document_in_the_trash_has_the_checksum_of_its_root_file(backend: Backend) -> None:
+    content, deleted = unique(), unique()
+    document = await uploaded(backend, content)
+    ports = backend.admin
+    version = await add_version(backend, document, deleted.decode())
+    _ = await ports.document_writes.delete_version(document, version)
+
+    # The entry of a version does not tell its checksum; the metadata of the live document does.
+    entry = (await find(ports, {version}))[version]
+    assert (entry.version_of, entry.checksum) == (document, None)
+    facts = await ports.documents.get_document_metadata(document, version_id=version)
+    assert facts.original_checksum == sha256(deleted)
+
+    await ports.document_writes.delete_document(document)
+
+    entry = (await find(ports, {document}))[document]
+    assert (entry.version_of, entry.checksum) == (None, sha256(content))
+    with pytest.raises(NotFound):
+        _ = await ports.documents.get_document_metadata(document, version_id=version)
+
+
+@pytest.mark.contract(DUPLICATES)
+async def test_the_duplicates_are_other_documents_with_the_file_the_trash_included(
+    backend: Backend,
+) -> None:
+    content = unique()
+    first, second, third = [await uploaded(backend, content) for _ in range(3)]
+    ports = backend.admin
+    await ports.document_writes.delete_document(third)
+
+    found = {d.id: d for d in await ports.documents.get_duplicates(first)}
+
+    assert found.keys() == {second, third}
+    assert found[second].deleted_at is None
+    assert found[third].deleted_at is not None
+    assert found[second].title == (await ports.documents.get_document(second)).title
+    assert await ports.documents.get_duplicates(await uploaded(backend, unique())) == ()
+
+
+@pytest.mark.contract(DUPLICATES)
+async def test_duplicates_in_versions_are_not_found(backend: Backend) -> None:
+    content = unique()
+    document, other = await uploaded(backend, unique()), await uploaded(backend, content)
+    version = await add_version(backend, document, content.decode())
+
+    assert await backend.admin.documents.get_duplicates(other) == ()
+    assert await backend.admin.documents.get_duplicates(document) == ()
+    with pytest.raises(NotFound):
+        _ = await backend.admin.documents.get_duplicates(version)
+
+
+@pytest.mark.contract(DUPLICATES)
+async def test_a_file_that_is_the_archive_of_another_document_is_a_duplicate(
+    backend: Backend,
+) -> None:
+    ports = backend.admin
+    document = backend.new_pdf(1)
+    archive = await ports.documents.get_document_file(document, "archive", max_bytes=10_000_000)
+    assert archive.content
+    copy = backend.upload(
+        f"plmcp77-{uuid.uuid4().hex}", "archive.pdf", archive.content, "application/pdf"
+    )
+
+    assert [d.id for d in await ports.documents.get_duplicates(copy)] == [document]
+
+
+@pytest.mark.contract(DUPLICATES)
+async def test_hidden_duplicates_are_not_named_and_shared_ones_are_also_in_the_trash(
+    backend: Backend,
+) -> None:
+    content = unique()
+    hidden, shared = [await uploaded(backend, content) for _ in range(2)]
+    reader = backend.restricted(frozenset({"view_document"}), view=[shared])
+
+    assert await reader.documents.get_duplicates(shared) == ()
+    with pytest.raises(NotFound):
+        _ = await reader.documents.get_duplicates(hidden)
+    with pytest.raises(PermissionDenied):
+        _ = await backend.blind.documents.get_duplicates(shared)
+
+    both = backend.restricted(frozenset({"view_document"}), view=[hidden, shared])
+    await backend.admin.document_writes.delete_document(shared)
+
+    assert [d.id for d in await both.documents.get_duplicates(hidden)] == [shared]
+    assert shared not in await find(both, {shared})
+
+
+@pytest.mark.contract(ROOT)
+async def test_the_root_of_documents_and_versions_also_in_the_trash(backend: Backend) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, unique())
+    version = await add_version(backend, document, unique().decode())
+    deleted = await add_version(backend, document, unique().decode())
+    _ = await ports.document_writes.delete_version(document, deleted)
+
+    for number in (document, version, deleted):
+        assert await ports.documents.get_root(number) == document
+    await ports.document_writes.delete_document(document)
+    for number in (document, version):
+        assert await ports.documents.get_root(number) == document
+
+
+@pytest.mark.contract(ROOT)
+async def test_a_hidden_document_has_no_root_like_a_missing_one(backend: Backend) -> None:
+    document = await uploaded(backend, unique())
+
+    texts: set[str] = set()
+    for ports, number in (
+        (backend.admin, MISSING),
+        (backend.reader, document),
+        (backend.reader, MISSING),
+        (backend.blind, SEEDED),
+    ):
+        with pytest.raises(NotFound) as raised:
+            _ = await ports.documents.get_root(number)
+        texts.add(raised.value.message.replace(str(number), "N"))
+    assert len(texts) == 1
+
+
+@pytest.mark.contract(SEARCH)
+async def test_has_duplicates_is_true_for_a_copy_in_the_trash_and_not_for_hidden_ones(
+    backend: Backend,
+) -> None:
+    content = unique()
+    first, second = [await uploaded(backend, content) for _ in range(2)]
+    reader = backend.restricted(frozenset({"view_document"}), view=[first])
+    await backend.admin.document_writes.delete_document(second)
+
+    async def duplicates(ports: Ports) -> int:
+        query = DocumentQuery(has_duplicates=True, ids=(first,))
+        return (await ports.documents.search_documents(query, page=1, page_size=1)).count
+
+    assert await duplicates(backend.admin) == 1
+    assert await duplicates(reader) == 0

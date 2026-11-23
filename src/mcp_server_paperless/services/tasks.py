@@ -15,12 +15,15 @@ from mcp_server_paperless.domain.tasks import TaskReport
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from mcp_server_paperless.domain.duplicates import DuplicateReport
     from mcp_server_paperless.domain.ports import TaskReader
     from mcp_server_paperless.domain.tasks import TaskStatus, Wait
+    from mcp_server_paperless.services.duplicates import DuplicateFinder
 
 # The longest a single call waits, and how often the task is read meanwhile.
 MAX_WAIT_SECONDS: Final = 30
 POLL_SECONDS: Final = 2.0
+CONSUMPTION: Final = "consume_file"
 
 
 class TaskService:
@@ -32,18 +35,28 @@ class TaskService:
         *,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
+        duplicates: DuplicateFinder | None = None,
     ) -> None:
-        """Read through ``reader``; ``sleep`` and ``clock`` are the seams tests replace."""
+        """Read through ``reader``; ``sleep`` and ``clock`` are the seams tests replace.
+
+        ``duplicates`` looks for the duplicates of a consumed file, for callers who ask for them.
+        """
         self._reader: TaskReader = reader
+        self._finder: DuplicateFinder | None = duplicates
         self._sleep: Callable[[float], Awaitable[None]] = sleep
         self._clock: Callable[[], float] = clock
 
-    async def get(self, task_id: str, *, wait_seconds: float = 0) -> TaskReport:
+    async def get(
+        self, task_id: str, *, wait_seconds: float = 0, duplicates: bool = False
+    ) -> TaskReport:
         """The task, after waiting up to ``wait_seconds`` (at most ``MAX_WAIT_SECONDS``) for it.
 
         The wait ends as soon as the task has ended, successfully or not, or when the bound is
         used up; a read that would start at the bound is skipped, so the whole call stays within
         it (plus the one read in flight) and the last known status is reported as timed out.
+
+        With ``duplicates`` a consumption that ended reports where else its file is, or which
+        document it was rejected for; that takes a few more reads, which the bound does not cover.
 
         Raises:
             NotFound: No task with that id exists that the user may see.
@@ -61,7 +74,22 @@ class TaskService:
         outcome: Wait = "not_requested"
         if bound > 0:
             outcome = "finished" if status.is_final else "timed_out"
-        return _report(status, outcome, waited)
+        report, message = (None, status.message)
+        if duplicates:
+            report, message = await self._duplicates(status)
+        return _report(status, outcome, waited).model_copy(
+            update={"duplicates": report, "message": message}
+        )
+
+    async def _duplicates(self, status: TaskStatus) -> tuple[DuplicateReport | None, str | None]:
+        """The duplicates of a file whose consumption ended, and the task's message."""
+        if self._finder is None or status.task_type != CONSUMPTION:
+            return None, status.message
+        if status.duplicate_of is not None:
+            return await self._finder.rejected(status.duplicate_of)
+        if status.state != "success" or len(status.document_ids) != 1:
+            return None, status.message
+        return await self._finder.after(status.document_ids[0]), status.message
 
 
 def _report(status: TaskStatus, wait: Wait, waited_seconds: float) -> TaskReport:
