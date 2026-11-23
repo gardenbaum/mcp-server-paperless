@@ -74,8 +74,8 @@ script reached its end. Keep the caption and the alt text in
 the README true, look at every scene before committing, and stay within 30 seconds and 500 kB (a
 test checks both; the large-file hook stops more). To show another release, change `SERVER` and
 raise `UV_EXCLUDE_NEWER` in the Dockerfile, run `just demo` and update the caption; a test compares
-the caption with `SERVER` and with the Paperless of the live tests, so a bump of either one needs a
-new recording.
+the caption with `SERVER`. The caption names the Paperless of the recording, so it stays true when
+the live tests move to a newer one.
 
 Known limits: PyPI's page of an older release embeds the GIF of main, so it shows the newest
 recording, not the one of its time. The recorder image stays behind after a run; remove it with

@@ -204,17 +204,17 @@ def demo_header() -> str:
 
 
 def test_the_demo_names_the_versions_it_is_recorded_with() -> None:
+    """The caption names the recorded Paperless, which may be older than that of the live tests."""
     script = (DOCS / "demo" / "demo.py").read_text(encoding="utf-8")
-    compose = (ROOT / "tests" / "e2e" / "compose.yaml").read_text(encoding="utf-8")
     server = re.search(r'^SERVER = "mcp-server-paperless==([\d.]+)"$', script, re.MULTILINE)
-    paperless = re.search(r"image: ghcr\.io/paperless-ngx/paperless-ngx:([\d.]+)@", compose)
     assert server
-    assert paperless
 
     _, caption = demo_texts()
-    assert f"Version {server[1]} against a real paperless-ngx {paperless[1]} " in caption
+    version = re.escape(server[1])
+    assert re.search(rf"Version {version} against a real paperless-ngx 3\.\d+\.\d+ ", caption)
     # The scenes ask the server, so the recording cannot name another release than it ran.
-    assert paperless[1] not in script
+    assert not re.search(r"paperless-ngx \d", script)
+    assert not re.search(r"\b3\.\d+\.\d+\b", script.replace(server[0], ""))
 
 
 def test_the_demo_is_short_and_loads_quickly() -> None:

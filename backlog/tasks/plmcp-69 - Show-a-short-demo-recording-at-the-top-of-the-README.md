@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:37:58Z'
-updated_date: '2026-11-23T12:21:41Z'
+updated_date: '2026-11-23T12:22:54Z'
 labels: []
 dependencies: []
 priority: medium
@@ -51,6 +51,8 @@ Red: the README/GIF tests failed before docs/demo existed. docs/demo holds the c
 Review fixes (tests red first): the recipe passes -p mcp-server-paperless-demo, so COMPOSE_PROJECT_NAME cannot point down --volumes at the e2e stack (recorded with COMPOSE_PROJECT_NAME=paperless-mcp-e2e and a leftover demo stack: e2e containers untouched, leftover removed). The Paperless version in the scenes comes from the server, the caption is tested against SERVER and the compose image, so a bump of either needs a new recording. Packages resolve as of UV_EXCLUDE_NEWER, for the script and the server. demo.gif is replaced only after a complete run. The limit is 500 kB (large-file hook), below the 3 MB of the acceptance criterion. Known limits in docs/development.md: old PyPI pages show the GIF of main, the recorder image stays behind.
 
 Owner approved the GIF on 2026-11-23; the re-recording changes only the header text. Independent opus review and re-review: 0 Critical, 0 Important left. Known limits: a Paperless image bump fails the caption test until re-recorded, two concurrent just demo runs share one project, GIF ownership on Linux unverified, the GIF auto-plays. PyPI shows it with the next release. DoD 2 unchecked: one known macOS-only local failure.
+
+Owner decision 2026-11-23: the caption is no longer tied to the Paperless of the live tests (deliberately loosened gate, so Renovate's Paperless updates need no new recording); it stays tied to SERVER, and the scene text may not hard-code a Paperless version.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
