@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T13:16:43Z'
-updated_date: '2026-11-23T13:46:03Z'
+updated_date: '2026-11-23T13:46:35Z'
 labels: []
 dependencies: []
 priority: high
@@ -50,4 +50,6 @@ BodyLimit is deny by default: 64 KiB on every path except exactly the MCP path, 
 Found, not changed: the MCP SDK limits the MCP endpoint itself to 4 MiB (StreamableHTTPSessionManager default, which FastMCP does not set), so HTTP uploads over about 3 MiB get 413 whatever PAPERLESS_MCP_MAX_UPLOAD_BYTES says. Needs its own task.
 
 Review fixes, replacing parts of the notes above: BodyLimit is back to its form before this task. SmallBodies puts the MCP SDK's RequestBodyLimitMiddleware (64 KiB) in front of every path but exactly the MCP path; it refuses before any handler runs, so nothing can swallow the 413 and the SDK no longer logs a traceback for an oversized chunked POST /authorize (tested). Trade-off: off the MCP endpoint up to 64 KiB is read before the host and origin guard answers, and the 413 text is the SDK's. Memory figures in decision-39 re-measured (tracemalloc): 65 KB body retains 67 KB (ASCII), 196 KB (accented) or 390 KB (DEL characters), a transaction 65 to 385 KB. docs/http.md, docs/configuration.md and decision-39 state the 4 MiB SDK cap over HTTP; the '10 MiB by default' tool descriptions in tools/upload.py and tools/versions.py are for the follow-up.
+
+Review M3: a handler that wraps the cut-off error gives 500 instead of 413; moot with SmallBodies, which reads before any handler. M5: run outside uvicorn_server with a root_path, the MCP path as routed differs from scope path, so /mcp then gets the small limit (fails safe).
 <!-- SECTION:NOTES:END -->
