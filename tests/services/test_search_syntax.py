@@ -139,6 +139,7 @@ def test_nested_exclusions_do_not_multiply_the_notice(query: str) -> None:
         ('invoice -"secret phrase"', ['-"secret phrase"']),
         ("-'b c'", ["-'b c'"]),
         ("!2024", ["!2024"]),
+        ("-_x !#b", ["-_x", "!#b"]),
         ("-type:*", ["-type:*"]),
     ],
 )

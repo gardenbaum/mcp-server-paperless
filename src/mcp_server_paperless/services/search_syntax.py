@@ -32,6 +32,8 @@ _TOKEN = re.compile(r"[()]|\0+|[^\s()\0]+")
 _FIELD = re.compile(r"[-!\N{EN DASH}\N{MINUS SIGN}]*((?=\w*[^\W\d])\w[\w.]*):(?!//)")
 _SIGN = re.compile(r"[-!\N{EN DASH}\N{MINUS SIGN}]+")
 _GLUED = re.compile(r"(?:AND|OR|NOT)[-!']")
+# What a sign can be meant to exclude; arrows and exclamation marks are none.
+_TERM = re.compile(r"[#_]*[^\W_]|['*?]")
 # The index drops the sign of such a term, so NOT in front of it excludes.
 _BARE = re.compile(r"[^:*?]+")
 
@@ -92,7 +94,7 @@ class _Word:
         if self.before == "NOT" and _BARE.fullmatch(term) and not self.has_operand:
             return False
         # A minus before a number is an amount ("CHF -50"), not an attempt to exclude.
-        return (term[0].isalnum() or term[0] in "'*?") and ("!" in sign[0] or not term[0].isdigit())
+        return bool(_TERM.match(term)) and ("!" in sign[0] or not term[0].isdigit())
 
     @property
     def is_negated(self) -> bool:
