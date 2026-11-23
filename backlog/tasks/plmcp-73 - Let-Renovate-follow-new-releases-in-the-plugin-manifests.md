@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T11:57:05Z'
-updated_date: '2026-11-23T12:28:24Z'
+updated_date: '2026-11-23T12:39:30Z'
 labels: []
 dependencies: []
 priority: medium
@@ -22,14 +22,14 @@ The directory refuses @latest, so the plugin manifests pin the released version 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 After a PyPI release Renovate proposes one pull request that raises the version and the pin in every plugin manifest
-- [ ] #2 The rule is proven against the real files (renovate-config-validator and a dry run or a regex test)
+- [x] #2 The rule is proven against the real files (renovate-config-validator and a dry run or a regex test)
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -45,4 +45,6 @@ The directory refuses @latest, so the plugin manifests pin the released version 
 Red: 3 failed; green: 22 passed. Proof: renovate 44.258.1 config validator --strict passes; a local lookup dry run on a copy with 0.3.1 finds all four places and puts 0.3.2 on the one branch renovate/mcp-server-paperless-0.x. Existing settings unchanged: the Monday schedule, no automerge, prConcurrentLimit 3 apply, so the pull request can come up to a week after a release.
 
 Review fixes. Correction to the note above: the bot's own global configuration automerges (seen in the bodies of PR 54 and 55), so a last packageRule sets automerge false for this package; a 'force' block in the bot's configuration, which this repository cannot see, would still win. Observed in Dependency Dashboard #9: updates wait under Pending Approval until ticked, so the tick is a step of the release. allowedVersions takes only plain versions.
+
+Re-review: 0 Critical, 0 Important. AC 1 stays unchecked until the owner accepts that the PR needs a tick in the Dependency Dashboard first (the bot's own configuration), and until the first real PR. The first note's 'no automerge' means the repository's settings; the rule now sets automerge false for this package (force in the bot's config would still win). Known test gaps: groupName or minimumReleaseAge in an earlier rule, ignorePresets, :disableRenovate.
 <!-- SECTION:NOTES:END -->
