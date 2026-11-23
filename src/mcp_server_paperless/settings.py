@@ -18,6 +18,7 @@ from typing import Annotated, ClassVar, Literal, cast
 from pydantic import Field, HttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from mcp_server_paperless.domain.documents import MAX_UPLOAD_LIMIT
 from mcp_server_paperless.domain.toolsets import ALL_TOOLSETS
 
 # Directories that are views of the running system, not places for documents.
@@ -114,7 +115,7 @@ class ServerSettings(BaseSettings):
     read_only: bool = False
     disabled_tools: Annotated[tuple[str, ...], NoDecode] = ()
     max_download_bytes: int = Field(default=512 * 1024, ge=1, le=32 * 1024 * 1024)
-    max_upload_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
+    max_upload_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=MAX_UPLOAD_LIMIT)
     upload_dirs: Annotated[tuple[str, ...], NoDecode] = ()
 
     @field_validator("toolsets", mode="before")
