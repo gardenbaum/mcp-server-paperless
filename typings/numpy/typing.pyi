@@ -1,0 +1,3 @@
+# See __init__.pyi.
+
+class NDArray[T]: ...

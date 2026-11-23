@@ -25,18 +25,27 @@ class Recording(FakePaperless):
 
     @override
     async def get_document_file(
-        self, document_id: int, version: FileVersion, *, max_bytes: int
+        self,
+        document_id: int,
+        version: FileVersion,
+        *,
+        max_bytes: int,
+        version_id: int | None = None,
     ) -> DocumentFile:
         self.served += 1
-        return await super().get_document_file(document_id, version, max_bytes=max_bytes)
+        return await super().get_document_file(
+            document_id, version, max_bytes=max_bytes, version_id=version_id
+        )
 
 
 class Understating(Recording):
     """A Paperless whose metadata names a smaller size than the file really has."""
 
     @override
-    async def get_document_metadata(self, document_id: int) -> FileMetadata:
-        found = await super().get_document_metadata(document_id)
+    async def get_document_metadata(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> FileMetadata:
+        found = await super().get_document_metadata(document_id, version_id=version_id)
         return found.model_copy(update={"original_size": 1, "archive_size": 1})
 
 
@@ -44,8 +53,10 @@ class Sizeless(Recording):
     """A Paperless that knows an archive version exists but not its size."""
 
     @override
-    async def get_document_metadata(self, document_id: int) -> FileMetadata:
-        found = await super().get_document_metadata(document_id)
+    async def get_document_metadata(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> FileMetadata:
+        found = await super().get_document_metadata(document_id, version_id=version_id)
         return found.model_copy(update={"archive_size": None})
 
 
@@ -53,8 +64,10 @@ class NoUploadName(Recording):
     """A Paperless that has no name for the uploaded file."""
 
     @override
-    async def get_document_metadata(self, document_id: int) -> FileMetadata:
-        found = await super().get_document_metadata(document_id)
+    async def get_document_metadata(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> FileMetadata:
+        found = await super().get_document_metadata(document_id, version_id=version_id)
         return found.model_copy(update={"original_filename": ""})
 
 

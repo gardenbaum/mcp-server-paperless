@@ -278,9 +278,16 @@ class Nameless(FakePaperless):
 
     @override
     async def get_document_file(
-        self, document_id: int, version: FileVersion, *, max_bytes: int
+        self,
+        document_id: int,
+        version: FileVersion,
+        *,
+        max_bytes: int,
+        version_id: int | None = None,
     ) -> DocumentFile:
-        found = await super().get_document_file(document_id, version, max_bytes=max_bytes)
+        found = await super().get_document_file(
+            document_id, version, max_bytes=max_bytes, version_id=version_id
+        )
         return found.model_copy(update={"filename": None})
 
 

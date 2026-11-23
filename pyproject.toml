@@ -36,9 +36,11 @@ dependencies = [
     "fastmcp>=4.2,<4.3",
     "httpx2>=2.16.0",
     "mcp>=2.3.0,<3",
+    "pillow>=13.0.0",
     "py-key-value-aio>=0.5.0",
     "pydantic>=2.14.3",
     "pydantic-settings>=2.16.2",
+    "pypdfium2>=5.15.2",
     "uvicorn>=0.40",
 ]
 
@@ -99,6 +101,11 @@ ignore = [
 "src/mcp_server_paperless/tools/*.py" = ["TC001", "TC002", "TC003"]
 "scripts/**" = [
     "INP001", # standalone scripts run by path (and tested via pythonpath), not an importable package
+]
+"typings/**" = [
+    "N802",   # the names are PDFium's and pypdfium2's
+    "N803",   # the same
+    "A002",   # the same
 ]
 "tests/**" = [
     "D1",      # test names state the behaviour; a docstring would repeat them
@@ -200,7 +207,7 @@ root_package = "mcp_server_paperless"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "Layers: entrypoints > server > observability > settings > tools | paperless > services > domain"
+name = "Layers: entrypoints > server > observability > settings > tools | paperless | rendering > services > domain"
 type = "layers"
 containers = ["mcp_server_paperless"]
 # Every module below the package root must be placed in a layer, so nothing in the layers imports
@@ -211,7 +218,7 @@ layers = [
     "server",
     "observability",
     "settings",
-    "tools | paperless",
+    "tools | paperless | rendering",
     "services",
     "domain",
 ]
@@ -230,7 +237,7 @@ source_modules = ["mcp_server_paperless.paperless"]
 forbidden_modules = ["mcp_server_paperless.services"]
 
 [[tool.importlinter.contracts]]
-name = "Only the composition root imports tools and paperless"
+name = "Only the composition root imports tools, paperless and rendering"
 type = "forbidden"
 source_modules = [
     "mcp_server_paperless.__main__",
@@ -238,8 +245,12 @@ source_modules = [
     "mcp_server_paperless.cli",
     "mcp_server_paperless.settings",
 ]
-forbidden_modules = ["mcp_server_paperless.tools", "mcp_server_paperless.paperless"]
-# Entrypoints reach tools and paperless through server.py; only direct imports are wrong.
+forbidden_modules = [
+    "mcp_server_paperless.tools",
+    "mcp_server_paperless.paperless",
+    "mcp_server_paperless.rendering",
+]
+# Entrypoints reach them through server.py; only direct imports are wrong.
 allow_indirect_imports = true
 
 # The external-package rules below check direct imports only. That is complete because every
@@ -260,10 +271,30 @@ source_modules = [
     "mcp_server_paperless.observability",
     "mcp_server_paperless.settings",
     "mcp_server_paperless.tools",
+    "mcp_server_paperless.rendering",
     "mcp_server_paperless.services",
     "mcp_server_paperless.domain",
 ]
 forbidden_modules = ["httpx2"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+# The renderer parses untrusted files with native code: it stays where its child process is.
+name = "Only rendering imports pypdfium2 and PIL"
+type = "forbidden"
+source_modules = [
+    "mcp_server_paperless.__main__",
+    "mcp_server_paperless.app",
+    "mcp_server_paperless.cli",
+    "mcp_server_paperless.server",
+    "mcp_server_paperless.observability",
+    "mcp_server_paperless.settings",
+    "mcp_server_paperless.tools",
+    "mcp_server_paperless.paperless",
+    "mcp_server_paperless.services",
+    "mcp_server_paperless.domain",
+]
+forbidden_modules = ["pypdfium2", "PIL"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
@@ -274,6 +305,7 @@ type = "forbidden"
 source_modules = [
     "mcp_server_paperless.settings",
     "mcp_server_paperless.paperless",
+    "mcp_server_paperless.rendering",
     "mcp_server_paperless.services",
     "mcp_server_paperless.domain",
 ]
@@ -286,6 +318,7 @@ type = "forbidden"
 source_modules = [
     "mcp_server_paperless.tools",
     "mcp_server_paperless.paperless",
+    "mcp_server_paperless.rendering",
     "mcp_server_paperless.services",
     "mcp_server_paperless.domain",
 ]
