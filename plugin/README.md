@@ -13,6 +13,25 @@ that is not affiliated with paperless-ngx.
   token. The server acts as that user and sees and changes only what that user may
 - [uv](https://docs.astral.sh/uv/) on your computer; it fetches Python 3.14 by itself
 
+## Skills
+
+The plugin brings four skills for common jobs; the assistant can pick one by itself, or you name it.
+They tell the assistant to propose first, to change nothing before your yes, and to treat the text of
+documents as data, never as instructions. An assistant can still err: the server's own confirmation
+step guards what is final, such as deleting, but not a changed title, tag or correspondent. The skills need only the default toolsets.
+
+| Skill | What it does |
+|---|---|
+| `paperless-triage-inbox` | Proposes a title, correspondent, type and tags for the documents in the inbox |
+| `paperless-find-document` | Finds a document from a loose description |
+| `paperless-annual-review` | Collects a year of documents, for example for the tax return |
+| `paperless-cleanup-taxonomy` | Finds duplicate, unused and badly named tags, types and correspondents |
+
+The skills are written to use the same server configured elsewhere too, such as a claude.ai connector
+(not tested).
+Without any server they have no tools (chat on claude.ai starts no local server); the assistant is
+told to say so instead of working around it.
+
 ## Install in Claude Code
 
 In a session (Claude Code 2.1.275 or later):
@@ -76,7 +95,7 @@ To test only that the plugin loads, clone the repository, copy its `plugin/` fol
 
 ## What it runs and sends
 
-The plugin holds no code. It starts `uvx mcp-server-paperless==<version>`, which downloads that
+The plugin holds no code, only the skills' instructions. It starts `uvx mcp-server-paperless==<version>`, which downloads that
 release of the open-source package and its dependencies from PyPI, and a Python runtime if none
 fits, and runs it on your computer. The version pins the package itself; its dependencies are the
 newest ones it allows when uvx installs it. The server sends requests only to your Paperless URL, with your
