@@ -1,31 +1,45 @@
+<!-- mcp-name: io.github.gardenbaum/mcp-server-paperless -->
 <div align="center">
 
 # mcp-server-paperless
 
-**Let Claude work with your [paperless-ngx](https://docs.paperless-ngx.com) archive:<br>
-find, read, file, upload and organise documents by asking.**
+**Talk to your [paperless-ngx](https://docs.paperless-ngx.com) archive.**<br>
+Claude, Cursor, VS Code and every other MCP client can find, read, file, upload and organise
+your documents, by name, and nothing final happens without your yes.
 
+[![PyPI](https://img.shields.io/pypi/v/mcp-server-paperless?color=3776ab)](https://pypi.org/project/mcp-server-paperless/)
+[![Downloads](https://img.shields.io/pypi/dm/mcp-server-paperless)](https://pypi.org/project/mcp-server-paperless/)
 [![CI](https://github.com/gardenbaum/mcp-server-paperless/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gardenbaum/mcp-server-paperless/actions/workflows/ci.yml)
 [![E2E full suite](https://github.com/gardenbaum/mcp-server-paperless/actions/workflows/e2e-full.yml/badge.svg?branch=main)](https://github.com/gardenbaum/mcp-server-paperless/actions/workflows/e2e-full.yml)
-[![Release](https://img.shields.io/github/v/tag/gardenbaum/mcp-server-paperless?label=release&sort=semver)](https://github.com/gardenbaum/mcp-server-paperless/pkgs/container/mcp-server-paperless)
 [![paperless-ngx 3.x](https://img.shields.io/badge/paperless--ngx-3.x-17541f)](https://github.com/paperless-ngx/paperless-ngx)
-[![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-3776ab)](pyproject.toml)
+[![Python 3.14+](https://img.shields.io/badge/python-3.14%2B-3776ab)](https://pypi.org/project/mcp-server-paperless/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/gardenbaum/mcp-server-paperless/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/gardenbaum/mcp-server-paperless?style=social)](https://github.com/gardenbaum/mcp-server-paperless)
 
-[Quick start](#quick-start) · [What you can ask](#what-you-can-ask) · [Toolsets](#toolsets) ·
-[Safety](#how-it-keeps-your-archive-safe) · [Documentation](#documentation)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_server-0098FF?logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=paperless&inputs=%5B%7B%22type%22%3A%22promptString%22%2C%22id%22%3A%22paperless_url%22%2C%22description%22%3A%22Paperless%20URL%2C%20e.g.%20https%3A%2F%2Fpaperless.example.org%22%7D%2C%7B%22type%22%3A%22promptString%22%2C%22id%22%3A%22paperless_token%22%2C%22description%22%3A%22Paperless%20API%20token%22%2C%22password%22%3Atrue%7D%5D&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22mcp-server-paperless%40latest%22%5D%2C%22env%22%3A%7B%22PAPERLESS_URL%22%3A%22%24%7Binput%3Apaperless_url%7D%22%2C%22PAPERLESS_TOKEN%22%3A%22%24%7Binput%3Apaperless_token%7D%22%7D%7D)
+[![Install in Cursor](https://img.shields.io/badge/Cursor-Install_server-000000?logo=cursor&logoColor=white)](https://cursor.com/en/install-mcp?name=paperless&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJtY3Atc2VydmVyLXBhcGVybGVzc0BsYXRlc3QiXSwiZW52Ijp7IlBBUEVSTEVTU19VUkwiOiJodHRwczovL3BhcGVybGVzcy5leGFtcGxlLm9yZyIsIlBBUEVSTEVTU19UT0tFTiI6InlvdXItYXBpLXRva2VuIn19)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-one_command-D97757?logo=claude&logoColor=white)](#claude-code)
+
+[Quick start](#quick-start) · [What you can ask](#what-you-can-ask) · [Comparison](#how-it-compares) ·
+[Toolsets](#toolsets) · [Safety](#how-it-keeps-your-archive-safe) · [Documentation](#documentation)
 
 </div>
 
+```sh
+claude mcp add paperless --env PAPERLESS_URL=https://paperless.example.org \
+    --env PAPERLESS_TOKEN=your-api-token -- uvx mcp-server-paperless@latest
+```
+
 mcp-server-paperless is a [Model Context Protocol](https://modelcontextprotocol.io) server for
-paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai and any
-other MCP client 87 tools in 13 toolsets that cover most of what the Paperless API can do, from a
-search to mail rules and workflows. It starts small and careful: 19 tools by default, names instead
-of ids, and a confirmation step before anything that cannot be undone.
+paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai, Cursor, VS
+Code and any other MCP client 87 tools in 13 toolsets that cover most of what the Paperless API
+can do, from a search to saved views, mail rules and workflows. It starts small and careful: 19
+tools by default, names instead of ids, and a confirmation step before anything that cannot be
+undone.
 
 ```mermaid
 flowchart LR
-    A["Claude Code<br>Claude Desktop"] -- stdio --> S
+    A["Claude Code · Claude Desktop<br>Cursor · VS Code"] -- stdio --> S
     B["claude.ai<br>connector"] -- "HTTPS + OIDC" --> S
     C["Other MCP<br>clients"] -- "HTTP + bearer token" --> S
     S(["mcp-server-paperless"]) -- "REST API v10" --> P[("paperless-ngx 3.x")]
@@ -42,6 +56,7 @@ flowchart LR
 - "Give me a link to my insurance policy that expires in a week."
 - "Set up a mail rule that files the invoices from billing@example.org."
 - "Find duplicate and unused tags and propose how to clean them up."
+- "Which documents have no document type yet? Then run my saved view *To do*."
 
 An example of how that goes (illustrative):
 
@@ -63,7 +78,7 @@ Four built-in prompts start such tasks from the client's prompt menu: `triage_in
 `find_document`, `annual_review` and `cleanup_taxonomy`. Each one proposes its changes and waits
 for your yes before it writes.
 
-## Why another paperless-ngx MCP server?
+## Why this one
 
 There are already several MCP servers for paperless-ngx. This one is a new build, made for
 people who want all of the following in one server:
@@ -87,6 +102,26 @@ people who want all of the following in one server:
 - 🔐 **Safe to reach from outside.** Over the network the server does not start without
   authentication. Claude Code signs in with a token, claude.ai through your own identity
   provider, and the container image runs without root rights.
+
+## How it compares
+
+The other paperless-ngx MCP servers, as their code stood in November 2026 (counted from their
+sources; open an issue if something has changed):
+
+| | **mcp-server-paperless** | [OrellBuehler](https://github.com/OrellBuehler/paperless-mcp) | [freeformz](https://github.com/freeformz/paperless-ngx-mcp) | [baruchiro](https://github.com/baruchiro/paperless-mcp) | [nloui](https://github.com/nloui/paperless-mcp) |
+|---|---|---|---|---|---|
+| Tools offered by default / in total | 19 / 87 | 126 / 126 | 120 / 120 | 47 / 47 | 16 / 16 |
+| Opt-in toolsets and a read-only mode | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Names instead of ids everywhere | ✅ | ❌ | partly | partly | ❌ |
+| Confirmation before anything final | ✅ with a preview of the effect | hints only | not found | ✅ | ❌ |
+| Runs saved views | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Says when a full-text query cannot work | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Versions, trash, share links, mail, workflows, users | ✅ | ✅ | mostly | mail only | ❌ |
+| HTTP with bearer token and OIDC (claude.ai) | ✅ | ✅ | stdio only | bearer | no auth |
+| Tested against a real Paperless | 3.4.2 on every change, newest 3.x weekly | ❌ | ❌ | 2.14 | ❌ |
+
+More tools is not better by itself: every tool a client loads costs context in every
+conversation. This server keeps the default small and lets you switch on the rest.
 
 ## Quick start
 
@@ -133,7 +168,19 @@ Add the server to `claude_desktop_config.json` (Settings, Developer, Edit Config
 ```
 
 If Claude Desktop cannot find `uvx`, give its full path (`which uvx`). Other MCP clients that
-start a stdio server take the same command, arguments and environment.
+start a stdio server (Windsurf, Zed, Cline, Continue, ...) take the same command, arguments and
+environment.
+
+### VS Code
+
+[Install in VS Code](https://insiders.vscode.dev/redirect/mcp/install?name=paperless&inputs=%5B%7B%22type%22%3A%22promptString%22%2C%22id%22%3A%22paperless_url%22%2C%22description%22%3A%22Paperless%20URL%2C%20e.g.%20https%3A%2F%2Fpaperless.example.org%22%7D%2C%7B%22type%22%3A%22promptString%22%2C%22id%22%3A%22paperless_token%22%2C%22description%22%3A%22Paperless%20API%20token%22%2C%22password%22%3Atrue%7D%5D&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22mcp-server-paperless%40latest%22%5D%2C%22env%22%3A%7B%22PAPERLESS_URL%22%3A%22%24%7Binput%3Apaperless_url%7D%22%2C%22PAPERLESS_TOKEN%22%3A%22%24%7Binput%3Apaperless_token%7D%22%7D%7D): VS Code asks for the Paperless URL and the API token and keeps the
+token as a secret. By hand, add the server to `.vscode/mcp.json` with the same `uvx` command as
+for Claude Desktop.
+
+### Cursor
+
+[Install in Cursor](https://cursor.com/en/install-mcp?name=paperless&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJtY3Atc2VydmVyLXBhcGVybGVzc0BsYXRlc3QiXSwiZW52Ijp7IlBBUEVSTEVTU19VUkwiOiJodHRwczovL3BhcGVybGVzcy5leGFtcGxlLm9yZyIsIlBBUEVSTEVTU19UT0tFTiI6InlvdXItYXBpLXRva2VuIn19), then replace the placeholder URL and token in the server settings
+(`~/.cursor/mcp.json`).
 
 ### Container, for remote clients
 

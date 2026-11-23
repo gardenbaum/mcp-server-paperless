@@ -96,6 +96,17 @@ def test_the_version_is_read_from_the_renamed_distribution() -> None:
     assert mcp_server_paperless.__version__ == importlib.metadata.version(DISTRIBUTION)
 
 
+def test_pypi_search_finds_the_distribution_by_its_topics() -> None:
+    meta = project()
+    keywords = cast("list[str]", meta["keywords"])
+    classifiers = cast("list[str]", meta["classifiers"])
+
+    assert {"mcp", "paperless-ngx", "model-context-protocol"} <= set(keywords)
+    # The classifier must name the Python the package requires, so PyPI filters list it.
+    assert "Programming Language :: Python :: 3.14" in classifiers
+    assert not [c for c in classifiers if c.startswith("License ::")]  # PEP 639: license field
+
+
 def test_the_import_package_is_named_after_the_distribution_without_an_override() -> None:
     """PyPI's unrelated `paperless-mcp` installs `paperless_mcp`, so ours must not (PLMCP-54)."""
     with (ROOT / "pyproject.toml").open("rb") as file:
