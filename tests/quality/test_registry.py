@@ -122,12 +122,11 @@ def test_the_listing_points_at_the_pypi_package_run_by_uvx_over_stdio() -> None:
     assert entry["version"] == load("server.json")["version"]
 
 
-def test_the_listing_declares_only_variables_the_server_reads() -> None:
+def test_the_listing_declares_exactly_the_variables_the_stdio_server_reads() -> None:
     known = settings_variables(PaperlessSettings) | settings_variables(ServerSettings)
     declared = variables()
 
-    assert [name for name in declared if name not in known] == []
-    assert {name for name, required in known.items() if required} <= set(declared)
+    assert set(declared) == set(known)
     for name, item in declared.items():
         assert item.get("isRequired", False) is known[name], name
         assert item.get("description"), name

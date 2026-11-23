@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T08:26:24Z'
-updated_date: '2026-11-23T08:36:12Z'
+updated_date: '2026-11-23T08:40:36Z'
 labels: []
 dependencies: []
 type: chore
@@ -55,12 +55,18 @@ The server is on PyPI (decision-33) but not in the official MCP Registry (regist
 - decision-35 records the new channel (decision-32/33 cover only PyPI and say every tag-published channel needs its rules).
 - just check: every recipe passes except two tests that also fail on an unchanged main checkout in this macOS sandbox: test_a_socket_is_not_a_file (AF_UNIX path too long under the sandbox TMPDIR; passes with TMPDIR=/tmp) and test_the_menu_driver_reports_a_failing_cli (pty Input/output error). Neither touches this change; CI runs them on Linux.
 - DoD #2 (CI green) and #4 (merged) are left unchecked: they become true only after this commit, on the PR.
+
+- Correction: the first commit declared only 7 of the 11 variables the stdio server reads, so AC 1 was checked too early. All 11 are declared now and the test requires exactly that set (run red first).
+- Correction: the mcp-publisher download now detects os/arch exactly as the registry guide does; it was hardcoded to linux_amd64.
+- Correction: decision-32/33 do not say every channel needs its own rules; decision-35 was written because a second job now holds an OIDC token.
+- The causes named above for the two local failures were inferred from their error messages. The pty failure was not investigated; both tests pass in CI (Linux).
+- The cosign verification was not run locally (no cosign). The signing certificate of the v1.8.15 bundle names the expected identity and issuer.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Publishes the server to the official MCP Registry on every version tag (decision-35). server.json (schema 2025-12-11) lists io.github.gardenbaum/mcp-server-paperless with the PyPI package mcp-server-paperless run by uvx over stdio and seven environment variables (PAPERLESS_URL and PAPERLESS_TOKEN required, the token secret). .github/workflows/registry.yml runs on v* tags only: requires the tagged commit on main, sets the PEP 440 version from the tag with uv as pypi.yml does, writes it into server.json with jq, waits up to 15 minutes for PyPI to serve it, downloads mcp-publisher v1.8.15 verified by cosign, logs in by GitHub OIDC and publishes. Same hardening as pypi.yml. glama.json names gardenbaum as maintainer. tests/quality/test_registry.py guards all of it; docs/development.md names the channel.
+Publishes the server to the official MCP Registry on every version tag (decision-35). server.json (schema 2025-12-11) lists io.github.gardenbaum/mcp-server-paperless with the PyPI package mcp-server-paperless run by uvx over stdio and all eleven environment variables of the stdio server (PAPERLESS_URL and PAPERLESS_TOKEN required, the token secret). .github/workflows/registry.yml runs on v* tags only: requires the tagged commit on main, sets the PEP 440 version from the tag with uv as pypi.yml does, writes it into server.json with jq, waits up to 15 minutes for PyPI to serve it, downloads mcp-publisher v1.8.15 verified by cosign, logs in by GitHub OIDC and publishes. Same hardening as pypi.yml. glama.json names gardenbaum as maintainer. tests/quality/test_registry.py guards all of it; docs/development.md names the channel.
 
 Risk: the job is first exercised by the next version tag; v0.3.0 is not listed by it (the owner can push a new tag or publish once by hand).
 <!-- SECTION:FINAL_SUMMARY:END -->

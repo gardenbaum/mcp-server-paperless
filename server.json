@@ -52,6 +52,36 @@
         {
           "name": "PAPERLESS_MCP_UPLOAD_DIRS",
           "description": "Absolute directories the upload tools may read files from by path (default: none)"
+        },
+        {
+          "name": "PAPERLESS_MCP_MAX_UPLOAD_BYTES",
+          "description": "Largest file the upload tools take, in bytes (at most 104857600)",
+          "format": "number",
+          "default": "10485760"
+        },
+        {
+          "name": "PAPERLESS_MCP_MAX_DOWNLOAD_BYTES",
+          "description": "Largest file download_document attaches, in bytes (at most 33554432)",
+          "format": "number",
+          "default": "524288"
+        },
+        {
+          "name": "PAPERLESS_MCP_LOG_LEVEL",
+          "description": "Minimum level of log records written to stderr",
+          "default": "INFO",
+          "choices": [
+            "DEBUG",
+            "INFO",
+            "WARNING",
+            "ERROR",
+            "CRITICAL"
+          ]
+        },
+        {
+          "name": "PAPERLESS_MCP_STARTUP_TIMEOUT",
+          "description": "Seconds the startup check may take",
+          "format": "number",
+          "default": "5"
         }
       ]
     }

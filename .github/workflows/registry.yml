@@ -76,7 +76,9 @@ jobs:
       - name: Download and verify mcp-publisher
         run: |
           set -euo pipefail
-          archive="mcp-publisher_linux_amd64.tar.gz"
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+          archive="mcp-publisher_${os}_${arch}.tar.gz"
           base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
           curl --fail --location --silent --show-error --output "$archive" "$base_url/$archive"
           curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base_url/$archive.sigstore.json"
