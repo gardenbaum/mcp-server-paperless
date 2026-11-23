@@ -32,5 +32,5 @@ The image of decision-28 (as carried over by decision-31) was built on one amd64
 
 ## Enforcement
 
-- `tests/quality/test_container.py` (markers decision-28 and decision-36): the runner matrix, one native platform per leg, cache scopes, no emulation, scan and smoke test of the pushed digest before it is recorded, the exact tag script and steps, the job gates and permissions.
+- `tests/quality/test_container.py` (markers decision-28 and decision-36): the runner matrix, one native platform per leg, cache scopes, no emulation, scan and smoke test of the pushed digest before it is recorded, the exact tag script and steps, the job gates and permissions, the Trivy platform, and the whole workflow without action pins as a snapshot, so any added condition or changed step shows up as a diff.
 - Everything decision-31 lists under Enforcement still runs unchanged.

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T09:00:10Z'
-updated_date: '2026-11-23T09:37:14Z'
+updated_date: '2026-11-23T09:47:41Z'
 labels: []
 dependencies: []
 type: feature
@@ -21,9 +21,9 @@ The 0.3.0 image has no linux/arm64 manifest, so it does not start natively on a 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 A version tag publishes one tag that resolves for linux/amd64 and linux/arm64
-- [ ] #2 Each architecture is smoke tested before the tag is published
+- [x] #2 Each architecture is smoke tested before the tag is published
 - [ ] #3 Provenance and SBOM attestations cover both architectures
-- [ ] #4 docs/container.md names the platforms
+- [x] #4 docs/container.md names the platforms
 <!-- AC:END -->
 
 ## Definition of Done
@@ -44,4 +44,6 @@ The 0.3.0 image has no linux/arm64 manifest, so it does not start natively on a 
 
 <!-- SECTION:NOTES:BEGIN -->
 decision-36 supersedes decision-31 (carry-over). Guard changes deliberate: tagging moved to the tag job. arm64 image built and smoke-tested locally on Apple Silicon.
+
+Opus review: Critical (Trivy scans linux/amd64 of an arm64-only index) fixed with TRIVY_PLATFORM, also Codex P1; guards now include a snapshot of the whole workflow (new snapshot, deliberate), 10 tried weakenings caught. Stays In Progress: AC 1 and 3 can only be proven by the 0.3.1 tag.
 <!-- SECTION:NOTES:END -->

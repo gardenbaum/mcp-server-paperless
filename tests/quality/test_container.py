@@ -6,10 +6,13 @@ workflow do), these tests only keep the hardening rules from eroding unnoticed.
 
 import re
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 import yaml
+
+if TYPE_CHECKING:
+    from syrupy.assertion import SnapshotAssertion
 
 ROOT = Path(__file__).parents[2]
 DOCKERFILE = ROOT / "Dockerfile"
@@ -149,7 +152,7 @@ def test_the_workflow_never_runs_untrusted_code_with_privileges() -> None:
 
 
 @pytest.mark.decision("decision-28")
-def test_only_the_tag_gated_publish_job_may_write_packages_or_push() -> None:
+def test_only_the_tag_gated_jobs_may_write_packages_or_push() -> None:
     flow = workflow()
     jobs = mapping(flow["jobs"])
 
@@ -332,3 +335,34 @@ def test_the_dockerfile_has_no_floating_frontend_and_copies_only_allowed_sources
         sources.update(words[:-1])
     assert sources
     assert sources <= COPY_SOURCES, sources - COPY_SOURCES
+
+
+def without_pins(value: object) -> object:
+    """The value with the commit of every action left out, so a Renovate bump is no change."""
+    if isinstance(value, dict):
+        return {
+            key: str(item).partition("@")[0] if key == "uses" else without_pins(item)
+            for key, item in mapping(cast("object", value)).items()
+        }
+    if isinstance(value, list):
+        return [without_pins(item) for item in sequence(cast("object", value))]
+    return value
+
+
+@pytest.mark.decision("decision-36")
+def test_the_workflow_is_exactly_the_reviewed_one(snapshot: SnapshotAssertion) -> None:
+    """Any added condition, changed scan, smoke, record or tag step shows up as a diff."""
+    assert without_pins(workflow()) == snapshot
+
+
+@pytest.mark.decision("decision-36")
+def test_both_jobs_that_name_the_tags_name_the_same_ones() -> None:
+    meta = [
+        mapping(step["with"])
+        for name in ("publish", "tag")
+        for step in steps(name)
+        if str(step.get("uses", "")).startswith("docker/metadata-action@")
+    ]
+
+    assert len(meta) == 2
+    assert meta[0] == meta[1]
