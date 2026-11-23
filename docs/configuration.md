@@ -19,7 +19,7 @@ The HTTP transport has its own variables in [Run over HTTP](http.md), the OIDC l
 |---|---|
 | `PAPERLESS_URL` | Base URL of the Paperless instance (required) |
 | `PAPERLESS_TOKEN` | Paperless API token (required). Create it in Paperless under your profile menu, "My Profile", API auth token. The server acts as this user and sees and changes only what this user may |
-| `PAPERLESS_PUBLIC_URL` | Base URL for links shown to users (`web_url`, share links), if it differs from `PAPERLESS_URL`, for example when the server reaches Paperless under a container name |
+| `PAPERLESS_PUBLIC_URL` | Base URL for links shown to users (`web_url`, share links), if it differs from `PAPERLESS_URL`, for example when the server reaches Paperless under a container name; an empty value counts as unset |
 
 Requires paperless-ngx 3.x (API version 10). 3.4.2 is the oldest supported release and the one
 every change is tested against; the latest 3.x release is tested weekly. paperless-ngx 2.x is not

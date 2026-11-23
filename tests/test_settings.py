@@ -75,10 +75,43 @@ def test_url_and_token_are_required(monkeypatch: pytest.MonkeyPatch, missing: st
 
 
 @pytest.mark.usefixtures("connection_env")
-def test_empty_token_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PAPERLESS_TOKEN", "")
+def test_an_empty_public_url_counts_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clients that build a form from server.json may pass what the user left blank (PLMCP-65)."""
+    monkeypatch.setenv("PAPERLESS_PUBLIC_URL", "")
 
-    assert invalid_fields(PaperlessSettings) == [("token",)]
+    assert PaperlessSettings.model_validate({}).public_url is None
+
+
+@pytest.mark.parametrize("name", ["PAPERLESS_URL", "PAPERLESS_TOKEN"])
+@pytest.mark.usefixtures("connection_env")
+def test_an_empty_required_variable_is_refused(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    monkeypatch.setenv(name, "")
+
+    assert invalid_fields(PaperlessSettings) == [(name.removeprefix("PAPERLESS_").lower(),)]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        *("TOOLSETS", "READ_ONLY"),  # unset would offer more than an empty value may mean
+        *("MAX_UPLOAD_BYTES", "MAX_DOWNLOAD_BYTES", "LOG_LEVEL", "STARTUP_TIMEOUT"),
+    ],
+)
+def test_an_empty_server_setting_is_refused_rather_than_guessed(
+    monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    monkeypatch.setenv(f"PAPERLESS_MCP_{name}", "")
+
+    assert invalid_fields(ServerSettings) == [(name.lower(),)]
+
+
+@pytest.mark.parametrize("name", ["DISABLED_TOOLS", "UPLOAD_DIRS"])
+def test_an_empty_list_setting_is_an_empty_list(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    monkeypatch.setenv(f"PAPERLESS_MCP_{name}", "")
+
+    settings = ServerSettings()
+
+    assert (settings.disabled_tools, settings.upload_dirs) == ((), ())
 
 
 @pytest.mark.parametrize("variable", ["PAPERLESS_URL", "PAPERLESS_PUBLIC_URL"])
