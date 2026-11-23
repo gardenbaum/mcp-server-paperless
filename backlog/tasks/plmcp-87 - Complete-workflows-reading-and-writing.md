@@ -4,9 +4,10 @@ title: Complete workflows, reading and writing
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:22:01Z'
-updated_date: '2026-11-23T12:24:42Z'
+updated_date: '2026-11-23T12:25:17Z'
 labels: []
-dependencies: []
+dependencies:
+  - PLMCP-91
 priority: medium
 type: feature
 ordinal: 70100

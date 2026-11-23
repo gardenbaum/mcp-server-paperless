@@ -4,6 +4,7 @@ title: Guard the coverage of the Paperless API endpoint by endpoint
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:24:30Z'
+updated_date: '2026-11-23T12:25:16Z'
 labels: []
 dependencies: []
 priority: high
@@ -19,10 +20,10 @@ Nothing shows endpoint by endpoint what the server covers, through which tool, a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A generated table lists every path and method of the vendored schema with the covering tool, the open task, or an owner-approved exclusion quoted with its date
+- [ ] #1 A generated table lists every path and method of the vendored schema with the covering tool, the open task (PLMCP-83 if no other task has it), or an owner-approved exclusion quoted with its date; paperless_api_get (raw) alone does not count as covering
 - [ ] #2 A test fails when an endpoint is neither covered nor listed, also after a schema refresh; it derives coverage from the code or the contract tests, not from a hand-written claim
-- [ ] #3 Query parameters missing from the schema, such as ?version=, are listed by hand
-- [ ] #4 The entries left open name their task, and closing a task removes them
+- [ ] #3 Request body fields and query parameters of covered endpoints that no tool uses are listed from the schema with their open task or an owner-approved exclusion, under the same test; query parameters missing from the schema, such as ?version=, are listed by hand
+- [ ] #4 Every open entry names a Backlog task, and a test fails when that task does not exist or is Done while the entry is still open
 <!-- AC:END -->
 
 ## Definition of Done

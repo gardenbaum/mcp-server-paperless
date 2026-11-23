@@ -4,9 +4,10 @@ title: Complete the task list and document history, reading and writing
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:22:03Z'
-updated_date: '2026-11-23T12:24:43Z'
+updated_date: '2026-11-23T12:25:17Z'
 labels: []
-dependencies: []
+dependencies:
+  - PLMCP-91
 priority: medium
 type: feature
 ordinal: 70300

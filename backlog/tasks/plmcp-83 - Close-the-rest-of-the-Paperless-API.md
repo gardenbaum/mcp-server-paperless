@@ -4,10 +4,25 @@ title: Close the rest of the Paperless API
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:53Z'
-updated_date: '2026-11-23T12:24:32Z'
+updated_date: '2026-11-23T12:25:16Z'
 labels: []
 dependencies:
   - PLMCP-91
+  - PLMCP-74
+  - PLMCP-75
+  - PLMCP-76
+  - PLMCP-77
+  - PLMCP-78
+  - PLMCP-79
+  - PLMCP-80
+  - PLMCP-81
+  - PLMCP-82
+  - PLMCP-85
+  - PLMCP-86
+  - PLMCP-87
+  - PLMCP-88
+  - PLMCP-89
+  - PLMCP-90
 priority: medium
 type: chore
 ordinal: 71000
@@ -21,7 +36,7 @@ The guard (PLMCP-91) shows endpoint by endpoint what is covered. After the other
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each endpoint left uncovered gets a tool, or an exclusion the owner approved, quoted with its date in the table; next ASN, autocomplete, storage path test, selection data and profile are uncovered today (document suggestions are covered by get_document; profile returns the API token and is denied by decision-25)
+- [ ] #1 Each endpoint and field the table of PLMCP-91 still leaves open gets a tool, or an exclusion the owner approved, quoted with its date in the table; when this was written that included next ASN, autocomplete, storage path test, selection data and profile (which returns the API token and is denied by decision-25)
 - [ ] #2 The README's statement about coverage matches the table
 - [ ] #3 New operations have contract tests on the fake and Paperless 3.4.2, tool tests and E2E
 <!-- AC:END -->

@@ -4,10 +4,11 @@ title: 'Complete the PDF tools: inspect, insert, extract and remove, metadata pe
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:14:50Z'
-updated_date: '2026-11-23T12:24:41Z'
+updated_date: '2026-11-23T12:25:16Z'
 labels: []
 dependencies:
   - PLMCP-74
+  - PLMCP-91
 priority: medium
 type: feature
 ordinal: 68000
