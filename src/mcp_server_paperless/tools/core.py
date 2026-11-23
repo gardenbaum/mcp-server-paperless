@@ -295,6 +295,11 @@ async def delete_taxonomy_item(
     return await services(ctx).taxonomy_edits.delete(kind, item, confirm=confirm)
 
 
+def _absent(has: bool | None) -> bool | None:  # noqa: FBT001 -- a tri-state filter, not a switch
+    """The Paperless ``isnull`` flag for a ``has_*`` filter: has=false means isnull=true."""
+    return None if has is None else not has
+
+
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["search_documents"])
 @boundary
 async def search_documents(  # noqa: PLR0913 -- one parameter per filter, described for the LLM
@@ -306,6 +311,9 @@ async def search_documents(  # noqa: PLR0913 -- one parameter per filter, descri
             description=(
                 "Full-text query in Paperless syntax over title, content, notes and fields, "
                 "e.g. 'invoice AND acme', 'created:[2024 to 2025]', 'notes.note:paid'. "
+                "NOT, AND and OR must be uppercase (lowercase are plain search terms); a leading "
+                "minus does not exclude, write NOT term; field:* (presence) does not work, use "
+                "the has_* filters. Unsupported syntax is named in notices. "
                 "Results are ranked by relevance and carry highlights."
             )
         ),
@@ -326,6 +334,21 @@ async def search_documents(  # noqa: PLR0913 -- one parameter per filter, descri
     correspondent: Named = None,
     document_type: Named = None,
     storage_path: Named = None,
+    has_correspondent: Annotated[
+        bool | None,
+        Field(description="true: documents with a correspondent; false: without one."),
+    ] = None,
+    has_document_type: Annotated[
+        bool | None,
+        Field(description="true: documents with a document type; false: without one."),
+    ] = None,
+    has_storage_path: Annotated[
+        bool | None,
+        Field(description="true: documents with a storage path; false: without one."),
+    ] = None,
+    has_tags: Annotated[
+        bool | None, Field(description="true: documents with any tag; false: untagged documents.")
+    ] = None,
     tags_all: Annotated[
         list[NameOrId] | None, Field(description="Tag names or ids; documents have all of them.")
     ] = None,
@@ -370,7 +393,9 @@ async def search_documents(  # noqa: PLR0913 -- one parameter per filter, descri
     Names (correspondent, document type, storage path, tags, owner) match exactly or ignoring
     case and accents; an unknown or ambiguous name is an error that lists candidates. Rows hold
     ids, names, dates, custom field values and web_url, never the document text. count is the
-    total; pass next_page as page to see more.
+    total; pass next_page as page to see more. To find documents without a correspondent, document
+    type, storage path or tags use has_correspondent, has_document_type, has_storage_path or
+    has_tags set to false; a full-text query like 'NOT type:*' cannot do it.
     """
     names = NameFilters(
         correspondent=correspondent,
@@ -390,6 +415,10 @@ async def search_documents(  # noqa: PLR0913 -- one parameter per filter, descri
         added_from=added_from,
         added_to=added_to,
         inbox=inbox,
+        correspondent_isnull=_absent(has_correspondent),
+        document_type_isnull=_absent(has_document_type),
+        storage_path_isnull=_absent(has_storage_path),
+        tagged=has_tags,
         custom_field_query=custom_field_query,
         ordering=ordering,
     )

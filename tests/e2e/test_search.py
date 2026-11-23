@@ -37,6 +37,28 @@ async def test_name_filters_resolve_on_live_paperless(stack: Stack) -> None:
     assert await titles(stack, owner="admin", tags_none=["e2e-inbox"]) == {"e2e-private-note"}
 
 
+async def test_has_filters_find_documents_without_a_correspondent_or_type(stack: Stack) -> None:
+    assert await titles(stack, has_correspondent=False, has_document_type=False) == {
+        "e2e-private-note"
+    }
+    assert await titles(stack, has_correspondent=True, has_document_type=True) == {
+        "e2e-public-invoice"
+    }
+
+
+async def test_unsupported_query_syntax_is_named_on_live_paperless(stack: Stack) -> None:
+    server = create_server(paperless_settings(stack.base_url, stack.admin_token), server_settings())
+    async with Client(server) as client:
+        noisy = await client.call_tool("search_documents", {"query": "acme not zebra"})
+        clean = await client.call_tool("search_documents", {"query": "acme AND NOT zebra"})
+
+    assert noisy.structured_content is not None
+    assert clean.structured_content is not None
+    assert len(cast("list[str]", noisy.structured_content["notices"])) == 1
+    assert clean.structured_content["notices"] == []
+    assert clean.structured_content["count"] == 1
+
+
 async def test_date_ranges_on_live_paperless(stack: Stack) -> None:
     [row] = await search(stack, stack.admin_token, title_contains="e2e-public-invoice")
     created = date.fromisoformat(str(row["created"]))

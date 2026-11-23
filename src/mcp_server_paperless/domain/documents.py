@@ -313,6 +313,15 @@ class DocumentSearchResult(BaseModel):
     page: int
     next_page: Annotated[int | None, Field(description="The next page, null on the last one.")]
     documents: tuple[DocumentSummary, ...]
+    notices: Annotated[
+        tuple[str, ...],
+        Field(
+            description=(
+                "Query syntax the search index does not support, with the working alternative; "
+                "empty for a clean query. Paperless itself reports no error for these."
+            )
+        ),
+    ] = ()
 
 
 class Note(BaseModel):
