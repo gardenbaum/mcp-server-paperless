@@ -377,32 +377,33 @@ async def test_an_image_near_the_pixel_limit_fits_into_the_memory_of_the_child(
 SHAPES = [(19_900, 4_990), (4_990, 19_900), (60_000, 1_650), (1_650, 60_000)]
 
 
-@pytest.mark.parametrize("shape", SHAPES, ids=str)
 @pytest.mark.parametrize(
     ("kind", "mode"),
     [("PNG", mode) for mode in ("L", "LA", "P", "RGB", "RGBA", "I;16")]
     + [("TIFF", mode) for mode in ("1", "LA", "RGB", "RGBA", "CMYK", "LAB", "F", "RGB turned")]
     + [("JPEG", mode) for mode in ("RGB", "CMYK", "RGB progressive", "CMYK progressive")],
 )
-async def test_wide_and_tall_images_fit_into_the_memory_of_the_child(
-    kind: str, mode: str, shape: tuple[int, int]
-) -> None:
-    content = large(kind, mode, shape)
-    mime_type = f"image/{kind.lower()}"
-    sizes = (256, 1568)
+async def test_wide_and_tall_images_fit_into_the_memory_of_the_child(kind: str, mode: str) -> None:
+    # Every shape in both sizes, four children at a time: one after the other takes minutes.
+    turn = asyncio.Semaphore(4)
 
-    found = await asyncio.gather(
-        *(
-            ChildRenderer().render(
-                content, REQUEST.model_copy(update={"mime_type": mime_type, "size": size})
-            )
-            for size in sizes
-        )
-    )
+    async def longest(content: bytes, size: int) -> int | str:
+        wanted = {"mime_type": f"image/{kind.lower()}", "size": size}
+        async with turn:
+            try:
+                found = await ChildRenderer().render(content, REQUEST.model_copy(update=wanted))
+            except RenderFailed as failure:
+                return failure.reason
+        [image] = found.images
+        return max(image.width, image.height)
 
-    for size, rendered in zip(sizes, found, strict=True):
-        [image] = rendered.images
-        assert max(image.width, image.height) == size
+    async def both(shape: tuple[int, int]) -> tuple[int | str, int | str]:
+        content = await asyncio.to_thread(large, kind, mode, shape)
+        return await asyncio.gather(longest(content, 256), longest(content, 1568))
+
+    found = await asyncio.gather(*(both(shape) for shape in SHAPES))
+
+    assert dict(zip(SHAPES, found, strict=True)) == dict.fromkeys(SHAPES, (256, 1568))
 
 
 def large(kind: str, mode: str, shape: tuple[int, int] = (8_300, 12_000)) -> bytes:

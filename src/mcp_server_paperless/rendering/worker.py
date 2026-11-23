@@ -164,7 +164,7 @@ def _flat(image: Image.Image) -> Image.Image:
 def resized(
     image: Image.Image, box: Region, size: tuple[int, int], *, tile: int = TILE
 ) -> Image.Image:
-    """The box of an image, scaled to ``size``: what ``resize`` with this box gives.
+    """The box of an image, scaled to ``size``: nearly what ``resize`` with this box gives.
 
     A tile at a time, of about ``tile`` pixels of the image on each side, because converting and
     scaling a large image as a whole takes several copies of it. Each tile is cut with the pixels

@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn, override
 
 import pytest
@@ -14,7 +15,6 @@ from mcp_server_paperless.rendering.limits import MEMORY_EXIT, TIME_EXIT, WATCH_
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
 LINUX = sys.platform == "linux"
 WINDOWS = sys.platform == "win32"
@@ -382,9 +382,33 @@ def test_a_process_that_may_read_fonts_cannot_write_data_into_a_file() -> None:
 @pytest.mark.skipif(not LINUX, reason="/proc and prctl are Linux")
 @pytest.mark.skipif(LINUX and os.geteuid() == 0, reason="root may read every process")
 def test_a_child_of_a_protected_server_cannot_read_its_environment_or_memory() -> None:
-    before, after = ["read", "read"], ["PermissionError", "PermissionError"]
+    assert child(PARENT).split() == [*unprotected(ptrace_scope()), *REFUSED]
 
-    assert child(PARENT).split() == before + after
+
+REFUSED = ["PermissionError", "PermissionError"]
+
+
+def ptrace_scope() -> str:
+    """What Yama lets a process attach to; empty where the kernel has no Yama."""
+    setting = Path("/proc/sys/kernel/yama/ptrace_scope")
+    return setting.read_text().strip() if setting.exists() else ""
+
+
+def unprotected(scope: str) -> list[str]:
+    """What a child can read of its unprotected parent: its environment, and its memory.
+
+    From scope 1 on Yama refuses the memory to a child by itself (Ubuntu's default), but never the
+    environment.
+    """
+    return ["read", "read" if scope in {"", "0"} else "PermissionError"]
+
+
+@pytest.mark.parametrize(
+    ("scope", "memory"),
+    [("", "read"), ("0", "read"), ("1", "PermissionError"), ("2", "PermissionError")],
+)
+def test_the_control_of_the_protection_knows_what_yama_refuses(scope: str, memory: str) -> None:
+    assert unprotected(scope) == ["read", memory]
 
 
 @pytest.mark.skipif(not LINUX, reason="RLIMIT_AS is enforced on Linux")
