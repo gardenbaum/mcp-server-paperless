@@ -27,11 +27,12 @@ README = ROOT / "README.md"
 DOCS = ROOT / "docs"
 PRIVACY = ROOT / "PRIVACY.md"
 # The pages written for users; the reading guides for contributors are checked for links too.
-PAGES = (README, PRIVACY, *sorted(DOCS.glob("*.md")))
-NAMES = [page.name for page in PAGES]
+PAGES = (README, PRIVACY, ROOT / "plugin" / "README.md", *sorted(DOCS.glob("*.md")))
+NAMES = [page.relative_to(ROOT).as_posix() for page in PAGES]
 # Every current doc and the Dockerfile; decisions and tasks keep the names of their time.
 NAMED = (
     *sorted(ROOT.glob("*.md")),
+    ROOT / "plugin" / "README.md",
     *sorted(DOCS.glob("*.md")),
     *sorted((ROOT / "backlog" / "docs").rglob("*.md")),
     ROOT / "Dockerfile",
@@ -227,7 +228,7 @@ def test_the_guard_covers_the_design_the_workflow_guide_and_the_dockerfile() -> 
 
 
 @pytest.mark.decision("decision-37")
-@pytest.mark.parametrize("page", NAMED, ids=[page.name for page in NAMED])
+@pytest.mark.parametrize("page", NAMED, ids=[page.relative_to(ROOT).as_posix() for page in NAMED])
 def test_no_page_uses_the_old_repository_name(page: Path) -> None:
     lines = page.read_text(encoding="utf-8").splitlines()
     stale = [line for line in lines if OLD_NAMES.search(line)]
