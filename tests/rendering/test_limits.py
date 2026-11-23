@@ -4,12 +4,12 @@ import ctypes
 import os
 import subprocess
 import sys
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING, NoReturn, override
 
 import pytest
 
 from mcp_server_paperless.rendering import limits
-from mcp_server_paperless.rendering.limits import MEMORY_EXIT, TIME_EXIT
+from mcp_server_paperless.rendering.limits import MEMORY_EXIT, TIME_EXIT, WATCH_EXIT
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -72,6 +72,60 @@ def test_the_watchdog_leaves_a_process_at_its_memory_alone_and_ends_it_at_its_ti
 
     assert process.codes == [TIME_EXIT]
     assert 101.0 <= process.now < 101.1
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (OSError("gone"), WATCH_EXIT),
+        (MemoryError(), MEMORY_EXIT),
+        (ValueError("not a number"), WATCH_EXIT),
+    ],
+)
+@pytest.mark.parametrize("broken", ["memory", "clock", "sleep"])
+def test_a_watchdog_that_cannot_watch_ends_the_process(
+    broken: str, error: Exception, code: int
+) -> None:
+    class Broken(Process):
+        """Fails in one of its parts once the watch has begun."""
+
+        def check(self, part: str) -> None:
+            if part == broken and (part != "clock" or self.used > 0):
+                raise error
+
+        @override
+        def memory(self) -> int:
+            self.check("memory")
+            return super().memory()
+
+        @override
+        def clock(self) -> float:
+            self.check("clock")
+            return super().clock()
+
+        @override
+        def sleep(self, seconds: float) -> None:
+            self.check("sleep")
+            super().sleep(seconds)
+
+    process = Broken(step=1)
+    process.watch()
+
+    assert process.codes == [code]
+
+
+def test_the_real_thread_ends_its_process_when_memory_cannot_be_read() -> None:
+    code = (
+        "import threading, time\n"
+        "from mcp_server_paperless.rendering.limits import watch\n"
+        "def used(): raise OSError\n"
+        "threading.Thread(target=lambda: watch(used, memory_bytes=1, seconds=9)).start()\n"
+        "time.sleep(5)\n"
+    )
+
+    run = subprocess.run([sys.executable, "-I", "-c", code], check=False, timeout=60)  # noqa: S603 -- this interpreter and code of this test
+
+    assert run.returncode == WATCH_EXIT
 
 
 def test_the_memory_of_this_process_is_read() -> None:

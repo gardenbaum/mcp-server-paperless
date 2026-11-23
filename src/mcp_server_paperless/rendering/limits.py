@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 # Exit codes of the child.
 MEMORY_EXIT: Final = 3
 TIME_EXIT: Final = 4
+WATCH_EXIT: Final = 5
 
 # Seconds between two looks at the memory of the child.
 INTERVAL: Final = 0.02
@@ -100,13 +101,23 @@ def watch(  # noqa: PLR0913 -- the limits, and one keyword per seam
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
 ) -> None:
-    """End this process once it uses more memory or lives longer than it may."""
-    deadline = clock() + seconds
-    while clock() < deadline:
-        if used() > memory_bytes:
-            end(MEMORY_EXIT)
-        sleep(INTERVAL)
-    end(TIME_EXIT)
+    """End this process once it uses more memory or lives longer than it may.
+
+    Also when it cannot tell any more: without the watchdog no limit would hold.
+    """
+    try:
+        deadline = clock() + seconds
+        code = TIME_EXIT
+        while clock() < deadline:
+            if used() > memory_bytes:
+                code = MEMORY_EXIT
+                break
+            sleep(INTERVAL)
+    except MemoryError:
+        code = MEMORY_EXIT
+    except BaseException:  # noqa: BLE001 -- whatever it is, it must not end the watch silently
+        code = WATCH_EXIT
+    end(code)
 
 
 def _set_limit(name: str, value: int) -> None:
