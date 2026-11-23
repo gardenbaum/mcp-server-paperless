@@ -1,6 +1,6 @@
 name: Image
 
-# Container image (decision-28). Separate from ci.yml and not a required check: it never slows a
+# Container image (decision-28, for linux/amd64 and linux/arm64: decision-36). Separate from ci.yml and not a required check: it never slows a
 # merge. Pull requests and main build, scan and smoke-test the image without pushing it. Only a
 # pushed version tag (v*) publishes to GHCR, from the `publish` job, the only one allowed to write
 # packages. Nothing publishes on a branch or a pull request.
@@ -33,7 +33,13 @@ env:
 jobs:
   # Builds the image, fails on known HIGH or CRITICAL vulnerabilities and smoke-tests it.
   build:
-    runs-on: ubuntu-latest
+    # Each platform on a runner of its own: no emulation, and the smoke test runs the real thing.
+    strategy:
+      matrix:
+        include:
+          - {arch: amd64, runner: ubuntu-24.04}
+          - {arch: arm64, runner: ubuntu-24.04-arm}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,13 +52,14 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
+          platforms: linux/${{ matrix.arch }}
           load: true
           push: false
           tags: mcp-server-paperless:ci
           build-args: |
             REVISION=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
       # Fixed vulnerabilities only (ignore-unfixed): there is nothing to act on for the rest.
       # Reviewed exceptions go in .trivyignore, each with a reason and an expiry date.
@@ -71,14 +78,21 @@ jobs:
         run: scripts/image_smoke.sh mcp-server-paperless:ci
 
   # Version tags only. Pushes the image under its digest alone, scans and smoke-tests exactly that
-  # digest, and only then gives it its version tags, so what is tagged is what was scanned. The
-  # push carries a provenance and an SBOM attestation. A failed scan leaves an untagged digest.
+  # digest; the `tag` job gives the digests of all platforms their version tags only after each
+  # passed, so what is tagged is what was scanned. Each push carries a provenance and an SBOM
+  # attestation. A failed scan leaves untagged digests.
   # Recommended repository settings (not set here): a tag ruleset limiting who may create `v*`
   # tags, and a protected environment for this job.
   publish:
     needs: build
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    # Each platform on a runner of its own: no emulation, and the smoke test runs the real thing.
+    strategy:
+      matrix:
+        include:
+          - {arch: amd64, runner: ubuntu-24.04}
+          - {arch: arm64, runner: ubuntu-24.04-arm}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -121,6 +135,7 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
+          platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
@@ -128,7 +143,7 @@ jobs:
             REVISION=${{ github.sha }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha
+          cache-from: type=gha,scope=${{ matrix.arch }}
 
       - name: Scan the pushed digest (HIGH and CRITICAL fail the job)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -146,9 +161,64 @@ jobs:
           DIGEST_REF: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
         run: scripts/image_smoke.sh "$DIGEST_REF"
 
-      - name: Tag the scanned digest
+      - name: Record the scanned digest
         env:
-          DIGEST_REF: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: printf '%s' "$DIGEST" > "$ARCH"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 1
+
+  # Runs only when every platform was pushed, scanned and smoke-tested.
+  tag:
+    needs: publish
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # v1.2.3 gives 1.2.3, 1.2 and 1; a pre-release tag (v1.2.3-rc.1) gives only its own version.
+      # OCI labels (source, revision, version, created) come from the tag and the repository.
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+
+      # An image index of both platforms; the attestations of each digest come along.
+      - name: Tag the scanned digests as one image
         run: |
-          # shellcheck disable=SC2046 -- the tag list is word-split on purpose
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") "$DIGEST_REF"
+          set -euo pipefail
+          refs=()
+          for arch in amd64 arm64; do
+            digest="$(cat "digests/$arch")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            refs+=("$IMAGE@$digest")
+          done
+          tags=()
+          while read -r name; do tags+=(-t "$name"); done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          ((${#tags[@]} > 0))
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"

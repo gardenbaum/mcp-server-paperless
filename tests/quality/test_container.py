@@ -18,6 +18,8 @@ WORKFLOW = ROOT / ".github" / "workflows" / "image.yml"
 FROM = re.compile(r"^FROM\s+(?P<ref>\S+)(?:\s+AS\s+(?P<name>\S+))?\s*$", re.MULTILINE)
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
 SHA_PIN = re.compile(r"^[\w./-]+@[0-9a-f]{40}$")
+JOBS = ("build", "publish", "tag")
+TAG_GATE = "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')"
 COPY_SOURCES = {
     "pyproject.toml",
     "uv.lock",
@@ -121,9 +123,7 @@ def test_dockerignore_keeps_secrets_and_history_out_of_the_build_context() -> No
 @pytest.mark.decision("decision-28")
 def test_every_action_in_the_image_workflow_is_pinned_to_a_commit() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
-    uses = [
-        str(step["uses"]) for name in ("build", "publish") for step in steps(name) if "uses" in step
-    ]
+    uses = [str(step["uses"]) for name in JOBS for step in steps(name) if "uses" in step]
 
     assert uses
     for ref in uses:
@@ -153,13 +153,13 @@ def test_only_the_tag_gated_publish_job_may_write_packages_or_push() -> None:
     flow = workflow()
     jobs = mapping(flow["jobs"])
 
-    assert set(jobs) == {"build", "publish"}
+    assert set(jobs) == set(JOBS)
     assert "permissions" not in job("build")  # inherits contents: read
     assert job("publish")["permissions"] == {"contents": "read", "packages": "write"}
+    assert job("tag")["permissions"] == {"packages": "write"}
     assert job("publish")["needs"] == "build"
-    assert job("publish")["if"] == (
-        "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')"
-    )
+    assert job("tag")["needs"] == "publish"
+    assert job("publish")["if"] == job("tag")["if"] == TAG_GATE
     build_text = yaml.safe_dump(job("build"))
     assert "push: true" not in build_text
     assert "login-action" not in build_text
@@ -169,7 +169,7 @@ def test_only_the_tag_gated_publish_job_may_write_packages_or_push() -> None:
             assert "cache-to" not in options, "a tag build must not write the shared cache"
             assert options["provenance"] == "mode=max"
             assert options["sbom"] is True
-    assert yaml.safe_dump(flow).count("packages") == 1
+    assert yaml.safe_dump(flow).count("packages: write") == 2
 
 
 @pytest.mark.decision("decision-28")
@@ -181,10 +181,69 @@ def test_publish_scans_and_smoke_tests_the_digest_it_pushed_before_tagging() -> 
     def index(needle: str) -> int:
         return next(i for i, item in enumerate(order) if needle in item)
 
-    assert index("build-push-action") < index("trivy-action") < index("Smoke") < index("Tag")
+    assert index("build-push-action") < index("trivy-action") < index("Smoke")
+    assert index("Smoke") < index("Record") < index("upload-artifact")
     assert "push-by-digest=true" in text
-    assert "imagetools create" in text
-    assert "@${{ steps.push.outputs.digest }}" in text
+    assert "imagetools" not in text, "tagging is the tag job's, after every platform passed"
+    assert text.count("@${{ steps.push.outputs.digest }}") == 2
+
+
+@pytest.mark.decision("decision-36")
+def test_each_platform_is_built_scanned_and_smoke_tested_on_a_runner_of_its_own() -> None:
+    for name in ("build", "publish"):
+        strategy = mapping(job(name)["strategy"])
+        legs = [mapping(leg) for leg in sequence(mapping(strategy["matrix"])["include"])]
+
+        assert set(mapping(strategy["matrix"])) == {"include"}
+        assert legs == [
+            {"arch": "amd64", "runner": "ubuntu-24.04"},
+            {"arch": "arm64", "runner": "ubuntu-24.04-arm"},
+        ]
+        assert job(name)["runs-on"] == "${{ matrix.runner }}"
+        assert "continue-on-error" not in yaml.safe_dump(job(name))
+        builds = [
+            mapping(step["with"])
+            for step in steps(name)
+            if str(step.get("uses", "")).startswith("docker/build-push-action@")
+        ]
+        assert [build["platforms"] for build in builds] == ["linux/${{ matrix.arch }}"]
+        assert builds[0]["cache-from"] == "type=gha,scope=${{ matrix.arch }}"
+    assert "qemu" not in WORKFLOW.read_text(encoding="utf-8").lower()
+
+
+@pytest.mark.decision("decision-36")
+def test_the_tag_job_tags_exactly_the_two_scanned_digests() -> None:
+    record = next(step for step in steps("publish") if "Record" in str(step.get("name")))
+    tag = steps("tag")[-1]
+    script = str(tag["run"])
+
+    assert "if" not in record
+    assert [str(step.get("uses", step.get("name"))).split("@")[0] for step in steps("tag")] == [
+        "docker/setup-buildx-action",
+        "docker/login-action",
+        "docker/metadata-action",
+        "actions/download-artifact",
+        "Tag the scanned digests as one image",
+    ]
+    assert mapping(steps("tag")[3]["with"]) == {
+        "pattern": "digest-*",
+        "path": "digests",
+        "merge-multiple": True,
+    }
+    assert script.splitlines() == [
+        "set -euo pipefail",
+        "refs=()",
+        "for arch in amd64 arm64; do",
+        '  digest="$(cat "digests/$arch")"',
+        '  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]',
+        '  refs+=("$IMAGE@$digest")',
+        "done",
+        "tags=()",
+        'while read -r name; do tags+=(-t "$name"); done'
+        " < <(jq -r '.tags[]' <<< \"$DOCKER_METADATA_OUTPUT_JSON\")",
+        "((${#tags[@]} > 0))",
+        'docker buildx imagetools create "${tags[@]}" "${refs[@]}"',
+    ]
 
 
 @pytest.mark.decision("decision-28")
