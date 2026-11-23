@@ -36,6 +36,7 @@ import unicodedata
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Final
 
+from mcp_server_paperless.domain.documents import MAX_UPLOAD_LIMIT
 from mcp_server_paperless.domain.errors import NotFound, Validation
 
 if TYPE_CHECKING:
@@ -68,7 +69,9 @@ def size_text(count: int) -> str:
 
 def _too_large(max_bytes: int) -> Validation:
     message = f"The file is larger than the limit of {size_text(max_bytes)}."
-    hint = "Upload a smaller file; the operator can raise PAPERLESS_MCP_MAX_UPLOAD_BYTES."
+    hint = "Upload a smaller file."
+    if max_bytes < MAX_UPLOAD_LIMIT:
+        hint = "Upload a smaller file; the operator can raise PAPERLESS_MCP_MAX_UPLOAD_BYTES."
     return Validation(message, hint=hint)
 
 
