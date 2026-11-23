@@ -41,6 +41,10 @@ supported.
 A misspelt toolset or tool name stops the server at startup with a message that names the known
 ones; so does a selection that leaves no tool.
 
+A variable that is set but empty stops the server too, so that an empty `PAPERLESS_MCP_READ_ONLY`
+never means writable; leave it unset for the default. Only an empty `PAPERLESS_MCP_DISABLED_TOOLS` or
+`PAPERLESS_MCP_UPLOAD_DIRS` is an empty list.
+
 ## What the model can do
 
 Three settings narrow the tools a client is offered. A tool that is not offered cannot be called.

@@ -90,24 +90,29 @@ def test_an_empty_required_variable_is_refused(monkeypatch: pytest.MonkeyPatch, 
     assert invalid_fields(PaperlessSettings) == [(name.removeprefix("PAPERLESS_").lower(),)]
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        *("TOOLSETS", "READ_ONLY"),  # unset would offer more than an empty value may mean
-        *("MAX_UPLOAD_BYTES", "MAX_DOWNLOAD_BYTES", "LOG_LEVEL", "STARTUP_TIMEOUT"),
-    ],
-)
+EMPTY_LISTS = {"disabled_tools", "upload_dirs"}
+
+
+def test_an_empty_token_is_refused_however_the_settings_are_built() -> None:
+    with pytest.raises(ValidationError, match="token"):
+        _ = PaperlessSettings.model_validate({"url": URL, "token": ""})
+
+
+@pytest.mark.parametrize("field", sorted(set(ServerSettings.model_fields) - EMPTY_LISTS))
 def test_an_empty_server_setting_is_refused_rather_than_guessed(
-    monkeypatch: pytest.MonkeyPatch, name: str
+    monkeypatch: pytest.MonkeyPatch, field: str
 ) -> None:
-    monkeypatch.setenv(f"PAPERLESS_MCP_{name}", "")
+    """Unset would offer more than an empty READ_ONLY or TOOLSETS may mean; a new field decides."""
+    monkeypatch.setenv(f"PAPERLESS_MCP_{field.upper()}", "")
 
-    assert invalid_fields(ServerSettings) == [(name.lower(),)]
+    assert invalid_fields(ServerSettings) == [(field,)]
 
 
-@pytest.mark.parametrize("name", ["DISABLED_TOOLS", "UPLOAD_DIRS"])
-def test_an_empty_list_setting_is_an_empty_list(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
-    monkeypatch.setenv(f"PAPERLESS_MCP_{name}", "")
+@pytest.mark.parametrize("field", sorted(EMPTY_LISTS))
+def test_an_empty_list_setting_is_an_empty_list(
+    monkeypatch: pytest.MonkeyPatch, field: str
+) -> None:
+    monkeypatch.setenv(f"PAPERLESS_MCP_{field.upper()}", "")
 
     settings = ServerSettings()
 
