@@ -660,6 +660,8 @@ async def test_a_has_filter_set_to_true_may_repeat_the_named_filter() -> None:
         ("rechnung and swisscom", ("Lowercase 'and'", "AND")),
         ("rechnung or swisscom", ("Lowercase 'or'", "OR")),
         ("(rechnung or swisscom)", ("Lowercase 'or'", "OR")),
+        ("NOT (type:*)", ("type:*", "has_document_type")),
+        ('invoice -"secret phrase"', ('-"secret phrase"', 'NOT "secret phrase"')),
         ("rechnung -swisscom", ("-swisscom", "NOT swisscom")),
         ("-swisscom", ("-swisscom", "NOT swisscom")),
         ('"terms" -x', ("-x", "NOT x")),

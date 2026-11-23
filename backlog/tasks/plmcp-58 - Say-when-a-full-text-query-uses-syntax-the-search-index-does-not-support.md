@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T00:52:09Z'
-updated_date: '2026-11-23T01:43:59Z'
+updated_date: '2026-11-23T01:54:34Z'
 labels: []
 dependencies: []
 type: bug
@@ -46,6 +46,8 @@ User feedback (2026-11-23): "NOT searches silently return 0 hits, so one cannot 
 Detector is a small regex pass (services.documents.query_notices) over the query with quoted phrases removed: field:*, standalone lowercase and/or/not, a term with a leading minus. One notice per construct kind; DocumentSearchResult.notices defaults to empty.
 
 Review (opus): no Critical. Important fixed: a relative range bound such as added:[-2 weeks to -1 week] was read as a leading minus; ranges are now stripped like quoted phrases (clean-query test added). Minor fixed: only a bare field:* counts as presence (title:*voice is silent), lowercase operators next to parentheses are caught. Deferred Minor: only the first minus/presence match is named; a lone lowercase not at the start or end is advised as NOT. Gates: just check green (4692 passed, two macOS-only deselected plus the shard-union test that fails only with PYTEST_ADDOPTS -k), e2e search/documents/views 17 passed live, mutmut services.documents no survivors (segfault-status mutants as before). Surface snapshot regenerated deliberately (notices output field, query description).
+
+Codex P2 findings fixed: field:* before a closing parenthesis, NOT (type:*), is detected, and a minus-prefixed phrase is detected and named with its phrase; quoted phrases and ranges are masked at equal length so positions map back to the query.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

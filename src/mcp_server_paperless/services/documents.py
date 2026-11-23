@@ -69,8 +69,10 @@ def _check_range(name: str, start: date | None, end: date | None) -> None:
         raise Validation(message, hint=f"Swap them, or leave one out for an open {name} range.")
 
 
-_QUOTED = re.compile(r'"[^"]*"|\[[^\]]*\]')  # phrases and ranges ([-2 weeks to -1 week])
-_PRESENCE = re.compile(r"[\w.]+:\*(?!\S)")
+_OPAQUE = re.compile(
+    r'(?P<phrase>"[^"]*")|\[[^\]]*\]'
+)  # phrases and ranges ([-2 weeks to -1 week])
+_PRESENCE = re.compile(r"[\w.]+:\*(?![^\s)])")
 _LOWERCASE = re.compile(r"(?<![^\s(])(and|or|not)(?![^\s)])")
 _MINUS = re.compile(r"(?<!\S)-(\S+)")
 _NO_PRESENCE = "does not work in the search index and matches nothing."
@@ -84,7 +86,8 @@ def query_notices(query: str) -> tuple[str, ...]:
     Paperless answers these constructs with 0 hits or with the opposite of what they say, and
     never with an error. Quoted phrases are left alone.
     """
-    plain = _QUOTED.sub(" ", query)
+    # Same length as the query, so a match position is also one in the query.
+    plain = _OPAQUE.sub(lambda m: ("x" if m["phrase"] else " ") * len(m[0]), query)
     notices: list[str] = []
     if presence := _PRESENCE.search(plain):
         notices.append(f"'{presence.group()}' {_NO_PRESENCE} {_USE_HAS} {_USE_HAS_MORE}")
@@ -94,7 +97,7 @@ def query_notices(query: str) -> tuple[str, ...]:
         for word in words
     )
     if minus := _MINUS.search(plain):
-        term = minus.group(1)
+        term = query[minus.start(1) : minus.end(1)]
         notices.append(
             f"A leading minus does not exclude: '-{term}' includes '{term}'; write NOT {term}."
         )
