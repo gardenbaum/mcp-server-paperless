@@ -17,7 +17,7 @@ from fakes.mail import FakeMailAccount, FakeMailRule, FakeProcessedMail
 from fakes.paperless import FakePaperless, FakeState, FakeTag, seeded
 from pydantic import SecretStr
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     Ambiguous,
     ConfirmationRequired,
@@ -25,15 +25,15 @@ from paperless_mcp.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from paperless_mcp.domain.mail import MailRuleSettings, NotText, Reference
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.mail import MAX_ERROR, MailService
-from paperless_mcp.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.domain.mail import MailRuleSettings, NotText, Reference
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.mail import MAX_ERROR, MailService
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from paperless_mcp.domain.mail import RuleClearable
+    from mcp_server_paperless.domain.mail import RuleClearable
 
 pytestmark = [
     pytest.mark.anyio,

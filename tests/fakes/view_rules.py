@@ -7,12 +7,12 @@ failed check raises `Validation` with the message of the 400.
 from typing import TYPE_CHECKING
 
 from fakes.document_values import reject
-from paperless_mcp.domain.views import RULE_TYPES
+from mcp_server_paperless.domain.views import RULE_TYPES
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from paperless_mcp.domain.views import FilterRule
+    from mcp_server_paperless.domain.views import FilterRule
 
 MAX_VALUE = 255
 

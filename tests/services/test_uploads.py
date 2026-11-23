@@ -14,8 +14,8 @@ from e2e.helpers import pdf
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakePaperless, FakeState, seeded
 
-from paperless_mcp.domain.documents import DocumentUpload, UploadMetadata
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.documents import DocumentUpload, UploadMetadata
+from mcp_server_paperless.domain.errors import (
     Ambiguous,
     NotFound,
     PaperlessMcpError,
@@ -23,16 +23,16 @@ from paperless_mcp.domain.errors import (
     UpstreamTimeout,
     Validation,
 )
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.tasks import TaskService
-from paperless_mcp.services.taxonomy import TaxonomyResolver
-from paperless_mcp.services.uploads import UploadService
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.tasks import TaskService
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.uploads import UploadService
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from paperless_mcp.domain.documents import UploadResult
-    from paperless_mcp.domain.tasks import TaskStatus
+    from mcp_server_paperless.domain.documents import UploadResult
+    from mcp_server_paperless.domain.tasks import TaskStatus
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-7")]
 

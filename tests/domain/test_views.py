@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-from paperless_mcp.domain.views import RULE_TYPES, ViewValues
+from mcp_server_paperless.domain.views import RULE_TYPES, ViewValues
 
 SCHEMA = Path(__file__).parents[2] / "docs" / "vendor" / "paperless" / "openapi.json"
 

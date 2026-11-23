@@ -6,10 +6,15 @@ from typing import TYPE_CHECKING, cast
 import httpx2
 import pytest
 
-from paperless_mcp.domain.errors import NotFound, PaperlessMcpError, PermissionDenied, Validation
-from paperless_mcp.domain.views import FilterRule, SavedView, ViewValues
-from paperless_mcp.paperless.pagination import MAX_ITEMS
-from paperless_mcp.paperless.views import PaperlessViewReader, PaperlessViewWriter
+from mcp_server_paperless.domain.errors import (
+    NotFound,
+    PaperlessMcpError,
+    PermissionDenied,
+    Validation,
+)
+from mcp_server_paperless.domain.views import FilterRule, SavedView, ViewValues
+from mcp_server_paperless.paperless.pagination import MAX_ITEMS
+from mcp_server_paperless.paperless.views import PaperlessViewReader, PaperlessViewWriter
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory

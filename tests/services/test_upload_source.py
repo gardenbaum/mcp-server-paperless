@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from paperless_mcp.domain.errors import NotFound, Validation
-from paperless_mcp.services.upload_source import (
+from mcp_server_paperless.domain.errors import NotFound, Validation
+from mcp_server_paperless.services.upload_source import (
     clean_filename,
     decode_base64,
     read_allowed,

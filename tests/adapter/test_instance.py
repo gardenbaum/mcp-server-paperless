@@ -5,20 +5,20 @@ from typing import TYPE_CHECKING, cast
 import httpx2
 import pytest
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     AuthenticationFailed,
     PaperlessMcpError,
     UpstreamUnavailable,
 )
-from paperless_mcp.domain.instance import (
+from mcp_server_paperless.domain.instance import (
     ComponentStatus,
     CurrentUser,
     InstanceOverview,
     InstanceStatistics,
     SystemStatus,
 )
-from paperless_mcp.paperless.client import RetryPolicy
-from paperless_mcp.paperless.instance import PaperlessInstanceReader
+from mcp_server_paperless.paperless.client import RetryPolicy
+from mcp_server_paperless.paperless.instance import PaperlessInstanceReader
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory

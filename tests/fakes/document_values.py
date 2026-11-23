@@ -9,14 +9,14 @@ from datetime import date
 from typing import TYPE_CHECKING, NoReturn, Protocol
 from urllib.parse import urlsplit
 
-from paperless_mcp.domain.errors import Validation
+from mcp_server_paperless.domain.errors import Validation
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Mapping
 
     from pydantic import JsonValue
 
-    from paperless_mcp.domain.taxonomy import SelectOption
+    from mcp_server_paperless.domain.taxonomy import SelectOption
 
 MAX_STRING = 128
 MONEY = re.compile(r"([A-Z]{3})?-?\d{1,10}(\.\d{1,2})?")

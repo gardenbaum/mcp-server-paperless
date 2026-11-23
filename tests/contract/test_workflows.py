@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING
 import pytest
 
 from contract.conftest import SCRATCH_WORKFLOW
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
-from paperless_mcp.domain.workflows import (
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.workflows import (
     Workflow,
     WorkflowAction,
     WorkflowTrigger,

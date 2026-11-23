@@ -11,8 +11,8 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from harness import FailsAfterProbe, admin, serve
 
-from paperless_mcp.domain.errors import ConfirmationRequired, UpstreamUnreachable
-from paperless_mcp.tools._shared import boundary
+from mcp_server_paperless.domain.errors import ConfirmationRequired, UpstreamUnreachable
+from mcp_server_paperless.tools._shared import boundary
 
 pytestmark = pytest.mark.anyio
 

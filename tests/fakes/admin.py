@@ -14,7 +14,7 @@ import zipfile
 from typing import TYPE_CHECKING, Final
 
 from fakes.document_values import reject
-from paperless_mcp.domain.admin import CONFIG_READ_ONLY, CONFIG_SETTINGS
+from mcp_server_paperless.domain.admin import CONFIG_READ_ONLY, CONFIG_SETTINGS
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from contract.conftest import SCRATCH_TAG
-from paperless_mcp.domain.errors import PermissionDenied, Validation
+from mcp_server_paperless.domain.errors import PermissionDenied, Validation
 
 if TYPE_CHECKING:
     from contract.conftest import Backend

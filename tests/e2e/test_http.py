@@ -42,7 +42,7 @@ def endpoint(stack: Stack) -> Generator[str]:
         "PAPERLESS_MCP_HTTP_AUTH_TOKENS": MCP_TOKEN,
     }
     process = subprocess.Popen(
-        [sys.executable, "-c", "from paperless_mcp.cli import main_http; main_http()"],
+        [sys.executable, "-c", "from mcp_server_paperless.cli import main_http; main_http()"],
         env=env,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,

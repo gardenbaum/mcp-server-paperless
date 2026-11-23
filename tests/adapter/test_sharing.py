@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, cast
 import httpx2
 import pytest
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     DeliveryUnknown,
     NotFound,
     PaperlessMcpError,
@@ -17,9 +17,9 @@ from paperless_mcp.domain.errors import (
     UpstreamUnavailable,
     Validation,
 )
-from paperless_mcp.domain.sharing import ShareBundle, ShareLink
-from paperless_mcp.paperless.pagination import MAX_ITEMS
-from paperless_mcp.paperless.sharing import (
+from mcp_server_paperless.domain.sharing import ShareBundle, ShareLink
+from mcp_server_paperless.paperless.pagination import MAX_ITEMS
+from mcp_server_paperless.paperless.sharing import (
     EMAIL_TIMEOUT,
     PaperlessSharingReader,
     PaperlessSharingWriter,

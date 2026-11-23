@@ -6,16 +6,21 @@ import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakePaperless, FakeState, FakeUser, seeded
 
-from paperless_mcp.domain.ai import AiSource, AiSuggestions, ChatAnswer, ChatSource
-from paperless_mcp.domain.documents import Ref
-from paperless_mcp.domain.errors import FeatureUnavailable, NotFound, PermissionDenied, Validation
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.ai import MAX_QUESTION, AiService
-from paperless_mcp.services.documents import document_link
-from paperless_mcp.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.domain.ai import AiSource, AiSuggestions, ChatAnswer, ChatSource
+from mcp_server_paperless.domain.documents import Ref
+from mcp_server_paperless.domain.errors import (
+    FeatureUnavailable,
+    NotFound,
+    PermissionDenied,
+    Validation,
+)
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.ai import MAX_QUESTION, AiService
+from mcp_server_paperless.services.documents import document_link
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
-    from paperless_mcp.domain.taxonomy import TaxonomyKind
+    from mcp_server_paperless.domain.taxonomy import TaxonomyKind
 
 pytestmark = pytest.mark.anyio
 

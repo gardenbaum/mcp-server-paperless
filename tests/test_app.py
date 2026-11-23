@@ -15,7 +15,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 from harness import admin, serve
 from pydantic import SecretStr
 
-from paperless_mcp.app import (
+from mcp_server_paperless.app import (
     BodyLimit,
     BodyTooLargeError,
     LoopbackOnly,
@@ -26,9 +26,9 @@ from paperless_mcp.app import (
     check_startup,
     is_loopback,
 )
-from paperless_mcp.domain.errors import InvalidConfiguration
-from paperless_mcp.observability import JsonFormatter, RequestContext
-from paperless_mcp.settings import HttpSettings
+from mcp_server_paperless.domain.errors import InvalidConfiguration
+from mcp_server_paperless.observability import JsonFormatter, RequestContext
+from mcp_server_paperless.settings import HttpSettings
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Iterator

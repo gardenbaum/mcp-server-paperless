@@ -10,10 +10,15 @@ from typing import TYPE_CHECKING, final, override
 import pytest
 from fakes.paperless import FakePaperless, seeded
 
-from paperless_mcp.domain.errors import PaperlessMcpError
-from paperless_mcp.domain.sharing import ShareLink
-from paperless_mcp.paperless.sharing import no_answer, send_failed, unseen_bundle, unseen_link
-from paperless_mcp.services.sharing import (
+from mcp_server_paperless.domain.errors import PaperlessMcpError
+from mcp_server_paperless.domain.sharing import ShareLink
+from mcp_server_paperless.paperless.sharing import (
+    no_answer,
+    send_failed,
+    unseen_bundle,
+    unseen_link,
+)
+from mcp_server_paperless.services.sharing import (
     MAX_DAYS,
     MAX_DOCUMENTS,
     MAX_RECIPIENTS,

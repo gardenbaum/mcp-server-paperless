@@ -7,20 +7,20 @@ import httpx2
 import pytest
 
 from adapter.conftest import streaming
-from paperless_mcp.domain.documents import (
+from mcp_server_paperless.domain.documents import (
     CustomFieldValue,
     DocumentFile,
     DocumentHit,
     DocumentQuery,
 )
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     FeatureUnavailable,
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
     Validation,
 )
-from paperless_mcp.paperless.documents import (
+from mcp_server_paperless.paperless.documents import (
     FIELDS,
     THUMBNAIL_LIMIT,
     PaperlessDocumentReader,

@@ -47,8 +47,8 @@ from fakes.paperless import (
     seeded,
 )
 
-from paperless_mcp.domain.bulk import ObjectPermissions
-from paperless_mcp.domain.ports import (  # noqa: TC001 -- Ports' annotations are introspected
+from mcp_server_paperless.domain.bulk import ObjectPermissions
+from mcp_server_paperless.domain.ports import (  # noqa: TC001 -- Ports' annotations are introspected
     AdminReader,
     AdminWriter,
     AiReader,
@@ -74,30 +74,39 @@ from paperless_mcp.domain.ports import (  # noqa: TC001 -- Ports' annotations ar
     WorkflowReader,
     WorkflowWriter,
 )
-from paperless_mcp.paperless.admin import PaperlessAdminReader, PaperlessAdminWriter
-from paperless_mcp.paperless.ai import PaperlessAiReader
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.paperless.bulk import PaperlessBulkWriter
-from paperless_mcp.paperless.client import PaperlessClient, RetryPolicy
-from paperless_mcp.paperless.documents import PaperlessDocumentReader, PaperlessDocumentWriter
-from paperless_mcp.paperless.instance import PaperlessInstanceReader
-from paperless_mcp.paperless.mail import PaperlessMailReader, PaperlessMailWriter
-from paperless_mcp.paperless.pdf import PaperlessPdfWriter
-from paperless_mcp.paperless.permissions import PaperlessPermissionReader, PaperlessPermissionWriter
-from paperless_mcp.paperless.raw import PaperlessRawReader
-from paperless_mcp.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
-from paperless_mcp.paperless.tasks import PaperlessTaskReader
-from paperless_mcp.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
-from paperless_mcp.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
-from paperless_mcp.paperless.views import PaperlessViewReader, PaperlessViewWriter
-from paperless_mcp.paperless.workflows import PaperlessWorkflowReader, PaperlessWorkflowWriter
+from mcp_server_paperless.paperless.admin import PaperlessAdminReader, PaperlessAdminWriter
+from mcp_server_paperless.paperless.ai import PaperlessAiReader
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.bulk import PaperlessBulkWriter
+from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
+from mcp_server_paperless.paperless.documents import (
+    PaperlessDocumentReader,
+    PaperlessDocumentWriter,
+)
+from mcp_server_paperless.paperless.instance import PaperlessInstanceReader
+from mcp_server_paperless.paperless.mail import PaperlessMailReader, PaperlessMailWriter
+from mcp_server_paperless.paperless.pdf import PaperlessPdfWriter
+from mcp_server_paperless.paperless.permissions import (
+    PaperlessPermissionReader,
+    PaperlessPermissionWriter,
+)
+from mcp_server_paperless.paperless.raw import PaperlessRawReader
+from mcp_server_paperless.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
+from mcp_server_paperless.paperless.tasks import PaperlessTaskReader
+from mcp_server_paperless.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
+from mcp_server_paperless.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
+from mcp_server_paperless.paperless.views import PaperlessViewReader, PaperlessViewWriter
+from mcp_server_paperless.paperless.workflows import (
+    PaperlessWorkflowReader,
+    PaperlessWorkflowWriter,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
 
     from e2e.helpers import Stack
 
-    from paperless_mcp.domain.bulk import BulkKind
+    from mcp_server_paperless.domain.bulk import BulkKind
 
 
 # Every tag a contract test creates starts with this; the live backend deletes them again.

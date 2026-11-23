@@ -12,8 +12,8 @@ import pytest
 from fastmcp import Client
 from harness import admin, serve
 
-from paperless_mcp.settings import ServerSettings
-from paperless_mcp.tools._shared import TOOL_TOOLSETS, TOOLSETS
+from mcp_server_paperless.settings import ServerSettings
+from mcp_server_paperless.tools._shared import TOOL_TOOLSETS, TOOLSETS
 
 if TYPE_CHECKING:
     from mcp.types import Prompt, Tool

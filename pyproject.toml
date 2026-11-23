@@ -24,17 +24,13 @@ Documentation = "https://github.com/gardenbaum/paperless-mcp/tree/main/docs"
 Issues = "https://github.com/gardenbaum/paperless-mcp/issues"
 
 [project.scripts]
-mcp-server-paperless = "paperless_mcp.cli:main"
-paperless-mcp = "paperless_mcp.cli:main"
-paperless-mcp-http = "paperless_mcp.cli:main_http"
+mcp-server-paperless = "mcp_server_paperless.cli:main"
+paperless-mcp = "mcp_server_paperless.cli:main"
+paperless-mcp-http = "mcp_server_paperless.cli:main_http"
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]
 build-backend = "uv_build"
-
-# The import package keeps its name; uv_build would derive mcp_server_paperless from the project.
-[tool.uv.build-backend]
-module-name = "paperless_mcp"
 
 [dependency-groups]
 dev = [
@@ -72,9 +68,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # The error names of design §5.2 (NotFound, Validation, ...) read as outcomes; an Error suffix adds nothing.
-"src/paperless_mcp/domain/errors.py" = ["N818"]
+"src/mcp_server_paperless/domain/errors.py" = ["N818"]
 # FastMCP evaluates tool signatures at runtime: their types must be imported, not TYPE_CHECKING-only.
-"src/paperless_mcp/tools/*.py" = ["TC001", "TC002", "TC003"]
+"src/mcp_server_paperless/tools/*.py" = ["TC001", "TC002", "TC003"]
 "scripts/**" = [
     "INP001", # standalone scripts run by path (and tested via pythonpath), not an importable package
 ]
@@ -143,7 +139,7 @@ markers = [
 [tool.coverage.run]
 branch = true
 # scripts/ holds the helpers of the scheduled quality jobs: tested like the product code.
-source = ["src/paperless_mcp", "scripts"]
+source = ["src/mcp_server_paperless", "scripts"]
 
 [tool.coverage.report]
 fail_under = 95
@@ -161,7 +157,7 @@ exclude_also = [
 
 [tool.mutmut]
 # Only the two packages whose logic the unit and adapter tests must pin down.
-source_paths = ["src/paperless_mcp/services", "src/paperless_mcp/paperless"]
+source_paths = ["src/mcp_server_paperless/services", "src/mcp_server_paperless/paperless"]
 # mutmut copies src/ and tests/ into mutants/ and runs pytest there; the `e2e` marker stays
 # deselected through addopts (`-m "not e2e"`), so no Paperless stack is needed. Coverage adds
 # nothing to a mutation run.
@@ -174,13 +170,13 @@ pytest_add_cli_args_test_selection = ["tests"]
 # --- Architecture (design §5.1) ----------------------------------------------
 
 [tool.importlinter]
-root_package = "paperless_mcp"
+root_package = "mcp_server_paperless"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Layers: entrypoints > server > observability > settings > tools | paperless > services > domain"
 type = "layers"
-containers = ["paperless_mcp"]
+containers = ["mcp_server_paperless"]
 # Every module below the package root must be placed in a layer, so nothing in the layers imports
 # the entrypoints. The root itself (`__init__.py`) is the container: its own contract follows.
 exhaustive = true
@@ -197,26 +193,26 @@ layers = [
 [[tool.importlinter.contracts]]
 name = "The package root imports nothing from the package and no I/O or MCP library"
 type = "forbidden"
-source_modules = ["paperless_mcp"]
+source_modules = ["mcp_server_paperless"]
 as_packages = false
-forbidden_modules = ["paperless_mcp.**", "httpx2", "fastmcp", "mcp", "pydantic_settings"]
+forbidden_modules = ["mcp_server_paperless.**", "httpx2", "fastmcp", "mcp", "pydantic_settings"]
 
 [[tool.importlinter.contracts]]
 name = "The adapter does not use services"
 type = "forbidden"
-source_modules = ["paperless_mcp.paperless"]
-forbidden_modules = ["paperless_mcp.services"]
+source_modules = ["mcp_server_paperless.paperless"]
+forbidden_modules = ["mcp_server_paperless.services"]
 
 [[tool.importlinter.contracts]]
 name = "Only the composition root imports tools and paperless"
 type = "forbidden"
 source_modules = [
-    "paperless_mcp.__main__",
-    "paperless_mcp.app",
-    "paperless_mcp.cli",
-    "paperless_mcp.settings",
+    "mcp_server_paperless.__main__",
+    "mcp_server_paperless.app",
+    "mcp_server_paperless.cli",
+    "mcp_server_paperless.settings",
 ]
-forbidden_modules = ["paperless_mcp.tools", "paperless_mcp.paperless"]
+forbidden_modules = ["mcp_server_paperless.tools", "mcp_server_paperless.paperless"]
 # Entrypoints reach tools and paperless through server.py; only direct imports are wrong.
 allow_indirect_imports = true
 
@@ -231,15 +227,15 @@ allow_indirect_imports = true
 name = "Only paperless imports httpx2"
 type = "forbidden"
 source_modules = [
-    "paperless_mcp.__main__",
-    "paperless_mcp.app",
-    "paperless_mcp.cli",
-    "paperless_mcp.server",
-    "paperless_mcp.observability",
-    "paperless_mcp.settings",
-    "paperless_mcp.tools",
-    "paperless_mcp.services",
-    "paperless_mcp.domain",
+    "mcp_server_paperless.__main__",
+    "mcp_server_paperless.app",
+    "mcp_server_paperless.cli",
+    "mcp_server_paperless.server",
+    "mcp_server_paperless.observability",
+    "mcp_server_paperless.settings",
+    "mcp_server_paperless.tools",
+    "mcp_server_paperless.services",
+    "mcp_server_paperless.domain",
 ]
 forbidden_modules = ["httpx2"]
 allow_indirect_imports = true
@@ -250,10 +246,10 @@ allow_indirect_imports = true
 name = "Only tools, observability, server and entrypoints import fastmcp and mcp"
 type = "forbidden"
 source_modules = [
-    "paperless_mcp.settings",
-    "paperless_mcp.paperless",
-    "paperless_mcp.services",
-    "paperless_mcp.domain",
+    "mcp_server_paperless.settings",
+    "mcp_server_paperless.paperless",
+    "mcp_server_paperless.services",
+    "mcp_server_paperless.domain",
 ]
 forbidden_modules = ["fastmcp", "mcp"]
 allow_indirect_imports = true
@@ -262,10 +258,10 @@ allow_indirect_imports = true
 name = "No pydantic-settings below the composition root (configuration is injected)"
 type = "forbidden"
 source_modules = [
-    "paperless_mcp.tools",
-    "paperless_mcp.paperless",
-    "paperless_mcp.services",
-    "paperless_mcp.domain",
+    "mcp_server_paperless.tools",
+    "mcp_server_paperless.paperless",
+    "mcp_server_paperless.services",
+    "mcp_server_paperless.domain",
 ]
 forbidden_modules = ["pydantic_settings"]
 allow_indirect_imports = true
@@ -273,7 +269,7 @@ allow_indirect_imports = true
 [[tool.importlinter.contracts]]
 name = "No httpx"
 type = "forbidden"
-source_modules = ["paperless_mcp"]
+source_modules = ["mcp_server_paperless"]
 forbidden_modules = ["httpx"]
 
 # Toolset independence (design §5.1, decision-1): toolset modules in tools/ do not import each
@@ -284,23 +280,23 @@ forbidden_modules = ["httpx"]
 name = "Toolset modules do not import each other"
 type = "independence"
 modules = [
-    "paperless_mcp.tools.core",
-    "paperless_mcp.tools.ai",
-    "paperless_mcp.tools.bulk",
-    "paperless_mcp.tools.mail",
-    "paperless_mcp.tools.prompts",
-    "paperless_mcp.tools.sharing",
-    "paperless_mcp.tools.upload",
-    "paperless_mcp.tools.upload_stdio",
-    "paperless_mcp.tools.versions",
-    "paperless_mcp.tools.versions_stdio",
-    "paperless_mcp.tools.views",
-    "paperless_mcp.tools.workflows",
-    "paperless_mcp.tools.trash",
-    "paperless_mcp.tools.pdf",
-    "paperless_mcp.tools.permissions",
+    "mcp_server_paperless.tools.core",
+    "mcp_server_paperless.tools.ai",
+    "mcp_server_paperless.tools.bulk",
+    "mcp_server_paperless.tools.mail",
+    "mcp_server_paperless.tools.prompts",
+    "mcp_server_paperless.tools.sharing",
+    "mcp_server_paperless.tools.upload",
+    "mcp_server_paperless.tools.upload_stdio",
+    "mcp_server_paperless.tools.versions",
+    "mcp_server_paperless.tools.versions_stdio",
+    "mcp_server_paperless.tools.views",
+    "mcp_server_paperless.tools.workflows",
+    "mcp_server_paperless.tools.trash",
+    "mcp_server_paperless.tools.pdf",
+    "mcp_server_paperless.tools.permissions",
 ]
 ignore_imports = [
-    "paperless_mcp.tools.upload_stdio -> paperless_mcp.tools.upload",
-    "paperless_mcp.tools.versions_stdio -> paperless_mcp.tools.versions",
+    "mcp_server_paperless.tools.upload_stdio -> mcp_server_paperless.tools.upload",
+    "mcp_server_paperless.tools.versions_stdio -> mcp_server_paperless.tools.versions",
 ]

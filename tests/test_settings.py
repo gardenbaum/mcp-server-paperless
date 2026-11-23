@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import ValidationError
 
-from paperless_mcp.settings import (
+from mcp_server_paperless.settings import (
     CLAUDE_CALLBACK,
     CLAUDE_COM_CALLBACK,
     HttpSettings,

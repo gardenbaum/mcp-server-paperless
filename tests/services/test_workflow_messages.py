@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from paperless_mcp.domain.errors import PaperlessMcpError
-from paperless_mcp.domain.workflows import (
+from mcp_server_paperless.domain.errors import PaperlessMcpError
+from mcp_server_paperless.domain.workflows import (
     ActionInput,
     EmailSettings,
     TriggerInput,
@@ -19,7 +19,7 @@ from paperless_mcp.domain.workflows import (
     WorkflowEdit,
     WorkflowTrigger,
 )
-from paperless_mcp.services.workflows import action_type, trigger_type
+from mcp_server_paperless.services.workflows import action_type, trigger_type
 from services.test_workflows import MAIL, NEVER, Setup
 
 if TYPE_CHECKING:

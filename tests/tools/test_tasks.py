@@ -8,8 +8,8 @@ from fastmcp import Client
 from harness import admin, serve
 from services.test_tasks import ManualClock
 
-from paperless_mcp.domain.tasks import TaskState  # noqa: TC001 -- FastMCP-free test signature
-from paperless_mcp.services.tasks import MAX_WAIT_SECONDS
+from mcp_server_paperless.domain.tasks import TaskState  # noqa: TC001 -- FastMCP-free test signature
+from mcp_server_paperless.services.tasks import MAX_WAIT_SECONDS
 
 pytestmark = pytest.mark.anyio
 

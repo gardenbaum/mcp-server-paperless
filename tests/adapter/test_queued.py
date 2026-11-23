@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 import httpx2
 import pytest
 
-from paperless_mcp.domain.errors import Validation
-from paperless_mcp.domain.tasks import Unconfirmed
-from paperless_mcp.paperless.client import RetryPolicy
-from paperless_mcp.paperless.queued import Queued, TaskWaiter
+from mcp_server_paperless.domain.errors import Validation
+from mcp_server_paperless.domain.tasks import Unconfirmed
+from mcp_server_paperless.paperless.client import RetryPolicy
+from mcp_server_paperless.paperless.queued import Queued, TaskWaiter
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory

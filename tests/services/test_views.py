@@ -14,8 +14,8 @@ from fakes.paperless import (
     seeded,
 )
 
-from paperless_mcp.domain.documents import DocumentQuery, NameFilters
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.documents import DocumentQuery, NameFilters
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     Ambiguous,
     ConfirmationRequired,
@@ -23,15 +23,15 @@ from paperless_mcp.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from paperless_mcp.domain.views import FilterRule, RuleInput, ViewCreate, ViewEdit
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.documents import DocumentService
-from paperless_mcp.services.filter_rules import translate
-from paperless_mcp.services.taxonomy import TaxonomyResolver
-from paperless_mcp.services.views import ViewService
+from mcp_server_paperless.domain.views import FilterRule, RuleInput, ViewCreate, ViewEdit
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.documents import DocumentService
+from mcp_server_paperless.services.filter_rules import translate
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.views import ViewService
 
 if TYPE_CHECKING:
-    from paperless_mcp.domain.views import SavedView, ViewValues
+    from mcp_server_paperless.domain.views import SavedView, ViewValues
 
 pytestmark = [
     pytest.mark.anyio,

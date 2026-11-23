@@ -7,7 +7,7 @@ from fakes.paperless import FakePaperless, FakeUser, seeded
 from fastmcp import Client
 from harness import admin, serve
 
-from paperless_mcp.domain.ai import AiSuggestions
+from mcp_server_paperless.domain.ai import AiSuggestions
 
 pytestmark = pytest.mark.anyio
 

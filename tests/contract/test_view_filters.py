@@ -11,13 +11,13 @@ from typing import TYPE_CHECKING
 import pytest
 from fakes.accounts import PRIVATE_ASN, PUBLIC_ASN
 
-from paperless_mcp.domain.documents import DocumentQuery
-from paperless_mcp.domain.errors import Validation
+from mcp_server_paperless.domain.documents import DocumentQuery
+from mcp_server_paperless.domain.errors import Validation
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
-    from paperless_mcp.domain.documents import DocumentHit
-    from paperless_mcp.domain.taxonomy import TaxonomyKind
+    from mcp_server_paperless.domain.documents import DocumentHit
+    from mcp_server_paperless.domain.taxonomy import TaxonomyKind
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
 

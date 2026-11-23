@@ -16,7 +16,7 @@ from mcp.types import BlobResourceContents, EmbeddedResource, ImageContent, Text
 if TYPE_CHECKING:
     from mcp.types import ContentBlock
 
-    from paperless_mcp.domain.documents import DocumentFile, FileVersion
+    from mcp_server_paperless.domain.documents import DocumentFile, FileVersion
 
 pytestmark = pytest.mark.anyio
 

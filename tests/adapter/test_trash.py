@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 import httpx2
 import pytest
 
-from paperless_mcp.domain.errors import NotFound, PermissionDenied, Validation
-from paperless_mcp.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory

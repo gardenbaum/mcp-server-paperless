@@ -7,7 +7,7 @@ import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakePaperless, FakeState, seeded
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     Ambiguous,
     ConfirmationRequired,
@@ -15,7 +15,7 @@ from paperless_mcp.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from paperless_mcp.domain.workflows import (
+from mcp_server_paperless.domain.workflows import (
     ActionInput,
     EmailSettings,
     TriggerInput,
@@ -26,16 +26,16 @@ from paperless_mcp.domain.workflows import (
     WorkflowEdit,
     WorkflowTrigger,
 )
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.services.taxonomy import TaxonomyResolver
-from paperless_mcp.services.workflows import WorkflowService
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.workflows import WorkflowService
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from pydantic import JsonValue
 
-    from paperless_mcp.domain.workflows import WorkflowValues
+    from mcp_server_paperless.domain.workflows import WorkflowValues
 
 pytestmark = [
     pytest.mark.anyio,

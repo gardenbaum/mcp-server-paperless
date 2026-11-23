@@ -11,8 +11,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from paperless_mcp.settings import HttpSettings, OidcSettings, PaperlessSettings, ServerSettings
-from paperless_mcp.tools._shared import TOOL_TOOLSETS, TOOLSETS
+from mcp_server_paperless.settings import (
+    HttpSettings,
+    OidcSettings,
+    PaperlessSettings,
+    ServerSettings,
+)
+from mcp_server_paperless.tools._shared import TOOL_TOOLSETS, TOOLSETS
 
 if TYPE_CHECKING:
     from pydantic_settings import BaseSettings
@@ -33,6 +38,9 @@ TOOLSET_ROW = re.compile(r"^\| `([a-z]+)` \| (\d+) \|", re.MULTILINE)
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$", re.MULTILINE)
 FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
+# PyPI renders the README on its own page, where a relative link leads nowhere, so the README
+# links files of the repository by their URL on main; they are checked like relative links.
+BLOB = "https://github.com/gardenbaum/paperless-mcp/blob/main/"
 
 
 def prose(page: Path) -> str:
@@ -103,10 +111,12 @@ def test_every_relative_link_leads_to_a_file_and_a_heading(page: Path) -> None:
     broken: list[str] = []
     for found in LINK.finditer(prose(page)):
         link = found[1]
-        if re.match(r"[a-z][a-z0-9+.-]*:", link):
+        in_repository = link.startswith(BLOB)
+        if not in_repository and re.match(r"[a-z][a-z0-9+.-]*:", link):
             continue  # an absolute URL (https:, mailto:)
-        path, _, fragment = link.partition("#")
-        target = (page.parent / path).resolve() if path else page
+        path, _, fragment = link.removeprefix(BLOB).partition("#")
+        base = ROOT if in_repository else page.parent
+        target = (base / path).resolve() if path else page
         missing_heading = fragment and target.suffix == ".md" and fragment not in anchors(target)
         if not target.exists() or missing_heading:
             broken.append(link)
@@ -120,4 +130,10 @@ def test_the_readme_links_every_page_written_for_users() -> None:
     pages = sorted(page.name for page in DOCS.glob("*.md") if page.name not in guides)
 
     assert pages, "docs/ holds no page for users"
-    assert [name for name in pages if f"(docs/{name}" not in text] == []
+    assert [name for name in pages if f"({BLOB}docs/{name}" not in text] == []
+
+
+def test_the_readme_links_files_by_url_so_they_work_on_the_pypi_page() -> None:
+    links = [found[1] for found in LINK.finditer(prose(README))]
+
+    assert [link for link in links if not re.match(r"[a-z][a-z0-9+.-]*:|#", link)] == []

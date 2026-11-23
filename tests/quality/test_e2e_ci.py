@@ -98,16 +98,16 @@ def test_the_smoke_tier_is_small_and_made_of_live_modules_that_exist() -> None:
 
 
 def test_a_toolset_change_runs_the_stdio_test_and_that_toolsets_live_modules() -> None:
-    selection = pick("src/paperless_mcp/tools/sharing.py", "docs/x.md")
+    selection = pick("src/mcp_server_paperless/tools/sharing.py", "docs/x.md")
     assert not selection.skip
     assert selection.targets == (STDIO, contract("test_sharing"), e2e("test_sharing"))
 
 
 def test_several_toolsets_run_their_modules_sorted_and_without_duplicates() -> None:
     selection = pick(
-        "src/paperless_mcp/tools/views.py",
-        "src/paperless_mcp/services/views.py",
-        "src/paperless_mcp/paperless/trash.py",
+        "src/mcp_server_paperless/tools/views.py",
+        "src/mcp_server_paperless/services/views.py",
+        "src/mcp_server_paperless/paperless/trash.py",
         "tests/adapter/test_trash.py",
     )
     assert selection.targets == (
@@ -122,12 +122,12 @@ def test_several_toolsets_run_their_modules_sorted_and_without_duplicates() -> N
 
 
 def test_a_stem_uses_the_alias_table_besides_the_modules_of_its_own_name() -> None:
-    assert pick("src/paperless_mcp/services/uploads.py").targets == (
+    assert pick("src/mcp_server_paperless/services/uploads.py").targets == (
         STDIO,
         contract("test_document_upload"),
         e2e("test_upload_document"),
     )
-    assert pick("src/paperless_mcp/tools/versions.py").targets == (
+    assert pick("src/mcp_server_paperless/tools/versions.py").targets == (
         STDIO,
         contract("test_document_versions"),
         e2e("test_versions"),
@@ -181,31 +181,31 @@ CORE_LIVE = (
 
 
 def test_the_core_toolset_runs_the_live_modules_of_documents_and_taxonomy() -> None:
-    selection = pick("src/paperless_mcp/tools/core.py")
+    selection = pick("src/mcp_server_paperless/tools/core.py")
     assert set(CORE_LIVE) <= set(selection.targets)
     assert selection.targets[0] == STDIO
 
 
 def test_a_domain_module_runs_the_toolset_of_its_name() -> None:
-    assert pick("src/paperless_mcp/domain/pdf.py").targets == (
+    assert pick("src/mcp_server_paperless/domain/pdf.py").targets == (
         STDIO,
         contract("test_pdf"),
         e2e("test_pdf"),
     )
-    assert set(pick("src/paperless_mcp/domain/documents.py").targets) >= {
+    assert set(pick("src/mcp_server_paperless/domain/documents.py").targets) >= {
         contract("test_document_writer"),
         e2e("test_update_document"),
     }
 
 
 def test_shared_plumbing_runs_the_smoke_set_and_the_modules_of_its_stem() -> None:
-    client = pick("src/paperless_mcp/paperless/client.py")
+    client = pick("src/mcp_server_paperless/paperless/client.py")
     assert client.targets == (STDIO, *sorted((set(SMOKE) | {e2e("test_client")}) - {STDIO}))
 
 
 @pytest.mark.parametrize("name", ["app", "cli", "server"])
 def test_the_entry_points_run_the_http_transport_test_besides_the_smoke_set(name: str) -> None:
-    selection = pick(f"src/paperless_mcp/{name}.py")
+    selection = pick(f"src/mcp_server_paperless/{name}.py")
     assert set(selection.targets) == set(SMOKE) | {e2e("test_http")}
 
 
@@ -217,7 +217,8 @@ def test_every_live_module_is_reachable_from_a_source_path_or_the_smoke_set() ->
         for path in (ROOT / "tests" / folder).glob("test_*.py")
     } - {"tests/contract/test_coverage.py"}  # guards the contract suite, has no live test
     sources = [
-        path.relative_to(ROOT).as_posix() for path in (ROOT / "src" / "paperless_mcp").rglob("*.py")
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / "src" / "mcp_server_paperless").rglob("*.py")
     ]
     reached = set(SMOKE)
     for source in sources:
@@ -252,7 +253,7 @@ def test_the_real_cross_cutting_example_fits_the_budget_per_group() -> None:
         for folder in ("e2e", "contract")
         for path in (ROOT / "tests" / folder).glob("test_*.py")
     }
-    paths = [f"src/paperless_mcp/services/{stem}.py" for stem in stems]
+    paths = [f"src/mcp_server_paperless/services/{stem}.py" for stem in stems]
     targets = e2e_ci.select(paths, live_modules=live).targets
     assert sum(e2e_ci.MODULE_SECONDS.get(t, 0.0) for t in targets) > e2e_ci.TIER_BUDGET_SECONDS
     groups = e2e_ci.split_tier(targets)
@@ -270,15 +271,15 @@ def test_a_changed_stdio_test_runs_only_the_stdio_test() -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "src/paperless_mcp/settings.py",
-        "src/paperless_mcp/tools/_shared.py",
-        "src/paperless_mcp/tools/__init__.py",
-        "src/paperless_mcp/domain/ports.py",
-        "src/paperless_mcp/domain/credentials.py",
-        "src/paperless_mcp/paperless/errors.py",  # a shared stem without a module of its name
-        "src/paperless_mcp/services/unheard_of.py",
-        "src/paperless_mcp/tools/new_toolset.py",  # no live module and no alias yet
-        "src/paperless_mcp/prompts/guide.md",  # markdown below src is runtime data
+        "src/mcp_server_paperless/settings.py",
+        "src/mcp_server_paperless/tools/_shared.py",
+        "src/mcp_server_paperless/tools/__init__.py",
+        "src/mcp_server_paperless/domain/ports.py",
+        "src/mcp_server_paperless/domain/credentials.py",
+        "src/mcp_server_paperless/paperless/errors.py",  # a shared stem, no module of its name
+        "src/mcp_server_paperless/services/unheard_of.py",
+        "src/mcp_server_paperless/tools/new_toolset.py",  # no live module and no alias yet
+        "src/mcp_server_paperless/prompts/guide.md",  # markdown below src is runtime data
         "tests/e2e/helpers.py",
         "tests/e2e/conftest.py",
         "tests/e2e/compose.yaml",
@@ -302,7 +303,7 @@ def test_a_changed_stdio_test_runs_only_the_stdio_test() -> None:
         "renovate.json",
         ".python-version",
         "LICENSE",
-        "docs/../src/paperless_mcp/server.py",
+        "docs/../src/mcp_server_paperless/server.py",
         "backlog/../justfile",
         "/etc/passwd",
         "",
@@ -311,7 +312,7 @@ def test_a_changed_stdio_test_runs_only_the_stdio_test() -> None:
 def test_a_change_outside_the_toolset_map_runs_the_smoke_tier_not_the_suite(path: str) -> None:
     """Such a change is checked after the merge by the full run (decision-23)."""
     assert pick("README.md", path) == e2e_ci.Selection(skip=False, targets=SMOKE)
-    mixed = pick("README.md", "src/paperless_mcp/tools/pdf.py", path)
+    mixed = pick("README.md", "src/mcp_server_paperless/tools/pdf.py", path)
     extra = {contract("test_pdf"), e2e("test_pdf")} - set(SMOKE)
     assert mixed.targets == (STDIO, *sorted((set(SMOKE) | extra) - {STDIO}))
 
@@ -329,7 +330,7 @@ def run_main(argv: list[str], stdin: str = "") -> tuple[int, str, str]:
 
 
 def test_the_scope_command_prints_the_job_outputs_for_a_toolset_change() -> None:
-    stdin = "src/paperless_mcp/tools/pdf.py\0docs/a.md\0"
+    stdin = "src/mcp_server_paperless/tools/pdf.py\0docs/a.md\0"
     code, out, _ = run_main(["scope"], stdin=stdin)
     assert code == 0
     lines = out.splitlines()
@@ -339,7 +340,7 @@ def test_the_scope_command_prints_the_job_outputs_for_a_toolset_change() -> None
 
 def test_the_scope_command_gives_each_part_its_group_and_skips_the_parts_without_work() -> None:
     stems = ["documents", "bulk_documents", "pdf", "uploads", "versions", "sharing"]
-    stdin = "".join(f"src/paperless_mcp/services/{stem}.py\0" for stem in stems)
+    stdin = "".join(f"src/mcp_server_paperless/services/{stem}.py\0" for stem in stems)
     seen: list[str] = []
     modes: list[str] = []
     for part in ("1/3", "2/3", "3/3"):
@@ -351,7 +352,9 @@ def test_the_scope_command_gives_each_part_its_group_and_skips_the_parts_without
     all_targets = run_main(["scope"], stdin=stdin)[1].splitlines()[1].removeprefix("targets=")
     assert sorted(seen) == sorted(all_targets.split())  # nothing dropped, nothing run twice
     assert modes[0] == "mode=fast"
-    _, out, err = run_main(["scope", "--part", "3/3"], stdin="src/paperless_mcp/tools/pdf.py\0")
+    _, out, err = run_main(
+        ["scope", "--part", "3/3"], stdin="src/mcp_server_paperless/tools/pdf.py\0"
+    )
     assert out == "mode=skip\ntargets=\n"
     assert "no work" in err
 
@@ -366,9 +369,9 @@ def test_the_scope_command_reads_the_live_modules_below_the_given_root(tmp_path:
         (tmp_path / "tests" / name).parent.mkdir(parents=True, exist_ok=True)
         _ = (tmp_path / "tests" / name).write_text("", "utf-8")
     argv = ["scope", "--root", str(tmp_path)]
-    _, out, _ = run_main(argv, stdin="src/paperless_mcp/tools/only.py\0")
+    _, out, _ = run_main(argv, stdin="src/mcp_server_paperless/tools/only.py\0")
     assert f"targets={STDIO} {contract('test_only')} {e2e('test_only')}\n" in out
-    _, out, _ = run_main(argv, stdin="src/paperless_mcp/tools/pdf.py\0")
+    _, out, _ = run_main(argv, stdin="src/mcp_server_paperless/tools/pdf.py\0")
     assert f"targets={' '.join(SMOKE)}\n" in out
 
 

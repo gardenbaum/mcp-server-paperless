@@ -17,9 +17,14 @@ from fakes.paperless import (
     seeded,
     write,
 )
-from paperless_mcp.domain.documents import DocumentUpload
-from paperless_mcp.domain.errors import FeatureUnavailable, NotFound, PermissionDenied, Validation
-from paperless_mcp.paperless.taxonomy import TAG_DELETE_HINT
+from mcp_server_paperless.domain.documents import DocumentUpload
+from mcp_server_paperless.domain.errors import (
+    FeatureUnavailable,
+    NotFound,
+    PermissionDenied,
+    Validation,
+)
+from mcp_server_paperless.paperless.taxonomy import TAG_DELETE_HINT
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
 

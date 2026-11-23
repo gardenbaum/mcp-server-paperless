@@ -13,8 +13,8 @@ if TYPE_CHECKING:
 
     from pydantic import JsonValue
 
-    from paperless_mcp.domain.documents import DocumentQuery
-    from paperless_mcp.domain.taxonomy import SelectOption
+    from mcp_server_paperless.domain.documents import DocumentQuery
+    from mcp_server_paperless.domain.taxonomy import SelectOption
 
 
 class Doc(Protocol):

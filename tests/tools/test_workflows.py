@@ -7,7 +7,7 @@ from fakes.paperless import FakePaperless, FakeState, seeded
 from fastmcp import Client
 from harness import serve
 
-from paperless_mcp.domain.workflows import Workflow, WorkflowAction, WorkflowTrigger
+from mcp_server_paperless.domain.workflows import Workflow, WorkflowAction, WorkflowTrigger
 
 pytestmark = [
     pytest.mark.anyio,

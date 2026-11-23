@@ -16,8 +16,8 @@ from typing import TYPE_CHECKING, ClassVar, override
 from fakes.accounts import ADMIN
 from fakes.paperless import FakePaperless, seeded
 
-from paperless_mcp.server import CATALOGUE, Catalogue, Ports, create_server
-from paperless_mcp.settings import PaperlessSettings, ServerSettings
+from mcp_server_paperless.server import CATALOGUE, Catalogue, Ports, create_server
+from mcp_server_paperless.settings import PaperlessSettings, ServerSettings
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Generator, Sequence
@@ -25,9 +25,9 @@ if TYPE_CHECKING:
     from fastmcp import FastMCP
     from fastmcp.server.auth import AuthProvider
 
-    from paperless_mcp.domain.errors import PaperlessMcpError
-    from paperless_mcp.domain.instance import InstanceOverview
-    from paperless_mcp.domain.ports import (
+    from mcp_server_paperless.domain.errors import PaperlessMcpError
+    from mcp_server_paperless.domain.instance import InstanceOverview
+    from mcp_server_paperless.domain.ports import (
         AdminReader,
         AdminWriter,
         AiReader,

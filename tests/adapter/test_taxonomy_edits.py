@@ -7,13 +7,18 @@ import httpx2
 import pytest
 
 from adapter.conftest import tag
-from paperless_mcp.domain.errors import NotFound, PaperlessMcpError, PermissionDenied, Validation
-from paperless_mcp.domain.taxonomy import OptionInput, SelectOption, TaxonomyValues
-from paperless_mcp.paperless.taxonomy import TAG_DELETE_HINT, PaperlessTaxonomyWriter
+from mcp_server_paperless.domain.errors import (
+    NotFound,
+    PaperlessMcpError,
+    PermissionDenied,
+    Validation,
+)
+from mcp_server_paperless.domain.taxonomy import OptionInput, SelectOption, TaxonomyValues
+from mcp_server_paperless.paperless.taxonomy import TAG_DELETE_HINT, PaperlessTaxonomyWriter
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory
-    from paperless_mcp.domain.taxonomy import WritableKind
+    from mcp_server_paperless.domain.taxonomy import WritableKind
 
 pytestmark = pytest.mark.anyio
 

@@ -16,14 +16,14 @@ from typing import TYPE_CHECKING
 import pytest
 from e2e.helpers import pdf
 
-from paperless_mcp.domain.documents import CustomFieldValue, DocumentUpload
-from paperless_mcp.domain.errors import PermissionDenied, Validation
+from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentUpload
+from mcp_server_paperless.domain.errors import PermissionDenied, Validation
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
-    from paperless_mcp.domain.documents import DocumentRecord
-    from paperless_mcp.domain.tasks import TaskStatus
-    from paperless_mcp.domain.taxonomy import TaxonomyKind
+    from mcp_server_paperless.domain.documents import DocumentRecord
+    from mcp_server_paperless.domain.tasks import TaskStatus
+    from mcp_server_paperless.domain.taxonomy import TaxonomyKind
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 

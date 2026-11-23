@@ -11,7 +11,7 @@ import pytest
 from fakes.accounts import ADMIN
 from fakes.paperless import FakeDocument, FakePaperless, FakeState, FakeUser, seeded
 
-from paperless_mcp.domain.errors import (
+from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     ConfirmationRequired,
     FeatureUnavailable,
@@ -19,7 +19,7 @@ from paperless_mcp.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from paperless_mcp.services.sharing import (
+from mcp_server_paperless.services.sharing import (
     MAX_DOCUMENTS,
     MAX_RECIPIENTS,
     SharingService,

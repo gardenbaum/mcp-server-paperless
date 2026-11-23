@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from paperless_mcp.domain.documents import DocumentQuery
-from paperless_mcp.domain.errors import Validation
-from paperless_mcp.domain.views import RULE_TYPES, FilterRule
-from paperless_mcp.services.filter_rules import EDIT_HINT, translate
+from mcp_server_paperless.domain.documents import DocumentQuery
+from mcp_server_paperless.domain.errors import Validation
+from mcp_server_paperless.domain.views import RULE_TYPES, FilterRule
+from mcp_server_paperless.services.filter_rules import EDIT_HINT, translate
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

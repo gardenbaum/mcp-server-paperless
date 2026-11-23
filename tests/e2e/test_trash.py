@@ -16,8 +16,8 @@ from fastmcp import Client
 from harness import paperless_settings, server_settings
 
 from e2e.helpers import consume_text, parse, seq
-from paperless_mcp.server import create_server
-from paperless_mcp.services.trash import MAX_ALL
+from mcp_server_paperless.server import create_server
+from mcp_server_paperless.services.trash import MAX_ALL
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

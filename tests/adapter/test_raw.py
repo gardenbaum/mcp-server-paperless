@@ -7,15 +7,20 @@ import httpx2
 import pytest
 
 from adapter.conftest import BASE_URL, TOKEN, streaming, tag
-from paperless_mcp.domain.errors import NotFound, PaperlessMcpError, PermissionDenied, Validation
-from paperless_mcp.observability import QUIET_LOGGERS
-from paperless_mcp.paperless.auth import StaticTokenProvider
-from paperless_mcp.paperless.client import PaperlessClient, RetryPolicy
-from paperless_mcp.paperless.raw import PaperlessRawReader
+from mcp_server_paperless.domain.errors import (
+    NotFound,
+    PaperlessMcpError,
+    PermissionDenied,
+    Validation,
+)
+from mcp_server_paperless.observability import QUIET_LOGGERS
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
+from mcp_server_paperless.paperless.raw import PaperlessRawReader
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory
-    from paperless_mcp.paperless.client import Params
+    from mcp_server_paperless.paperless.client import Params
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-25")]
 

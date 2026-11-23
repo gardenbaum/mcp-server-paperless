@@ -313,19 +313,19 @@ def test_mutants_that_were_not_properly_judged_count_against_the_score(status: s
 
 
 RESULTS = """\
-    paperless_mcp.services.a.x_f__mutmut_1: survived
-    paperless_mcp.services.a.x_f__mutmut_2: survived
-    paperless_mcp.paperless.b.x_g__mutmut_3: timeout
-    paperless_mcp.paperless.b.x_g__mutmut_4: suspicious
+    mcp_server_paperless.services.a.x_f__mutmut_1: survived
+    mcp_server_paperless.services.a.x_f__mutmut_2: survived
+    mcp_server_paperless.paperless.b.x_g__mutmut_3: timeout
+    mcp_server_paperless.paperless.b.x_g__mutmut_4: suspicious
 """
 EQUIVALENTS_TOML = """\
 [[equivalent]]
-mutant = "paperless_mcp.services.a.x_f__mutmut_1"
+mutant = "mcp_server_paperless.services.a.x_f__mutmut_1"
 function_hash = "aaa"
 reason = "the argument is ignored at run time"
 
 [[equivalent]]
-mutant = "paperless_mcp.services.a.x_f__mutmut_9"
+mutant = "mcp_server_paperless.services.a.x_f__mutmut_9"
 function_hash = "aaa"
 reason = "was renumbered away"
 """
@@ -339,10 +339,10 @@ def eq(function_hash: str = "h") -> scheduled_jobs.Equivalent:
 @pytest.mark.decision("decision-13")
 def test_results_are_read_as_mutant_and_status() -> None:
     assert scheduled_jobs.parse_results(RESULTS) == {
-        "paperless_mcp.services.a.x_f__mutmut_1": "survived",
-        "paperless_mcp.services.a.x_f__mutmut_2": "survived",
-        "paperless_mcp.paperless.b.x_g__mutmut_3": "timeout",
-        "paperless_mcp.paperless.b.x_g__mutmut_4": "suspicious",
+        "mcp_server_paperless.services.a.x_f__mutmut_1": "survived",
+        "mcp_server_paperless.services.a.x_f__mutmut_2": "survived",
+        "mcp_server_paperless.paperless.b.x_g__mutmut_3": "timeout",
+        "mcp_server_paperless.paperless.b.x_g__mutmut_4": "suspicious",
     }
     assert scheduled_jobs.parse_results("") == {}
 
@@ -350,10 +350,10 @@ def test_results_are_read_as_mutant_and_status() -> None:
 @pytest.mark.decision("decision-13")
 def test_equivalents_are_read_with_their_reasons_and_function_hashes() -> None:
     assert scheduled_jobs.parse_equivalents(EQUIVALENTS_TOML) == {
-        "paperless_mcp.services.a.x_f__mutmut_1": EQUIVALENT(
+        "mcp_server_paperless.services.a.x_f__mutmut_1": EQUIVALENT(
             "the argument is ignored at run time", "aaa"
         ),
-        "paperless_mcp.services.a.x_f__mutmut_9": EQUIVALENT("was renumbered away", "aaa"),
+        "mcp_server_paperless.services.a.x_f__mutmut_9": EQUIVALENT("was renumbered away", "aaa"),
     }
     assert scheduled_jobs.parse_equivalents("") == {}
 

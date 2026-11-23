@@ -4,7 +4,7 @@ import hashlib
 
 import pytest
 
-from paperless_mcp.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
 
 
 @pytest.mark.decision("decision-9")

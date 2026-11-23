@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import BaseModel
 
-from paperless_mcp.domain.errors import NotFound, PaperlessMcpError
+from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError
 
 if TYPE_CHECKING:
     from contract.conftest import Backend

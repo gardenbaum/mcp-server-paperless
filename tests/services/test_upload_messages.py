@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING
 import pytest
 from e2e.helpers import pdf
 
-from paperless_mcp.domain.documents import UploadMetadata
-from paperless_mcp.domain.errors import PaperlessMcpError
-from paperless_mcp.services.upload_source import clean_filename, decode_base64, read_allowed
+from mcp_server_paperless.domain.documents import UploadMetadata
+from mcp_server_paperless.domain.errors import PaperlessMcpError
+from mcp_server_paperless.services.upload_source import clean_filename, decode_base64, read_allowed
 from services.test_uploads import Setup, b64
 
 if TYPE_CHECKING:
