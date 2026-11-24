@@ -8,6 +8,7 @@ server cannot write. Secrets (webhook header values, credentials in
 webhook URLs, PDF passwords) are never shown.
 """
 
+import dataclasses
 import json
 import re
 from typing import TYPE_CHECKING, Final, cast
@@ -50,12 +51,14 @@ from mcp_server_paperless.domain.workflows import (
     WorkflowTrigger,
     WorkflowValues,
 )
+from mcp_server_paperless.services.documents import readable
 from mcp_server_paperless.services.removal import WAY_BACK
+from mcp_server_paperless.services.tag_hierarchy import close_over_ancestors, descendants
 from mcp_server_paperless.services.taxonomy import fold, pick
 from mcp_server_paperless.services.views import plural
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Awaitable, Callable, Mapping, Sequence
 
     from pydantic import JsonValue
 
@@ -108,7 +111,18 @@ OWNERSHIP: Final = (
 TRASH_ACTION: Final = 6
 # E-mail, webhook, password removal and AI suggestions: Paperless tells no one whether they worked.
 UNSEEN_ACTIONS: Final = frozenset({3, 4, 5, 8})
-ASSIGNMENT, REMOVAL, REMOTE_OCR = 1, 2, 7
+ASSIGNMENT, REMOVAL, REMOTE_OCR, SUGGEST = 1, 2, 7, 8
+AI_FIELDS: Final = frozenset(
+    {"title", "tags", "correspondent", "document_type", "storage_path", "created"}
+)
+# Paperless does it last, wherever it stands.
+TRASHES: Final = "move each of them to the trash, after everything else"
+# What Paperless 3.5.1 reads of a manual trigger: not where a document came from, nor a schedule,
+# nor a match without an algorithm.
+MANUAL_FILTERS: Final = frozenset(
+    {"matching_algorithm", "filename", "custom_field_query"}
+    | {name for name in TRIGGER_FIELDS if name.startswith("has_")}
+)
 NO_OCR: Final = "run remote OCR (Paperless ignores it here: it needs a document being consumed)"
 TRASH_NOTE: Final = f"A document this workflow moves to the trash {WAY_BACK}"
 SUGGESTIONS: Final = 5
@@ -577,10 +591,16 @@ def _acts(
     return found
 
 
+def _filters(trigger: WorkflowTrigger) -> list[str]:
+    """The filters of a trigger that limit it."""
+    found = list(_set(TRIGGER_FIELDS, trigger.settings))
+    return [n for n in found if n in MANUAL_FILTERS] if trigger.type == MANUAL else found
+
+
 def trigger_text(trigger: WorkflowTrigger) -> str:
     """The type of a trigger and which filters it has."""
     text = TRIGGER_TYPES.get(trigger.type, f"unknown type {trigger.type}")
-    filters = ", ".join(_set(TRIGGER_FIELDS, trigger.settings))
+    filters = ", ".join(_filters(trigger))
     if filters:
         text += f", filtered by {filters}"
     if trigger.type == SCHEDULED:
@@ -590,7 +610,7 @@ def trigger_text(trigger: WorkflowTrigger) -> str:
 
 def unfiltered(triggers: Sequence[WorkflowTrigger]) -> bool:
     """Whether a manual trigger has no filters, so that every document matches."""
-    return any(not _set(TRIGGER_FIELDS, t.settings) for t in triggers if t.type == MANUAL)
+    return any(not _filters(t) for t in triggers if t.type == MANUAL)
 
 
 def _effect(lead: str, triggers: Sequence[WorkflowTrigger], acts: Sequence[str]) -> str:
@@ -651,25 +671,39 @@ class WorkflowService:
         found = await self.find(workflow)
         return self._info(found, await self._names([found]))
 
-    async def told(self, workflow: Workflow) -> tuple[str, ...]:
-        """What the workflow does to a document, action by action, with the values it writes.
+    async def told(
+        self, workflow: Workflow, titles: Callable[[Sequence[int]], Awaitable[Mapping[int, str]]]
+    ) -> tuple[str, ...]:
+        """What a run does to a document, the most far-reaching first, with the values it writes.
+
+        ``titles`` reads the titles of linked documents the user may see.
 
         Raises:
             Validation: It has a destination that cannot be shown, or too many of them.
         """
         _ = _acts(workflow.actions)  # counts the destinations of all actions together
-        names = await self._names([workflow])
-        found: list[str] = []
+        texts = _Texts(
+            names=await self._names([workflow]),
+            fields=await self._known("custom_field", workflow),
+            tags=await self._known("tag", workflow),
+        )
+        linked = [n for action in workflow.actions for n in texts.linked(action)]
+        texts.titles = await titles(linked) if linked else {}
+        found: list[tuple[bool, str]] = []
         for action in workflow.actions:
-            if action.type in {ASSIGNMENT, REMOVAL}:
-                values = _values_text(action, names)
-                verb = "assign" if action.type == ASSIGNMENT else "remove"
-                found += [f"{verb} {values}"] if values else []
-            elif action.type == REMOTE_OCR:
-                found.append(NO_OCR)
-            if action.type != REMOVAL:
-                found += _acts([action])
-        return tuple(found) or ("do nothing",)
+            found += [(not _far(action), text) for text in texts.of(action)]
+        return tuple(text for _, text in sorted(found, key=lambda row: row[0])) or ("do nothing",)
+
+    async def _known(
+        self, kind: TaxonomyKind, workflow: Workflow
+    ) -> dict[int, TaxonomyItem] | None:
+        """The objects of ``kind`` by id, if an action uses it; None if the user may not list it."""
+        if not any(kind in _kinds(_action_fields(a), a.settings) for a in workflow.actions):
+            return {}
+        try:
+            return {item.id: item for item in await self._taxonomy.items(kind)}
+        except PermissionDenied:
+            return None
 
     async def create(self, spec: WorkflowCreate, *, confirm: bool) -> WorkflowInfo:
         """Create a workflow; names are resolved and types checked before anything is sent.
@@ -1099,27 +1133,132 @@ def _nested(value: JsonValue) -> dict[str, JsonValue]:
     return shown
 
 
-def _values_text(action: WorkflowAction, names: Mapping[TaxonomyKind, Mapping[int, str]]) -> str:
-    """What an assignment or removal writes or takes away, each name and text quoted and cut."""
-    fields = ACTION_FIELDS[action.type]
+def _far(action: WorkflowAction) -> bool:
+    """Whether an action does more than file: sends, trashes, asks the AI, changes rights."""
+    if action.type in {ASSIGNMENT, REMOVAL}:
+        fields = _set(_action_fields(action), action.settings)
+        return any(re.search("owner|permissions|_users|_groups", name) for name in fields)
+    return action.type != REMOTE_OCR
 
-    def text(value: JsonValue) -> str:
-        return quoted(value if isinstance(value, str) else json.dumps(value))
 
-    def one(value: JsonValue) -> str:  # a hidden object has no name
-        return f"#{value}" if isinstance(value, int) else text(value)
+def _ids(value: JsonValue) -> list[int]:
+    return [n for n in value if isinstance(n, int)] if isinstance(value, list) else []
 
-    found: list[str] = []
-    for name, value in _set(fields, action.settings).items():
-        what = name.removeprefix("assign_").removeprefix("remove_").replace("_", " ")
-        shown = _show(name, fields[name], value, names)
-        if isinstance(shown, dict):
-            what += f" {', '.join(f'{quoted(k)}: {text(v)}' for k, v in shown.items())}"
-        elif fields[name].shape != "flag":
-            rows = shown if isinstance(shown, list) else [shown]
-            what += f" {', '.join(map(one, rows))}"
-        found.append(what)
-    return ", ".join(found)
+
+@dataclasses.dataclass(slots=True)
+class _Texts:
+    """Words for the actions of a run; every name and text is quoted and cut."""
+
+    names: Mapping[TaxonomyKind, Mapping[int, str]]
+    # None where the user may not list them.
+    fields: Mapping[int, TaxonomyItem] | None
+    tags: Mapping[int, TaxonomyItem] | None
+    titles: Mapping[int, str] = dataclasses.field(default_factory=dict[int, str])
+
+    def of(self, action: WorkflowAction) -> list[str]:
+        """What the action does, in one or two clauses."""
+        if action.type == REMOTE_OCR:
+            return [NO_OCR]
+        if action.type == TRASH_ACTION:
+            return [TRASHES]
+        if action.type == SUGGEST:
+            return [_suggestions(action.settings)]
+        if action.type not in {ASSIGNMENT, REMOVAL}:
+            return _acts([action])
+        values = self._values(action)
+        verb = "assign" if action.type == ASSIGNMENT else "remove"
+        told = [f"{verb} {values}"] if values else []
+        return [*_acts([action]), *told] if action.type == ASSIGNMENT else told
+
+    def linked(self, action: WorkflowAction) -> list[int]:
+        """The documents an assignment links to."""
+        values = _object(action.settings.get("assign_custom_fields_values"))
+        fields = _ids(action.settings.get("assign_custom_fields"))
+        return [n for at in fields if self._links(at) for n in _ids(values.get(str(at)))]
+
+    def _links(self, number: int) -> bool:
+        item = (self.fields or {}).get(number)
+        return item is not None and item.data_type == "documentlink"
+
+    def _name(self, kind: TaxonomyKind | None, number: int) -> str:
+        name = self.names.get(kind, {}).get(number) if kind is not None else None
+        return f"#{number}" if name is None else quoted(name)
+
+    def _values(self, action: WorkflowAction) -> str:
+        found: list[str] = []
+        for name, value in _set(ACTION_FIELDS[action.type], action.settings).items():
+            setting = ACTION_FIELDS[action.type][name]
+            if name == "assign_custom_fields_values":
+                continue  # Paperless writes those of assign_custom_fields only
+            what = name.removeprefix("assign_").removeprefix("remove_").replace("_", " ")
+            if name == "assign_custom_fields":
+                values = _object(action.settings.get("assign_custom_fields_values"))
+                what += f" {', '.join(self._field(n, values.get(str(n))) for n in _ids(value))}"
+            elif setting.shape == "list":
+                what += f" {', '.join(self._name(setting.kind, n) for n in _ids(value))}"
+                what += self._along(action, _ids(value)) if setting.kind == "tag" else ""
+            elif isinstance(value, int) and setting.shape == "one":
+                what += f" {self._name(setting.kind, value)}"
+            elif setting.shape != "flag":
+                what += f" {quoted(str(value))}"
+            found.append(what)
+        return ", ".join(found)
+
+    def _field(self, number: int, value: JsonValue) -> str:
+        name = self._name("custom_field", number)
+        if value in (None, ""):
+            return f"{name} (without a value, where it is missing)"
+        if self._links(number):
+            rows = [
+                f"{n} {quoted(self.titles[n])}" if n in self.titles else f"#{n}"
+                for n in _ids(value)
+            ]
+            return f"{name}: {', '.join(rows) or 'no document'}"
+        shown = readable(value, (self.fields or {}).get(number))
+        return f"{name}: {quoted(shown if isinstance(shown, str) else json.dumps(shown))}"
+
+    def _along(self, action: WorkflowAction, named: list[int]) -> str:
+        """The tags Paperless adds or removes with those that are named."""
+        adds = action.type == ASSIGNMENT
+        which = "parent" if adds else "child"
+        if self.tags is None:
+            return f" (with their {which} tags, which you may not list)"
+        parents = {number: tag.parent for number, tag in self.tags.items()}
+        if adds:
+            others = [n for n in close_over_ancestors(named, parents) if n not in named]
+        else:
+            others = sorted({n for tag in named for n in descendants(tag, parents)} - set(named))
+        listed = ", ".join(self._name("tag", n) for n in others)
+        if adds:
+            return f" (with their parent tags {listed})" if listed else ""
+        if listed:
+            return f" (with their child tags {listed} and any you cannot see)"
+        return " (with any child tags you cannot see)"
+
+
+def _suggestions(settings: Mapping[str, JsonValue]) -> str:
+    """What an action that applies AI suggestions may do."""
+    given = settings.get("ai_suggestion_fields")
+    fields = [str(name) for name in given] if isinstance(given, list) else []
+    if not fields:
+        return "apply AI suggestions to no field (Paperless skips it)"
+    told = ", ".join(
+        name.replace("_", " ") if name in AI_FIELDS else quoted(name) for name in fields
+    )
+    over = "only where there is no value"
+    if settings.get("ai_overwrite_existing"):
+        over = "over existing values"
+    if "tags" in fields:
+        over += " (tags are only added)"
+    makes = (
+        "creating tags, correspondents and document types that do not exist"
+        if settings.get("ai_create_missing")
+        else "without creating anything"
+    )
+    return (
+        "ask the AI backend about the text of each of them and apply what it suggests for "
+        f"{told}, {over}, {makes}"
+    )
 
 
 def _show(

@@ -119,6 +119,60 @@ async def test_a_run_applies_the_actions_in_order_to_each_document_once(backend:
     assert (await ports.documents.get_document(other)).title != "contract run"
 
 
+async def test_a_removed_tag_takes_its_child_tags_off(backend: Backend) -> None:
+    ports = backend.admin
+    parent = await new_tag(ports)
+    child = await new_tag(ports, parent)
+    [document] = backend.new_documents(1)
+    adding = await workflow(ports, assign(assign_tags=[child]))
+    _ = await run(ports, adding.id, document)
+    assert {parent, child} <= await tags(ports, document)
+    removing = await workflow(ports, WorkflowAction(type=2, settings={"remove_tags": [parent]}))
+
+    _ = await run(ports, removing.id, document)
+
+    assert not {parent, child} & await tags(ports, document)
+
+
+async def test_where_a_document_came_from_and_a_schedule_do_not_filter_a_run(
+    backend: Backend,
+) -> None:
+    ports = backend.admin
+    given = await new_tag(ports)
+    [document] = backend.new_documents(1)
+    flow = await workflow(
+        ports,
+        assign(assign_tags=[given]),
+        triggers=(
+            manual(
+                sources=[],
+                filter_path="/never/*",
+                match="never-in-any-document",
+                schedule_offset_days=9,
+            ),
+        ),
+    )
+
+    _ = await run(ports, flow.id, document)
+
+    assert given in await tags(ports, document)
+
+
+async def test_a_value_that_is_not_assigned_is_not_written(backend: Backend) -> None:
+    ports = backend.admin
+    text, number = await field(ports, "e2e-string"), await field(ports, "e2e-integer")
+    [document] = backend.new_documents(1)
+    values: JsonValue = {str(text): "x", str(number): 5}
+    flow = await workflow(
+        ports, assign(assign_custom_fields=[text], assign_custom_fields_values=values)
+    )
+
+    _ = await run(ports, flow.id, document)
+
+    record = await ports.documents.get_document(document)
+    assert [(v.field, v.value) for v in record.custom_fields] == [(text, "x")]
+
+
 async def test_the_filters_of_the_manual_trigger_skip_documents_silently_unless_left_out(
     backend: Backend,
 ) -> None:

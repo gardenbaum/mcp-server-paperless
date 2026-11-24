@@ -171,6 +171,7 @@ async def test_who_is_signed_in_is_known_to_users_who_may_read_their_settings(
     assert other is not None
     assert not other.is_superuser
     assert other.id != mine.id
+    assert set(other.permissions or ()) == CHANGER
     assert hidden is None
 
 

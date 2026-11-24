@@ -27,7 +27,6 @@ from mcp_server_paperless.tools._shared import (
     ANNOTATIONS,
     Confirm,
     DocumentIds,
-    DryRun,
     ExcludeIds,
     Filters,
     View,
@@ -212,7 +211,15 @@ async def run_workflow(  # noqa: PLR0913 -- one parameter per concept, described
             )
         ),
     ] = True,
-    dry_run: DryRun = False,
+    dry_run: Annotated[
+        bool,
+        Field(
+            description=(
+                "true shows what it would do and on which documents, and runs nothing; it needs no "
+                "confirm. Do it first."
+            )
+        ),
+    ] = False,
     confirm: Confirm = False,
 ) -> WorkflowRunReport:
     """Run a workflow with a manual trigger by hand on chosen documents, at most 100 per call.

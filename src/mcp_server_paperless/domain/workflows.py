@@ -583,7 +583,8 @@ class WorkflowRunReport(BaseModel):
     workflow_id: int
     workflow: Annotated[str, Field(description="Its name.")]
     actions: Annotated[
-        tuple[str, ...], Field(description="What it does to each document, in order.")
+        tuple[str, ...],
+        Field(description="What it does to each document, the most far-reaching first."),
     ]
     apply_filters: bool
     dry_run: Annotated[bool, Field(description="true: a preview, nothing was run.")]

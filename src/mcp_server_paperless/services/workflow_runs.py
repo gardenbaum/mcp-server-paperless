@@ -24,8 +24,6 @@ from mcp_server_paperless.domain.errors import (
 )
 from mcp_server_paperless.domain.workflows import WorkflowRunReport
 from mcp_server_paperless.services.bulk_documents import (
-    DRY_RUN,
-    NEXT_CALL,
     TO_GO_AHEAD,
     TO_GO_AHEAD_BY_IDS,
 )
@@ -44,7 +42,7 @@ from mcp_server_paperless.services.workflows import (
 )
 
 if TYPE_CHECKING:
-    from mcp_server_paperless.domain.documents import DocumentHit, NameOrId
+    from mcp_server_paperless.domain.documents import DocumentHit, NameOrId, SignedIn
     from mcp_server_paperless.domain.ports import DocumentReader, WorkflowWriter
     from mcp_server_paperless.domain.selection import Selection
     from mcp_server_paperless.domain.workflows import Workflow, WorkflowRun
@@ -52,6 +50,18 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.taxonomy import TaxonomyResolver
     from mcp_server_paperless.services.workflows import WorkflowService
 
+NOT_RUN: Final = "Dry run, nothing was run."
+NEXT_CALL: Final = (
+    "Show the user these documents and the effect. Once they agree, call again with the same "
+    "workflow, apply_filters, filters (or saved_view) and exclude_ids, and with "
+    "document_ids=[{ids}] and confirm=true: it runs on exactly these, and on none if one of them "
+    "no longer matches. With filters or saved_view alone, confirm=true is not enough."
+)
+NO_RIGHT_HINT: Final = "Ask an administrator for the permission change_document."
+BLOCKED_HINT: Final = (
+    "Leave those documents out: a workflow runs by hand only on documents you own, or that have no "
+    "owner."
+)
 NOT_AGAIN: Final = (
     "What it does may be done already, e-mails and webhooks included: do not run it again on your "
     "own; ask the user what they want."
@@ -75,6 +85,7 @@ class _Call:
     chosen: Selected
     owners: dict[int, int | None]
     blocked: list[DocumentHit]
+    no_right: bool
     # Whether a filter or a view stands alone, and whether one stands with ids.
     alone: bool
     beside: bool
@@ -93,8 +104,8 @@ class _Call:
         return self.apply_filters and not unfiltered(self.workflow.triggers)
 
     @property
-    def effect(self) -> str:
-        """What confirming would do: every document and every action."""
+    def target(self) -> str:
+        """Every document, and which of them may be skipped."""
         manual = "; ".join(trigger_text(t) for t in self.workflow.triggers if t.type == MANUAL)
         if self.skips:
             which = (
@@ -107,11 +118,24 @@ class _Call:
             which = (
                 ", each of which counts as matching: the filters of its triggers are not applied"
             )
-        will = "; ".join(self.actions)
+        return f"{named(titled(self.hits))}{which}{unchecked(self.chosen)}"
+
+    @property
+    def effect(self) -> str:
+        """What confirming would do: every action, then every document."""
         return (
-            f"run {self.subject} on {named(titled(self.hits))}{which}{unchecked(self.chosen)}. It "
-            f"will: {will}"
+            f"run {self.subject}, which will (the most far-reaching first, not in the order it "
+            f"runs): {'; '.join(self.actions)}. It runs on {self.target}"
         )
+
+    @property
+    def refusal(self) -> str:
+        """Why Paperless would refuse the whole run, as far as that is known; or nothing."""
+        if self.no_right:
+            return "you lack the permission to change documents"
+        if self.blocked:
+            return f"you may not change or do not own {named(titled(self.blocked))}"
+        return ""
 
     @property
     def scope(self) -> object:
@@ -174,18 +198,13 @@ class WorkflowRuns:
         """
         call = await self._call(workflow, selection, apply_filters=apply_filters)
         if not call.hits:
-            return _report(call, "Nothing was run: no document matches.")
+            return _report(call, "Nothing was run: no document matches.", dry_run=dry_run)
         if dry_run:
             return _preview(call)
-        if call.blocked:
-            message = (
-                f"You may not change or do not own {named(titled(call.blocked))}, so Paperless "
-                "would refuse the whole run; nothing was run."
-            )
-            hint = (
-                "Leave those documents out: a workflow runs by hand only on documents you own, or "
-                "that have no owner."
-            )
+        if call.refusal:
+            why = f"{call.refusal[0].upper()}{call.refusal[1:]}"
+            message = f"{why}, so Paperless would refuse the whole run; nothing was run."
+            hint = NO_RIGHT_HINT if call.no_right else BLOCKED_HINT
             raise PermissionDenied(message, hint=hint)
         if call.alone or not confirm:
             await self._require(call)
@@ -201,7 +220,7 @@ class WorkflowRuns:
             raise Validation(message, hint="Work in several calls.")
         found = await self._workflows.find(workflow)
         _require_usable(found)
-        actions = await self._workflows.told(found)
+        actions = await self._workflows.told(found, self._reader.get_document_titles)
         chosen = await self._selector.select(selection, change=True)
         require_all(chosen.missing)
         require_exclusions(chosen)
@@ -213,13 +232,16 @@ class WorkflowRuns:
             hint = "Narrow the filters, or add document_ids: read_documents shows them."
             raise Validation(message, hint=hint)
         owners = await self._owners(chosen)
+        user = await self._reader.get_signed_in() if chosen.hits else None
+        no_right = _lacks(user)
         return _Call(
             workflow=found,
             actions=actions,
             apply_filters=apply_filters,
             chosen=chosen,
             owners=owners,
-            blocked=await self._blocked(chosen, owners),
+            blocked=list(chosen.hits) if no_right else _blocked(chosen, owners, user),
+            no_right=no_right,
             alone=by_filter and not ids,
             beside=by_filter and bool(ids),
         )
@@ -232,16 +254,6 @@ class WorkflowRuns:
         )
         return {row.id: row.owner for row in rows}
 
-    async def _blocked(self, chosen: Selected, owners: dict[int, int | None]) -> list[DocumentHit]:
-        """The documents Paperless would refuse, as far as that can be known."""
-        user = await self._reader.get_signed_in() if any(owners.values()) else None
-        foreign = {
-            number
-            for number, owner in owners.items()
-            if user is not None and not user.is_superuser and owner not in {None, user.id}
-        }
-        return [h for h in chosen.hits if h.user_can_change is False or h.id in foreign]
-
     async def _require(self, call: _Call) -> None:
         """Refuse, unless the user accepted exactly this.
 
@@ -251,7 +263,7 @@ class WorkflowRuns:
         ids = [hit.id for hit in call.hits]
         files = await self._reader.get_newest_versions(ids)
         listed = ", ".join(map(str, ids))
-        hint = NEXT_CALL.format(ids=listed, what="workflow and apply_filters")
+        hint = NEXT_CALL.format(ids=listed)
         ConfirmationRequired.require(
             call.effect,
             scope=(call.scope, sorted(files.items())),
@@ -280,6 +292,25 @@ class WorkflowRuns:
                 self._taxonomy.invalidate(kind)
 
 
+def _lacks(user: SignedIn | None) -> bool:
+    """Whether the user is known to lack the global permission."""
+    if user is None or user.is_superuser or user.permissions is None:
+        return False
+    return "change_document" not in user.permissions
+
+
+def _blocked(
+    chosen: Selected, owners: dict[int, int | None], user: SignedIn | None
+) -> list[DocumentHit]:
+    """The documents Paperless would refuse, as far as that can be known."""
+    foreign = {
+        number
+        for number, owner in owners.items()
+        if user is not None and not user.is_superuser and owner not in {None, user.id}
+    }
+    return [h for h in chosen.hits if h.user_can_change is False or h.id in foreign]
+
+
 def _require_usable(workflow: Workflow) -> None:
     subject = f"Nothing was run: the workflow {quoted(workflow.name)} (id {workflow.id})"
     if not workflow.enabled:
@@ -292,14 +323,14 @@ def _require_usable(workflow: Workflow) -> None:
 
 
 def _preview(call: _Call) -> WorkflowRunReport:
-    if call.blocked:
-        message = (
-            f"{DRY_RUN} The run would be refused as a whole: you may not change or do not own "
-            f"{named(titled(call.blocked))}."
-        )
+    if call.refusal:
+        message = f"{NOT_RUN} The run would be refused as a whole: {call.refusal}."
     else:
         ahead = TO_GO_AHEAD_BY_IDS if call.alone else TO_GO_AHEAD
-        message = f"{DRY_RUN} Confirming would {call.effect}. {ahead}{call.more('is')}"
+        message = (
+            f"{NOT_RUN} Confirming would run {call.subject} and do what actions says on "
+            f"{call.target}. {ahead}{call.more('is')}"
+        )
     return _report(call, message, dry_run=True)
 
 

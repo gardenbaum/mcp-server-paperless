@@ -21304,7 +21304,7 @@
           }),
           'dry_run': dict({
             'default': False,
-            'description': 'true returns a preview (how many change, a sample, what changes) and writes nothing; it needs no confirm. Do it first.',
+            'description': 'true shows what it would do and on which documents, and runs nothing; it needs no confirm. Do it first.',
             'type': 'boolean',
           }),
           'exclude_ids': dict({
@@ -21675,7 +21675,7 @@
         'description': 'A run of a workflow by hand: the preview of a dry run, or what was asked of Paperless.',
         'properties': dict({
           'actions': dict({
-            'description': 'What it does to each document, in order.',
+            'description': 'What it does to each document, the most far-reaching first.',
             'items': dict({
               'type': 'string',
             }),

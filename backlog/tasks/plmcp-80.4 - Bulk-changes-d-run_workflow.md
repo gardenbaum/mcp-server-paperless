@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:35Z'
-updated_date: '2026-11-24T19:25:03Z'
+updated_date: '2026-11-24T19:41:01Z'
 labels:
   - bulk
 dependencies:
@@ -57,4 +57,6 @@ Beyond the design: the confirmation also shows the values assignments and remova
 Local runs: targeted only; tests/tools, tests/quality and others green except test_backlog_instructions::test_the_menu_driver_reports_a_failing_cli, a pty error of this machine in a file this task does not touch.
 
 Hosted evidence on e6549f1: full E2E run 45464274162 green (four shards, postgres, office, duplicates), so the live contract and E2E tests of run_workflow passed on Paperless 3.5.1 at their first run; PR tier of CI run 45464288047 green, 10672 tests passed on 3.14. Its check jobs were red for other reasons: one uncovered line of PLMCP-80.3 (bulk_updates.py 968, fixed in its branch by fb4b56e, merged here) and a network error of the Go checksum server on 3.15. Then only the base branch and backlog notes were merged; no source file changed since.
+
+Review round 1 (F1 to F11), tests first: manual triggers count only the filters Paperless reads; tags that come along named, not refused (Paperless takes them whatever the caller asks); actions before documents, far-reaching first; AI settings, select labels, linked titles in words; only the custom fields Paperless writes; dry_run stays true without a match; texts of a run; missing change_document told beforehand (SignedIn.permissions); the plain-text 400 is 'not known'. tests/adapter/schema_guard.py: one documented deviation more (bulk_edit 400, text/html). Surface snapshot: two changed lines of run_workflow. Sizes measured (100 documents, six actions): 11,917 ordinary, 42,821 hostile; previews 7,164 and 24,564. 29 further hand mutants, all killed after four tests more. F12 left.
 <!-- SECTION:NOTES:END -->

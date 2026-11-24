@@ -372,7 +372,8 @@ does not belong to its trigger or action type is an error.
 
 `run_workflow` runs an enabled workflow with a manual trigger on up to 100 documents, chosen like those
 of `bulk_edit_documents`; manual triggers are set up in the Paperless web UI. Every run is confirmed:
-every document and every action is named before, with all e-mail recipients and webhook hosts, and a
+every action, with all e-mail recipients and webhook hosts, and every document is named before, also
+tags that come along (parents of assigned ones, children of removed ones), and a
 filter or a view alone never runs anything. With `apply_filters=false` the filters of the trigger are
 left out; with them Paperless does not tell which documents it skips. If it fails on some documents the
 answer names them, and a part of the actions may have run there. Whether e-mails, webhooks, password

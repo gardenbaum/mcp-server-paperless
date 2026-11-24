@@ -174,7 +174,7 @@ Limits.
 | `POST /api/token/` |  | PLMCP-83 |
 | `GET /api/trash/` | `empty_trash`, `get_trash_entry`, `get_trashed_file`, `list_trash`, `restore_from_trash` and 3 more |  |
 | `POST /api/trash/` | `empty_trash`, `restore_from_trash` |  |
-| `GET /api/ui_settings/` | `delete_pages`, `delete_user`, `edit_pdf`, `email_documents`, `extract_pages` and 8 more |  |
+| `GET /api/ui_settings/` | `delete_pages`, `delete_user`, `edit_pdf`, `email_documents`, `extract_pages` and 9 more |  |
 | `POST /api/ui_settings/` |  | PLMCP-88 |
 | `GET /api/users/` | `create_mail_rule`, `create_workflow`, `delete_user`, `get_document`, `get_user` and 10 more |  |
 | `POST /api/users/` | `create_user` |  |

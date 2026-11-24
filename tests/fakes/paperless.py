@@ -2209,7 +2209,11 @@ class FakePaperless:
         """`DocumentReader.get_signed_in` (UiSettingsView: needs `view_uisettings`)."""
         if not self.user.has("view_uisettings"):
             return None
-        return SignedIn(id=self.user.id, is_superuser=self.user.is_superuser)
+        return SignedIn(
+            id=self.user.id,
+            is_superuser=self.user.is_superuser,
+            permissions=tuple(sorted(self.user.permissions)),
+        )
 
     @write
     async def rotate_documents(

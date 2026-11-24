@@ -16,6 +16,7 @@ from mcp_server_paperless.domain.errors import (
     PaperlessMcpError,
     PermissionDenied,
     TaskFailed,
+    Validation,
     quoted,
 )
 from mcp_server_paperless.domain.tasks import Unconfirmed
@@ -25,6 +26,7 @@ from mcp_server_paperless.domain.workflows import (
     WorkflowRun,
     WorkflowTrigger,
 )
+from mcp_server_paperless.paperless.errors import REJECTED
 from mcp_server_paperless.paperless.pagination import MAX_ITEMS, Page, collect
 from mcp_server_paperless.paperless.queued import FAILED_HINT, Queued, TaskWaiter
 
@@ -222,6 +224,15 @@ class PaperlessWorkflowWriter:
             queued = await self._client.call("POST", RUN, Queued, json=body)
         except PermissionDenied:
             raise run_refused() from None
+        except Validation as error:
+            if error.message != f"{REJECTED}.":
+                raise
+            # A plain-text 400 stands for any failure while the run was queued.
+            message = (
+                "Paperless reported an error while it queued the run, without saying whether it "
+                "runs."
+            )
+            raise PaperlessMcpError(message) from None
         task = await self._waiter.ended(queued.task_id, stop_on_limit=True)
         if isinstance(task, Unconfirmed):
             return WorkflowRun(task_id=queued.task_id, unconfirmed=task)

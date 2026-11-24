@@ -12,6 +12,7 @@ from confirmation import YES, answering
 from contract.conftest import delete_and_empty_trash, drop_orphaned_workflow_parts, live_in_trash
 from fastmcp import Client
 from harness import paperless_settings, server_settings
+from services.test_workflow_runs import WEB_UI
 
 from e2e.helpers import consume_text, num, results
 from e2e.test_bulk import fields_of, make, raw, tags_of
@@ -151,6 +152,21 @@ async def test_the_filters_of_the_trigger_apply_unless_they_are_left_out(
     assert given in tags_of(stack, first)
     assert str(whole["message"]).endswith("on 2 documents.")
     assert given in tags_of(stack, second)
+
+
+async def test_a_trigger_as_the_web_ui_makes_it_has_no_filters(
+    stack: Stack, scratch: str, documents: list[int]
+) -> None:
+    first, _, _ = documents
+    tag = make(stack, "tags", {"name": f"{scratch}tag"})
+    number = workflow(
+        stack, f"{scratch}flow", assign(assign_tags=[tag]), triggers=[{**WEB_UI, "type": 5}]
+    )
+
+    done = await run(stack, stack.admin_token, workflow=number, document_ids=[first], confirm=True)
+
+    assert str(done["message"]).endswith("on 1 document.")
+    assert tag in tags_of(stack, first)
 
 
 async def test_a_filter_runs_on_what_the_dialog_named_and_never_by_itself(
@@ -306,12 +322,18 @@ async def test_a_restricted_user_runs_it_on_own_documents_only(
     unseen = await refused(
         stack, runner.token, workflow=number, document_ids=[own, hidden], confirm=True
     )
+    unable = user("view_document", "view_workflow", "view_uisettings")
+    patch(stack, hidden, owner=unable.id)
+    lacking = await refused(
+        stack, unable.token, workflow=number, document_ids=[hidden], confirm=True
+    )
     untouched = not any(tag in tags_of(stack, d) for d in documents)
     done = await run(stack, runner.token, workflow=number, document_ids=[own], confirm=True)
 
     assert "The Paperless user may not perform this action." in without
     assert "You may not change or do not own" in foreign
     assert str(hidden) in unseen
+    assert "You lack the permission to change documents" in lacking
     assert untouched
     assert done["started"] is True
     assert tag in tags_of(stack, own)

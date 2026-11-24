@@ -484,6 +484,8 @@ class SignedIn(BaseModel):
 
     id: int
     is_superuser: bool
+    # The global permissions by code name, where Paperless lists them.
+    permissions: tuple[str, ...] | None = None
 
 
 class DocumentText(BaseModel):

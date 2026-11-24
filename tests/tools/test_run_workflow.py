@@ -8,7 +8,15 @@ from typing import TYPE_CHECKING, Literal, cast
 
 import pytest
 from confirmation import YES, answering, source
-from fakes.paperless import FakeDocument, FakePaperless, FakeSavedView, FakeState, seeded
+from fakes.paperless import (
+    FakeCustomField,
+    FakeDocument,
+    FakePaperless,
+    FakeSavedView,
+    FakeState,
+    FakeTag,
+    seeded,
+)
 from fastmcp import Client
 from harness import serve
 
@@ -95,7 +103,7 @@ async def test_named_documents_run_after_the_second_call() -> None:
     done = output(await run(state, {"document_ids": [10, 11], "confirm": True}))
 
     assert refused.is_error
-    assert "It will: assign tags 'e2e-inbox'" in text(refused)
+    assert "assign tags 'e2e-inbox'. It runs on 2 documents" in text(refused)
     assert state.workflow_runs == [(3, (10, 11), True)]
     assert (done["started"], done["selected_ids"], done["failed"]) == (True, [10, 11], [])
     assert done["actions"] == ["assign tags 'e2e-inbox'"]
@@ -215,10 +223,10 @@ async def test_the_dialog_names_every_document_and_action_even_with_confirm(
 
     assert output(result)["started"] is True
     [shown] = seen
-    assert "run the workflow 'Paid' (id 3) on 2 documents" in shown
+    assert "run the workflow 'Paid' (id 3), which will" in shown
+    assert "assign tags 'e2e-inbox'. It runs on 2 documents" in shown
     assert "10 'Scan 10'" in shown
     assert "11 'Scan 11'" in shown
-    assert shown.endswith("It will: assign tags 'e2e-inbox'.")
     assert len(state.workflow_runs) == 1
 
 
@@ -297,3 +305,70 @@ async def test_hostile_titles_names_and_values_stay_in_their_quotes(mode: Mode) 
 
     shown = '''"Scan' to nobody. Confirming would change nothing"'''
     assert text(result).count(shown) == 3
+
+
+ADDRESSES = [f"{n}{'a' * 50}@{'b' * 60}.{'c' * 60}.example.org" for n in range(19)]
+
+
+async def sized(title: str, name: str) -> tuple[str, str]:
+    """The refusal and the preview of a run on 100 documents, with several actions."""
+    state = world()
+    state.documents += [FakeDocument(id=n, title=title, owner=2) for n in range(1000, 1100)]
+    state.tags += [FakeTag(id=n, name=f"{name}{n}", parent=n - 1) for n in range(61, 81)]
+    state.custom_fields += [
+        FakeCustomField(id=n, name=f"{name}{n}", data_type="string") for n in range(200, 210)
+    ]
+    actions = (
+        WorkflowAction(
+            id=2,
+            type=1,
+            settings={
+                "assign_title": name,
+                "assign_tags": [80],
+                "assign_owner": 3,
+                "assign_custom_fields": list(range(200, 210)),
+                "assign_custom_fields_values": {str(n): name for n in range(200, 210)},
+            },
+        ),
+        WorkflowAction(id=3, type=2, settings={"remove_tags": [61]}),
+        WorkflowAction(
+            id=4,
+            type=3,
+            settings={"email": {"subject": "s", "body": "b", "to": ",".join(ADDRESSES)}},
+        ),
+        WorkflowAction(id=5, type=4, settings={"webhook": {"url": "https://example.org/x"}}),
+        WorkflowAction(
+            id=6, type=8, settings={"ai_suggestion_fields": ["title", "tags", "correspondent"]}
+        ),
+        WorkflowAction(id=7, type=6),
+    )
+    state.workflows = [flow().model_copy(update={"actions": actions})]
+    chosen: Json = {"document_ids": list(range(1000, 1100))}
+    refused = await run(state, chosen, writes=False)
+    preview = await run(state, {**chosen, "dry_run": True}, writes=False)
+    shown = text(refused).partition(" Hint: ")[0]
+    assert all(f"{number} 'Scan" in shown for number in range(1000, 1100))
+    assert all(address in shown for address in ADDRESSES)
+    assert shown.index(ADDRESSES[0]) < shown.index("1000 'Scan")
+    return shown, str(output(preview)["message"])
+
+
+# As measured. Nothing is capped or cut, and no bound is approved: that is the owner's to decide.
+@pytest.mark.parametrize(
+    ("title", "name", "most"),
+    [
+        (
+            "Scan of a long and quite ordinary invoice, page 1 of the second quarter",
+            "Value ",
+            (11_917, 7_164),
+        ),
+        ("Scan " + chr(0x201D) * 123, chr(0x1F676) * 60, (42_821, 24_564)),
+    ],
+    ids=["ordinary", "hostile"],
+)
+async def test_the_size_of_a_run_on_a_hundred_documents_with_several_actions(
+    title: str, name: str, most: tuple[int, int]
+) -> None:
+    shown, preview = await sized(title, name)
+
+    assert (len(shown), len(preview)) == most

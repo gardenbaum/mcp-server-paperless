@@ -9,6 +9,7 @@ import pytest
 from adapter.test_queued import TASK, Clock
 from adapter.test_queued import row as task_row
 from mcp_server_paperless.domain.errors import (
+    PaperlessMcpError,
     PermissionDenied,
     TaskFailed,
     UpstreamUnavailable,
@@ -167,6 +168,22 @@ async def test_a_workflow_paperless_does_not_run_is_a_validation_error(
 
     with pytest.raises(Validation, match="Workflow is not enabled"):
         _ = await writer(make_client, paperless).run_workflow(3, (4,), filter_documents=True)
+
+
+async def test_a_plain_text_400_does_not_say_whether_the_run_was_queued(
+    make_client: ClientFactory,
+) -> None:
+    paperless = Paperless()
+    said = "Error performing bulk edit, check logs for more detail."
+    paperless.answer = httpx2.Response(400, text=said, headers={"content-type": "text/html"})
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await writer(make_client, paperless).run_workflow(3, (4,), filter_documents=True)
+
+    assert not isinstance(raised.value, Validation)
+    assert raised.value.message == (
+        "Paperless reported an error while it queued the run, without saying whether it runs."
+    )
 
 
 async def test_a_run_is_never_sent_twice(make_client: ClientFactory) -> None:

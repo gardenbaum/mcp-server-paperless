@@ -4,7 +4,7 @@ The fakes of the "nothing may run" cases refuse writes: a write fails the test.
 """
 
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, final, override
 
 import pytest
@@ -33,6 +33,7 @@ from mcp_server_paperless.domain.selection import Selection
 from mcp_server_paperless.domain.tasks import Unconfirmed
 from mcp_server_paperless.domain.views import FilterRule
 from mcp_server_paperless.domain.workflows import (
+    ACTION_FIELDS,
     Workflow,
     WorkflowAction,
     WorkflowRun,
@@ -133,6 +134,14 @@ class Setup:
         self.fake = World(self.state, user=user, writes=self.fake.allow_writes)
         self.runs = workflow_runs(self.fake)
 
+    def without(self, user: str, permission: str) -> None:
+        """Take a permission from the user."""
+        self.state.users = [
+            replace(u, permissions=u.permissions - {permission}) if u.username == user else u
+            for u in self.state.users
+        ]
+        self.may(user)
+
     def document(self, number: int) -> FakeDocument:
         return next(d for d in self.state.documents if d.id == number)
 
@@ -195,14 +204,15 @@ async def test_the_confirmation_names_the_workflow_every_document_and_what_it_do
     refusal = await setup.asked()
 
     assert refusal.message == (
-        "Nothing was changed. Confirming would run the workflow 'Paid' (id 3) on 2 documents "
-        "(101 'Scan 1', 102 'Scan 2'), all of which match: its manual trigger has no filters. It "
-        "will: assign title '{{ created_year }} paid', tags 'e2e-finance', 'e2e-inbox', "
-        "correspondent 'e2e-acme', custom fields 'e2e-string', custom fields values 'e2e-string': "
-        "'settled'; remove tags 'e2e-finance', all correspondents; send an e-mail to "
-        "'a@example.org', 'b@example.org' with the document attached; send a POST request to "
-        "'hooks.example.org', with credentials (not shown); move the matching documents to the "
-        "trash."
+        "Nothing was changed. Confirming would run the workflow 'Paid' (id 3), which will (the "
+        "most far-reaching first, not in the order it runs): send an e-mail to 'a@example.org', "
+        "'b@example.org' with the document attached; send a POST request to 'hooks.example.org', "
+        "with credentials (not shown); move each of them to the trash, after everything else; "
+        "assign title '{{ created_year }} paid', tags 'e2e-finance', 'e2e-inbox', correspondent "
+        "'e2e-acme', custom fields 'e2e-string': 'settled'; remove tags 'e2e-finance' (with their "
+        "child tags 'e2e-invoices' and any you cannot see), all correspondents. It runs on 2 "
+        "documents (101 'Scan 1', 102 "
+        "'Scan 2'), all of which match: its manual trigger has no filters."
     )
     assert refusal.hint == CONFIRM_HINT
 
@@ -213,8 +223,8 @@ async def test_the_confirmation_names_the_workflow_every_document_and_what_it_do
         (
             (action(1, assign_owner=READER_ID, assign_view_users=[READER_ID]),),
             (
-                "assign owner 'e2e-reader', view users 'e2e-reader'; change who owns or may see "
-                "the matching documents."
+                "change who owns or may see the matching documents; assign owner 'e2e-reader', "
+                "view users 'e2e-reader'."
             ),
         ),
         (
@@ -237,7 +247,7 @@ async def test_the_confirmation_names_the_workflow_every_document_and_what_it_do
         ),
         (
             (action(8),),
-            "ask the AI backend about every matching document and apply what it suggests.",
+            "apply AI suggestions to no field (Paperless skips it).",
         ),
         ((action(99),), "run an action of type 99."),
     ],
@@ -248,7 +258,7 @@ async def test_every_kind_of_action_is_told(actions: tuple[WorkflowAction, ...],
 
     refusal = await setup.asked()
 
-    assert refusal.message.endswith(f". It will: {told}")
+    assert f"not in the order it runs): {told} It runs on 2 documents" in refusal.message
     assert "hush" not in refusal.message
 
 
@@ -256,7 +266,7 @@ async def test_a_workflow_without_actions_does_nothing_and_says_so() -> None:
     setup = Setup(writes=False)
     setup.state.workflows = [setup.state.workflows[0].model_copy(update={"actions": ()})]
 
-    assert (await setup.asked()).message.endswith(". It will: do nothing.")
+    assert (await setup.asked()).message.count("): do nothing. It runs on 2 documents") == 1
 
 
 FILTERED = WorkflowTrigger(id=1, type=5, settings={"filter_has_tags": [FINANCE]})
@@ -271,7 +281,7 @@ ADDED = WorkflowTrigger(id=2, type=2, settings={})
             True,
             (
                 ", skipping those that do not match its manual trigger (manual, filtered by "
-                "has_tags); Paperless does not tell which it skips. It"
+                "has_tags); Paperless does not tell which it skips."
             ),
         ),
         (
@@ -280,18 +290,18 @@ ADDED = WorkflowTrigger(id=2, type=2, settings={})
             (
                 ", skipping those that do not match its manual trigger (manual, filtered by "
                 "has_tags; manual, filtered by has_document_type); Paperless does not "
-                "tell which it skips. It"
+                "tell which it skips."
             ),
         ),
         (
             (FILTERED, MANUAL),
             True,
-            ", all of which match: its manual trigger has no filters. It",
+            ", all of which match: its manual trigger has no filters.",
         ),
         (
             (FILTERED, ADDED),
             False,
-            ", each of which counts as matching: the filters of its triggers are not applied. It",
+            ", each of which counts as matching: the filters of its triggers are not applied.",
         ),
     ],
 )
@@ -303,7 +313,7 @@ async def test_the_confirmation_says_what_the_filters_of_the_trigger_do(
 
     refusal = await setup.asked(apply_filters=apply_filters)
 
-    assert f"102 'Scan 2'){told}" in refusal.message
+    assert refusal.message.endswith(f"102 'Scan 2'){told}")
 
 
 async def test_a_destination_that_cannot_be_shown_and_too_many_of_them_are_refused() -> None:
@@ -358,8 +368,8 @@ async def test_a_filter_never_runs_anything_by_itself_and_names_the_next_call(
     assert "on 2 documents (101 'Scan 1', 102 'Scan 2')" in refusal.message
     assert refusal.hint == (
         "Show the user these documents and the effect. Once they agree, call again with the same "
-        "filters (or saved_view), exclude_ids and workflow and apply_filters, and with "
-        "document_ids=[101, 102] and confirm=true: exactly these are changed, and none if one of "
+        "workflow, apply_filters, filters (or saved_view) and exclude_ids, and with "
+        "document_ids=[101, 102] and confirm=true: it runs on exactly these, and on none if one of "
         "them no longer matches. With filters or saved_view alone, confirm=true is not enough."
     )
 
@@ -511,13 +521,8 @@ async def test_an_exclusion_that_is_not_there_refuses_the_run_and_its_preview() 
 async def test_what_could_not_be_checked_is_told() -> None:
     setup = Setup(READER[0], writes=False, scans=0)
     setup.state.documents.append(FakeDocument(id=101, title="Scan 1", owner=READER_ID))
-    setup.may(READER[0], "view_workflow", "view_savedview")
-    setup.state.users = [
-        replace(u, permissions=u.permissions - {"view_tag"}) if u.id == READER_ID else u
-        for u in setup.state.users
-    ]
-    setup.fake = World(setup.state, user=READER[0], writes=False)
-    setup.runs = workflow_runs(setup.fake)
+    setup.may(READER[0], "view_workflow", "view_savedview", "change_document")
+    setup.without(READER[0], "view_tag")
     rules = (FilterRule(rule_type=0, value="Scan"), FilterRule(rule_type=17, value="888"))
     setup.state.saved_views = [FakeSavedView(id=9, name="scans", owner=3, filter_rules=rules)]
 
@@ -566,6 +571,16 @@ async def test_nothing_matches_and_nothing_is_asked_or_run() -> None:
 
     assert (report.started, report.matched, report.selected_ids) == (False, 0, ())
     assert report.message == "Nothing was run: no document matches."
+    assert report.dry_run is False
+
+
+async def test_a_preview_of_nothing_is_still_a_preview() -> None:
+    report = await Setup(writes=False).run(
+        dry_run=True, filters={"title_contains": "no such title"}
+    )
+
+    assert (report.dry_run, report.started) == (True, False)
+    assert report.message == "Nothing was run: no document matches."
 
 
 # --- previews
@@ -577,11 +592,12 @@ async def test_a_preview_runs_nothing_and_says_what_confirming_would_do() -> Non
     report = await setup.run(dry_run=True)
 
     assert (report.dry_run, report.started, report.selected_ids) == (True, False, (101, 102))
+    assert report.actions == ("assign tags 'e2e-inbox'",)
     assert report.message == (
-        "Dry run, nothing was changed. Confirming would run the workflow 'Paid' (id 3) on 2 "
-        "documents (101 'Scan 1', 102 'Scan 2'), all of which match: its manual trigger has no "
-        "filters. It will: assign tags 'e2e-inbox'. To go ahead, call again without dry_run; pass "
-        "confirm=true only if the user already agreed."
+        "Dry run, nothing was run. Confirming would run the workflow 'Paid' (id 3) and do what "
+        "actions says on 2 documents (101 'Scan 1', 102 'Scan 2'), all of which match: its manual "
+        "trigger has no filters. To go ahead, call again without dry_run; pass confirm=true only "
+        "if the user already agreed."
     )
 
 
@@ -675,7 +691,7 @@ async def test_a_document_of_another_owner_is_known_beforehand_and_refuses_the_r
 
     assert preview.blocked == (102,)
     assert preview.message == (
-        "Dry run, nothing was changed. The run would be refused as a whole: you may not change or "
+        "Dry run, nothing was run. The run would be refused as a whole: you may not change or "
         "do not own 1 document (102 'Scan 2')."
     )
     assert raised.value.message == (
@@ -866,3 +882,403 @@ async def test_what_a_run_counts_is_looked_up_anew() -> None:
 
     after = {t.id: t.document_count for t in await taxonomy.items("tag")}
     assert (after[INBOX] or 0) == (before[INBOX] or 0) + 2
+
+
+# --- filters: only what Paperless reads for a document that exists
+
+# What the web UI of 3.5.1 stores for a new manual trigger.
+WEB_UI: dict[str, JsonValue] = {
+    "sources": [],
+    "filter_filename": None,
+    "filter_path": None,
+    "filter_mailrule": None,
+    "filter_has_tags": [],
+    "filter_has_all_tags": [],
+    "filter_has_not_tags": [],
+    "filter_has_any_correspondents": [],
+    "filter_has_not_correspondents": [],
+    "filter_has_any_document_types": [],
+    "filter_has_not_document_types": [],
+    "filter_has_any_storage_paths": [],
+    "filter_has_not_storage_paths": [],
+    "filter_custom_field_query": None,
+    "filter_has_correspondent": None,
+    "filter_has_document_type": None,
+    "filter_has_storage_path": None,
+    "matching_algorithm": 0,
+    "match": "",
+    "is_insensitive": True,
+    "schedule_offset_days": 0,
+    "schedule_is_recurring": False,
+    "schedule_recurring_interval_days": 1,
+    "schedule_date_field": "added",
+    "schedule_date_custom_field": None,
+}
+
+
+@pytest.mark.parametrize(
+    "more",
+    [
+        {},
+        {"filter_path": "/x/*", "filter_mailrule": 4, "sources": [1]},
+        {"match": "word", "is_insensitive": False},
+        {
+            "schedule_offset_days": 3,
+            "schedule_is_recurring": True,
+            "schedule_date_field": "created",
+        },
+        {"schedule_recurring_interval_days": 9, "schedule_date_custom_field": 2},
+    ],
+)
+async def test_what_paperless_does_not_read_for_a_manual_run_is_no_filter(
+    more: dict[str, JsonValue],
+) -> None:
+    setup = Setup()
+    setup.flow(triggers=(WorkflowTrigger(id=1, type=5, settings={**WEB_UI, **more}),))
+
+    preview = await setup.run(dry_run=True)
+    done = await setup.run(confirm=True)
+
+    assert "all of which match: its manual trigger has no filters" in preview.message
+    assert done.message == "Ran the workflow 'Paid' (id 3) on 2 documents."
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "shown"),
+    [
+        ("matching_algorithm", 1, "matching_algorithm"),
+        ("filter_filename", "*.pdf", "filename"),
+        ("filter_custom_field_query", '["1", "exact", 2]', "custom_field_query"),
+        ("filter_has_tags", [1], "has_tags"),
+        ("filter_has_all_tags", [1], "has_all_tags"),
+        ("filter_has_not_tags", [1], "has_not_tags"),
+        ("filter_has_any_correspondents", [1], "has_any_correspondents"),
+        ("filter_has_not_correspondents", [1], "has_not_correspondents"),
+        ("filter_has_any_document_types", [1], "has_any_document_types"),
+        ("filter_has_not_document_types", [1], "has_not_document_types"),
+        ("filter_has_any_storage_paths", [1], "has_any_storage_paths"),
+        ("filter_has_not_storage_paths", [1], "has_not_storage_paths"),
+        ("filter_has_correspondent", 1, "has_correspondent"),
+        ("filter_has_document_type", 1, "has_document_type"),
+        ("filter_has_storage_path", 1, "has_storage_path"),
+    ],
+)
+async def test_every_filter_paperless_reads_is_one(name: str, value: JsonValue, shown: str) -> None:
+    setup = Setup(writes=False)
+    settings = {**WEB_UI, name: value, "filter_path": "/x/*"}
+    setup.flow(triggers=(WorkflowTrigger(id=1, type=5, settings=settings),))
+
+    refusal = await setup.asked()
+
+    assert f"its manual trigger (manual, filtered by {shown}); Paperless" in refusal.message
+
+
+# --- what comes along, names and values
+
+
+def family(setup: Setup) -> None:
+    """Finance > Paid > Cash, and Finance under a tag that is not visible."""
+    setup.state.tags += [
+        FakeTag(id=61, name="Paid tag", parent=FINANCE),
+        FakeTag(id=62, name="Cash", parent=61),
+    ]
+
+
+async def test_parent_tags_of_an_assignment_and_child_tags_of_a_removal_are_named() -> None:
+    setup = Setup(writes=False)
+    family(setup)
+    setup.flow(action(1, assign_tags=[62]), action(2, remove_tags=[FINANCE]))
+
+    message = (await setup.asked()).message
+
+    assert "assign tags 'Cash' (with their parent tags 'Paid tag', 'e2e-finance')" in message
+    assert (
+        "remove tags 'e2e-finance' (with their child tags 'e2e-invoices', 'Paid tag', 'Cash' and "
+        "any you cannot "
+        "see)"
+    ) in message
+
+
+async def test_child_tags_that_cannot_be_seen_are_always_mentioned() -> None:
+    setup = Setup(writes=False)
+    setup.flow(action(2, remove_tags=[INBOX]))
+
+    assert (
+        "remove tags 'e2e-inbox' (with any child tags you cannot see)."
+        in (await setup.asked()).message
+    )
+
+
+async def test_a_parent_tag_that_is_hidden_is_named_by_its_number() -> None:
+    setup = Setup(writes=False)
+    setup.state.tags.append(FakeTag(id=61, name="Orphan", parent=888))
+    setup.flow(action(1, assign_tags=[61]))
+
+    assert "assign tags 'Orphan' (with their parent tags #888)" in (await setup.asked()).message
+
+
+async def test_a_parent_that_is_assigned_too_is_named_once() -> None:
+    setup = Setup(writes=False)
+    family(setup)
+    setup.flow(action(1, assign_tags=[61, FINANCE]))
+
+    assert "assign tags 'Paid tag', 'e2e-finance'." in (await setup.asked()).message
+
+
+async def test_without_the_list_of_tags_it_is_said_that_tags_come_along() -> None:
+    setup = Setup(READER[0], writes=False)
+    for number in (101, 102):
+        setup.document(number).owner = READER_ID
+    setup.flow(action(1, assign_tags=[INBOX]), action(2, remove_tags=[FINANCE]))
+    setup.may(READER[0], "view_workflow", "change_document")
+    setup.without(READER[0], "view_tag")
+
+    message = (await setup.asked()).message
+
+    assert "assign tags #4 (with their parent tags, which you may not list)" in message
+    assert "remove tags #1 (with their child tags, which you may not list)" in message
+
+
+async def test_the_far_reaching_actions_come_first_wherever_they_stand() -> None:
+    setup = Setup(writes=False)
+    setup.flow(
+        TAGGING,
+        action(2, remove_tags=[FINANCE]),
+        action(1, assign_owner=READER_ID),
+        action(2, remove_all_owners=True),
+        action(2, remove_change_groups=[1]),
+        action(8, ai_suggestion_fields=["title"]),
+        action(5, passwords=["hush"]),
+        action(99),
+        mail("a@example.org"),
+        hook("https://example.org/x"),
+        action(6),
+    )
+
+    report = await setup.run(dry_run=True)
+
+    assert [told.split(" ")[0] for told in report.actions[-2:]] == ["assign", "remove"]
+    assert report.actions[-2:] == (
+        "assign tags 'e2e-inbox'",
+        "remove tags 'e2e-finance' (with their child tags 'e2e-invoices' and any you cannot see)",
+    )
+    starts = ("change", "assign owner", "remove all owners", "remove change groups", "ask the AI")
+    for start in (*starts, "unlock", "run an action", "send an e-mail", "send a POST", "move"):
+        assert any(told.startswith(start) for told in report.actions[:-2]), start
+
+
+@pytest.mark.parametrize(
+    ("settings", "told"),
+    [
+        (
+            {
+                "ai_suggestion_fields": ["title", "document_type"],
+                "ai_create_missing": True,
+                "ai_overwrite_existing": True,
+            },
+            (
+                "for title, document type, over existing values, creating tags, "
+                "correspondents and document types that do not exist."
+            ),
+        ),
+        (
+            {"ai_suggestion_fields": ["tags", "new' thing"]},
+            (
+                'for tags, "new\' thing", only where there is no value (tags are only added), '
+                "without "
+                "creating anything."
+            ),
+        ),
+    ],
+)
+async def test_what_the_ai_may_do_is_told_in_words(
+    settings: dict[str, JsonValue], told: str
+) -> None:
+    setup = Setup(writes=False)
+    setup.flow(action(8, **settings))
+
+    assert (
+        f"of each of them and apply what it suggests {told} It runs"
+        in (await setup.asked()).message
+    )
+
+
+async def test_select_labels_and_linked_titles_are_shown_instead_of_ids() -> None:
+    setup = Setup(writes=False)
+    fields = {f.name: f.id for f in setup.state.custom_fields}
+    select, link = fields["e2e-select"], fields["e2e-documentlink"]
+    options = next(f for f in setup.state.custom_fields if f.id == select).select_options
+    assert options
+    first = options[0]
+    values: dict[str, JsonValue] = {
+        str(select): first.id,
+        str(link): [101, 999],
+        "8888": "x",
+        "777": "never assigned",
+    }
+    setup.flow(
+        action(
+            1,
+            assign_custom_fields=[select, link, 8888, fields["e2e-string"]],
+            assign_custom_fields_values=values,
+        )
+    )
+
+    message = (await setup.asked()).message
+
+    assert (
+        f"assign custom fields 'e2e-select': '{first.label}', 'e2e-documentlink': 101 'Scan 1',"
+        " #999, #8888: 'x', 'e2e-string' (without a value, where it is missing)"
+    ) in message
+    # Paperless writes only the fields that are assigned.
+    assert "never" not in message
+
+
+async def test_two_fields_with_one_name_are_both_told() -> None:
+    setup = Setup(writes=False)
+    first = setup.state.custom_fields[0]
+    setup.state.custom_fields = [first, replace(first, id=70)]
+    values: dict[str, JsonValue] = {str(first.id): "one", "70": "two"}
+    setup.flow(action(1, assign_custom_fields=[first.id, 70], assign_custom_fields_values=values))
+
+    message = (await setup.asked()).message
+
+    assert f"'{first.name}': 'one', '{first.name}': 'two'" in message
+
+
+@pytest.mark.parametrize(
+    ("number", "name"),
+    [(n, name) for n in (1, 2) for name in ACTION_FIELDS[n] if "custom_fields" not in name],
+)
+async def test_every_setting_that_writes_or_takes_away_is_told(number: int, name: str) -> None:
+    setup = Setup(writes=False)
+    shape = ACTION_FIELDS[number][name].shape
+    given: dict[str, JsonValue] = {"flag": True, "list": [1], "one": 1, "text": "x"}
+    value = given[shape]
+    setup.flow(action(number, **{name: value}))
+
+    report = await setup.run(dry_run=True)
+
+    what = name.removeprefix("assign_").removeprefix("remove_").replace("_", " ")
+    verb = "assign" if number == 1 else "remove"
+    assert any(told.startswith(f"{verb} {what}") for told in report.actions), report.actions
+
+
+async def test_removed_custom_fields_are_told() -> None:
+    setup = Setup(writes=False)
+    setup.flow(action(2, remove_custom_fields=[1]), action(2, remove_all_custom_fields=True))
+
+    actions = (await setup.run(dry_run=True)).actions
+
+    assert actions == ("remove custom fields 'e2e-string'", "remove all custom fields")
+
+
+# --- bound values
+
+
+BOUND: list[tuple[str, object]] = [
+    ("title", "Scan 2 "),
+    ("created", DAY - timedelta(days=40)),
+    ("added", datetime(2026, 1, 1, tzinfo=UTC)),
+    ("correspondent", 1),
+    ("document_type", 1),
+    ("storage_path", 1),
+    ("tags", [FINANCE]),
+    ("custom_fields", {1: "x"}),
+    ("owner", None),
+]
+
+
+@pytest.mark.parametrize(("name", "value"), BOUND)
+async def test_every_current_value_is_bound(name: str, value: object) -> None:
+    setup = Setup(writes=False)
+    refusal = await setup.asked()
+    vars(setup.document(102))[name] = value
+
+    with accepting(refusal.fingerprint):
+        again = await setup.asked()
+
+    assert again.message == refusal.message or name == "title"
+    assert again.fingerprint != refusal.fingerprint
+
+
+async def test_the_triggers_are_bound_with_their_values_and_those_that_are_not_shown() -> None:
+    for before, after in (
+        (FILTERED, WorkflowTrigger(id=1, type=5, settings={"filter_has_tags": [INBOX]})),
+        (MANUAL, MANUAL.model_copy(update={"id": 7})),
+    ):
+        setup = Setup(writes=False)
+        setup.flow(triggers=(before,))
+        refusal = await setup.asked()
+        setup.flow(triggers=(after,))
+
+        with accepting(refusal.fingerprint):
+            again = await setup.asked()
+
+        assert again.message == refusal.message
+        assert again.fingerprint != refusal.fingerprint
+
+
+# --- rights and ends
+
+
+async def test_a_missing_permission_to_change_documents_is_told_beforehand() -> None:
+    setup = restricted(owner=None)
+    setup.without(READER[0], "change_document")
+
+    preview = await setup.run(dry_run=True)
+    with pytest.raises(PermissionDenied) as raised:
+        _ = await setup.run(confirm=True)
+
+    assert preview.blocked == (101, 102)
+    assert preview.message == (
+        "Dry run, nothing was run. The run would be refused as a whole: you lack the permission to "
+        "change documents."
+    )
+    assert raised.value.message == (
+        "You lack the permission to change documents, so Paperless would refuse the whole run; "
+        "nothing was run."
+    )
+    assert raised.value.hint == "Ask an administrator for the permission change_document."
+
+
+async def test_a_partial_failure_still_tells_of_mails_and_the_trash() -> None:
+    setup = Setup()
+    setup.flow(mail("a@example.org"), action(6))
+    setup.state.workflow_fails_on = {102}
+
+    report = await setup.run(confirm=True)
+
+    assert report.message.endswith(f"{NOT_AGAIN}{UNSEEN} {TRASH_NOTE}")
+
+
+async def test_a_child_that_is_removed_too_is_named_once() -> None:
+    setup = Setup(writes=False)
+    family(setup)
+    setup.flow(action(2, remove_tags=[61, 62]))
+
+    message = (await setup.asked()).message
+
+    assert "remove tags 'Paid tag', 'Cash' (with any child tags you cannot see)." in message
+
+
+async def test_removed_permissions_come_first_and_ignored_ocr_does_not() -> None:
+    setup = Setup(writes=False)
+    setup.flow(action(7), TAGGING, action(2, remove_all_permissions=True))
+
+    actions = (await setup.run(dry_run=True)).actions
+
+    assert actions[0] == "remove all permissions"
+
+    setup.flow(TAGGING, action(7))
+    assert (await setup.run(dry_run=True)).actions[0] == "assign tags 'e2e-inbox'"
+
+
+async def test_an_empty_text_writes_no_value() -> None:
+    setup = Setup(writes=False)
+    setup.flow(action(1, assign_custom_fields=[1], assign_custom_fields_values={"1": ""}))
+
+    assert (
+        "custom fields 'e2e-string' (without a value, where it is missing)"
+        in (await setup.asked()).message
+    )

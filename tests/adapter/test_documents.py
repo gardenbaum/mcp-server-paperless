@@ -1152,8 +1152,20 @@ async def test_the_signed_in_user_is_read_from_the_settings(make_client: ClientF
     none = await PaperlessDocumentReader(make_client(hidden)).get_signed_in()
 
     assert found is not None
-    assert (found.id, found.is_superuser) == (2, True)
+    assert (found.id, found.is_superuser, found.permissions) == (2, True, None)
     assert none is None
+
+
+async def test_the_permissions_of_the_signed_in_user_are_read_where_they_are_listed(
+    make_client: ClientFactory,
+) -> None:
+    user = {"id": 2, "username": "x", "is_superuser": False}
+    body = {"user": user, "settings": {}, "permissions": ["view_document", "change_document"]}
+
+    found = await PaperlessDocumentReader(make_client(Resource(body))).get_signed_in()
+
+    assert found is not None
+    assert found.permissions == ("view_document", "change_document")
 
 
 @pytest.mark.parametrize("status", [401, 429, 503])
