@@ -11,14 +11,21 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     UpstreamTimeout,
 )
-from mcp_server_paperless.domain.pdf import StartedTasks
+from mcp_server_paperless.domain.pdf import FoundCopies, StartedTasks
 from mcp_server_paperless.services.pdf import Options
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from mcp_server_paperless.domain.documents import DocumentPatch, DocumentRecord
-    from mcp_server_paperless.domain.pdf import LookupProblem, PdfResult
+    from mcp_server_paperless.domain.errors import PaperlessMcpError
+    from mcp_server_paperless.domain.pdf import (
+        CopiedFiles,
+        FileOutput,
+        LookupProblem,
+        PageSlot,
+        PdfResult,
+    )
     from mcp_server_paperless.domain.tasks import TaskState, TaskStatus
     from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
 
@@ -63,6 +70,17 @@ class Paperless(FakePaperless):
         self.no_fields: bool = False
         self.swap: bool = False
         self.hide_tasks: bool = False
+        self.renames: set[int] = set()  # what a workflow renames when it is patched
+        self.edits: list[tuple[list[int], FileOutput]] = []
+        self.refuse_edit: dict[FileOutput, PaperlessMcpError] = {}
+        self.lose_version: bool = False
+        self.copies_after: float = 0.0  # when what a date hides is there
+        self.copies_first: int = 0  # how many of them are there at once
+        self.copies_doubt: str | None = None
+        self.copies_fail: bool = False
+        self.undate: bool = False
+        self.forget_included: bool = False
+        self.ticked: Callable[[], None] = lambda: None
         self.now: float = 0.0
 
     def clock(self) -> float:
@@ -70,6 +88,53 @@ class Paperless(FakePaperless):
 
     async def sleep(self, delay: float) -> None:
         self.now += delay
+        self.ticked()
+
+    @override
+    async def find_copies(self, files: CopiedFiles) -> FoundCopies:
+        if self.copies_fail:
+            message = "Paperless did not respond in time."
+            raise UpstreamTimeout(message)
+        found = await super().find_copies(files)
+        if self.copies_doubt is not None:
+            return FoundCopies(ids=(None,) * len(found.ids), doubt=self.copies_doubt)
+        if self.now >= self.copies_after:
+            return found
+        there = found.ids[: self.copies_first]
+        return FoundCopies(ids=there + (None,) * (len(found.ids) - len(there)))
+
+    @override
+    def _copying(self, names: Sequence[str], included: tuple[int, ...] | None) -> CopiedFiles:
+        return super()._copying(names, None if self.forget_included else included)
+
+    def add_version(self, number: int, pages: int) -> int:
+        """A newer version of the document, as somebody else would add it."""
+        found = document(self, number)
+        return self._new_version(found, self._file_of(found, None), pages=pages, marker=b"\n%new")
+
+    @override
+    async def edit_pdf(
+        self,
+        document_id: int,
+        pages: Sequence[PageSlot],
+        *,
+        output: FileOutput,
+        version_id: int | None = None,
+        keep_metadata: bool = True,
+    ) -> StartedTasks:
+        if output in self.refuse_edit:
+            raise self.refuse_edit[output]
+        self.edits.append(([slot.page for slot in pages], output))
+        started = await super().edit_pdf(
+            document_id,
+            pages,
+            output=output,
+            version_id=version_id,
+            keep_metadata=keep_metadata,
+        )
+        if output == "new_version" and self.lose_version:
+            return started.model_copy(update={"ids": (), "sources": ()})
+        return started
 
     @override
     def _seen_tasks(
@@ -127,10 +192,12 @@ class Paperless(FakePaperless):
             message = "Paperless did not respond in time."
             raise UpstreamTimeout(message)
         record = await super().get_document(document_id)
-        if self.started and document_id > OTHER:
+        if document_id > OTHER:
             place = document_id - OTHER - 1
             if place in self.wrong_pages:
                 return record.model_copy(update={"page_count": self.wrong_pages[place]})
+            if self.undate:
+                return record.model_copy(update={"custom_fields": ()})
         return record
 
     @override
@@ -139,7 +206,8 @@ class Paperless(FakePaperless):
             message = "Paperless did not respond in time."
             raise UpstreamTimeout(message)
         self.patches.append((document_id, patch.archive_serial_number))
-        return await super().update_document(document_id, patch)
+        record = await super().update_document(document_id, patch)
+        return record.model_copy(update={"title": "Renamed"} if document_id in self.renames else {})
 
     @override
     async def delete_document(self, document_id: int) -> None:
@@ -1141,12 +1209,60 @@ def dated(fake: Paperless, number: int) -> None:
     document(fake, number).custom_fields = {field: "2026-01-15"}
 
 
-async def test_a_document_with_a_date_field_keeps_the_original_and_says_why() -> None:
+BY_NAME = (
+    "Paperless lists no task for it, because a custom field holds a date: the documents were found "
+    "by their file names."
+)
+
+
+@pytest.mark.decision("decision-67")
+async def test_documents_whose_tasks_a_date_hides_are_found_by_name_and_replace_the_original() -> (
+    None
+):
+    parts, shorter, merging, locked = (paperless() for _ in range(4))
+    for fake in (parts, shorter, merging, locked):
+        dated(fake, DOC)
+    document(locked, DOC).password, document(locked, DOC).page_count = "s3cret", None
+    unlocking = pdf_service(locked, sleep=locked.sleep, clock=locked.clock)
+
+    results = [
+        await split(parts),
+        await shorten(shorter),
+        await merge(merging, DOC),
+        await unlocking.remove_password(DOC, "s3cret", output="replace_original", options=YES),
+    ]
+
+    assert [r.state for r in results] == ["success"] * 4
+    assert [r.trashed_ids for r in results] == [(DOC,), (DOC,), (DOC, OTHER), (DOC,)]
+    assert [len(r.produced_ids) for r in results] == [2, 1, 1, 1]
+    for result in results:
+        assert result.message is not None
+        assert result.message.startswith(f"{BY_NAME} Now in the trash")
+        assert {task.task_id for task in result.tasks} == {None}
+        assert result.wait == "finished"
+
+
+@pytest.mark.decision("decision-67")
+async def test_a_found_document_counts_the_pages_and_carries_the_number() -> None:
+    fake, wrong = paperless(NUMBER), paperless(NUMBER)
+    dated(fake, DOC)
+    dated(wrong, DOC)
+    wrong.wrong_pages = {0: 9}
+
+    moved, kept = await shorten(fake), await shorten(wrong)
+
+    assert document(fake, moved.produced_ids[0]).archive_serial_number == NUMBER
+    assert (kept.trashed_ids, kept.next) == ((), None)
+    assert "document 52 has 9 pages instead of 3" in (kept.message or "")
+
+
+@pytest.mark.decision("decision-67")
+async def test_without_a_wait_nothing_is_looked_for() -> None:
     fake = paperless()
     dated(fake, DOC)
     service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
 
-    replaced = await shorten(fake)
+    replaced = await shorten(fake, Options(confirm=True, wait_seconds=0))
     rotated = await service.rotate([DOC, OTHER], 90)
     merged = await service.merge([DOC, OTHER], DOC)
     version = await service.delete_pages(DOC, "1", options=YES)
@@ -1162,13 +1278,112 @@ async def test_a_document_with_a_date_field_keeps_the_original_and_says_why() ->
     assert version.state == "success"
 
 
+@pytest.mark.decision("decision-67")
+async def test_a_document_that_is_not_there_yet_is_waited_for() -> None:
+    late, never, half = paperless(), paperless(), paperless()
+    for fake in (late, never, half):
+        dated(fake, DOC)
+    late.copies_after = 4.0
+    never.copies_after = half.copies_after = 99.0
+    half.copies_first = 1
+
+    found, missing, partly = await split(late), await split(never), await split(half)
+
+    assert (found.trashed_ids, found.waited_seconds) == ((DOC,), 4.0)
+    assert (missing.trashed_ids, missing.tasks, missing.next) == ((), (), FIND)
+    assert missing.message is not None
+    assert missing.message.startswith(f"{NO_TASK} ({DATED}). Nothing")
+    assert (partly.state, partly.wait, partly.waited_seconds) == ("unknown", "timed_out", 30.0)
+    assert (partly.trashed_ids, partly.next) == ((), FIND)
+    assert partly.produced_ids == (52,)
+    assert partly.parts[1].message == "there is no document with the file name 50_edit_2.pdf yet"
+    assert partly.parts[1].next is not None
+    assert partly.parts[1].next.startswith("find the new document of pages 2-4 of document 50")
+
+
+@pytest.mark.decision("decision-67")
+async def test_documents_in_doubt_are_not_taken_and_nothing_is_trashed_for_them() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    fake.copies_doubt = "another operation of this user ran at the same time"
+
+    result = await split(fake)
+
+    assert (result.state, result.produced_ids, result.trashed_ids) == ("unknown", (), ())
+    assert (trash(fake), result.next, fake.now) == ([], FIND, 0.0)
+    assert result.message is not None
+    assert (
+        f"The new documents could not be told by their file names either ({fake.copies_doubt}): "
+        "nothing is done to them."
+    ) in result.message
+    assert [p.document_id for p in result.parts] == [None, None]
+
+
+@pytest.mark.decision("decision-67")
+async def test_a_document_without_the_date_or_unreadable_is_in_doubt() -> None:
+    other, unread = paperless(), paperless()
+    dated(other, DOC)
+    dated(unread, DOC)
+    other.undate = True
+    unread.unreadable = lambda number: number == 53
+
+    first, second = await split(other), await split(unread)
+
+    assert (first.trashed_ids, second.trashed_ids) == ((), ())
+    assert "document 52 does not hold the date of the custom field that is copied" in (
+        first.message or ""
+    )
+    assert "document 53 could not be read" in (second.message or "")
+
+
+@pytest.mark.decision("decision-67")
+async def test_a_search_that_fails_leaves_everything_as_it_is() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    fake.copies_fail = True
+
+    result = await split(fake)
+
+    assert (result.state, result.trashed_ids, result.next) == ("unknown", (), FIND)
+
+
+@pytest.mark.decision("decision-67")
+async def test_a_second_request_for_the_same_document_replaces_nothing() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+
+    _ = await service.split(DOC, ["1", "2-4"])
+    result = await split(fake)
+
+    assert (result.trashed_ids, trash(fake), result.next) == ((), [], FIND)
+    assert "files of earlier operations of this user may still come" in (result.message or "")
+
+
+@pytest.mark.decision("decision-67")
+async def test_an_image_in_a_long_merge_is_not_known_to_be_in_it() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    document(fake, OTHER).mime_type, document(fake, OTHER).page_count = "image/png", None
+    fake.forget_included = True
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+
+    result = await service.merge(
+        [DOC, OTHER], DOC, delete_originals=True, archive_fallback=True, confirm=True
+    )
+
+    assert result.trashed_ids == ()
+    assert "it cannot be told whether every document is in the merged one" in (result.message or "")
+
+
 async def test_unlocking_a_document_with_a_date_field_names_both_causes() -> None:
     fake = paperless()
     document(fake, DOC).password, document(fake, DOC).page_count = "s3cret", None
     dated(fake, DOC)
     service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+    none = Options(confirm=True, wait_seconds=0)
 
-    unlocked = await service.remove_password(DOC, "s3cret", output="replace_original", options=YES)
+    unlocked = await service.remove_password(DOC, "s3cret", output="replace_original", options=none)
     bare = await service.remove_password(
         DOC, "s3cret", options=Options(keep_metadata=False, wait_seconds=5)
     )

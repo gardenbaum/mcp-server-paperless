@@ -1,4 +1,4 @@
-"""PDF operations: rotate, merge, split, delete pages, edit, remove a password, reprocess.
+"""PDF operations: rotate, merge, split, extract, edit, remove a password, reprocess.
 
 Paperless runs these as background tasks and answers "OK" without naming them; the adapter finds
 the tasks, and this service reports them like an upload does (``task_outcome``), with an optional
@@ -19,12 +19,13 @@ step (``pdf_replacing``), never by Paperless (decision-60).
 
 import contextlib
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.documents import UploadState  # noqa: TC001 -- used at runtime in a constant
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
+    NotFound,
     PaperlessMcpError,
     PermissionDenied,
     Validation,
@@ -32,17 +33,27 @@ from mcp_server_paperless.domain.errors import (
 )
 from mcp_server_paperless.domain.pdf import PageSlot, PdfPlan, PdfResult, PdfTask
 from mcp_server_paperless.services.documents import document_link, listed_version, require_files
-from mcp_server_paperless.services.page_ranges import describe, parse_pages
+from mcp_server_paperless.services.page_ranges import describe, parse_pages, specification
+from mcp_server_paperless.services.pdf_parts import part_lines, unset_reason
 from mcp_server_paperless.services.pdf_plans import (
     REBUILT,
     UNSIGNED,
     document_plan,
     numbers,
     outputs,
+    shortening,
     version_plan,
     without,
 )
-from mcp_server_paperless.services.pdf_replacing import Replacement
+from mcp_server_paperless.services.pdf_replacing import (
+    REFUSALS,
+    KeptError,
+    Replacement,
+    cause,
+    if_unchanged,
+    noted,
+    stays,
+)
 from mcp_server_paperless.services.removal import WAY_BACK
 from mcp_server_paperless.services.task_outcome import follow
 from mcp_server_paperless.services.tasks import MAX_WAIT_SECONDS
@@ -52,9 +63,10 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping, Sequence
 
     from mcp_server_paperless.domain.documents import DocumentRecord, FileMetadata
-    from mcp_server_paperless.domain.pdf import FileOutput, Output, StartedTasks
+    from mcp_server_paperless.domain.pdf import FileOutput, Output, PartMetadata, StartedTasks
     from mcp_server_paperless.domain.ports import DocumentReader, PdfWriter
     from mcp_server_paperless.domain.tasks import Wait
+    from mcp_server_paperless.services.pdf_parts import Found, Part, Parts
     from mcp_server_paperless.services.pdf_plans import Numbers
     from mcp_server_paperless.services.pdf_replacing import Replacing
     from mcp_server_paperless.services.tasks import TaskService
@@ -86,6 +98,24 @@ UNLOCKED_NONE: Final = "the file may not be password protected"
 DATED: Final = (
     "its custom fields hold a date, for which Paperless 3.5 lists no task: the work is done all "
     "the same"
+)
+BY_NAME: Final = (
+    "Paperless lists no task for it, because a custom field holds a date: the documents were found "
+    "by their file names."
+)
+NOT_TAKEN: Final = (
+    "The new documents could not be told by their file names either ({doubt}): nothing is done to "
+    "them."
+)
+EVERY_PART: Final = "the calls in next of every part, then "
+NOT_REMOVED: Final = "No page was removed from document {id}: {{reason}}."
+MAYBE_REMOVED: Final = (
+    "It is not known whether the pages were removed from document {id} ({cause}): document "
+    "{product} holds them."
+)
+VANISH: Final = (
+    "and remove them from it: the document then shows a new version without them, and the earlier "
+    "version with all pages stays until that version is deleted"
 )
 BACK: Final = WAY_BACK.rstrip(".")
 ARCHIVE_ONLY: Final = (
@@ -180,12 +210,26 @@ class _Request:
         summary: What was asked, for the result.
         what: The same with the document named, for the refusal.
         verb: What dropping pages is called here: drop, or delete for delete_pages.
+        parts: The new documents that are reported one by one.
+        removed: The pages the document loses once they are in the new document.
     """
 
     operation: str
     summary: str
     what: str
     verb: str = "drop"
+    parts: tuple[Part, ...] = ()
+    removed: tuple[int, ...] = ()
+
+    @property
+    def single(self) -> bool:
+        """Whether its one part is called the new document."""
+        return self.operation == "extract_pages"
+
+    @property
+    def sets(self) -> bool:
+        """Whether new documents get metadata of their own."""
+        return any(part.edit is not None for part in self.parts)
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,18 +264,21 @@ class PdfService:
         replacing: Replacing,
         taxonomy: TaxonomyResolver,
         *,
+        parts: Parts,
         web_url: str,
     ) -> None:
         """Read through ``reader``, write through ``writer``, follow tasks through ``tasks``.
 
-        ``replacing`` verifies and trashes, ``taxonomy`` tells the custom fields; ``web_url`` is the
-        Paperless web UI, for the links of a result.
+        ``replacing`` verifies and trashes, ``parts`` finds new documents and sets their metadata,
+        ``taxonomy`` tells the custom fields; ``web_url`` is the Paperless web UI, for the links of
+        a result.
         """
         self._web_url: str = web_url
         self._reader: DocumentReader = reader
         self._writer: PdfWriter = writer
         self._tasks: TaskService = tasks
         self._replacing: Replacing = replacing
+        self._parts: Parts = parts
         self._taxonomy: TaxonomyResolver = taxonomy
 
     async def rotate(  # noqa: PLR0913 -- the documents and the options of the rotation
@@ -375,14 +422,18 @@ class PdfService:
             archive_fallback=archive_fallback,
             original_files=use_original_files,
         )
+        bound = _bound(wait_seconds, composed=delete_originals)
+        copied = [d for d in documents if d.id == metadata_document_id]
+        started, found = await self._parts.look(started, await self._dates(copied), bound)
         result = await self._result(
             "merge",
             summary,
             document_ids,
             started,
             plan,
-            wait_seconds=_bound(wait_seconds, composed=delete_originals),
-            copied=[d for d in documents if d.id == metadata_document_id],
+            wait_seconds=bound,
+            copied=copied,
+            found=found,
         )
         left_out = _left_out(document_ids, started)
         if not delete_originals:
@@ -400,18 +451,21 @@ class PdfService:
         parts: Sequence[str],
         *,
         output: Output = "new_document",
+        part_metadata: Sequence[PartMetadata] | None = None,
         options: Options = DEFAULTS,
     ) -> PdfResult:
         """Split a PDF into one new document per part, each part a page range like ``1-3,5``.
 
-        Pages in no part are in no new document. ``replace_original`` moves the original to the
-        trash, after every part was checked, and needs ``confirm``.
+        Pages in no part are in no new document. ``part_metadata`` is set on each part once it was
+        checked. ``replace_original`` moves the original to the trash, after every part was checked
+        and has its metadata, and needs ``confirm``.
 
         Raises:
             ConfirmationRequired: ``replace_original`` without ``confirm``. Nothing was changed.
             Validation: Fewer than two parts or too many, a bad or overlapping range, a page past
-                the end, a non-PDF, or ``output`` ``new_version``.
-            NotFound: No such document or version.
+                the end, a non-PDF, ``output`` ``new_version``, or not one metadata per part.
+            NotFound: No such document or version, or a name of the metadata matches nothing.
+            Ambiguous: A name of the metadata matches more than one object.
             PermissionDenied: The user may not change the document.
         """
         if output == "new_version":
@@ -423,7 +477,7 @@ class PdfService:
         source, count = await self._paged(document_id, options.version_id)
         slots: list[PageSlot] = []
         seen: dict[int, int] = {}
-        ranges: list[str] = []
+        listed: list[list[int]] = []
         for number, spec in enumerate(parts):
             pages = parse_pages(spec, page_count=count)
             for page in pages:
@@ -431,13 +485,62 @@ class PdfService:
                     message = f"Page {page} is in part {seen[page] + 1} and part {number + 1}."
                     raise Validation(message, hint="Give each page to one part.")
                 seen[page] = number
-            ranges.append(describe(pages))
+            listed.append(pages)
             slots.extend(PageSlot(page=page, document=number) for page in pages)
+        made = await self._parts.resolve(listed, part_metadata)
+        ranges = [part.label for part in made]
         summary = f"split document {document_id} into {len(parts)} new documents: "
         summary += " | ".join(ranges)
         what = f"split {source.named()} into {len(parts)} new documents ({' | '.join(ranges)})"
-        request = _Request("split", summary, what)
+        request = _Request("split", summary, what, parts=made)
         return await self._send_pages(source, slots, request, output=output, options=options)
+
+    async def extract(
+        self,
+        document_id: int,
+        pages: str,
+        *,
+        remove: bool = False,
+        metadata: PartMetadata | None = None,
+        options: Options = DEFAULTS,
+    ) -> PdfResult:
+        """Put pages (a range like ``2-3,5``, in this order) into one new document.
+
+        With ``remove`` the document then gets a new version without them, once the new document
+        was checked and has its ``metadata``; that needs ``confirm``.
+
+        Raises:
+            ConfirmationRequired: ``remove`` without ``confirm``. Nothing was changed.
+            Validation: A bad range, a page past the end, a non-PDF, every page or an older version
+                with ``remove``, or a bad title.
+            NotFound: No such document or version, or a name of the metadata matches nothing.
+            Ambiguous: A name of the metadata matches more than one object.
+            PermissionDenied: The user may not change the document.
+        """
+        source, count = await self._paged(document_id, options.version_id)
+        taken = parse_pages(pages, page_count=count)
+        if remove and len(taken) == count:
+            message = "Removing every page leaves nothing."
+            raise Validation(message, hint="The document itself holds exactly these pages.")
+        if remove and source.older:
+            message = (
+                f"Document {document_id} has newer versions, so pages are removed from the newest "
+                "only."
+            )
+            raise Validation(message, hint="Extract without remove, or leave version_id out.")
+        [part] = await self._parts.resolve([taken], None if metadata is None else [metadata])
+        where = f"extract {part.label} of document {document_id} into a new document"
+        request = _Request(
+            "extract_pages",
+            f"{where} and remove them from it" if remove else where,
+            f"extract {part.label} of {source.named()} into a new document",
+            parts=(part,),
+            removed=tuple(sorted(taken)) if remove else (),
+        )
+        slots = [PageSlot(page=page) for page in taken]
+        return await self._send_pages(
+            source, slots, request, output="new_document", options=options
+        )
 
     async def delete_pages(
         self,
@@ -772,53 +875,128 @@ class PdfService:
         plan = _file_plan(
             source, request, len(files), dropped, serials, output=output, options=options
         )
-        plan = plan.model_copy(update={"keeps": (*plan.keeps, *unread)})
+        sets = part_lines(request.parts, single=request.single)
+        plan = plan.model_copy(update={"keeps": (*plan.keeps, *unread, *sets)})
         summary = request.summary
         if trashes and request.operation != "remove_password":
             summary += f" and {TRASH}"
         if options.dry_run:
             return self._preview(request.operation, summary, [document.id], plan)
         if plan.needs_confirm and not options.confirm:
-            effect = request.what
-            if version:
-                effect = _version_effect(source, request, dropped)
-            else:
-                if request.operation != "remove_password":
-                    effect += f" and {TRASH}"
-                lost = () if options.keep_metadata else (without(_named([document])),)
-                lost = (*_dropped(request, dropped), *lost, *serials.keeps, *serials.loses)
-                effect = "; ".join([effect, f"it {BACK}", *lost, *unread])
-            number = document.archive_serial_number
+            asked = _effect(source, request, dropped, serials, (*unread, *sets), options, output)
             scope = (
                 source.scope,
-                number if trashes else None,
+                document.archive_serial_number if trashes else None,
                 options.keep_metadata,
                 bool(unread),
+                [part.edit for part in request.parts],
             )
-            ConfirmationRequired.require(effect, scope=scope)
+            ConfirmationRequired.require(asked, scope=scope)
         began = self._replacing.clock()
         started = await start("new_version" if version else "new_document")
+        composed = trashes or request.sets or bool(request.removed)
+        bound = _bound(options.wait_seconds, composed=composed)
+        copied = [document] if options.keep_metadata and not version else []
+        started, found = await self._parts.look(started, await self._dates(copied), bound)
         result = await self._result(
             request.operation,
             summary,
             [document.id],
             started,
             plan,
-            wait_seconds=_bound(options.wait_seconds, composed=trashes),
+            wait_seconds=bound,
             version=version,
             no_task=no_task,
-            copied=[document] if options.keep_metadata and not version else [],
+            copied=copied,
+            found=found,
         )
-        if not trashes:
-            return result
+        unset = None
+        if request.parts:
+            made = await self._parts.settle(
+                result, started, request.parts, files, document, began=began
+            )
+            unset = unset_reason(made, single=request.single)
+            result = result.model_copy(update={"parts": made, "original": "kept"})
         wanted = Replacement(
             [document],
             files,
-            serial=moves,
+            serial=moves if trashes else None,
             unread=bool(unread),
             perhaps_none=bool(no_task) and DATED not in (result.message or ""),
+            unset=unset,
+            first=EVERY_PART if unset else "",
         )
-        return await self._replacing.finish(result, started, wanted, began=began)
+        if trashes:
+            return await self._replacing.finish(result, started, wanted, began=began)
+        if request.removed:
+            return await self._remove(
+                source, request, result, started, wanted, began=began, bound=bound
+            )
+        notes = [] if unset is None else [f"{unset[0].upper()}{unset[1:]}."]
+        return noted(result, notes, next_call=None)
+
+    async def _remove(  # noqa: PLR0913 -- the new document and what it was made of
+        self,
+        source: _Source,
+        request: _Request,
+        result: PdfResult,
+        started: StartedTasks,
+        wanted: Replacement,
+        *,
+        began: float,
+        bound: float,
+    ) -> PdfResult:
+        """Remove the pages from the document as a new version, if the new document holds them.
+
+        Nothing is raised any more: the new document exists.
+        """
+        document = source.document
+        spec = specification(request.removed)
+        call = f'delete_pages(document_id={document.id}, pages="{spec}", output="new_version")'
+        again = f"{if_unchanged([document])}: {call}"
+        wanted = replace(wanted, then=call, kept=NOT_REMOVED.format(id=document.id))
+        drop = ""
+        try:
+            product = await self._replacing.checked(result, started, wanted, began=began)
+            drop = f"; or delete_document(document_id={product.id}) to drop the new document"
+            await self._replacing.unchanged(document, document.archive_serial_number)
+        except KeptError as kept:
+            look = f"get_document(document_id={document.id}), then {call} if the pages are still "
+            next_call = f"{look}these{drop}" if drop else kept.next_call
+            return stays(result, wanted, kept.reason, next_call)
+        rest = [
+            PageSlot(page=page)
+            for page in range(1, (source.pages or 0) + 1)
+            if page not in request.removed
+        ]
+        unknown = f'get_document(document_id={document.id}, include=["versions"]), {again}'
+        try:
+            second = await self._writer.edit_pdf(
+                document.id, rest, output="new_version", version_id=source.version
+            )
+        except (*REFUSALS, NotFound) as error:
+            return stays(result, wanted, cause(error), f"{again}{drop}")
+        except PaperlessMcpError as error:
+            note = MAYBE_REMOVED.format(id=document.id, cause=cause(error), product=product.id)
+            known = {"state": "unknown", "original": "unknown"}
+            return noted(result, [note], next_call=unknown).model_copy(update=known)
+        removal = await self._result(
+            request.operation,
+            result.summary,
+            [document.id],
+            second,
+            result.plan,
+            wait_seconds=max(bound - result.waited_seconds, 0),
+            version=True,
+        )
+        result = _together(result, removal)
+        if removal.state == "success" and removal.produced_ids:
+            return result.model_copy(update={"original": "shortened"})
+        if removal.state in {"success", "failure", "revoked"}:
+            return stays(result, wanted, "its task made no version", f"{again}{drop}")
+        waits = [f'get_task(task_id="{task.task_id}", wait_seconds=30)' for task in removal.tasks]
+        known = {"original": "unknown", "next": waits[0] if waits else unknown}
+        return result.model_copy(update=known)
 
     async def _merged_note(
         self, result: PdfResult, left_out: str | None, pages: int | None
@@ -868,16 +1046,18 @@ class PdfService:
         no_task: str = "",
         copied: Sequence[DocumentRecord] = (),
         note: str = "",
+        found: Found | None = None,
     ) -> PdfResult:
         """Follow the tasks for up to ``wait_seconds`` altogether and report them.
 
         ``version``: the result is a new version of the source (the produced ids are version ids,
         so the links are the sources'). ``no_task`` explains why a request may have no task,
         ``copied`` are the documents whose metadata is copied, ``note`` is added to the message.
+        ``found`` are the new documents in place of tasks Paperless does not list.
         """
         bound = min(max(wait_seconds, 0), MAX_WAIT_SECONDS)
-        tasks: list[PdfTask] = []
-        waited = 0.0
+        tasks: list[PdfTask] = [] if found is None else list(found.tasks)
+        waited = 0.0 if found is None else found.waited
         for task_id in started.ids:
             outcome = await follow(
                 self._tasks, task_id, max(bound - waited, 0), accepted="the request"
@@ -894,24 +1074,9 @@ class PdfService:
         states: list[UploadState] = [task.state for task in tasks]
         complete = started.problem is None and len(tasks) == started.expected
         notes = [task.message for task in tasks if task.message][:1]
-        if started.problem == "forbidden":
-            notes.append(FORBIDDEN)
-        elif started.problem == "failed":
-            notes.append(UNREADABLE)
-        elif started.problem == "unconfirmed":
-            notes.append(UNCONFIRMED.format(detail=started.detail))
-        elif not tasks:
-            reason = await self._why_hidden(copied, no_task)
-            notes.append(NONE_FOUND.format(reason=reason))
-        elif not complete:
-            reason = await self._why_hidden(copied)
-            those = "that one" if len(tasks) == 1 else "those"
-            found = len(tasks)
-            notes.append(
-                SOME_FOUND.format(
-                    found=found, expected=started.expected, those=those, reason=reason
-                )
-            )
+        notes += await self._lookup_notes(
+            started, tasks, copied, no_task, by_name=found is not None
+        )
         if note:
             notes.append(note)
         wait: Wait = "not_requested"
@@ -937,23 +1102,54 @@ class PdfService:
             waited_seconds=round(waited, 1),
         )
 
+    async def _lookup_notes(
+        self,
+        started: StartedTasks,
+        tasks: Sequence[PdfTask],
+        copied: Sequence[DocumentRecord],
+        no_task: str,
+        *,
+        by_name: bool,
+    ) -> list[str]:
+        """What the result says of the search for its tasks."""
+        if started.problem is not None:
+            unconfirmed = UNCONFIRMED.format(detail=started.detail)
+            said = {"forbidden": FORBIDDEN, "failed": UNREADABLE, "unconfirmed": unconfirmed}
+            return [said[started.problem]]
+        if by_name:
+            return [BY_NAME]
+        if not tasks:
+            none = NONE_FOUND.format(reason=await self._why_hidden(copied, no_task))
+            doubt = started.doubt
+            return [none, *(() if doubt is None else (NOT_TAKEN.format(doubt=doubt),))]
+        if len(tasks) == started.expected:
+            return []
+        reason = await self._why_hidden(copied)
+        those = "that one" if len(tasks) == 1 else "those"
+        return [
+            SOME_FOUND.format(
+                found=len(tasks), expected=started.expected, those=those, reason=reason
+            )
+        ]
+
     async def _why_hidden(self, copied: Sequence[DocumentRecord], other: str = "") -> str:
         """Why a task may be missing: ``other``, or a date among the custom fields that are copied.
 
         3.5.1 cannot record a task whose metadata holds such a date.
         """
         causes = [other] if other else []
-        if any(value.value is not None for d in copied for value in d.custom_fields):
-            with contextlib.suppress(PaperlessMcpError):
-                fields = await self._taxonomy.items("custom_field")
-                dates = {field.id for field in fields if field.data_type == "date"}
-                if any(
-                    value.field in dates and value.value is not None
-                    for d in copied
-                    for value in d.custom_fields
-                ):
-                    causes.append(DATED)
+        if await self._dates(copied):
+            causes.append(DATED)
         return f" ({', or '.join(causes)})" if causes else ""
+
+    async def _dates(self, copied: Sequence[DocumentRecord]) -> dict[int, object]:
+        """The dates among the custom fields that are copied, by field."""
+        given = {v.field: v.value for d in copied for v in d.custom_fields if v.value is not None}
+        with contextlib.suppress(PaperlessMcpError):
+            fields = await self._taxonomy.items("custom_field") if given else []
+            dates = {field.id for field in fields if field.data_type == "date"}
+            return {number: value for number, value in given.items() if number in dates}
+        return {}
 
     async def _require_delete(self, documents: Sequence[DocumentRecord]) -> tuple[str, ...]:
         """Refuse early when the user is known not to be allowed to trash the originals.
@@ -995,6 +1191,45 @@ class PdfService:
             if source is not None:
                 links.append(document_link(self._web_url, source))
         return tuple(links)
+
+
+def _effect(  # noqa: PLR0913, PLR0917 -- what the words depend on
+    source: _Source,
+    request: _Request,
+    dropped: Sequence[int],
+    serials: Numbers,
+    more: Sequence[str],
+    options: Options,
+    output: Output,
+) -> str:
+    """What confirming would do."""
+    lost = () if options.keep_metadata else (without(_named([source.document])),)
+    if output == "new_version":
+        return _version_effect(source, request, dropped)
+    if request.removed:
+        return "; ".join([f"{request.what} {VANISH}", *lost, *more])
+    what = request.what
+    if request.operation != "remove_password":
+        what += f" and {TRASH}"
+    lost = (*_dropped(request, dropped), *lost, *serials.keeps, *serials.loses)
+    return "; ".join([what, f"it {BACK}", *lost, *more])
+
+
+def _together(made: PdfResult, removal: PdfResult) -> PdfResult:
+    """One result of making the new document and removing its pages from the source."""
+    messages = [text for text in (made.message, removal.message) if text]
+    done = made.wait == removal.wait == "finished"
+    return made.model_copy(
+        update={
+            "state": _aggregate([s for s in (made.state, removal.state) if s != "not_started"]),
+            "message": " ".join(messages) or None,
+            "tasks": (*made.tasks, *removal.tasks),
+            "produced_ids": (*made.produced_ids, *removal.produced_ids),
+            "produced_links": (*made.produced_links, *removal.produced_links),
+            "wait": "finished" if done else "timed_out",
+            "waited_seconds": round(made.waited_seconds + removal.waited_seconds, 1),
+        }
+    )
 
 
 def _bound(wait_seconds: float | None, *, composed: bool) -> float:
@@ -1073,6 +1308,8 @@ def _file_plan(  # noqa: PLR0913 -- what the plan of a request for one document 
     """The plan of an operation on one document."""
     name = _named([source.document])
     made = outputs(files, output)
+    if request.removed:
+        dropped = ()
     loses = _dropped(request, dropped)
     if request.operation != "remove_password":
         loses = (*loses, REBUILT)
@@ -1080,7 +1317,7 @@ def _file_plan(  # noqa: PLR0913 -- what the plan of a request for one document 
         if source.older:
             loses = (*loses, f"{name} no longer shows its newest file")
         return version_plan(made, name, loses=loses, needs_confirm=bool(dropped) or source.older)
-    return document_plan(
+    plan = document_plan(
         made,
         name,
         serials,
@@ -1088,6 +1325,7 @@ def _file_plan(  # noqa: PLR0913 -- what the plan of a request for one document 
         keep_metadata=options.keep_metadata,
         trashes=output == "replace_original",
     )
+    return shortening(plan, name) if request.removed else plan
 
 
 def _dropped(request: _Request, dropped: Sequence[int]) -> tuple[str, ...]:
