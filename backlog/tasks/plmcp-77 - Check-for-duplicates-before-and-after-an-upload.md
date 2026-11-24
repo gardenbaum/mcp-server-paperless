@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:48Z'
-updated_date: '2026-11-24T01:06:08Z'
+updated_date: '2026-11-24T01:24:03Z'
 labels: []
 dependencies: []
 priority: high
@@ -22,11 +22,11 @@ By default Paperless keeps duplicates (with PAPERLESS_CONSUMER_DELETE_DUPLICATES
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 upload_document and upload_document_version check before sending whether a visible document has the same original checksum, name the matches and upload anyway only when told to
-- [ ] #2 Versions and the trash are checked before sending if a probe of 3.5.1 shows a way; otherwise they are reported after the upload from duplicate_documents; the tool says what was not checked (trash, versions, archive checksum, documents the user cannot see)
-- [ ] #3 The result of a finished upload reports the duplicates Paperless found, also through get_task when the upload was not waited for, and a rejected duplicate names the existing document
+- [x] #2 Versions and the trash are checked before sending if a probe of 3.5.1 shows a way; otherwise they are reported after the upload from duplicate_documents; the tool says what was not checked (trash, versions, archive checksum, documents the user cannot see)
+- [x] #3 The result of a finished upload reports the duplicates Paperless found, also through get_task when the upload was not waited for, and a rejected duplicate names the existing document
 - [x] #4 Over stdio the error for base64-only use and the tool descriptions say how to enable upload by path; over HTTP nothing suggests it, and the rules of decision-7 hold
 - [x] #5 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
-- [ ] #6 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover matches, no match, upload anyway, rejection by Paperless, a restricted user and the checksum algorithm in use (SHA-256 is pinned for versions)
+- [x] #6 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover matches, no match, upload anyway, rejection by Paperless, a restricted user and the checksum algorithm in use (SHA-256 is pinned for versions)
 <!-- AC:END -->
 
 ## Definition of Done
@@ -60,4 +60,8 @@ DoD 1 stays unchecked until the live levels ran: the E2E tests were written afte
 Review of c7a71a2 (0 critical, 3 important, 8 minor) and the automated security review are fixed. Correction of note (3) above: it was our parser (original_size must not be null) and not Paperless; only the checksum of a deleted version is read now, so a missing file no longer stops uploads. A scan that does not add up, a missing checksum and 25 seconds are a failed check. Live evidence: full hosted E2E on 2199077 green including e2e-duplicates (run 45292725686, reported by the controller); the review fixes have not run live yet. M8: the module seconds can be read from the logs of that run, aliases unchanged until then. Memory measured again with a stand-in (docs/configuration.md). Known: get_document (file_metadata), download_document and get_document_pages still refuse a document whose file is missing, because FileMetadata wants a size and names that 3.5.1 answers as null; outside this task.
 
 Delta review of 9d5cdfd (C1, I1, M1 to M6) and Codex P2 (confirm lost with a path) are fixed. The P2 came from a text replacement that missed one single-line call; no test caught it because the confirmation tests call the remote form only (tests/tools/test_upload_confirm.py now covers every form). The trash is read in one request bounded by 64 MiB (decision-47). Live proof on PostgreSQL: just e2e-postgres (e2e-full), not run yet. Memory measured again with a stand-in.
+
+AC 2, 3 and 6 ticked on the controller's word, with the hosted runs it reported: 45292725686 on 2199077 (fully green, e2e-duplicates included) and 45302569892 on ade6696 (e2e-postgres, e2e-duplicates and e2e-office green; the shards were still running when this was written, the controller corrects the ticks if they fail). The commits after ade6696 (compressed answer, merge of decision-49, second delta review) have not run live.
+DoD 1 stays unchecked: adapter, contract (fake), service and tool tests were red first, but the E2E and live contract tests were written with or after the code and never ran red, so the sentence 'at every test level' is not true.
+Second delta review (0 critical, 0 important): m1, m2, m4 fixed; a document is named once.
 <!-- SECTION:NOTES:END -->

@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING, override
 
 import pytest
 from fakes.accounts import ADMIN, READER
-from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
+from fakes.paperless import FakeDocument, FakeFile, FakePaperless, FakeState, seeded
 
 from mcp_server_paperless.domain.errors import (
+    AnswerCompressed,
     ConfirmationRequired,
     NotFound,
     PaperlessMcpError,
@@ -24,6 +25,7 @@ from mcp_server_paperless.services.duplicates import (
     ALTERED,
     CAPPED,
     HIDDEN,
+    NO_SKIP,
     OWN_TRASH,
     UNCOMPARED,
     UNREAD_AFTER,
@@ -526,6 +528,37 @@ async def test_more_additions_than_the_closing_page_shows_are_read_again() -> No
     _ = await found_by(setup)
 
     assert setup.fake.calls.count("list_versions 1") == 3
+
+
+async def test_a_document_merged_into_another_one_is_named_once() -> None:
+    """As a version it keeps its id."""
+    setup = moving()
+    _ = setup.document(12)
+
+    def merge() -> None:
+        [source] = [d for d in setup.state.documents if d.id == 12]
+        setup.state.documents.remove(source)
+        root = setup.state.documents[0]
+        root.version_files[root.id] = FakeFile(root.original, None, "", root.mime_type)
+        root.version_files[12] = FakeFile(FILE, None, "", root.mime_type)
+        root.versions.insert(0, source.versions[0].model_copy(update={"is_root": False}))
+
+    setup.fake.changes["read_trash"] = [merge]
+
+    assert await found_by(setup) == [(10, 12, False)]
+
+
+async def test_a_compressed_answer_stops_the_upload_and_says_so() -> None:
+    setup = Setup()
+    setup.fake.errors["read_trash"] = AnswerCompressed(
+        "It was compressed.", hint="Check the proxy."
+    )
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await setup.finder.cleared(FILE, "upload", confirm=True)
+
+    assert raised.value.message == "It was compressed. The file was not uploaded."
+    assert raised.value.hint == f"Check the proxy. {NO_SKIP}"
 
 
 async def test_a_document_merged_into_another_one_during_the_check_is_found_first() -> None:

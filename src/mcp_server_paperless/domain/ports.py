@@ -651,6 +651,7 @@ class TrashReader(Protocol):
         The rows carry the whole text of the documents, so at most ``max_bytes`` are read.
 
         Raises:
+            AnswerCompressed: The answer is compressed, so its size is not known.
             AnswerTooLarge: The answer is larger than ``max_bytes``.
             PermissionDenied: The user lacks the global ``view_document`` permission.
         """

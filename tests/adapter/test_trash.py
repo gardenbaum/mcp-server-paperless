@@ -9,6 +9,7 @@ import pytest
 
 from adapter.conftest import streaming
 from mcp_server_paperless.domain.errors import (
+    AnswerCompressed,
     AnswerTooLarge,
     NotFound,
     PaperlessMcpError,
@@ -310,13 +311,13 @@ async def test_a_body_of_exactly_the_limit_is_read() -> None:
     assert len(page.entries) == 1
 
 
-@pytest.mark.parametrize("encoding", ["gzip", "zstd", "br", "x-unknown"])
+@pytest.mark.parametrize("encoding", ["gzip", "GZIP", "zstd", "br", "x-unknown", "identity, gzip"])
 async def test_a_compressed_body_is_refused_unread(encoding: str) -> None:
     """One small piece could unpack to any size before the limit is looked at."""
     stream = Chunks(b"anything")
     response = httpx2.Response(200, headers={"Content-Encoding": encoding}, stream=stream)
 
-    with pytest.raises(PaperlessMcpError) as raised:
+    with pytest.raises(AnswerCompressed) as raised:
         _ = await read(response)
 
     assert raised.value.message == (
@@ -327,6 +328,15 @@ async def test_a_compressed_body_is_refused_unread(encoding: str) -> None:
         "identity."
     )
     assert stream.sent == 0
+
+
+@pytest.mark.parametrize("encoding", ["", "  ", "identity", "Identity"])
+async def test_an_answer_that_is_not_compressed_is_read(encoding: str) -> None:
+    headers = {"Content-Encoding": encoding}
+
+    page, _ = await read(httpx2.Response(200, headers=headers, stream=Chunks(body(DOCUMENT))))
+
+    assert len(page.entries) == 1
 
 
 @pytest.mark.parametrize("cut", [b"", b"{", body(DOCUMENT)[:-5], b"[]"])

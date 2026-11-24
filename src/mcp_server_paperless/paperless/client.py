@@ -21,7 +21,12 @@ from typing import TYPE_CHECKING, Literal
 import httpx2
 import pydantic
 
-from mcp_server_paperless.domain.errors import AnswerTooLarge, PaperlessMcpError, UpstreamTimeout
+from mcp_server_paperless.domain.errors import (
+    AnswerCompressed,
+    AnswerTooLarge,
+    PaperlessMcpError,
+    UpstreamTimeout,
+)
 from mcp_server_paperless.domain.files import OpenedFile
 from mcp_server_paperless.paperless.disposition import filename
 from mcp_server_paperless.paperless.errors import (
@@ -281,12 +286,16 @@ class PaperlessClient:
     async def read_json[M: pydantic.BaseModel](
         self, path: str, model: type[M], *, params: Params | None = None, max_bytes: int
     ) -> M:
-        """GET ``path`` and validate a body of at most ``max_bytes`` bytes, parsed in a thread.
+        """GET ``path`` and validate a body of at most ``max_bytes`` bytes.
+
+        It is parsed in a thread, which does not keep the event loop free: the parser holds the GIL
+        (0.02 s for ordinary text, up to 0.8 s for a hostile body near 64 MiB).
 
         The limit is enforced while the body is read, whatever its Content-Length says. A
         compressed body is refused: one piece of it could unpack to any size.
 
         Raises:
+            AnswerCompressed: The body is compressed.
             AnswerTooLarge: The body is larger than ``max_bytes``.
             PaperlessMcpError: The matching subclass for an error status or a failed transport, or
                 a body that does not match.
@@ -298,12 +307,13 @@ class PaperlessClient:
         try:
             if response.is_error:
                 raise error_for_status(await _with_capped_body(response))
-            if response.headers.get("Content-Encoding", "identity") != "identity":
+            encoding = response.headers.get("Content-Encoding", "").strip().lower()
+            if encoding not in {"", "identity"}:
                 message = (
                     f"The answer to GET {outgoing.url.path} was compressed although that was not "
                     "asked for."
                 )
-                raise PaperlessMcpError(message, hint=COMPRESSED_HINT)
+                raise AnswerCompressed(message, hint=COMPRESSED_HINT)
             async for chunk in response.aiter_raw():
                 if len(body) + len(chunk) > max_bytes:
                     message = f"Paperless sent more than {max_bytes} bytes for GET {path}."

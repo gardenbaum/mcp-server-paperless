@@ -104,7 +104,7 @@ class PaperlessTrashReader:
         )
 
     async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
-        """See ``TrashReader.read_trash``; parsed in a thread, because a large answer takes a while.
+        """See ``TrashReader.read_trash``; parsing a large answer stops the event loop for a while.
 
         Of the rows only what ``_Row`` names is kept.
         """

@@ -21,6 +21,7 @@ from mcp_server_paperless.domain.duplicates import (
     DuplicateReport,
 )
 from mcp_server_paperless.domain.errors import (
+    AnswerCompressed,
     AnswerTooLarge,
     ConfirmationRequired,
     NotFound,
@@ -313,14 +314,15 @@ class DuplicateFinder:
         """The originals are read first and last.
 
         One that is merged into another document in between is a version only after the versions
-        were read, and no original any more at the end.
+        were read, and no original any more at the end. A version keeps the id it had.
         """
         try:
             early, _ = await self._originals(sha256)
         except PermissionDenied:
             early = []  # ``before`` names the gap
         found = await self.before(sha256, await self.snapshot(), own=own)
-        missed = [m for m in early if key_of(m) not in {key_of(f) for f in found.matches}]
+        seen = {n for m in found.matches for n in (m.document_id, m.version_id)}
+        missed = [m for m in early if m.document_id not in seen]
         return replace(found, matches=(*missed, *found.matches), count=found.count + len(missed))
 
     async def after(self, consumed: int) -> DuplicateReport:
@@ -453,6 +455,9 @@ class DuplicateFinder:
             return await self._trash.read_trash(entries=entries, max_bytes=most)
         except AnswerTooLarge:
             raise TrashTooLargeError(most) from None
+        except AnswerCompressed as error:
+            message = f"{error.message} The file was not uploaded."
+            raise AnswerCompressed(message, hint=f"{error.hint} {NO_SKIP}") from None
 
     async def _trashed_versions(self, entries: list[TrashedDocument], scan: _Scan) -> None:
         """Deleted versions: their checksum is in the metadata of the document, one by one."""
