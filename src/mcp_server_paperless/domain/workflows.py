@@ -59,6 +59,19 @@ SCHEDULE_DATE_FIELDS: Final = ("added", "created", "modified", "custom_field")
 WRITABLE_TRIGGER_TYPES: Final = frozenset({1, 2, 3, 4})
 WRITABLE_ACTION_TYPES: Final = frozenset({1, 2, 3, 4, 6, 7})
 
+# The trigger types by the short names tools use.
+type TriggerTypeName = Literal["consumption", "added", "updated", "scheduled", "manual"]
+# What the settings of a workflow can name.
+type UsedKind = Literal[
+    "tag",
+    "correspondent",
+    "document_type",
+    "storage_path",
+    "custom_field",
+    "user",
+    "group",
+    "mail_rule",
+]
 type FieldShape = Literal["one", "list", "text", "flag", "number", "json"]
 
 
@@ -540,13 +553,90 @@ class WorkflowInfo(BaseModel):
     ] = None
 
 
+class Usage(BaseModel):
+    """An object whose workflows are searched: its kind and its name or id."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    kind: UsedKind
+    value: NameOrId
+
+
+class PartUse(BaseModel):
+    """Where a workflow uses an object."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    part: Literal["trigger", "action"]
+    id: Annotated[int | None, Field(description="The id of the trigger or action.")]
+    setting: str
+
+
+class ListedWorkflow(WorkflowInfo):
+    """A workflow of a list."""
+
+    used_in: Annotated[
+        tuple[PartUse, ...], Field(description="With uses: where the object is used.")
+    ] = ()
+
+
 class WorkflowListing(BaseModel):
     """The workflows the user may see."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     count: int
-    workflows: tuple[WorkflowInfo, ...]
+    workflows: tuple[ListedWorkflow, ...]
+    note: Annotated[str | None, Field(description="What the search for uses could not cover.")] = (
+        None
+    )
+
+
+class WorkflowHolder(BaseModel):
+    """A workflow that holds a trigger or action."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    name: str
+    enabled: bool
+
+
+class WorkflowPart(BaseModel):
+    """A single trigger or action."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    trigger: TriggerInfo | None = None
+    action: ActionInfo | None = None
+    workflows: Annotated[
+        tuple[WorkflowHolder, ...] | None,
+        Field(
+            description=(
+                "The workflows that hold it; empty: none, it does nothing; null: you may not view "
+                "workflows."
+            )
+        ),
+    ]
+
+
+class WorkflowRead(BaseModel):
+    """A workflow, or one of its triggers or actions."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: Annotated[int | None, Field(description="The workflow; null where a part was read.")] = None
+    name: str | None = None
+    order: Annotated[
+        int | None, Field(description="Workflows run in this order, lowest first.")
+    ] = None
+    enabled: bool | None = None
+    triggers: tuple[TriggerInfo, ...] = ()
+    actions: tuple[ActionInfo, ...] = ()
+    note: None = None
+    part: Annotated[
+        WorkflowPart | None, Field(description="With trigger_id or action_id: that part.")
+    ] = None
 
 
 class WorkflowDeletion(BaseModel):

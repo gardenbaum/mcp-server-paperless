@@ -94,7 +94,13 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.trash import TrashedRecord, TrashLookup, TrashPage
     from mcp_server_paperless.domain.versions import VersionPage, VersionUpload
     from mcp_server_paperless.domain.views import SavedView, ViewValues
-    from mcp_server_paperless.domain.workflows import Workflow, WorkflowRun, WorkflowValues
+    from mcp_server_paperless.domain.workflows import (
+        Workflow,
+        WorkflowAction,
+        WorkflowRun,
+        WorkflowTrigger,
+        WorkflowValues,
+    )
 
 
 class InstanceReader(Protocol):
@@ -1315,8 +1321,13 @@ class RawReader(Protocol):
 class WorkflowReader(Protocol):
     """Workflows, with their triggers and actions, as the current user sees them."""
 
-    async def list_workflows(self) -> tuple[Workflow, ...]:
+    async def list_workflows(
+        self, *, enabled: bool | None = None, trigger_type: int | None = None
+    ) -> tuple[Workflow, ...]:
         """Every workflow, over all pages, in Paperless order (by order, then id).
+
+        ``enabled`` and ``trigger_type`` limit it to workflows that are (not) enabled and to those
+        with a trigger of that type.
 
         Raises:
             PermissionDenied: The user lacks the global ``view_workflow`` permission.
@@ -1329,6 +1340,24 @@ class WorkflowReader(Protocol):
         Raises:
             NotFound: No such workflow.
             PermissionDenied: The user lacks the global ``view_workflow`` permission.
+        """
+        ...
+
+    async def get_trigger(self, trigger_id: int) -> WorkflowTrigger:
+        """One trigger, also one that no workflow holds.
+
+        Raises:
+            NotFound: No such trigger.
+            PermissionDenied: The user lacks the global ``view_workflowtrigger`` permission.
+        """
+        ...
+
+    async def get_action(self, action_id: int) -> WorkflowAction:
+        """One action, also one that no workflow holds.
+
+        Raises:
+            NotFound: No such action.
+            PermissionDenied: The user lacks the global ``view_workflowaction`` permission.
         """
         ...
 

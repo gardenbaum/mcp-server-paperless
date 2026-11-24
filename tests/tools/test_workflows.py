@@ -333,3 +333,120 @@ async def test_a_read_webhook_written_back_keeps_its_credentials_and_shows_none(
     assert "Kept as stored, with any credentials" in str(updated["note"])
     stored = state.workflows[0].actions[0].settings["webhook"]
     assert cast("Json", stored)["url"] == hook["url"]
+
+
+def with_three() -> FakeState:
+    """`with_workflow`, a disabled one with a manual trigger and one with a mail rule."""
+    state = with_workflow()
+    state.workflows += [
+        Workflow(
+            id=2,
+            name="By hand",
+            order=1,
+            enabled=False,
+            triggers=(WorkflowTrigger(id=3, type=5, settings={"filter_has_tags": [4]}),),
+            actions=(WorkflowAction(id=4, type=2, settings={"remove_tags": [1]}),),
+        ),
+        Workflow(
+            id=3,
+            name="Mail",
+            order=2,
+            enabled=True,
+            triggers=(WorkflowTrigger(id=5, type=1, settings={"filter_mailrule": 7}),),
+            actions=(),
+        ),
+    ]
+    return state
+
+
+def names(output: Json) -> list[object]:
+    return [w["name"] for w in cast("list[Json]", output["workflows"])]
+
+
+@pytest.mark.decision("decision-81")
+async def test_the_workflows_that_use_an_object_are_listed_with_the_place() -> None:
+    source = fake(with_three(), writes=False)
+
+    output = await call(source, "list_workflows", uses_kind="tag", uses="e2e-finance")
+    by_rule = await call(source, "list_workflows", uses_kind="mail_rule", uses=7)
+
+    assert output["count"] == 2
+    assert [(w["name"], w["used_in"]) for w in cast("list[Json]", output["workflows"])] == [
+        ("Filing", [{"part": "trigger", "id": 1, "setting": "has_tags"}]),
+        ("By hand", [{"part": "action", "id": 4, "setting": "remove_tags"}]),
+    ]
+    assert output["note"] is None
+    assert names(by_rule) == ["Mail"]
+
+
+@pytest.mark.decision("decision-81")
+async def test_the_workflows_are_filtered_by_enabled_and_trigger_type() -> None:
+    source = fake(with_three(), writes=False)
+
+    assert names(await call(source, "list_workflows", enabled=False)) == ["By hand"]
+    assert names(await call(source, "list_workflows", trigger_type="manual")) == ["By hand"]
+    assert names(await call(source, "list_workflows", trigger_type="added", enabled=True)) == [
+        "Filing"
+    ]
+    unknown = await refusal(source, "list_workflows", trigger_type="hourly")
+    assert "'consumption', 'added', 'updated', 'scheduled' or 'manual'" in unknown
+
+
+@pytest.mark.decision("decision-81")
+@pytest.mark.parametrize("given", [{"uses": "x"}, {"uses_kind": "tag"}], ids=["object", "kind"])
+async def test_uses_and_its_kind_go_together(given: Json) -> None:
+    text = await refusal(fake(with_three()), "list_workflows", **given)
+
+    assert "uses and uses_kind go together" in text
+
+
+@pytest.mark.decision("decision-81")
+async def test_a_single_trigger_and_action_are_read_with_their_workflows() -> None:
+    source = fake(with_three(), writes=False)
+
+    trigger = await call(source, "get_workflow", trigger_id=1)
+    action = await call(source, "get_workflow", action_id=4)
+    whole = await call(source, "get_workflow", workflow="Filing")
+
+    assert cast("Json", trigger["part"])["trigger"] == {
+        "id": 1,
+        "type": 2,
+        "type_name": "document added",
+        "settings": {"has_tags": ["e2e-finance"]},
+    }
+    assert cast("Json", trigger["part"])["workflows"] == [
+        {"id": 1, "name": "Filing", "enabled": True}
+    ]
+    assert cast("Json", cast("Json", action["part"])["action"])["settings"] == {
+        "remove_tags": ["e2e-finance"]
+    }
+    assert (whole["id"], whole["part"]) == (1, None)
+    assert "exactly one" in await refusal(source, "get_workflow")
+    assert "exactly one" in await refusal(source, "get_workflow", workflow=1, action_id=4)
+    assert "No workflow trigger 99 exists" in await refusal(source, "get_workflow", trigger_id=99)
+
+
+@pytest.mark.decision("decision-66")
+@pytest.mark.decision("decision-81")
+async def test_a_single_action_shows_no_hidden_value() -> None:
+    state = with_workflow()
+    hook = {"url": "https://user:planted@h.example/x", "headers": {"X-Token": "planted"}}
+    state.workflows[0] = state.workflows[0].model_copy(
+        update={
+            "actions": (
+                WorkflowAction.model_validate({"id": 8, "type": 4, "settings": {"webhook": hook}}),
+                WorkflowAction(id=9, type=5, settings={"passwords": ["planted"]}),
+            )
+        }
+    )
+    source = fake(state, writes=False)
+
+    outputs = [
+        await call(source, "get_workflow", action_id=8),
+        await call(source, "get_workflow", action_id=9),
+        await call(source, "list_workflows", uses_kind="tag", uses=1),
+    ]
+
+    assert all("planted" not in str(output) for output in outputs)
+    shown = cast("Json", cast("Json", outputs[0]["part"])["action"])
+    assert shown["shown_in_part"] == ["webhook.url"]

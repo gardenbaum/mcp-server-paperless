@@ -41,9 +41,11 @@ class CountingReader(FakePaperless):
     lists: int = 0
 
     @override
-    async def list_workflows(self) -> tuple[Workflow, ...]:
+    async def list_workflows(
+        self, *, enabled: bool | None = None, trigger_type: int | None = None
+    ) -> tuple[Workflow, ...]:
         self.lists += 1
-        return await super().list_workflows()
+        return await super().list_workflows(enabled=enabled, trigger_type=trigger_type)
 
 
 def hooked(number: int, url: str) -> WorkflowAction:

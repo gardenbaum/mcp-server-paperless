@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:04Z'
-updated_date: '2026-11-24T22:43:09Z'
+updated_date: '2026-11-24T23:00:17Z'
 labels:
   - workflows
 dependencies:
@@ -48,3 +48,11 @@ First part of PLMCP-87. How Paperless 3.5.1 treats parts sent with ids decides h
 3. Coverage table with exclusions 2 and 3, decision, docs, snapshots.
 4. One full hosted E2E on the finished head.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner approval (2026-11-24, question dialog, recommended options chosen; record of the main agent): 'Designs 81, 87, 88, 89, 90, 83, 100 all as recommended'. Guide limit: this part needs none of the 42 bytes (no new tool).
+
+Probes on Paperless 3.5.1, CI run 45503786740, job e2e (1/6), head 54845e1 (temporary tests, removed): P1 holds: id-only and full PATCHes kept all five trigger and eight action types with hidden values, one changed part changed nothing else; the one red case was the test's own expectation: the answer of a PATCH that moves actions does not list them in their order, so part b has to compare with a fresh read. P2 to P5 confirm T1 to T7 and T13 of the design (details in decision-81).
+<!-- SECTION:NOTES:END -->

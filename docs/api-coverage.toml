@@ -70,25 +70,6 @@ operations = [
 ]
 
 [[open]]
-task = "PLMCP-87"
-operations = [
-  "DELETE /api/workflow_actions/{id}/",
-  "DELETE /api/workflow_triggers/{id}/",
-  "GET /api/workflow_actions/",
-  "GET /api/workflow_actions/{id}/",
-  "GET /api/workflow_triggers/",
-  "GET /api/workflow_triggers/{id}/",
-  "GET /api/workflows/{id}/",
-  "PATCH /api/workflow_actions/{id}/",
-  "PATCH /api/workflow_triggers/{id}/",
-  "POST /api/workflow_actions/",
-  "POST /api/workflow_triggers/",
-  "PUT /api/workflow_actions/{id}/",
-  "PUT /api/workflow_triggers/{id}/",
-  "PUT /api/workflows/{id}/",
-]
-
-[[open]]
 task = "PLMCP-88"
 operations = [
   "GET /api/saved_views/{id}/",
@@ -331,11 +312,6 @@ fields = ["query:ordering", "query:username__iendswith", "query:username__iexact
 task = "PLMCP-83"
 
 [[open_fields]]
-operation = "GET /api/workflows/"
-fields = ["query:enabled", "query:id", "query:id__in", "query:trigger_type"]
-task = "PLMCP-87"
-
-[[open_fields]]
 operation = "PATCH /api/config/{id}/"
 fields = ["body:app_logo"]
 task = "PLMCP-83"
@@ -372,7 +348,7 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/workflows/{id}/"
-fields = ["body:actions[].ai_create_missing", "body:actions[].ai_overwrite_existing", "body:actions[].ai_suggestion_fields", "body:actions[].email.id", "body:actions[].id", "body:actions[].passwords", "body:actions[].webhook.id", "body:triggers[].id"]
+fields = ["body:actions[].ai_create_missing", "body:actions[].ai_overwrite_existing", "body:actions[].ai_suggestion_fields", "body:actions[].id", "body:actions[].passwords", "body:triggers[].id"]
 task = "PLMCP-87"
 
 [[open_fields]]
@@ -499,7 +475,7 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/workflows/"
-fields = ["body:actions[].ai_create_missing", "body:actions[].ai_overwrite_existing", "body:actions[].ai_suggestion_fields", "body:actions[].email.id", "body:actions[].id", "body:actions[].passwords", "body:actions[].webhook.id", "body:triggers[].id"]
+fields = ["body:actions[].ai_create_missing", "body:actions[].ai_overwrite_existing", "body:actions[].ai_suggestion_fields", "body:actions[].passwords"]
 task = "PLMCP-87"
 
 [[open_fields]]
@@ -594,3 +570,90 @@ fields = ["body:all", "body:excluded_documents", "body:filters"]
 quote = "Bitte alles wie von dir empfohlen umsetzen."
 date = "2026-11-24"
 source = "backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md"
+
+[[exclusion]]
+operation = "GET /api/workflows/"
+fields = ["query:id", "query:id__in"]
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "GET /api/workflow_actions/"
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "POST /api/workflow_actions/"
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "PUT /api/workflow_actions/{id}/"
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "PATCH /api/workflow_actions/{id}/"
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "DELETE /api/workflow_actions/{id}/"
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "GET /api/workflow_triggers/"
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "POST /api/workflow_triggers/"
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "PUT /api/workflow_triggers/{id}/"
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "PATCH /api/workflow_triggers/{id}/"
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "DELETE /api/workflow_triggers/{id}/"
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "PUT /api/workflows/{id}/"
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "POST /api/workflows/"
+fields = ["body:actions[].email.id", "body:actions[].id", "body:actions[].webhook.id", "body:triggers[].id"]
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "PATCH /api/workflows/{id}/"
+fields = ["body:actions[].email.id", "body:actions[].webhook.id"]
+quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+date = "2026-11-24"
+source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"

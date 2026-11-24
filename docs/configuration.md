@@ -367,6 +367,11 @@ always does. Password removal and applying AI suggestions are not written by the
 are shown when read), webhook header values and passwords are never shown, and a setting that
 does not belong to its trigger or action type is an error.
 
+- `list_workflows` filters by enabled, by trigger type and by what a workflow uses (a tag,
+  correspondent, document type, storage path, custom field, user, group or mail rule); `used_in`
+  names the trigger or action and the setting. Names inside templates are not searched, nor parent
+  and child tags that come along. `get_workflow` also reads one trigger or action by its id, with
+  the workflows that hold it.
 - Webhook URLs are returned without the user name and password in them (a query string is
   returned; a URL in which they cannot be told apart is not); `shown_in_part` of the action says
   so. Written back as returned, on an action with the id it has now, the URL keeps what is stored;

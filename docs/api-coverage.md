@@ -183,24 +183,24 @@ Limits.
 | `PATCH /api/users/{id}/` | `update_user` |  |
 | `PUT /api/users/{id}/` |  | PLMCP-83 |
 | `POST /api/users/{id}/deactivate_totp/` |  | PLMCP-83 |
-| `GET /api/workflow_actions/` |  | PLMCP-87 |
-| `POST /api/workflow_actions/` |  | PLMCP-87 |
-| `DELETE /api/workflow_actions/{id}/` |  | PLMCP-87 |
-| `GET /api/workflow_actions/{id}/` |  | PLMCP-87 |
-| `PATCH /api/workflow_actions/{id}/` |  | PLMCP-87 |
-| `PUT /api/workflow_actions/{id}/` |  | PLMCP-87 |
-| `GET /api/workflow_triggers/` |  | PLMCP-87 |
-| `POST /api/workflow_triggers/` |  | PLMCP-87 |
-| `DELETE /api/workflow_triggers/{id}/` |  | PLMCP-87 |
-| `GET /api/workflow_triggers/{id}/` |  | PLMCP-87 |
-| `PATCH /api/workflow_triggers/{id}/` |  | PLMCP-87 |
-| `PUT /api/workflow_triggers/{id}/` |  | PLMCP-87 |
+| `GET /api/workflow_actions/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
+| `POST /api/workflow_actions/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
+| `DELETE /api/workflow_actions/{id}/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
+| `GET /api/workflow_actions/{id}/` | `get_workflow` |  |
+| `PATCH /api/workflow_actions/{id}/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
+| `PUT /api/workflow_actions/{id}/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
+| `GET /api/workflow_triggers/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
+| `POST /api/workflow_triggers/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
+| `DELETE /api/workflow_triggers/{id}/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
+| `GET /api/workflow_triggers/{id}/` | `get_workflow` |  |
+| `PATCH /api/workflow_triggers/{id}/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
+| `PUT /api/workflow_triggers/{id}/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
 | `GET /api/workflows/` | `create_workflow`, `delete_workflow`, `get_workflow`, `list_workflows`, `run_workflow` and 1 more |  |
 | `POST /api/workflows/` | `create_workflow` |  |
 | `DELETE /api/workflows/{id}/` | `delete_workflow` |  |
-| `GET /api/workflows/{id}/` |  | PLMCP-87 |
+| `GET /api/workflows/{id}/` | `get_workflow` |  |
 | `PATCH /api/workflows/{id}/` | `update_workflow` |  |
-| `PUT /api/workflows/{id}/` |  | PLMCP-87 |
+| `PUT /api/workflows/{id}/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
 
 ## Query parameters, body fields and enum values no tool sends
 
@@ -276,11 +276,13 @@ TOML file.
 | `GET /api/users/` | `query:ordering`, `query:username__iendswith`, `query:username__iexact`, `query:username__istartswith` | PLMCP-83 |
 | `POST /api/users/` | `body:date_joined` | PLMCP-83 |
 | `PATCH /api/users/{id}/` | `body:date_joined` | PLMCP-83 |
-| `GET /api/workflows/` | `query:enabled`, `query:id`, `query:id__in`, `query:trigger_type` | PLMCP-87 |
-| `POST /api/workflows/` | `body:actions[].ai_create_missing`, `body:actions[].ai_overwrite_existing`, `body:actions[].ai_suggestion_fields`, `body:actions[].email.id`, `body:actions[].id`, `body:actions[].passwords`, `body:actions[].webhook.id`, `body:triggers[].id` | PLMCP-87 |
+| `GET /api/workflows/` | `query:id`, `query:id__in` | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
+| `POST /api/workflows/` | `body:actions[].ai_create_missing`, `body:actions[].ai_overwrite_existing`, `body:actions[].ai_suggestion_fields`, `body:actions[].passwords` | PLMCP-87 |
 | `POST /api/workflows/` | `body:actions[].type=5`, `body:actions[].type=8`, `body:triggers[].type=5` | PLMCP-87 |
-| `PATCH /api/workflows/{id}/` | `body:actions[].ai_create_missing`, `body:actions[].ai_overwrite_existing`, `body:actions[].ai_suggestion_fields`, `body:actions[].email.id`, `body:actions[].id`, `body:actions[].passwords`, `body:actions[].webhook.id`, `body:triggers[].id` | PLMCP-87 |
+| `POST /api/workflows/` | `body:actions[].email.id`, `body:actions[].id`, `body:actions[].webhook.id`, `body:triggers[].id` | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
+| `PATCH /api/workflows/{id}/` | `body:actions[].ai_create_missing`, `body:actions[].ai_overwrite_existing`, `body:actions[].ai_suggestion_fields`, `body:actions[].id`, `body:actions[].passwords`, `body:triggers[].id` | PLMCP-87 |
 | `PATCH /api/workflows/{id}/` | `body:actions[].type=5`, `body:actions[].type=8`, `body:triggers[].type=5` | PLMCP-87 |
+| `PATCH /api/workflows/{id}/` | `body:actions[].email.id`, `body:actions[].webhook.id` | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
 
 ## Fields only a saved view reaches
 

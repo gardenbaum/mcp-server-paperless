@@ -11,12 +11,13 @@ webhook URLs, PDF passwords) are never shown.
 import dataclasses
 import json
 import re
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Final, Literal, cast
 from urllib.parse import urlsplit
 
 from mcp_server_paperless.domain.documents import NameOrId  # noqa: TC001 -- cast target at runtime
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
+    NotFound,
     PermissionDenied,
     Validation,
     destination,
@@ -42,12 +43,16 @@ from mcp_server_paperless.domain.workflows import (
     WRITABLE_TRIGGER_TYPES,
     ActionInfo,
     Field_,
+    ListedWorkflow,
     TriggerInfo,
     Workflow,
     WorkflowAction,
     WorkflowDeletion,
+    WorkflowHolder,
     WorkflowInfo,
     WorkflowListing,
+    WorkflowPart,
+    WorkflowRead,
     WorkflowTrigger,
     WorkflowValues,
 )
@@ -56,6 +61,7 @@ from mcp_server_paperless.services.removal import WAY_BACK
 from mcp_server_paperless.services.tag_hierarchy import close_over_ancestors, descendants
 from mcp_server_paperless.services.taxonomy import fold, pick
 from mcp_server_paperless.services.views import plural
+from mcp_server_paperless.services.workflow_usage import workflow_uses
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -66,7 +72,10 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.taxonomy import TaxonomyKind
     from mcp_server_paperless.domain.workflows import (
         ActionInput,
+        PartUse,
         TriggerInput,
+        TriggerTypeName,
+        Usage,
         WorkflowCreate,
         WorkflowEdit,
     )
@@ -652,17 +661,132 @@ class WorkflowService:
         self._writer: WorkflowWriter = writer
         self._taxonomy: TaxonomyResolver = taxonomy
 
-    async def list(self) -> WorkflowListing:
-        """Every workflow, with its triggers and actions.
+    async def list(
+        self,
+        *,
+        enabled: bool | None = None,
+        trigger: TriggerTypeName | None = None,
+        uses: Usage | None = None,
+    ) -> WorkflowListing:
+        """The workflows, with their triggers and actions.
+
+        ``enabled`` and ``trigger`` limit them to (not) enabled ones and to those with such a
+        trigger, ``uses`` to those that use an object.
 
         Raises:
-            PermissionDenied: The user may not view workflows.
+            NotFound: No object has the name in ``uses``; the hint lists the closest names.
+            Ambiguous: The name matches several objects.
+            Validation: A mail rule is given by a name.
+            PermissionDenied: The user may not view workflows, or the named object's kind.
         """
-        workflows = await self._reader.list_workflows()
+        wanted = None if uses is None else await self._used(uses)
+        workflows = await self._reader.list_workflows(
+            enabled=enabled, trigger_type=None if trigger is None else trigger_type(trigger)
+        )
+        found: dict[int, tuple[PartUse, ...]] = {}
+        note = None
+        if uses is not None and wanted is not None:
+            number, name = wanted
+            found = {w.id: workflow_uses(w, uses.kind, number, name) for w in workflows}
+            workflows = [w for w in workflows if found[w.id]]
+            if uses.kind == "custom_field" and name is None:
+                note = (
+                    f"You see no custom field {number}: it was searched by its id only, so a "
+                    "custom field query that names it is not found."
+                )
         names = await self._names(workflows)
         return WorkflowListing(
-            count=len(workflows), workflows=tuple(self._info(w, names) for w in workflows)
+            count=len(workflows),
+            workflows=tuple(
+                ListedWorkflow.model_validate(
+                    {**self._info(w, names).model_dump(), "used_in": found.get(w.id, ())}
+                )
+                for w in workflows
+            ),
+            note=note,
         )
+
+    async def _used(self, uses: Usage) -> tuple[int, str | None]:
+        """The id and, if the user sees it, the name of the object in ``uses``."""
+        number = _number(uses.value)
+        if uses.kind == "mail_rule":
+            if number is None:
+                message = "A mail rule is given by its id."
+                raise Validation(
+                    message, hint="Call list_mail_rules to see the ids (toolset mail)."
+                )
+            return number, None
+        try:
+            item = await self._taxonomy.resolve(uses.kind, uses.value)
+        except NotFound, PermissionDenied:
+            if number is None:
+                raise
+            return number, None
+        return item.id, item.name
+
+    async def read(
+        self,
+        *,
+        workflow: NameOrId | None = None,
+        trigger_id: int | None = None,
+        action_id: int | None = None,
+    ) -> WorkflowRead:
+        """A workflow, or a single trigger or action with the workflows that hold it.
+
+        Raises:
+            Validation: Not exactly one of the three is given.
+            NotFound: No such workflow, trigger or action.
+            Ambiguous: The name matches several workflows.
+            PermissionDenied: The user may view neither it nor the workflows that could hold it.
+        """
+        if [workflow, trigger_id, action_id].count(None) != 2:  # noqa: PLR2004 -- one of three
+            message = "Give exactly one of workflow, trigger_id and action_id."
+            raise Validation(message, hint="Call list_workflows to see names and ids.")
+        if workflow is not None:
+            return WorkflowRead.model_validate((await self.get(workflow)).model_dump())
+        try:
+            workflows = await self._reader.list_workflows()
+        except PermissionDenied:
+            workflows = None
+        if trigger_id is not None:
+            holders = _holders(workflows, "triggers", trigger_id)
+            trigger = await self._part(
+                self._reader.get_trigger,
+                "trigger",
+                trigger_id,
+                None if workflows is None else [t for w in workflows for t in w.triggers],
+            )
+            names = await self._names_of([trigger], [])
+            part = WorkflowPart(trigger=_trigger_info(trigger, names), workflows=holders)
+        else:
+            number = cast("int", action_id)
+            holders = _holders(workflows, "actions", number)
+            action = await self._part(
+                self._reader.get_action,
+                "action",
+                number,
+                None if workflows is None else [a for w in workflows for a in w.actions],
+            )
+            names = await self._names_of([], [action])
+            part = WorkflowPart(action=_action_info(action, names), workflows=holders)
+        return WorkflowRead(part=part)
+
+    @staticmethod
+    async def _part[T: (WorkflowTrigger, WorkflowAction)](
+        read: Callable[[int], Awaitable[T]], kind: str, number: int, held: Sequence[T] | None
+    ) -> T:
+        """The part ``read`` gives, or the one of the workflows if the user may not view parts."""
+        try:
+            return await read(number)
+        except PermissionDenied:
+            if held is None:
+                raise
+        for part in held:
+            if part.id == number:
+                return part
+        message = f"No workflow holds the {kind} {number}; you may not view ones outside workflows."
+        hint = "Call list_workflows to see the ids of triggers and actions."
+        raise NotFound(message, hint=hint)
 
     async def get(self, workflow: NameOrId) -> WorkflowInfo:
         """The workflow that ``workflow`` (a name or an id) names.
@@ -672,7 +796,13 @@ class WorkflowService:
             Ambiguous: The name matches several workflows.
             PermissionDenied: The user may not view workflows.
         """
-        found = await self.find(workflow)
+        number = _number(workflow)
+        try:
+            found = await (
+                self.find(workflow) if number is None else self._reader.get_workflow(number)
+            )
+        except NotFound:
+            found = await self.find(workflow)  # it says what there is instead
         return self._info(found, await self._names([found]))
 
     async def told(
@@ -1058,12 +1188,18 @@ class WorkflowService:
 
     async def _names(self, workflows: Sequence[Workflow]) -> dict[TaxonomyKind, dict[int, str]]:
         """The names of the objects the workflows refer to, for the kinds they use."""
+        return await self._names_of(
+            [t for w in workflows for t in w.triggers], [a for w in workflows for a in w.actions]
+        )
+
+    async def _names_of(
+        self, triggers: Sequence[WorkflowTrigger], actions: Sequence[WorkflowAction]
+    ) -> dict[TaxonomyKind, dict[int, str]]:
         used: set[TaxonomyKind] = set()
-        for workflow in workflows:
-            for trigger in workflow.triggers:
-                used |= _kinds(TRIGGER_FIELDS, trigger.settings)
-            for action in workflow.actions:
-                used |= _kinds(_action_fields(action), action.settings)
+        for trigger in triggers:
+            used |= _kinds(TRIGGER_FIELDS, trigger.settings)
+        for action in actions:
+            used |= _kinds(_action_fields(action), action.settings)
         names: dict[TaxonomyKind, dict[int, str]] = {}
         for kind in used:
             try:
@@ -1079,41 +1215,61 @@ class WorkflowService:
         note = " ".join([*notes, *([TRASH_NOTE] if trashes else [])])
         return info.model_copy(update={"note": note or None})
 
-    def _info(
-        self, workflow: Workflow, names: Mapping[TaxonomyKind, Mapping[int, str]]
-    ) -> WorkflowInfo:
-        def shown(name: str, field: Field_, value: JsonValue) -> JsonValue:
-            return _show(name, field, value, names)
-
-        def trigger(t: WorkflowTrigger) -> TriggerInfo:
-            settings = {
-                n: shown(n, TRIGGER_FIELDS[n], v)
-                for n, v in _set(TRIGGER_FIELDS, t.settings).items()
-            }
-            label = TRIGGER_TYPES.get(t.type, f"unknown type {t.type}")
-            return TriggerInfo(id=t.id, type=t.type, type_name=label, settings=settings)
-
-        def action(a: WorkflowAction) -> ActionInfo:
-            fields = _action_fields(a)
-            settings = {n: shown(n, fields[n], v) for n, v in _set(fields, a.settings).items()}
-            settings.update(_read_only(a))
-            label = ACTION_TYPES.get(a.type, f"unknown type {a.type}")
-            return ActionInfo(
-                id=a.id,
-                type=a.type,
-                type_name=label,
-                settings=settings,
-                shown_in_part=("webhook.url",) if _hides(_url(a)) else (),
-            )
-
+    @staticmethod
+    def _info(workflow: Workflow, names: Mapping[TaxonomyKind, Mapping[int, str]]) -> WorkflowInfo:
         return WorkflowInfo(
             id=workflow.id,
             name=workflow.name,
             order=workflow.order,
             enabled=workflow.enabled,
-            triggers=tuple(trigger(t) for t in workflow.triggers),
-            actions=tuple(action(a) for a in workflow.actions),
+            triggers=tuple(_trigger_info(t, names) for t in workflow.triggers),
+            actions=tuple(_action_info(a, names) for a in workflow.actions),
         )
+
+
+def _number(value: NameOrId) -> int | None:
+    """The id that ``value`` is, if it is one (as ``pick`` reads it)."""
+    text = str(value).strip()
+    return int(text) if text.isascii() and text.isdigit() else None
+
+
+def _holders(
+    workflows: Sequence[Workflow] | None, name: Literal["triggers", "actions"], number: int
+) -> tuple[WorkflowHolder, ...] | None:
+    """The workflows that hold a part; None if the user may not view workflows."""
+    if workflows is None:
+        return None
+    return tuple(
+        WorkflowHolder(id=w.id, name=w.name, enabled=w.enabled)
+        for w in workflows
+        if any(part.id == number for part in (w.triggers if name == "triggers" else w.actions))
+    )
+
+
+def _trigger_info(
+    trigger: WorkflowTrigger, names: Mapping[TaxonomyKind, Mapping[int, str]]
+) -> TriggerInfo:
+    settings = {
+        n: _show(n, TRIGGER_FIELDS[n], v, names)
+        for n, v in _set(TRIGGER_FIELDS, trigger.settings).items()
+    }
+    label = TRIGGER_TYPES.get(trigger.type, f"unknown type {trigger.type}")
+    return TriggerInfo(id=trigger.id, type=trigger.type, type_name=label, settings=settings)
+
+
+def _action_info(
+    action: WorkflowAction, names: Mapping[TaxonomyKind, Mapping[int, str]]
+) -> ActionInfo:
+    fields = _action_fields(action)
+    settings = {n: _show(n, fields[n], v, names) for n, v in _set(fields, action.settings).items()}
+    settings.update(_read_only(action))
+    return ActionInfo(
+        id=action.id,
+        type=action.type,
+        type_name=ACTION_TYPES.get(action.type, f"unknown type {action.type}"),
+        settings=settings,
+        shown_in_part=("webhook.url",) if _hides(_url(action)) else (),
+    )
 
 
 def _kinds(fields: Mapping[str, Field_], settings: Mapping[str, JsonValue]) -> set[TaxonomyKind]:
