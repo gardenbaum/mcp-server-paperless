@@ -1,6 +1,7 @@
 """PaperlessClient: headers, retries, error mapping and redaction, on real endpoint shapes."""
 
 import asyncio
+import contextlib
 import email.utils
 import logging
 from datetime import timedelta
@@ -1270,3 +1271,55 @@ async def test_an_error_of_the_reader_passes_through_a_stream_and_closes_it() ->
             raise error
 
     assert body.closed
+
+
+OLD_RELEASE = (
+    "Paperless 3.4.2 is older than the minimum release 3.5.1: Paperless must be updated; until "
+    "then some tools fail or answer differently"
+)
+
+
+@pytest.mark.decision("decision-57")
+async def test_an_old_release_is_logged_once_by_the_first_answer_that_reports_it(
+    make_client: ClientFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.WARNING, logger=CLIENT_LOGGER)
+    old = answer(200, TAG_PAGE, **{"X-Version": "3.4.2"})
+    client = make_client(Script(answer(200, TAG_PAGE), old, old))
+
+    _ = await client.request("GET", "/api/tags/")
+    assert caplog.records == []
+    _ = await client.request("GET", "/api/tags/")
+    _ = await client.request("GET", "/api/tags/")
+
+    assert [(r.levelno, r.getMessage()) for r in caplog.records] == [(logging.WARNING, OLD_RELEASE)]
+
+
+@pytest.mark.decision("decision-57")
+async def test_an_old_release_is_logged_when_it_is_a_stream_or_an_error_that_reports_it(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    for status in (200, 406):
+        caplog.clear()
+        client, _ = streaming(
+            lambda _, status=status: httpx2.Response(status, headers={"X-Version": "3.4.2"})
+        )
+        with contextlib.suppress(UnsupportedVersion):
+            _ = await client.download("/api/documents/1/download/", max_bytes=100)
+
+        assert [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING] == [
+            OLD_RELEASE
+        ]
+
+
+@pytest.mark.decision("decision-57")
+@pytest.mark.parametrize("version", [None, "", "dev", "3.4", "3.5.1", "3.6.0"])
+async def test_any_other_version_is_not_logged(
+    make_client: ClientFactory, caplog: pytest.LogCaptureFixture, version: str | None
+) -> None:
+    caplog.set_level(logging.WARNING, logger=CLIENT_LOGGER)
+    headers = {} if version is None else {"X-Version": version}
+
+    _ = await make_client(Script(answer(200, TAG_PAGE, **headers))).request("GET", "/api/tags/")
+
+    assert caplog.records == []

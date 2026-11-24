@@ -5,13 +5,31 @@ to superusers, staff and holders of ``view_system_monitoring``, and the current 
 flag (UI settings) only to holders of ``view_uisettings``.
 """
 
-from typing import Annotated, ClassVar
+import re
+from typing import Annotated, ClassVar, Final
 
 from pydantic import BaseModel, ConfigDict, Field
 
 # Output models are tool output schemas: a one-line class docstring each, and field descriptions
 # (``Field(description=...)``) only where the name does not say enough. Docstrings of these
 # classes reach the LLM in every tools/list, once per use of the class.
+
+
+# The oldest supported paperless-ngx (decision-43), compared with what Paperless reports.
+MINIMUM_RELEASE: Final = (3, 5, 1)
+_RELEASE = re.compile(r"(\d{1,9})\.(\d{1,9})\.(\d{1,9})", re.ASCII)
+
+
+def update_notice(version: str) -> str | None:
+    """That ``version`` is older than the minimum; None if it is not, or is no plain release."""
+    found = _RELEASE.fullmatch(version)
+    if found is None or tuple(map(int, found.groups())) >= MINIMUM_RELEASE:
+        return None
+    minimum = ".".join(map(str, MINIMUM_RELEASE))
+    return (
+        f"{version} is older than the minimum release {minimum}: Paperless must be updated; until "
+        "then some tools fail or answer differently"
+    )
 
 
 class _Frozen(BaseModel):
@@ -113,7 +131,9 @@ class ServerOverview(InstanceOverview):
     def of(cls, overview: InstanceOverview, toolsets: ToolsetGuide) -> ServerOverview:
         """The overview of the instance, with the toolsets of this server."""
         return cls(
-            paperless_version=overview.paperless_version,
+            # In the version itself: a field of its own costs every session its schema.
+            paperless_version=update_notice(overview.paperless_version)
+            or overview.paperless_version,
             api_version=overview.api_version,
             statistics=overview.statistics,
             system_status=overview.system_status,

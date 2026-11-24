@@ -28,8 +28,10 @@ The HTTP transport has its own variables in [Run over HTTP](http.md), the OIDC l
 Requires paperless-ngx 3.5.1 or later (API version 10). 3.5.1 is the oldest supported release and
 the one the tests run against (a fast tier on every pull request, the whole suite after every
 merge and nightly); the latest 3.x release is tested weekly. paperless-ngx
-3.4.x, 3.5.0 and 2.x are not supported: the server does not check the version, so against an older
-release some tools fail or answer differently.
+3.4.x, 3.5.0 and 2.x are not supported. Against an older release with API version 10 the server still
+starts, but some tools fail or answer differently: it logs one warning, and `get_instance_overview`
+says in `paperless_version` that Paperless must be updated. A version it cannot read as a release
+(such as `unknown` when a proxy removes the `X-Version` header) gives no warning.
 
 ## Server
 

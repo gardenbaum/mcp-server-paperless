@@ -323,7 +323,7 @@ them.
 
 | | |
 |---|---|
-| **paperless-ngx** | 3.5.1 or later (API version 10). Pull requests run a fast E2E tier against 3.5.1, the whole suite runs after every merge and nightly, and the latest 3.x release weekly. 3.4.x, 3.5.0 and 2.x are not supported |
+| **paperless-ngx** | 3.5.1 or later (API version 10). Pull requests run a fast E2E tier against 3.5.1, the whole suite runs after every merge and nightly, and the latest 3.x release weekly. 3.4.x, 3.5.0 and 2.x are not supported: the server warns about an older release in its log and in `get_instance_overview` |
 | **Clients** | Claude Code and Claude Desktop over stdio, claude.ai custom connectors and other MCP clients over Streamable HTTP |
 | **Runtime** | Python 3.14 or later (`uvx` fetches it for you), or the container image |
 

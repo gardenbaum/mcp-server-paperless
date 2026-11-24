@@ -9,12 +9,17 @@ from fakes.accounts import READER
 from fakes.paperless import FakePaperless, seeded
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-from harness import FailsAfterProbe, admin, serve
+from harness import FailsAfterProbe, Recorded, admin, serve
 
 from mcp_server_paperless.domain.errors import ConfirmationRequired, UpstreamUnreachable
 from mcp_server_paperless.tools._shared import boundary
 
 pytestmark = pytest.mark.anyio
+
+TOO_OLD = (
+    "3.4.2 is older than the minimum release 3.5.1: Paperless must be updated; until then some "
+    "tools fail or answer differently"
+)
 
 
 async def test_the_overview_is_the_structured_output_of_the_instance() -> None:
@@ -124,3 +129,17 @@ async def test_more_like_id_warns_that_an_empty_result_can_be_an_index_problem()
     properties = cast("dict[str, dict[str, str]]", schema["properties"])
     description = properties["more_like_id"]["description"]
     assert "document_index reindex" in description
+
+
+@pytest.mark.decision("decision-57")
+@pytest.mark.parametrize("version", ["3.4.2", "3.5.1", "3.6.0", "unknown", ""])
+async def test_the_overview_says_so_when_paperless_is_too_old(version: str) -> None:
+    overview = (await admin().get_overview()).model_copy(update={"paperless_version": version})
+
+    async with Client(serve(Recorded(overview))) as client:
+        result = await client.call_tool("get_instance_overview")
+
+    assert result.structured_content is not None
+    assert result.structured_content["paperless_version"] == (
+        TOO_OLD if version == "3.4.2" else version
+    )
