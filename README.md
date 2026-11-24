@@ -38,7 +38,7 @@ claude mcp add paperless --env PAPERLESS_URL=https://paperless.example.org \
 
 mcp-server-paperless is a [Model Context Protocol](https://modelcontextprotocol.io) server for
 paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai, Cursor, VS
-Code and any other MCP client 96 tools in 13 toolsets that cover most of what the Paperless API
+Code and any other MCP client 97 tools in 13 toolsets that cover most of what the Paperless API
 can do, from a search to saved views, mail rules and workflows. It starts small and careful: 20
 tools by default, names instead of ids, and a confirmation step before anything that cannot be
 undone.
@@ -99,7 +99,7 @@ people who want all of the following in one server:
 - 🛡️ **Nothing final without your yes.** Before a tool deletes, overwrites, publishes or shares
   anything, it reports what would happen and waits for your confirmation. Changes to many
   documents at once can be previewed first.
-- 🪶 **Small to start with.** Only 20 tools by default out of the 96, so the assistant starts
+- 🪶 **Small to start with.** Only 20 tools by default out of the 97, so the assistant starts
   with the essentials and you decide what else it may do. Search results are short lists and long
   documents are read piece by piece, so a conversation does not fill up with text it does not
   need.
@@ -251,7 +251,7 @@ variables: [Connect claude.ai](https://github.com/gardenbaum/mcp-server-paperles
 
 ## Toolsets
 
-The 96 tools are grouped into toolsets, and only two are on by default, so the model is not
+The 97 tools are grouped into toolsets, and only two are on by default, so the model is not
 handed tools you never use. Switch more on with `PAPERLESS_MCP_TOOLSETS=core,ai,pdf,trash` or
 `all`, and restart the server. The assistant is told which toolsets are off, what each adds and how to
 switch them on (never for a session: only you decide, see
@@ -261,7 +261,7 @@ switch them on (never for a session: only you decide, see
 |---|---|---|---|
 | `core` | 18 | on | Search, read, see pages as images, download, file and upload documents; run saved views; notes; tags, correspondents, types, storage paths and custom fields; background tasks |
 | `ai` | 2 | on | Ask Paperless AI about your documents and get its filing suggestions (offered only while Paperless AI is enabled) |
-| `bulk` | 4 | | Change many documents or taxonomy items in one step and resolve duplicates, with a dry run first; over stdio with upload directories also upload several files or a directory |
+| `bulk` | 5 | | Read many documents in one call, change many documents or taxonomy items in one step and resolve duplicates, with a dry run first; over stdio with upload directories also upload several files or a directory |
 | `pdf` | 10 | | See all pages at a glance with their sizes, insert pages of another document, rotate, merge, split with metadata per part, extract and delete pages, edit PDFs, remove passwords, reprocess |
 | `versions` | 6 | | The file versions of a document: list, upload, label, delete, merge documents as versions, correct the text |
 | `trash` | 5 | | List and filter the trash, look into an entry, get its file, restore it, empty the trash |

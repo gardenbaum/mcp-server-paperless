@@ -44,25 +44,25 @@ Limits.
 | `GET /api/config/{id}/` |  | PLMCP-83 |
 | `PATCH /api/config/{id}/` | `update_app_config` |  |
 | `PUT /api/config/{id}/` |  | PLMCP-83 |
-| `GET /api/correspondents/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 12 more |  |
+| `GET /api/correspondents/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 13 more |  |
 | `POST /api/correspondents/` | `create_taxonomy_item` |  |
 | `DELETE /api/correspondents/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/correspondents/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/correspondents/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/correspondents/{id}/` |  | PLMCP-83 |
-| `GET /api/custom_fields/` | `bulk_edit_documents`, `create_workflow`, `delete_taxonomy_item`, `get_document`, `get_trash_entry` and 8 more |  |
+| `GET /api/custom_fields/` | `bulk_edit_documents`, `create_workflow`, `delete_taxonomy_item`, `get_document`, `get_trash_entry` and 9 more |  |
 | `POST /api/custom_fields/` | `create_taxonomy_item` |  |
 | `DELETE /api/custom_fields/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/custom_fields/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/custom_fields/{id}/` | `update_taxonomy_item` |  |
 | `PUT /api/custom_fields/{id}/` |  | PLMCP-83 |
-| `GET /api/document_types/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 12 more |  |
+| `GET /api/document_types/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 13 more |  |
 | `POST /api/document_types/` | `create_taxonomy_item` |  |
 | `DELETE /api/document_types/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/document_types/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/document_types/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/document_types/{id}/` |  | PLMCP-83 |
-| `GET /api/documents/` | `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents`, `empty_trash` and 12 more |  |
+| `GET /api/documents/` | `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents`, `empty_trash` and 13 more |  |
 | `POST /api/documents/bulk_download/` | `bulk_download` |  |
 | `POST /api/documents/bulk_edit/` | `bulk_edit_documents`, `resolve_duplicates` |  |
 | `POST /api/documents/chat/` | `ask_paperless_ai` |  |
@@ -78,7 +78,7 @@ Limits.
 | `POST /api/documents/rotate/` | `rotate_documents` |  |
 | `POST /api/documents/selection_data/` |  | PLMCP-83 |
 | `DELETE /api/documents/{id}/` | `delete_document` |  |
-| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 20 more |  |
+| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 21 more |  |
 | `PATCH /api/documents/{id}/` | `correct_document_text`, `extract_pages`, `set_permissions`, `split_document`, `update_document` |  |
 | `PUT /api/documents/{id}/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/ai_suggestions/` | `get_ai_suggestions` |  |
@@ -87,7 +87,7 @@ Limits.
 | `GET /api/documents/{id}/history/` | `get_document` |  |
 | `GET /api/documents/{id}/metadata/` | `delete_pages`, `download_document`, `edit_pdf`, `email_documents`, `extract_pages` and 11 more |  |
 | `DELETE /api/documents/{id}/notes/` | `delete_note` |  |
-| `GET /api/documents/{id}/notes/` | `delete_note`, `get_document` |  |
+| `GET /api/documents/{id}/notes/` | `delete_note`, `get_document`, `read_documents` |  |
 | `POST /api/documents/{id}/notes/` | `add_note` |  |
 | `GET /api/documents/{id}/preview/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/root/` | `empty_trash`, `upload_document`, `upload_document_version`, `upload_documents` |  |
@@ -132,7 +132,7 @@ Limits.
 | `GET /api/profile/totp/` |  | PLMCP-83 |
 | `POST /api/profile/totp/` |  | PLMCP-83 |
 | `GET /api/remote_version/` |  | PLMCP-83 |
-| `GET /api/saved_views/` | `create_saved_view`, `delete_saved_view`, `get_saved_view`, `list_saved_views`, `list_taxonomy` and 2 more |  |
+| `GET /api/saved_views/` | `create_saved_view`, `delete_saved_view`, `get_saved_view`, `list_saved_views`, `list_taxonomy` and 3 more |  |
 | `POST /api/saved_views/` | `create_saved_view` |  |
 | `DELETE /api/saved_views/{id}/` | `delete_saved_view` |  |
 | `GET /api/saved_views/{id}/` |  | PLMCP-88 |
@@ -151,14 +151,14 @@ Limits.
 | `GET /api/share_links/{id}/` | `delete_share_link` |  |
 | `GET /api/statistics/` | `get_instance_overview` |  |
 | `GET /api/status/` | `get_instance_overview` |  |
-| `GET /api/storage_paths/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_workflow`, `delete_taxonomy_item`, `get_document` and 10 more |  |
+| `GET /api/storage_paths/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_workflow`, `delete_taxonomy_item`, `get_document` and 11 more |  |
 | `POST /api/storage_paths/` | `create_taxonomy_item` |  |
 | `POST /api/storage_paths/test/` |  | PLMCP-83 |
 | `DELETE /api/storage_paths/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/storage_paths/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/storage_paths/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/storage_paths/{id}/` |  | PLMCP-83 |
-| `GET /api/tags/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_taxonomy_item`, `delete_taxonomy_item` and 13 more |  |
+| `GET /api/tags/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_taxonomy_item`, `delete_taxonomy_item` and 14 more |  |
 | `POST /api/tags/` | `create_taxonomy_item`, `update_document` |  |
 | `DELETE /api/tags/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/tags/{id}/` | `update_taxonomy_item` |  |
@@ -176,7 +176,7 @@ Limits.
 | `POST /api/trash/` | `empty_trash`, `restore_from_trash` |  |
 | `GET /api/ui_settings/` | `delete_pages`, `delete_user`, `edit_pdf`, `email_documents`, `extract_pages` and 7 more |  |
 | `POST /api/ui_settings/` |  | PLMCP-88 |
-| `GET /api/users/` | `create_mail_rule`, `create_workflow`, `delete_user`, `get_document`, `get_user` and 8 more |  |
+| `GET /api/users/` | `create_mail_rule`, `create_workflow`, `delete_user`, `get_document`, `get_user` and 9 more |  |
 | `POST /api/users/` | `create_user` |  |
 | `DELETE /api/users/{id}/` | `delete_user` |  |
 | `GET /api/users/{id}/` | `delete_user`, `get_user`, `update_user` |  |
@@ -221,7 +221,6 @@ TOML file.
 | `GET /api/document_types/` | `query:id`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
 | `POST /api/document_types/` | `body:owner`, `body:set_permissions` | PLMCP-83 |
 | `GET /api/document_types/{id}/` | `query:full_perms` | PLMCP-83 |
-| `GET /api/documents/` | `query:fields` | PLMCP-80 |
 | `GET /api/documents/` | `query:added__day`, `query:added__gt`, `query:added__gte`, `query:added__lt`, `query:added__lte`, `query:added__month`, `query:added__year`, `query:all`, `query:archive_serial_number__gte`, `query:archive_serial_number__lte`, `query:checksum__icontains`, `query:checksum__iendswith`, `query:checksum__istartswith`, `query:content__iendswith`, `query:content__iexact`, `query:content__istartswith`, `query:correspondent__name__icontains`, `query:correspondent__name__iendswith`, `query:correspondent__name__iexact`, `query:correspondent__name__istartswith`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:document_type__name__icontains`, `query:document_type__name__iendswith`, `query:document_type__name__iexact`, `query:document_type__name__istartswith`, `query:id`, `query:modified__date__gte`, `query:modified__date__lte`, `query:modified__day`, `query:modified__gt`, `query:modified__gte`, `query:modified__lt`, `query:modified__lte`, `query:modified__month`, `query:modified__year`, `query:original_filename__icontains`, `query:original_filename__iendswith`, `query:original_filename__iexact`, `query:original_filename__istartswith`, `query:search`, `query:storage_path__name__icontains`, `query:storage_path__name__iendswith`, `query:storage_path__name__iexact`, `query:storage_path__name__istartswith`, `query:tags__id`, `query:tags__name__icontains`, `query:tags__name__iendswith`, `query:tags__name__iexact`, `query:tags__name__istartswith`, `query:title__iendswith`, `query:title__iexact`, `query:title__istartswith`, `query:title_content` | PLMCP-83 |
 | `GET /api/documents/` | `query:shared_by__id=false`, `query:shared_by__id=true` | PLMCP-83 |
 | `POST /api/documents/bulk_download/` | `body:all`, `body:excluded_documents`, `body:filters` | PLMCP-80 |

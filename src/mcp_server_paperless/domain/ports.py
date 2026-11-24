@@ -79,6 +79,7 @@ if TYPE_CHECKING:
         UserPage,
     )
     from mcp_server_paperless.domain.raw import RawReply
+    from mcp_server_paperless.domain.selection import DocumentRow, ReadField
     from mcp_server_paperless.domain.sharing import FileVersionKind, ShareBundle, ShareLink
     from mcp_server_paperless.domain.tasks import TaskState, TaskStatus, Unconfirmed
     from mcp_server_paperless.domain.taxonomy import (
@@ -131,6 +132,33 @@ class DocumentReader(Protocol):
         Raises:
             Validation: Paperless rejected the query (e.g. a bad ``custom_field_query``).
             NotFound: ``page`` is beyond the last page.
+        """
+        ...
+
+    async def select_documents(
+        self, query: DocumentQuery, *, limit: int, max_bytes: int
+    ) -> DocumentPage:
+        """The first ``limit`` documents matching ``query`` in one request, as a search.
+
+        Raises:
+            Validation: Paperless rejected the query.
+            AnswerTooLarge: The answer is larger than ``max_bytes``.
+            AnswerCompressed: The answer was compressed, so its size is not known.
+        """
+        ...
+
+    async def read_rows(
+        self, document_ids: Sequence[int], fields: Sequence[ReadField], *, max_bytes: int
+    ) -> tuple[DocumentRow, ...]:
+        """Those of the documents the user may see, with ``fields``, in one request.
+
+        ``content`` is no field of a row: it is never read here. Paperless sends the notes also to
+        a user without ``view_note``, so whoever asks for them checks that first.
+
+        Raises:
+            PermissionDenied: The user lacks the global ``view_document`` permission.
+            AnswerTooLarge: The answer is larger than ``max_bytes``.
+            AnswerCompressed: The answer was compressed, so its size is not known.
         """
         ...
 

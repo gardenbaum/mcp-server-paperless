@@ -69,7 +69,9 @@ from mcp_server_paperless.services.pdf_parts import Parts
 from mcp_server_paperless.services.pdf_replacing import Replacing
 from mcp_server_paperless.services.permissions import PermissionService
 from mcp_server_paperless.services.raw import RawApiService
+from mcp_server_paperless.services.read_documents import ReadDocuments
 from mcp_server_paperless.services.removal import DocumentRemoval
+from mcp_server_paperless.services.selection import DocumentSelector
 from mcp_server_paperless.services.sharing import SharingService
 from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
@@ -412,9 +414,8 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     credentials = StaticTokenProvider(paperless.token.get_secret_value())
     web_url = str(paperless.public_url or paperless.url)
     by_path = stdio and bool(settings.upload_dirs)
-    uploads = catalogue.remote_providers
-    if stdio:
-        uploads = catalogue.local_providers if by_path else catalogue.stdio_providers
+    in_process = catalogue.local_providers if by_path else catalogue.stdio_providers
+    uploads = in_process if stdio else catalogue.remote_providers
     known_tools = {**catalogue.annotations, **catalogue.local_annotations}
     if by_path:
         toolsets = {**catalogue.tool_toolsets, **catalogue.local_tool_toolsets}
@@ -455,6 +456,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
             documents = DocumentService(
                 adapters.documents, adapters.trash, taxonomy, web_url=web_url
             )
+            views = ViewService(adapters.views, adapters.view_writes, taxonomy, documents)
             trash_scan = TrashScan(adapters.trash, adapters.documents, taxonomy)
             duplicates = DuplicateFinder(adapters.documents, adapters.trash, web_url=web_url)
             tasks = TaskService(adapters.tasks, sleep=sleep, clock=clock, duplicates=duplicates)
@@ -503,7 +505,19 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 removal=removal,
                 tasks=tasks,
                 ai=AiService(adapters.ai, taxonomy, web_url=web_url),
-                views=ViewService(adapters.views, adapters.view_writes, taxonomy, documents),
+                views=views,
+                read_documents=ReadDocuments(
+                    adapters.documents,
+                    DocumentSelector(
+                        adapters.documents,
+                        documents,
+                        views,
+                        taxonomy,
+                    ),
+                    taxonomy,
+                    web_url=web_url,
+                    clock=clock,
+                ),
                 pdf=PdfService(
                     adapters.documents,
                     adapters.pdf_writes,

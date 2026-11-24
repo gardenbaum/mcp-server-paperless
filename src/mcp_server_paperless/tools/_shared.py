@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.pdf_insert import PageInserter
     from mcp_server_paperless.services.permissions import PermissionService
     from mcp_server_paperless.services.raw import RawApiService
+    from mcp_server_paperless.services.read_documents import ReadDocuments
     from mcp_server_paperless.services.removal import DocumentRemoval
     from mcp_server_paperless.services.sharing import SharingService
     from mcp_server_paperless.services.tasks import TaskService
@@ -151,6 +152,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "create_taxonomy_item": "core",
     "update_taxonomy_item": "core",
     "delete_taxonomy_item": "core",
+    "read_documents": "bulk",
     "bulk_edit_documents": "bulk",
     "bulk_edit_taxonomy": "bulk",
     "resolve_duplicates": "bulk",
@@ -718,6 +720,12 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    "read_documents": ToolAnnotations(
+        title="Read documents",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     # Destructive (decision-6): it can trash documents and overwrite what many of them hold, so
     # every execution needs confirm, and dry_run previews it. Not idempotent: a repeated trashing
     # or reprocessing is another action (a repeated tag change leaves the state as it is).
@@ -1064,6 +1072,7 @@ class Services:
     versions: VersionService
     version_uploads: VersionUploadService
     text_edits: TextEditor
+    read_documents: ReadDocuments
     bulk_documents: BulkDocumentEditor
     bulk_taxonomy: BulkTaxonomyEditor
     duplicate_resolver: DuplicateResolver

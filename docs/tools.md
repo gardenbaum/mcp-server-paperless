@@ -2,7 +2,7 @@
 
 <!-- Generated from the tool surface by `just docs-tools`. Do not edit by hand. -->
 
-96 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
+97 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
 default; the others are switched on with
 [`PAPERLESS_MCP_TOOLSETS`](configuration.md#toolsets), which also says what each toolset is for.
 
@@ -67,6 +67,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 
 | Tool | Kind | What it does |
 |---|---|---|
+| `read_documents` | read | Read many documents, at most 100 per call, chosen by ids, search filters or a saved view. |
 | `bulk_edit_documents` | destructive, confirm, dry run | Change many documents in one step: tags, correspondent, type, storage path, custom fields, trash or reprocess. |
 | `bulk_edit_taxonomy` | destructive, confirm, dry run | Delete many tags, correspondents, document types or storage paths, or set who owns them and who may view or change them. |
 | `resolve_duplicates` | destructive, confirm, dry run | Keep one document and move its duplicates to the trash, or merge them into it as versions. |
