@@ -68,7 +68,9 @@ from mcp_server_paperless.services.pdf_parts import Parts
 from mcp_server_paperless.services.pdf_replacing import Replacing
 from mcp_server_paperless.services.permissions import PermissionService
 from mcp_server_paperless.services.raw import RawApiService
+from mcp_server_paperless.services.read_documents import ReadDocuments
 from mcp_server_paperless.services.removal import DocumentRemoval
+from mcp_server_paperless.services.selection import DocumentSelector
 from mcp_server_paperless.services.sharing import SharingService
 from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
@@ -499,6 +501,17 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 tasks=tasks,
                 ai=AiService(adapters.ai, taxonomy, web_url=web_url),
                 views=ViewService(adapters.views, adapters.view_writes, taxonomy, documents),
+                read_documents=ReadDocuments(
+                    adapters.documents,
+                    DocumentSelector(
+                        adapters.documents,
+                        documents,
+                        ViewService(adapters.views, adapters.view_writes, taxonomy, documents),
+                    ),
+                    taxonomy,
+                    web_url=web_url,
+                    clock=clock,
+                ),
                 pdf=PdfService(
                     adapters.documents,
                     adapters.pdf_writes,

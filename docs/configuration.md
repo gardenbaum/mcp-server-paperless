@@ -182,7 +182,16 @@ read-only tools will run them unasked. Use `PAPERLESS_MCP_TOOLSETS=core` to leav
 
 ### `bulk`
 
-Off by default. Over stdio with upload directories it also has `upload_documents`, see
+Off by default. `read_documents` reads up to 100 documents a call, chosen by ids, by the filters of
+`search_documents` or by a saved view, with the fields you name. At most 1000 documents may match:
+more is refused with the count, and the first page names the id of each match, so the other tools
+can take a set that was shown. Ids together with the filters or the view are read only while each of
+them still matches. Text comes only when asked for, at most 20,000 characters a call, one document
+after the other for at most 40 seconds; an answer has at most 100,000 characters, and what does not
+fit is named. Notes are refused to a user who may not view notes. `read_documents` only reads, so
+read-only mode keeps it (decision-69 and decision-70 in `backlog/decisions/`).
+
+Over stdio with upload directories the toolset also has `upload_documents`, see
 [Uploads and downloads](#uploads-and-downloads). `bulk_edit_documents` changes many documents in one step (tags, correspondent,
 type, storage path, custom fields, trash, reprocess) and `bulk_edit_taxonomy` deletes many tags,
 correspondents, document types or storage paths or sets who owns and may see them. Both work in

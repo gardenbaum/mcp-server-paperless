@@ -8,8 +8,8 @@
 #                 an exclusion. A field a tool supports that no tool test sends is listed too.
 # [[internal]]    fields the adapter chooses itself although a task wants them as a tool argument
 #                 (tasks owner, ordering, date_created_after; processed_mail ordering; the body
-#                 of mail_accounts/test, for testing an unsaved account; the documents `fields`
-#                 projection, PLMCP-80 AC 3; the documents of a bundle rebuild, PLMCP-83). They
+#                 of mail_accounts/test, for testing an unsaved account; the documents of a bundle
+#                 rebuild, PLMCP-83). They
 #                 stay open under that task although they are sent.
 # [[plumbing]]    fields the adapter chooses itself and no task is known to want as an argument
 #                 (applied where it was noticed, not a census of every constant): full_perms,
@@ -211,11 +211,6 @@ fields = ["query:ordering"]
 reason = "the adapter chooses it"
 
 [[internal]]
-operation = "GET /api/documents/"
-fields = ["query:fields"]
-reason = "the projection is chosen by the adapter; PLMCP-80 AC 3 wants the fields selectable"
-
-[[internal]]
 operation = "POST /api/share_link_bundles/{id}/rebuild/"
 fields = ["body:document_ids"]
 reason = "the stored bundle's documents are sent back; rebuilding with other documents is not offered (PLMCP-83)"
@@ -249,11 +244,6 @@ task = "PLMCP-83"
 operation = "GET /api/document_types/{id}/"
 fields = ["query:full_perms"]
 task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/documents/"
-fields = ["query:fields"]
-task = "PLMCP-80"
 
 [[open_fields]]
 operation = "GET /api/documents/"

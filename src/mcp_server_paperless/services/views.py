@@ -33,7 +33,7 @@ from mcp_server_paperless.services.taxonomy import fold, pick
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping, Sequence
 
-    from mcp_server_paperless.domain.documents import DocumentSearchResult, NameOrId
+    from mcp_server_paperless.domain.documents import DocumentQuery, DocumentSearchResult, NameOrId
     from mcp_server_paperless.domain.ports import ViewReader, ViewWriter
     from mcp_server_paperless.domain.taxonomy import TaxonomyKind
     from mcp_server_paperless.domain.views import RuleInput, SavedView, ViewCreate, ViewEdit
@@ -231,9 +231,20 @@ class ViewService:
             Ambiguous: The name matches several views.
             PermissionDenied: The user may not view saved views or documents.
         """
-        found = await self._find(view)
-        query = translate(found.filter_rules, found.sort_field, sort_reverse=found.sort_reverse)
+        query = await self.query(view)
         return await self._documents.search(NameFilters(), query, page=page, page_size=page_size)
+
+    async def query(self, view: NameOrId) -> DocumentQuery:
+        """The search a view stands for; nothing is searched.
+
+        Raises:
+            Validation: A rule or the sort field of the view cannot be run.
+            NotFound: No such view.
+            Ambiguous: The name matches several views.
+            PermissionDenied: The user may not view saved views.
+        """
+        found = await self._find(view)
+        return translate(found.filter_rules, found.sort_field, sort_reverse=found.sort_reverse)
 
     async def _find(self, view: NameOrId) -> SavedView:
         views = await self._reader.list_saved_views()
