@@ -116,7 +116,7 @@ TIER_PARTS = 4
 # What every pull request that changes code runs: the stdio smoke test.
 STDIO = "tests/e2e/test_stdio.py"
 # What a change outside the toolset map (shared code, helpers, build files) adds to the tier: the
-# stdio test, the stack's own seeding test and a read-only sample across the adapter, about 35 s.
+# stdio test, the stack's own seeding test and a read-only sample across the adapter, about 65 s.
 # The full suite follows after the merge.
 SMOKE_TARGETS = frozenset(
     {

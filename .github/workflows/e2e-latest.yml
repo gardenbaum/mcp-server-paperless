@@ -63,7 +63,7 @@ jobs:
     name: e2e-latest (${{ matrix.shard }})
     needs: resolve
     runs-on: ubuntu-latest
-    # A hang guard, no quality gate: the whole suite took about 33 minutes in one job (PLMCP-45),
+    # A hang guard, no quality gate: the whole suite is about 50 minutes of tests, split in four (decision-58),
     # so a shard takes about 15 minutes.
     timeout-minutes: 25
     strategy:
