@@ -9,15 +9,17 @@ Every test works on documents of its own, never on a seeded one.
 
 import asyncio
 import io
+import json
 import time
 import uuid
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from e2e.helpers import pdf_pages
 from PIL import Image
 
+from mcp_server_paperless.domain.bulk import TagsChange
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch, DocumentQuery
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, PageSlot, StartedTasks
@@ -602,13 +604,24 @@ async def copies(backend: Backend, user: Ports, files: CopiedFiles | None) -> Fo
     deadline = time.monotonic() + SECONDS
     while True:
         found = await user.pdf_writes.find_copies(files)
-        if found.doubt is not None or None not in found.ids:
+        if found.doubt is not None and not found.passing:
+            return found
+        if found.doubt is None and None not in found.ids:
             for number in found.ids:
                 if number is not None:
                     backend.track_document(number)
             return found
         assert time.monotonic() < deadline, "Paperless did not finish in time"
         await asyncio.sleep(0.5)
+
+
+async def queued_row(user: Ports, request: str) -> tuple[object, object, object]:
+    """Type, operation and owner of a queued operation, as this user sees its row."""
+    reply = await user.raw.get("/api/tasks/", {"task_id": request}, max_bytes=100_000)
+    page = cast("dict[str, list[dict[str, object]]]", json.loads(reply.body))
+    [row] = [row for row in page["results"] if row["task_id"] == request]
+    data = cast("dict[str, object]", row["input_data"])
+    return row["task_type"], data["operation"], row["owner"]
 
 
 @pytest.mark.contract(COPIES)
@@ -620,7 +633,23 @@ async def test_parts_whose_tasks_a_date_hides_are_found_by_their_file_names(
     document, other = backend.new_pdf(3), backend.new_pdf(1)
     value = await dated(backend, document)
     _ = await dated(backend, other)
+    # A metadata change of somebody, and a PDF operation of a user who is deleted since: neither
+    # has an owner afterwards, and everybody sees them.
+    tags = {tag.name: tag.id for tag in await backend.admin.taxonomy.list_taxonomy("tag")}
+    change = TagsChange(add=(tags["e2e-finance"],))
+    _ = await backend.admin.bulk_writes.bulk_edit_documents((other,), change)
+    name = f"contract-gone-{uuid.uuid4().hex[:12]}"
+    gone = backend.restricted(FINDING, name=name)
+    theirs = await gone.pdf_writes.edit_pdf(other, (PageSlot(page=1),), output="new_document")
+    [made] = (await copies(backend, gone, theirs.files)).ids
+    accounts = await backend.admin.permissions.list_users(name_contains=name, page=1, page_size=1)
+    [account] = accounts.rows
+    await backend.admin.management_writes.delete_user(account.id)
     user = backend.restricted(FINDING)
+    assert theirs.files is not None
+    assert await queued_row(user, theirs.files.request) == ("bulk_update", "edit_pdf", None)
+    assert made is not None
+    assert (await backend.admin.documents.get_document(made)).owner is None
     slots = (PageSlot(page=1), PageSlot(page=2, document=1), PageSlot(page=3, document=1))
 
     first = await user.pdf_writes.edit_pdf(other, (PageSlot(page=1),), output="new_document")
@@ -630,6 +659,7 @@ async def test_parts_whose_tasks_a_date_hides_are_found_by_their_file_names(
 
     assert (tasks.ids, tasks.problem) == ((), None)
     assert one is not None
+    assert one != made  # the same file name, but not the caller's
     # The earlier operation is known to have made something else: its file is there.
     assert found.doubt is None
     assert [await pages(backend, n) for n in found.ids if n is not None] == [1, 2]
@@ -691,7 +721,11 @@ async def two_made(backend: Backend, user: Ports, name: str) -> None:
 async def test_a_merged_and_an_unlocked_document_are_found_by_their_file_names(
     backend: Backend,
 ) -> None:
-    document, second, locked = backend.new_pdf(2), backend.new_pdf(1), backend.new_encrypted("s3c")
+    document, second, locked = (
+        backend.new_pdf(2),
+        backend.new_pdf(1),
+        backend.new_encrypted("s3cret"),
+    )
     for number in (document, second, locked):
         _ = await dated(backend, number)
     merging, unlocking = backend.restricted(FINDING), backend.restricted(FINDING)
@@ -699,7 +733,7 @@ async def test_a_merged_and_an_unlocked_document_are_found_by_their_file_names(
     merged = await merging.pdf_writes.merge_documents(
         (document, second), metadata_document_id=document
     )
-    unlocked = await unlocking.pdf_writes.remove_password(locked, "s3c", output="new_document")
+    unlocked = await unlocking.pdf_writes.remove_password(locked, "s3cret", output="new_document")
 
     [together] = (await copies(backend, merging, merged.files)).ids
     [opened] = (await copies(backend, unlocking, unlocked.files)).ids
