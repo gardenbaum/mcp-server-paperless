@@ -21,7 +21,7 @@ import contextlib
 import logging
 from collections import Counter
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Literal
 
 from mcp_server_paperless.domain.documents import UploadState  # noqa: TC001 -- used at runtime in a constant
 from mcp_server_paperless.domain.errors import (
@@ -114,6 +114,7 @@ MAYBE_DATED: Final = (
     "lists no task: the work is done all the same"
 )
 STOPPED: Final = "An unexpected error stopped the call after Paperless accepted the request."
+MAYBE_GONE: Final = "It is not known which originals went to the trash: look at documents {ids}."
 # How long to look for an unlocked file where the locked one was readable, so there may be none.
 UNLOCK_SECONDS: Final = 5.0
 NOT_TAKEN: Final = (
@@ -344,15 +345,21 @@ class PdfService:
         started = await self._writer.rotate_documents(
             document_ids, turn, original_files=use_original_files
         )
-        return await self._result(
-            "rotate",
-            summary,
-            document_ids,
+        base = self._preview("rotate", summary, document_ids, plan)
+        return await _guarded(
+            lambda _: self._result(
+                "rotate",
+                summary,
+                document_ids,
+                started,
+                plan,
+                wait_seconds=wait_seconds,
+                version=True,
+                copied=documents,
+            ),
+            _accepted(base, started),
             started,
-            plan,
-            wait_seconds=wait_seconds,
-            version=True,
-            copied=documents,
+            find=_versions(document_ids),
         )
 
     async def merge(  # noqa: PLR0913 -- the documents and the options of the merge
@@ -436,27 +443,33 @@ class PdfService:
             original_files=use_original_files,
         )
         bound = _bound(wait_seconds, composed=delete_originals)
-        copied = [d for d in documents if d.id == metadata_document_id]
-        started, found = await self._parts.look(started, await self._dates(copied), bound)
-        result = await self._result(
-            "merge",
-            summary,
-            document_ids,
-            started,
-            plan,
-            wait_seconds=bound,
-            copied=copied,
-            found=found,
-        )
-        left_out = _left_out(document_ids, started)
-        if not delete_originals:
-            return await self._merged_note(result, left_out, pages)
-        if started.included is None and pages is None:
-            left_out = "it cannot be told whether every document is in the merged one"
-        wanted = Replacement(
-            documents, {0: pages}, serial=serial, problem=left_out, unread=bool(unread)
-        )
-        return await self._replacing.finish(result, started, wanted, began=began)
+        wanted = Replacement(documents, {0: pages}, serial=serial, unread=bool(unread))
+
+        async def follow_up(progress: Progress) -> PdfResult:
+            copied = [d for d in documents if d.id == metadata_document_id]
+            known, found = await self._parts.look(started, await self._dates(copied), bound)
+            result = await self._result(
+                "merge",
+                summary,
+                document_ids,
+                known,
+                plan,
+                wait_seconds=bound,
+                copied=copied,
+                found=found,
+            )
+            progress.result = result
+            left_out = _left_out(document_ids, known)
+            if not delete_originals:
+                return await self._merged_note(result, left_out, pages)
+            if known.included is None and pages is None:
+                left_out = "it cannot be told whether every document is in the merged one"
+            return await self._replacing.finish(
+                result, known, replace(wanted, problem=left_out), began=began, progress=progress
+            )
+
+        base = _accepted(self._preview("merge", summary, document_ids, plan), started)
+        return await _guarded(follow_up, base, started, wanted if delete_originals else None)
 
     async def split(
         self,
@@ -907,23 +920,16 @@ class PdfService:
             ConfirmationRequired.require(asked, scope=scope)
         began = self._replacing.clock()
         started = await start("new_version" if version else "new_document")
-        base = self._preview(request.operation, summary, [document.id], plan).model_copy(
-            update={
-                "dry_run": False,
-                "state": "unknown",
-                "tasks": tuple(
-                    PdfTask(task_id=n, state="unknown", message=None, document_ids=())
-                    for n in started.ids
-                ),
-                "original": "kept" if trashes or request.parts else None,
-            }
+        base = _accepted(
+            self._preview(request.operation, summary, [document.id], plan),
+            started,
+            original="kept" if trashes or request.parts else None,
         )
-        progress = Progress(base)
         wanted = Replacement(
             [document], files, serial=moves if trashes else None, unread=bool(unread)
         )
-        try:
-            return await self._follow_up(
+        return await _guarded(
+            lambda progress: self._follow_up(
                 source,
                 request,
                 started,
@@ -933,12 +939,12 @@ class PdfService:
                 no_task=no_task,
                 began=began,
                 progress=progress,
-            )
-        except Exception as error:  # noqa: BLE001 -- Paperless took the request: say what is known
-            logger.error(  # noqa: TRY400 -- the type alone: a message could hold document data
-                "%s: stopped after the start: %s", request.operation, type(error).__name__
-            )
-            return _stopped(progress, started, wanted)
+            ),
+            base,
+            started,
+            wanted,
+            find=_versions([document.id]) if version else FIND,
+        )
 
     async def _follow_up(  # noqa: PLR0913 -- what was started and how it goes on
         self,
@@ -1325,25 +1331,67 @@ def _unremoved(
     return result.model_copy(update=known)
 
 
-def _stopped(progress: Progress, started: StartedTasks, wanted: Replacement) -> PdfResult:
+def _versions(document_ids: Sequence[int]) -> str:
+    """Where to look for new versions whose tasks are not known."""
+    return ", then ".join(
+        f'get_document(document_id={n}, include=["versions"])' for n in document_ids
+    )
+
+
+def _accepted(
+    preview: PdfResult, started: StartedTasks, *, original: Literal["kept"] | None = None
+) -> PdfResult:
+    """What is known of a request right after Paperless accepted it."""
+    tasks = tuple(
+        PdfTask(task_id=n, state="unknown", message=None, document_ids=()) for n in started.ids
+    )
+    known = {"dry_run": False, "state": "unknown", "tasks": tasks, "original": original}
+    return preview.model_copy(update=known)
+
+
+async def _guarded(
+    follow_up: Callable[[Progress], Awaitable[PdfResult]],
+    base: PdfResult,
+    started: StartedTasks,
+    wanted: Replacement | None = None,
+    *,
+    find: str = FIND,
+) -> PdfResult:
+    """What ``follow_up`` returns, or what was known when an unexpected error stopped it."""
+    progress = Progress(base)
+    try:
+        return await follow_up(progress)
+    except Exception as error:  # noqa: BLE001 -- Paperless took the request: say what is known
+        logger.error(  # noqa: TRY400 -- the type alone: a message could hold document data
+            "%s: stopped after the start: %s", base.operation, type(error).__name__
+        )
+        return _stopped(progress, started, wanted, find)
+
+
+def _stopped(
+    progress: Progress, started: StartedTasks, wanted: Replacement | None, find: str
+) -> PdfResult:
     """What is known of a call an unexpected error stopped after Paperless accepted it."""
     known = progress.result
     notes = [STOPPED]
-    [original] = wanted.originals
-    moving = wanted.serial is not None and original.archive_serial_number is not None
-    if progress.last and moving and known.produced_ids:
-        notes.append(
-            UNKNOWN_PLACE.format(
-                number=original.archive_serial_number,
-                original=original.id,
-                product=known.produced_ids[-1],
-            )
-        )
-    waits = [f'get_task(task_id="{task_id}", wait_seconds=30)' for task_id in started.ids]
     update: dict[str, object] = {"state": "unknown"}
-    if progress.last:
-        update["original"] = "unknown"
-    return noted(known, notes, next_call=", then ".join(waits) or FIND).model_copy(update=update)
+    if progress.last and wanted is not None:
+        if len(wanted.originals) == 1:
+            update["original"] = "unknown"
+        else:
+            ids = ", ".join(str(d.id) for d in wanted.originals)
+            notes.append(MAYBE_GONE.format(ids=ids))
+        serial = wanted.serial
+        if serial is not None and serial.archive_serial_number is not None and known.produced_ids:
+            notes.append(
+                UNKNOWN_PLACE.format(
+                    number=serial.archive_serial_number,
+                    original=serial.id,
+                    product=known.produced_ids[-1],
+                )
+            )
+    waits = [f'get_task(task_id="{task_id}", wait_seconds=30)' for task_id in started.ids]
+    return noted(known, notes, next_call=", then ".join(waits) or find).model_copy(update=update)
 
 
 def _together(made: PdfResult, removal: PdfResult) -> PdfResult:

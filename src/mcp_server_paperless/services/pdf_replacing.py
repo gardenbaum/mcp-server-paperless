@@ -284,7 +284,7 @@ class Replacing:
         wanted: Replacement,
         *,
         began: float,
-        progress: Progress | None = None,
+        progress: Progress,
     ) -> PdfResult:
         """``result`` after the last step: originals trashed, or why not and how to go on.
 
@@ -297,8 +297,7 @@ class Replacing:
                 await self.unchanged(original, original.archive_serial_number)
         except KeptError as kept:
             return stays(result, wanted, kept.reason, kept.next_call)
-        if progress is not None:
-            progress.last = True
+        progress.last = True
         # Not to be cut short between taking a serial number from one document and giving it on.
         done = await asyncio.shield(asyncio.ensure_future(self._trash(wanted, product, began)))
         result = noted(result, done.notes, next_call=done.next)

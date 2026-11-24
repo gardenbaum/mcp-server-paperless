@@ -67,6 +67,7 @@ class Paperless(FakePaperless):
         self.started: list[str] = []
         self.problem: LookupProblem | None = None
         self.no_fields: bool = False
+        self.break_fields: bool = False
         self.swap: bool = False
         self.hide_tasks: bool = False
         self.update_error: BaseException | None = None
@@ -200,6 +201,8 @@ class Paperless(FakePaperless):
 
     @override
     async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
+        if self.break_fields:
+            raise RuntimeError
         if self.no_fields:
             message = "The Paperless user may not perform this action."
             raise PermissionDenied(message)
@@ -1502,3 +1505,72 @@ async def test_an_unreadable_field_list_leaves_a_date_possible() -> None:
     assert result.message is not None
     maybe = DATED.replace("hold a date", "may hold a date (their definitions cannot be read)")
     assert result.message.startswith(f"{NO_TASK} ({maybe}). Nothing")
+
+
+STOPPED = "An unexpected error stopped the call after Paperless accepted the request."
+
+
+@pytest.mark.decision("decision-67")
+@pytest.mark.parametrize("trashes", [False, True])
+async def test_an_unexpected_error_after_a_merge_started_is_not_raised(
+    *, trashes: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake = paperless()
+    fake.unreadable = broken
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+
+    result = await service.merge(
+        [DOC, OTHER], None, delete_originals=trashes, confirm=trashes, wait_seconds=5
+    )
+
+    assert (result.operation, result.state, result.trashed_ids) == ("merge", "unknown", ())
+    assert (result.message or "").endswith(STOPPED)
+    assert result.next == f'get_task(task_id="{fake.started[0]}", wait_seconds=30)'
+    assert (trash(fake), result.original) == ([], None)
+    assert "RuntimeError" in caplog.text
+    assert "secret" not in caplog.text + str(result)
+
+
+def broken(number: int) -> bool:
+    """Reads of new documents fail unexpectedly."""
+    if number > OTHER:
+        message = "secret"
+        raise RuntimeError(message)
+    return False
+
+
+@pytest.mark.decision("decision-67")
+async def test_an_unexpected_error_while_merged_originals_go_says_that_they_may_be_gone() -> None:
+    fake = paperless(NUMBER)
+
+    def second(number: int) -> None:
+        if number == OTHER:
+            raise RuntimeError
+
+    fake.before_delete = second
+
+    result = await merge(fake)
+
+    assert (result.state, trash(fake)) == ("unknown", [DOC])
+    assert "It is not known which originals went to the trash: look at documents 50, 51." in (
+        result.message or ""
+    )
+    assert "It is not known where archive serial number 777 is" in (result.message or "")
+
+
+@pytest.mark.decision("decision-67")
+async def test_an_unexpected_error_after_rotating_started_is_not_raised() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    fake.break_fields = True
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+
+    some = await service.rotate([DOC, OTHER], 90)
+    none = await service.rotate([DOC], 90)
+    version = await service.remove_password(DOC, "x", output="new_version")
+
+    assert [r.state for r in (some, none)] == ["unknown", "unknown"]
+    assert (some.message, none.message) == (STOPPED, STOPPED)
+    assert some.next == f'get_task(task_id="{fake.started[0]}", wait_seconds=30)'
+    assert none.next == f'get_document(document_id={DOC}, include=["versions"])'
+    assert version.message != STOPPED  # copies nothing, so it does not read the definitions
