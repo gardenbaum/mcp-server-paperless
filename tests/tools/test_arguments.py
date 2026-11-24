@@ -1115,6 +1115,20 @@ async def test_the_pdf_tools_take_every_option() -> None:
         prepare=with_real_files,
     )
     await sweep(
+        "insert_pages",
+        {
+            "document_id": 1,
+            "source_document_id": 2,
+            "after_page": 1,
+            "pages": "1",
+            "source_version_id": 2,
+            "wait_seconds": 0,
+            "dry_run": False,
+        },
+        ("output",),
+        prepare=with_real_files,
+    )
+    await sweep(
         "rotate_documents",
         {"document_ids": [1], "degrees": 90, "wait_seconds": 0, "dry_run": False},
         ("degrees", "use_original_files"),

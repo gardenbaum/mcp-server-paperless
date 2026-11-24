@@ -64,6 +64,7 @@ from mcp_server_paperless.services.mail import MailService
 from mcp_server_paperless.services.notes import NoteService
 from mcp_server_paperless.services.pages import PageService
 from mcp_server_paperless.services.pdf import PdfService
+from mcp_server_paperless.services.pdf_insert import PageInserter
 from mcp_server_paperless.services.pdf_parts import Parts
 from mcp_server_paperless.services.pdf_replacing import Replacing
 from mcp_server_paperless.services.permissions import PermissionService
@@ -470,7 +471,11 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 upload_dirs=settings.upload_dirs if by_path else (),
                 path_hint=path_hint,
             )
-            removal = DocumentRemoval(adapters.documents, adapters.document_writes, taxonomy)
+            removal, drawing, turn = (
+                DocumentRemoval(adapters.documents, adapters.document_writes, taxonomy),
+                renderer or ChildRenderer(),
+                asyncio.Semaphore(1),
+            )
             edits = DocumentEditor(
                 adapters.documents,
                 adapters.document_writes,
@@ -494,7 +499,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     max_bytes=settings.max_download_bytes,
                     sink=sink,
                 ),
-                pages=PageService(adapters.documents, renderer or ChildRenderer(), web_url=web_url),
+                pages=PageService(adapters.documents, drawing, web_url=web_url, turn=turn),
                 edits=edits,
                 notes=NoteService(adapters.documents, adapters.document_writes, web_url=web_url),
                 removal=removal,
@@ -528,6 +533,14 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                         web_url=web_url,
                         sleep=sleep,
                     ),
+                    web_url=web_url,
+                ),
+                insertion=PageInserter(
+                    adapters.documents,
+                    adapters.document_writes,
+                    drawing,
+                    tasks,
+                    turn,
                     web_url=web_url,
                 ),
                 sharing=SharingService(

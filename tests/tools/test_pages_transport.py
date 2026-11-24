@@ -19,6 +19,8 @@ from test_http_uploads import DEFAULT, http_settings, listening
 from mcp_server_paperless.app import build_app
 from mcp_server_paperless.domain.rendering import (
     MAX_IMAGE_BYTES,
+    Assembled,
+    AssembleRequest,
     ContactSheet,
     Overview,
     PageImage,
@@ -75,6 +77,9 @@ class Full:
         )
         rest = tuple(range(61, 200, 2))
         return Overview(page_count=200, runs=runs, layout_rest=rest, sheets=sheets, rest=rest)
+
+    async def assemble(self, target: bytes, source: bytes, request: AssembleRequest) -> Assembled:
+        raise AssertionError((target, source, request))
 
 
 def reader(original: bytes, mime_type: str) -> FakePaperless:
@@ -141,8 +146,10 @@ from fakes.paperless import FakeDocument, FakePaperless, seeded
 from harness import serve
 from rendering.files import QUADRANTS, pdf_of
 state = seeded()
-state.documents.append(FakeDocument(id=7, title="Scan", original=pdf_of([QUADRANTS])))
-server = serve(FakePaperless(state, user="admin"), stdio=True, toolsets=["core", "pdf"])
+for number in (7, 8):
+    state.documents.append(FakeDocument(id=number, title="Scan", original=pdf_of([QUADRANTS])))
+paperless = FakePaperless(state, user="admin", allow_writes=True)
+server = serve(paperless, stdio=True, toolsets=["core", "pdf"])
 server.run(transport="stdio", show_banner=False)
 """
 
@@ -158,8 +165,13 @@ async def test_pages_are_shown_over_stdio_and_the_stream_stays_clean() -> None:
         second = await client.call_tool("get_document_pages", {"document_id": 7, "size": 256})
 
         sheet = await client.call_tool("inspect_pdf", {"document_id": 7})
+        inserted = await client.call_tool(
+            "insert_pages", {"document_id": 7, "source_document_id": 8, "after_page": 1}
+        )
 
     assert len(images(first)) == len(images(second)) == len(images(sheet)) == 1
+    assert inserted.structured_content is not None
+    assert inserted.structured_content["state"] == "success"
 
 
 async def test_the_console_script_offers_the_tool_and_reports_an_unreachable_paperless() -> None:

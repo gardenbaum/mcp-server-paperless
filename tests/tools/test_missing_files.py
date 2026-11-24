@@ -58,6 +58,16 @@ async def test_the_document_its_versions_and_its_file_metadata_are_read() -> Non
         ("get_document_pages", {"document_id": LOST}, f"{MESSAGE} (version {LOST})."),
         ("inspect_pdf", {"document_id": LOST}, f"{MESSAGE} (version {LOST})."),
         (
+            "insert_pages",
+            {"document_id": LOST, "source_document_id": 1, "after_page": 0},
+            f"{MESSAGE} (version {LOST}).",
+        ),
+        (
+            "insert_pages",
+            {"document_id": 1, "source_document_id": LOST, "after_page": 0},
+            f"{MESSAGE} (version {LOST}).",
+        ),
+        (
             "get_document_thumbnail",
             {"document_id": LOST},
             f"Paperless cannot find the thumbnail of document {LOST}.",

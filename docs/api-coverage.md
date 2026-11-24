@@ -72,20 +72,20 @@ Limits.
 | `POST /api/documents/merge/` | `merge_documents` |  |
 | `POST /api/documents/merge_as_versions/` | `merge_documents_as_versions`, `resolve_duplicates` |  |
 | `GET /api/documents/next_asn/` |  | PLMCP-83 |
-| `POST /api/documents/post_document/` | `upload_document`, `upload_documents` |  |
+| `POST /api/documents/post_document/` | `insert_pages`, `upload_document`, `upload_documents` |  |
 | `POST /api/documents/remove_password/` | `remove_document_password` |  |
 | `POST /api/documents/reprocess/` | `reprocess_documents` |  |
 | `POST /api/documents/rotate/` | `rotate_documents` |  |
 | `POST /api/documents/selection_data/` |  | PLMCP-83 |
 | `DELETE /api/documents/{id}/` | `delete_document` |  |
-| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 20 more |  |
+| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 21 more |  |
 | `PATCH /api/documents/{id}/` | `correct_document_text`, `extract_pages`, `set_permissions`, `split_document`, `update_document` |  |
 | `PUT /api/documents/{id}/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/ai_suggestions/` | `get_ai_suggestions` |  |
-| `GET /api/documents/{id}/download/` | `download_document`, `get_document_pages`, `get_trashed_file`, `inspect_pdf` |  |
+| `GET /api/documents/{id}/download/` | `download_document`, `get_document_pages`, `get_trashed_file`, `insert_pages`, `inspect_pdf` |  |
 | `POST /api/documents/{id}/email/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/history/` | `get_document` |  |
-| `GET /api/documents/{id}/metadata/` | `delete_pages`, `download_document`, `edit_pdf`, `email_documents`, `extract_pages` and 10 more |  |
+| `GET /api/documents/{id}/metadata/` | `delete_pages`, `download_document`, `edit_pdf`, `email_documents`, `extract_pages` and 11 more |  |
 | `DELETE /api/documents/{id}/notes/` | `delete_note` |  |
 | `GET /api/documents/{id}/notes/` | `delete_note`, `get_document`, `read_documents` |  |
 | `POST /api/documents/{id}/notes/` | `add_note` |  |
@@ -94,7 +94,7 @@ Limits.
 | `GET /api/documents/{id}/share_links/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/suggestions/` | `get_document` |  |
 | `GET /api/documents/{id}/thumb/` | `get_document_thumbnail`, `get_trashed_file` |  |
-| `POST /api/documents/{id}/update_version/` | `upload_document_version` |  |
+| `POST /api/documents/{id}/update_version/` | `insert_pages`, `upload_document_version` |  |
 | `DELETE /api/documents/{id}/versions/{version_id}/` | `delete_document_version` |  |
 | `PATCH /api/documents/{id}/versions/{version_id}/` | `set_document_version_label` |  |
 | `GET /api/groups/` | `create_user`, `create_workflow`, `delete_group`, `get_trash_entry`, `get_user` and 5 more |  |
@@ -164,7 +164,7 @@ Limits.
 | `GET /api/tags/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/tags/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/tags/{id}/` |  | PLMCP-83 |
-| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `extract_pages`, `get_task` and 11 more |  |
+| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `extract_pages`, `get_task` and 12 more |  |
 | `POST /api/tasks/acknowledge/` | `acknowledge_tasks` |  |
 | `GET /api/tasks/active/` |  | PLMCP-89 |
 | `POST /api/tasks/run/` | `run_task` |  |

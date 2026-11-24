@@ -17,6 +17,8 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.domain.rendering import (
+    Assembled,
+    AssembleRequest,
     Overview,
     OverviewRequest,
     PageImage,
@@ -61,6 +63,9 @@ class Renderer:
     async def inspect(self, content: bytes, request: OverviewRequest) -> Overview:
         raise AssertionError((content, request))
 
+    async def assemble(self, target: bytes, source: bytes, request: AssembleRequest) -> Assembled:
+        raise AssertionError((target, source, request))
+
 
 class Slow(Renderer):
     """Renders until it is let go."""
@@ -68,11 +73,13 @@ class Slow(Renderer):
     def __init__(self) -> None:
         super().__init__()
         self.go: asyncio.Event = asyncio.Event()
+        self.began: asyncio.Event = asyncio.Event()
         self.running: int = 0
 
     @override
     async def render(self, content: bytes, request: RenderRequest) -> Rendered:
         self.running += 1
+        self.began.set()
         _ = await self.go.wait()
         return await super().render(content, request)
 
