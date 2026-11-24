@@ -11,6 +11,7 @@ download is a read: the archive is attached only within the download limit.
 
 import hashlib
 import json
+import re
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.admin import (
@@ -89,6 +90,10 @@ SAVE_WAIT_SECONDS: Final = 600.0
 SHOWN_IDS: Final = 10
 # The settings that are URLs.
 ENDPOINTS: Final = frozenset({"llm_endpoint", "llm_embedding_endpoint", "remote_ocr_endpoint"})
+# What stands for a URL whose credentials are not certain; its spaces keep it from being written.
+NOT_SHOWN: Final = "a URL that is not shown"
+# A service URL that asks for the stored credentials to be removed (decision-64).
+EMPTY_USER: Final = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://):?@([^@]*)")
 # Settings a confirmation names in full; the rest are counted.
 SHOWN: Final = 5
 TASK_EFFECTS: Final[dict[str, str]] = {
@@ -127,7 +132,7 @@ def _went(name: str, value: JsonValue) -> str:
         return _shown(value)
     text = without_credentials(_text(value)) if name in ENDPOINTS else _text(value)
     if text is None:
-        return "a URL that is not shown"
+        return NOT_SHOWN
     return both_ends(text) + _credentials(name, value) if text else "empty"
 
 
@@ -161,9 +166,26 @@ def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
+def _written(name: str, value: JsonValue) -> JsonValue:
+    """The value to write: a service URL with an empty user name becomes one without any."""
+    found = EMPTY_USER.fullmatch(value) if name in ENDPOINTS and isinstance(value, str) else None
+    return found[1] + found[2] if found else value
+
+
+def _returned(name: str, value: JsonValue) -> JsonValue:
+    """The value of a setting as results hold it: a service URL without its credentials."""
+    if name not in ENDPOINTS:
+        return value
+    text = _text(value)
+    shown = without_credentials(text)
+    return value if shown == text else shown or NOT_SHOWN
+
+
 def _config(record: AppConfigRecord) -> AppConfig:
+    shown = {name: _returned(name, value) for name, value in record.settings.items()}
     return AppConfig(
-        settings=record.settings,
+        settings=shown,
+        shown_in_part=tuple(sorted(n for n, v in shown.items() if v != record.settings[n])),
         keys_configured=record.keys_configured,
         externally_configured_variables=record.externally_configured_variables,
     )
@@ -265,10 +287,18 @@ class SystemAdmin:
         current = await self._reader.get_config()
         effects: list[str] = []
         changes: dict[str, JsonValue] = {}
-        for name, value in wanted.items():
+        kept: list[str] = []
+        removed: list[str] = []
+        for name, given in wanted.items():
             now = current.settings.get(name)
-            if value == now:
+            value = _written(name, given)
+            if now == value:
                 continue
+            if now is not None and value == _returned(name, now):
+                if value == given:
+                    kept.append(name)
+                    continue
+                removed.append(name)
             changes[name] = value
             new, old = _goes(name, value), _went(name, now)
             if value is None:
@@ -284,11 +314,15 @@ class SystemAdmin:
             else f"replace the saved {name} (its value is never shown)"
             for name in secrets
         )
+        note = f" Removed the credentials of: {', '.join(removed)}." if removed else ""
+        note += f" Kept as stored, with any credentials: {', '.join(kept)}." if kept else ""
         if not effects:
             return ConfigOutcome(
                 config=_config(current),
                 changed=(),
-                message="Nothing changed: the configuration already is as asked.",
+                message=f"Nothing changed.{note}"
+                if kept
+                else "Nothing changed: the configuration already is as asked.",
             )
         if not confirm:
             ConfirmationRequired.require(
@@ -300,7 +334,7 @@ class SystemAdmin:
         return ConfigOutcome(
             config=_config(written),
             changed=done,
-            message=f"Changed {_plural(len(done), 'setting')}: {', '.join(done)}.",
+            message=f"Changed {_plural(len(done), 'setting')}: {', '.join(done)}.{note}",
         )
 
     @staticmethod

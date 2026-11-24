@@ -71,6 +71,186 @@ async def test_the_configuration_shows_what_is_set_and_which_keys_are_saved() ->
     assert found.externally_configured_variables == ("PAPERLESS_OCR_LANGUAGE",)
 
 
+ENDPOINTS = ("llm_endpoint", "llm_embedding_endpoint", "remote_ocr_endpoint")
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize("name", ENDPOINTS)
+@pytest.mark.parametrize(
+    ("stored", "shown", "in_part"),
+    [
+        ("https://u:s3cret@e.x:8443/v1?a=b", "https://e.x:8443/v1?a=b", True),
+        ("https://s3cret@e.x", "https://e.x", True),
+        ("https://u:s3cret@b@e.x/", "a URL that is not shown", True),
+        ("u:s3cret@e.x", "a URL that is not shown", True),
+        ("https://e.x/v1", "https://e.x/v1", False),
+        ("", "", False),
+    ],
+)
+async def test_a_service_url_is_returned_without_its_credentials(
+    name: str, stored: str, shown: str, *, in_part: bool
+) -> None:
+    setup = Setup()
+    setup.state.config = {name: stored, "app_title": "a:b@c"}
+
+    found = await setup.service.get_config()
+    same = await setup.service.update_config({name: stored})
+    changed = await setup.service.update_config({"pages": 3}, confirm=True)
+
+    for config in (found, same.config, changed.config):
+        assert config.settings[name] == shown
+        assert config.settings["app_title"] == "a:b@c"  # a name, no URL
+        assert config.shown_in_part == ((name,) if in_part else ())
+    assert "s3cret" not in "".join(m.model_dump_json() for m in (found, same, changed))
+    assert setup.state.config[name] == stored
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize("confirm", [False, True])
+@pytest.mark.parametrize("stored", ["https://u:s3cret@e.x/v1", "https://u:s3cret@b@e.x/"])
+async def test_a_url_written_back_as_it_was_returned_keeps_its_credentials(
+    stored: str, *, confirm: bool
+) -> None:
+    setup = Setup(writes=False)
+    setup.state.config = {"llm_endpoint": stored, "app_title": "A"}
+    shown = (await setup.service.get_config()).settings
+
+    outcome = await setup.service.update_config(shown, confirm=confirm)
+
+    assert outcome.changed == ()
+    assert outcome.message == (
+        "Nothing changed. Kept as stored, with any credentials: llm_endpoint."
+    )
+    assert setup.state.config["llm_endpoint"] == stored
+
+
+@pytest.mark.decision("decision-64")
+async def test_a_url_written_back_is_not_part_of_another_change() -> None:
+    setup = Setup()
+    stored = dict.fromkeys(ENDPOINTS, "https://u:s3cret@e.x/v1")
+    setup.state.config = {**stored}
+    shown = (await setup.service.get_config()).settings
+
+    message = await refusal(setup.service.update_config({**shown, "pages": 3}))
+    outcome = await setup.service.update_config({**shown, "pages": 3}, confirm=True)
+
+    assert "endpoint" not in message
+    assert outcome.changed == ("pages",)
+    assert outcome.message == (
+        "Changed 1 setting: pages. Kept as stored, with any credentials: "
+        "llm_endpoint, llm_embedding_endpoint, remote_ocr_endpoint."
+    )
+    assert setup.state.config == {**stored, "pages": 3}
+
+
+@pytest.mark.decision("decision-64")
+async def test_a_stored_url_without_credentials_is_kept_without_a_word_about_them() -> None:
+    setup = Setup(writes=False)
+    setup.state.config = {"llm_endpoint": "https://e.x"}
+
+    outcome = await setup.service.update_config({"llm_endpoint": "https://e.x"})
+
+    assert outcome.message == "Nothing changed: the configuration already is as asked."
+
+
+EMPTY_USER = pytest.mark.parametrize("empty", ["@", ":@"])
+
+
+@pytest.mark.decision("decision-64")
+@EMPTY_USER
+async def test_an_empty_user_over_the_stored_url_removes_its_credentials(empty: str) -> None:
+    setup = Setup()
+    setup.state.config = {"llm_endpoint": "https://u:s3cret@e.x:8443/v1?a=b"}
+    asked = {"llm_endpoint": f"https://{empty}e.x:8443/v1?a=b"}
+
+    message = await refusal(setup.service.update_config(asked))
+    outcome = await setup.service.update_config(asked, confirm=True)
+
+    assert "remove the credentials of llm_endpoint 'https://e.x:8443/v1?a=b' (not" in message
+    assert "s3cret" not in message
+    assert outcome.changed == ("llm_endpoint",)
+    assert outcome.message == (
+        "Changed 1 setting: llm_endpoint. Removed the credentials of: llm_endpoint."
+    )
+    assert outcome.config.shown_in_part == ()
+    assert setup.state.config == {"llm_endpoint": "https://e.x:8443/v1?a=b"}
+
+
+@pytest.mark.decision("decision-64")
+@EMPTY_USER
+async def test_an_empty_user_over_a_url_without_credentials_changes_nothing(empty: str) -> None:
+    setup = Setup(writes=False)
+    setup.state.config = {"llm_endpoint": "https://e.x/v1"}
+
+    outcome = await setup.service.update_config({"llm_endpoint": f"https://{empty}e.x/v1"})
+
+    assert outcome.message == "Nothing changed: the configuration already is as asked."
+
+
+@pytest.mark.decision("decision-64")
+@EMPTY_USER
+@pytest.mark.parametrize(
+    ("stored", "old"),
+    [
+        (None, "set llm_endpoint to 'https://new.x/' (it follows"),
+        ("https://u:s3cret@e.x/", "from 'https://e.x/' with credentials (not shown) to 'https://n"),
+        ("https://u:s3cret@b@e.x/", "from a URL that is not shown to 'https://new.x/';"),
+        ("https://e.x/", "from 'https://e.x/' to 'https://new.x/';"),
+    ],
+)
+async def test_a_new_url_is_written_without_its_empty_user(
+    stored: str | None, old: str, empty: str
+) -> None:
+    setup = Setup()
+    setup.state.config = {"llm_endpoint": stored} if stored else {}
+    asked = {"llm_endpoint": f"https://{empty}new.x/"}
+
+    message = await refusal(setup.service.update_config(asked))
+    outcome = await setup.service.update_config(asked, confirm=True)
+
+    assert old in message
+    assert outcome.message == "Changed 1 setting: llm_endpoint."
+    assert setup.state.config == {"llm_endpoint": "https://new.x/"}
+
+
+@pytest.mark.decision("decision-64")
+@EMPTY_USER
+async def test_a_stored_empty_user_is_removed_by_writing_it_again(empty: str) -> None:
+    setup = Setup()
+    setup.state.config = {"llm_endpoint": f"https://{empty}e.x"}
+    asked = {"llm_endpoint": f"https://{empty}e.x"}
+
+    message = await refusal(setup.service.update_config(asked))
+    outcome = await setup.service.update_config(asked, confirm=True)
+
+    assert "remove the credentials of llm_endpoint 'https://e.x'" in message
+    assert outcome.changed == ("llm_endpoint",)
+    assert setup.state.config == {"llm_endpoint": "https://e.x"}
+
+
+@pytest.mark.decision("decision-64")
+async def test_only_a_service_url_loses_an_empty_user() -> None:
+    setup = Setup()
+
+    _ = await setup.service.update_config({"app_title": "https://@e.x", "pages": 3}, confirm=True)
+
+    assert setup.state.config["app_title"] == "https://@e.x"
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize("stored", [None, "https://u:s3cret@e.x/v1", "https://e.x"])
+async def test_what_stands_for_an_unshown_url_is_not_written_over_another(
+    stored: str | None,
+) -> None:
+    setup = Setup(writes=False)
+    setup.state.config = {"llm_endpoint": stored} if stored else {}
+
+    with pytest.raises(Validation, match="may not show"):
+        _ = await setup.service.update_config(
+            {"llm_endpoint": "a URL that is not shown"}, confirm=True
+        )
+
+
 async def test_every_configuration_change_needs_confirm_and_shows_old_and_new_values() -> None:
     setup = Setup(writes=False)
     setup.state.config = {"app_title": "Archive"}
