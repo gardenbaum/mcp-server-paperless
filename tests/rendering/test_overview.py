@@ -22,6 +22,7 @@ from mcp_server_paperless.domain.rendering import (
     PageShape,
     RenderFailed,
     RenderRequest,
+    SlowPage,
 )
 from mcp_server_paperless.rendering.runner import OUTPUT_BYTES, ChildRenderer
 from mcp_server_paperless.rendering.wire import Job, answer, encoded, overview_of, started_page
@@ -347,8 +348,8 @@ def test_the_pages_of_the_layout_are_announced_too() -> None:
     _ = overview(content, asked(max_sheets=1), FONT, announce=marks.append)
     _ = overview(content, asked("2-3", sheets=False), FONT, announce=alone.append)
 
-    assert b"".join(marks) == b"15:" + b".-" * 12 + b"...-\n"
-    assert b"".join(alone) == b"15:..-\n"
+    assert b"".join(marks) == b"15:" + b".-" * 12 + b",,,-\n"
+    assert b"".join(alone) == b"15:,,-\n"
 
 
 def test_the_announcements_of_the_most_pages_fit_into_the_output() -> None:
@@ -474,10 +475,12 @@ def test_the_pages_are_announced_before_the_answer() -> None:
     out = run(pdf_of([""] * 3), asked("3,1"))[1]
 
     assert out.startswith(b'3:.-.--\n{"')
-    assert started_page(b"3:.-.", asked("3,1")) == 1
-    assert started_page(b"3:.", asked("3,1")) == 3
-    assert started_page(b"3:.-", asked("3,1")) == 0  # at a sheet
-    assert started_page(out, asked("3,1")) == 0
+    assert started_page(b"3:.-.", asked("3,1")) == SlowPage(1, drawing=True, alone=False)
+    assert started_page(b"3:.", asked("3,1")) == SlowPage(3, drawing=True, alone=False)
+    assert started_page(b"3:.-,", asked("3,1")) == SlowPage(1, drawing=False, alone=False)
+    assert started_page(b"3:,", asked("2")) == SlowPage(2, drawing=False, alone=True)
+    assert started_page(b"3:.-", asked("3,1")) is None  # at a sheet
+    assert started_page(out, asked("3,1")) is None
 
 
 @pytest.mark.parametrize(
@@ -486,12 +489,12 @@ def test_the_pages_are_announced_before_the_answer() -> None:
         *(b"", b"x", b"3:", b"3:x", b".", b"3:..\n", b"-1:.", b"9" * 5000 + b":."),
         b"0:.",
         b"200001:.",
-        b"3:....",  # more pages than asked for
+        b"3:.-,,,",  # more pages than asked for
         b"2:.",  # page 3 was asked for
     ],
 )
 def test_an_announcement_that_does_not_fit_the_request_names_no_page(output: bytes) -> None:
-    assert started_page(output, asked("3,1-2")) == 0
+    assert started_page(output, asked("3,1-2")) is None
 
 
 def test_a_failure_is_an_answer() -> None:
@@ -521,6 +524,13 @@ def said(
         "sheets": [{"count": length, **one} for length in sheets],
     }
     return json.dumps(head).encode() + b"\n" + data * len(sheets)
+
+
+def test_announcements_are_taken_away_at_the_start_only() -> None:
+    data = b"RIFF....WEBP3:.-\n"
+
+    for output in (said(data=data), b"3:.-.-.--\n" + said(data=data)):
+        assert overview_of(output, asked()).sheets[0].data == data
 
 
 def test_an_answer_that_adds_up_is_taken_and_the_pages_follow_from_the_request() -> None:
@@ -675,9 +685,12 @@ async def test_a_child_over_its_time_names_the_page_it_was_at(end: str) -> None:
             b"x", RenderRequest(mime_type="application/pdf", pages="1-", size=400)
         )
 
-    assert (raised.value.reason, raised.value.page) == ("timeout", 30)
+    assert (raised.value.reason, raised.value.slow) == (
+        "timeout",
+        SlowPage(30, drawing=True, alone=False),
+    )
     # get_document_pages announces nothing, so a child that says so is not believed.
-    assert (other.value.reason, other.value.page) == ("timeout", 0)
+    assert (other.value.reason, other.value.slow) == ("timeout", None)
 
 
 def endless() -> bytes:
@@ -697,10 +710,14 @@ def endless() -> bytes:
 
 @pytest.mark.anyio
 async def test_the_real_child_names_the_page_whose_drawing_does_not_end() -> None:
+    # Long enough for a slow machine to reach the second page.
     with pytest.raises(RenderFailed) as raised:
-        _ = await ChildRenderer(seconds=4.0).inspect(endless(), asked())
+        _ = await ChildRenderer(seconds=10.0).inspect(endless(), asked())
 
-    assert (raised.value.reason, raised.value.page) == ("timeout", 2)
+    assert (raised.value.reason, raised.value.slow) == (
+        "timeout",
+        SlowPage(2, drawing=True, alone=False),
+    )
 
 
 @pytest.mark.anyio
@@ -711,4 +728,4 @@ async def test_a_child_over_its_time_before_any_page_names_none() -> None:
     with pytest.raises(RenderFailed) as raised:
         _ = await renderer.inspect(b"x", asked())
 
-    assert (raised.value.reason, raised.value.page) == ("timeout", 0)
+    assert (raised.value.reason, raised.value.slow) == ("timeout", None)

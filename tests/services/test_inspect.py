@@ -21,6 +21,7 @@ from mcp_server_paperless.domain.rendering import (
     PageShape,
     RenderFailed,
     RenderRequest,
+    SlowPage,
 )
 from services.test_pages import (
     LIMIT,
@@ -326,21 +327,34 @@ async def test_a_call_without_overview_is_not_told_to_leave_it_out() -> None:
     assert raised.value.hint == f"Ask for fewer pages. {ELSEWHERE}"
 
 
-@pytest.mark.parametrize("overview", [True, False])
+ALONE = "Ask for page 30 alone or leave it out of pages (ranges skip it, like 1-4,6-). "
+UNDRAWN = "overview=false skips the drawing. "
+
+
+@pytest.mark.parametrize(
+    ("drawing", "alone", "way_on"),
+    [
+        (True, False, ALONE + UNDRAWN),
+        (False, False, ALONE),
+        (True, True, UNDRAWN),
+        (False, True, ""),
+    ],
+)
 async def test_a_page_slower_than_the_limit_is_named_with_the_way_on(
-    overview: bool,  # noqa: FBT001 -- a parameter of the test
+    drawing: bool,  # noqa: FBT001 -- a parameter of the test
+    alone: bool,  # noqa: FBT001 -- a parameter of the test
+    way_on: str,
 ) -> None:
-    renderer = Inspector(RenderFailed(reason="timeout", page=30))
+    slow = SlowPage(30, drawing=drawing, alone=alone)
+    renderer = Inspector(RenderFailed(reason="timeout", slow=slow))
 
     with pytest.raises(PaperlessMcpError) as raised:
-        _ = await service(fake(document()), renderer).inspect(7, "1-", overview=overview)
+        _ = await service(fake(document()), renderer).inspect(7, "1-")
 
     assert raised.value.message == (
         "Rendering document 7 took longer than 30 seconds and was stopped at page 30."
     )
-    alone = "Ask for page 30 alone or leave it out of pages (ranges skip it, like 1-4,6-)."
-    drawn = f"{alone} overview=false skips the drawing. {ELSEWHERE}"
-    assert raised.value.hint == (drawn if overview else f"{alone} {ELSEWHERE}")
+    assert raised.value.hint == way_on + ELSEWHERE
 
 
 @pytest.mark.parametrize("overview", [True, False])

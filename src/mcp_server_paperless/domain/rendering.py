@@ -3,7 +3,7 @@
 The renderer is not a port: it talks to a child process, not to Paperless.
 """
 
-from typing import Annotated, ClassVar, Final, Literal, Protocol
+from typing import Annotated, ClassVar, Final, Literal, NamedTuple, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -164,6 +164,19 @@ class Overview(BaseModel):
     rest: tuple[int, ...] = ()
 
 
+class SlowPage(NamedTuple):
+    """The page a job was at when its time was over.
+
+    Attributes:
+        drawing: It was being drawn; else only its size was read.
+        alone: It was the only page asked for.
+    """
+
+    page: int
+    drawing: bool
+    alone: bool
+
+
 class RenderFailed(Exception):  # noqa: N818 -- an outcome, as the names of domain/errors.py
     """The file could not be rendered.
 
@@ -171,18 +184,23 @@ class RenderFailed(Exception):  # noqa: N818 -- an outcome, as the names of doma
         reason: Why; the caller turns it into a message.
         page_count: How many pages the file has, if the page specification is wrong.
         megapixels: How large the image is, if it is too large.
-        page: The page it was at when the time was over, if it is known.
+        slow: The page it was at when the time was over, if it is known.
     """
 
     def __init__(
-        self, *, reason: Reason, page_count: int = 0, megapixels: float = 0.0, page: int = 0
+        self,
+        *,
+        reason: Reason,
+        page_count: int = 0,
+        megapixels: float = 0.0,
+        slow: SlowPage | None = None,
     ) -> None:
         """Create the failure. No text in it: the file and the child that reads it are untrusted."""
         super().__init__(reason)
         self.reason: Reason = reason
         self.page_count: int = page_count
         self.megapixels: float = megapixels
-        self.page: int = page
+        self.slow: SlowPage | None = slow
 
 
 class PageRenderer(Protocol):

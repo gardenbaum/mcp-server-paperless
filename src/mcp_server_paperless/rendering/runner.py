@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         Reason,
         Rendered,
         RenderRequest,
+        SlowPage,
     )
 
 COMMAND: Final = (sys.executable, "-I", "-m", "mcp_server_paperless.rendering.worker")
@@ -68,11 +69,11 @@ async def _collect(stdout: StreamReader, limit: int, output: bytearray) -> None:
             raise RenderFailed(reason="crashed")
 
 
-def _page(output: bytearray, request: RenderRequest | OverviewRequest) -> int:
+def _slow(output: bytearray, request: RenderRequest | OverviewRequest) -> SlowPage | None:
     """The page a child was at, if its job is one that says so."""
     if isinstance(request, OverviewRequest):
         return started_page(bytes(output), request)
-    return 0
+    return None
 
 
 class ChildRenderer:
@@ -133,7 +134,7 @@ class ChildRenderer:
                 await _collect(stdout, self._output_bytes, output)
                 code = await process.wait()
         except TimeoutError as error:
-            raise RenderFailed(reason="timeout", page=_page(output, request)) from error
+            raise RenderFailed(reason="timeout", slow=_slow(output, request)) from error
         finally:
             _ = feed.cancel()
             try:
@@ -148,5 +149,5 @@ class ChildRenderer:
                 transport.close()
         if code:
             reason: Reason = _EXITS.get(code, "crashed")
-            raise RenderFailed(reason=reason, page=_page(output, request))
+            raise RenderFailed(reason=reason, slow=_slow(output, request))
         return bytes(output)

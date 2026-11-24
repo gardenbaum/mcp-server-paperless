@@ -38,7 +38,7 @@ from mcp_server_paperless.domain.rendering import (
 )
 from mcp_server_paperless.rendering import limits
 from mcp_server_paperless.rendering.limits import MEMORY_EXIT
-from mcp_server_paperless.rendering.wire import DONE, STARTED, Job, answer
+from mcp_server_paperless.rendering.wire import DONE, READING, STARTED, Job, answer
 from mcp_server_paperless.services.page_ranges import parse_pages
 
 if TYPE_CHECKING:
@@ -615,7 +615,7 @@ def overview(  # noqa: PLR0913 -- the file, the job, and one keyword per seam
         for place, page in enumerate(pages[shown:], start=shown):
             if place and clock() - begun >= request.seconds:
                 break
-            announce(STARTED)
+            announce(READING)
             yield page, source.shape(page)
 
     runs = _runs(chain(shapes, remaining()))

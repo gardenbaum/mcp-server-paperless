@@ -156,7 +156,6 @@ class _File:
     Attributes:
         other: The other file of the version, if it can be shown.
         less: How to ask for less.
-        undrawn: How to ask for what needs no drawing.
         less_memory: Whether that also helps where the memory was not enough.
     """
 
@@ -170,7 +169,6 @@ class _File:
     facts: FileMetadata
     less: str = FEWER_PIXELS
     less_memory: bool = False
-    undrawn: str = ""
 
     @property
     def _named(self) -> str:
@@ -238,12 +236,13 @@ class _File:
                     "stopped."
                 )
                 hint = less
-                if failure.page:
-                    message = message.removesuffix(".") + f" at page {failure.page}."
-                    hint = (
-                        f"Ask for page {failure.page} alone or leave it out of pages (ranges skip "
-                        f"it, like 1-4,6-).{self.undrawn} {self._elsewhere}"
-                    )
+                if failure.slow:
+                    page, drawing, alone = failure.slow
+                    message = message.removesuffix(".") + f" at page {page}."
+                    other = f"Ask for page {page} alone or leave it out of pages "
+                    hint = "" if alone else other + "(ranges skip it, like 1-4,6-). "
+                    hint += "overview=false skips the drawing. " if drawing else ""
+                    hint += self._elsewhere
             case "memory":
                 message = (
                     f"Rendering {document} needed more than {RENDER_MEMORY} of memory and was "
@@ -395,8 +394,7 @@ class PageService:
         """
         file = await self._file(document_id, source, version_id, PDFS)
         less = FEWER_PAGES if overview else "Ask for fewer pages."
-        undrawn = " overview=false skips the drawing." if overview else ""
-        file = replace(file, less=less, less_memory=True, undrawn=undrawn)
+        file = replace(file, less=less, less_memory=True)
         request = OverviewRequest(pages=pages, sheets=overview)
         filename, found = await self._read(
             file, pages, lambda content: self._renderer.inspect(content, request)

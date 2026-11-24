@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:15Z'
-updated_date: '2026-11-24T11:45:40Z'
+updated_date: '2026-11-24T11:51:24Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -73,4 +73,6 @@ Correction: the service and tool tests of the review fixes were seen red afterwa
 M5 taken back (controller, 2026-11-24): the layout is of all pages asked for, also with sheets, as the owner approved in design 2.1; its cost on next_pages calls is stated in decision-65. I3b is now tested: overview takes the function that opens the PDF, and a counting document shows that each page is loaded once for its size and its tile (the layout keeps the at most 60 pages whose tiles follow). The 24 s bound counts the layout too (tested). This supersedes the notes above on both. Surface snapshot: description of inspect_pdf only.
 
 Delta review (6 Minor and the layout): sheets first, then the layout of the remaining pages asked for until the 20 s, with the shapes the tiles read (a counting document shows one load per page). The child announces the page count and one mark per page, tiles and layout, and a mark when it is at none; the server names the page from the request and only for this job. Hint: ask for the page alone or leave it out; overview=false only where there was drawing. A real child with a PDF whose second page does not end names page 2; that test and the one of the time before the drawing kill the mutants without flush and without started. Tests seen red first (24 failed), except the one of the time before the drawing, which was shown by its mutant. Output bound of 1 MiB unchanged: 720 KiB, 200 000 marks and the head fit (tested).
+
+Last review (d1 to d4): decision-65 corrected in two places; the timeout says overview=false only where a tile was drawn (a mark of its own for layout pages) and asks for the page alone only if others were asked for; announcements are taken off the start of the answer only (the test fails with sub); the test with a page that does not end gives the child 10 s. Red: by import error, the start-only test by its mutant.
 <!-- SECTION:NOTES:END -->

@@ -25,6 +25,7 @@ from mcp_server_paperless.domain.rendering import (
     Rendered,
     RenderFailed,
     RenderRequest,
+    SlowPage,
 )
 from mcp_server_paperless.services.page_ranges import parse_pages
 
@@ -119,27 +120,32 @@ def answer(found: Rendered | Overview | RenderFailed) -> bytes:
 
 
 # What the child writes before the answer to an ``OverviewRequest``: how many pages the file has,
-# then a mark when it starts the next of the pages asked for and one when it is at none.
+# then a mark when it starts to draw the next of the pages asked for, or to read its size only, and
+# one when it is at none.
 STARTED = b"."
+READING = b","
 DONE = b"-"
-_ANNOUNCED = re.compile(rb"[0-9]{1,6}:[.-]*\n")
-_AT_A_PAGE = re.compile(rb"([0-9]{1,6}):([.-]*\.)")
+_ANNOUNCED = re.compile(rb"[0-9]{1,6}:[.,-]*\n")
+_AT_A_PAGE = re.compile(rb"([0-9]{1,6}):([.,-]*[.,])")
 
 
-def started_page(output: bytes, request: OverviewRequest) -> int:
-    """The page the child was at when its output ended; 0 if it was at none, or it is unknown.
+def started_page(output: bytes, request: OverviewRequest) -> SlowPage | None:
+    """The page the child was at when its output ended; None if it was at none, or it is unknown.
 
     The child counts, the server names: it can be at no other page than one it was asked for.
     """
     found = _AT_A_PAGE.fullmatch(output)
     if found is None or not 0 < int(found[1]) <= MAX_PAGES:
-        return 0
+        return None
     try:
         wanted = parse_pages(request.pages, page_count=int(found[1]))
     except Validation:
-        return 0
-    place = found[2].count(STARTED)
-    return wanted[place - 1] if place <= len(wanted) else 0
+        return None
+    marks = found[2]
+    place = marks.count(STARTED) + marks.count(READING)
+    if place > len(wanted):
+        return None
+    return SlowPage(wanted[place - 1], drawing=marks.endswith(STARTED), alone=len(wanted) == 1)
 
 
 def _is_webp(data: bytes) -> bool:
@@ -218,7 +224,8 @@ def overview_of(output: bytes, request: OverviewRequest) -> Overview:
     Raises:
         RenderFailed: The failure it answered, or the answer does not fit the request.
     """
-    head, wanted, data = _read(_ANNOUNCED.sub(b"", output, count=1), request.pages)
+    announced = _ANNOUNCED.match(output)
+    head, wanted, data = _read(output[announced.end() if announced else 0 :], request.pages)
     described = list(accumulate(run.count for run in head.runs))
     shown = list(accumulate(sheet.count for sheet in head.sheets))
     sizes = [sheet.size_bytes for sheet in head.sheets]
