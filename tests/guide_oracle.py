@@ -54,7 +54,7 @@ SELECTIONS: dict[str, list[str] | None] = {
 DISABLED = {
     "none": (),
     "part-of-trash": ("restore_from_trash", "empty_trash"),
-    "all-of-trash": ("list_trash", "restore_from_trash", "empty_trash"),
+    "all-of-trash": tuple(name for name, toolset in TOOL_TOOLSETS.items() if toolset == "trash"),
     "the-overview": (OVERVIEW,),
 }
 COMBINATIONS = list(itertools.product(SELECTIONS, DISABLED, (False, True)))

@@ -38,7 +38,7 @@ claude mcp add paperless --env PAPERLESS_URL=https://paperless.example.org \
 
 mcp-server-paperless is a [Model Context Protocol](https://modelcontextprotocol.io) server for
 paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai, Cursor, VS
-Code and any other MCP client 91 tools in 13 toolsets that cover most of what the Paperless API
+Code and any other MCP client 93 tools in 13 toolsets that cover most of what the Paperless API
 can do, from a search to saved views, mail rules and workflows. It starts small and careful: 20
 tools by default, names instead of ids, and a confirmation step before anything that cannot be
 undone.
@@ -251,7 +251,7 @@ variables: [Connect claude.ai](https://github.com/gardenbaum/mcp-server-paperles
 
 ## Toolsets
 
-The 91 tools are grouped into toolsets, and only two are on by default, so the model is not
+The 93 tools are grouped into toolsets, and only two are on by default, so the model is not
 handed tools you never use. Switch more on with `PAPERLESS_MCP_TOOLSETS=core,ai,pdf,trash` or
 `all`, and restart the server. The assistant is told which toolsets are off, what each adds and how to
 switch them on (never for a session: only you decide, see
@@ -264,7 +264,7 @@ switch them on (never for a session: only you decide, see
 | `bulk` | 4 | | Change many documents or taxonomy items in one step and resolve duplicates, with a dry run first; over stdio with upload directories also upload several files or a directory |
 | `pdf` | 7 | | Rotate, merge, split, delete pages, edit PDFs, remove passwords, reprocess |
 | `versions` | 6 | | The file versions of a document: list, upload, label, delete, merge documents as versions, correct the text |
-| `trash` | 3 | | List the trash, restore from it, empty it |
+| `trash` | 5 | | List and filter the trash, look into an entry, get its file, restore it, empty the trash |
 | `views` | 5 | | Saved views: list, create, change and delete them (running them is in `core`) |
 | `sharing` | 8 | | Public share links and bundles, and sending documents by e-mail |
 | `permissions` | 3 | | Owners and view and change rights of documents and taxonomy; list users and groups |

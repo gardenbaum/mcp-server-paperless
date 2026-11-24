@@ -3,7 +3,7 @@ id: doc-1
 title: paperless-mcp design
 type: specification
 created_date: '2026-11-09T19:21:00Z'
-updated_date: '2026-11-24T01:56:55Z'
+updated_date: '2026-11-24T08:03:24Z'
 ---
 # mcp-server-paperless — Design
 
@@ -251,7 +251,7 @@ Names are indicative; the builder finalises parameters within §5.5. "Phase" ref
 | versions | `list_document_versions` · `upload_document_version` · `set_document_version_label` · `delete_document_version` (confirm) · `merge_documents_as_versions` · `correct_document_text` (dry_run, confirm: decision-48) | M3 |
 | views | saved views list/get/create/update/delete (`run_saved_view`, which translates a view's filter rules into a document query, is in core: decision-34) | M3 |
 | sharing | share links list/create/delete · share-link bundles list/create/rebuild/delete · `email_documents` | M3 |
-| trash | `list_trash` · `restore_from_trash` · `empty_trash` (explicit ids or `all=true`, confirm) | M3 |
+| trash | `list_trash` (filters) · `get_trash_entry` · `get_trashed_file` · `restore_from_trash` · `empty_trash` (explicit ids, a filter that only shows, or `all=true`; confirm: decision-54, decision-55) | M3 |
 | permissions | `set_permissions` (documents and taxonomy; owner, view/change users/groups; merge or replace) · `list_users` · `list_groups` | M3 |
 | mail | mail accounts list/get/create/update/delete/test/process (passwords write-only, never returned) · mail rules CRUD · `list_processed_mail` | M4 |
 | workflows | workflows list/get/create/update/delete (triggers and actions nested) | M4 |

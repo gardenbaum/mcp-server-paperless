@@ -18,6 +18,7 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
+    UpstreamUnavailable,
     Validation,
 )
 from mcp_server_paperless.paperless.documents import (
@@ -1062,3 +1063,27 @@ async def test_a_not_found_of_whoever_reads_an_opened_file_stays_as_it_is(
     with pytest.raises(NotFound, match="mine"):
         async with reader.open_document_file(30, "original"):
             raise error
+
+
+@pytest.mark.parametrize(("status", "there"), [(200, True), (403, True), (404, False)])
+async def test_a_document_that_is_only_hidden_exists(
+    make_client: ClientFactory,
+    status: int,
+    there: bool,  # noqa: FBT001 -- a parametrised flag, not a switch
+) -> None:
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        assert (request.method, request.url.path) == ("GET", "/api/documents/7/root/")
+        if status == 403:  # HttpResponseForbidden, text/html
+            return httpx2.Response(403, text="Insufficient permissions")
+        return httpx2.Response(status, json={"root_id": 7} if there else {"detail": "Not found."})
+
+    assert await PaperlessDocumentReader(make_client(answer)).document_exists(7) is there
+
+
+async def test_whether_a_document_exists_is_not_guessed_in_an_outage(
+    make_client: ClientFactory,
+) -> None:
+    client = make_client(lambda _request: httpx2.Response(503, text="busy"))
+
+    with pytest.raises(UpstreamUnavailable):
+        _ = await PaperlessDocumentReader(client).document_exists(7)

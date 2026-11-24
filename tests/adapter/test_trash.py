@@ -1,8 +1,10 @@
 """PaperlessTrashReader and PaperlessTrashWriter on responses recorded from Paperless 3.4.2."""
 
+import gzip
 import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, override
+from pathlib import Path
+from typing import TYPE_CHECKING, cast, override
 
 import httpx2
 import pytest
@@ -17,13 +19,18 @@ from mcp_server_paperless.domain.errors import (
     UpstreamUnreachable,
     Validation,
 )
-from mcp_server_paperless.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
+from mcp_server_paperless.domain.trash import TrashedDetail
+from mcp_server_paperless.paperless.trash import (
+    SCAN_TIMEOUT,
+    PaperlessTrashReader,
+    PaperlessTrashWriter,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
     from adapter.conftest import ClientFactory
-    from mcp_server_paperless.domain.trash import TrashedRecord, TrashPage
+    from mcp_server_paperless.domain.trash import TrashedRecord, TrashLookup, TrashPage
 
 pytestmark = pytest.mark.anyio
 
@@ -393,3 +400,167 @@ async def test_found_documents_come_with_their_facts_and_versions_are_left_out()
         "b5989a99fade41ed36af961e918ef43da955b8b08a4c8aa78430f2e6b7da43cb",
     )
     assert entry.original_file_name == "plmcp27-probe-b.txt"
+
+
+# --- one entry whole ------------------------------------------------------------------------------
+
+FULL: Json = {
+    **DOCUMENT,
+    "correspondent": 4,
+    "document_type": 5,
+    "storage_path": 6,
+    "archive_serial_number": 7,
+    "archived_file_name": "2026/plmcp78.pdf",
+    "page_count": 3,
+    "notes": [
+        {
+            "id": 8,
+            "note": "a note",
+            "format": "markdown",
+            "created": "2026-11-13T14:26:54Z",
+            "user": {"id": 2, "username": "admin", "first_name": "", "last_name": ""},
+        },
+        {"id": 9, "note": "nobody's", "format": "plain", "created": None, "user": None},
+    ],
+    "custom_fields": [{"field": 10, "value": "opt"}],
+    "duplicate_documents": [{"id": 11, "title": "copy", "deleted_at": None}],
+}
+
+
+async def look_up(response: httpx2.Response, wanted: int) -> tuple[TrashLookup, httpx2.Request]:
+    asked: list[httpx2.Request] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        asked.append(request)
+        return response
+
+    client, _ = streaming(answer)
+    found = await PaperlessTrashReader(client).look_up_in_trash(
+        wanted, page=2, page_size=50, max_bytes=100_000
+    )
+    return found, asked[0]
+
+
+async def test_an_entry_is_looked_up_with_every_field_in_one_bounded_request() -> None:
+    page = listing(VERSION, FULL, after="page=3&page_size=50")
+
+    found, request = await look_up(
+        httpx2.Response(200, stream=Chunks(json.dumps(page).encode())), 3301
+    )
+
+    assert dict(request.url.params) == {"page": "2", "page_size": "50"}
+    assert request.headers["Accept-Encoding"] == "identity"
+    timeouts = cast("dict[str, float]", request.extensions["timeout"])
+    assert timeouts["read"] == SCAN_TIMEOUT
+    assert found.next_page == 3
+    entry = found.entry
+    assert entry
+    assert (entry.correspondent, entry.document_type, entry.storage_path) == (4, 5, 6)
+    assert (entry.archive_serial_number, entry.page_count, entry.notes_count) == (7, 3, 2)
+    assert entry.archived_file_name == "2026/plmcp78.pdf"
+    assert entry.created_date.isoformat() == "2026-11-13"
+    assert (entry.user_can_change, entry.is_shared_by_requester) == (True, False)
+    assert [(n.id, n.note, n.format, n.user) for n in entry.notes] == [
+        (8, "a note", "markdown", "admin"),
+        (9, "nobody's", "plain", None),
+    ]
+    assert [(v.field, v.value) for v in entry.custom_fields] == [(10, "opt")]
+    assert [(d.id, d.title) for d in entry.duplicate_documents] == [(11, "copy")]
+    assert [(v.id, v.is_root) for v in entry.versions] == [(3301, True)]
+    assert (entry.version_of, entry.content) == (None, "plmcp27-probe-b text")
+
+
+async def test_an_entry_that_is_not_on_the_page_is_none() -> None:
+    found, _ = await look_up(httpx2.Response(200, stream=Chunks(body(DOCUMENT))), 9)
+
+    assert (found.entry, found.next_page) == (None, None)
+
+
+async def test_a_lookup_beyond_the_last_page_is_not_found() -> None:
+    with pytest.raises(NotFound, match="Page 2 of the trash does not exist"):
+        _ = await look_up(httpx2.Response(404, json={"detail": "Invalid page."}), 9)
+
+
+async def test_every_field_the_api_documents_is_read() -> None:
+    """Of a document, as 3.5.1 describes it; `permissions` is only sent with `full_perms`."""
+    path = Path(__file__).parents[2] / "docs" / "vendor" / "paperless" / "openapi.json"
+    schema = cast("dict[str, dict[str, dict[str, Json]]]", json.loads(path.read_text("utf-8")))
+    document = schema["components"]["schemas"]["Document"]
+    documented = set(cast("Json", document["properties"])) - {"permissions"}
+
+    read = set(TrashedDetail.model_fields)
+
+    assert documented - {"root_document"} <= read
+    assert "version_of" in read
+
+
+async def test_the_list_tells_what_chooses_an_entry(make_client: ClientFactory) -> None:
+    server = Recorded(listing(FULL, VERSION))
+
+    page = await PaperlessTrashReader(make_client(server)).list_trash(page=1, page_size=25)
+
+    first, second = page.entries
+    assert (first.document_type, first.owner, first.mime_type) == (5, 2, "text/plain")
+    assert (first.created.isoformat(), first.has_archive) == ("2026-11-13", True)
+    assert second.has_archive is False
+
+
+async def test_other_rows_than_the_wanted_one_are_not_kept_and_not_even_complete() -> None:
+    """They carry the whole text of other documents."""
+    odd: Json = {"id": 1, "content": "x"}
+
+    found, _ = await look_up(httpx2.Response(200, stream=Chunks(body(odd, FULL))), 3301)
+
+    assert found.entry
+    assert found.entry.id == 3301
+
+
+@pytest.mark.parametrize("encoding", ["gzip", "deflate", "br", "zstd"])
+async def test_a_compressed_row_is_refused_unread_also_for_the_grants(encoding: str) -> None:
+    """A small body could unpack to any size, and the rows carry whole texts."""
+    streams: list[Chunks] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        assert request.headers["Accept-Encoding"] == "identity"
+        streams.append(Chunks(gzip.compress(b"x" * 1_000_000)))
+        headers = {"Content-Encoding": encoding}
+        return httpx2.Response(200, headers=headers, stream=streams[-1])
+
+    client, _ = streaming(answer)
+    reader = PaperlessTrashReader(client)
+    for read_one in (reader.look_up_in_trash, reader.get_trash_permissions):
+        with pytest.raises(AnswerCompressed) as raised:
+            _ = await read_one(3301, page=1, page_size=100, max_bytes=100_000)
+        assert "proxy between this server and Paperless" in (raised.value.hint or "")
+    assert [stream.sent for stream in streams] == [0, 0]
+
+
+async def test_a_wanted_row_that_is_not_what_it_should_be_is_an_error() -> None:
+    with pytest.raises(PaperlessMcpError, match="unexpected response"):
+        _ = await look_up(httpx2.Response(200, stream=Chunks(body({"id": 3301}))), 3301)
+
+
+async def test_the_grants_of_an_entry_are_read_with_full_perms() -> None:
+    granted: Json = {
+        "id": 3301,
+        "permissions": {
+            "view": {"users": [3, 4], "groups": [5]},
+            "change": {"users": [4], "groups": []},
+        },
+    }
+    asked: list[httpx2.Request] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        asked.append(request)
+        return httpx2.Response(200, stream=Chunks(body({"id": 1}, granted)))
+
+    client, _ = streaming(answer)
+    reader = PaperlessTrashReader(client)
+    found = await reader.get_trash_permissions(3301, page=2, page_size=50, max_bytes=9_999)
+    absent = await reader.get_trash_permissions(9, page=2, page_size=50, max_bytes=9_999)
+
+    assert dict(asked[0].url.params) == {"page": "2", "page_size": "50", "full_perms": "true"}
+    assert found
+    assert (found.view_users, found.view_groups) == ((3, 4), (5,))
+    assert (found.change_users, found.change_groups) == ((4,), ())
+    assert absent is None

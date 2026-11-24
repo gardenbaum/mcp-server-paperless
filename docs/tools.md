@@ -2,7 +2,7 @@
 
 <!-- Generated from the tool surface by `just docs-tools`. Do not edit by hand. -->
 
-91 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
+93 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
 default; the others are switched on with
 [`PAPERLESS_MCP_TOOLSETS`](configuration.md#toolsets), which also says what each toolset is for.
 
@@ -134,6 +134,8 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | Tool | Kind | What it does |
 |---|---|---|
 | `list_trash` | read | List what was deleted and can still be restored: documents and deleted versions. |
+| `get_trash_entry` | read | Look into an entry of the trash: everything Paperless tells of it, and its text. |
+| `get_trashed_file` | read | Get the thumbnail or a file of an entry of the trash, after a JSON report. |
 | `restore_from_trash` | write | Take entries out of the trash: a document comes back whole, a version is re-attached. |
 | `empty_trash` | destructive, confirm | Delete trash entries for good: documents, their files, text, notes and metadata are lost. |
 

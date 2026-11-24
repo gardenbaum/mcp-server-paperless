@@ -80,6 +80,7 @@ from mcp_server_paperless.domain.admin import (
 from mcp_server_paperless.domain.ai import AiSuggestions, ChatAnswer, ChatSource
 from mcp_server_paperless.domain.bulk import (
     FieldsChange,
+    ObjectPermissions,
     ReferenceChange,
     TagsChange,
     TrashDocuments,
@@ -127,7 +128,14 @@ from mcp_server_paperless.domain.permissions import (
 )
 from mcp_server_paperless.domain.tasks import REJECTED, TaskState, TaskStatus, Unconfirmed
 from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyDetail, TaxonomyItem
-from mcp_server_paperless.domain.trash import TrashedDocument, TrashedRecord, TrashPage
+from mcp_server_paperless.domain.trash import (
+    TrashedDetail,
+    TrashedDocument,
+    TrashedNote,
+    TrashedRecord,
+    TrashLookup,
+    TrashPage,
+)
 from mcp_server_paperless.domain.versions import VersionPage, VersionRow
 from mcp_server_paperless.domain.views import FilterRule, SavedView
 from mcp_server_paperless.domain.workflows import Workflow
@@ -188,7 +196,6 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.bulk import (
         BulkKind,
         DocumentChange,
-        ObjectPermissions,
         PermissionsChange,
     )
     from mcp_server_paperless.domain.documents import FileVersion
@@ -563,6 +570,9 @@ class FakeState:
     tasks: list[FakeTask] = field(default_factory=list[FakeTask])
     # Deleted documents, newest last; reads no longer see them, the Paperless trash does.
     trash: list[FakeDocument] = field(default_factory=list[FakeDocument])
+    # Ids that restoring or emptying silently leaves in the trash (Paperless logs the error of an
+    # emptied entry and answers OK).
+    stuck: set[int] = field(default_factory=set[int])
     # The ids of the documents a bulk reprocess queued, in order (the fake does no OCR).
     reprocessed: list[int] = field(default_factory=list[int])
     # An opened file breaks off before its chunk of this number (None: never).
@@ -998,6 +1008,13 @@ class FakePaperless:
             raise unseen_document(document_id)
         return document.root_id or document.id
 
+    async def document_exists(self, document_id: int) -> bool:
+        """`DocumentReader.document_exists` (the `root` action: 404 only for a missing one)."""
+        return any(
+            document_id in {d.id, *(v.id for v in d.versions)}
+            for d in (*self.state.documents, *self.state.trash)
+        )
+
     async def get_duplicates(self, document_id: int) -> tuple[DuplicateRecord, ...]:
         """`DocumentReader.get_duplicates` (the detail view, `duplicate_documents`)."""
         return tuple(
@@ -1054,8 +1071,8 @@ class FakePaperless:
             raise unseen_document(document_id)
         return document
 
-    def _sub(self, document_id: int, *permissions: str) -> FakeDocument:
-        """The document for a sub-resource.
+    def _sub(self, document_id: int, *permissions: str, trashed: bool = False) -> FakeDocument:
+        """The document for a sub-resource; with ``trashed`` also one in the trash.
 
         The global permission is checked first (403), then existence (404); a hidden document
         is 403, which differs from the detail view.
@@ -1064,8 +1081,10 @@ class FakePaperless:
             if not self.user.has(needed):
                 message = "The Paperless user may not perform this action."
                 raise PermissionDenied(message)
-        document = self._document(document_id)
-        if not document.visible_to(self.user):
+        deleted = [d for d in self.state.trash if d.id == document_id and trashed]
+        document = deleted[0] if deleted else self._document(document_id)
+        roots = [d for d in self.state.documents if d.id == document.root_id]
+        if not (roots[0] if roots else document).visible_to(self.user):
             message = "The Paperless user may not perform this action."
             raise PermissionDenied(message)
         return document
@@ -1471,7 +1490,7 @@ class FakePaperless:
             d
             for d in self.state.trash
             if d.root_id not in covered
-            and (self.user.is_superuser or d.owner in {None, self.user.id})
+            and (self.user.is_superuser or self._root_owner(d) in {None, self.user.id})
         ]
         seen.sort(key=lambda d: (d.created, d.id), reverse=True)
         start = (page - 1) * page_size
@@ -1486,6 +1505,11 @@ class FakePaperless:
                     title=d.title,
                     deleted_at=d.deleted_at or datetime.min.replace(tzinfo=UTC),
                     version_of=d.root_id,
+                    created=d.created,
+                    mime_type=self._first_file(d).mime_type,
+                    document_type=d.document_type,
+                    owner=d.owner,
+                    has_archive=self._first_file(d).archive is not None,
                     checksum=root_checksum(d) if d.root_id is None else None,
                 )
                 for d in seen[start : start + page_size]
@@ -1528,6 +1552,77 @@ class FakePaperless:
             if d.id in listed
         }
 
+    def _root_owner(self, entry: FakeDocument) -> int | None:
+        """The owner who counts for an entry: of a version, its document's."""
+        roots = [d for d in self.state.documents if d.id == entry.root_id]
+        return roots[0].owner if roots else entry.owner
+
+    @staticmethod
+    def _first_file(entry: FakeDocument) -> FakeFile:
+        """The file of an entry in the trash: of a document the first version's."""
+        shown = FakeFile(entry.original, entry.archive, entry.content, entry.mime_type)
+        return entry.version_files.get(entry.id, shown)
+
+    async def look_up_in_trash(
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
+    ) -> TrashLookup:
+        """`TrashReader.look_up_in_trash`: a page of `list_trash`, one row of it whole.
+
+        Notes, custom field values and later versions went to the trash with the document, so
+        Paperless does not tell them. A version lists what is left of its document.
+        """
+        listed = await self.list_trash(page=page, page_size=page_size)
+        shown = {e.id for e in listed.entries}
+        rows = [d for d in self.state.trash if d.id in shown]
+        if sum(len(d.content.encode()) for d in rows) > max_bytes:
+            message = f"Paperless sent more than {max_bytes} bytes for GET /api/trash/."
+            raise AnswerTooLarge(message)
+        entry = next((d for d in rows if d.id == document_id), None)
+        return TrashLookup(
+            entry=None if entry is None else self._trash_row(entry), next_page=listed.next_page
+        )
+
+    async def get_trash_permissions(
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
+    ) -> ObjectPermissions | None:
+        """`TrashReader.get_trash_permissions`: the same row with `full_perms`."""
+        found = await self.look_up_in_trash(
+            document_id, page=page, page_size=page_size, max_bytes=max_bytes
+        )
+        if found.entry is None:
+            return None
+        [entry] = [d for d in self.state.trash if d.id == document_id]
+        return ObjectPermissions(
+            view_users=tuple(sorted(entry.viewers)),
+            view_groups=tuple(sorted(entry.view_groups)),
+            change_users=tuple(sorted(entry.editors)),
+            change_groups=tuple(sorted(entry.change_groups)),
+        )
+
+    def _trash_row(self, entry: FakeDocument) -> TrashedDetail:
+        file = self._first_file(entry)
+        roots = [d for d in self.state.documents if d.id == entry.root_id]
+        versions = roots[0].versions if roots else [v for v in entry.versions if v.is_root]
+        return TrashedDetail.model_validate(
+            {
+                **_record(entry, self.user).model_dump(),
+                "mime_type": file.mime_type,
+                "custom_fields": (),
+                "notes_count": 0,
+                "versions": versions,
+                "deleted_at": entry.deleted_at or datetime.min.replace(tzinfo=UTC),
+                "version_of": entry.root_id,
+                "created_date": entry.created,
+                "archived_file_name": None
+                if file.archive is None
+                else PurePath(entry.original_filename).with_suffix(".pdf").name,
+                "is_shared_by_requester": entry.owner == self.user.id and bool(entry.viewers),
+                "notes": tuple[TrashedNote, ...](),
+                "duplicate_documents": (),
+                "content": file.content,
+            }
+        )
+
     @write
     async def restore_from_trash(self, document_ids: Sequence[int]) -> None:
         """`TrashWriter.restore_from_trash` (TrashView.post, action `restore`).
@@ -1543,6 +1638,8 @@ class FakePaperless:
         if any(d.root_id in covered for d in entries):
             reject("documents", "Restore the root document instead of one of its versions.")
         for entry in entries:
+            if entry.id in self.state.stuck:
+                continue
             self.state.trash.remove(entry)
             entry.deleted_at = None
             if entry.root_id is None:
@@ -1560,7 +1657,7 @@ class FakePaperless:
         The same checks as `restore_from_trash` (except the one for versions). A document's
         deleted versions go with it, those deleted earlier too (probed on 3.4.2).
         """
-        entries = self._selected(document_ids)
+        entries = [d for d in self._selected(document_ids) if d.id not in self.state.stuck]
         gone = {d.id for d in entries}
         self.state.trash[:] = [
             d for d in self.state.trash if d not in entries and d.root_id not in gone
@@ -3520,9 +3617,17 @@ class FakePaperless:
         )
 
     async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
-        """`DocumentReader.get_document_thumbnail` (the `thumb` action: WebP, numbered name)."""
-        document = self._sub(document_id)
-        if (document.versions[0].id, "thumbnail") in self.state.missing:
+        """`DocumentReader.get_document_thumbnail` (the `thumb` action: WebP, numbered name).
+
+        It finds documents and versions in the trash, too (`include_deleted`); what is missing of
+        them cannot be told from what does not exist, because their metadata is a 404.
+        """
+        document = self._sub(document_id, trashed=True)
+        trashed = any(d is document for d in self.state.trash)
+        shown = document.id if trashed else document.versions[0].id
+        if (shown, "thumbnail") in self.state.missing:
+            if trashed:
+                raise unseen_document(document_id)
             message = f"Paperless cannot find the thumbnail of document {document_id}."
             raise NotFound(message, hint=NO_THUMBNAIL_HINT)
         return DocumentFile(
@@ -3541,13 +3646,22 @@ class FakePaperless:
     ) -> DocumentFile:
         """`DocumentReader.get_document_file` (the `download` action).
 
-        Without an archive version `archive` answers the original, as Paperless does.
+        Without an archive version `archive` answers the original, as Paperless does. It finds
+        documents and versions in the trash, too; of a document there the first version's file.
         """
-        document = self._sub(document_id)
-        file = self._file_of(document, version_id)
-        facts = await FakePaperless.get_document_metadata(self, document_id, version_id=version_id)
-        if facts.lacks(version):
-            raise missing_file(document_id, version, facts, version_id)
+        document = self._sub(document_id, trashed=True)
+        if version_id is None and any(d is document for d in self.state.trash):
+            file = self._first_file(document)
+            sent = "archive" if version == "archive" and file.archive is not None else "original"
+            if (document.id, sent) in self.state.missing:
+                raise unseen_document(document_id)
+        else:
+            file = self._file_of(document, version_id)
+            facts = await FakePaperless.get_document_metadata(
+                self, document_id, version_id=version_id
+            )
+            if facts.lacks(version):
+                raise missing_file(document_id, version, facts, version_id)
         archive = version == "archive" and file.archive is not None
         mime_type = file.mime_type
         if mime_type.startswith("text/"):
