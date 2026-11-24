@@ -6,14 +6,20 @@ import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
 
-from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError, PermissionDenied
+from mcp_server_paperless.domain.documents import FileMetadata
+from mcp_server_paperless.domain.errors import (
+    NotFound,
+    PaperlessMcpError,
+    PermissionDenied,
+    UpstreamTimeout,
+)
 from mcp_server_paperless.domain.versions import VersionUpload
 from mcp_server_paperless.services.files import TRASHED_HINT, FileService
 
 if TYPE_CHECKING:
     from collections.abc import Collection
 
-    from mcp_server_paperless.domain.documents import DocumentFile, FileMetadata, FileVersion
+    from mcp_server_paperless.domain.documents import DocumentFile, FileVersion
 
 pytestmark = pytest.mark.anyio
 
@@ -157,15 +163,94 @@ async def test_a_document_deleted_while_its_thumbnail_is_read_is_not_shown() -> 
         _ = await files(Deleting(seeded(), user=ADMIN[0])).thumbnail(1)
 
 
-async def test_what_is_not_listed_but_live_is_shown() -> None:
-    """A version that is not deleted: Paperless lists documents only."""
+class Versioned(FakePaperless):
+    """Document 1 has a version 70 that is not deleted. Failures as told."""
 
-    class Unlisted(FakePaperless):
-        @override
-        async def get_document_titles(self, document_ids: Collection[int]) -> dict[int, str]:
-            return {}
+    titles_error: PaperlessMcpError | None = None
+    root_error: PaperlessMcpError | None = None
+    metadata_error: PaperlessMcpError | None = None
+    asked: tuple[str, ...] = ()
 
-    assert (await files(Unlisted(seeded(), user=ADMIN[0])).thumbnail(1)).data
+    @override
+    async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
+        return await super().get_document_thumbnail(1 if document_id == 70 else document_id)
+
+    @override
+    async def get_document_titles(self, document_ids: Collection[int]) -> dict[int, str]:
+        self.asked = (*self.asked, f"titles {sorted(document_ids)}")
+        if self.titles_error:
+            raise self.titles_error
+        return await super().get_document_titles(document_ids)
+
+    @override
+    async def get_root(self, document_id: int) -> int:
+        self.asked = (*self.asked, f"root {document_id}")
+        if self.root_error:
+            raise self.root_error
+        return await super().get_root(1 if document_id == 70 else document_id)
+
+    @override
+    async def get_document_metadata(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> FileMetadata:
+        self.asked = (*self.asked, f"metadata {document_id}")
+        if self.metadata_error:
+            raise self.metadata_error
+        return FileMetadata(
+            original_filename=None,
+            original_mime_type="text/plain",
+            original_size=1,
+            original_checksum="x",
+            media_filename=None,
+            has_archive_version=False,
+            archive_size=None,
+            archive_checksum=None,
+            archive_media_filename=None,
+        )
+
+
+def versioned() -> Versioned:
+    return Versioned(seeded(), user=ADMIN[0])
+
+
+async def test_a_live_document_takes_one_look_up_and_a_live_version_three_more() -> None:
+    document, version = versioned(), versioned()
+
+    assert (await files(document).thumbnail(1)).data
+    assert (await files(version).thumbnail(70)).data
+
+    assert document.asked == ("titles [1]",)
+    assert version.asked == ("titles [70]", "root 70", "titles [1]", "metadata 70")
+
+
+async def test_a_live_version_of_a_trashed_document_is_not_shown() -> None:
+    fake = versioned()
+    await FakePaperless(fake.state, user=ADMIN[0], allow_writes=True).delete_document(1)
+
+    with pytest.raises(NotFound, match="70 is in the trash"):
+        _ = await files(fake).thumbnail(70)
+
+
+@pytest.mark.parametrize("what", ["titles_error", "root_error", "metadata_error"])
+@pytest.mark.parametrize(
+    "error", [UpstreamTimeout("slow"), PermissionDenied("no"), NotFound("gone")]
+)
+async def test_a_thumbnail_is_not_shown_where_a_look_up_fails(
+    what: str, error: PaperlessMcpError
+) -> None:
+    fake = versioned()
+    if what == "titles_error":
+        fake.titles_error = error
+    elif what == "root_error":
+        fake.root_error = error
+    else:
+        fake.metadata_error = error
+
+    with pytest.raises(type(error)) as raised:
+        _ = await files(fake).thumbnail(70)
+
+    missing = what == "metadata_error" and isinstance(error, NotFound)
+    assert raised.value.message == (f"70 is in the trash: {IN_TRASH}" if missing else error.message)
 
 
 async def test_an_original_within_the_limit_is_delivered_with_its_name_and_type() -> None:

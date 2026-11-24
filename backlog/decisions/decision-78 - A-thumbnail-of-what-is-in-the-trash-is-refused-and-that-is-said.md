@@ -14,12 +14,12 @@ Proposed; the owner decides. What is built:
 
 - The tool and the resource answer an error that the id is in the trash, and show no image. That is safer than the image with a note: nothing deleted is shown by a tool for live documents, as with every other one, and decision-54 ties the thumbnail of an entry to the trash list of the user (`get_trashed_file`), which a view grant does not open.
 - It is said to be in the trash only where Paperless served the thumbnail, so to users who may view it. Everybody else gets the error of before.
-- Whether a document is live is asked after the image came: one light list request for a document. Only for an id that is not listed, such as a version that is not deleted, its metadata is asked.
+- Whether a document is live is asked after the image came: one light list request for a document. Only an id that is not listed takes more: a version is shown if its document is listed and its own metadata is there, so a version left alive under a trashed document is not.
 
 ## Consequences
 
-- One more request per thumbnail, two for the id of a version.
-- If that request fails, the thumbnail is not shown.
+- One more request per thumbnail, four for the id of a live version.
+- If one of these requests fails, the thumbnail is not shown.
 - A document emptied from the trash between both requests is still called "in the trash".
 
 ## Alternatives

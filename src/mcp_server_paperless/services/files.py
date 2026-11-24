@@ -5,6 +5,7 @@ one is read in parts, each within the limit, or saved into a directory the opera
 stdio only); nothing else is ever written to the host (decision-7, decision-45).
 """
 
+import contextlib
 import hashlib
 from dataclasses import dataclass
 from pathlib import PurePath
@@ -135,18 +136,21 @@ class FileService:
         """Refuse what is in the trash, whose thumbnail Paperless serves like that of a live one.
 
         Asked after the image came, so that one deleted meanwhile is not shown. The list names
-        documents; the metadata, slower to make, also answers for a version that is not deleted.
+        live documents; a version is live if its document is listed and its own metadata, slower to
+        make, is there.
         """
         if document_id in await self._reader.get_document_titles([document_id]):
             return
-        try:
-            _ = await self._reader.get_document_metadata(document_id)
-        except NotFound:
-            message = (
-                f"{document_id} is in the trash: it is a deleted document or version, so its "
-                "thumbnail is not shown here."
-            )
-            raise NotFound(message, hint=TRASHED_HINT) from None
+        root = await self._reader.get_root(document_id)
+        if root != document_id and root in await self._reader.get_document_titles([root]):
+            with contextlib.suppress(NotFound):
+                _ = await self._reader.get_document_metadata(document_id)
+                return
+        message = (
+            f"{document_id} is in the trash: it is a deleted document or version, so its "
+            "thumbnail is not shown here."
+        )
+        raise NotFound(message, hint=TRASHED_HINT)
 
     async def download(
         self, document_id: int, version: FileVersion, *, version_id: int | None = None

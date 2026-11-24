@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T20:43:13Z'
-updated_date: '2026-11-24T21:23:58Z'
+updated_date: '2026-11-24T21:51:15Z'
 labels:
   - tools
 dependencies: []
@@ -48,4 +48,6 @@ Paperless 3.5.1 serves the thumbnail of a trashed document (views.py thumb resol
 
 <!-- SECTION:NOTES:BEGIN -->
 Decision of the implementer, for the owner to confirm (decision-78, proposed): answer an error that says the id is in the trash, show no image. Recommended, because the alternative (image with a note) keeps showing what an owner deleted to users with a view grant, and the resource has no report for the note. Only the thumbnail was affected: downloads, parts, page images, contact sheets and PDF tools read the document or its metadata first (404 in the trash), bulk_download takes live documents only (v3.5.1 source), the raw toolset refuses file endpoints. The fake already served trashed thumbnails as Paperless does. Surface snapshot: one sentence in the description of get_document_thumbnail. docs/api-coverage.md regenerated (one count). Tests red first at tool level (tool and resource, admin and reader); live proof by the new contract and E2E tests on GitHub.
+
+Review: a version is shown only if its document is listed and its own metadata is there (get_root first), so a live version of a trashed document is not shown; by the 3.5.1 source deleting a document deletes its versions, so this is pinned at the service only. Tests for failed look-ups (titles, root, metadata; NotFound and others): never shown. The root tests were red first; those of titles and metadata passed on the earlier code.
 <!-- SECTION:NOTES:END -->
