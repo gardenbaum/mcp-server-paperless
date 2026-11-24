@@ -113,8 +113,8 @@ TWIN_LOST: Final = (
     "was not sent."
 )
 FAILED: Final = (
-    "Files that failed, with their twins: {count}. next_after does not repeat them; call again with "
-    "them as paths, unless their reason says otherwise."
+    "Files that failed, with their twins: {count}. next_after does not repeat them; call again "
+    "with them as paths, unless their reason says otherwise."
 )
 DEEPER: Final = (
     "Subdirectories not read because they are more than {depth} levels down: {count}. Give them as "
