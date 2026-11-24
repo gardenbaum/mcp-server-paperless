@@ -5,13 +5,17 @@ background tasks that produce files: new documents, or new versions of the docum
 result goes is the ``Output`` of the operation.
 """
 
+from dataclasses import dataclass, field
 from datetime import date
-from typing import Annotated, ClassVar, Literal
+from typing import TYPE_CHECKING, Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from mcp_server_paperless.domain.documents import NameOrId, UploadState
 from mcp_server_paperless.domain.tasks import Wait
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 # Where the edited file goes: a new document (the original stays as it is), a new version of the
 # same document (the older versions stay), or a new document while the original moves to the
@@ -75,7 +79,7 @@ type LookupProblem = Literal["forbidden", "failed", "unconfirmed"]
 
 
 class CopiedFiles(BaseModel):
-    """How to find the new documents of a request whose tasks Paperless does not list.
+    """How to find the files of a request whose tasks Paperless does not list.
 
     Attributes:
         request: The queued task of the request.
@@ -91,10 +95,10 @@ class CopiedFiles(BaseModel):
 
 
 class FoundCopies(BaseModel):
-    """The documents with the file names of a request.
+    """The documents, or versions, that are the files of a request.
 
     Attributes:
-        ids: The document of each name, None where there is none yet, or where they are in doubt.
+        ids: The document or version of each, None where there is none yet, or in doubt.
         doubt: Why it cannot be told that they are the request's own: then nothing is done to them.
         passing: Whether the doubt may go away when other files are done.
     """
@@ -104,6 +108,27 @@ class FoundCopies(BaseModel):
     ids: tuple[int | None, ...]
     doubt: str | None = None
     passing: bool = False
+
+
+@dataclass(slots=True)
+class RotationSearch:
+    """What is looked for after a rotation, and what does not change between two looks.
+
+    Attributes:
+        request: The queued task of the rotation.
+        hidden: The documents of the request without a listed task, whose versions are looked for.
+        before: The version every document of the request showed before it.
+        user: The current user, once known.
+        names: The file name of each version that was read ("" if it is gone).
+        actors: Who added each version, by the history.
+    """
+
+    request: str
+    hidden: Sequence[int]
+    before: Mapping[int, int]
+    user: int | None = None
+    names: dict[int, str] = field(default_factory=dict[int, str])
+    actors: dict[int, int | None] = field(default_factory=dict[int, int | None])
 
 
 class StartedTasks(BaseModel):
@@ -125,7 +150,8 @@ class StartedTasks(BaseModel):
         doubt: Why it cannot be told that these tasks are the request's own, if so: good enough to
             report, not to trash anything for.
         detail: For ``unconfirmed``: why the queued task could not be followed.
-        files: For new documents: how to find them where Paperless lists no task for them.
+        files: For new documents and rotated versions: how to find those Paperless lists no task
+            for.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
