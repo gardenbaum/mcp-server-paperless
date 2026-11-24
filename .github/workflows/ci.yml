@@ -127,7 +127,7 @@ jobs:
       fail-fast: false
       matrix:
         part: ["1/4", "2/4", "3/4", "4/4"]
-    # A hang guard, no quality gate: the tier takes 2 to 10 minutes. This replaces the 60 minutes of
+    # A hang guard, no quality gate: the tier takes 2 to 15 minutes. This replaces the 60 minutes of
     # PLMCP-43, which guarded the whole suite in one job; that suite now runs in e2e-full.yml.
     timeout-minutes: 20
     steps:
