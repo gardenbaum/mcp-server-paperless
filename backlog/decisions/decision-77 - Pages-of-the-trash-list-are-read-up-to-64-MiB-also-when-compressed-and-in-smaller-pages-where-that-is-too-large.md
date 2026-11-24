@@ -1,11 +1,11 @@
 ---
-updated_date: '2026-11-24T21:33:47Z'
+updated_date: '2026-11-24T22:34:31Z'
 id: decision-77
 title: >-
   Pages of the trash list are read up to 64 MiB also when compressed and in
   smaller pages where that is too large
 date: '2026-11-24T21:15:38Z'
-status: proposed
+status: accepted
 ---
 ## Context
 <!-- SECTION:CONTEXT:BEGIN -->
@@ -39,6 +39,7 @@ httpx2 unpacks in pieces of at most 1 MiB since 2.16.0, but what unpacks to noth
 - Emptying the whole trash with more than 64 MiB of text takes several requests, and on PostgreSQL, where pages of equal dates can overlap, may be refused where it was possible before. It never empties entries it did not see.
 - If the trash shrinks while its pages are read, the search ends instead of failing with a page that does not exist; an id that is not found is explained as before.
 
+- The owner accepted this decision on 2026-11-24, in a question dialog with these points named.
 <!-- SECTION:CONSEQUENCES:END -->
 ## Alternatives
 <!-- SECTION:ALTERNATIVES:BEGIN -->

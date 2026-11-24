@@ -1,11 +1,11 @@
 ---
 id: PLMCP-111
 title: Bound the pages of the trash list in bytes
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T09:06:02Z'
-updated_date: '2026-11-24T21:59:03Z'
+updated_date: '2026-11-24T22:34:31Z'
 labels:
   - safety
 dependencies: []
@@ -22,15 +22,15 @@ list_trash pages (100 rows with full texts) have no byte limit and accept compre
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every read of whole trash rows is bounded, also when the answer is compressed, and restore by ids still works behind a compressing proxy
-- [ ] #2 Adapter, service and contract tests
+- [x] #1 Every read of whole trash rows is bounded, also when the answer is compressed, and restore by ids still works behind a compressing proxy
+- [x] #2 Adapter, service and contract tests
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -50,4 +50,12 @@ decision-77. list_trash takes max_bytes (64 MiB) and reads through read_json, wh
 Review: hostile compressed answers. The body is now unpacked with zlib in paperless/unpacking.py: raw bytes count, data after the end is refused at once, gzip and deflate only and asked for explicitly, error bodies bounded too; tests red first (2.7 GB of process memory before; under 40 MB now). zstd is not taken any more (decision-77, proposed). The pages search has a limit of 1,000 requests; an unread entry is told beside found entries and reasons; the hint that pages can skip entries stands for restore too. Survivor tests added after the code, shown by mutation: while, scan.complete, wanted <= found (both), aclosing, smaller pages, request limit. Not caught by a test: the loop that drains what still waits inside zlib once all input has gone in; no input was found that reaches it. Not changed: other streamed reads and the error bodies of downloads still use httpx2's decoders and keep data after the end.
 
 Second review: error bodies of bounded reads are cut to the first 64 KiB that arrive and decoded by httpx2 again (zstd details kept, cut not emptied); the own test of an endless error body now allows these 64 KiB (67 pieces, before 2). all=true names the request limit; STOPPED no longer claims the trash is longer. Tests for the end-of-stream check, the zlib header check and the wording, each failing under mutation. Follow-ups: PLMCP-117, PLMCP-118.
+
+decision-77 accepted by the owner on 2026-11-24. DoD 1 stays open: not fully written test first (named in the PR). DoD 2 and 4: CI and merge of #151.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Trash list reads are bounded on the unpacked and the raw size; restore by ids works behind a compressing proxy (decision-77).
+<!-- SECTION:FINAL_SUMMARY:END -->
