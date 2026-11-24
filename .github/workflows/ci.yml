@@ -42,6 +42,13 @@ jobs:
           go-version: stable
           cache: false
 
+      # Building gitleaks downloads its modules from the Go servers, whose outages made `just secrets`
+      # fail; the scan itself always runs.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ matrix.python }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
       - name: Install just
         run: uv tool install "rust-just==${RUST_JUST_VERSION}"
 
@@ -99,6 +106,13 @@ jobs:
           go-version: stable
           cache: false
 
+      # Building gitleaks downloads its modules from the Go servers, whose outages made `just secrets`
+      # fail; the scan itself always runs.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-audit-${{ hashFiles('.pre-commit-config.yaml') }}
+
       - name: Install just
         run: uv tool install "rust-just==${RUST_JUST_VERSION}"
 
@@ -115,10 +129,10 @@ jobs:
   # live contract and e2e modules of the toolsets the change touches, a small smoke set for a change
   # outside that map (scripts/e2e_ci.py, tested). A few minutes, never the whole suite. It is not a
   # required check (decision-24, superseded by decision-23); the controller waits for it (doc-2). The full suite runs after the
-  # merge and nightly in four shards (e2e-full.yml). The job always runs and reports; a change to
+  # merge and nightly in six shards (e2e-full.yml). The job always runs and reports; a change to
   # documentation or backlog only skips its steps.
   # A heavy tier (a change across many toolsets, over 450 s of recorded test time) is split over the
-  # four matrix parts; a part without work skips its steps and still reports. Nothing is dropped.
+  # six matrix parts; a part without work skips its steps and still reports. Nothing is dropped.
   e2e:
     name: e2e (${{ matrix.part }})
     if: github.event_name == 'pull_request'
@@ -126,7 +140,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: ["1/4", "2/4", "3/4", "4/4"]
+        part: ["1/6", "2/6", "3/6", "4/6", "5/6", "6/6"]
     # A hang guard, no quality gate: the tier takes 2 to 15 minutes. This replaces the 60 minutes of
     # PLMCP-43, which guarded the whole suite in one job; that suite now runs in e2e-full.yml.
     timeout-minutes: 20

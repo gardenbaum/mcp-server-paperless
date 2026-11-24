@@ -25,67 +25,75 @@ from pathlib import Path
 from typing import TextIO, cast
 
 # The number of parallel jobs of the full run. Its matrix lists the same shards (a test checks it).
-SHARDS = 4
+SHARDS = 6
 
-# Seconds per module on a hosted runner (ubuntu-latest, 4 vCPUs): the median of four green e2e-full
-# runs of 2026-11-24, 45349506723, 45349964929, 45353668848 and 45355735636 (PLMCP-44), a module's
-# time being the gap of the Actions timestamps of its pytest progress lines, 30 s of stack seeding
-# taken off the first module of a shard. The Celery-bound modules (bulk, writer, pdf, sharing,
-# versions, duplicates) vary 1.5 to 2x between runs (the median ignores one fast or slow runner).
+# Seconds per module on a hosted runner (ubuntu-latest, 4 vCPUs): the median of four e2e-full
+# runs of 2026-11-24 (PLMCP-115, decision-76): 45460920436, 45467934032, 45467975266, 45475116464.
+# A module's time is the gap of the Actions timestamps of the ends of its pytest progress lines,
+# 30 s of stack seeding taken off the first module of a shard. The Celery-bound modules (bulk,
+# writer, pdf, sharing, versions, duplicates) vary 1.5 to 2x between runs (the median ignores one
+# fast or slow runner).
 # The weight the split balances; a module not listed counts as the average of the listed ones, so a
 # new module lands in some shard without anyone editing this table; refresh the numbers when the
 # balance drifts (a test checks the split of the current table against the measured seconds). Keys
 # are paths relative to the repository. test_trash_order and test_rejected_duplicates are skipped in
 # the shards (they run in the jobs e2e-postgres and e2e-duplicates).
 MODULE_SECONDS: dict[str, float] = {
-    "tests/contract/test_pdf.py": 253,
-    "tests/contract/test_bulk.py": 248,
-    "tests/contract/test_duplicates.py": 207,
-    "tests/e2e/test_pages_files.py": 206,
-    "tests/contract/test_document_versions.py": 205,
-    "tests/contract/test_document_writer.py": 160,
-    "tests/e2e/test_duplicates.py": 111,
-    "tests/e2e/test_pdf.py": 111,
-    "tests/contract/test_sharing.py": 106,
-    "tests/e2e/test_confirmation.py": 96,
-    "tests/e2e/test_bulk.py": 69,
-    "tests/e2e/test_upload_duplicates.py": 68,
-    "tests/contract/test_document_upload.py": 62,
-    "tests/contract/test_notes_and_trash.py": 58,
-    "tests/contract/test_admin.py": 57,
-    "tests/contract/test_taxonomy_edits.py": 56,
-    "tests/e2e/test_text_edits.py": 56,
+    "tests/contract/test_pdf.py": 440,
+    "tests/contract/test_bulk.py": 340,
+    "tests/e2e/test_pdf.py": 259,
+    "tests/e2e/test_pages_files.py": 216,
+    "tests/contract/test_document_versions.py": 199,
+    "tests/contract/test_sharing.py": 192,
+    "tests/contract/test_duplicates.py": 185,
+    "tests/e2e/test_duplicates.py": 158,
+    "tests/e2e/test_bulk_items.py": 144,
+    "tests/contract/test_document_writer.py": 129,
+    "tests/e2e/test_trash.py": 119,
+    "tests/e2e/test_bulk.py": 113,
+    "tests/e2e/test_confirmation.py": 113,
+    "tests/e2e/test_pdf_insert.py": 113,
+    "tests/e2e/test_pages.py": 109,
+    "tests/e2e/test_versions.py": 102,
+    "tests/contract/test_bulk_items.py": 83,
+    "tests/contract/test_document_reader.py": 72,
+    "tests/contract/test_trash.py": 67,
+    "tests/contract/test_admin.py": 64,
+    "tests/e2e/test_text_edits.py": 61,
+    "tests/contract/test_document_upload.py": 60,
+    "tests/e2e/test_upload_duplicates.py": 60,
+    "tests/e2e/test_update_document.py": 58,
     "tests/e2e/test_toolset_guide.py": 54,
-    "tests/e2e/test_versions.py": 52,
-    "tests/e2e/test_upload_batches.py": 50,
-    "tests/e2e/test_pages.py": 49,
-    "tests/e2e/test_update_document.py": 48,
-    "tests/contract/test_trash.py": 47,
-    "tests/e2e/test_permissions.py": 44,
-    "tests/e2e/test_search.py": 41,
-    "tests/e2e/test_admin.py": 40,
-    "tests/contract/test_permissions.py": 38,
-    "tests/contract/test_batch_uploads.py": 37,
-    "tests/contract/test_text_edits.py": 34,
-    "tests/e2e/test_downloads.py": 28,
+    "tests/contract/test_notes_and_trash.py": 50,
+    "tests/contract/test_text_edits.py": 50,
+    "tests/e2e/test_read_documents.py": 49,
+    "tests/contract/test_pdf_insert.py": 47,
+    "tests/e2e/test_permissions.py": 43,
+    "tests/e2e/test_upload_batches.py": 43,
+    "tests/contract/test_taxonomy_edits.py": 42,
+    "tests/e2e/test_admin.py": 42,
+    "tests/e2e/test_search.py": 40,
+    "tests/e2e/test_downloads.py": 39,
+    "tests/contract/test_permissions.py": 36,
+    "tests/contract/test_instance_reader.py": 29,
+    "tests/contract/test_batch_uploads.py": 27,
     "tests/e2e/test_upload_document.py": 25,
-    "tests/contract/test_document_reader.py": 23,
-    "tests/contract/test_instance_reader.py": 22,
-    "tests/e2e/test_raw.py": 20,
-    "tests/contract/test_task_reader.py": 16,
+    "tests/e2e/test_raw.py": 21,
+    "tests/e2e/test_taxonomy_edits.py": 17,
+    "tests/e2e/test_files.py": 16,
     "tests/e2e/test_mail.py": 16,
-    "tests/e2e/test_notes_and_trash.py": 16,
-    "tests/e2e/test_taxonomy_edits.py": 16,
-    "tests/e2e/test_files.py": 15,
-    "tests/e2e/test_http.py": 15,
-    "tests/e2e/test_stdio.py": 15,
+    "tests/contract/test_selection.py": 15,
+    "tests/e2e/test_notes_and_trash.py": 15,
+    "tests/e2e/test_http.py": 14,
+    "tests/e2e/test_stdio.py": 14,
+    "tests/e2e/test_minimum_release.py": 13,
+    "tests/contract/test_task_reader.py": 12,
     "tests/e2e/test_sharing.py": 11,
-    "tests/e2e/test_trash.py": 10,
-    "tests/contract/test_ai_reader.py": 8,
+    "tests/contract/test_ai_reader.py": 10,
     "tests/e2e/test_documents.py": 8,
+    "tests/contract/test_views.py": 7,
     "tests/contract/test_workflows.py": 7,
     "tests/contract/test_mail.py": 6,
-    "tests/contract/test_views.py": 6,
     "tests/e2e/test_views.py": 6,
     "tests/e2e/test_workflows.py": 6,
     "tests/e2e/test_tasks.py": 4,
@@ -109,9 +117,9 @@ SHARD_TIMEOUT_MINUTES = 25
 # A tier heavier than this (recorded seconds) is split over up to TIER_PARTS parallel jobs of the
 # `e2e` matrix (a cross-cutting change would pass the 20-minute guard on a hosted runner). Weights
 # and budget are hosted-runner seconds (decision-30); the number of shards and parts is
-# decision-58's. The full run covers everything after the merge.
+# decision-76's. The full run covers everything after the merge.
 TIER_BUDGET_SECONDS = 450.0
-TIER_PARTS = 4
+TIER_PARTS = 6
 
 # What every pull request that changes code runs: the stdio smoke test.
 STDIO = "tests/e2e/test_stdio.py"
