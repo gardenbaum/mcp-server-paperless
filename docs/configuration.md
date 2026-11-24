@@ -11,8 +11,7 @@ token to use. The rest decides what the model may do and how much it may move.
 - [Startup and logs](#startup-and-logs)
 
 The [Claude Code plugin](../plugin/README.md) asks for the Paperless settings and the server settings
-that narrow or widen what the model can do, and leaves the rest at their defaults. It does not ask for
-`PAPERLESS_MCP_REQUIRE_DIALOG` yet, because the release it runs does not know that setting.
+that narrow or widen what the model can do, and leaves the rest at their defaults.
 
 The HTTP transport has its own variables in [Run over HTTP](http.md), the OIDC layer in
 [Connect claude.ai](claude-ai-connector.md).

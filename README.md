@@ -316,6 +316,7 @@ them.
 | `PAPERLESS_PUBLIC_URL` | Base URL for links shown to you, if it differs from `PAPERLESS_URL` |
 | `PAPERLESS_MCP_TOOLSETS` | Toolsets to offer, comma-separated, or `all` (default `core,ai`) |
 | `PAPERLESS_MCP_READ_ONLY` | `true` to offer only tools that change nothing |
+| `PAPERLESS_MCP_REQUIRE_DIALOG` | `true` to let only an accepted dialog confirm, never `confirm=true` |
 | `PAPERLESS_MCP_DISABLED_TOOLS` | Tools never offered, by name |
 | `PAPERLESS_MCP_UPLOAD_DIRS` | Directories the model may upload files from by path (stdio only; default: none) |
 | `PAPERLESS_MCP_DOWNLOAD_DIRS` | Directories the model may save downloads into (stdio only; default: none) |

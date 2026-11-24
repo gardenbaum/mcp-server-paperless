@@ -48,7 +48,7 @@ claude plugin marketplace add gardenbaum/mcp-server-paperless
 claude plugin install mcp-server-paperless@gardenbaum
 ```
 
-Claude Code asks for eight options, of which only the Paperless URL and the token are required. After
+Claude Code asks for nine options, of which only the Paperless URL and the token are required. After
 an install from the shell, or to change a value later, run
 `/plugin configure mcp-server-paperless@gardenbaum` in a session, then restart Claude Code; the server
 starts once the two required values are set. Claude Code keeps the token in its credential store (the
@@ -73,6 +73,7 @@ claude plugin update mcp-server-paperless@gardenbaum
 | Public URL | Base URL for links shown to you, if it differs from the Paperless URL (default: none) |
 | Toolsets | Toolsets to offer, comma-separated, or `all` (default: `core,ai`). Once set, must not be empty: type `core,ai` to restore the default |
 | Read-only | Offer only tools that change nothing in Paperless or on this machine (default: off) |
+| Only dialogs confirm | Let only a dialog accepted in the client confirm deletions and the like, never the assistant alone; without dialogs they are refused ([details](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md#only-dialogs-confirm)) (default: off) |
 | Disabled tools | Tools never offered, by name (default: none) |
 | Upload directories | Directories the model may upload files from by path (default: none) |
 | Download directories | Directories the model may save downloads into (default: none) |
