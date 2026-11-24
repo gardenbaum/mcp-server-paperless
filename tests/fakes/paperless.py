@@ -2022,7 +2022,8 @@ class FakePaperless:
             if source is not None
             else f"{'_'.join(str(d.id) for d in taken)}_merged"
         )
-        pages = sum(files[d.id].page_count or 0 for d in taken)
+        # An image has no page count, its archive PDF one page.
+        pages = sum(files[d.id].page_count or 1 for d in taken)
         made = self._new_document(source, title, pages, taken[0].content)
         task = self._pdf_task("consume_file", (made.id,))
         if self._hidden_by_date(source):

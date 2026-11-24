@@ -170,7 +170,10 @@ METADATA = (
     "title, correspondent, document type, storage path, tags, created date, custom field values "
     "and view and change grants"
 )
-NEVER = "notes, history, earlier versions, share links and corrections of the text are not copied"
+NEVER = (
+    "notes, history, earlier versions, share links, corrections of the text and the back links of "
+    "document links are not copied"
+)
 PIPELINE = (
     "a new document belongs to the calling user, gets the inbox tags and is processed like an "
     "upload: workflows, matching and barcodes can change it, split it again or stop it"

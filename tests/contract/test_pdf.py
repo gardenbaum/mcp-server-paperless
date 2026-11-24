@@ -8,6 +8,7 @@ Every test works on documents of its own, never on a seeded one.
 """
 
 import asyncio
+import io
 import time
 import uuid
 from datetime import date
@@ -15,6 +16,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from e2e.helpers import pdf_pages
+from PIL import Image
 
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch, DocumentQuery
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
@@ -571,3 +573,27 @@ async def test_a_date_among_the_custom_fields_hides_the_task_of_a_new_document_o
     for number in made:
         backend.track_document(number)
     assert (await ports.documents.get_document(made[0])).custom_fields == (dated,)
+
+
+def photo() -> bytes:
+    """A PNG; Paperless archives it as a PDF of one page and counts none for the document."""
+    out = io.BytesIO()
+    colour = (uuid.uuid4().int % 255, 10, 20)
+    Image.new("RGB", (300, 400), colour).save(out, format="PNG", dpi=(100, 100))
+    return out.getvalue()
+
+
+@pytest.mark.contract(MERGE)
+async def test_a_merge_can_take_the_archive_pdf_of_an_image(backend: Backend) -> None:
+    ports, first = backend.admin, backend.new_pdf(2)
+    image = backend.upload(f"contract-photo-{first}", "photo.png", photo(), "image/png")
+
+    without = await ports.pdf_writes.merge_documents((first, image), metadata_document_id=None)
+    taken = await ports.pdf_writes.merge_documents(
+        (first, image), metadata_document_id=None, archive_fallback=True
+    )
+
+    assert (without.included, taken.included) == ((first,), (first, image))
+    [short], [whole] = await finished(backend, without), await finished(backend, taken)
+    assert (await pages(backend, image), await pages(backend, short)) == (None, 2)
+    assert await pages(backend, whole) == 3

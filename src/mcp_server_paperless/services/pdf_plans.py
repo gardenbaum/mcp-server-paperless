@@ -12,7 +12,8 @@ METADATA: Final = (
     "and view and change grants"
 )
 NEVER_COPIED: Final = (
-    "notes, history, earlier versions, share links and corrections of the text are not copied"
+    "notes, history, earlier versions, share links, corrections of the text and the back links of "
+    "document links are not copied"
 )
 NEW_DOCUMENT: Final = (
     "a new document belongs to the calling user, gets the inbox tags and is processed like an "

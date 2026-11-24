@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:14Z'
-updated_date: '2026-11-24T09:23:08Z'
+updated_date: '2026-11-24T09:49:10Z'
 labels: []
 dependencies: []
 parent_task_id: PLMCP-79
@@ -68,4 +68,16 @@ Probe facts on 3.5.1 (run 45361040241 and CI 45361045282, 2026-11-24):
 - P8: images need a dpi to be consumed; asked again in a second probe.
 - P11: edit and merge products keep pages and annotations, lose bookmarks, attachments, the form (its logic) and signatures; a rotated file keeps bookmarks, attachments, form and the signature field.
 - SURPRISE (new trap): editing a document with every custom field kind with include_metadata made document 94 but NO consume_file task row ever appeared (bulk_update succeeded). Second probe asks which field kind hides it.
+
+Second probe (CI 45364769800, 2026-11-24):
+- Only a DATE among the custom fields hides the consume_file task of everything that copies the metadata (edit into new documents, rotate, merge with a metadata document); string, url, boolean, integer, float, monetary, documentlink, select and longtext do not. The document is made all the same. Source: the JSON of the task row cannot hold the nested date, the error is logged and swallowed.
+- Product with metadata: title, created, correspondent, type, storage path, tags, all custom fields and grants; no notes, no share links, no correction of the text; a document link is copied, the linked document gets no back link.
+- P8: an encrypted PDF and a text file are left out with and without archive_fallback, an image only without; an image's document has no page count, its archive PDF has one page. The file name lists what is in the merge. Only an unreadable document: no task. With delete_originals only the included ones go.
+Probe module deleted; the facts are contract tests in tests/contract/test_pdf.py.
+
+Design choices: merge with use_original_files and delete_originals is refused where a document shows a newer file (as version_id with replace_original); keep_metadata=false with new_version is refused; versions are always requested with include_metadata=false (no effect on the document, keeps the task visible); rotate takes confirm and stays non-destructive; trash-last covers split, delete_pages and edit_pdf here too (AC 4), so 79.3 adds part metadata on top of services/pdf_replacing.py.
+Deviation: code and tests of the adapter, service and tool steps were written together, the tests not run red before the code in every case.
+Not covered as designed: the failed part on the duplicates stack in E2E, because own products never are duplicates (P4); it is covered on the fake.
+Snapshots and limits: surface snapshot, docs/tools.md, docs/api-coverage.md regenerated (new parameters, plan, texts); no limit or budget raised. Contract tests of delete_original(s) removed with the port option. test_arguments.py names the options its pdf sweeps vary, because dry_run sends nothing.
+Local: ruff and basedpyright clean, targeted tests of the touched modules green, diff-cover 100 %; no full suite, E2E or live run.
 <!-- SECTION:NOTES:END -->
