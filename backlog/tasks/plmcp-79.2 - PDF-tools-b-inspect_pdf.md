@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:15Z'
-updated_date: '2026-11-24T11:22:14Z'
+updated_date: '2026-11-24T11:22:20Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -30,9 +30,9 @@ Second part of PLMCP-79 (design approved by the owner on 2026-11-24 (all 14 deci
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [x] #1 Tests written first (red, then green) at every test level the change touches
+- [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -63,4 +63,6 @@ Changed on purpose, with reasons:
 Design choices: layout covers the pages asked for (default all), also with the overview; a page that cannot be read is a run without size and an empty tile instead of failing the call; sheets share the 720 KiB (a lower quality first) so 60 pages are always shown if time allows; the 20 s stop is between tiles, the layout takes at most half of it, at least one page is always shown. Measured on macOS: 60 A4 scans of 300 dpi (120 MB, one picture repeated) 2.6 s, 360 MB.
 Known limit: a UserUnit of the file is not applied to sizes (PDFium does not report it); in docs/configuration.md.
 Not run locally: E2E, the full suite, the runner tests near 100 megapixels, mutation. The weight of test_pages.py (49 s) was not re-measured.
+
+DoD 1 left open: rendering, service and tool tests were seen red (the service tests by running them against the old module); the contract and the E2E tests were written after the code and the E2E tests have not run yet.
 <!-- SECTION:NOTES:END -->
