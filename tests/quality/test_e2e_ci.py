@@ -353,7 +353,7 @@ def test_the_scope_command_gives_each_part_its_group_and_skips_the_parts_without
     stdin = "".join(f"src/mcp_server_paperless/services/{stem}.py\0" for stem in stems)
     seen: list[str] = []
     modes: list[str] = []
-    for part in ("1/4", "2/4", "3/4", "4/4"):
+    for part in ("1/6", "2/6", "3/6", "4/6", "5/6", "6/6"):
         code, out, err = run_main(["scope", "--part", part], stdin=stdin)
         assert code == 0
         modes.append(out.splitlines()[0])
@@ -363,7 +363,7 @@ def test_the_scope_command_gives_each_part_its_group_and_skips_the_parts_without
     assert sorted(seen) == sorted(all_targets.split())  # nothing dropped, nothing run twice
     assert modes[0] == "mode=fast"
     _, out, err = run_main(
-        ["scope", "--part", "4/4"], stdin="src/mcp_server_paperless/tools/pdf.py\0"
+        ["scope", "--part", "6/6"], stdin="src/mcp_server_paperless/tools/pdf.py\0"
     )
     assert out == "mode=skip\ntargets=\n"
     assert "no work" in err
@@ -404,60 +404,67 @@ def test_the_weights_name_the_live_modules_of_the_suite_and_split_it_evenly() ->
     assert max(loads) <= 1.15 * sum(loads) / len(loads), loads
 
 
-# Seconds per module on a hosted runner: the median of four green e2e-full runs of 2026-11-24,
-# 45349506723, 45349964929, 45353668848 and 45355735636, derived from the Actions timestamp of each
+# Seconds per module on a hosted runner: the median of four e2e-full runs of 2026-11-24,
+# 45460920436, 45467934032, 45467975266 and 45475116464, derived from the Actions timestamp of each
 # module's progress line; the first module of a shard has the 30 s of the stack's seeding taken off.
 # This is the measured reality the weights in scripts/e2e_ci.py must split evenly; refresh it
 # together with the weights.
 HOSTED_SECONDS = {
-    "tests/contract/test_pdf.py": 253,
-    "tests/contract/test_bulk.py": 248,
-    "tests/contract/test_duplicates.py": 207,
-    "tests/e2e/test_pages_files.py": 206,
-    "tests/contract/test_document_versions.py": 205,
-    "tests/contract/test_document_writer.py": 160,
-    "tests/e2e/test_duplicates.py": 111,
-    "tests/e2e/test_pdf.py": 111,
-    "tests/contract/test_sharing.py": 106,
-    "tests/e2e/test_confirmation.py": 96,
-    "tests/e2e/test_bulk.py": 69,
-    "tests/e2e/test_upload_duplicates.py": 68,
-    "tests/contract/test_document_upload.py": 62,
-    "tests/contract/test_notes_and_trash.py": 58,
-    "tests/contract/test_admin.py": 57,
-    "tests/contract/test_taxonomy_edits.py": 56,
-    "tests/e2e/test_text_edits.py": 56,
+    "tests/contract/test_pdf.py": 440,
+    "tests/contract/test_bulk.py": 340,
+    "tests/e2e/test_pdf.py": 259,
+    "tests/e2e/test_pages_files.py": 216,
+    "tests/contract/test_document_versions.py": 199,
+    "tests/contract/test_sharing.py": 192,
+    "tests/contract/test_duplicates.py": 185,
+    "tests/e2e/test_duplicates.py": 158,
+    "tests/e2e/test_bulk_items.py": 144,
+    "tests/contract/test_document_writer.py": 129,
+    "tests/e2e/test_trash.py": 119,
+    "tests/e2e/test_bulk.py": 113,
+    "tests/e2e/test_confirmation.py": 113,
+    "tests/e2e/test_pdf_insert.py": 113,
+    "tests/e2e/test_pages.py": 109,
+    "tests/e2e/test_versions.py": 102,
+    "tests/contract/test_bulk_items.py": 83,
+    "tests/contract/test_document_reader.py": 72,
+    "tests/contract/test_trash.py": 67,
+    "tests/contract/test_admin.py": 64,
+    "tests/e2e/test_text_edits.py": 61,
+    "tests/contract/test_document_upload.py": 60,
+    "tests/e2e/test_upload_duplicates.py": 60,
+    "tests/e2e/test_update_document.py": 58,
     "tests/e2e/test_toolset_guide.py": 54,
-    "tests/e2e/test_versions.py": 52,
-    "tests/e2e/test_upload_batches.py": 50,
-    "tests/e2e/test_pages.py": 49,
-    "tests/e2e/test_update_document.py": 48,
-    "tests/contract/test_trash.py": 47,
-    "tests/e2e/test_permissions.py": 44,
-    "tests/e2e/test_search.py": 41,
-    "tests/e2e/test_admin.py": 40,
-    "tests/contract/test_permissions.py": 38,
-    "tests/contract/test_batch_uploads.py": 37,
-    "tests/contract/test_text_edits.py": 34,
-    "tests/e2e/test_downloads.py": 28,
+    "tests/contract/test_notes_and_trash.py": 50,
+    "tests/contract/test_text_edits.py": 50,
+    "tests/e2e/test_read_documents.py": 49,
+    "tests/contract/test_pdf_insert.py": 47,
+    "tests/e2e/test_permissions.py": 43,
+    "tests/e2e/test_upload_batches.py": 43,
+    "tests/contract/test_taxonomy_edits.py": 42,
+    "tests/e2e/test_admin.py": 42,
+    "tests/e2e/test_search.py": 40,
+    "tests/e2e/test_downloads.py": 39,
+    "tests/contract/test_permissions.py": 36,
+    "tests/contract/test_instance_reader.py": 29,
+    "tests/contract/test_batch_uploads.py": 27,
     "tests/e2e/test_upload_document.py": 25,
-    "tests/contract/test_document_reader.py": 23,
-    "tests/contract/test_instance_reader.py": 22,
-    "tests/e2e/test_raw.py": 20,
-    "tests/contract/test_task_reader.py": 16,
+    "tests/e2e/test_raw.py": 21,
+    "tests/e2e/test_taxonomy_edits.py": 17,
+    "tests/e2e/test_files.py": 16,
     "tests/e2e/test_mail.py": 16,
-    "tests/e2e/test_notes_and_trash.py": 16,
-    "tests/e2e/test_taxonomy_edits.py": 16,
-    "tests/e2e/test_files.py": 15,
-    "tests/e2e/test_http.py": 15,
-    "tests/e2e/test_stdio.py": 15,
+    "tests/contract/test_selection.py": 15,
+    "tests/e2e/test_notes_and_trash.py": 15,
+    "tests/e2e/test_http.py": 14,
+    "tests/e2e/test_stdio.py": 14,
+    "tests/e2e/test_minimum_release.py": 13,
+    "tests/contract/test_task_reader.py": 12,
     "tests/e2e/test_sharing.py": 11,
-    "tests/e2e/test_trash.py": 10,
-    "tests/contract/test_ai_reader.py": 8,
+    "tests/contract/test_ai_reader.py": 10,
     "tests/e2e/test_documents.py": 8,
+    "tests/contract/test_views.py": 7,
     "tests/contract/test_workflows.py": 7,
     "tests/contract/test_mail.py": 6,
-    "tests/contract/test_views.py": 6,
     "tests/e2e/test_views.py": 6,
     "tests/e2e/test_workflows.py": 6,
     "tests/e2e/test_tasks.py": 4,
@@ -541,7 +548,7 @@ def test_the_union_of_the_shards_is_the_whole_live_suite_with_nothing_twice() ->
         return [line for line in done.stdout.splitlines() if "::" in line]
 
     specs = [f"{n}/{e2e_ci.SHARDS}" for n in range(1, e2e_ci.SHARDS + 1)]
-    with ThreadPoolExecutor() as pool:  # five collections at once: each one imports the suite
+    with ThreadPoolExecutor() as pool:  # seven collections at once: each one imports the suite
         whole_run = pool.submit(collect)
         shard_runs = [pool.submit(collect, "--e2e-shard", spec) for spec in specs]
         shards = [run.result() for run in shard_runs]
@@ -569,7 +576,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        part: ["1/4", "2/4", "3/4", "4/4"]
+        part: ["1/6", "2/6", "3/6", "4/6", "5/6", "6/6"]
     steps:
       - id: scope
         run: python3 scripts/e2e_ci.py scope --part "$PART"
@@ -656,7 +663,7 @@ def test_the_reference_workflows_have_no_problems() -> None:
         ("      - if: steps.scope.outputs.mode != 'skip'\n", "      - if: success()\n", "mode"),
         ("      - if: steps.scope.outputs.mode != 'skip'\n", "      - if: false\n", "mode"),
         ("just e2e-paths $TARGETS", "just e2e", "e2e-paths"),
-        ('["1/4", "2/4", "3/4", "4/4"]', '["1/4", "2/4", "3/4"]', "matrix"),
+        ('["1/6", "2/6", "3/6", "4/6", "5/6", "6/6"]', '["1/6", "2/6", "3/6"]', "matrix"),
         ('scope --part "$PART"', "scope", "--part"),
         ("      - if: failure() && steps", "      - if: failure() || steps", "mode"),
         (
