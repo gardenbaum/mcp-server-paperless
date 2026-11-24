@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:34Z'
-updated_date: '2026-11-24T17:55:33Z'
+updated_date: '2026-11-24T18:23:39Z'
 labels:
   - bulk
 dependencies:
@@ -87,4 +87,6 @@ Evidence for the acceptance criteria, live on 5c33911 (PR e2e tier of CI 4545103
 Not ticked: the Definition of Done (one test red, not merged).
 
 Third review (from 89228bf), production code clean: the fake checks the change right for every document in the link lists sent (as Paperless's validate_documentlink_targets) and tolerates a missing field on the other side; a contract test for a stored link to an unchangeable document. Above 100,000 characters the room short items leave goes to the long ones. Where no order was found, the refusal says 'or try another order' besides 'in an earlier call'. The test of 100 documents asserts that no answer was lost. Named mutants killed. OPEN, owner: 5388 against WORST 4897.
+
+Owner, 2026-11-24, on the point left open above: "Alles wie von dir empfohlen." WORST is 5388; no case was cut. Full hosted E2E 45451015858 on 5c33911 green; add_notes 100 of 100 without a lost answer.
 <!-- SECTION:NOTES:END -->
