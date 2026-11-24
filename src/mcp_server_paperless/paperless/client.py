@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Literal
 import httpx2
 import pydantic
 
-from mcp_server_paperless.domain.errors import PaperlessMcpError, UpstreamTimeout
+from mcp_server_paperless.domain.errors import AnswerTooLarge, PaperlessMcpError, UpstreamTimeout
 from mcp_server_paperless.domain.files import OpenedFile
 from mcp_server_paperless.paperless.disposition import filename
 from mcp_server_paperless.paperless.errors import (
@@ -274,6 +274,43 @@ class PaperlessClient:
             raise error_for_transport(error) from error
         finally:
             await response.aclose()
+
+    async def read_json[M: pydantic.BaseModel](
+        self, path: str, model: type[M], *, params: Params | None = None, max_bytes: int
+    ) -> M:
+        """GET ``path`` and validate a body of at most ``max_bytes`` bytes, parsed in a thread.
+
+        The limit is enforced while the body is read, whatever its Content-Length says. A
+        compressed body is refused: one piece of it could unpack to any size.
+
+        Raises:
+            AnswerTooLarge: The body is larger than ``max_bytes``.
+            PaperlessMcpError: The matching subclass for an error status or a failed transport, or
+                a body that does not match.
+        """
+        outgoing = self._build("GET", path, params=params)
+        outgoing.headers["Accept-Encoding"] = "identity"
+        response = await self._exchange(outgoing, stream=True)
+        body = bytearray()
+        try:
+            if response.is_error:
+                raise error_for_status(await _with_capped_body(response))
+            if response.headers.get("Content-Encoding", "identity") != "identity":
+                raise unexpected(response)
+            async for chunk in response.aiter_raw():
+                if len(body) + len(chunk) > max_bytes:
+                    message = f"Paperless sent more than {max_bytes} bytes for GET {path}."
+                    raise AnswerTooLarge(message)
+                body += chunk
+        except httpx2.TransportError as error:
+            logger.warning("GET %s failed: %s", outgoing.url.path, type(error).__name__)
+            raise error_for_transport(error) from error
+        finally:
+            await response.aclose()
+        try:
+            return await asyncio.to_thread(model.model_validate_json, body)
+        except pydantic.ValidationError as error:
+            raise unexpected(response) from error
 
     @property
     def base_url(self) -> httpx2.URL:

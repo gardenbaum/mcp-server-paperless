@@ -1,0 +1,20 @@
+# Overlay of `just e2e-postgres`: the E2E stack on PostgreSQL, which orders rows with equal sort
+# keys as it likes, so that pages of a listing without a tie-break overlap.
+services:
+  db:
+    # renovate: datasource=docker depName=postgres
+    image: postgres:17-alpine@sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73
+    environment:
+      POSTGRES_DB: paperless
+      POSTGRES_USER: paperless
+      POSTGRES_PASSWORD: e2e-only-not-a-secret
+
+  paperless:
+    depends_on:
+      - db
+    environment:
+      PAPERLESS_DBENGINE: postgresql
+      PAPERLESS_DBHOST: db
+      PAPERLESS_DBNAME: paperless
+      PAPERLESS_DBUSER: paperless
+      PAPERLESS_DBPASS: e2e-only-not-a-secret

@@ -2,16 +2,27 @@
 
 import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 import httpx2
 import pytest
 
-from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from adapter.conftest import streaming
+from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
+    NotFound,
+    PaperlessMcpError,
+    PermissionDenied,
+    UpstreamUnreachable,
+    Validation,
+)
 from mcp_server_paperless.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from adapter.conftest import ClientFactory
+    from mcp_server_paperless.domain.trash import TrashPage
 
 pytestmark = pytest.mark.anyio
 
@@ -229,3 +240,110 @@ async def test_the_writer_is_not_retried(make_client: ClientFactory) -> None:
         await PaperlessTrashWriter(make_client(server)).empty_trash((7,))
 
     assert len(server.sent) == 1
+
+
+# --- the whole trash in one request ---------------------------------------------------------------
+
+
+class Chunks(httpx2.AsyncByteStream):
+    """A body that comes in pieces and remembers how many were asked for."""
+
+    def __init__(self, *pieces: bytes) -> None:
+        self.pieces: tuple[bytes, ...] = pieces
+        self.sent: int = 0
+
+    @override
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        for piece in self.pieces:
+            self.sent += 1
+            yield piece
+
+
+def body(*rows: Json) -> bytes:
+    return json.dumps(listing(*rows)).encode()
+
+
+async def read(
+    response: httpx2.Response, max_bytes: int = 100_000
+) -> tuple[TrashPage, httpx2.Request]:
+    asked: list[httpx2.Request] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        asked.append(request)
+        return response
+
+    client, _ = streaming(answer)
+    page = await PaperlessTrashReader(client).read_trash(entries=500, max_bytes=max_bytes)
+    return page, asked[0]
+
+
+async def test_the_trash_is_read_at_once_and_uncompressed() -> None:
+    page, request = await read(httpx2.Response(200, stream=Chunks(body(DOCUMENT, VERSION))))
+
+    assert dict(request.url.params) == {"page": "1", "page_size": "500"}
+    assert request.headers["Accept-Encoding"] == "identity"
+    assert [(e.id, e.version_of, e.checksum is None) for e in page.entries] == [
+        (3301, None, False),
+        (3305, 3304, True),
+    ]
+    assert (page.count, page.next_page) == (2, None)
+
+
+@pytest.mark.parametrize("length", [None, "10", "999999"])
+async def test_the_byte_limit_is_enforced_while_reading_whatever_the_length_says(
+    length: str | None,
+) -> None:
+    stream = Chunks(*[b"x" * 100] * 50)
+    headers = {} if length is None else {"Content-Length": length}
+
+    with pytest.raises(AnswerTooLarge):
+        _ = await read(httpx2.Response(200, headers=headers, stream=stream), max_bytes=250)
+
+    assert stream.sent == 3
+
+
+async def test_a_body_of_exactly_the_limit_is_read() -> None:
+    whole = body(DOCUMENT)
+
+    page, _ = await read(httpx2.Response(200, stream=Chunks(whole)), max_bytes=len(whole))
+
+    assert len(page.entries) == 1
+
+
+@pytest.mark.parametrize("encoding", ["gzip", "zstd", "br", "x-unknown"])
+async def test_a_compressed_body_is_refused_unread(encoding: str) -> None:
+    """One small piece could unpack to any size before the limit is looked at."""
+    stream = Chunks(b"anything")
+    response = httpx2.Response(200, headers={"Content-Encoding": encoding}, stream=stream)
+
+    with pytest.raises(PaperlessMcpError, match="unexpected response"):
+        _ = await read(response)
+
+    assert stream.sent == 0
+
+
+@pytest.mark.parametrize("cut", [b"", b"{", body(DOCUMENT)[:-5], b"[]"])
+async def test_a_short_or_odd_body_is_an_error(cut: bytes) -> None:
+    with pytest.raises(PaperlessMcpError, match="unexpected response"):
+        _ = await read(httpx2.Response(200, stream=Chunks(cut)))
+
+
+async def test_a_user_who_may_not_list_the_trash_is_told_so() -> None:
+    with pytest.raises(PermissionDenied):
+        _ = await read(httpx2.Response(403, json={"detail": "no"}))
+
+
+class Broken(Chunks):
+    """A body whose connection breaks after the first piece."""
+
+    @override
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        async for piece in super().__aiter__():
+            yield piece
+        message = "connection lost"
+        raise httpx2.ReadError(message)
+
+
+async def test_a_connection_that_breaks_while_reading_is_an_outage() -> None:
+    with pytest.raises(UpstreamUnreachable):
+        _ = await read(httpx2.Response(200, stream=Broken(b"{")))

@@ -101,6 +101,7 @@ from mcp_server_paperless.domain.documents import (
 )
 from mcp_server_paperless.domain.duplicates import DuplicateRecord
 from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
     FeatureUnavailable,
     NotFound,
     PermissionDenied,
@@ -1446,6 +1447,15 @@ class FakePaperless:
                 for d in seen[start : start + page_size]
             ),
         )
+
+    async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
+        """`TrashReader.read_trash`: one page of `list_trash`; the rows carry the text."""
+        page = await self.list_trash(page=1, page_size=entries)
+        shown = {e.id for e in page.entries}
+        if sum(len(d.content.encode()) for d in self.state.trash if d.id in shown) > max_bytes:
+            message = f"Paperless sent more than {max_bytes} bytes for GET /api/trash/."
+            raise AnswerTooLarge(message)
+        return page
 
     @write
     async def restore_from_trash(self, document_ids: Sequence[int]) -> None:

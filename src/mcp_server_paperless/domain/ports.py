@@ -644,6 +644,18 @@ class TrashReader(Protocol):
         """
         ...
 
+    async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
+        """The first ``entries`` entries in one request, like a page of ``list_trash``.
+
+        Paperless orders the trash by a date only, so pages of it can overlap; one request cannot.
+        The rows carry the whole text of the documents, so at most ``max_bytes`` are read.
+
+        Raises:
+            AnswerTooLarge: The answer is larger than ``max_bytes``.
+            PermissionDenied: The user lacks the global ``view_document`` permission.
+        """
+        ...
+
 
 class TrashWriter(Protocol):
     """Changes to the trash."""
