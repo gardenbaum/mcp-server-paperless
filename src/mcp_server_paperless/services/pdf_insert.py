@@ -85,7 +85,8 @@ LABELS: Final = (
 ALONG: Final = (
     "what the inserted pages refer to, also where it is not visible: links, comments with the "
     "replies to them and the files in them, actions, private and page data, and resources they "
-    "share with other pages of the source"
+    "share with other pages of the source; fields they refer to come without values, except one "
+    "that stands in a field above those of the pages"
 )
 UNCHECKED: Final = "accessibility tags and PDF/A conformance of the result are not checked"
 UNGRANTED: Final = "view and change grants are not copied"
@@ -347,6 +348,10 @@ class PageInserter:
             "size": (
                 f"{noun} has a page that is too large to be put together (over 3.5 km).",
                 None,
+            ),
+            "fields": (
+                f"{noun} has a page whose form fields cannot be taken out of it.",
+                "Insert the other pages, or upload a copy that was printed to a new PDF.",
             ),
             "large": (f"The result would be over {named_size(self._max_bytes)}.", FEWER),
             "timeout": (

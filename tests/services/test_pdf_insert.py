@@ -62,7 +62,8 @@ KEPT = (
     (
         "what the inserted pages refer to, also where it is not visible: links, comments with the "
         "replies to them and the files in them, actions, private and page data, and resources "
-        "they share with other pages of the source"
+        "they share with other pages of the source; fields they refer to come without values, "
+        "except one that stands in a field above those of the pages"
     ),
     f"document {OTHER} 'Annex': unchanged",
 )
@@ -728,6 +729,15 @@ REWRITE = (
                 "(over 3.5 km)."
             ),
             None,
+        ),
+        (
+            "fields",
+            True,
+            (
+                f"The original of document {OTHER} has a page whose form fields cannot be taken "
+                "out of it."
+            ),
+            "Insert the other pages, or upload a copy that was printed to a new PDF.",
         ),
         ("large", False, "The result would be over 100 bytes.", "Insert fewer pages."),
         (

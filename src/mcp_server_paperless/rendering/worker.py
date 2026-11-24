@@ -41,7 +41,12 @@ from mcp_server_paperless.domain.rendering import (
     RenderFailed,
 )
 from mcp_server_paperless.rendering import limits
-from mcp_server_paperless.rendering.fields import draw_fields, has_fields, remove_fields
+from mcp_server_paperless.rendering.fields import (
+    blank_fields,
+    draw_fields,
+    has_fields,
+    remove_fields,
+)
 from mcp_server_paperless.rendering.limits import MEMORY_EXIT
 from mcp_server_paperless.rendering.wire import DONE, READING, STARTED, Job, answer
 from mcp_server_paperless.services.page_ranges import parse_pages
@@ -719,12 +724,24 @@ def _prepared(origin: pypdfium2.PdfDocument, pages: list[int]) -> tuple[list[int
         if has_fields(original):
             fields.append(place)
         original.close()
+    _blank(origin, {page - 1 for page in pages})
     # Afterwards: two pages can be one object.
     for place in fields:
         original = origin[pages[place] - 1]
         remove_fields(original)
         original.close()
     return rotations, fields
+
+
+def _blank(origin: pypdfium2.PdfDocument, wanted: set[int]) -> None:
+    """Empty every field of the file; of a file without a form those of the ``wanted`` pages."""
+    for number in range(len(origin)) if origin.get_formtype() else wanted:
+        try:
+            page = origin[number]
+        except pypdfium2.PdfiumError:
+            continue  # the wanted ones were read before
+        blank_fields(page)
+        page.close()
 
 
 def _saved(pdf: pypdfium2.PdfDocument) -> bytes:

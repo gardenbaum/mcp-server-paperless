@@ -49,6 +49,7 @@ type Reason = Literal[
     "count",
     "large",
     "size",
+    "fields",
     "timeout",
     "memory",
     "crashed",

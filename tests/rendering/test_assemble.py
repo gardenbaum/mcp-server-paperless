@@ -1,7 +1,9 @@
 """Pages of one PDF inserted into another: the worker, its answer and the child."""
 
+import contextlib
 import io
 import json
+import re
 import struct
 import sys
 import zlib
@@ -260,7 +262,7 @@ def test_links_and_annotations_come_with_their_page() -> None:
     )
     source = pdf_of([""], page=f"/MediaBox [0 0 600 800] {link}")
 
-    assert b"app.beep" in assemble(TARGET, source, wanted()).content
+    assert b"app.beep" in unpacked(assemble(TARGET, source, wanted()).content)
 
 
 def attached() -> bytes:
@@ -316,6 +318,138 @@ def field(
             *extra,
         ],
     )
+
+
+def unpacked(content: bytes) -> bytes:
+    """A file and what its streams hold."""
+    streams: list[bytes] = re.findall(rb"stream\r?\n(.*?)\r?\nendstream", content, re.DOTALL)
+    texts = [content]
+    for stream in streams:
+        with contextlib.suppress(zlib.error):
+            texts.append(zlib.decompressobj().decompress(stream))
+    return b"\n".join(texts)
+
+
+def referring(annotation: str, *, parent: bool = False) -> bytes:
+    """Two pages with fields, and on the first an annotation that refers to some of them."""
+    above = "/Parent 12 0 R" if parent else ""
+    look = "/Type /Annot /Subtype /Widget /FT /Tx /DA (/Helv 12 Tf 0 g)"
+    stored = "/AP << /N 13 0 R /D 13 0 R >> /DV (DEFAULT) /RV (RICH)"
+    return (
+        pdf_of(
+            ["", "", ""],
+            page="/MediaBox [0 0 600 800] /Annots [XX]",
+            catalog="/AcroForm << /Fields [10 0 R 11 0 R] /NeedAppearances true >>",
+            extra=[
+                f"<< {look} /T (a) /V (VISIBLE) /Rect [10 10 200 40] /F 4 >>",
+                f"<< {look} /T (b) /V (HIDDENV) {stored} /Rect [10 60 200 90] /F 2 {above} >>",
+                f"<< {look} /T (c) /V (OTHERPAGE) {stored} /Rect [10 60 200 90] /F 4 {above} >>",
+                "<< /T (p) /V (PARENTV) /Kids [10 0 R 11 0 R] >>",
+                (
+                    "<< /Type /XObject /Subtype /Form /BBox [0 0 9 9] /Length 12 >>\nstream\n"
+                    "(STOREDAP) Tj\nendstream"
+                ),
+            ],
+        )
+        .replace(b"[XX]", f"[9 0 R 10 0 R {annotation}]".encode(), 1)
+        .replace(b"[XX]", b"[11 0 R]", 1)
+    )
+
+
+@pytest.mark.parametrize("parent", [False, True])
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        "<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] /A << /S /Hide /T [10 0 R 11 0 R] >> >>",
+        (
+            "<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] "
+            "/A << /S /SubmitForm /F (x) /Fields [10 0 R 11 0 R] >> >>"
+        ),
+        "<< /Type /Annot /Subtype /Text /Rect [0 0 9 9] /Contents (n) /IRT 10 0 R >>",
+        "<< /Type /Annot /Subtype /Text /Rect [0 0 9 9] /Contents (n) /IRT 11 0 R >>",
+    ],
+    ids=["hide", "submit", "hidden", "other page"],
+)
+def test_values_of_fields_do_not_come_along_by_a_reference(
+    annotation: str, *, parent: bool
+) -> None:
+    source = referring(annotation, parent=parent)
+
+    made = unpacked(assemble(TARGET, source, wanted("1")).content)
+
+    values = [b"HIDDENV", b"OTHERPAGE", b"DEFAULT", b"RICH", b"STOREDAP", b"PARENTV"]
+    assert [value for value in values if value in made] == []
+    assert b"VISIBLE" in made  # in the picture
+
+
+def test_a_value_of_a_field_above_the_fields_of_the_pages_comes_along_if_referred_to() -> None:
+    """The stated rest: PDFium does not reach it."""
+    link = "<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] /A << /S /Hide /T 12 0 R >> >>"
+
+    made = unpacked(assemble(TARGET, referring(link, parent=True), wanted("1")).content)
+
+    assert b"PARENTV" in made
+    assert b"HIDDENV" not in made
+    assert b"OTHERPAGE" not in made
+
+
+def test_a_broken_page_among_the_fields_does_not_matter_if_it_is_not_wanted() -> None:
+    source = referring("").replace(b"/Kids [3 0 R 5 0 R 7 0 R]", b"/Kids [3 0 R 5 0 R 99 0 R]")
+
+    assert len(pypdfium2.PdfDocument(assemble(TARGET, source, wanted("1")).content)) == 4
+
+
+def stamps(content: bytes, page: int) -> list[tuple[int, int, int, int]]:
+    """The rectangles of the stamps of a page: left, bottom, right, top."""
+    pdf = pypdfium2.PdfDocument(content)
+    found = pdf[page]
+    rectangles: list[tuple[int, int, int, int]] = []
+    for number in range(pypdfium2.raw.FPDFPage_GetAnnotCount(found)):
+        note = pypdfium2.raw.FPDFPage_GetAnnot(found, number)
+        if pypdfium2.raw.FPDFAnnot_GetSubtype(note) == STAMP:
+            at = pypdfium2.raw.FS_RECTF()
+            assert pypdfium2.raw.FPDFAnnot_GetRect(note, at)
+            rectangles.append((round(at.left), round(at.bottom), round(at.right), round(at.top)))
+        pypdfium2.raw.FPDFPage_CloseAnnot(note)
+    return rectangles
+
+
+def several(count_: int, *, others: str = "") -> bytes:
+    """A page with that many fields one above the other, and other annotations."""
+    look = "/Type /Annot /Subtype /Widget /FT /Tx /V (i) /F 4"
+    fields = " ".join(
+        f"<< {look} /T (f{n}) /Rect [300 {5 * n + 14} 100 {5 * n + 10}] >>" for n in range(count_)
+    )
+    return pdf_of(
+        [""],
+        page=f"/MediaBox [0 0 600 800] /Annots [{others} {fields}]",
+        catalog="/AcroForm << /Fields [] /NeedAppearances true /DA (/Helv 4 Tf 0 g) >>",
+    )
+
+
+NOTE = "<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] >>"
+
+
+def test_the_stamp_covers_the_fields_and_no_more() -> None:
+    made = assemble(TARGET, several(3), wanted(max_bytes=10 * MIB)).content
+
+    assert stamps(made, 1) == [(100, 10, 300, 24)]
+
+
+def test_beside_other_annotations_every_field_has_its_own_stamp() -> None:
+    source = several(3, others=NOTE)
+
+    made = assemble(TARGET, source, wanted(max_bytes=10 * MIB)).content
+
+    assert sorted(stamps(made, 1)) == [(100, 5 * n + 10, 300, 5 * n + 14) for n in range(3)]
+    assert differing(drawn(made, 1, forms=False), drawn(source, 0, forms=True)) < 60
+
+
+@pytest.mark.parametrize(("fields", "expected"), [(100, 100), (101, 1)])
+def test_very_many_fields_share_one_stamp(fields: int, expected: int) -> None:
+    made = assemble(TARGET, several(fields, others=NOTE), wanted(max_bytes=10 * MIB)).content
+
+    assert len(stamps(made, 1)) == expected
 
 
 def drawn(content: bytes, page: int, *, forms: bool) -> Image.Image:
@@ -442,11 +576,11 @@ def test_what_the_content_leaves_behind_does_not_change_the_fields(content: str)
     require_drawn_alike(source)
 
 
-def test_content_that_hides_the_fields_is_damage_and_not_a_silent_loss() -> None:
+def test_content_that_hides_the_fields_is_refused_and_not_a_silent_loss() -> None:
     with pytest.raises(RenderFailed) as raised:
         _ = assemble(TARGET, field("/FT /Tx /V (value)", content="0 0 m ((("), wanted())
 
-    assert (raised.value.reason, raised.value.of_source) == ("damaged", True)
+    assert (raised.value.reason, raised.value.of_source) == ("fields", True)
 
 
 @pytest.mark.parametrize("flags", [2, 4 + 2, 4 + 32, 32])
@@ -455,7 +589,7 @@ def test_fields_that_are_hidden_are_not_there(flags: int) -> None:
 
     made = assemble(TARGET, source, wanted()).content
 
-    assert (subtypes(made, 1), b"SECRET" in made) == ([], False)
+    assert (subtypes(made, 1), b"SECRET" in unpacked(made)) == ([], False)
     assert black(drawn(made, 1, forms=True)) == 0
 
 
@@ -545,7 +679,8 @@ def test_the_pages_of_a_source_bring_only_their_own_fields() -> None:
     made = assemble(TARGET, source, wanted("2")).content
 
     assert differing(drawn(made, 1, forms=False), drawn(source, 1, forms=True)) < 60
-    assert b"FIRST" not in made
+    assert b"FIRST" not in unpacked(made)
+    assert b"SECOND" in unpacked(made)
 
 
 def test_scripts_of_a_form_do_not_run() -> None:
