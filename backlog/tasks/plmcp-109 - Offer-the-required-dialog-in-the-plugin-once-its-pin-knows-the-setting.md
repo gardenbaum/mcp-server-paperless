@@ -1,11 +1,11 @@
 ---
 id: PLMCP-109
 title: Offer the required dialog in the plugin once its pin knows the setting
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:07:14Z'
-updated_date: '2026-11-24T21:07:40Z'
+updated_date: '2026-11-24T21:08:12Z'
 labels:
   - safety
   - config
@@ -33,7 +33,7 @@ PLMCP-99 leaves PAPERLESS_MCP_REQUIRE_DIALOG out of the plugin, because its pinn
 <!-- DOD:BEGIN -->
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -59,4 +59,12 @@ AC 4: Claude Code 2.1.330, isolated CLAUDE_CONFIG_DIR, --plugin-dir, the release
 claude plugin validate (both) passed. Cursor: only the pin; it offers the two required variables only and leaves the setting unset (off).
 
 decision-53 still names the old pin 0.3.2 in its consequences; it asks for exactly this change, so it is unchanged.
+
+Pin 0.4.0 by normal PR, approved by the owner on 2026-11-24 because Renovate is paused. DoD 1: the option test was red first. DoD 2 and 4: CI and merge of #149.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Plugin 0.4.0 with the option Only dialogs confirm, off by default; a test keeps settings and options in step.
+<!-- SECTION:FINAL_SUMMARY:END -->
