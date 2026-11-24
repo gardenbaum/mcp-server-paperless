@@ -1,11 +1,11 @@
 ---
 id: PLMCP-75
 title: Correct the text of a document
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:46Z'
-updated_date: '2026-11-24T01:35:21Z'
+updated_date: '2026-11-24T07:06:07Z'
 labels: []
 dependencies:
   - PLMCP-74
@@ -26,17 +26,17 @@ Once a page can be read as an image, a wrong or missing OCR passage should be co
 - [x] #2 The content of a document or of one version can be replaced as a whole or by an exact passage, with a preview of the change and a confirmation
 - [x] #3 A passage that is missing or not unique changes nothing and says so; if the text changed since the preview, nothing is written
 - [x] #4 A decision supplements decision-12: content changes need confirm
-- [ ] #5 The tool says that reprocessing overwrites the correction, and full-text search finds the new text (live test)
+- [x] #5 The tool says that reprocessing overwrites the correction, and full-text search finds the new text (live test)
 - [x] #6 No tool joins the default profile: a decision weighs the tool against decision-34 and decision-42 (20 of 20 tools are used, no slot is free)
-- [ ] #7 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover whole and passage replacement, a version, a missing or ambiguous passage, a change in between and a restricted user
+- [x] #7 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover whole and passage replacement, a version, a missing or ambiguous passage, a change in between and a restricted user
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -70,4 +70,6 @@ Correction (2026-11-24): INSTRUCTIONS_LIMIT and OVERVIEW_GUIDE_LIMIT stay at 145
 Hosted E2E on 2bcdbc6: two live contract tests failed because the fixture's grants (PATCH set_permissions) replace those of an earlier user on the same document, while the fake added them. Neither the product code nor fields/version was the cause. The fake now replaces them as well and failed the same two tests; the tests use one user after the other and now also assert that the refused users see the document.
 
 Review through b38f545 handled: look-alike quotes, blank signs and stray combining marks are escaped in the excerpt; the confirmation has consequences and numbers first and the excerpts last; the change is computed against the stored text; offset without dry_run is refused; criterion 6 reworded to decision-42.
+
+Merged as e47a1e4 (#116). Hosted full E2E 45307554212 on 7fe44da and main's on e47a1e4 green, incl. search after a correction and reprocessing.
 <!-- SECTION:NOTES:END -->

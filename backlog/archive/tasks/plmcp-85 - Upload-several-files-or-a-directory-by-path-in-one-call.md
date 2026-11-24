@@ -1,11 +1,11 @@
 ---
 id: PLMCP-85
 title: Upload several files or a directory by path in one call
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:21:58Z'
-updated_date: '2026-11-24T03:03:27Z'
+updated_date: '2026-11-24T07:06:09Z'
 labels: []
 dependencies:
   - PLMCP-77
@@ -35,7 +35,7 @@ Uploads by path take one file per call, so a folder of scans needs one call per 
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -54,4 +54,6 @@ Owner approvals 2026-11-23 (design-plmcp-77-85-86): file names of allowed upload
 Implemented (decision-50 supersedes one part of decision-7 only, as decision-45 did; the design text spoke of superseding it). Answer to the PLMCP-77 note: read_for looks the originals of every file up before one snapshot, find looks each up again; 25 s each, a moved trash is read again once for all files left. Review (2 Important, 11 Minor) fixed in 05b8497: cursor with digest, lossless path escapes, walk in a thread with 10 s and 32 levels, types moved to tools._shared. Gate: OVERVIEW_GUIDE_LIMIT 2760 -> 2779 (measured 2777), the rise the owner approved for the bulk tool; wording of ENABLE unchanged. Deviations from the design: after two outages in a row the rest is left out (design: failed), so next_after repeats it; a directory over 10,000 entries or 10 s is refused; files are read twice; hashing stops after 15 s; tasks are read until 55 s; the first file is always started. Snapshot: only upload_documents added. E2E run 45308703831 on 171f94b was green; criterion 6 waits for the run on the final commit. Not run locally: E2E, mutation.
 
 Criterion 6: the full hosted E2E run 45312740186 on ebe8f37 is green. After it came: the merge of PLMCP-103 (f046951), the delta review (69923d6, 24cfbd2: twins counted with failed files, descriptions, decision text), 14b9e41 (clean_filename as before; names that are no text are refused in the batch service) and the fix of Codex P2 (a twin is read again and compared before it is called a duplicate), each with service tests. Full suite: CI on 14b9e41 is green; local full runs did not finish tests/rendering. Red first: the listing and tool tests were red only as import errors, batch_uploads.py and its first tests, the contract tests and the cursor fix were written together.
+
+Merged as 6974ce0 (#117). Single uploads still end with a bare UnicodeEncodeError for names that are not valid text, as before: PLMCP-108.
 <!-- SECTION:NOTES:END -->
