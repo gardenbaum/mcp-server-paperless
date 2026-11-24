@@ -50,7 +50,7 @@ Limits.
 | `GET /api/correspondents/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/correspondents/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/correspondents/{id}/` |  | PLMCP-83 |
-| `GET /api/custom_fields/` | `bulk_edit_documents`, `create_workflow`, `delete_taxonomy_item`, `get_document`, `get_trash_entry` and 7 more |  |
+| `GET /api/custom_fields/` | `bulk_edit_documents`, `create_workflow`, `delete_taxonomy_item`, `get_document`, `get_trash_entry` and 8 more |  |
 | `POST /api/custom_fields/` | `create_taxonomy_item` |  |
 | `DELETE /api/custom_fields/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/custom_fields/{id}/` | `update_taxonomy_item` |  |
@@ -232,18 +232,18 @@ TOML file.
 | `POST /api/documents/bulk_edit/` | `body:method=edit_pdf`, `body:method=merge`, `body:method=remove_password`, `body:method=rotate` | PLMCP-80 |
 | `POST /api/documents/bulk_edit/` | `body:from_webui` | PLMCP-83 |
 | `POST /api/documents/bulk_edit/` | `body:method=run_workflow` | PLMCP-80 |
-| `POST /api/documents/edit_pdf/` | `body:include_metadata`, `body:source_mode` | PLMCP-79 |
 | `POST /api/documents/edit_pdf/` | `body:from_webui` | PLMCP-83 |
-| `POST /api/documents/merge/` | `body:archive_fallback`, `body:source_mode` | PLMCP-79 |
+| `POST /api/documents/edit_pdf/` | `body:delete_original` | excluded, "Bitte alles wie von dir empfohlen umsetzen." (2026-11-24, backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md) |
 | `POST /api/documents/merge/` | `body:from_webui` | PLMCP-83 |
+| `POST /api/documents/merge/` | `body:delete_originals` | excluded, "Bitte alles wie von dir empfohlen umsetzen." (2026-11-24, backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md) |
 | `POST /api/documents/merge_as_versions/` | `body:from_webui` | PLMCP-83 |
 | `POST /api/documents/post_document/` | `body:from_webui` | PLMCP-83 |
-| `POST /api/documents/remove_password/` | `body:include_metadata`, `body:source_mode` | PLMCP-79 |
 | `POST /api/documents/remove_password/` | `body:from_webui` | PLMCP-83 |
-| `POST /api/documents/reprocess/` | `body:all`, `body:excluded_documents`, `body:filters` | PLMCP-79 |
+| `POST /api/documents/remove_password/` | `body:delete_original` | excluded, "Bitte alles wie von dir empfohlen umsetzen." (2026-11-24, backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md) |
 | `POST /api/documents/reprocess/` | `body:from_webui` | PLMCP-83 |
-| `POST /api/documents/rotate/` | `body:all`, `body:excluded_documents`, `body:filters`, `body:source_mode` | PLMCP-79 |
+| `POST /api/documents/reprocess/` | `body:all`, `body:excluded_documents`, `body:filters` | excluded, "Bitte alles wie von dir empfohlen umsetzen." (2026-11-24, backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md) |
 | `POST /api/documents/rotate/` | `body:from_webui` | PLMCP-83 |
+| `POST /api/documents/rotate/` | `body:all`, `body:excluded_documents`, `body:filters` | excluded, "Bitte alles wie von dir empfohlen umsetzen." (2026-11-24, backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md) |
 | `GET /api/documents/{id}/` | `query:full_perms` | PLMCP-83 |
 | `PATCH /api/documents/{id}/` | `body:created_date`, `body:remove_inbox_tags` | PLMCP-83 |
 | `GET /api/documents/{id}/download/` | `query:follow_formatting` | PLMCP-83 |

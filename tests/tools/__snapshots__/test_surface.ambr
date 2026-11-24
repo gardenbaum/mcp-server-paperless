@@ -6297,13 +6297,15 @@
         
         By default (new_version) the document then shows the shorter file and the older version with
         all pages stays until it is deleted, but pages vanish from what the document shows, so this
-        needs confirm; so does replace_original (a new document without the pages, the original moves to
-        the Paperless trash: restore_from_trash of the trash toolset, or the web UI, restores it). With
-        new_document nothing existing changes and no confirm is needed. Without it a dialog, or an error
-        for you to show the user, first names the pages and what would happen (see confirm). Page ranges
-        are checked against the page count first. Needs the permission to change documents (and to add
-        them for a new document) and ownership of the document (or no owner; a change grant is not
-        enough).
+        needs confirm; so does replace_original (a new document without the pages, the original
+        moves to the Paperless trash: restore_from_trash of the trash toolset, or the web UI,
+        restores it). With new_document nothing existing changes and no confirm is needed. Without
+        it a dialog, or an error for you to show the user, first names the pages and what would
+        happen (see confirm). An original is trashed last, by this server, once the new document was
+        checked; otherwise it stays and next names the calls that finish the work: look there before
+        repeating the call. Page ranges are checked against the page count of the file that is read.
+        Needs the permission to change documents (and to add them for a new document) and ownership
+        of the document (or no owner; a change grant is not enough).
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -6317,9 +6319,19 @@
             'description': 'Document id, from search_documents.',
             'type': 'integer',
           }),
+          'dry_run': dict({
+            'default': False,
+            'description': 'true checks everything and returns the plan; nothing is started.',
+            'type': 'boolean',
+          }),
+          'keep_metadata': dict({
+            'default': True,
+            'description': 'false: new documents take no title, tags or other metadata over.',
+            'type': 'boolean',
+          }),
           'output': dict({
             'default': 'new_version',
-            'description': 'Where the result goes: new_document (the original stays untouched), new_version (the same document shows the new file; the older version stays) or replace_original (a new document, and the original moves to the Paperless trash).',
+            'description': 'Where the result goes: new_document (the original stays untouched), new_version (the same document shows the new file; the older version stays) or replace_original (a new document, and the original moves to the Paperless trash once the new one was checked).',
             'enum': list([
               'new_document',
               'new_version',
@@ -6331,11 +6343,30 @@
             'description': "The pages to delete, counted from 1: pages and ranges separated by commas, e.g. '2' or '1-3,5'. Not every page.",
             'type': 'string',
           }),
+          'version_id': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Version whose file is read (get_document with include versions); left out: the newest.',
+          }),
           'wait_seconds': dict({
-            'default': 0,
-            'description': 'Wait up to this many seconds for the tasks Paperless starts and return their outcome; more than 30 is cut to 30. 0 returns at once with the task ids; follow them with get_task.',
-            'minimum': 0,
-            'type': 'integer',
+            'anyOf': list([
+              dict({
+                'minimum': 0,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Seconds to wait for the tasks Paperless starts; more than 30 is cut to 30. Left out: 30 where originals are to be trashed, else 0. With 0 the task ids are returned at once and no original is trashed.',
           }),
         }),
         'required': list([
@@ -6348,6 +6379,10 @@
       'outputSchema': dict({
         'description': 'A PDF operation Paperless accepted, the tasks it started and, if waited for, the outcome.',
         'properties': dict({
+          'dry_run': dict({
+            'description': 'true: a preview, nothing was started.',
+            'type': 'boolean',
+          }),
           'message': dict({
             'anyOf': list([
               dict({
@@ -6357,11 +6392,53 @@
                 'type': 'null',
               }),
             ]),
-            'description': 'Why a task failed, or why the state is unknown.',
+            'description': 'Why a task failed, the state is unknown or an original stays.',
+          }),
+          'next': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The calls that finish what was left, as a suggestion.',
           }),
           'operation': dict({
             'description': 'What was asked, e.g. rotate or merge.',
             'type': 'string',
+          }),
+          'plan': dict({
+            'description': 'What an operation makes, what stays and what is lost; known before it runs.',
+            'properties': dict({
+              'keeps': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'loses': dict({
+                'description': 'What the result does not have, or no longer shows.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'needs_confirm': dict({
+                'type': 'boolean',
+              }),
+              'produces': dict({
+                'type': 'string',
+              }),
+            }),
+            'required': list([
+              'produces',
+              'keeps',
+              'loses',
+              'needs_confirm',
+            ]),
+            'type': 'object',
           }),
           'produced_ids': dict({
             'description': 'The documents the finished tasks produced: new documents, or for a new version the id of that version (the document keeps its id). Empty while tasks run; reprocessing produces none.',
@@ -6394,21 +6471,29 @@
           'state': dict({
             'anyOf': list([
               dict({
-                'enum': list([
-                  'pending',
-                  'started',
-                  'success',
-                  'failure',
-                  'revoked',
+                'anyOf': list([
+                  dict({
+                    'enum': list([
+                      'pending',
+                      'started',
+                      'success',
+                      'failure',
+                      'revoked',
+                    ]),
+                    'type': 'string',
+                  }),
+                  dict({
+                    'const': 'unknown',
+                    'type': 'string',
+                  }),
                 ]),
-                'type': 'string',
               }),
               dict({
-                'const': 'unknown',
+                'const': 'not_started',
                 'type': 'string',
               }),
             ]),
-            'description': 'The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
+            'description': 'not_started: a preview. The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
           }),
           'summary': dict({
             'description': 'What Paperless was asked to do, in words.',
@@ -6469,6 +6554,13 @@
             }),
             'type': 'array',
           }),
+          'trashed_ids': dict({
+            'description': 'The originals this call moved to the Paperless trash, after it checked that everything was made; empty if it kept them.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
           'wait': dict({
             'enum': list([
               'not_requested',
@@ -6484,6 +6576,8 @@
         'required': list([
           'operation',
           'summary',
+          'dry_run',
+          'plan',
           'source_document_ids',
           'state',
           'message',
@@ -6491,6 +6585,8 @@
           'tasks',
           'produced_ids',
           'produced_links',
+          'trashed_ids',
+          'next',
           'wait',
           'waited_seconds',
         ]),
@@ -7062,15 +7158,18 @@
       'description': '''
         Build PDF files from the pages of one document: pick, reorder, rotate and group pages.
         
-        The general form of split_document, delete_pages and rotate_documents. With
-        output new_document (the default) the original stays and every output file becomes a new
-        document with the title and metadata of the original. new_version needs a single output file
-        and makes it the file the document shows; if it leaves pages out, that needs confirm, as
-        does replace_original (new documents, and the original moves to the Paperless trash:
-        restore_from_trash of the trash toolset, or the web UI, restores it). Without it a dialog, or an
-        error for you to show the user, first says what would happen (see confirm). Page numbers are
-        checked against the page count first. Needs the permission to change documents (and to add them
-        for new documents) and ownership of the document (or no owner; a change grant is not enough).
+        The general form of split_document, delete_pages and rotate_documents. With output
+        new_document (the default) the original stays and every output file becomes a new document
+        with the title and metadata of the original. new_version needs a single output file and
+        makes it the file the document shows; if it leaves pages out, that needs confirm, as does
+        replace_original (new documents, and the original moves to the Paperless trash:
+        restore_from_trash of the trash toolset, or the web UI, restores it). Without it a dialog,
+        or an error for you to show the user, first says what would happen (see confirm). The
+        original is trashed last, by this server, once everything was checked; otherwise it stays
+        and next names the calls that finish the work: look there before repeating the call. Page
+        numbers are checked against the page count of the file that is read. Needs the permission to
+        change documents (and to add them for new documents) and ownership of the document (or no
+        owner; a change grant is not enough).
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -7084,9 +7183,19 @@
             'description': 'Document id, from search_documents.',
             'type': 'integer',
           }),
+          'dry_run': dict({
+            'default': False,
+            'description': 'true checks everything and returns the plan; nothing is started.',
+            'type': 'boolean',
+          }),
+          'keep_metadata': dict({
+            'default': True,
+            'description': 'false: new documents take no title, tags or other metadata over.',
+            'type': 'boolean',
+          }),
           'output': dict({
             'default': 'new_document',
-            'description': 'Where the result goes: new_document (the original stays untouched), new_version (the same document shows the new file; the older version stays) or replace_original (a new document, and the original moves to the Paperless trash).',
+            'description': 'Where the result goes: new_document (the original stays untouched), new_version (the same document shows the new file; the older version stays) or replace_original (a new document, and the original moves to the Paperless trash once the new one was checked).',
             'enum': list([
               'new_document',
               'new_version',
@@ -7131,11 +7240,30 @@
             'minItems': 1,
             'type': 'array',
           }),
+          'version_id': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Version whose file is read (get_document with include versions); left out: the newest.',
+          }),
           'wait_seconds': dict({
-            'default': 0,
-            'description': 'Wait up to this many seconds for the tasks Paperless starts and return their outcome; more than 30 is cut to 30. 0 returns at once with the task ids; follow them with get_task.',
-            'minimum': 0,
-            'type': 'integer',
+            'anyOf': list([
+              dict({
+                'minimum': 0,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Seconds to wait for the tasks Paperless starts; more than 30 is cut to 30. Left out: 30 where originals are to be trashed, else 0. With 0 the task ids are returned at once and no original is trashed.',
           }),
         }),
         'required': list([
@@ -7148,6 +7276,10 @@
       'outputSchema': dict({
         'description': 'A PDF operation Paperless accepted, the tasks it started and, if waited for, the outcome.',
         'properties': dict({
+          'dry_run': dict({
+            'description': 'true: a preview, nothing was started.',
+            'type': 'boolean',
+          }),
           'message': dict({
             'anyOf': list([
               dict({
@@ -7157,11 +7289,53 @@
                 'type': 'null',
               }),
             ]),
-            'description': 'Why a task failed, or why the state is unknown.',
+            'description': 'Why a task failed, the state is unknown or an original stays.',
+          }),
+          'next': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The calls that finish what was left, as a suggestion.',
           }),
           'operation': dict({
             'description': 'What was asked, e.g. rotate or merge.',
             'type': 'string',
+          }),
+          'plan': dict({
+            'description': 'What an operation makes, what stays and what is lost; known before it runs.',
+            'properties': dict({
+              'keeps': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'loses': dict({
+                'description': 'What the result does not have, or no longer shows.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'needs_confirm': dict({
+                'type': 'boolean',
+              }),
+              'produces': dict({
+                'type': 'string',
+              }),
+            }),
+            'required': list([
+              'produces',
+              'keeps',
+              'loses',
+              'needs_confirm',
+            ]),
+            'type': 'object',
           }),
           'produced_ids': dict({
             'description': 'The documents the finished tasks produced: new documents, or for a new version the id of that version (the document keeps its id). Empty while tasks run; reprocessing produces none.',
@@ -7194,21 +7368,29 @@
           'state': dict({
             'anyOf': list([
               dict({
-                'enum': list([
-                  'pending',
-                  'started',
-                  'success',
-                  'failure',
-                  'revoked',
+                'anyOf': list([
+                  dict({
+                    'enum': list([
+                      'pending',
+                      'started',
+                      'success',
+                      'failure',
+                      'revoked',
+                    ]),
+                    'type': 'string',
+                  }),
+                  dict({
+                    'const': 'unknown',
+                    'type': 'string',
+                  }),
                 ]),
-                'type': 'string',
               }),
               dict({
-                'const': 'unknown',
+                'const': 'not_started',
                 'type': 'string',
               }),
             ]),
-            'description': 'The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
+            'description': 'not_started: a preview. The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
           }),
           'summary': dict({
             'description': 'What Paperless was asked to do, in words.',
@@ -7269,6 +7451,13 @@
             }),
             'type': 'array',
           }),
+          'trashed_ids': dict({
+            'description': 'The originals this call moved to the Paperless trash, after it checked that everything was made; empty if it kept them.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
           'wait': dict({
             'enum': list([
               'not_requested',
@@ -7284,6 +7473,8 @@
         'required': list([
           'operation',
           'summary',
+          'dry_run',
+          'plan',
           'source_document_ids',
           'state',
           'message',
@@ -7291,6 +7482,8 @@
           'tasks',
           'produced_ids',
           'produced_links',
+          'trashed_ids',
+          'next',
           'wait',
           'waited_seconds',
         ]),
@@ -14438,10 +14631,15 @@
         'readOnlyHint': False,
         'title': 'Merge documents',
       }),
-      'description': "Merge PDF documents, in the order given, into one new document. The new document takes the metadata (title with ' (merged)', tags, correspondent, ...) of metadata_document_id if given. The originals stay unless delete_originals is true: they then move to the Paperless trash (restore_from_trash of the trash toolset, or the web UI, restores them), which needs confirm. Without it a dialog, or an error for you to show the user, first names the documents and what would happen (see confirm). Paperless does the work later, in background tasks: the result lists the ones it could find (state, produced_ids: the new documents, or for a new version its id) and with wait_seconds waits for them. Needs the permission to change and to add documents and a change grant on (or ownership of) every document; delete_originals also needs ownership of them and the permission to delete documents. Only PDF files.",
+      'description': "Merge PDF documents, in the order given, into one new document. The new document takes the metadata (title with ' (merged)', tags, correspondent, ...) of metadata_document_id if given. The originals stay unless delete_originals is true: they then move to the Paperless trash (restore_from_trash of the trash toolset, or the web UI, restores them), which needs confirm. Without it a dialog, or an error for you to show the user, first names the documents and what would happen (see confirm). A document that could not be merged is refused first. A merge is always a new document; to make it a version, merge and then use merge_documents_as_versions (toolset versions), which absorbs the merged document for good. Originals are trashed last, by this server: only once everything was made, has the pages it should have and nothing changed meanwhile. Otherwise they stay (trashed_ids, message) and next names the calls that finish the work: look there before repeating a call. Paperless does the work later, in background tasks: the result lists the ones it could find (state, produced_ids: the new documents, or for a new version its id) and with wait_seconds waits for them. Needs the permission to change and to add documents and a change grant on (or ownership of) every document; delete_originals also needs ownership of them and the permission to delete documents. Takes PDF files; other files need archive_fallback and an archive PDF.",
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
+          'archive_fallback': dict({
+            'default': False,
+            'description': 'true merges the archive PDF of documents whose file is not a PDF.',
+            'type': 'boolean',
+          }),
           'confirm': dict({
             'default': False,
             'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
@@ -14453,13 +14651,18 @@
             'type': 'boolean',
           }),
           'document_ids': dict({
-            'description': 'Ids of the PDFs to merge, in order, at most 20, each once.',
+            'description': 'Ids of the documents to merge, in order, at most 20, each once.',
             'items': dict({
               'type': 'integer',
             }),
             'maxItems': 20,
             'minItems': 2,
             'type': 'array',
+          }),
+          'dry_run': dict({
+            'default': False,
+            'description': 'true checks everything and returns the plan; nothing is started.',
+            'type': 'boolean',
           }),
           'metadata_document_id': dict({
             'anyOf': list([
@@ -14473,11 +14676,23 @@
             'default': None,
             'description': 'One of the merged documents whose metadata the new one takes.',
           }),
+          'use_original_files': dict({
+            'default': False,
+            'description': 'true takes the first file of each document, not the newest.',
+            'type': 'boolean',
+          }),
           'wait_seconds': dict({
-            'default': 0,
-            'description': 'Wait up to this many seconds for the tasks Paperless starts and return their outcome; more than 30 is cut to 30. 0 returns at once with the task ids; follow them with get_task.',
-            'minimum': 0,
-            'type': 'integer',
+            'anyOf': list([
+              dict({
+                'minimum': 0,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Seconds to wait for the tasks Paperless starts; more than 30 is cut to 30. Left out: 30 where originals are to be trashed, else 0. With 0 the task ids are returned at once and no original is trashed.',
           }),
         }),
         'required': list([
@@ -14489,6 +14704,10 @@
       'outputSchema': dict({
         'description': 'A PDF operation Paperless accepted, the tasks it started and, if waited for, the outcome.',
         'properties': dict({
+          'dry_run': dict({
+            'description': 'true: a preview, nothing was started.',
+            'type': 'boolean',
+          }),
           'message': dict({
             'anyOf': list([
               dict({
@@ -14498,11 +14717,53 @@
                 'type': 'null',
               }),
             ]),
-            'description': 'Why a task failed, or why the state is unknown.',
+            'description': 'Why a task failed, the state is unknown or an original stays.',
+          }),
+          'next': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The calls that finish what was left, as a suggestion.',
           }),
           'operation': dict({
             'description': 'What was asked, e.g. rotate or merge.',
             'type': 'string',
+          }),
+          'plan': dict({
+            'description': 'What an operation makes, what stays and what is lost; known before it runs.',
+            'properties': dict({
+              'keeps': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'loses': dict({
+                'description': 'What the result does not have, or no longer shows.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'needs_confirm': dict({
+                'type': 'boolean',
+              }),
+              'produces': dict({
+                'type': 'string',
+              }),
+            }),
+            'required': list([
+              'produces',
+              'keeps',
+              'loses',
+              'needs_confirm',
+            ]),
+            'type': 'object',
           }),
           'produced_ids': dict({
             'description': 'The documents the finished tasks produced: new documents, or for a new version the id of that version (the document keeps its id). Empty while tasks run; reprocessing produces none.',
@@ -14535,21 +14796,29 @@
           'state': dict({
             'anyOf': list([
               dict({
-                'enum': list([
-                  'pending',
-                  'started',
-                  'success',
-                  'failure',
-                  'revoked',
+                'anyOf': list([
+                  dict({
+                    'enum': list([
+                      'pending',
+                      'started',
+                      'success',
+                      'failure',
+                      'revoked',
+                    ]),
+                    'type': 'string',
+                  }),
+                  dict({
+                    'const': 'unknown',
+                    'type': 'string',
+                  }),
                 ]),
-                'type': 'string',
               }),
               dict({
-                'const': 'unknown',
+                'const': 'not_started',
                 'type': 'string',
               }),
             ]),
-            'description': 'The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
+            'description': 'not_started: a preview. The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
           }),
           'summary': dict({
             'description': 'What Paperless was asked to do, in words.',
@@ -14610,6 +14879,13 @@
             }),
             'type': 'array',
           }),
+          'trashed_ids': dict({
+            'description': 'The originals this call moved to the Paperless trash, after it checked that everything was made; empty if it kept them.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
           'wait': dict({
             'enum': list([
               'not_requested',
@@ -14625,6 +14901,8 @@
         'required': list([
           'operation',
           'summary',
+          'dry_run',
+          'plan',
           'source_document_ids',
           'state',
           'message',
@@ -14632,6 +14910,8 @@
           'tasks',
           'produced_ids',
           'produced_links',
+          'trashed_ids',
+          'next',
           'wait',
           'waited_seconds',
         ]),
@@ -15193,9 +15473,12 @@
         replace_original makes a new document and moves the locked original to the Paperless trash
         (restore_from_trash of the trash toolset, or the web UI, restores it), which needs confirm.
         Without it a dialog, or an error for you to show the user, first says what would happen (see
-        confirm). A wrong password is an error; a file without a password starts no task. Needs the
-        permission to change documents and ownership of the document (or no owner; a change grant is not
-        enough), and to add documents unless output is new_version.
+        confirm). The original is trashed last, by this server, once the unlocked copy was checked;
+        otherwise it stays and next names the calls that finish the work. An archive serial number
+        is not handed over: it stays with the original. A wrong password is an error; a file without
+        a password starts no task. Needs the permission to change documents and ownership of the
+        document (or no owner; a change grant is not enough), and to add documents unless output is
+        new_version.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -15209,9 +15492,19 @@
             'description': 'Document id, from search_documents.',
             'type': 'integer',
           }),
+          'dry_run': dict({
+            'default': False,
+            'description': 'true checks everything and returns the plan; nothing is started.',
+            'type': 'boolean',
+          }),
+          'keep_metadata': dict({
+            'default': True,
+            'description': 'false: new documents take no title, tags or other metadata over.',
+            'type': 'boolean',
+          }),
           'output': dict({
             'default': 'new_document',
-            'description': 'Where the result goes: new_document (the original stays untouched), new_version (the same document shows the new file; the older version stays) or replace_original (a new document, and the original moves to the Paperless trash).',
+            'description': 'Where the result goes: new_document (the original stays untouched), new_version (the same document shows the new file; the older version stays) or replace_original (a new document, and the original moves to the Paperless trash once the new one was checked).',
             'enum': list([
               'new_document',
               'new_version',
@@ -15224,11 +15517,30 @@
             'minLength': 1,
             'type': 'string',
           }),
+          'version_id': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Version whose file is read (get_document with include versions); left out: the newest.',
+          }),
           'wait_seconds': dict({
-            'default': 0,
-            'description': 'Wait up to this many seconds for the tasks Paperless starts and return their outcome; more than 30 is cut to 30. 0 returns at once with the task ids; follow them with get_task.',
-            'minimum': 0,
-            'type': 'integer',
+            'anyOf': list([
+              dict({
+                'minimum': 0,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Seconds to wait for the tasks Paperless starts; more than 30 is cut to 30. Left out: 30 where originals are to be trashed, else 0. With 0 the task ids are returned at once and no original is trashed.',
           }),
         }),
         'required': list([
@@ -15241,6 +15553,10 @@
       'outputSchema': dict({
         'description': 'A PDF operation Paperless accepted, the tasks it started and, if waited for, the outcome.',
         'properties': dict({
+          'dry_run': dict({
+            'description': 'true: a preview, nothing was started.',
+            'type': 'boolean',
+          }),
           'message': dict({
             'anyOf': list([
               dict({
@@ -15250,11 +15566,53 @@
                 'type': 'null',
               }),
             ]),
-            'description': 'Why a task failed, or why the state is unknown.',
+            'description': 'Why a task failed, the state is unknown or an original stays.',
+          }),
+          'next': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The calls that finish what was left, as a suggestion.',
           }),
           'operation': dict({
             'description': 'What was asked, e.g. rotate or merge.',
             'type': 'string',
+          }),
+          'plan': dict({
+            'description': 'What an operation makes, what stays and what is lost; known before it runs.',
+            'properties': dict({
+              'keeps': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'loses': dict({
+                'description': 'What the result does not have, or no longer shows.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'needs_confirm': dict({
+                'type': 'boolean',
+              }),
+              'produces': dict({
+                'type': 'string',
+              }),
+            }),
+            'required': list([
+              'produces',
+              'keeps',
+              'loses',
+              'needs_confirm',
+            ]),
+            'type': 'object',
           }),
           'produced_ids': dict({
             'description': 'The documents the finished tasks produced: new documents, or for a new version the id of that version (the document keeps its id). Empty while tasks run; reprocessing produces none.',
@@ -15287,21 +15645,29 @@
           'state': dict({
             'anyOf': list([
               dict({
-                'enum': list([
-                  'pending',
-                  'started',
-                  'success',
-                  'failure',
-                  'revoked',
+                'anyOf': list([
+                  dict({
+                    'enum': list([
+                      'pending',
+                      'started',
+                      'success',
+                      'failure',
+                      'revoked',
+                    ]),
+                    'type': 'string',
+                  }),
+                  dict({
+                    'const': 'unknown',
+                    'type': 'string',
+                  }),
                 ]),
-                'type': 'string',
               }),
               dict({
-                'const': 'unknown',
+                'const': 'not_started',
                 'type': 'string',
               }),
             ]),
-            'description': 'The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
+            'description': 'not_started: a preview. The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
           }),
           'summary': dict({
             'description': 'What Paperless was asked to do, in words.',
@@ -15362,6 +15728,13 @@
             }),
             'type': 'array',
           }),
+          'trashed_ids': dict({
+            'description': 'The originals this call moved to the Paperless trash, after it checked that everything was made; empty if it kept them.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
           'wait': dict({
             'enum': list([
               'not_requested',
@@ -15377,6 +15750,8 @@
         'required': list([
           'operation',
           'summary',
+          'dry_run',
+          'plan',
           'source_document_ids',
           'state',
           'message',
@@ -15384,6 +15759,8 @@
           'tasks',
           'produced_ids',
           'produced_links',
+          'trashed_ids',
+          'next',
           'wait',
           'waited_seconds',
         ]),
@@ -15434,6 +15811,11 @@
             'minItems': 1,
             'type': 'array',
           }),
+          'dry_run': dict({
+            'default': False,
+            'description': 'true checks everything and returns the plan; nothing is started.',
+            'type': 'boolean',
+          }),
           'remote_ocr': dict({
             'default': False,
             'description': 'true uses the remote OCR engine if Paperless has one set up.',
@@ -15455,6 +15837,10 @@
       'outputSchema': dict({
         'description': 'A PDF operation Paperless accepted, the tasks it started and, if waited for, the outcome.',
         'properties': dict({
+          'dry_run': dict({
+            'description': 'true: a preview, nothing was started.',
+            'type': 'boolean',
+          }),
           'message': dict({
             'anyOf': list([
               dict({
@@ -15464,11 +15850,53 @@
                 'type': 'null',
               }),
             ]),
-            'description': 'Why a task failed, or why the state is unknown.',
+            'description': 'Why a task failed, the state is unknown or an original stays.',
+          }),
+          'next': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The calls that finish what was left, as a suggestion.',
           }),
           'operation': dict({
             'description': 'What was asked, e.g. rotate or merge.',
             'type': 'string',
+          }),
+          'plan': dict({
+            'description': 'What an operation makes, what stays and what is lost; known before it runs.',
+            'properties': dict({
+              'keeps': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'loses': dict({
+                'description': 'What the result does not have, or no longer shows.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'needs_confirm': dict({
+                'type': 'boolean',
+              }),
+              'produces': dict({
+                'type': 'string',
+              }),
+            }),
+            'required': list([
+              'produces',
+              'keeps',
+              'loses',
+              'needs_confirm',
+            ]),
+            'type': 'object',
           }),
           'produced_ids': dict({
             'description': 'The documents the finished tasks produced: new documents, or for a new version the id of that version (the document keeps its id). Empty while tasks run; reprocessing produces none.',
@@ -15501,21 +15929,29 @@
           'state': dict({
             'anyOf': list([
               dict({
-                'enum': list([
-                  'pending',
-                  'started',
-                  'success',
-                  'failure',
-                  'revoked',
+                'anyOf': list([
+                  dict({
+                    'enum': list([
+                      'pending',
+                      'started',
+                      'success',
+                      'failure',
+                      'revoked',
+                    ]),
+                    'type': 'string',
+                  }),
+                  dict({
+                    'const': 'unknown',
+                    'type': 'string',
+                  }),
                 ]),
-                'type': 'string',
               }),
               dict({
-                'const': 'unknown',
+                'const': 'not_started',
                 'type': 'string',
               }),
             ]),
-            'description': 'The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
+            'description': 'not_started: a preview. The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
           }),
           'summary': dict({
             'description': 'What Paperless was asked to do, in words.',
@@ -15576,6 +16012,13 @@
             }),
             'type': 'array',
           }),
+          'trashed_ids': dict({
+            'description': 'The originals this call moved to the Paperless trash, after it checked that everything was made; empty if it kept them.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
           'wait': dict({
             'enum': list([
               'not_requested',
@@ -15591,6 +16034,8 @@
         'required': list([
           'operation',
           'summary',
+          'dry_run',
+          'plan',
           'source_document_ids',
           'state',
           'message',
@@ -15598,6 +16043,8 @@
           'tasks',
           'produced_ids',
           'produced_links',
+          'trashed_ids',
+          'next',
           'wait',
           'waited_seconds',
         ]),
@@ -16177,14 +16624,20 @@
       'description': '''
         Rotate every page of PDF documents clockwise.
         
-        Each document gets the rotated file as a new version and the older version stays, so
-        nothing is lost and no confirm is needed. The document keeps its id, title and metadata.
-        Needs the permission to change documents and ownership of every document (or no owner): a
-        change grant is not enough.
+        Each document gets the rotated file as a new version and the older version stays, so nothing
+        is lost and no confirm is needed. Only if use_original_files makes a document show older content
+        again it is: then a dialog, or an error for you to show the user, first says so (see confirm).
+        The document keeps its id, title and metadata. Needs the permission to change documents and
+        ownership of every document (or no owner): a change grant is not enough.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
           'degrees': dict({
             'description': 'Degrees to turn every page clockwise.',
             'enum': list([
@@ -16203,6 +16656,16 @@
             'minItems': 1,
             'type': 'array',
           }),
+          'dry_run': dict({
+            'default': False,
+            'description': 'true checks everything and returns the plan; nothing is started.',
+            'type': 'boolean',
+          }),
+          'use_original_files': dict({
+            'default': False,
+            'description': 'true takes the first file of each document, not the newest.',
+            'type': 'boolean',
+          }),
           'wait_seconds': dict({
             'default': 0,
             'description': 'Wait up to this many seconds for the tasks Paperless starts and return their outcome; more than 30 is cut to 30. 0 returns at once with the task ids; follow them with get_task.',
@@ -16220,6 +16683,10 @@
       'outputSchema': dict({
         'description': 'A PDF operation Paperless accepted, the tasks it started and, if waited for, the outcome.',
         'properties': dict({
+          'dry_run': dict({
+            'description': 'true: a preview, nothing was started.',
+            'type': 'boolean',
+          }),
           'message': dict({
             'anyOf': list([
               dict({
@@ -16229,11 +16696,53 @@
                 'type': 'null',
               }),
             ]),
-            'description': 'Why a task failed, or why the state is unknown.',
+            'description': 'Why a task failed, the state is unknown or an original stays.',
+          }),
+          'next': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The calls that finish what was left, as a suggestion.',
           }),
           'operation': dict({
             'description': 'What was asked, e.g. rotate or merge.',
             'type': 'string',
+          }),
+          'plan': dict({
+            'description': 'What an operation makes, what stays and what is lost; known before it runs.',
+            'properties': dict({
+              'keeps': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'loses': dict({
+                'description': 'What the result does not have, or no longer shows.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'needs_confirm': dict({
+                'type': 'boolean',
+              }),
+              'produces': dict({
+                'type': 'string',
+              }),
+            }),
+            'required': list([
+              'produces',
+              'keeps',
+              'loses',
+              'needs_confirm',
+            ]),
+            'type': 'object',
           }),
           'produced_ids': dict({
             'description': 'The documents the finished tasks produced: new documents, or for a new version the id of that version (the document keeps its id). Empty while tasks run; reprocessing produces none.',
@@ -16266,21 +16775,29 @@
           'state': dict({
             'anyOf': list([
               dict({
-                'enum': list([
-                  'pending',
-                  'started',
-                  'success',
-                  'failure',
-                  'revoked',
+                'anyOf': list([
+                  dict({
+                    'enum': list([
+                      'pending',
+                      'started',
+                      'success',
+                      'failure',
+                      'revoked',
+                    ]),
+                    'type': 'string',
+                  }),
+                  dict({
+                    'const': 'unknown',
+                    'type': 'string',
+                  }),
                 ]),
-                'type': 'string',
               }),
               dict({
-                'const': 'unknown',
+                'const': 'not_started',
                 'type': 'string',
               }),
             ]),
-            'description': 'The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
+            'description': 'not_started: a preview. The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
           }),
           'summary': dict({
             'description': 'What Paperless was asked to do, in words.',
@@ -16341,6 +16858,13 @@
             }),
             'type': 'array',
           }),
+          'trashed_ids': dict({
+            'description': 'The originals this call moved to the Paperless trash, after it checked that everything was made; empty if it kept them.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
           'wait': dict({
             'enum': list([
               'not_requested',
@@ -16356,6 +16880,8 @@
         'required': list([
           'operation',
           'summary',
+          'dry_run',
+          'plan',
           'source_document_ids',
           'state',
           'message',
@@ -16363,6 +16889,8 @@
           'tasks',
           'produced_ids',
           'produced_links',
+          'trashed_ids',
+          'next',
           'wait',
           'waited_seconds',
         ]),
@@ -17892,10 +18420,13 @@
         The new documents take the title and metadata of the original. The original stays unless
         output is replace_original: it then moves to the Paperless trash (restore_from_trash of the
         trash toolset, or the web UI, restores it), which needs confirm. Without it a dialog, or an
-        error for you to show the user, first names the document and what would happen (see confirm).
-        Page ranges are checked against the page count first. Needs the permission to change and to add
-        documents and ownership of the document (or no owner; a change grant is not enough), and for
-        replace_original the permission to delete documents.
+        error for you to show the user, first names the document and what would happen (see
+        confirm). The original is trashed last, by this server, once every part was checked;
+        otherwise it stays and next names the calls that finish the work: look there before
+        repeating the call. Several files cannot be one version of a document. Page ranges are
+        checked against the page count of the file that is read. Needs the permission to change and
+        to add documents and ownership of the document (or no owner; a change grant is not enough),
+        and for replace_original the permission to delete documents.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -17909,9 +18440,19 @@
             'description': 'Document id, from search_documents.',
             'type': 'integer',
           }),
+          'dry_run': dict({
+            'default': False,
+            'description': 'true checks everything and returns the plan; nothing is started.',
+            'type': 'boolean',
+          }),
+          'keep_metadata': dict({
+            'default': True,
+            'description': 'false: new documents take no title, tags or other metadata over.',
+            'type': 'boolean',
+          }),
           'output': dict({
             'default': 'new_document',
-            'description': 'new_document leaves the original; replace_original moves it to the Paperless trash afterwards and needs confirm.',
+            'description': 'new_document leaves the original; replace_original moves it to the Paperless trash once every part was checked, and needs confirm.',
             'enum': list([
               'new_document',
               'replace_original',
@@ -17927,11 +18468,30 @@
             'minItems': 2,
             'type': 'array',
           }),
+          'version_id': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Version whose file is read (get_document with include versions); left out: the newest.',
+          }),
           'wait_seconds': dict({
-            'default': 0,
-            'description': 'Wait up to this many seconds for the tasks Paperless starts and return their outcome; more than 30 is cut to 30. 0 returns at once with the task ids; follow them with get_task.',
-            'minimum': 0,
-            'type': 'integer',
+            'anyOf': list([
+              dict({
+                'minimum': 0,
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Seconds to wait for the tasks Paperless starts; more than 30 is cut to 30. Left out: 30 where originals are to be trashed, else 0. With 0 the task ids are returned at once and no original is trashed.',
           }),
         }),
         'required': list([
@@ -17944,6 +18504,10 @@
       'outputSchema': dict({
         'description': 'A PDF operation Paperless accepted, the tasks it started and, if waited for, the outcome.',
         'properties': dict({
+          'dry_run': dict({
+            'description': 'true: a preview, nothing was started.',
+            'type': 'boolean',
+          }),
           'message': dict({
             'anyOf': list([
               dict({
@@ -17953,11 +18517,53 @@
                 'type': 'null',
               }),
             ]),
-            'description': 'Why a task failed, or why the state is unknown.',
+            'description': 'Why a task failed, the state is unknown or an original stays.',
+          }),
+          'next': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The calls that finish what was left, as a suggestion.',
           }),
           'operation': dict({
             'description': 'What was asked, e.g. rotate or merge.',
             'type': 'string',
+          }),
+          'plan': dict({
+            'description': 'What an operation makes, what stays and what is lost; known before it runs.',
+            'properties': dict({
+              'keeps': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'loses': dict({
+                'description': 'What the result does not have, or no longer shows.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'needs_confirm': dict({
+                'type': 'boolean',
+              }),
+              'produces': dict({
+                'type': 'string',
+              }),
+            }),
+            'required': list([
+              'produces',
+              'keeps',
+              'loses',
+              'needs_confirm',
+            ]),
+            'type': 'object',
           }),
           'produced_ids': dict({
             'description': 'The documents the finished tasks produced: new documents, or for a new version the id of that version (the document keeps its id). Empty while tasks run; reprocessing produces none.',
@@ -17990,21 +18596,29 @@
           'state': dict({
             'anyOf': list([
               dict({
-                'enum': list([
-                  'pending',
-                  'started',
-                  'success',
-                  'failure',
-                  'revoked',
+                'anyOf': list([
+                  dict({
+                    'enum': list([
+                      'pending',
+                      'started',
+                      'success',
+                      'failure',
+                      'revoked',
+                    ]),
+                    'type': 'string',
+                  }),
+                  dict({
+                    'const': 'unknown',
+                    'type': 'string',
+                  }),
                 ]),
-                'type': 'string',
               }),
               dict({
-                'const': 'unknown',
+                'const': 'not_started',
                 'type': 'string',
               }),
             ]),
-            'description': 'The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
+            'description': 'not_started: a preview. The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
           }),
           'summary': dict({
             'description': 'What Paperless was asked to do, in words.',
@@ -18065,6 +18679,13 @@
             }),
             'type': 'array',
           }),
+          'trashed_ids': dict({
+            'description': 'The originals this call moved to the Paperless trash, after it checked that everything was made; empty if it kept them.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
           'wait': dict({
             'enum': list([
               'not_requested',
@@ -18080,6 +18701,8 @@
         'required': list([
           'operation',
           'summary',
+          'dry_run',
+          'plan',
           'source_document_ids',
           'state',
           'message',
@@ -18087,6 +18710,8 @@
           'tasks',
           'produced_ids',
           'produced_links',
+          'trashed_ids',
+          'next',
           'wait',
           'waited_seconds',
         ]),

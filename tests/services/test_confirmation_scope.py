@@ -22,6 +22,7 @@ from fakes.paperless import (
     seeded,
 )
 from fakes.sharing import FakeShareBundle
+from harness import pdf_service
 
 from mcp_server_paperless.domain.bulk import (
     AddTags,
@@ -55,11 +56,9 @@ from mcp_server_paperless.services.document_edits import DocumentEditor
 from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.mail import MailService
 from mcp_server_paperless.services.notes import NoteService
-from mcp_server_paperless.services.pdf import PdfService
 from mcp_server_paperless.services.permissions import PermissionService
 from mcp_server_paperless.services.removal import DocumentRemoval
 from mcp_server_paperless.services.sharing import SharingService
-from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
 from mcp_server_paperless.services.trash import TrashService
@@ -70,6 +69,8 @@ from mcp_server_paperless.services.workflows import WorkflowService
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+
+    from mcp_server_paperless.services.pdf import PdfService
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-44")]
 
@@ -361,15 +362,15 @@ def other_layout(state: FakeState) -> None:
 
 
 def other_pages(state: FakeState) -> None:
-    """A newer file has another page, which the split drops too."""
+    """A newer file has other pages, which the same words cover."""
     state.documents[0].page_count = 9
 
 
-def split(state: FakeState) -> Callable[[], Awaitable[object]]:
+def cut(state: FakeState) -> Callable[[], Awaitable[object]]:
     state.documents = [FakeDocument(id=1, title="Scan", page_count=4)]
     fake, _ = fakes(state)
-    service = PdfService(fake, fake, TaskService(fake), web_url=WEB)
-    return lambda: service.split(1, ["1", "2"], output="replace_original")
+    service = pdf_service(fake)
+    return lambda: service.delete_pages(1, "1")
 
 
 def change_owner(state: FakeState) -> Callable[[], Awaitable[object]]:
@@ -402,7 +403,7 @@ def pdf_call(
 ) -> Callable[[FakeState], Callable[[], Awaitable[object]]]:
     def make(state: FakeState) -> Callable[[], Awaitable[object]]:
         fake = scans(state)
-        service = PdfService(fake, fake, TaskService(fake), web_url=WEB)
+        service = pdf_service(fake)
         return lambda: start(service)
 
     return make
@@ -538,7 +539,7 @@ NEWER_FILE = {
         (delete_view, other_rules),
         (create_rule, other_tag),
         (update_rule, other_layout),
-        (split, other_pages),
+        (cut, other_pages),
         (change_owner, other_owner),
         (trash, swap_trash),
         (bulk_documents_with_one_done, swap_changing),

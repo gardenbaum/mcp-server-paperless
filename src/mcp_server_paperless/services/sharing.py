@@ -392,7 +392,9 @@ class SharingService:
         titles = await self._titles(ids)
         kind: FileVersionKind = "archive" if use_archive_version else "original"
         # Paperless sends the original upload of a document, not its newest version.
-        await require_files(self._documents, {number: number for number in ids}, kind, choice=True)
+        _ = await require_files(
+            self._documents, {number: number for number in ids}, kind, choice=True
+        )
         shown = [destination(address, "e-mail address", "email") for address in addresses]
         if not confirm:
             named = joined([f"{quoted(titles[number])} (id {number})" for number in ids])

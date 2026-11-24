@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Literal, final, override
 import pytest
 from fakes.accounts import ADMIN
 from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
+from harness import pdf_service
 
 from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
@@ -20,13 +21,12 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.domain.pdf import PageSlot, StartedTasks
-from mcp_server_paperless.services.pdf import MAX_DOCUMENTS, PdfService
-from mcp_server_paperless.services.tasks import TaskService
+from mcp_server_paperless.services.pdf import MAX_DOCUMENTS, Options, PdfService
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Sequence
 
-    from mcp_server_paperless.domain.pdf import Output
+    from mcp_server_paperless.domain.pdf import FileOutput, Output
     from mcp_server_paperless.domain.tasks import TaskStatus
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
@@ -36,6 +36,10 @@ REPROCESS_NOTE = (
     "Paperless does not say which document a reprocess task belongs to (its tasks name none): "
     "they are the newest reprocess tasks this request started, so they cannot be tied to the "
     "documents."
+)
+BACK = (
+    "stays there until the trash is emptied (by default after 30 days) and can be restored in the "
+    "Paperless web UI, or with restore_from_trash if the trash toolset is enabled"
 )
 EDITING = frozenset({"view_document", "change_document", "add_document", "delete_document"})
 
@@ -75,6 +79,8 @@ class Slow(FakePaperless):
         task_ids: tuple[str, ...],
         expected: int | None = None,
         sources: tuple[int | None, ...] = (),
+        outputs: tuple[int, ...] = (),
+        included: tuple[int, ...] | None = None,
     ) -> StartedTasks:
         total = len(task_ids)
         if self.hide_sources:
@@ -83,7 +89,11 @@ class Slow(FakePaperless):
             task_ids, sources = task_ids[1:], sources[1:]
         kept = task_ids[: len(task_ids) - self.lose_tasks]
         started = super()._seen_tasks(
-            kept, total if expected is None else expected, sources[: len(kept)]
+            kept,
+            total if expected is None else expected,
+            sources[: len(kept)],
+            outputs[: len(kept)],
+            included,
         )
         if self.lookup_problem:
             return StartedTasks(
@@ -130,12 +140,7 @@ class Setup:
             ]
         self.fake: Slow = Slow(self.state, user=user, allow_writes=writes, slow_reads=slow_reads)
         self.clock: Clock = Clock()
-        self.service: PdfService = PdfService(
-            self.fake,
-            self.fake,
-            TaskService(self.fake, sleep=self.clock.sleep, clock=self.clock),
-            web_url=WEB,
-        )
+        self.service: PdfService = pdf_service(self.fake, sleep=self.clock.sleep, clock=self.clock)
 
     def pdf(self, pages: int, title: str = "Report", **fields: object) -> int:
         number = max(d.id for d in self.state.documents) + 1
@@ -371,7 +376,7 @@ async def test_splitting_makes_a_document_per_part_and_keeps_the_original() -> N
     setup = Setup()
     document = setup.pdf(5, "Scan")
 
-    result = await setup.service.split(document, ["1-2", "3,5"], wait_seconds=5)
+    result = await setup.service.split(document, ["1-2", "3,5"], options=Options(wait_seconds=5))
 
     counts = sorted(setup.document(n).page_count or 0 for n in result.produced_ids)
     assert counts == [2, 2]
@@ -417,7 +422,7 @@ async def test_a_bad_split_is_refused_before_anything_is_sent(
 async def test_splitting_cannot_make_a_version() -> None:
     setup = Setup(writes=False)
 
-    with pytest.raises(Validation, match="several files"):
+    with pytest.raises(Validation, match="Several files"):
         _ = await setup.service.split(setup.pdf(4), ["1", "2"], output="new_version")
 
 
@@ -438,7 +443,7 @@ async def test_a_confirmed_replacing_split_trashes_the_original() -> None:
     document = setup.pdf(4)
 
     result = await setup.service.split(
-        document, ["1-2", "3-4"], output="replace_original", confirm=True
+        document, ["1-2", "3-4"], output="replace_original", options=Options(confirm=True)
     )
 
     assert trashed(setup) == {document}
@@ -466,7 +471,9 @@ async def test_a_confirmed_page_deletion_makes_a_version_with_the_other_pages() 
     setup = Setup()
     document = setup.pdf(5)
 
-    result = await setup.service.delete_pages(document, "2-3,5", confirm=True, wait_seconds=5)
+    result = await setup.service.delete_pages(
+        document, "2-3,5", options=Options(confirm=True, wait_seconds=5)
+    )
 
     assert setup.document(document).page_count == 2
     assert len(setup.document(document).versions) == 2
@@ -503,11 +510,11 @@ async def test_every_page_cannot_be_deleted_and_bad_ranges_are_refused() -> None
     document = setup.pdf(3)
 
     with pytest.raises(Validation, match="every page"):
-        _ = await setup.service.delete_pages(document, "1-3", confirm=True)
+        _ = await setup.service.delete_pages(document, "1-3", options=Options(confirm=True))
     with pytest.raises(Validation, match="Page 4 does not exist"):
-        _ = await setup.service.delete_pages(document, "2-4", confirm=True)
+        _ = await setup.service.delete_pages(document, "2-4", options=Options(confirm=True))
     with pytest.raises(Validation, match="No pages given"):
-        _ = await setup.service.delete_pages(document, " ", confirm=True)
+        _ = await setup.service.delete_pages(document, " ", options=Options(confirm=True))
 
     assert setup.untouched()
 
@@ -518,7 +525,7 @@ async def test_page_operations_need_a_known_page_count() -> None:
     setup.document(locked).page_count = None
 
     with pytest.raises(Validation, match="page count") as raised:
-        _ = await setup.service.delete_pages(locked, "1", confirm=True)
+        _ = await setup.service.delete_pages(locked, "1", options=Options(confirm=True))
 
     assert raised.value.hint is not None
     assert "remove_document_password" in raised.value.hint
@@ -532,7 +539,7 @@ async def test_an_edit_builds_new_documents_from_the_pages_and_rotations() -> No
     document = setup.pdf(3, "Scan")
     slots = [PageSlot(page=3), PageSlot(page=1, rotate=90), PageSlot(page=2, document=1)]
 
-    result = await setup.service.edit(document, slots, wait_seconds=5)
+    result = await setup.service.edit(document, slots, options=Options(wait_seconds=5))
 
     assert sorted(setup.document(n).page_count or 0 for n in result.produced_ids) == [1, 2]
     assert result.summary == (f"edit document {document} into 2 new documents (3 pages, 1 turned)")
@@ -610,7 +617,9 @@ async def test_a_bad_edit_is_refused_before_anything_is_sent(
     setup = Setup(writes=False)
 
     with pytest.raises(Validation, match=message):
-        _ = await setup.service.edit(setup.pdf(2), slots, output=output, confirm=True)
+        _ = await setup.service.edit(
+            setup.pdf(2), slots, output=output, options=Options(confirm=True)
+        )
 
     assert setup.untouched()
 
@@ -619,7 +628,9 @@ async def test_an_edit_may_have_at_most_500_pages() -> None:
     setup = Setup(writes=False)
 
     with pytest.raises(Validation, match="at most 500 pages"):
-        _ = await setup.service.edit(setup.pdf(2), [PageSlot(page=1)] * 501, confirm=True)
+        _ = await setup.service.edit(
+            setup.pdf(2), [PageSlot(page=1)] * 501, options=Options(confirm=True)
+        )
 
 
 # --- remove_password ----------------------------------------------------------------------
@@ -630,7 +641,7 @@ async def test_removing_a_password_makes_an_unlocked_copy_and_never_repeats_the_
     locked = setup.pdf(1, "Locked", password="s3cret")
     setup.document(locked).page_count = None
 
-    result = await setup.service.remove_password(locked, "s3cret", wait_seconds=5)
+    result = await setup.service.remove_password(locked, "s3cret", options=Options(wait_seconds=5))
 
     [copy] = result.produced_ids
     assert setup.document(copy).page_count == 1
@@ -796,8 +807,10 @@ async def test_the_refusal_to_merge_without_confirm_has_the_exact_words() -> Non
     assert raised.value.message == (
         f"Nothing was changed. Confirming would merge document {first} 'Alpha', document {second} "
         f"'Beta' and document {third} 'Gamma' into one new document, in this order, and move the "
-        "originals to the Paperless trash (they can be restored from there); an original's "
-        "archive serial number, if it has one, moves to the new document."
+        f"originals to the Paperless trash; each {BACK}; new documents take nothing of title, "
+        "correspondent, document type, storage path, tags, created date, custom field values and "
+        f"view and change grants of document {first} 'Alpha', document {second} 'Beta' and "
+        f"document {third} 'Gamma'."
     )
 
 
@@ -827,8 +840,8 @@ async def test_the_refusals_of_a_split() -> None:
     service = setup.service
 
     assert await refused(service.split(document, ["1", "2"], output="new_version")) == (
-        "A split makes several files, which cannot all be a version of the document.",
-        "Use new_document or replace_original.",
+        "Several files cannot be one version of a document.",
+        "Closest: new documents (new_document).",
     )
     assert await refused(service.split(document, ["1"])) == (
         "A split needs at least two parts and at most 20 parts.",
@@ -840,7 +853,7 @@ async def test_the_refusals_of_a_split() -> None:
     )
     assert await refused(service.split(locked, ["1", "2"])) == (
         f"The page count of document {locked} is unknown.",
-        "Encrypted PDFs have none: remove the password first with remove_document_password.",
+        "It may be password protected (remove_document_password unlocks it) or damaged.",
     )
 
 
@@ -863,7 +876,8 @@ async def test_the_split_confirmation_and_summary_have_the_exact_words() -> None
 
     assert raised.value.message == (
         f"Nothing was changed. Confirming would split document {document} 'Scan' into 2 new "
-        "documents (pages 1-2 | pages 3-4) and move the original to the Paperless trash."
+        "documents (pages 1-2 | pages 3-4) and move the original to the Paperless trash; "
+        f"it {BACK}."
     )
     writing = Setup()
     result = await writing.service.split(writing.pdf(4), ["1-2", "3-4"])
@@ -874,7 +888,9 @@ async def test_the_refusals_of_deleting_pages() -> None:
     setup = Setup(writes=False)
     document = setup.pdf(3)
 
-    assert await refused(setup.service.delete_pages(document, "1-3", confirm=True)) == (
+    assert await refused(
+        setup.service.delete_pages(document, "1-3", options=Options(confirm=True))
+    ) == (
         "Deleting every page leaves nothing.",
         "Delete the whole document with delete_document.",
     )
@@ -899,8 +915,8 @@ async def test_the_confirmations_of_deleting_pages_have_the_exact_words() -> Non
     )
     assert replacing.value.message == (
         f"Nothing was changed. Confirming would delete page 1 of document {document} 'Scan' into "
-        "a new document and move the original to the Paperless trash; the original's archive "
-        "serial number, if it has one, moves to the new document."
+        "a new document and move the original to the Paperless trash; "
+        f"it {BACK}; page 1: not in the result."
     )
 
 
@@ -909,14 +925,14 @@ async def test_deleting_pages_that_replace_the_original_say_so_in_the_result() -
     document = setup.pdf(3)
 
     result = await setup.service.delete_pages(
-        document, "1", output="replace_original", confirm=True
+        document, "1", output="replace_original", options=Options(confirm=True)
     )
 
     assert result.summary == (
         f"delete page 1 of document {document} into a new document and move the original to the "
         "Paperless trash"
     )
-    assert (result.operation, result.wait) == ("delete_pages", "not_requested")
+    assert (result.operation, result.wait) == ("delete_pages", "finished")
     assert trashed(setup) == {document}
 
 
@@ -997,7 +1013,8 @@ async def test_the_confirmations_of_an_edit_have_the_exact_words() -> None:
     )
     assert replacing.value.message == (
         f"Nothing was changed. Confirming would edit document {document} 'Scan' into 2 new "
-        "documents (2 pages, 0 turned) and move the original to the Paperless trash."
+        "documents (2 pages, 0 turned) and move the original to the Paperless trash; "
+        f"it {BACK}; pages 3-4: not in the result."
     )
 
 
@@ -1006,7 +1023,7 @@ async def test_an_edit_that_replaces_the_original_says_so_in_the_result() -> Non
     document = setup.pdf(2)
 
     result = await setup.service.edit(
-        document, [PageSlot(page=2)], output="replace_original", confirm=True
+        document, [PageSlot(page=2)], output="replace_original", options=Options(confirm=True)
     )
 
     assert result.summary == (
@@ -1028,8 +1045,8 @@ async def test_removing_a_password_has_exact_refusals_and_summaries() -> None:
         _ = await setup.service.remove_password(locked, "s3cret", output="replace_original")
     assert raised.value.message == (
         f"Nothing was changed. Confirming would remove the password of document {locked} "
-        "'Locked' into a new document and move the original to the Paperless trash; the "
-        "original's archive serial number, if it has one, moves to the new document."
+        "'Locked' into a new document and move the original to the Paperless trash; "
+        f"it {BACK}."
     )
     text = setup.pdf(1, mime_type="text/plain")
     with pytest.raises(Validation, match="is not a PDF"):
@@ -1041,14 +1058,14 @@ async def test_a_confirmed_password_removal_that_replaces_the_original_trashes_i
     locked = setup.pdf(1, "Locked", password="s3cret")
 
     result = await setup.service.remove_password(
-        locked, "s3cret", output="replace_original", confirm=True
+        locked, "s3cret", output="replace_original", options=Options(confirm=True)
     )
 
     assert result.summary == (
         f"remove the password of document {locked} into a new document and move the original to "
         "the Paperless trash"
     )
-    assert (result.operation, result.wait) == ("remove_password", "not_requested")
+    assert (result.operation, result.wait) == ("remove_password", "finished")
     assert trashed(setup) == {locked}
 
 
@@ -1079,7 +1096,7 @@ async def test_reprocessing_passes_the_ocr_choice_on_and_reports_its_operation()
             return await super().reprocess_documents(document_ids, remote_ocr=remote_ocr)
 
     spy = Spy(setup.state, user=ADMIN[0], allow_writes=True, slow_reads=0)
-    service = PdfService(spy, spy, TaskService(spy), web_url=WEB)
+    service = pdf_service(spy)
     document = setup.pdf(1)
 
     local = await service.reprocess([document], confirm=True)
@@ -1142,16 +1159,28 @@ class Recording(Slow):
 
     @override
     async def edit_pdf(
-        self, document_id: int, pages: Sequence[PageSlot], *, output: Output
+        self,
+        document_id: int,
+        pages: Sequence[PageSlot],
+        *,
+        output: FileOutput,
+        version_id: int | None = None,
+        keep_metadata: bool = True,
     ) -> StartedTasks:
         self.outputs.append(output)
-        return await super().edit_pdf(document_id, pages, output=output)
+        return await super().edit_pdf(
+            document_id,
+            pages,
+            output=output,
+            version_id=version_id,
+            keep_metadata=keep_metadata,
+        )
 
 
 async def test_splitting_and_editing_make_new_documents_unless_told_otherwise() -> None:
     setup = Setup()
     spy = Recording(setup.state)
-    service = PdfService(spy, spy, TaskService(spy), web_url=WEB)
+    service = pdf_service(spy)
     document = setup.pdf(3)
 
     _ = await service.split(document, ["1", "2"])
@@ -1168,9 +1197,9 @@ async def test_page_operations_refuse_a_file_that_is_not_a_pdf() -> None:
     with pytest.raises(Validation, match="is not a PDF"):
         _ = await service.split(text, ["1", "2"])
     with pytest.raises(Validation, match="is not a PDF"):
-        _ = await service.delete_pages(text, "1", confirm=True)
+        _ = await service.delete_pages(text, "1", options=Options(confirm=True))
     with pytest.raises(Validation, match="is not a PDF"):
-        _ = await service.edit(text, [PageSlot(page=1)], confirm=True)
+        _ = await service.edit(text, [PageSlot(page=1)], options=Options(confirm=True))
 
 
 async def test_leaving_out_only_the_first_page_drops_it() -> None:
@@ -1304,33 +1333,6 @@ async def test_nothing_produced_links_nothing() -> None:
     assert (result.produced_ids, result.produced_links) == ((), ())
 
 
-async def test_the_confirmations_say_that_the_serial_number_moves() -> None:
-    setup = Setup(writes=False)
-    first, second, doc = setup.pdf(1), setup.pdf(1), setup.pdf(3)
-    locked = setup.pdf(1, password="x")
-    asn = "archive serial number, if it has one, moves to the new document"
-
-    with pytest.raises(ConfirmationRequired) as merge:
-        _ = await setup.service.merge([first, second], None, delete_originals=True)
-    with pytest.raises(ConfirmationRequired) as edit:
-        _ = await setup.service.edit(doc, [PageSlot(page=1)], output="replace_original")
-    with pytest.raises(ConfirmationRequired) as pages:
-        _ = await setup.service.delete_pages(doc, "1", output="replace_original")
-    with pytest.raises(ConfirmationRequired) as password:
-        _ = await setup.service.remove_password(locked, "x", output="replace_original")
-    with pytest.raises(ConfirmationRequired) as split:
-        _ = await setup.service.split(doc, ["1", "2"], output="replace_original")
-    with pytest.raises(ConfirmationRequired) as two_files:
-        _ = await setup.service.edit(
-            doc, [PageSlot(page=1), PageSlot(page=2, document=1)], output="replace_original"
-        )
-
-    for raised in (merge, edit, pages, password):
-        assert asn in raised.value.message
-    for raised in (split, two_files):
-        assert "serial number" not in raised.value.message
-
-
 async def test_removing_a_password_links_what_it_made() -> None:
     setup = Setup()
     first = setup.pdf(1, "One", password="s3cret")
@@ -1403,7 +1405,7 @@ async def test_the_documents_of_every_file_of_a_split_are_linked() -> None:
     setup = Setup()
     document = setup.pdf(4)
 
-    result = await setup.service.split(document, ["1-2", "3-4"], wait_seconds=1)
+    result = await setup.service.split(document, ["1-2", "3-4"], options=Options(wait_seconds=1))
 
     assert result.produced_links == tuple(
         f"{WEB}/documents/{n}/details" for n in result.produced_ids
@@ -1421,9 +1423,9 @@ async def test_with_one_source_a_task_that_does_not_name_it_still_gets_its_link(
     assert result.produced_links == (f"{WEB}/documents/{document}/details",)
 
 
-def way_back(subject: str, when: str) -> str:
+def way_back(names: str, subject: str) -> str:
     return (
-        f"{subject} moves to the trash {when}. It stays there until the trash is emptied (by "
+        f"Now in the trash: {names}. {subject} stays there until the trash is emptied (by "
         "default after 30 days) and can be restored in the Paperless web UI, or with "
         "restore_from_trash if the trash toolset is enabled."
     )
@@ -1436,20 +1438,26 @@ async def test_whatever_trashes_an_original_says_how_to_get_it_back() -> None:
     locked = setup.pdf(1, password="s3cret")
     slots = [PageSlot(page=1)]
     results = [
-        await service.split(split, ["1-2", "3-4"], output="replace_original", confirm=True),
-        await service.delete_pages(cut, "2", output="replace_original", confirm=True),
-        await service.edit(edited, slots, output="replace_original", confirm=True),
-        await service.remove_password(locked, "s3cret", output="replace_original", confirm=True),
+        await service.split(
+            split, ["1-2", "3-4"], output="replace_original", options=Options(confirm=True)
+        ),
+        await service.delete_pages(
+            cut, "2", output="replace_original", options=Options(confirm=True)
+        ),
+        await service.edit(edited, slots, output="replace_original", options=Options(confirm=True)),
+        await service.remove_password(
+            locked, "s3cret", output="replace_original", options=Options(confirm=True)
+        ),
         await service.merge([first, second], None, delete_originals=True, confirm=True),
     ]
     kept = [setup.pdf(4) for _ in range(3)]
     quiet = [
         await service.split(kept[0], ["1-2", "3-4"]),
-        await service.delete_pages(kept[1], "2", confirm=True),
+        await service.delete_pages(kept[1], "2", options=Options(confirm=True)),
         await service.merge(kept[:2], None),
     ]
 
-    one = way_back("The original", "once the work succeeds")
-    each = way_back("Each original", "once the work succeeds")
-    assert [r.message for r in results] == [one, one, one, one, each]
+    one = [way_back(f"document {n}", "It") for n in (split, cut, edited, locked)]
+    each = way_back(f"documents {first}, {second}", "Each")
+    assert [r.message for r in results] == [*one, each]
     assert all("trash" not in (r.message or "") for r in quiet)

@@ -64,6 +64,7 @@ from mcp_server_paperless.services.mail import MailService
 from mcp_server_paperless.services.notes import NoteService
 from mcp_server_paperless.services.pages import PageService
 from mcp_server_paperless.services.pdf import PdfService
+from mcp_server_paperless.services.pdf_replacing import Replacing
 from mcp_server_paperless.services.permissions import PermissionService
 from mcp_server_paperless.services.raw import RawApiService
 from mcp_server_paperless.services.removal import DocumentRemoval
@@ -466,6 +467,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 upload_dirs=settings.upload_dirs if by_path else (),
                 path_hint=path_hint,
             )
+            removal = DocumentRemoval(adapters.documents, adapters.document_writes, taxonomy)
             services = Services(
                 instance=InstanceService(adapters.instance),
                 taxonomy=taxonomy,
@@ -488,11 +490,18 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     documents=documents,
                 ),
                 notes=NoteService(adapters.documents, adapters.document_writes, web_url=web_url),
-                removal=DocumentRemoval(adapters.documents, adapters.document_writes, taxonomy),
+                removal=removal,
                 tasks=tasks,
                 ai=AiService(adapters.ai, taxonomy, web_url=web_url),
                 views=ViewService(adapters.views, adapters.view_writes, taxonomy, documents),
-                pdf=PdfService(adapters.documents, adapters.pdf_writes, tasks, web_url=web_url),
+                pdf=PdfService(
+                    adapters.documents,
+                    adapters.pdf_writes,
+                    tasks,
+                    Replacing(adapters.documents, adapters.document_writes, removal, clock=clock),
+                    taxonomy,
+                    web_url=web_url,
+                ),
                 sharing=SharingService(
                     adapters.sharing, adapters.sharing_writes, adapters.documents, web_url=web_url
                 ),
