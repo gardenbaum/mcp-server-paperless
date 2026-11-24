@@ -361,8 +361,11 @@ ranges and the server keeps nothing between calls, so every part reads the file 
   title and no text of a document can make the server write a script, a program or a `CLAUDE.md`.
   Names that start with a dot are refused.
 - An existing file is replaced only after a confirmation (a dialog where your client can show one,
-  else `confirm=true`), which names the file and the directory in full; if either is longer than 254
-  characters or holds characters that may not show, the replacement is refused. And only a plain file: never a link, a file
+  else `confirm=true`), which says what would be saved and names the file and the directory (where a
+  link leads) in full; if either is longer than 254
+  characters or holds characters that may not show, the replacement is refused. Opening the old file, a sync client, a backup or a `chmod`
+  can count as a change of it: the call then asks again or ends with "changed meanwhile". And only a
+  plain file: never a link, a file
   with a second name (hard link) or a device.
 - Up to 2 GiB and 30 minutes; 256 MiB of the disk stay free, checked while the file arrives. Only a complete file gets its name, and
   it is compared with the size and checksum Paperless knows (a ZIP archive must be whole). It
@@ -372,7 +375,7 @@ ranges and the server keeps nothing between calls, so every part reads the file 
   server can leave a hidden `.mcp-….part`, which you may delete.
 - Not on Windows: saving is refused there, as uploading by path is.
 
-The rules are decision-45 and decision-46 (`backlog/decisions/`).
+The rules are decision-45, decision-46 and, for replacing a file, decision-49 (`backlog/decisions/`).
 
 ### Page images
 
