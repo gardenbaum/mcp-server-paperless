@@ -77,7 +77,7 @@ class Acting(FakePaperless):
 
     @override
     async def bulk_edit_documents(
-        self, document_ids: Sequence[int], change: DocumentChange
+        self, document_ids: Sequence[int], change: DocumentChange, *, stop_on_limit: bool = False
     ) -> Unconfirmed | None:
         if self.instead is None:
             _ = await super().bulk_edit_documents(document_ids, change)

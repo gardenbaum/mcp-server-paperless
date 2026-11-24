@@ -175,6 +175,38 @@ async def test_a_task_list_that_stays_unreadable_is_unconfirmed_at_the_deadline(
     assert clock.now == 5.0
 
 
+async def test_a_rate_limit_ends_the_wait_at_once_where_that_is_asked(
+    make_client: ClientFactory,
+) -> None:
+    tasks, clock = Tasks(429), Clock()
+
+    outcome = await waiter(make_client, tasks, clock).confirmed(ANSWER, _never, stop_on_limit=True)
+
+    assert outcome == Unconfirmed(
+        task_id=TASK, reason="Paperless limits the rate of requests (HTTP 429)", rate_limited=True
+    )
+    assert (len(tasks.reads), clock.sleeps) == (1, [])
+
+
+async def test_other_errors_are_waited_out_there_too(make_client: ClientFactory) -> None:
+    tasks, clock = Tasks(503, [row("success")]), Clock()
+
+    outcome = await waiter(make_client, tasks, clock).confirmed(ANSWER, _never, stop_on_limit=True)
+
+    assert outcome is None
+
+
+async def test_elsewhere_a_rate_limit_is_waited_out_because_the_task_is_needed(
+    make_client: ClientFactory,
+) -> None:
+    tasks, clock = Tasks(429, [row("success")]), Clock()
+
+    outcome = await waiter(make_client, tasks, clock).confirmed(ANSWER, _never)
+
+    assert outcome is None
+    assert len(tasks.reads) == 2
+
+
 async def test_a_task_still_running_after_the_wait_is_unconfirmed_and_named(
     make_client: ClientFactory,
 ) -> None:

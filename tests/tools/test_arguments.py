@@ -545,6 +545,14 @@ async def test_permissions_and_bulk_changes_take_every_argument() -> None:
             (),
             prepare=bare,
         )
+    by_filter: Json = {
+        "document_ids": [1],
+        "exclude_ids": [2],
+        "filters": {"title_contains": "e2e"},
+    }
+    for chosen in (by_filter, {"document_ids": [1], "saved_view": "e2e-view"}):
+        arguments: Json = {**chosen, "operation": {"op": "remove_tags", "tags": [4]}}
+        await sweep("bulk_edit_documents", arguments, (), prepare=bare)
     assert not FAILED, "\n".join(FAILED)
 
 

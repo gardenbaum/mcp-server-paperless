@@ -25,12 +25,6 @@
 # [[undeclared]]  query parameters the generated schema omits (listed by hand)
 
 [[open]]
-task = "PLMCP-80"
-operations = [
-  "POST /api/documents/delete/",
-]
-
-[[open]]
 task = "PLMCP-81"
 operations = [
   "GET /api/oauth/callback/",
@@ -388,11 +382,6 @@ task = "PLMCP-87"
 reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them. A manual trigger (type 5) is read but not written: it is run by hand from the web UI (PLMCP-97; PLMCP-87 decides whether to write it)."
 
 [[open_fields]]
-operation = "POST /api/bulk_edit_objects/"
-fields = ["body:all", "body:filters"]
-task = "PLMCP-80"
-
-[[open_fields]]
 operation = "POST /api/correspondents/"
 fields = ["body:owner", "body:set_permissions"]
 task = "PLMCP-83"
@@ -403,48 +392,19 @@ fields = ["body:owner", "body:set_permissions"]
 task = "PLMCP-83"
 
 [[open_fields]]
-operation = "POST /api/documents/bulk_download/"
-fields = ["body:all", "body:excluded_documents", "body:filters"]
-task = "PLMCP-80"
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:from_webui"]
+task = "PLMCP-83"
 
 [[open_fields]]
-operation = "POST /api/documents/bulk_edit/"
-fields = ["body:all", "body:excluded_documents", "body:filters"]
-task = "PLMCP-80"
-
-[[open_fields]]
-operation = "POST /api/documents/bulk_edit/"
-fields = ["body:method=add_tag", "body:method=remove_tag"]
-task = "PLMCP-80"
-reason = "modify_tags adds and removes tags in one call, so the tool never sends the single-tag methods"
-
-[[open_fields]]
-operation = "POST /api/documents/bulk_edit/"
-fields = ["body:method=set_permissions"]
-task = "PLMCP-80"
-reason = "permissions are changed by the set_permissions tool (bulk_edit_objects and set_permissions of the document), not by bulk_edit_documents"
-
-[[open_fields]]
-operation = "POST /api/documents/bulk_edit/"
-fields = ["body:method=delete_pages", "body:method=split"]
-task = "PLMCP-80"
-reason = "split_document and delete_pages send the edit_pdf endpoint of the pdf toolset (they have none of their own), so bulk_edit_documents never sends it"
-
-[[open_fields]]
-operation = "POST /api/documents/bulk_edit/"
-fields = ["body:method=edit_pdf", "body:method=merge", "body:method=remove_password", "body:method=rotate"]
-task = "PLMCP-80"
-reason = "the pdf toolset has an endpoint of its own for it (API 10 deprecates this bulk_edit form), so bulk_edit_documents never sends it"
-
-[[open_fields]]
-operation = "POST /api/documents/bulk_edit/"
+operation = "POST /api/documents/delete/"
 fields = ["body:from_webui"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/documents/bulk_edit/"
 fields = ["body:method=run_workflow"]
-task = "PLMCP-80"
+task = "PLMCP-80.4"
 reason = "Paperless runs a workflow with a manual trigger on selected documents; no tool does, and the workflows toolset does not write manual triggers (PLMCP-97)"
 
 [[open_fields]]
@@ -553,6 +513,58 @@ operation = "POST /api/workflows/"
 fields = ["body:actions[].type=5", "body:actions[].type=8", "body:triggers[].type=5"]
 task = "PLMCP-87"
 reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them. A manual trigger (type 5) is read but not written: it is run by hand from the web UI (PLMCP-97; PLMCP-87 decides whether to write it)."
+
+[[exclusion]]
+operation = "POST /api/bulk_edit_objects/"
+fields = ["body:all", "body:filters"]
+quote = "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits."
+date = "2026-11-24"
+source = "backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md"
+
+[[exclusion]]
+operation = "POST /api/documents/bulk_download/"
+fields = ["body:all", "body:excluded_documents", "body:filters"]
+quote = "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits."
+date = "2026-11-24"
+source = "backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md"
+
+[[exclusion]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:all", "body:excluded_documents", "body:filters"]
+quote = "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits."
+date = "2026-11-24"
+source = "backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md"
+
+[[exclusion]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:method=add_tag", "body:method=remove_tag"]
+quote = "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits."
+date = "2026-11-24"
+source = "backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md"
+reason = "modify_tags adds and removes tags in one call"
+
+[[exclusion]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:method=set_permissions"]
+quote = "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits."
+date = "2026-11-24"
+source = "backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md"
+reason = "the set_permissions tool does it per document with a diff; this form without owner removes the owner"
+
+[[exclusion]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:method=delete", "body:method=delete_pages", "body:method=edit_pdf", "body:method=merge", "body:method=remove_password", "body:method=reprocess", "body:method=rotate", "body:method=split"]
+quote = "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits."
+date = "2026-11-24"
+source = "backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md"
+reason = "deprecated forms in API version 10: the tools use the endpoints documents/delete, reprocess, rotate, merge, edit_pdf and remove_password"
+
+[[exclusion]]
+operation = "POST /api/documents/delete/"
+fields = ["body:all", "body:excluded_documents", "body:filters"]
+quote = "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits."
+date = "2026-11-24"
+source = "backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md"
 
 [[exclusion]]
 operation = "POST /api/documents/edit_pdf/"

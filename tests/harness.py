@@ -20,14 +20,17 @@ from observation import recorded
 
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.server import CATALOGUE, Catalogue, Ports, create_server
+from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
 from mcp_server_paperless.services.document_edits import DocumentEditor
 from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.pdf import PdfService
 from mcp_server_paperless.services.pdf_parts import Parts
 from mcp_server_paperless.services.pdf_replacing import Replacing
 from mcp_server_paperless.services.removal import DocumentRemoval
+from mcp_server_paperless.services.selection import DocumentSelector
 from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.views import ViewService
 from mcp_server_paperless.settings import PaperlessSettings, ServerSettings
 
 if TYPE_CHECKING:
@@ -129,6 +132,15 @@ def pdf_service(
         parts=Parts(fake, fake, editor, taxonomy, replacing, web_url=web, sleep=sleep),
         web_url=web,
     )
+
+
+def bulk_editor(fake: FakePaperless, taxonomy: TaxonomyResolver) -> BulkDocumentEditor:
+    """`BulkDocumentEditor` on the fake, with everything it is built from."""
+    web = "https://paperless.example"
+    documents = DocumentService(fake, fake, taxonomy, web_url=web)
+    views = ViewService(fake, fake, taxonomy, documents)
+    selector = DocumentSelector(fake, documents, views, taxonomy)
+    return BulkDocumentEditor(fake, fake, selector, taxonomy, web_url=web)
 
 
 def serve(  # noqa: PLR0913 -- one keyword per seam of the server

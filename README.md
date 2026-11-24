@@ -289,7 +289,8 @@ takes more than a misunderstanding:
   unless you allow only dialogs with `PAPERLESS_MCP_REQUIRE_DIALOG=true`
   ([details](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md#confirmation)).
 - **Dry runs for bulk edits.** `bulk_edit_documents`, `bulk_edit_taxonomy` and
-  `resolve_duplicates` preview what would change before they ask for confirmation.
+  `resolve_duplicates` preview what would change before they ask for confirmation. A search filter or
+  saved view never acts by itself: every document it would change is named first.
 - **The trash first.** Deleting a document moves it to the Paperless trash, from where it can be
   restored. Emptying the trash is a separate tool in a toolset that is off by default.
 - **You choose the surface.** Toolsets are opt-in, `PAPERLESS_MCP_READ_ONLY=true` offers only

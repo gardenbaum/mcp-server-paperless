@@ -70,10 +70,13 @@ async def test_the_input_schema_types_the_operation_and_bounds_the_selection() -
 
     documents = tools["bulk_edit_documents"].input_schema
     properties = cast("dict[str, Json]", documents["properties"])
-    assert set(properties) == {"document_ids", "operation", "dry_run", "confirm"}
-    assert documents["required"] == ["document_ids", "operation"]
-    assert properties["document_ids"]["maxItems"] == MAX_DOCUMENTS
-    assert properties["document_ids"]["minItems"] == 1
+    selection = {"document_ids", "filters", "saved_view", "exclude_ids"}
+    assert set(properties) == {*selection, "operation", "dry_run", "confirm"}
+    assert documents["required"] == ["operation"]
+    reading = cast("dict[str, Json]", tools["read_documents"].input_schema["properties"])
+    assert {n: properties[n] for n in selection} == {n: reading[n] for n in selection}
+    [ids, _] = cast("list[Json]", properties["document_ids"]["anyOf"])
+    assert (ids["minItems"], ids["maxItems"]) == (1, MAX_DOCUMENTS)
     assert properties["confirm"]["description"] == CONFIRM_DESCRIPTION
     assert consts(properties["operation"]) == [
         "add_tags",
@@ -86,6 +89,12 @@ async def test_the_input_schema_types_the_operation_and_bounds_the_selection() -
         "delete",
         "reprocess",
     ]
+
+    answer = cast(
+        "dict[str, Json]", (tools["bulk_edit_documents"].output_schema or {})["properties"]
+    )
+    assert "asked to change in this call" in str(answer["selected_ids"]["description"])
+    assert "OCR twice" in str(answer["remaining"]["description"])
 
     taxonomy = tools["bulk_edit_taxonomy"].input_schema
     taxonomy_properties = cast("dict[str, Json]", taxonomy["properties"])
@@ -208,6 +217,77 @@ async def test_the_selection_bounds_are_enforced_by_the_schema(ids: list[int]) -
     )
 
     assert "document_ids" in text
+
+
+SCANS: Json = {"title_contains": "Second"}
+
+
+@pytest.mark.decision("decision-69")
+async def test_a_filter_is_refused_and_the_call_it_names_goes_through() -> None:
+    state = seeded()
+    source = fake(state)
+
+    refused = await refusal(
+        source, "bulk_edit_documents", filters=SCANS, operation=INBOX, confirm=True
+    )
+    assert state.documents[-1].tags == []
+    assert "5 'Second invoice'" in refused
+    assert "document_ids=[5] and confirm=true" in refused
+    done = await call(
+        source,
+        "bulk_edit_documents",
+        filters=SCANS,
+        operation=INBOX,
+        document_ids=[5],
+        confirm=True,
+    )
+
+    assert (done["applied"], done["matched"], done["selected_ids"]) == (True, 1, [5])
+    assert state.documents[-1].tags == [4]
+
+
+@pytest.mark.decision("decision-69")
+async def test_a_preview_by_view_leaves_out_what_is_excluded() -> None:
+    output = await call(
+        fake(writes=False),
+        "bulk_edit_documents",
+        filters={"title_contains": "e"},
+        exclude_ids=[1, 2],
+        operation=INBOX,
+        dry_run=True,
+    )
+    by_view = await call(
+        fake(writes=False),
+        "bulk_edit_documents",
+        saved_view="e2e-view",
+        operation={"op": "remove_tags", "tags": ["e2e-inbox"]},
+        dry_run=True,
+    )
+
+    assert output["selected_ids"] == [5]
+    assert by_view["selected_ids"] == [1]
+
+
+@pytest.mark.decision("decision-69")
+@pytest.mark.parametrize(
+    ("selection", "told"),
+    [
+        ({}, "between 1 and 100"),
+        ({"filters": SCANS, "saved_view": 1}, "cannot be combined"),
+        ({"filters": {"titel": "x"}}, "titel"),
+        ({"filters": {}}, "every document"),
+        ({"filters": {"title_contains": ""}}, "title_contains"),
+        ({"filters": {"query": "acme and invoice"}}, "more than was meant"),
+        ({"document_ids": [True]}, "document_ids"),
+        ({"document_ids": [5], "exclude_ids": [2]}, "exclude_ids"),
+    ],
+)
+async def test_a_wrong_selection_is_refused(selection: Json, told: str) -> None:
+    text = await refusal(
+        fake(writes=False), "bulk_edit_documents", operation=INBOX, confirm=True, **selection
+    )
+
+    assert told in text
 
 
 async def test_taxonomy_deletion_is_previewed_refused_then_done() -> None:
