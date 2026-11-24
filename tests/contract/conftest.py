@@ -235,7 +235,9 @@ class Restricted(Protocol):
     """Makes a user with just these global permissions and object grants on admin documents.
 
     `view` documents are shared with it for viewing only, `change` documents for changing too;
-    every other document of the admin stays hidden from it. The live one deletes the user again
+    every other document of the admin stays hidden from it. Grants replace those a document had, so
+    a second user on the same document takes it from the first: use it before making the next. The
+    live one deletes the user again
     when the test ends.
     """
 
@@ -389,11 +391,13 @@ def fake_restricted(state: FakeState) -> Restricted:
             permissions=permissions,
         )
         state.users.append(user)
+        [admin] = [u for u in state.users if u.username == ADMIN[0]]
         for document in state.documents:
             if document.id in {*view, *change}:
-                document.viewers.add(user.id)
-            if document.id in change:
-                document.editors.add(user.id)
+                # The PATCH of the live one replaces every grant the document had.
+                document.owner = admin.id
+                document.viewers = {user.id}
+                document.editors = {user.id} if document.id in change else set()
         return fake_ports(state, user.username)
 
     return restricted

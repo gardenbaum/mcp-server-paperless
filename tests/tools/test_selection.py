@@ -259,10 +259,7 @@ def test_the_enable_text_names_the_restart_of_every_way_to_run_the_server() -> N
             "stdio: env of the server in the client's config (docker run -i: -e), "
             "restart the client."
         ),
-        (
-            "HTTP and image: environment of the process or container, "
-            "restart the process or recreate the container."
-        ),
+        "HTTP and image: environment, restart the process or recreate the container.",
     ):
         assert channel in text
 

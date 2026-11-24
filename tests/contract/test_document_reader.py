@@ -311,10 +311,11 @@ async def test_the_content_is_the_whole_text(backend: Backend) -> None:
     public = await document(backend.reader, PUBLIC)
     private = await document(backend.admin, PRIVATE)
 
-    assert await backend.reader.documents.get_document_content(public.id) == (
-        "E2E public invoice ACME 2026"
-    )
-    assert await backend.admin.documents.get_document_content(private.id) == PRIVATE_CONTENT
+    seen = await backend.reader.documents.get_document_content(public.id)
+    assert seen.content == "E2E public invoice ACME 2026"
+    assert (seen.id, seen.title, seen.version_id) == (public.id, PUBLIC, public.id)
+    found = await backend.admin.documents.get_document_content(private.id)
+    assert (found.content, found.user_can_change) == (PRIVATE_CONTENT, True)
 
 
 @pytest.mark.contract("DocumentReader.get_document_content")

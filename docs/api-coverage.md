@@ -78,8 +78,8 @@ Limits.
 | `POST /api/documents/rotate/` | `rotate_documents` |  |
 | `POST /api/documents/selection_data/` |  | PLMCP-83 |
 | `DELETE /api/documents/{id}/` | `delete_document` |  |
-| `GET /api/documents/{id}/` | `delete_document`, `delete_document_version`, `delete_note`, `delete_pages`, `download_document` and 15 more |  |
-| `PATCH /api/documents/{id}/` | `set_permissions`, `update_document` |  |
+| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 16 more |  |
+| `PATCH /api/documents/{id}/` | `correct_document_text`, `set_permissions`, `update_document` |  |
 | `PUT /api/documents/{id}/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/ai_suggestions/` | `get_ai_suggestions` |  |
 | `GET /api/documents/{id}/download/` | `download_document`, `get_document_pages` |  |
@@ -244,9 +244,7 @@ TOML file.
 | `POST /api/documents/reprocess/` | `body:from_webui` | PLMCP-83 |
 | `POST /api/documents/rotate/` | `body:all`, `body:excluded_documents`, `body:filters`, `body:source_mode` | PLMCP-79 |
 | `POST /api/documents/rotate/` | `body:from_webui` | PLMCP-83 |
-| `GET /api/documents/{id}/` | `query:version` | PLMCP-75 |
 | `GET /api/documents/{id}/` | `query:full_perms` | PLMCP-83 |
-| `PATCH /api/documents/{id}/` | `body:content`, `query:version` | PLMCP-75 |
 | `PATCH /api/documents/{id}/` | `body:created_date`, `body:remove_inbox_tags` | PLMCP-83 |
 | `GET /api/documents/{id}/download/` | `query:follow_formatting` | PLMCP-83 |
 | `GET /api/documents/{id}/history/` | `query:page`, `query:page_size` | PLMCP-89 |

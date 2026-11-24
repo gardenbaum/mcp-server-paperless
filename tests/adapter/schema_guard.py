@@ -48,6 +48,7 @@ UNDECLARED_QUERY_PARAMETERS: Mapping[tuple[str, str], Mapping[str, str]] = {
         "more_like_id": "documented in api.md, missing from the generated parameters (PLMCP-3)",
         "all": "documented in api.md, missing from the generated parameters (PLMCP-3)",
     },
+    ("GET", "/api/documents/{id}/"): {"version": VERSION_REASON},
     ("GET", "/api/documents/{id}/download/"): {"version": VERSION_REASON},
     ("GET", "/api/documents/{id}/metadata/"): {"version": VERSION_REASON},
     ("PATCH", "/api/documents/{id}/"): {
@@ -55,6 +56,7 @@ UNDECLARED_QUERY_PARAMETERS: Mapping[tuple[str, str], Mapping[str, str]] = {
             "the update serializer honours it like the retrieve one; without it the answer "
             "carries the whole OCR text (PLMCP-16)"
         ),
+        "version": VERSION_REASON,
         "full_perms": FULL_PERMS_REASON,
     },
     ("PATCH", "/api/tags/{id}/"): {"full_perms": FULL_PERMS_REASON},

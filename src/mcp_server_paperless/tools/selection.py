@@ -26,8 +26,8 @@ ENABLE = (
     "needed, never `all`, which offers every tool) in the server's environment and "
     "restarts it. Claude Code plugin: option Toolsets, restart Claude Code. Cursor plugin: no "
     "such option, add the server by hand. stdio: env of the server in the client's "
-    "config (docker run -i: -e), restart the client. HTTP and image: environment of the process "
-    "or container, restart the process or recreate the container."
+    "config (docker run -i: -e), restart the client. HTTP and image: environment, restart the "
+    "process or recreate the container."
 )
 # What a toolset is said to be when read-only mode or disabled tools cut it down: its summary
 # would promise tools that are not there, and the instructions name no tool (the overview does).

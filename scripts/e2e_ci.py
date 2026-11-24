@@ -43,6 +43,8 @@ SHARDS = 3
 # (PLMCP-44).
 # PLMCP-74: test_pages and test_pages_files were measured on macOS (2026-11-23), not hosted; the
 # next e2e-full runs should replace them.
+# PLMCP-75: test_text_edits is an estimate (its version uploads against those of
+# test_document_versions and test_versions), not measured; the next e2e-full runs should replace it.
 MODULE_SECONDS: dict[str, float] = {
     "tests/contract/test_bulk.py": 284,
     "tests/contract/test_document_writer.py": 174,
@@ -59,6 +61,7 @@ MODULE_SECONDS: dict[str, float] = {
     "tests/contract/test_trash.py": 41,
     "tests/contract/test_notes_and_trash.py": 40,
     "tests/e2e/test_permissions.py": 40,
+    "tests/contract/test_text_edits.py": 40,
     "tests/e2e/test_pages_files.py": 218,
     "tests/e2e/test_pages.py": 42,
     "tests/e2e/test_admin.py": 39,

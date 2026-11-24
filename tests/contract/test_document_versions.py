@@ -89,7 +89,9 @@ async def test_a_new_version_is_the_newest_with_its_label_and_checksum(backend: 
     assert version != document
     # The metadata belongs to the document and stays; the file is the newest version's.
     assert (after.title, after.tags) == (before.title, before.tags)
-    assert await ports.documents.get_document_content(document) == "plmcp24 second version"
+    assert (
+        await ports.documents.get_document_content(document)
+    ).content == "plmcp24 second version"
     original = await ports.documents.get_document_file(document, "original", max_bytes=10_000)
     assert original.content == b"plmcp24 second version"
 
@@ -149,6 +151,53 @@ async def test_a_version_that_is_not_on_the_document_is_not_found(backend: Backe
             )
         with pytest.raises(NotFound):
             _ = await ports.documents.get_document_metadata(document, version_id=missing)
+
+
+READ = "DocumentReader.get_document_content"
+
+
+@pytest.mark.contract(READ)
+async def test_the_text_of_every_listed_version_is_read(backend: Backend) -> None:
+    ports, document = backend.admin, backend.new_document()
+    root = (await ports.documents.get_document_content(document)).content
+    middle = await add_version(backend, document, "plmcp75 middle version")
+    newest = await add_version(backend, document, "plmcp75 newest version")
+
+    for wanted, content in (
+        (None, "plmcp75 newest version"),
+        (newest, "plmcp75 newest version"),
+        (middle, "plmcp75 middle version"),
+        (document, root),
+    ):
+        text = await ports.documents.get_document_content(document, version_id=wanted)
+        assert (text.content, text.version_id) == (content, wanted or newest)
+        assert [v.id for v in text.versions] == [newest, middle, document]
+        assert (text.id, text.user_can_change) == (document, True)
+
+
+@pytest.mark.contract(READ)
+async def test_the_text_of_a_deleted_or_foreign_version_is_not_found(backend: Backend) -> None:
+    ports, document, other = backend.admin, backend.new_document(), backend.new_document()
+    version = await add_version(backend, document, "plmcp75 deleted version")
+    _ = await ports.document_writes.delete_version(document, version)
+
+    for missing in (version, other, MISSING):
+        with pytest.raises(NotFound) as raised:
+            _ = await ports.documents.get_document_content(document, version_id=missing)
+        assert raised.value.message == unseen_version(document, missing).message
+
+
+@pytest.mark.contract(READ)
+async def test_a_read_of_the_text_says_whether_the_user_may_change_the_document(
+    backend: Backend,
+) -> None:
+    document = backend.new_document()
+
+    viewer = backend.restricted(CHANGING, view=[document])
+    assert not (await viewer.documents.get_document_content(document)).user_can_change
+    # A second user's grants replace the first one's.
+    granted = backend.restricted(CHANGING, change=[document])
+    assert (await granted.documents.get_document_content(document)).user_can_change
 
 
 @pytest.mark.contract(UPLOAD)
@@ -279,13 +328,13 @@ async def test_deleting_versions_trashes_them_and_the_document_shows_the_newest_
     current = await ports.document_writes.delete_version(document, third)
     assert current == second
     assert [v.id for v in await versions(ports, document)] == [second, first, document]
-    assert await ports.documents.get_document_content(document) == "plmcp24 second"
+    assert (await ports.documents.get_document_content(document)).content == "plmcp24 second"
     assert backend.in_trash(third)  # not gone for good: the trash can restore it
     assert not backend.in_trash(document)
 
     current = await ports.document_writes.delete_version(document, first)  # an older one
     assert current == second
-    assert await ports.documents.get_document_content(document) == "plmcp24 second"
+    assert (await ports.documents.get_document_content(document)).content == "plmcp24 second"
 
     with pytest.raises(Validation):  # the root is deleted with the document
         _ = await ports.document_writes.delete_version(document, document)

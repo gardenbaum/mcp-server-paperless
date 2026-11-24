@@ -166,9 +166,24 @@ first: if one may not be changed, none is. Deleting taxonomy is final (it has no
 ### `versions`
 
 Off by default: `list_document_versions`, `upload_document_version`,
-`set_document_version_label`, `delete_document_version`, `merge_documents_as_versions`. Works
-with the file versions of documents. `delete_document_version` and
-`merge_documents_as_versions` need `confirm`, and a merge removes the merged documents for good.
+`set_document_version_label`, `delete_document_version`, `merge_documents_as_versions`,
+`correct_document_text`. Works with the file versions of documents and their text.
+`delete_document_version`, `merge_documents_as_versions` and `correct_document_text` need
+`confirm`, and a merge removes the merged documents for good.
+
+`correct_document_text` replaces one exact passage of the OCR text, or the whole text, of the
+newest or of a named version. The file stays as it is.
+
+- Its confirmation shows up to 300 characters of the old and of the new text, with hidden
+  characters escaped; `dry_run=true` returns a longer change in full. That text reaches your trace
+  backend if you export traces.
+- It needs the `text_state` that `get_document_content` returned, and writes nothing if the text
+  changed since. Paperless has no conditional write, so a change by somebody else in the moment of
+  writing can still be overwritten. The text is read again afterwards, and the result says so if it
+  is not the one that was sent.
+- Reprocessing a document overwrites the correction. Search finds the text of the newest version
+  only. According to the 3.5.1 source, Paperless keeps the old text only in its audit log, if that
+  is on, and runs the workflows for updated documents.
 
 ### `views`
 
