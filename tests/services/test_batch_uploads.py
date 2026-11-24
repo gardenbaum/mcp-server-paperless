@@ -1016,6 +1016,23 @@ async def test_a_file_that_changes_between_the_two_readings_is_not_sent(
         assert "No file was found" in (file.reason or "")
 
 
+async def test_a_twin_that_changes_between_the_two_readings_is_no_duplicate(root: Path) -> None:
+    setup = Setup(root)
+    _ = setup.file("a.txt", b"same")
+    for name in ("b.txt", "c.txt", "d.txt"):
+        _ = setup.file(name, b"same")
+
+    def act() -> None:
+        _ = (root / "b.txt").write_bytes(b"other")
+        (root / "c.txt").unlink()
+
+    setup.fake.on_upload[1] = act
+    batch = await setup.directory()
+
+    assert [f.status for f in batch.files] == ["uploaded", "failed", "refused", "duplicate"]
+    assert batch.files[1].reason == CHANGED
+
+
 async def test_a_file_swapped_after_the_listing_is_refused(root: Path, tmp_path: Path) -> None:
     secret = tmp_path / "secret.pdf"
     _ = secret.write_bytes(pdf("secret"))
