@@ -97,6 +97,9 @@ SCALARS: Final[Mapping[str, TaxonomyKind | None]] = {
 WORKFLOWS: Final = "Paperless runs its workflows for changed documents on each"
 MEANWHILE: Final = "A value this call touches changed after it was checked, so nothing was written."
 BY_NOW: Final = "By the time it was read again it was as asked."
+NOT_YET: Final = (
+    "Read again: it is not, or only partly (see changes), as asked, and may still become so."
+)
 UNLINKED: Final = "Links to it may be gone on the documents it linked to."
 LINK_NEEDS: Final = "A document link needs change permission on the linked document."
 AGAIN: Final = "Pass these items again once the reason is gone; what is done stays as it is."
@@ -563,8 +566,9 @@ class BulkUpdates:
             why = f"{error.message} It could not be read again: {second.message}"
             return Ended(self._row(item, "unknown", why), stopped_by(second), silent=True)
         if item.plan.patch(after, call.created).model_fields_set:
-            why = f"{error.message} Read again: it is not as asked, but may still become so."
-            return Ended(self._row(item, "unknown", why), silent=True)
+            why = f"{error.message} {NOT_YET}"
+            seen = tuple(c.value for c in self._changes(item, before, after, call.names))
+            return Ended(self._row(item, "unknown", why, changes=seen), silent=True)
         row = self._changed(item, call, before, after, patch)
         why = f"{error.message} Read again: it is as asked."
         return Ended(row.model_copy(update={"why": why}), silent=True)

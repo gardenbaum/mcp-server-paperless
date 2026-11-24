@@ -29,7 +29,7 @@ from mcp_server_paperless.domain.errors import (
     accepting,
 )
 from mcp_server_paperless.domain.selection import MAX_ANSWER
-from mcp_server_paperless.services.bulk_updates import MAX_VALUE
+from mcp_server_paperless.services.bulk_updates import MAX_VALUE, NOT_YET
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -929,13 +929,26 @@ async def test_a_lost_answer_is_looked_up_once_and_the_others_go_on(
 
     assert statuses(report) == {101: "changed", 102: "changed", 103: "unknown"}
     assert report.documents[0].why == f"{error.message} Read again: it is as asked."
-    assert report.documents[2].why == (
-        f"{error.message} Read again: it is not as asked, but may still become so."
-    )
+    assert report.documents[2].why == f"{error.message} {NOT_YET}"
+    assert report.documents[2].changes == ()
     assert [c.new for c in report.documents[0].changes] == ["New 101"]
     assert setup.fake.got == [101, 101, 102, 103, 103]
     assert setup.fake.sent == [101, 102, 103]  # never repeated
     assert report.left == (103,)
+
+
+async def test_a_change_that_was_made_only_partly_shows_what_was_seen() -> None:
+    setup = Setup()
+    setup.fake.write_fails[101] = TIMEOUT
+
+    def partly() -> None:
+        setup.document(101).title = "New 101"
+
+    setup.fake.before[101] = lambda: setup.fake.before.update({101: partly})
+    report = await setup.run(item(101, title="New 101", correspondent="e2e-acme"), named(102))
+
+    assert statuses(report) == {101: "unknown", 102: "changed"}
+    assert [(c.field, c.new) for c in report.documents[0].changes] == [("title", "New 101")]
 
 
 async def test_a_lost_answer_that_cannot_be_looked_up_stays_unknown() -> None:
@@ -1065,7 +1078,7 @@ async def test_a_call_in_which_nothing_was_changed_and_something_failed_is_an_er
     assert error.message == (
         "No document is known to be changed; 2 of 3 documents are not as asked: 1 failed, 1 "
         f"unknown. Documents not as asked: 101 (failed): {REFUSED[0].message} 102 (unknown): "
-        f"{TIMEOUT.message} Read again: it is not as asked, but may still become so."
+        f"{TIMEOUT.message} {NOT_YET}"
     )
     assert error.hint == "Read the documents again before repeating the call."
 
