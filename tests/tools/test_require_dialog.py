@@ -399,6 +399,29 @@ async def test_what_needs_no_confirmation_runs_without_a_dialog(mode: Mode) -> N
     assert "New" in {d.title for d in state.documents}
 
 
+@both_eras
+@pytest.mark.parametrize("save_as", [None, "x.pdf"])
+@pytest.mark.parametrize("tool", SAVING)
+async def test_confirm_without_a_directory_is_ignored_and_a_name_still_refused(
+    tmp_path: Path, mode: Mode, tool: str, save_as: str | None
+) -> None:
+    """Deliberate: with the setting off, confirm alone is refused here; it only reads."""
+    which: Json = {"document_id": 13} if tool == "download_document" else {"document_ids": [13]}
+    arguments = {**which, "confirm": True} | ({"save_as": save_as} if save_as else {})
+
+    result = await call(
+        server(source(world(), writes=False), tmp_path), mode, None, tool, arguments
+    )
+
+    assert files(tmp_path) == {}
+    if save_as:
+        assert result.is_error
+        assert "save_as and confirm are for saving a file." in text(result)
+    else:
+        assert not result.is_error, text(result)
+        assert [b.type for b in result.content] == ["text", "resource"]
+
+
 async def test_it_is_off_by_default() -> None:
     state = world()
 

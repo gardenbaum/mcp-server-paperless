@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T18:44:54Z'
-updated_date: '2026-11-24T08:03:24Z'
+updated_date: '2026-11-24T08:07:24Z'
 labels:
   - safety
   - config
@@ -52,9 +52,9 @@ With confirmation dialogs the assistant can still skip the dialog by passing con
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-PAPERLESS_MCP_REQUIRE_DIALOG (decision-53). The boundary drops confirm=true, so every confirmation reaches ConfirmationRequired.require and only an accepted dialog passes; every other outcome is a NotConfirmed with reason and setting. Tests red first (unknown setting). tests/quality/test_registry.py: the new boolean joins the table of formats of server.json. No snapshot, limit, gate or tool text changed. The plugin offers the option while it pins 0.3.2, which ignores it: the option and its docs say so. mode='auto'/'legacy' and HTTP/stdio variants are covered registry-wide; stateless HTTP on the wire. E2E written, run on GitHub only.
+PAPERLESS_MCP_REQUIRE_DIALOG (decision-53). The boundary drops confirm=true, so every confirmation reaches ConfirmationRequired.require and only an accepted dialog passes; every other outcome is a NotConfirmed with reason and setting. Tests red first (unknown setting). tests/quality/test_registry.py: the new boolean joins the table of formats of server.json. No snapshot, limit, gate or tool text changed. The plugin does not offer the option yet (see below). mode='auto'/'legacy' and HTTP/stdio variants are covered registry-wide; stateless HTTP on the wire. E2E written, run on GitHub only.
 
-Review fixes: the AST check reads every module (keyed by path) and allows only the caller's own confirm; exact reasons on the wire; NO_FORMS true in every case; the refusal names the way out where there was nobody to ask; tool is positional-only in confirmed(); HTTP variants of the upload tools tested (the HTTP download tools have no confirm). CORRECTION of the note above: the plugin does NOT offer the option; it pins 0.3.2, which would silently ignore it. It is added with the first pin that knows the setting, together with the README table (a test keeps them equal). server.json has it: its version is written from the tag, a test forces its list.
+Review fixes: the AST check reads every module (keyed by path) and allows only the caller's own confirm; exact reasons on the wire; NO_FORMS true in every case; the refusal names the way out where there was nobody to ask; tool is positional-only in confirmed(); HTTP variants of the upload tools tested (the HTTP download tools have no confirm). The plugin does not offer the option: it pins 0.3.2, which would silently ignore it. It is added with the first pin that knows the setting, together with the README table (a test keeps them equal). server.json has it: its version is written from the tag, a test forces its list.
 
 Full local check at a13b426: 7886 passed, diff-cover 100 %, the known macOS failure plus test_a_socket_is_not_a_file (AF_UNIX path, see report). E2E runs on GitHub.
 <!-- SECTION:NOTES:END -->
