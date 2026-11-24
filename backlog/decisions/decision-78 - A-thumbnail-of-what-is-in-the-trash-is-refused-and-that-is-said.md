@@ -20,7 +20,8 @@ Proposed; the owner decides. What is built:
 
 - One more request per thumbnail, four for the id of a live version.
 - If one of these requests fails, the thumbnail is not shown.
-- A document emptied from the trash between both requests is still called "in the trash".
+- A refusal takes, after the thumbnail: two requests for a trashed document, four for a deleted version, three for a version left alive under a trashed document.
+- A document emptied from the trash right after its thumbnail was read gets the error of one that does not exist, because `/root/` no longer knows it. Only what is emptied after that request is still called "in the trash".
 
 ## Alternatives
 
