@@ -132,17 +132,19 @@ class Proxy:
 
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         self._serving.add(cast("asyncio.Task[None]", asyncio.current_task()))
-        with contextlib.suppress(ConnectionError):
-            upstream = await asyncio.open_connection("127.0.0.1", int(PORT))
-            try:
-                async with asyncio.TaskGroup() as group:
-                    _ = group.create_task(self._forward(reader, upstream[1]))
-                    _ = group.create_task(self._answer(upstream[0], writer))
-            finally:
-                # The transports go now: what is left of them at the end of the event loop is
-                # reported in whatever test happens to run when it is collected.
-                upstream[1].transport.abort()
-                writer.transport.abort()
+        # The transports go at the end: what is left of them when the event loop closes is
+        # reported in whatever test happens to run when it is collected.
+        try:
+            with contextlib.suppress(ConnectionError):
+                upstream = await asyncio.open_connection("127.0.0.1", int(PORT))
+                try:
+                    async with asyncio.TaskGroup() as group:
+                        _ = group.create_task(self._forward(reader, upstream[1]))
+                        _ = group.create_task(self._answer(upstream[0], writer))
+                finally:
+                    upstream[1].transport.abort()
+        finally:
+            writer.transport.abort()
 
     @contextlib.asynccontextmanager
     async def listening(self) -> AsyncGenerator[Proxy]:

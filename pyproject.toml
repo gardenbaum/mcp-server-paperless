@@ -199,8 +199,8 @@ source_paths = ["src/mcp_server_paperless/services", "src/mcp_server_paperless/p
 # nothing to a mutation run.
 # The rest of the package (domain/, settings, ...) is imported by the code under mutation.
 also_copy = ["src/", "scripts/", "docs/vendor/paperless/", "docs/tools.md", "backlog/decisions/"]
-# tests/quality tests the job scripts and tests/rendering the renderer (minutes of large images):
-# neither is the code under mutation.
+# tests/quality tests the job scripts and tests/rendering the renderer (minutes of large images).
+# Of the code under mutation the renderer uses only page_ranges, which has its own tests.
 pytest_add_cli_args = ["--no-cov", "--ignore=tests/quality", "--ignore=tests/rendering"]
 pytest_add_cli_args_test_selection = ["tests"]
 

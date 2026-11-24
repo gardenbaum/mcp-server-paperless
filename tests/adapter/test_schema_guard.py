@@ -590,9 +590,18 @@ def test_a_queued_answer_without_its_task_or_with_a_wrong_one_is_refused(
 TRASH_PAGE: dict[str, object] = {"count": 0, "next": None, "previous": None, "results": []}
 
 
-@pytest.mark.parametrize("name", ["list_trash", "xǁPaperlessTrashReaderǁlist_trash__mutmut_orig"])
-def test_the_recorded_method_is_the_one_of_the_source_in_a_mutation_run_too(name: str) -> None:
-    assert method_name(name) == "list_trash"
+@pytest.mark.parametrize(
+    ("code_name", "name"),
+    [
+        ("list_trash", "list_trash"),
+        ("xǁPaperlessTrashReaderǁlist_trash__mutmut_orig", "list_trash"),
+        ("xǁPaperlessTrashReaderǁ_rows__mutmut_12", "_rows"),
+    ],
+)
+def test_the_recorded_method_is_the_one_of_the_source_in_a_mutation_run_too(
+    code_name: str, name: str
+) -> None:
+    assert method_name(code_name) == name
 
 
 @pytest.mark.anyio
