@@ -364,13 +364,20 @@ async def test_the_copy_whose_file_exists_is_the_one_to_keep(action: str) -> Non
     state = copies()
     state.missing = {(10, "original")}
     quiet = FakePaperless(state, user="admin")
-    why = "Paperless cannot find its file, and document 11 still has it"
+    writer = FakePaperless(state, user="admin", allow_writes=True)
+    why = (
+        "Paperless cannot find its original, only its archive version, and document 11 still has "
+        "that file"
+    )
 
     preview = await call(quiet, "resolve_duplicates", **arguments, dry_run=True)
     refused = await refusal(quiet, "resolve_duplicates", **arguments, confirm=True)
     state.missing.add((11, "original"))
+    if action == "merge_as_versions":
+        merge = await refusal(writer, "resolve_duplicates", **arguments, confirm=True)
+        assert "Use action trash for a duplicate whose file is missing, or leave it out." in merge
+        arguments["action"] = "trash"
     asked = await refusal(quiet, "resolve_duplicates", **arguments)
-    writer = FakePaperless(state, user="admin", allow_writes=True)
     done = await call(writer, "resolve_duplicates", **arguments, confirm=True)
 
     [blocked] = cast("list[Json]", preview["not_resolved"])
@@ -378,5 +385,4 @@ async def test_the_copy_whose_file_exists_is_the_one_to_keep(action: str) -> Non
     assert why in refused
     assert "Keep a document whose file is there instead" in refused
     for text in (asked, str(done["message"])):
-        assert "WARNING: Paperless cannot find the original" in text
-    assert "document 10" in asked
+        assert "WARNING: Paperless cannot find the original of document 10" in text

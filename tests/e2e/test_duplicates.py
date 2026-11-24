@@ -229,14 +229,24 @@ async def test_the_copy_whose_file_exists_is_the_one_to_keep(
     preview = output(await scope.call("resolve_duplicates", None, **call, dry_run=True))
     refused = await scope.call("resolve_duplicates", None, **call, confirm=True)
     assert stack.admin.get(f"/api/documents/{whole}/").status_code == 200
+    if action == "merge_as_versions":
+        unmerged = await scope.call("resolve_duplicates", None, **other, confirm=True)
+        assert unmerged.is_error
+        assert "a version of it would hold a missing file" in text(unmerged)
+        assert await versions(scope, whole) == [whole]
+        other["action"] = "trash"
     done = output(await scope.call("resolve_duplicates", None, **other, confirm=True))
 
-    why = f"Paperless cannot find its file, and document {whole} still has it"
-    assert [d["why"] for d in cast("list[Json]", preview["not_resolved"])] == [why]
+    [blocked] = cast("list[Json]", preview["not_resolved"])
     assert refused.is_error
-    assert why in text(refused)
+    for why in (str(blocked["why"]), text(refused)):
+        assert "Paperless cannot find its original" in why
+        assert f"document {whole} still has that file" in why
     assert [d["id"] for d in cast("list[Json]", done["resolved"])] == [lost]
     assert "WARNING" not in str(done["message"])
+    assert in_trash(stack, lost)
+    kept = stack.admin.get(f"/api/documents/{whole}/download/", params={"original": "true"})
+    assert kept.raise_for_status().content == content
 
 
 @pytest.mark.decision("decision-63")

@@ -299,6 +299,24 @@ async def test_a_merge_into_a_document_without_its_file_says_so() -> None:
     assert done["versions"] is not None
 
 
+@pytest.mark.decision("decision-63")
+async def test_a_merge_of_a_source_without_its_file_warns_before_and_after() -> None:
+    state = seeded()
+    with_documents(state, 10)
+    state.missing = {(10, "original")}
+    arguments = {"root_document_id": 1, "source_document_ids": [10]}
+
+    asked = await refusal(fake(state, writes=False), "merge_documents_as_versions", **arguments)
+    done = await call(fake(state), "merge_documents_as_versions", **arguments, confirm=True)
+
+    warning = (
+        "WARNING: document 10 becomes the newest version of document 1, which then shows a missing"
+    )
+    assert warning in asked
+    assert warning in str(done["message"])
+    assert "its file stays" not in asked
+
+
 async def test_a_merge_label_is_passed_on_for_one_document() -> None:
     state = seeded()
     with_documents(state, 10)

@@ -185,6 +185,33 @@ async def test_a_merge_into_a_document_without_its_file_says_so(stack: Stack, sc
     assert warning in asked
     assert warning in str(merged["message"])
     assert [v["id"] for v in cast("list[Json]", merged["versions"])] == [source, root]
+    # The document has a file again.
+    shown = stack.admin.get(f"/api/documents/{root}/download/", params={"original": "true"})
+    assert shown.raise_for_status().content
+
+
+@pytest.mark.decision("decision-63")
+async def test_a_merge_of_a_source_without_its_file_warns_that_it_then_shows(
+    stack: Stack, scope: Scope
+) -> None:
+    root, source = scope.document(), scope.document()
+    lose_file(stack.admin, source, "original")
+    arguments = {"root_document_id": root, "source_document_ids": [source]}
+
+    asked = await refused(stack, "merge_documents_as_versions", **arguments)
+    merged = await run(stack, "merge_documents_as_versions", **arguments, confirm=True)
+
+    warning = f"WARNING: document {source} becomes the newest version of document {root}"
+    assert warning in asked
+    assert warning in str(merged["message"])
+    shown = stack.admin.get(f"/api/documents/{root}/download/", params={"original": "true"})
+    assert shown.status_code == 404
+    deleted = await run(
+        stack, "delete_document_version", document_id=root, version_id=source, confirm=True
+    )
+    assert deleted["current_version_id"] == root
+    back = stack.admin.get(f"/api/documents/{root}/download/", params={"original": "true"})
+    assert back.raise_for_status().content
 
 
 async def test_a_read_only_user_may_list_but_not_change_versions(

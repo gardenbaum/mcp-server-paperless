@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:50:41Z'
-updated_date: '2026-11-24T10:20:04Z'
+updated_date: '2026-11-24T10:28:33Z'
 labels:
   - safety
 dependencies: []
@@ -51,4 +51,6 @@ The reading part of require_files became read_facts (5 at once, 30 s; behaviour 
 Requests: one metadata read more per trash (two with several versions); all documents of a merge, or of a trash whose kept document lacks a file. The latter checks twice, at most 60 s.
 Changed deliberately: surface snapshot (description of resolve_duplicates and merge_documents_as_versions say it, description of VersionsMerged.message: also set when a file is missing); docs/api-coverage.md regenerated (two more tools read metadata/). No limit, gate, budget or contract raised or weakened, no accepted decision edited. decision-62, which the CLI gave first, was deleted again: numbers start at 63 here.
 Evidence: targeted modules, basedpyright, ruff, import contracts, diff-cover 100 %, 12 hand mutants (2 survivors got tests, all killed). The tests of the services were written together with the code and not run red before it; that they fail without it is shown by the mutants only. just check, the live contract tests and the E2E tests have not run (hosted only).
+
+Review of d4242c4 (0 critical, 2 important, 7 minor). I1: the kept document is read once, the duplicates get what is left of the 30 s (M6: so never above 30 s). I2 (controller's ruling): resolve_duplicates does not merge a duplicate known to lack its original; merge_documents_as_versions warns when the last source lacks a file and no longer promises that its file stays; the E2E test that asserted the merge of a lost copy is corrected and downloads the kept file. M1: texts name the original, the archive version that is there, and archive-only copies. M2: refusals carry the notes. M3: versions with the checksum of the root are read too. M4: files are compared by checksum across documents, also archive versions: a kept document whose matching archive version is lost is refused (it was only named). M5: a later version of the same file counts although the root cannot be read. These replace the statements above on a second check of 60 s and on archive versions. M7: DoD 1 stays unticked: the first service, tool and fake contract tests were written with or after the code. The service tests of these fixes were seen red (19 failed) before the code; the tool and E2E tests were not. Surface snapshot: the description of resolve_duplicates names the refused merge. Nothing else of limits or gates changes.
 <!-- SECTION:NOTES:END -->

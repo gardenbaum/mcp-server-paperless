@@ -4,6 +4,7 @@ Fakes without `allow_writes` fail the test on any write, so a passing test prove
 """
 
 import asyncio
+import time
 from typing import TYPE_CHECKING, Literal, final, override
 
 import pytest
@@ -20,7 +21,7 @@ from mcp_server_paperless.domain.errors import (
 from mcp_server_paperless.domain.versions import VersionUpload
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.duplicate_resolution import DuplicateResolver
-from mcp_server_paperless.services.file_checks import check_files
+from mcp_server_paperless.services.file_checks import check_files, check_for_trash
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.versions import VersionService
 
@@ -51,6 +52,9 @@ class Flaky(FakePaperless):
 
     broken: frozenset[int] = frozenset()  # documents and versions
     slow: bool = False
+    delay: float = 0
+    once: frozenset[int] = frozenset()  # readable only the first time
+    unreadable_version: int | None = None
     reads: tuple[int, ...] = ()
     unfollowed: bool = False
     failing: bool = False
@@ -63,6 +67,10 @@ class Flaky(FakePaperless):
         self.reads += (document_id,)
         if self.slow:
             await asyncio.sleep(60)
+        await asyncio.sleep(self.delay)
+        again = document_id in self.once and self.reads.count(document_id) > 1
+        if again or (document_id, version_id) == (self.unreadable_version, self.unreadable_version):
+            raise UpstreamTimeout(TIMEOUT)
         if not self.broken.isdisjoint({document_id, version_id}):
             raise UpstreamTimeout(TIMEOUT)
         return await super().get_document_metadata(document_id, version_id=version_id)
@@ -147,17 +155,22 @@ async def test_a_kept_document_without_its_file_is_refused_while_a_copy_has_it(
     action: ResolveAction, *, confirm: bool
 ) -> None:
     setup = Setup()
-    setup.lose(10, 11)
+    setup.lose(10)
+    if action == "trash":
+        setup.lose(11)
+    ids = [11, 12] if action == "trash" else [12]
 
-    preview = await setup.preview(action)
+    preview = await setup.preview(action, ids)
     with pytest.raises(Validation) as refused:
-        _ = await setup.duplicates.resolve(10, [11, 12], action, confirm=confirm)
+        _ = await setup.duplicates.resolve(10, ids, action, confirm=confirm)
 
-    why = "Paperless cannot find its file, and document 12 still has it"
+    why = "Paperless cannot find its original, and document 12 still has that file"
     assert [(d.id, d.why) for d in preview.not_resolved] == [(10, why)]
     assert preview.resolved == ()
     assert "It would be refused as a whole: document 10 'Document 10': " + why in preview.message
-    assert refused.value.message == f"Nothing was changed: document 10 'Document 10': {why}."
+    assert refused.value.message.startswith(
+        f"Nothing was changed: document 10 'Document 10': {why}. {LOST_WARNING}."
+    )
     assert refused.value.hint == (
         "Keep a document whose file is there instead, or restore the missing file from a backup."
     )
@@ -170,11 +183,13 @@ async def test_every_copy_that_still_has_the_file_is_named() -> None:
     preview = await setup.preview("trash")
 
     [kept] = preview.not_resolved
-    assert kept.why == "Paperless cannot find its file, and documents 11 and 12 still have it"
+    assert kept.why == (
+        "Paperless cannot find its original, and documents 11 and 12 still have that file"
+    )
 
 
-@pytest.mark.parametrize("action", ACTIONS)
-async def test_a_file_that_no_copy_has_either_is_named_everywhere(action: ResolveAction) -> None:
+async def test_a_file_that_no_copy_has_either_is_named_everywhere() -> None:
+    action: ResolveAction = "trash"
     setup = Setup(writes=True)
     setup.lose(10, 11, 12)
 
@@ -194,7 +209,7 @@ async def test_a_repeated_check_refuses_what_changed_after_the_confirmation() ->
     asked = await setup.ask("trash")
     setup.lose(10)
 
-    with accepting(asked.fingerprint), pytest.raises(Validation, match="cannot find its file"):
+    with accepting(asked.fingerprint), pytest.raises(Validation, match="cannot find its original"):
         _ = await setup.duplicates.resolve(10, [11, 12], "trash")
 
     assert {11, 12} <= {d.id for d in setup.state.documents}
@@ -234,12 +249,15 @@ async def test_a_copy_with_only_an_archive_version_still_has_more_than_nothing()
         setup.get(number).archive = b"an archive"
     setup.lose(10, 11)
     asked = await setup.ask("trash", [11])
+    both = "Paperless cannot find its original or its archive version"
     setup.lose(10, part="archive")
 
     preview = await setup.preview("trash", [11])
 
     assert f"{LOST_WARNING}." in asked.message
-    assert [d.id for d in preview.not_resolved] == [10]
+    assert [(d.id, d.why) for d in preview.not_resolved] == [
+        (10, f"{both}, and document 11 still has an archive version")
+    ]
     assert (
         "WARNING: Paperless cannot find the original and the archive version of document 10."
         in preview.message
@@ -349,25 +367,156 @@ async def test_a_merge_that_cannot_be_checked_is_refused(unchecked: int) -> None
     )
 
 
-async def test_a_merged_copy_without_its_file_is_named() -> None:
+@pytest.mark.parametrize("confirm", [False, True])
+async def test_a_duplicate_without_its_file_is_not_merged(*, confirm: bool) -> None:
     setup = Setup()
     setup.lose(11)
 
+    preview = await setup.preview("merge_as_versions")
+    with pytest.raises(Validation) as refused:
+        _ = await setup.duplicates.resolve(10, [11, 12], "merge_as_versions", confirm=confirm)
+
+    why = "Paperless cannot find its original, so a version of it would hold a missing file"
+    assert [(d.id, d.why) for d in preview.not_resolved] == [(11, why)]
+    assert f"document 11 'Document 11': {why}." in refused.value.message
+    assert "Paperless cannot find the original of document 11." in refused.value.message
+    assert refused.value.hint == (
+        "Use action trash for a duplicate whose file is missing, or leave it out."
+    )
+
+
+async def test_a_duplicate_that_only_lacks_its_archive_version_is_merged_and_named() -> None:
+    setup = Setup()
+    setup.get(11).archive = b"an archive"
+    setup.lose(11, part="archive")
+
     message = (await setup.ask("merge_as_versions")).message
 
-    assert "Paperless cannot find the original of document 11." in message
-    assert "original of document 10" not in message
+    assert "Paperless cannot find the archive version of document 11." in message
+
+
+async def test_the_kept_document_stays_lost_after_the_second_read_fails() -> None:
+    setup = Setup(writes=True)
+    setup.lose(10)
+    setup.fake.once = frozenset({10})
+
+    with pytest.raises(Validation, match="still have that file"):
+        _ = await setup.done("trash")
+
+    assert setup.fake.reads == (10, 11, 12)
+    assert {11, 12} <= {d.id for d in setup.state.documents}
+
+
+async def test_the_kept_document_and_the_copies_share_one_time_limit() -> None:
+    setup = Setup()
+    setup.lose(10)
+    setup.fake.delay = 0.15
+    keep, copy = [await setup.fake.get_document(n) for n in (10, 11)]
+
+    started = time.monotonic()
+    found = await check_for_trash(setup.fake, keep, [copy], seconds=0.2)
+
+    assert time.monotonic() - started < 0.28
+    assert found.lost(10)
+    assert set(found.unchecked) == {11}
+
+
+async def test_a_middle_version_of_the_same_file_is_that_file() -> None:
+    setup = Setup()
+    _ = await setup.version(10, FILE)
+    newest = await setup.version(10)
+    setup.lose(10, newest)
+
+    message = (await setup.ask("trash")).message
+
+    assert f"{LOST_WARNING} (version 10)." in message
+    assert f"{LOST_WARNING} (version {newest})." in message
+
+
+async def test_a_copy_whose_root_cannot_be_read_has_the_file_as_a_later_version() -> None:
+    setup = Setup()
+    _ = await setup.version(11, FILE)
+    setup.lose(10)
+    setup.fake.unreadable_version = 11
+
+    [kept] = (await setup.preview("trash", [11])).not_resolved
+
+    assert kept.why == "Paperless cannot find its original, and document 11 still has that file"
+
+
+async def test_the_only_file_that_matched_is_not_trashed_if_the_kept_archive_version_is_lost() -> (
+    None
+):
+    setup = Setup()
+    setup.get(10).archive = b"matched"
+    copy = FakeDocument(id=13, title="Document 13", original=b"matched", archive=None, owner=2)
+    setup.state.documents.append(copy)
+    setup.lose(10, part="archive")
+
+    [kept] = (await setup.preview("trash", [13])).not_resolved
+
+    assert kept.why == (
+        "Paperless cannot find its archive version, the file that matched, and document 13 still "
+        "has that file"
+    )
+
+
+async def test_a_merge_of_whole_documents_that_matched_by_an_archive_version_is_asked_for() -> None:
+    setup = Setup()
+    setup.get(10).archive = b"matched"
+    copy = FakeDocument(id=13, title="Document 13", original=b"matched", archive=None, owner=2)
+    setup.state.documents.append(copy)
+
+    assert "cannot find" not in (await setup.ask("merge_as_versions", [13])).message
+
+
+async def test_a_whole_document_without_a_known_checksum_has_its_file() -> None:
+    setup = Setup()
+    keep = setup.get(10)
+    keep.versions = [keep.versions[0].model_copy(update={"checksum": None})]
+
+    assert "cannot find" not in (await setup.ask("merge_as_versions")).message
+
+
+async def test_a_copy_that_has_the_lost_original_as_its_archive_version_still_has_it() -> None:
+    setup = Setup()
+    copy = FakeDocument(id=13, title="Document 13", original=b"other", archive=FILE, owner=2)
+    setup.state.documents.append(copy)
+    setup.lose(10, 13)
+
+    [kept] = (await setup.preview("trash", [13])).not_resolved
+    setup.lose(13, part="archive")
+    asked = await setup.ask("trash", [13])
+
+    assert kept.why == "Paperless cannot find its original, and document 13 still has that file"
+    assert "the original and the archive version of document 13." in asked.message
+
+
+async def test_a_copy_that_matched_by_its_archive_version_has_an_original_of_its_own() -> None:
+    setup = Setup()
+    setup.get(10).archive = b"matched"
+    copy = FakeDocument(id=13, title="Document 13", original=b"other", archive=b"matched", owner=2)
+    setup.state.documents.append(copy)
+    setup.lose(10)
+
+    [kept] = (await setup.preview("trash", [13])).not_resolved
+
+    assert kept.why == (
+        "Paperless cannot find its original, only its archive version, and document 13 still has "
+        "an original"
+    )
 
 
 async def test_a_failed_change_names_the_missing_file_too() -> None:
     setup = Setup()
-    setup.lose(10, 11, 12)
+    setup.get(10).archive = b"an archive"
+    setup.lose(10, part="archive")
     setup.fake.failing = True
 
     with pytest.raises(PaperlessMcpError) as raised:
         _ = await setup.done("merge_as_versions")
 
-    assert LOST_WARNING in raised.value.message
+    assert "WARNING: Paperless cannot find the archive version" in raised.value.message
 
 
 async def test_everything_that_blocks_is_named_with_what_helps() -> None:
@@ -379,7 +528,10 @@ async def test_everything_that_blocks_is_named_with_what_helps() -> None:
         _ = await setup.done("merge_as_versions")
 
     assert "it has 2 versions" in raised.value.message
-    assert "cannot find its file" in raised.value.message
+    assert (
+        "cannot find its original, and documents 11 and 12 still have that file"
+        in raised.value.message
+    )
     assert "Use action trash" in (raised.value.hint or "")
     assert "Keep a document whose file is there" in (raised.value.hint or "")
 
@@ -399,8 +551,31 @@ async def test_a_merge_names_a_missing_file_in_the_confirmation_and_the_result(l
     assert named in asked.message
     assert done.message is not None
     assert named in done.message
-    assert ("WARNING" in asked.message) is (lost == 10)
+    top = (
+        "WARNING: document 11 becomes the newest version of document 10, which then shows a "
+        "missing original until that version is deleted."
+    )
+    stays = "only its file stays, as a version of document 10"
+    for message in (asked.message, done.message):
+        assert (top in message) is (lost == 11)
+    assert (stays in asked.message) is (lost == 10)
+    assert ("then shows the file and text of document 11" in asked.message) is (lost == 10)
     assert done.versions is not None
+
+
+async def test_a_merge_warns_of_the_last_source_only_and_promises_no_lost_file() -> None:
+    setup = Setup()
+    setup.lose(11)
+
+    first = (await setup.ask_merge([11, 12])).message
+    last = (await setup.ask_merge([12, 11])).message
+
+    for message in (first, last):
+        assert "only those of their files that Paperless can find stay, as versions" in message
+    assert "becomes the newest version" not in first
+    assert "then shows the file and text of document 12" in first
+    assert "WARNING: document 11 becomes the newest version of document 10" in last
+    assert "then shows the text of document 11" in last
 
 
 async def test_a_merge_with_all_files_says_nothing_about_them() -> None:

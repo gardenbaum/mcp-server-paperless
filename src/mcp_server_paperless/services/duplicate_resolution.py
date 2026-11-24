@@ -30,12 +30,11 @@ from mcp_server_paperless.domain.errors import (
     Validation,
     quoted,
 )
-from mcp_server_paperless.domain.files import joined
 from mcp_server_paperless.services.bulk_documents import DRY_RUN, TO_GO_AHEAD
 from mcp_server_paperless.services.document_edits import COUNTED
 from mcp_server_paperless.services.documents import document_link, match_of, root_checksum
 from mcp_server_paperless.services.duplicates import SHOWN, describe
-from mcp_server_paperless.services.file_checks import check_files
+from mcp_server_paperless.services.file_checks import check_files, check_for_trash
 from mcp_server_paperless.services.versions import bound, merge_effect
 
 if TYPE_CHECKING:
@@ -54,7 +53,10 @@ UNSEEN: Final = "it does not exist outside the trash as a document this user may
 MAY_NOT: Final = "this user may not change it"
 HAS_VERSIONS: Final = "it has {count} versions, so it cannot be merged"
 STILL_THERE: Final = "it was still there when read again"
-NO_FILE: Final = "Paperless cannot find its file, and {others} still {have} it"
+NOT_MERGED: Final = (
+    "Paperless cannot find its original, so a version of it would hold a missing file"
+)
+NOT_MERGED_HINT: Final = "Use action trash for a duplicate whose file is missing, or leave it out."
 UNCHECKED: Final = "whether Paperless can find its file could not be checked (the reason: {reason})"
 NOT_READ: Final = "what became of it could not be read"
 REPORTED: Final = (
@@ -168,8 +170,8 @@ class DuplicateResolver:
             ConfirmationRequired: ``confirm`` is false. Nothing was changed.
             Validation: The selection is empty, too large or repeated, a document is no duplicate
                 of the kept one outside the trash, it cannot be merged, its file cannot be checked
-                before a merge, or Paperless cannot find the file of the kept one while a duplicate
-                has it. Nothing was changed.
+                before a merge or is missing, or Paperless cannot find the file of the kept one
+                while a duplicate has it. Nothing was changed.
             NotFound: The kept document does not exist, or the user may not see it.
             PermissionDenied: The user may not change the documents. Nothing was changed.
             PaperlessMcpError: The change failed; the message names what was seen afterwards.
@@ -181,7 +183,8 @@ class DuplicateResolver:
         if dry_run:
             return self._preview(group, action, effect, blocked)
         if blocked:
-            message = f"Nothing was changed: {_listed(blocked)}."
+            refusal = f"Nothing was changed: {_listed(blocked)}."
+            message = " ".join([refusal, *_sentences(group.notes)])
             if any(b.why == MAY_NOT for b in blocked):
                 raise PermissionDenied(message, hint=OWNERS[action])
             raise Validation(message, hint=hint)
@@ -260,11 +263,8 @@ class DuplicateResolver:
     async def _files(
         self, keep: DocumentRecord, duplicates: Sequence[DocumentRecord], action: ResolveAction
     ) -> FileCheck:
-        """Before the trash the duplicates matter only if the kept document lacks a file."""
         if action == "trash":
-            kept = await check_files(self._reader, [keep])
-            if not kept.lost(keep.id):
-                return kept
+            return await check_for_trash(self._reader, keep, duplicates)
         return await check_files(self._reader, [keep, *duplicates])
 
     async def _after(self, group: _Group, action: ResolveAction) -> _After:
@@ -420,7 +420,7 @@ def _blocked(group: _Group, action: ResolveAction) -> tuple[tuple[UnresolvedDupl
     That is what Paperless would refuse, as far as it can be seen, and what would cost a file.
     """
     merging, keep, files = action == "merge_as_versions", group.keep, group.files
-    better = files.outdone_by(keep.id, [d.id for d in group.duplicates])
+    outdone = files.outdone(keep.id, [d.id for d in group.duplicates])
 
     def why(document: DocumentRecord) -> tuple[str, str] | None:
         # Trashing the duplicates does not touch the kept document.
@@ -431,9 +431,10 @@ def _blocked(group: _Group, action: ResolveAction) -> tuple[tuple[UnresolvedDupl
         if merging and document.id in files.unchecked:
             reason = files.unchecked[document.id].removesuffix(".")
             return UNCHECKED.format(reason=reason), UNCHECKED_HINT
-        if better and document is keep:
-            have = "has" if len(better) == 1 else "have"
-            return NO_FILE.format(others=joined(better), have=have), NO_FILE_HINT
+        if outdone and document is keep:
+            return outdone, NO_FILE_HINT
+        if merging and document is not keep and files.lacks_original(document.id):
+            return NOT_MERGED, NOT_MERGED_HINT
         return None
 
     found = [(d, reason) for d in (keep, *group.duplicates) if (reason := why(d))]
