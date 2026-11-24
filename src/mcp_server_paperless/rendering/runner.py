@@ -12,15 +12,21 @@ import os
 import sys
 from typing import TYPE_CHECKING, Final, cast
 
-from mcp_server_paperless.domain.rendering import RenderFailed
+from mcp_server_paperless.domain.rendering import OverviewRequest, RenderFailed
 from mcp_server_paperless.rendering.limits import MEMORY_EXIT, TIME_EXIT
-from mcp_server_paperless.rendering.wire import Job, answer_of, encoded
+from mcp_server_paperless.rendering.wire import Job, answer_of, encoded, overview_of, started_page
 
 if TYPE_CHECKING:
     from asyncio import StreamReader, StreamWriter
     from collections.abc import Mapping, Sequence
 
-    from mcp_server_paperless.domain.rendering import Reason, Rendered, RenderRequest
+    from mcp_server_paperless.domain.rendering import (
+        Overview,
+        Reason,
+        Rendered,
+        RenderRequest,
+        SlowPage,
+    )
 
 COMMAND: Final = (sys.executable, "-I", "-m", "mcp_server_paperless.rendering.worker")
 # The worst ordinary file measured took 2.4 s.
@@ -55,13 +61,19 @@ async def _feed(stdin: StreamWriter, head: bytes, content: bytes) -> None:
         stdin.close()
 
 
-async def _output(stdout: StreamReader, limit: int) -> bytes:
-    """Everything the child writes, at most ``limit`` bytes."""
-    try:
-        _ = await stdout.readexactly(limit + 1)
-    except asyncio.IncompleteReadError as end:
-        return end.partial
-    raise RenderFailed(reason="crashed")
+async def _collect(stdout: StreamReader, limit: int, output: bytearray) -> None:
+    """Everything the child writes into ``output``, at most ``limit`` bytes."""
+    while chunk := await stdout.read(_CHUNK):
+        output += chunk
+        if len(output) > limit:
+            raise RenderFailed(reason="crashed")
+
+
+def _slow(output: bytearray, request: RenderRequest | OverviewRequest) -> SlowPage | None:
+    """The page a child was at, if its job is one that says so."""
+    if isinstance(request, OverviewRequest):
+        return started_page(bytes(output), request)
+    return None
 
 
 class ChildRenderer:
@@ -83,6 +95,14 @@ class ChildRenderer:
 
     async def render(self, content: bytes, request: RenderRequest) -> Rendered:
         """See ``PageRenderer.render``."""
+        return answer_of(await self._answered(content, request), request)
+
+    async def inspect(self, content: bytes, request: OverviewRequest) -> Overview:
+        """See ``PageRenderer.inspect``."""
+        return overview_of(await self._answered(content, request), request)
+
+    async def _answered(self, content: bytes, request: RenderRequest | OverviewRequest) -> bytes:
+        """What the child writes for a job."""
         head = Job(
             request=request,
             content_bytes=len(content),
@@ -107,13 +127,14 @@ class ChildRenderer:
         process = asyncio.subprocess.Process(transport, protocol, loop)
         # Both are pipes, as asked for.
         stdin, stdout = cast("StreamWriter", process.stdin), cast("StreamReader", process.stdout)
+        output = bytearray()
         feed = asyncio.create_task(_feed(stdin, encoded(head), content))
         try:
             async with asyncio.timeout(self._seconds):
-                output = await _output(stdout, self._output_bytes)
+                await _collect(stdout, self._output_bytes, output)
                 code = await process.wait()
         except TimeoutError as error:
-            raise RenderFailed(reason="timeout") from error
+            raise RenderFailed(reason="timeout", slow=_slow(output, request)) from error
         finally:
             _ = feed.cancel()
             try:
@@ -127,5 +148,6 @@ class ChildRenderer:
                 # holds the other end: a full or an inherited pipe would stay open.
                 transport.close()
         if code:
-            raise RenderFailed(reason=_EXITS.get(code, "crashed"))
-        return answer_of(output, request)
+            reason: Reason = _EXITS.get(code, "crashed")
+            raise RenderFailed(reason=reason, slow=_slow(output, request))
+        return bytes(output)

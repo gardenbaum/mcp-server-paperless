@@ -1,4 +1,4 @@
-"""What the live tests of get_document_pages share."""
+"""What the live tests of get_document_pages and inspect_pdf share."""
 
 import asyncio
 import base64
@@ -62,7 +62,7 @@ def unique(content: bytes) -> bytes:
 def server(stack: Stack, token: str | None = None) -> FastMCP:
     return create_server(
         paperless_settings(stack.base_url, token or stack.admin_token),
-        server_settings(toolsets=["core", "versions"]),
+        server_settings(toolsets=["core", "versions", "pdf"]),
     )
 
 
@@ -80,15 +80,19 @@ def images(result: CallToolResult) -> list[Image.Image]:
     ]
 
 
-async def show(stack: Stack, document: int, **arguments: object) -> CallToolResult:
+async def show(
+    stack: Stack, document: int, tool: str = "get_document_pages", **arguments: object
+) -> CallToolResult:
     async with Client(server(stack)) as client:
-        return await client.call_tool("get_document_pages", {"document_id": document, **arguments})
+        return await client.call_tool(tool, {"document_id": document, **arguments})
 
 
-async def refused(stack: Stack, document: int, **arguments: object) -> str:
+async def refused(
+    stack: Stack, document: int, tool: str = "get_document_pages", **arguments: object
+) -> str:
     async with Client(server(stack)) as client:
         result = await client.call_tool(
-            "get_document_pages", {"document_id": document, **arguments}, raise_on_error=False
+            tool, {"document_id": document, **arguments}, raise_on_error=False
         )
     assert result.is_error
     return str(result.content)

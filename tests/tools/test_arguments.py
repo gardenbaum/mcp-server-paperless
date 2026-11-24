@@ -1073,6 +1073,12 @@ async def test_the_pdf_tools_take_every_option() -> None:
     # A preview sends nothing, so every case runs for real.
     one = {"document_id": 1, "version_id": 1, "wait_seconds": 0, "dry_run": False}
     await sweep(
+        "inspect_pdf",
+        {"document_id": 1, "pages": "1", "version_id": 1},
+        ("overview", "source"),
+        prepare=with_real_files,
+    )
+    await sweep(
         "rotate_documents",
         {"document_ids": [1], "degrees": 90, "wait_seconds": 0, "dry_run": False},
         ("degrees", "use_original_files"),

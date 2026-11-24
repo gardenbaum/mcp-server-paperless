@@ -12,12 +12,12 @@ from harness import admin, serve
 from mcp.types import ImageContent, TextContent
 from rendering.files import ENCRYPTED_PDF, QUADRANTS, corners, opened, pdf_of
 
-from mcp_server_paperless.domain.rendering import PageImage, Rendered
+from mcp_server_paperless.domain.rendering import Overview, PageImage, Rendered
 
 if TYPE_CHECKING:
     from mcp.types import ContentBlock
 
-    from mcp_server_paperless.domain.rendering import PageRenderer, RenderRequest
+    from mcp_server_paperless.domain.rendering import OverviewRequest, PageRenderer, RenderRequest
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-42")]
 
@@ -38,6 +38,9 @@ class Renderer:
             PageImage(page=page, width=300, height=400, data=content[:4]) for page in (3, 5)
         )
         return Rendered(page_count=12, images=images, rest=(6, 7))
+
+    async def inspect(self, content: bytes, request: OverviewRequest) -> Overview:
+        raise AssertionError((content, request))
 
 
 def fake(original: bytes, mime_type: str = "application/pdf") -> FakePaperless:
