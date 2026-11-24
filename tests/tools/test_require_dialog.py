@@ -4,9 +4,9 @@ Off (the default) is what `test_confirmation.py` tests. Declining cases use a fa
 writes, so a write fails the test.
 """
 
+import ast
 import copy
 import logging
-import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -18,6 +18,7 @@ from fastmcp.exceptions import ToolError
 from harness import serve
 
 from mcp_server_paperless.domain.errors import CONFIRM_HINT
+from mcp_server_paperless.tools._shared import boundary
 from mcp_server_paperless.tools.confirmation import MAX_DIALOGS, Dialogs
 
 if TYPE_CHECKING:
@@ -35,14 +36,19 @@ REQUIRED = (
     f"the operator requires the user's answer in a dialog ({SETTING}=true) and confirm=true does "
     "not replace it"
 )
-NO_FORMS = "this client does not say that it can show dialogs (MCP form elicitation)"
+NO_FORMS = (
+    "the user cannot be asked on this connection, or the client does not declare form elicitation "
+    "(MCP dialogs)"
+)
+WAY_OUT = "a client that shows dialogs can confirm, or the operator can switch that off"
 # Tools whose confirm exists only over stdio with download directories.
 SAVING = ("bulk_download", "download_document")
 TOOLS = sorted([*CALLS, *SAVING])
 
 
 def refusal(reason: str) -> str:
-    return f"Nothing was changed: {reason}; {REQUIRED}. Hint: {NOT_AGAIN}"
+    way_out = f"; {WAY_OUT}" if reason == NO_FORMS else ""
+    return f"Nothing was changed: {reason}; {REQUIRED}{way_out}. Hint: {NOT_AGAIN}"
 
 
 def server(
@@ -131,12 +137,123 @@ def test_self_test_a_confirmation_elsewhere_in_a_schema_is_found() -> None:
     assert confirmations(nested) == {("edit", "anyOf", "Confirmed"), ("$defs", "X", "confirm")}
 
 
+def own_consents(source: str) -> list[int]:
+    """The lines where code does anything with a `confirm` but pass the caller's on.
+
+    The name may be a keyword-only parameter or a field, False by default; a `confirm=` argument
+    may only be that name; and it is neither assigned nor spelled as a string.
+    """
+    found: set[int] = set()
+    declared: set[ast.expr] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.AnnAssign) and not no_default(node.value):
+            declared.add(node.target)
+        if isinstance(node, ast.arguments):
+            found |= {a.lineno for a in [*node.posonlyargs, *node.args] if a.arg == "confirm"}
+            found |= {
+                a.lineno
+                for a, default in zip(node.kwonlyargs, node.kw_defaults, strict=True)
+                if a.arg == "confirm" and no_default(default)
+            }
+        if isinstance(node, ast.keyword) and node.arg == "confirm":
+            passed = isinstance(node.value, ast.Name) and node.value.id == "confirm"
+            found |= set() if passed else {node.value.lineno}
+        if isinstance(node, ast.Constant) and node.value == "confirm":
+            found.add(node.lineno)
+        name = node.id if isinstance(node, ast.Name) else getattr(node, "attr", None)
+        if (
+            name == "confirm"
+            and isinstance(node, ast.Name | ast.Attribute)
+            and isinstance(node.ctx, ast.Store)
+            and node not in declared
+        ):
+            found.add(node.lineno)
+    return sorted(found)
+
+
+def no_default(default: ast.expr | None) -> bool:
+    """Whether a default is anything but none at all or False."""
+    return default is not None and not (
+        isinstance(default, ast.Constant) and default.value is False
+    )
+
+
 def test_no_tool_or_service_confirms_for_the_caller() -> None:
-    sources = Path(__file__).parents[2] / "src" / "mcp_server_paperless"
+    package = Path(__file__).parents[2] / "src" / "mcp_server_paperless"
+    paths = sorted(package.rglob("*.py"))
 
-    texts = {p.name: p.read_text(encoding="utf-8") for p in sources.rglob("*.py")}
+    found = {
+        str(path.relative_to(package)): own_consents(path.read_text(encoding="utf-8"))
+        for path in paths
+    }
 
-    assert [name for name, code in texts.items() if re.search(r"confirm=True\b", code)] == []
+    assert len(found) == len(paths) > 100
+    boundary = found.pop(str(Path("tools", "confirmation.py")))
+    assert len(boundary) == 1  # the name of the parameter it takes away
+    assert {path: lines for path, lines in found.items() if lines} == {}
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "run(confirm=True)",
+        "run(confirm=not dry_run)",
+        "run(confirm=edit.confirm)",
+        "dict(confirm=True)",
+        'run(**{"confirm": True})',
+        'kwargs["confirm"] = True',
+        'put(edit, "confirm", True)',
+        "confirm = True",
+        "edit.confirm = True",
+        "run((confirm := True))",
+        "def run(confirm): ...",
+        "def run(confirm, /): ...",
+        "def run(*, confirm=True): ...",
+        "confirm: bool = True",
+    ],
+)
+def test_self_test_code_that_confirms_for_the_caller_is_found(line: str) -> None:
+    assert own_consents(line) == [1]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "run(confirm=confirm)",
+        "def run(*, confirm: bool = False): ...",
+        "def run(*, confirm): ...",
+        "confirm: bool = False",
+        "if not edit.confirm: pass",
+    ],
+)
+def test_self_test_code_that_passes_the_callers_confirm_on_is_not(line: str) -> None:
+    assert own_consents(line) == []
+
+
+# The HTTP variants of the download tools have no confirm (test_downloads.py): nothing is saved.
+@both_eras
+@pytest.mark.parametrize("tool", ["upload_document", "upload_document_version"])
+async def test_the_http_variants_of_the_upload_tools_need_the_dialog(mode: Mode, tool: str) -> None:
+    arguments: Json = {**CALLS[tool], "confirm": True}
+
+    no = await call(server(source(world(), writes=False)), mode, None, tool, arguments)
+    state, seen = world(), list[str]()
+    before = copy.deepcopy(state)
+    yes = await call(
+        server(source(state)), mode, answering("accept", YES, seen=seen), tool, arguments
+    )
+
+    assert text(no) == refusal(NO_FORMS)
+    assert not yes.is_error, text(yes)
+    assert len(seen) == 1
+    assert state != before
+
+
+async def test_a_parameter_named_like_the_boundarys_own_reaches_the_tool() -> None:
+    async def run(*, tool: str) -> str:
+        return tool
+
+    assert await boundary(run)(tool="x") == "x"
 
 
 @both_eras

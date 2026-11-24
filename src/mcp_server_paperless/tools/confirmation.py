@@ -59,7 +59,12 @@ REQUIRED: Final = (
     "the operator requires the user's answer in a dialog (PAPERLESS_MCP_REQUIRE_DIALOG=true) and "
     "confirm=true does not replace it"
 )
-NO_FORMS: Final = "this client does not say that it can show dialogs (MCP form elicitation)"
+NO_FORMS: Final = (
+    "the user cannot be asked on this connection, or the client does not declare form elicitation "
+    "(MCP dialogs)"
+)
+NOT_SHOWN: Final = "the dialog could not be shown"
+WAY_OUT: Final = "a client that shows dialogs can confirm, or the operator can switch that off"
 KEPT_CHANGING: Final = "what would be changed kept changing while the user was asked"
 
 
@@ -116,7 +121,7 @@ def shows_forms(capabilities: ClientCapabilities | None) -> bool:
 
 
 async def confirmed[**P, R](
-    tool: Callable[P, Awaitable[R]], *args: P.args, **kwargs: P.kwargs
+    tool: Callable[P, Awaitable[R]], /, *args: P.args, **kwargs: P.kwargs
 ) -> R:
     """Run a tool call; when it needs a confirmation, ask the user for it if the client can.
 
@@ -136,8 +141,9 @@ async def confirmed[**P, R](
         reason = KEPT_CHANGING if asking else NO_FORMS
     except NotConfirmed as no:
         reason = no.reason
-    reason = f"{reason}; {REQUIRED}"
-    raise NotConfirmed(reason)
+    # Not after a user's no: there is no way around that.
+    parts = [reason, REQUIRED, *([WAY_OUT] if reason in {NO_FORMS, NOT_SHOWN} else [])]
+    raise NotConfirmed("; ".join(parts))
 
 
 async def _run[R](run: Callable[[], Awaitable[R]], asking: _Asking | None) -> R:
@@ -234,8 +240,7 @@ class _Asking:
         except MCPError as error:
             if error.error.code == METHOD_NOT_FOUND and not self.dialogs.required:
                 raise refusal from None  # nobody was asked
-            reason = "the dialog could not be shown"
-            raise NotConfirmed(reason) from None
+            raise NotConfirmed(NOT_SHOWN) from None
         except ValidationError:
             answer = None
         finally:

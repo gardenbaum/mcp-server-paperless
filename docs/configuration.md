@@ -11,7 +11,8 @@ token to use. The rest decides what the model may do and how much it may move.
 - [Startup and logs](#startup-and-logs)
 
 The [Claude Code plugin](../plugin/README.md) asks for the Paperless settings and the server settings
-that narrow or widen what the model can do, and leaves the rest at their defaults.
+that narrow or widen what the model can do, and leaves the rest at their defaults. It does not ask for
+`PAPERLESS_MCP_REQUIRE_DIALOG` yet, because the release it runs does not know that setting.
 
 The HTTP transport has its own variables in [Run over HTTP](http.md), the OIDC layer in
 [Connect claude.ai](claude-ai-connector.md).
@@ -111,8 +112,9 @@ the reason and this setting, if
   nobody answers within 10 minutes,
 - the connection drops before the answer, or the target keeps changing while you are asked.
 
-What needs no confirmation runs as before. The descriptions of the tools are the same with and
-without the setting, so an assistant may still pass `confirm=true`; you are asked then, too.
+What needs no confirmation runs as before. The descriptions of the tools, the hints in their results
+and the prompts are the same with and without the setting, so an assistant may still pass
+`confirm=true`; you are asked then, too.
 
 It is no proof of a human. The server sees only the client's answer: a client, a hook or a script can
 accept dialogs automatically, and what the assistant itself can make the client do counts, too. Nor

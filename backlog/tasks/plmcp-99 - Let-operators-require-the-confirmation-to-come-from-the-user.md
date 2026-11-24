@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T18:44:54Z'
-updated_date: '2026-11-24T07:37:29Z'
+updated_date: '2026-11-24T07:53:28Z'
 labels:
   - safety
   - config
@@ -48,3 +48,11 @@ With confirmation dialogs the assistant can still skip the dialog by passing con
 3. Tests first: registry-wide over both servers (HTTP and stdio variants) and both eras, wire tests, stateless HTTP; e2e on both entrypoints.
 4. decision-53, SECURITY.md, configuration reference, README, server.json, plugin.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+PAPERLESS_MCP_REQUIRE_DIALOG (decision-53). The boundary drops confirm=true, so every confirmation reaches ConfirmationRequired.require and only an accepted dialog passes; every other outcome is a NotConfirmed with reason and setting. Tests red first (unknown setting). tests/quality/test_registry.py: the new boolean joins the table of formats of server.json. No snapshot, limit, gate or tool text changed. The plugin offers the option while it pins 0.3.2, which ignores it: the option and its docs say so. mode='auto'/'legacy' and HTTP/stdio variants are covered registry-wide; stateless HTTP on the wire. E2E written, run on GitHub only.
+
+Review fixes: the AST check reads every module (keyed by path) and allows only the caller's own confirm; exact reasons on the wire; NO_FORMS true in every case; the refusal names the way out where there was nobody to ask; tool is positional-only in confirmed(); HTTP variants of the upload tools tested (the HTTP download tools have no confirm). CORRECTION of the note above: the plugin does NOT offer the option; it pins 0.3.2, which would silently ignore it. It is added with the first pin that knows the setting, together with the README table (a test keeps them equal). server.json has it: its version is written from the tag, a test forces its list.
+<!-- SECTION:NOTES:END -->

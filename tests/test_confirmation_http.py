@@ -315,8 +315,19 @@ CONFIRMED: Final[Json] = {**NOTE, "confirm": True}
 SETTING: Final = "PAPERLESS_MCP_REQUIRE_DIALOG=true"
 
 
-def fails_closed(text: str) -> bool:
-    return text.startswith("Nothing was changed: ") and SETTING in text and text.endswith(NOT_AGAIN)
+NO_FORMS: Final = "the user cannot be asked on this connection, or the client does not declare "
+NOT_SHOWN: Final = "the dialog could not be shown; "
+NOT_UNDERSTOOD: Final = "the answer to the dialog was not understood; "
+WAY_OUT: Final = "a client that shows dialogs can confirm, or the operator can switch that off."
+
+
+def fails_closed(text: str, reason: str) -> bool:
+    return (
+        text.startswith(f"Nothing was changed: {reason}")
+        and SETTING in text
+        and (WAY_OUT in text) is (reason in {NO_FORMS, NOT_SHOWN})
+        and text.endswith(NOT_AGAIN)
+    )
 
 
 @pytest.mark.decision("decision-53")
@@ -329,7 +340,7 @@ async def test_required_a_handshake_client_is_asked_or_refused(
         shown, text = await session.finish(DECLINE, arguments=CONFIRMED)
 
     assert shown is asked
-    assert fails_closed(text)
+    assert fails_closed(text, "the user declined; " if asked else NO_FORMS)
 
 
 @pytest.mark.decision("decision-53")
@@ -341,28 +352,28 @@ async def test_required_a_2026_07_28_client_is_asked_or_refused(
         message = await sessionless(http, url, capabilities=capabilities, arguments=CONFIRMED)
 
     assert (cast("Json", message["result"])["resultType"] == "input_required") is asked
-    assert asked or fails_closed(said(message))
+    assert asked or fails_closed(said(message), NO_FORMS)
 
 
 @pytest.mark.decision("decision-53")
 @pytest.mark.parametrize(
-    "reply",
+    ("reply", "reason"),
     [
-        {"error": {"code": -32601, "message": "no"}},
-        {"error": {"code": -32603, "message": "no"}},
-        {"result": {"action": "accept"}},
-        {"result": {"action": "accept", "content": {"confirm": "true"}}},
+        ({"error": {"code": -32601, "message": "no"}}, NOT_SHOWN),
+        ({"error": {"code": -32603, "message": "no"}}, NOT_SHOWN),
+        ({"result": {"action": "accept"}}, NOT_UNDERSTOOD),
+        ({"result": {"action": "accept", "content": {"confirm": "true"}}}, NOT_UNDERSTOOD),
     ],
 )
 async def test_required_a_dialog_that_fails_changes_nothing(
-    http: httpx2.AsyncClient, reply: Json
+    http: httpx2.AsyncClient, reply: Json, reason: str
 ) -> None:
     with running(app(source(world(), writes=False), require_dialog=True)) as url:
         session = await Handshake.open(http, url)
         shown, text = await session.finish(reply, arguments=CONFIRMED)
 
     assert shown
-    assert fails_closed(text)
+    assert fails_closed(text, reason)
 
 
 @pytest.mark.decision("decision-53")
@@ -393,7 +404,7 @@ async def test_required_an_answer_without_declared_forms_is_not_read(
             http, url, capabilities={}, state=token, answer=ACCEPT, arguments=CONFIRMED
         )
 
-    assert fails_closed(said(message))
+    assert fails_closed(said(message), NO_FORMS)
 
 
 @pytest.mark.decision("decision-53")
@@ -410,7 +421,7 @@ async def test_required_a_stateless_server_that_cannot_ask_refuses(
             replies = [m async for m in messages(response)]
         message = await sessionless(http, url, arguments=CONFIRMED)
 
-    assert fails_closed(said(replies[-1]))
+    assert fails_closed(said(replies[-1]), NO_FORMS)
     assert question(message)["requestState"]
 
 
