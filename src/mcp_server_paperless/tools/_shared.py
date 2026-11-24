@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
     from mcp_server_paperless.services.document_edits import DocumentEditor
     from mcp_server_paperless.services.documents import DocumentService
+    from mcp_server_paperless.services.duplicate_resolution import DuplicateResolver
     from mcp_server_paperless.services.files import FileService
     from mcp_server_paperless.services.instance import InstanceService
     from mcp_server_paperless.services.mail import MailService
@@ -135,6 +136,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "delete_taxonomy_item": "core",
     "bulk_edit_documents": "bulk",
     "bulk_edit_taxonomy": "bulk",
+    "resolve_duplicates": "bulk",
     "list_document_versions": "versions",
     "upload_document_version": "versions",
     "set_document_version_label": "versions",
@@ -689,6 +691,14 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=False,
         open_world_hint=False,
     ),
+    # Destructive (decision-51): duplicates go to the trash, or become versions for good.
+    "resolve_duplicates": ToolAnnotations(
+        title="Resolve duplicates",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
     "list_trash": ToolAnnotations(
         title="List trash",
         read_only_hint=True,
@@ -998,6 +1008,7 @@ class Services:
     text_edits: TextEditor
     bulk_documents: BulkDocumentEditor
     bulk_taxonomy: BulkTaxonomyEditor
+    duplicate_resolver: DuplicateResolver
     views: ViewService
     trash: TrashService
     permissions: PermissionService

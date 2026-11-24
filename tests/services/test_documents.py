@@ -32,7 +32,7 @@ WEB = "https://paperless.example/"
 
 def service(fake: FakePaperless) -> DocumentService:
     resolver = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=60.0)
-    return DocumentService(fake, resolver, web_url=WEB)
+    return DocumentService(fake, fake, resolver, web_url=WEB)
 
 
 def admin() -> DocumentService:

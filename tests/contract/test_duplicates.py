@@ -27,6 +27,7 @@ pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-47")]
 SEARCH = "DocumentReader.search_documents"
 ROOT = "DocumentReader.get_root"
 DUPLICATES = "DocumentReader.get_duplicates"
+FIND = "TrashReader.find_in_trash"
 ROWS = "DocumentReader.list_versions"
 MISSING = 999_999
 MIB = 1024 * 1024
@@ -304,6 +305,31 @@ async def test_has_duplicates_is_true_for_a_copy_in_the_trash_and_not_for_hidden
     assert await duplicates(reader) == 0
 
 
+@pytest.mark.contract(SEARCH)
+async def test_has_duplicates_is_true_for_an_archive_copy_and_not_for_a_version(
+    backend: Backend,
+) -> None:
+    ports = backend.admin
+    content = unique()
+    other = await uploaded(backend, content)
+    versioned = await uploaded(backend, unique())
+    _ = await add_version(backend, versioned, content.decode())
+    original = backend.new_pdf(1)
+    archive = await ports.documents.get_document_file(original, "archive", max_bytes=10_000_000)
+    copy = backend.upload(
+        f"plmcp86-{uuid.uuid4().hex}", "archive.pdf", archive.content, "application/pdf"
+    )
+
+    async def found(*, has: bool) -> set[int]:
+        ids = (original, copy, other, versioned)
+        query = DocumentQuery(has_duplicates=has, ids=ids)
+        page = await ports.documents.search_documents(query, page=1, page_size=10)
+        return {hit.id for hit in page.hits}
+
+    assert await found(has=True) == {original, copy}
+    assert await found(has=False) == {other, versioned}
+
+
 @pytest.mark.contract("TrashReader.read_trash")
 async def test_the_trash_is_read_at_once_within_a_byte_limit(backend: Backend) -> None:
     content = unique()
@@ -322,3 +348,51 @@ async def test_the_trash_is_read_at_once_within_a_byte_limit(backend: Backend) -
         _ = await ports.trash.read_trash(entries=100_000, max_bytes=10)
     with pytest.raises(PermissionDenied):
         _ = await backend.blind.trash.read_trash(entries=1, max_bytes=MIB)
+
+
+@pytest.mark.contract(FIND)
+async def test_documents_in_the_trash_are_found_with_what_tells_them_apart(
+    backend: Backend,
+) -> None:
+    content = unique()
+    ports = backend.admin
+    first, second, live = [await uploaded(backend, content) for _ in range(3)]
+    tag = await ports.taxonomy_writes.create_tag(f"contract-tag-{uuid.uuid4().hex}")
+    number = uuid.uuid4().int % 4_000_000_000
+    patch = DocumentPatch(tags=(tag.id,), archive_serial_number=number, owner=None)
+    before = await ports.document_writes.update_document(first, patch)
+    version = await add_version(backend, live, unique().decode())
+    _ = await ports.document_writes.delete_version(live, version)
+    for document in (first, second):
+        await ports.document_writes.delete_document(document)
+
+    found = await ports.trash.find_in_trash(
+        [first, second, live, version, MISSING], entries=100_000, max_bytes=64 * MIB
+    )
+
+    assert found.keys() == {first, second}
+    entry = found[first]
+    assert (entry.checksum, entry.tags, entry.archive_serial_number, entry.owner) == (
+        sha256(content),
+        (tag.id,),
+        number,
+        None,
+    )
+    for name in ("title", "created", "added", "original_file_name", "mime_type"):
+        assert getattr(entry, name) == getattr(before, name)
+    # Every user with view_document sees the trash entries nobody owns; a grant is not enough.
+    seen = await backend.reader.trash.find_in_trash(
+        [first, second], entries=100_000, max_bytes=64 * MIB
+    )
+    assert seen.keys() == {first}
+
+
+@pytest.mark.contract(FIND)
+async def test_finding_in_the_trash_is_bounded_and_needs_the_permission(backend: Backend) -> None:
+    document = await uploaded(backend, unique())
+    await backend.admin.document_writes.delete_document(document)
+
+    with pytest.raises(AnswerTooLarge):
+        _ = await backend.admin.trash.find_in_trash([document], entries=100_000, max_bytes=10)
+    with pytest.raises(PermissionDenied):
+        _ = await backend.blind.trash.find_in_trash([document], entries=1, max_bytes=MIB)
