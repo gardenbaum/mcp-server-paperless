@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:15Z'
-updated_date: '2026-11-24T11:34:25Z'
+updated_date: '2026-11-24T11:34:35Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -67,4 +67,6 @@ Not run locally: E2E, the full suite, the runner tests near 100 megapixels, muta
 DoD 1 left open: rendering, service and tool tests were seen red (the service tests by running them against the old module); the contract and the E2E tests were written after the code and the E2E tests have not run yet.
 
 Review fixes (0 Critical, 3 Important, 7 Minor), tests red first (rendering by import, then the number test against the mutant str(page + 1); service and tool tests before the change). I1: contract PDF has 24 to 30 characters of text, so 3.5.1 makes an archive; the E2E PDFs whose archive is read have no text. I2: each number strip is compared with one drawn in the test. I3: no tile is started that would end after 24 s if as slow as the slowest; the child announces each page, a timeout names it; one load per tile (no seam to count loads, so not tested by itself). Supersedes the earlier notes: with sheets the layout is of the pages on them (M5), with overview=false of all. M1: the UserUnit clause (PDFium has no call for it). M2, M3, M4, M6, M7 done; the rest of a list that does not fit 200 characters is named in the note. Surface snapshot: description of inspect_pdf only. The weight of test_pages.py is refreshed with the next hosted runs.
+
+Correction: the service and tool tests of the review fixes were seen red afterwards, by running them against src of 6c41471.
 <!-- SECTION:NOTES:END -->
