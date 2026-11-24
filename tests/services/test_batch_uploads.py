@@ -889,6 +889,18 @@ async def test_files_that_failed_are_counted_when_there_is_more(root: Path) -> N
     assert FAILED.format(count=1) in (await setup.directory()).notes
 
 
+async def test_twins_of_failed_files_are_counted_with_them(root: Path) -> None:
+    setup = Setup(root, limits=Limits(files=3))
+    for name in ("a.txt", "b.txt", "c.txt", "d.txt"):
+        _ = setup.file(name, b"fine" if name == "c.txt" else b"same")
+    setup.fake.on_upload[1] = raising(DOWN)
+
+    batch = await setup.directory()
+
+    assert [f.status for f in batch.files] == ["failed", "duplicate", "uploaded"]
+    assert FAILED.format(count=2) in batch.notes
+
+
 async def test_a_twin_of_a_file_that_fails_later_says_so(root: Path) -> None:
     setup = Setup(root)
     _ = setup.file("a.txt", b"same")

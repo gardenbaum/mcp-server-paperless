@@ -31,7 +31,7 @@ Uploads by path take one file per call, so a folder of scans needs one call per 
 - The window in which a version that someone else adds is not noticed is a whole call instead of one check (up to 40 seconds and the last file). Equal files in two calls, or in a call and the next one before Paperless consumed the first, are both sent; the report after consumption shows it.
 - A call that times out or is cancelled loses its report, although files may have been sent. The description says to look at `list_tasks` first; the server logs the id of every task Paperless accepted (an id, no name or content) at INFO.
 - A call can last longer than 60 seconds when the last file that was started is slow to check or send; the limit is on starting.
-- A file on a mount that hangs is waited for, in a thread; the parent of an allowed directory can be swapped by who may write there; Windows is not supported. All three as for single uploads.
+- A mount that hangs keeps one thread of the shared executor for every call that touches it, until the mount answers, also after the call was refused for its time or cancelled. Name lookups use the same executor, so many such calls can stall the server, and its exit waits for these threads. A file on such a mount is waited for. The parent of an allowed directory can be swapped by who may write there; Windows is not supported. The last three as for single uploads.
 - The description names limits twice as numbers; a change of the constants changes the snapshot.
 
 ## Alternatives

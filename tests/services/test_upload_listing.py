@@ -241,6 +241,11 @@ def test_an_escape_no_report_holds_is_refused(text: str) -> None:
         _ = given_path(text)
 
 
+def test_a_platform_without_safe_opening_has_backslashes_in_its_paths() -> None:
+    """The refusal that names the platform comes later, instead of one of an escape."""
+    assert given_path("C:\\scans\\new", secure=False) == "C:\\scans\\new"
+
+
 def test_files_are_sorted_by_what_they_are_not_by_what_is_shown(allowed: Path) -> None:
     for name in ("a\nb.pdf", "a\\nb.pdf", "a\u202eb.pdf"):
         _ = (allowed / name).write_bytes(b"x")

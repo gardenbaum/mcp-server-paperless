@@ -35219,7 +35219,7 @@
             }),
           ]),
           'default': None,
-          'description': 'Absolute path of a directory on that machine, one the operator allowed or below one: its files are uploaded, sorted by path.',
+          'description': 'Absolute path of a directory on that machine, one the operator allowed or below one: its files are uploaded, sorted by path. Backslashes as in paths.',
         }),
         'document_type': dict({
           'anyOf': list([
@@ -35261,7 +35261,7 @@
             }),
           ]),
           'default': None,
-          'description': 'Absolute paths of files on the machine this server runs on, at most 25, inside the directories the operator allowed. Not together with directory.',
+          'description': 'Absolute paths of files on the machine this server runs on, at most 25, inside the directories the operator allowed. A backslash starts an escape as reports show it; one in a name is doubled. Not together with directory.',
         }),
         'recursive': dict({
           'default': False,

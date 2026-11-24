@@ -47,7 +47,8 @@ async def upload_documents(  # noqa: PLR0913 -- where the files are plus one par
             max_length=MAX_FILES,
             description=(
                 f"Absolute paths of files on the machine this server runs on, at most {MAX_FILES}, "
-                "inside the directories the operator allowed. Not together with directory."
+                "inside the directories the operator allowed. A backslash starts an escape as reports "
+                "show it; one in a name is doubled. Not together with directory."
             ),
         ),
     ] = None,
@@ -56,7 +57,7 @@ async def upload_documents(  # noqa: PLR0913 -- where the files are plus one par
         Field(
             description=(
                 "Absolute path of a directory on that machine, one the operator allowed or below "
-                "one: its files are uploaded, sorted by path."
+                "one: its files are uploaded, sorted by path. Backslashes as in paths."
             )
         ),
     ] = None,

@@ -91,8 +91,8 @@ def shown_path(path: str) -> str:
     )
 
 
-def given_path(text: str) -> str:
-    """The path that ``shown_path`` shows as ``text``.
+def given_path(text: str, *, secure: bool = SECURE) -> str:
+    """The path that ``shown_path`` shows as ``text``; as it is where paths are refused anyway.
 
     Raises:
         Validation: A backslash starts no escape that a report holds.
@@ -105,7 +105,7 @@ def given_path(text: str) -> str:
             raise Validation(message, hint=hint)
         return found[0].encode().decode("unicode_escape")
 
-    return ESCAPE.sub(plain, text)
+    return ESCAPE.sub(plain, text) if secure else text
 
 
 class _Walk:

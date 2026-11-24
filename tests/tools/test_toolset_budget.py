@@ -45,11 +45,9 @@ BASE_OVERVIEW_DEFINITION = 4442
 # BASE_INSTRUCTIONS), the guide in a call of the overview, and the growth of the overview's
 # definition in tools/list (its output schema).
 INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut down)
-OVERVIEW_GUIDE_LIMIT = (
-    2779  # measured 2777 (core alone, nothing cut, stdio with upload
-    # directories:
-)
-# 19 bytes of upload_documents over the 2758 of the other modes; PLMCP-85, approved by the owner)
+# Measured 2777 (core alone, nothing cut, stdio with upload directories): 19 bytes of
+# upload_documents over the 2758 of HTTP; PLMCP-85, approved by the owner.
+OVERVIEW_GUIDE_LIMIT = 2779
 DEFINITION_ADDED_LIMIT = 750  # measured 747, 28 more than with the name pending (twice 14 bytes)
 # The limit of every instructions text (test_registry.py TEXT_LIMIT): Claude Code cuts at 4,096.
 TEXT_LIMIT = 2048

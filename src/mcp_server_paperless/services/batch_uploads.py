@@ -113,8 +113,8 @@ TWIN_LOST: Final = (
     "was not sent."
 )
 FAILED: Final = (
-    "Files that failed: {count}. next_after does not repeat them; call again with them as paths, "
-    "unless their reason says otherwise."
+    "Files that failed, with their twins: {count}. next_after does not repeat them; call again with "
+    "them as paths, unless their reason says otherwise."
 )
 DEEPER: Final = (
     "Subdirectories not read because they are more than {depth} levels down: {count}. Give them as "
@@ -172,6 +172,13 @@ class _Call:
     def reports(self) -> tuple[BatchFile, ...]:
         """What became of the files so far."""
         return tuple(f.report for f in self.files if f.report is not None)
+
+    def lost(self) -> int:
+        """How many files failed, or are twins of one that did."""
+        return sum(
+            f.report is not None and f.report.status == "failed"
+            for f in (file.twin or file for file in self.files)
+        )
 
     def cut(self, at: int, why: str) -> None:
         """Leave out the files from ``at`` on."""
@@ -314,7 +321,7 @@ class BatchUploadService:
         if after is not None:
             count = len(listed.files) - len(files)
             notes.append(f"Files that sort before after, not looked at in this call: {count}.")
-        if call.left and (lost := sum(f.status == "failed" for f in call.reports())):
+        if call.left and (lost := call.lost()):
             notes.append(FAILED.format(count=lost))
         if listed.directories:
             count = len(listed.directories)
