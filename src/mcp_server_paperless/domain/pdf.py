@@ -16,6 +16,8 @@ from mcp_server_paperless.domain.tasks import Wait
 # same document (the older versions stay), or a new document while the original moves to the
 # Paperless trash.
 type Output = Literal["new_document", "new_version", "replace_original"]
+# What Paperless itself is asked for: trashing the original is this server's last step.
+type FileOutput = Literal["new_document", "new_version"]
 
 
 class PageSlot(BaseModel):
@@ -60,10 +62,16 @@ class StartedTasks(BaseModel):
         expected: How many tasks the request starts.
         sources: The document each task belongs to, parallel to ``ids``; None where Paperless
             does not say (reprocessing). Empty when the caller does not know.
+        outputs: The output file of an edit into new documents each task makes (from 0), parallel
+            to ``ids``. Empty for every other operation.
+        included: The documents the file of a merge names, None where that is not known (a long
+            name is cut, so it does not say).
         problem: Why the lookup is incomplete beyond tasks that did not show up: the user may not
             view tasks (forbidden), reading them failed after the request was accepted (failed),
             or the queued task of Paperless could not be followed to its end (unconfirmed):
             then ``ids`` holds that task alone.
+        doubt: Why it cannot be told that these tasks are the request's own, if so: good enough to
+            report, not to trash anything for.
         detail: For ``unconfirmed``: why the queued task could not be followed.
     """
 
@@ -72,12 +80,28 @@ class StartedTasks(BaseModel):
     ids: tuple[str, ...]
     expected: int
     sources: tuple[int | None, ...] = ()
+    outputs: tuple[int, ...] = ()
+    included: tuple[int, ...] | None = None
     problem: LookupProblem | None = None
+    doubt: str | None = None
     detail: str | None = None
 
 
 # Output models are tool output schemas: a one-line class docstring each, and field descriptions
 # only where the name does not say enough.
+
+
+class PdfPlan(BaseModel):
+    """What an operation makes, what stays and what is lost; known before it runs."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    produces: str
+    keeps: tuple[str, ...]
+    loses: Annotated[
+        tuple[str, ...], Field(description="What the result does not have, or no longer shows.")
+    ]
+    needs_confirm: bool
 
 
 class PdfTask(BaseModel):
@@ -109,22 +133,25 @@ class PdfResult(BaseModel):
 
     operation: Annotated[str, Field(description="What was asked, e.g. rotate or merge.")]
     summary: Annotated[str, Field(description="What Paperless was asked to do, in words.")]
+    dry_run: Annotated[bool, Field(description="true: a preview, nothing was started.")]
+    plan: PdfPlan
     source_document_ids: Annotated[
         tuple[int, ...], Field(description="The documents the operation worked on.")
     ]
     state: Annotated[
-        UploadState,
+        UploadState | Literal["not_started"],
         Field(
             description=(
-                "The tasks together: failure or revoked if one did, else started or pending if "
-                "one still runs, else success. unknown when not all expected tasks could be "
-                "found or read: Paperless accepted the request all the same (the user may not "
-                "view tasks, or the work is not yet visible); see message."
+                "not_started: a preview. The tasks together: failure or revoked if one did, else "
+                "started or pending if one still runs, else success. unknown when not all "
+                "expected tasks could be found or read: Paperless accepted the request all the "
+                "same (the user may not view tasks, or the work is not yet visible); see message."
             )
         ),
     ]
     message: Annotated[
-        str | None, Field(description="Why a task failed, or why the state is unknown.")
+        str | None,
+        Field(description="Why a task failed, the state is unknown or an original stays."),
     ]
     source_links: Annotated[
         tuple[str, ...], Field(description="Links to the source documents in the Paperless web UI.")
@@ -148,6 +175,18 @@ class PdfResult(BaseModel):
                 "that got it."
             )
         ),
+    ]
+    trashed_ids: Annotated[
+        tuple[int, ...],
+        Field(
+            description=(
+                "The originals this call moved to the Paperless trash, after it checked that "
+                "everything was made; empty if it kept them."
+            )
+        ),
+    ]
+    next: Annotated[
+        str | None, Field(description="The calls that finish what was left, as a suggestion.")
     ]
     wait: Wait
     waited_seconds: float

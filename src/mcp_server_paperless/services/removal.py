@@ -48,12 +48,21 @@ class DocumentRemoval:
                 f"(it keeps its notes and can be restored from there)"
             )
             ConfirmationRequired.require(effect, scope=document.newest_file)
-        await self._writer.delete_document(document_id)
-        for kind in COUNTED:
-            self._taxonomy.invalidate(kind)
+        await self.trash(document_id)
         return DocumentDeleted(
             document_id=document_id,
             title=document.title,
             in_trash=True,
             message=f"Document {document_id} {quoted(document.title)} is in the trash. {RESTORE}",
         )
+
+    async def trash(self, document_id: int) -> None:
+        """Move a document to the trash whose removal was confirmed already.
+
+        Raises:
+            NotFound: No such document, or the user may not see it.
+            PermissionDenied: The user may not delete this document.
+        """
+        await self._writer.delete_document(document_id)
+        for kind in COUNTED:
+            self._taxonomy.invalidate(kind)

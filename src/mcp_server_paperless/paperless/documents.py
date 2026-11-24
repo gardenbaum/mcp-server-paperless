@@ -186,6 +186,21 @@ class _Text(BaseModel):
     user_can_change: bool
 
 
+class _Pages(BaseModel):
+    page_count: int | None
+    versions: list[_Version]
+
+
+class _SignedIn(BaseModel):
+    id: int
+    is_superuser: bool = False
+
+
+class _Rights(BaseModel):
+    user: _SignedIn
+    permissions: list[str] | None = None
+
+
 class _Content(BaseModel):
     content: str
 
@@ -487,6 +502,29 @@ class PaperlessDocumentReader:
             user_can_change=row.user_can_change,
             content=row.content,
         )
+
+    async def get_version_pages(self, document_id: int, version_id: int) -> int | None:
+        """See ``DocumentReader.get_version_pages``; listed versions only, as for the text."""
+        params: Params = {"fields": "page_count,versions", **_of_version(version_id)}
+        try:
+            row = await self._one(document_id, "", _Pages, params)
+        except NotFound:
+            raise _unseen(document_id, version_id) from None
+        if version_id not in ([version.id for version in row.versions] or [document_id]):
+            raise unseen_version(document_id, version_id)
+        return row.page_count
+
+    async def may_delete(self, owners: Sequence[int | None]) -> bool | None:
+        """See ``DocumentReader.may_delete``: the permissions ``/api/ui_settings/`` lists."""
+        try:
+            rights = await self._client.get("/api/ui_settings/", _Rights)
+        except PaperlessMcpError:
+            return None
+        if rights.user.is_superuser:
+            return True
+        if any(owner not in {None, rights.user.id} for owner in owners):
+            return False
+        return None if rights.permissions is None else "delete_document" in rights.permissions
 
     async def list_document_notes(self, document_id: int) -> tuple[Note, ...]:
         """See ``DocumentReader.list_document_notes``."""

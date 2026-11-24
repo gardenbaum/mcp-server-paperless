@@ -8,20 +8,25 @@ Every test works on documents of its own, never on a seeded one.
 """
 
 import asyncio
+import io
 import time
+import uuid
+from datetime import date
 from typing import TYPE_CHECKING
 
 import pytest
+from e2e.helpers import pdf_pages
+from PIL import Image
 
-from mcp_server_paperless.domain.documents import DocumentPatch
-from mcp_server_paperless.domain.errors import PermissionDenied, Validation
-from mcp_server_paperless.domain.pdf import PageSlot
+from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch, DocumentQuery
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.pdf import PageSlot, StartedTasks
+from mcp_server_paperless.domain.versions import VersionUpload
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from contract.conftest import Backend
-    from mcp_server_paperless.domain.pdf import StartedTasks
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 
@@ -30,6 +35,7 @@ MERGE = "PdfWriter.merge_documents"
 EDIT = "PdfWriter.edit_pdf"
 PASSWORD = "PdfWriter.remove_password"
 REPROCESS = "PdfWriter.reprocess_documents"
+PDF = "application/pdf"
 MISSING = 999_999
 SECONDS = 180.0
 # The global permissions of a user who may change documents and make new ones (not delete).
@@ -99,9 +105,7 @@ async def test_a_request_for_unknown_or_repeated_documents_is_refused(backend: B
         with pytest.raises(Validation, match="exist"):
             _ = await writes.rotate_documents(unknown, 90)
         with pytest.raises(Validation, match="exist"):
-            _ = await writes.merge_documents(
-                unknown, metadata_document_id=None, delete_originals=False
-            )
+            _ = await writes.merge_documents(unknown, metadata_document_id=None)
         with pytest.raises(Validation, match="exist"):
             _ = await writes.reprocess_documents(unknown, remote_ocr=False)
     with pytest.raises(Validation, match="exist"):
@@ -126,27 +130,15 @@ async def test_merging_makes_one_new_document_titled_after_the_metadata_document
     source = await backend.admin.documents.get_document(second)
 
     tasks = await backend.admin.pdf_writes.merge_documents(
-        (first, second), metadata_document_id=second, delete_originals=False
+        (first, second), metadata_document_id=second
     )
 
+    assert tasks.doubt is None
     [merged] = await finished(backend, tasks)
     made = await backend.admin.documents.get_document(merged)
     assert (made.title, made.page_count) == (f"{source.title} (merged)", 3)
     assert not backend.in_trash(first)
     assert (await pages(backend, first), await pages(backend, second)) == (2, 1)
-
-
-@pytest.mark.contract(MERGE)
-async def test_merging_can_send_the_originals_to_the_trash(backend: Backend) -> None:
-    first, second = backend.new_pdf(1), backend.new_pdf(1)
-
-    tasks = await backend.admin.pdf_writes.merge_documents(
-        (first, second), metadata_document_id=None, delete_originals=True
-    )
-
-    [merged] = await finished(backend, tasks)
-    await until(lambda: backend.in_trash(first) and backend.in_trash(second))
-    assert await pages(backend, merged) == 2
 
 
 @pytest.mark.contract(EDIT)
@@ -185,19 +177,6 @@ async def test_an_edit_as_a_new_version_changes_what_the_document_shows_and_keep
 
 
 @pytest.mark.contract(EDIT)
-async def test_an_edit_can_replace_the_original_by_trashing_it(backend: Backend) -> None:
-    document = backend.new_pdf(2)
-
-    tasks = await backend.admin.pdf_writes.edit_pdf(
-        document, (PageSlot(page=2),), output="replace_original"
-    )
-
-    [made] = await finished(backend, tasks)
-    await until(lambda: backend.in_trash(document))
-    assert await pages(backend, made) == 1
-
-
-@pytest.mark.contract(EDIT)
 async def test_a_bad_edit_is_refused_before_anything_happens(backend: Backend) -> None:
     writes, document = backend.admin.pdf_writes, backend.new_pdf(2)
     text = backend.upload(f"contract-text-{document}", "plain.txt", b"plain text", "text/plain")
@@ -228,6 +207,7 @@ async def test_a_password_is_removed_into_a_new_document(backend: Backend) -> No
 
     tasks = await backend.admin.pdf_writes.remove_password(locked, "s3cret", output="new_document")
 
+    assert tasks.doubt is None
     [unlocked] = await finished(backend, tasks)
     assert unlocked != locked
     assert await pages(backend, unlocked) == 1
@@ -248,20 +228,6 @@ async def test_a_password_can_be_removed_as_a_new_version_and_a_wrong_one_is_ref
     [version] = await finished(backend, tasks)
     assert await version_ids(backend, locked) == [version, locked]
     assert await pages(backend, locked) == 1
-
-
-@pytest.mark.contract(PASSWORD)
-async def test_a_password_can_be_removed_while_trashing_the_locked_original(
-    backend: Backend,
-) -> None:
-    locked = backend.new_encrypted("s3cret")
-
-    tasks = await backend.admin.pdf_writes.remove_password(
-        locked, "s3cret", output="replace_original"
-    )
-
-    _ = await finished(backend, tasks)
-    await until(lambda: backend.in_trash(locked))
 
 
 @pytest.mark.contract(PASSWORD)
@@ -309,9 +275,7 @@ async def test_only_a_user_who_may_change_the_documents_can_edit_them(backend: B
         with pytest.raises(PermissionDenied):
             _ = await writes.reprocess_documents((first,), remote_ocr=False)
         with pytest.raises(PermissionDenied):
-            _ = await writes.merge_documents(
-                (first, second), metadata_document_id=None, delete_originals=False
-            )
+            _ = await writes.merge_documents((first, second), metadata_document_id=None)
 
 
 @pytest.mark.contract(ROTATE)
@@ -371,14 +335,326 @@ async def until_versions(backend: Backend, document: int, count: int) -> None:
         backend.track_document(number)
 
 
+async def add_version(backend: Backend, document: int, pages: int) -> int:
+    """A newest version with this many pages, uploaded by the admin."""
+    name = f"contract-version-{uuid.uuid4().hex}"
+    content = pdf_pages([f"{name} page {n}" for n in range(1, pages + 1)])
+    upload = VersionUpload(filename=f"{name}.pdf", mime_type=PDF, content=content)
+    task = await backend.admin.document_writes.upload_document_version(document, upload)
+    [version] = await finished(backend, StartedTasks(ids=(task,), expected=1))
+    return version
+
+
+@pytest.mark.contract(EDIT)
+@pytest.mark.contract("DocumentReader.get_version_pages")
+async def test_a_page_past_the_first_file_is_edited_by_the_id_of_the_newest_version(
+    backend: Backend,
+) -> None:
+    document = backend.new_pdf(2)
+    version = await add_version(backend, document, 4)
+    reader, writes = backend.admin.documents, backend.admin.pdf_writes
+    last = (PageSlot(page=4),)
+
+    # The document says 4 pages, but Paperless holds a request for the root against its first file.
+    assert await pages(backend, document) == 4
+    assert await reader.get_version_pages(document, document) == 2
+    assert await reader.get_version_pages(document, version) == 4
+    with pytest.raises(Validation, match="out of bounds for document with 2 pages"):
+        _ = await writes.edit_pdf(document, last, output="new_document")
+    tasks = await writes.edit_pdf(document, last, output="new_document", version_id=version)
+
+    [made] = await finished(backend, tasks)
+    title = (await reader.get_document(document)).title
+    assert ((await reader.get_document(made)).title, await pages(backend, made)) == (title, 1)
+    assert await version_ids(backend, document) == [version, document]
+
+
+@pytest.mark.contract(EDIT)
+async def test_the_first_file_can_be_edited_when_the_newest_has_fewer_pages(
+    backend: Backend,
+) -> None:
+    document = backend.new_pdf(3)
+    version = await add_version(backend, document, 1)
+    writes, first = backend.admin.pdf_writes, tuple(PageSlot(page=n) for n in (1, 2, 3))
+
+    # The request passes against the first file, and the queued task fails on the newest.
+    with pytest.raises(Validation, match="page that does not exist"):
+        _ = await writes.edit_pdf(document, first, output="new_document")
+    tasks = await writes.edit_pdf(document, first, output="new_version", version_id=document)
+
+    [made] = await finished(backend, tasks)
+    assert await version_ids(backend, document) == [made, version, document]
+    assert await pages(backend, document) == 3
+
+
+@pytest.mark.contract(ROTATE)
 @pytest.mark.contract(MERGE)
-async def test_deleting_originals_needs_the_right_to_delete_them(backend: Backend) -> None:
-    first, second = backend.new_documents(2)
-    editor = backend.restricted(EDITING, change=[first, second])
+async def test_rotating_and_merging_can_take_the_first_file(backend: Backend) -> None:
+    document, other = backend.new_pdf(3), backend.new_pdf(1)
+    version = await add_version(backend, document, 1)
+    writes = backend.admin.pdf_writes
+
+    newest = await writes.merge_documents((document, other), metadata_document_id=None)
+    first = await writes.merge_documents(
+        (document, other), metadata_document_id=None, original_files=True
+    )
+    [small], [large] = await finished(backend, newest), await finished(backend, first)
+    assert (await pages(backend, small), await pages(backend, large)) == (2, 4)
+    rotated = await writes.rotate_documents((document,), 90, original_files=True)
+
+    [turned] = await finished(backend, rotated)
+    assert await version_ids(backend, document) == [turned, version, document]
+    assert await pages(backend, document) == 3
+
+
+@pytest.mark.contract("DocumentReader.get_version_pages")
+async def test_the_pages_of_a_version_the_document_does_not_list_are_not_found(
+    backend: Backend,
+) -> None:
+    document, other = backend.new_documents(2)
+
+    for number, version in ((document, other), (document, MISSING), (MISSING, MISSING)):
+        with pytest.raises(NotFound):
+            _ = await backend.admin.documents.get_version_pages(number, version)
+
+
+@pytest.mark.contract(EDIT)
+async def test_an_owner_may_edit_by_version_id_and_a_change_grant_is_not_enough(
+    backend: Backend,
+) -> None:
+    document = backend.new_pdf(1)
+    version = await add_version(backend, document, 2)
+    granted = backend.restricted(EDITING, change=[document])
+    last = (PageSlot(page=2),)
 
     with pytest.raises(PermissionDenied):
-        _ = await editor.pdf_writes.merge_documents(
-            (first, second), metadata_document_id=None, delete_originals=True
+        _ = await granted.pdf_writes.edit_pdf(
+            document, last, output="new_version", version_id=version
         )
+    _ = await backend.admin.document_writes.update_document(document, DocumentPatch(owner=None))
+    tasks = await granted.pdf_writes.edit_pdf(
+        document, last, output="new_version", version_id=version
+    )
 
-    assert not backend.in_trash(first)
+    assert tasks.ids == ()  # this user may not view tasks
+    await until_versions(backend, document, 3)
+    assert await pages(backend, document) == 1
+
+
+@pytest.mark.contract(EDIT)
+async def test_the_parts_of_a_split_are_known_by_their_number(backend: Backend) -> None:
+    document = backend.new_pdf(3)
+    slots = (PageSlot(page=1), PageSlot(page=2, document=1), PageSlot(page=3, document=1))
+
+    tasks = await backend.admin.pdf_writes.edit_pdf(document, slots, output="new_document")
+
+    assert tasks.doubt is None
+    produced = dict(zip(tasks.outputs, await finished(backend, tasks), strict=True))
+    assert [await pages(backend, produced[n]) for n in (0, 1)] == [1, 2]
+
+
+@pytest.mark.contract(EDIT)
+@pytest.mark.parametrize("keep", [True, False])
+async def test_what_a_new_document_takes_over_and_what_it_never_does(
+    backend: Backend, *, keep: bool
+) -> None:
+    ports, document = backend.admin, backend.new_pdf(2)
+    number = uuid.uuid4().int % 1_000_000 + 9_000_000
+    tags = {tag.name: tag.id for tag in await ports.taxonomy.list_taxonomy("tag")}
+    kinds = {f.name: f.id for f in await ports.taxonomy.list_taxonomy("custom_field")}
+    value = CustomFieldValue(field=kinds["e2e-string"], value="kept")
+    patch = DocumentPatch(
+        tags=(tags["e2e-finance"],),
+        created=date(2020, 2, 3),
+        archive_serial_number=number,
+        custom_fields=(value,),
+    )
+    source = await ports.document_writes.update_document(document, patch)
+    _ = await ports.document_writes.add_note(document, "stays here")
+
+    tasks = await ports.pdf_writes.edit_pdf(
+        document, (PageSlot(page=2),), output="new_document", keep_metadata=keep
+    )
+
+    [made] = await finished(backend, tasks)
+    record = await ports.documents.get_document(made)
+    assert record.title == (source.title if keep else f"{document}_edit_1")
+    assert (tags["e2e-finance"] in record.tags) is keep
+    assert tags["e2e-inbox"] in record.tags  # like every document that is consumed
+    assert record.custom_fields == ((value,) if keep else ())
+    assert (record.created == date(2020, 2, 3)) is keep
+    assert (record.archive_serial_number, record.notes_count) == (None, 0)
+    assert len(record.versions) == 1
+
+
+@pytest.mark.contract(EDIT)
+async def test_a_new_version_keeps_what_the_document_has(backend: Backend) -> None:
+    ports, document = backend.admin, backend.new_pdf(2)
+    number = uuid.uuid4().int % 1_000_000 + 9_000_000
+    before = await ports.document_writes.update_document(
+        document, DocumentPatch(archive_serial_number=number)
+    )
+    _ = await ports.document_writes.add_note(document, "stays here")
+
+    tasks = await ports.pdf_writes.edit_pdf(
+        document, (PageSlot(page=2),), output="new_version", keep_metadata=False
+    )
+
+    _ = await finished(backend, tasks)
+    after = await ports.documents.get_document(document)
+    assert (after.title, after.tags, after.created) == (before.title, before.tags, before.created)
+    assert (after.archive_serial_number, after.notes_count) == (number, 1)
+
+
+@pytest.mark.contract(PASSWORD)
+async def test_an_unlocked_copy_takes_no_serial_number(backend: Backend) -> None:
+    ports, locked = backend.admin, backend.new_encrypted("s3cret")
+    number = uuid.uuid4().int % 1_000_000 + 9_000_000
+    _ = await ports.document_writes.update_document(
+        locked, DocumentPatch(archive_serial_number=number)
+    )
+
+    tasks = await ports.pdf_writes.remove_password(
+        locked, "s3cret", output="new_document", version_id=locked, keep_metadata=False
+    )
+
+    [made] = await finished(backend, tasks)
+    record = await ports.documents.get_document(made)
+    assert (record.title, record.archive_serial_number) == (f"{locked}_unprotected", None)
+
+
+@pytest.mark.contract(MERGE)
+async def test_a_merge_leaves_out_what_it_cannot_read_and_names_the_rest(
+    backend: Backend,
+) -> None:
+    first, locked = backend.new_pdf(2), backend.new_encrypted("s3cret")
+    text = backend.upload(f"contract-text-{first}", "plain.txt", b"plain text", "text/plain")
+    writes = backend.admin.pdf_writes
+
+    for fallback in (False, True):  # a text file has no archive PDF
+        tasks = await writes.merge_documents(
+            (first, locked, text), metadata_document_id=None, archive_fallback=fallback
+        )
+        [merged] = await finished(backend, tasks)
+        record = await backend.admin.documents.get_document(merged)
+        assert tasks.included == (first,)
+        assert (record.page_count, record.title) == (2, f"{first}_merged")
+
+
+@pytest.mark.contract(EDIT)
+async def test_a_date_among_the_custom_fields_hides_the_task_of_a_new_document_only(
+    backend: Backend,
+) -> None:
+    ports, document = backend.admin, backend.new_pdf(1)
+    kinds = {f.name: f.id for f in await ports.taxonomy.list_taxonomy("custom_field")}
+    dated = CustomFieldValue(field=kinds["e2e-date"], value="2026-01-15")
+    _ = await ports.document_writes.update_document(document, DocumentPatch(custom_fields=(dated,)))
+    title = f"contract-dated-{uuid.uuid4().hex}"
+    _ = await ports.document_writes.update_document(document, DocumentPatch(title=title))
+    page = (PageSlot(page=1),)
+
+    version = await ports.pdf_writes.edit_pdf(document, page, output="new_version")
+    _ = await finished(backend, version)
+    hidden = await ports.pdf_writes.edit_pdf(document, page, output="new_document")
+    bare = await ports.pdf_writes.edit_pdf(
+        document, page, output="new_document", keep_metadata=False
+    )
+
+    assert (len(version.ids), hidden.ids, len(bare.ids)) == (1, (), 1)
+    assert (hidden.expected, hidden.problem) == (1, None)
+    _ = await finished(backend, bare)
+    # The document is made all the same, with the title and the date.
+    deadline = time.monotonic() + SECONDS
+    while True:
+        query = DocumentQuery(title_contains=title)
+        listed = await ports.documents.search_documents(query, page=1, page_size=10)
+        made = [hit.id for hit in listed.hits if hit.id != document]
+        if made:
+            break
+        assert time.monotonic() < deadline, "Paperless did not finish in time"
+        await asyncio.sleep(0.5)
+    for number in made:
+        backend.track_document(number)
+    assert (await ports.documents.get_document(made[0])).custom_fields == (dated,)
+
+
+def photo() -> bytes:
+    """A PNG; Paperless archives it as a PDF of one page and counts none for the document."""
+    out = io.BytesIO()
+    colour = (uuid.uuid4().int % 255, 10, 20)
+    Image.new("RGB", (300, 400), colour).save(out, format="PNG", dpi=(100, 100))
+    return out.getvalue()
+
+
+@pytest.mark.contract(MERGE)
+async def test_a_merge_can_take_the_archive_pdf_of_an_image(backend: Backend) -> None:
+    ports, first = backend.admin, backend.new_pdf(2)
+    image = backend.upload(f"contract-photo-{first}", "photo.png", photo(), "image/png")
+
+    without = await ports.pdf_writes.merge_documents((first, image), metadata_document_id=None)
+    taken = await ports.pdf_writes.merge_documents(
+        (first, image), metadata_document_id=None, archive_fallback=True
+    )
+
+    assert (without.included, taken.included) == ((first,), (first, image))
+    [short], [whole] = await finished(backend, without), await finished(backend, taken)
+    assert (await pages(backend, image), await pages(backend, short)) == (None, 2)
+    assert await pages(backend, whole) == 3
+
+
+@pytest.mark.contract("DocumentReader.may_delete")
+async def test_who_may_delete_is_known_to_users_who_may_read_their_settings(
+    backend: Backend,
+) -> None:
+    ports, document = backend.admin, backend.new_documents(1)[0]
+    owner = (await ports.documents.get_document(document)).owner
+    settings = frozenset({"view_uisettings", "view_document"})
+    deleting = backend.restricted(settings | {"delete_document"})
+    viewing = backend.restricted(settings)
+    hidden = backend.restricted(frozenset({"view_document", "delete_document"}))
+
+    assert await ports.documents.may_delete([owner, None]) is True
+    assert await deleting.documents.may_delete([None]) is True
+    assert await deleting.documents.may_delete([None, owner]) is False
+    assert await viewing.documents.may_delete([None]) is False
+    assert await hidden.documents.may_delete([None]) is None
+
+
+@pytest.mark.contract(ROTATE)
+@pytest.mark.contract(MERGE)
+@pytest.mark.contract(PASSWORD)
+async def test_a_date_hides_the_tasks_of_rotating_merging_and_unlocking(backend: Backend) -> None:
+    ports = backend.admin
+    document, locked = backend.new_pdf(1), backend.new_encrypted("s3cret")
+    kinds = {f.name: f.id for f in await ports.taxonomy.list_taxonomy("custom_field")}
+    dated = CustomFieldValue(field=kinds["e2e-date"], value="2026-01-15")
+    title = f"contract-dated-{uuid.uuid4().hex}"
+    for number in (document, locked):
+        patch = DocumentPatch(custom_fields=(dated,), title=f"{title} {number}")
+        _ = await ports.document_writes.update_document(number, patch)
+    writes = ports.pdf_writes
+
+    rotated = await writes.rotate_documents((document,), 90)
+    merged = await writes.merge_documents((document,), metadata_document_id=document)
+    unlocked = await writes.remove_password(locked, "s3cret", output="new_document")
+    version = await writes.remove_password(locked, "s3cret", output="new_version")
+    bare = await writes.remove_password(
+        locked, "s3cret", output="new_document", version_id=locked, keep_metadata=False
+    )
+
+    assert (rotated.ids, merged.ids, unlocked.ids) == ((), (), ())
+    assert (len(version.ids), len(bare.ids)) == (1, 1)
+    _ = await finished(backend, version)
+    _ = await finished(backend, bare)
+    await until_versions(backend, document, 2)
+    deadline = time.monotonic() + SECONDS
+    while True:
+        query = DocumentQuery(title_contains=title)
+        listed = await ports.documents.search_documents(query, page=1, page_size=10)
+        made = [hit.id for hit in listed.hits if hit.id not in {document, locked}]
+        if len(made) == 2:
+            break
+        assert time.monotonic() < deadline, "Paperless did not finish in time"
+        await asyncio.sleep(0.5)
+    for number in made:
+        backend.track_document(number)
