@@ -1,4 +1,4 @@
-"""Where Paperless already holds a file: the check around an upload (decision-47).
+"""Where Paperless already holds a file: the check around an upload (decision-47, decision-52).
 
 Files are compared by their SHA-256, the checksum Paperless 3.5 stores. Before sending, the
 original uploads of documents are found with a filter; versions and the trash have none, so they
@@ -65,6 +65,10 @@ CAPPED: Final = (
     "Versions: only the {read} most recently changed of {total} documents were read; a document "
     "changed meanwhile may be missed."
 )
+TRASH_UNREAD: Final = (
+    "Trash: neither its documents nor its deleted versions were checked, because its entries "
+    "(the first {entries}) with the text of their documents are larger than {mib} MiB."
+)
 UNNAMED: Final = "{more} more documents with the same file are not named."
 REJECTED_FOR: Final = "Paperless rejected the file: it already holds the same file, {where}."
 HIDDEN_REJECTED: Final = REJECTED_FOR.format(
@@ -89,7 +93,7 @@ class Bounds:
         documents: Documents with the file that are read; more are only counted.
         trash_entries: Read in one request, because pages of the trash can overlap.
         trash_bytes: The rows of the trash carry the whole text of the documents, so this is what
-            bounds the request.
+            bounds the request. A larger trash is not checked, and that is said (decision-52).
         trashed_versions: Deleted versions, each of which costs a request of its own.
         seconds: The whole check. Many clients give a call 60 seconds; a wait of 30 still fits.
     """
@@ -122,18 +126,6 @@ TRASH_CHANGED: Final = "the number of entries in the trash changed"
 VERSION_GONE: Final = "a deleted version was restored or removed"
 
 
-class TrashTooLargeError(PaperlessMcpError):
-    """The trash does not fit into what may be read of it."""
-
-    def __init__(self, max_bytes: int) -> None:
-        """Create the error; nothing was sent."""
-        message = (
-            f"The duplicate check failed, because the trash of this user is larger than "
-            f"{max_bytes // MIB} MiB with the text of its documents; the file was not uploaded."
-        )
-        super().__init__(message, hint=f"It works again with a smaller trash. {NO_SKIP}")
-
-
 class ChecksumMissingError(PaperlessMcpError):
     """Paperless does not tell the checksum of a file, so it could be the same one."""
 
@@ -154,7 +146,8 @@ class Snapshot:
     """The versions and the trash by checksum, as they were read once.
 
     Attributes:
-        trash_count: How many entries the trash had; None if the user may not list it.
+        trash_count: How many entries the trash had; None if the user may not list it, or if even
+            one entry is too large to read.
     """
 
     matches: Mapping[str, tuple[DuplicateMatch, ...]]
@@ -276,10 +269,9 @@ class DuplicateFinder:
         except PermissionDenied:
             gaps.append("Documents: this user may not list them.")
         matches += [] if own is None else self._of(own, sha256)
-        if snapshot.trash_count is not None:
-            trash = await self._read_entries(1)
-            if trash.count != snapshot.trash_count:
-                raise CheckMovedError(TRASH_CHANGED)
+        counted = snapshot.trash_count
+        if counted is not None and await self._count_trash() != counted:
+            raise CheckMovedError(TRASH_CHANGED)
         unique = _unique([*matches, *snapshot.matches.get(sha256, ())])
         return Before(
             matches=tuple(sorted(unique, key=lambda m: m.in_trash)),
@@ -303,6 +295,8 @@ class DuplicateFinder:
             found = await self._checked(sha256, own)
         if found.count and not confirm:
             trash = RESTORABLE if any(m.in_trash for m in found.matches) else ""
+            if (unread := self._trash_unread()) in found.not_checked:
+                trash += f"{unread} "
             ConfirmationRequired.require(
                 (
                     f"{action} although the same file is already in Paperless: {found.where()}. "
@@ -488,6 +482,10 @@ class DuplicateFinder:
         except PermissionDenied:
             scan.gaps.append("Trash: this user may not list it.")
             return
+        except AnswerTooLarge:
+            scan.gaps.append(self._trash_unread())
+            scan.trash_count = await self._count_trash()
+            return
         scan.trash_count = total
         for entry in entries:
             if entry.version_of is not None:
@@ -505,19 +503,28 @@ class DuplicateFinder:
 
         Raises:
             CheckMovedError: Paperless lists fewer entries than it counts.
-            TrashTooLargeError: The texts of the documents are too large.
+            AnswerTooLarge: The texts of the documents are too large.
         """
         listed = await self._read_entries(self._bounds.trash_entries)
         if len({e.id for e in listed.entries}) < min(listed.count, self._bounds.trash_entries):
             raise CheckMovedError(TRASH_SHORT)
         return listed.entries, listed.count
 
+    def _trash_unread(self) -> str:
+        bounds = self._bounds
+        return TRASH_UNREAD.format(entries=bounds.trash_entries, mib=bounds.trash_bytes // MIB)
+
+    async def _count_trash(self) -> int | None:
+        """How many entries the trash has; None if even one is too large to read."""
+        try:
+            return (await self._read_entries(1)).count
+        except AnswerTooLarge:
+            return None
+
     async def _read_entries(self, entries: int) -> TrashPage:
         most = self._bounds.trash_bytes
         try:
             return await self._trash.read_trash(entries=entries, max_bytes=most)
-        except AnswerTooLarge:
-            raise TrashTooLargeError(most) from None
         except AnswerCompressed as error:
             message = f"{error.message} The file was not uploaded."
             raise AnswerCompressed(message, hint=f"{error.hint} {NO_SKIP}") from None
@@ -588,7 +595,7 @@ class DuplicateFinder:
         """A document in the trash; its title only if the user's trash lists it."""
         try:
             entries, _ = await self._trash_entries()
-        except CheckMovedError, TrashTooLargeError, PermissionDenied:
+        except CheckMovedError, AnswerTooLarge, PermissionDenied:
             entries = ()
         entry = next((e for e in entries if e.id == root), None)
         return DuplicateMatch(
