@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T07:06:16Z'
-updated_date: '2026-11-24T11:08:15Z'
+updated_date: '2026-11-24T11:08:32Z'
 labels: []
 dependencies: []
 priority: medium
@@ -30,7 +30,7 @@ Left by the reviews of PLMCP-98 and 75: get_app_config and the result of update_
 <!-- DOD:BEGIN -->
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
