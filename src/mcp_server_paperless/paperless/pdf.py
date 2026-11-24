@@ -33,12 +33,13 @@ from pydantic import AwareDatetime, BaseModel, JsonValue
 
 from mcp_server_paperless.domain.errors import PaperlessMcpError, PermissionDenied, Validation
 from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, StartedTasks
+from mcp_server_paperless.domain.tasks import Unconfirmed
 from mcp_server_paperless.paperless.errors import REJECTED
 from mcp_server_paperless.paperless.pagination import Page
 from mcp_server_paperless.paperless.queued import Queued, TaskWaiter, not_applied, task_failed
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Iterator, Sequence
+    from collections.abc import Awaitable, Callable, Collection, Iterator, Sequence
 
     from mcp_server_paperless.domain.pdf import FileOutput, LookupProblem, PageSlot
     from mcp_server_paperless.paperless.client import PaperlessClient
@@ -143,6 +144,7 @@ NO_TIMES: Final = "the times of its queued task are not known"
 NOT_OWN: Final = "a file was not handed over by its queued task"
 AT_ONCE: Final = "another operation of this user ran at the same time"
 UNCOMPARED: Final = "its tasks could not be compared"
+BROKE: Final = "its task could not be followed"
 PENDING: Final = "files of earlier operations of this user may still come"
 TASKED: Final = "a task of its own makes a file of one of these names"
 # How long a file may wait for its consumption: operations before that are taken to be done.
@@ -474,7 +476,13 @@ class PaperlessPdfWriter:
         own: _Copies | None,
     ) -> StartedTasks:
         """The tasks of an accepted request; ``found`` holds what is known if it breaks."""
-        unconfirmed = await self._waiter.confirmed(queued, failed)
+        try:
+            unconfirmed = await self._waiter.confirmed(queued, failed)
+        except Validation:
+            raise
+        except Exception as error:  # noqa: BLE001 -- accepted: its queued task can still be followed
+            logger.error("a queued task could not be followed: %s", type(error).__name__)  # noqa: TRY400 -- the type alone
+            unconfirmed = Unconfirmed(task_id=queued.task_id, reason=BROKE)
         if unconfirmed is not None and problem != "forbidden":
             # Accepted, but not followed to its end: hand the queued task back, do not raise,
             # even when the mark failed, because the queued task is still the one to follow.
@@ -540,7 +548,7 @@ class PaperlessPdfWriter:
             return NOT_OWN
         others = [
             row
-            for row in _copying(bulk, queued, user)
+            for row in _copying(bulk, queued, {None, user})
             if row.date_started is not None
             and row.date_started <= end
             and (row.date_done is None or row.date_done >= start)
@@ -615,7 +623,9 @@ class PaperlessPdfWriter:
         oldest = min(row.created for row in operations.results)
         if operations.next_page is not None and oldest > start - BACKLOG:
             return UNCOMPARED
-        others = list(_copying(operations.results, files.request, user))
+        # 3.5.1 records the caller as owner of every operation. One without an owner is of a user
+        # who was deleted since, whose files are not the caller's, or Paperless's own update.
+        others = list(_copying(operations.results, files.request, {user}))
         if any(
             row.date_started and (not row.date_done or row.date_done >= start) for row in others
         ):
@@ -686,10 +696,10 @@ def _doubtful(files: CopiedFiles, doubt: str) -> FoundCopies:
     return FoundCopies(ids=nothing, doubt=doubt, passing=doubt == PENDING)
 
 
-def _copying(rows: Sequence[_Task], queued: str, user: int) -> Iterator[_Task]:
-    """The other operations of this user that hand over files a copy could be taken for."""
+def _copying(rows: Sequence[_Task], queued: str, owners: Collection[int | None]) -> Iterator[_Task]:
+    """The other operations of these owners that hand over files a copy could be taken for."""
     for row in rows:
-        if row.task_id != queued and row.owner in {None, user} and row.operation in COPYING:
+        if row.task_id != queued and row.owner in owners and row.operation in COPYING:
             yield row
 
 

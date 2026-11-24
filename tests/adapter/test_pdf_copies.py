@@ -234,6 +234,29 @@ async def test_an_earlier_operation_that_made_other_files_is_no_doubt(
     assert (await find(make_client, archive)).doubt == PENDING
 
 
+@pytest.mark.parametrize("fields", [{}, {"date_done": None}, {"date_done": LATER}])
+@pytest.mark.parametrize("operation", ["edit_pdf", "merge", "remove_password", None])
+@pytest.mark.parametrize("owner", [None, 3])
+async def test_an_operation_that_is_not_the_callers_is_no_doubt(
+    make_client: ClientFactory, fields: Json, operation: str | None, owner: int | None
+) -> None:
+    """Without an owner its user was deleted since, or Paperless queued it for itself."""
+    data = {} if operation is None else {"operation": operation, "document_count": 1}
+    archive = Archive(made(61, NAMES[0]), made(62, NAMES[1]))
+    archive.bulk = [QUEUED, other(owner=owner, input_data=data, **fields)]
+
+    assert await find(make_client, archive) == FoundCopies(ids=(61, 62))
+
+    archive.bulk.append(other(id=3, task_id=task_id(3), **fields))  # the caller's own
+    assert (await find(make_client, archive)).doubt in {PENDING, AT_ONCE}
+
+
+async def test_documents_without_an_owner_are_not_the_callers(make_client: ClientFactory) -> None:
+    archive = Archive(made(61, NAMES[0]), {**made(62, NAMES[1]), "owner": None})
+
+    assert await find(make_client, archive) == FoundCopies(ids=(61, None))
+
+
 async def test_an_earlier_new_version_is_known_by_its_task(make_client: ClientFactory) -> None:
     archive = Archive(made(61, NAMES[0]), made(62, NAMES[1]))
     archive.bulk = [QUEUED, other()]

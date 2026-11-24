@@ -518,9 +518,15 @@ class FakeCopying:
     """A queued operation that made new documents, and what their file names start with."""
 
     request: str
-    owner: int
+    owner: int | None
     started: datetime
     family: str
+
+    @property
+    def operation(self) -> str:
+        """The operation, which its file names tell."""
+        kinds = {"_merged.pdf": "merge", "_unprotected.pdf": "remove_password"}
+        return next((v for k, v in kinds.items() if self.family.endswith(k)), "edit_pdf")
 
 
 @dataclass(kw_only=True)
@@ -3633,6 +3639,8 @@ class FakePaperless:
         target = self._find_user(user_id)
         self.state.users.remove(target)
         self._forget(user=user_id)
+        for row in self.state.copying:
+            row.owner = None if row.owner == user_id else row.owner
 
     @write
     async def create_group(self, values: GroupValues) -> GroupRecord:
@@ -3956,7 +3964,17 @@ class FakePaperless:
         document = self._sub(int(match[1])) if match else None
         tags = [(t.id, t.name) for t in self.state.tags if t.visible_to(self.user)]
         file = (document.original, document.mime_type) if document else None
-        return raw.answer(path, params, tags, file, max_bytes=max_bytes)
+        seen = [c for c in self.state.copying if c.owner in {None, self.user.id}]
+        rows: list[dict[str, object]] = [
+            {
+                "task_id": c.request,
+                "task_type": "bulk_update",
+                "owner": c.owner,
+                "input_data": {"operation": c.operation, "document_count": 1},
+            }
+            for c in seen
+        ]
+        return raw.answer(path, params, tags, file, rows, max_bytes=max_bytes)
 
     async def get_ai_suggestions(self, document_id: int) -> AiSuggestions:
         """`AiReader.get_ai_suggestions` (the `ai_suggestions` action).
