@@ -273,7 +273,8 @@ version is re-attached to its document) and empties the trash.
 its trash, so the server looks at the first 1,000 entries in one request of at most 64 MiB (if that
 is too large, slow or fails, at 100), and `truncated` says when there are more; `ids` also looks
 beyond them. Of a document in the trash Paperless shows the text, thumbnail and file of its first
-version and no notes or custom field values: restore it to read the rest.
+version and no notes or custom field values: restore it to read the rest. `get_document_thumbnail`
+does not show what is in the trash; `get_trashed_file` does.
 
 `restore_from_trash` and `empty_trash` take `document_ids` or a `filter`. A filter never acts by
 itself: it lists its matches, and only ids that were shown are acted on, by a dialog or a second

@@ -4,12 +4,15 @@ from typing import TYPE_CHECKING, override
 
 import pytest
 from fakes.accounts import ADMIN, READER
-from fakes.paperless import FakeDocument, FakePaperless, seeded
+from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
 
 from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError, PermissionDenied
-from mcp_server_paperless.services.files import FileService
+from mcp_server_paperless.domain.versions import VersionUpload
+from mcp_server_paperless.services.files import TRASHED_HINT, FileService
 
 if TYPE_CHECKING:
+    from collections.abc import Collection
+
     from mcp_server_paperless.domain.documents import DocumentFile, FileMetadata, FileVersion
 
 pytestmark = pytest.mark.anyio
@@ -108,6 +111,61 @@ async def test_a_thumbnail_comes_with_its_report() -> None:
     assert report.size_bytes == len(delivery.data or b"")
     assert (report.delivered, report.max_bytes, report.note) == (True, None, None)
     assert report.web_url == "https://paperless.example/documents/1/details"
+
+
+IN_TRASH = "it is a deleted document or version, so its thumbnail is not shown here."
+
+
+async def trashed(state: FakeState) -> tuple[int, int, int]:
+    """A live document, a deleted one the reader has a view grant on, and a deleted version."""
+    writer = FakePaperless(state, user=ADMIN[0], allow_writes=True)
+    state.documents.append(FakeDocument(id=70, title="Shared", owner=2, viewers={3}))
+    upload = VersionUpload(filename="v.txt", mime_type="text/plain", content=b"v")
+    made = await writer.get_task(await writer.upload_document_version(1, upload))
+    [version] = made.document_ids
+    _ = await writer.delete_version(1, version)
+    await writer.delete_document(70)
+    return 1, 70, version
+
+
+@pytest.mark.parametrize("user", [ADMIN[0], READER[0]])
+async def test_the_thumbnail_of_what_is_in_the_trash_is_refused_and_that_is_said(
+    user: str,
+) -> None:
+    state = seeded()
+    live, document, version = await trashed(state)
+    fake = Recording(state, user=user)
+
+    assert (await files(fake).thumbnail(live)).data
+    for number in (document, version):
+        assert (await fake.get_document_thumbnail(number)).content  # Paperless serves it
+        with pytest.raises(NotFound) as raised:
+            _ = await files(fake).thumbnail(number)
+        assert raised.value.message == f"{number} is in the trash: {IN_TRASH}"
+        assert raised.value.hint == TRASHED_HINT
+
+
+async def test_a_document_deleted_while_its_thumbnail_is_read_is_not_shown() -> None:
+    class Deleting(FakePaperless):
+        @override
+        async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
+            found = await super().get_document_thumbnail(document_id)
+            await FakePaperless(self.state, user=ADMIN[0], allow_writes=True).delete_document(1)
+            return found
+
+    with pytest.raises(NotFound, match="1 is in the trash"):
+        _ = await files(Deleting(seeded(), user=ADMIN[0])).thumbnail(1)
+
+
+async def test_what_is_not_listed_but_live_is_shown() -> None:
+    """A version that is not deleted: Paperless lists documents only."""
+
+    class Unlisted(FakePaperless):
+        @override
+        async def get_document_titles(self, document_ids: Collection[int]) -> dict[int, str]:
+            return {}
+
+    assert (await files(Unlisted(seeded(), user=ADMIN[0])).thumbnail(1)).data
 
 
 async def test_an_original_within_the_limit_is_delivered_with_its_name_and_type() -> None:

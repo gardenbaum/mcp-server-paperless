@@ -384,6 +384,32 @@ async def test_a_view_grant_reaches_the_file_but_not_the_list(backend: Backend) 
         _ = await granted.documents.get_root(hidden)
 
 
+@pytest.mark.contract(THUMB)
+async def test_the_thumbnail_of_what_is_in_the_trash_is_served_to_whom_may_view_it(
+    backend: Backend,
+) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp102 document")
+    parent = await uploaded(backend, b"plmcp102 parent")
+    version = await add_version(backend, parent, "plmcp102 version")
+    granted = backend.restricted(frozenset({"view_document"}), view=[document, parent])
+    stranger = backend.restricted(frozenset({"view_document"}))
+    await ports.document_writes.delete_document(document)
+    _ = await ports.document_writes.delete_version(parent, version)
+
+    for number in (document, version):
+        for seen in (ports, granted):
+            found = await seen.documents.get_document_thumbnail(number)
+            assert (found.content[8:12], found.mime_type) == (b"WEBP", "image/webp")
+            # What tells it from a live one.
+            assert await seen.documents.get_document_titles([number]) == {}
+            with pytest.raises(NotFound):
+                _ = await seen.documents.get_document_metadata(number)
+        with pytest.raises(PermissionDenied):
+            _ = await stranger.documents.get_document_thumbnail(number)
+    assert (await granted.documents.get_document_titles([parent])).keys() == {parent}
+
+
 @pytest.mark.contract(LIST)
 async def test_a_deleted_version_is_listed_to_the_owner_of_its_document(backend: Backend) -> None:
     ports = backend.admin
