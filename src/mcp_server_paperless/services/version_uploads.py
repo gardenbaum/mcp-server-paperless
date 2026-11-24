@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from mcp_server_paperless.domain.errors import Validation, quoted
 from mcp_server_paperless.domain.versions import VersionUpload, VersionUploadResult
-from mcp_server_paperless.services.allowed_paths import clean_filename
+from mcp_server_paperless.services.allowed_paths import upload_name
 from mcp_server_paperless.services.documents import document_link
 from mcp_server_paperless.services.task_outcome import follow
 from mcp_server_paperless.services.upload_source import decode_base64, read_allowed
@@ -81,7 +81,7 @@ class VersionUploadService:
             NotFound: No such document, or the user may not see it.
             PermissionDenied: The user may not change the document.
         """
-        name = clean_filename(filename)
+        name = upload_name(filename)
         data = decode_base64(content_base64, max_bytes=self._max_bytes, path_hint=self._path_hint)
         return await self._upload(document_id, data, name, label, wait_seconds, confirm=confirm)
 
@@ -101,7 +101,7 @@ class VersionUploadService:
         ``NotFound`` when the path is outside the allowlist or not a regular file.
         """
         found, data = read_allowed(path, self._dirs, max_bytes=self._max_bytes)
-        name = clean_filename(found if filename is None else filename)
+        name = upload_name(found if filename is None else filename)
         return await self._upload(document_id, data, name, label, wait_seconds, confirm=confirm)
 
     async def _upload(  # noqa: PLR0913 -- the document, the file and its options

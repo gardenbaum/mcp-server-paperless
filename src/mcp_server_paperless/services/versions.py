@@ -24,6 +24,7 @@ from mcp_server_paperless.domain.versions import (
     VersionLabelSet,
     VersionsMerged,
 )
+from mcp_server_paperless.services.allowed_paths import check_text
 from mcp_server_paperless.services.document_edits import COUNTED
 from mcp_server_paperless.services.documents import document_link
 from mcp_server_paperless.services.file_checks import check_files
@@ -46,12 +47,13 @@ def clean_label(label: str | None) -> str | None:
     """The label trimmed; None for none or blank (Paperless stores a blank label as none).
 
     Raises:
-        Validation: The label is longer than ``MAX_LABEL`` characters.
+        Validation: The label is longer than ``MAX_LABEL`` characters or no valid text.
     """
     text = (label or "").strip()
     if len(text) > MAX_LABEL:
         message = f"A version label holds at most {MAX_LABEL} characters; this one has {len(text)}."
         raise Validation(message, hint="Shorten the label.")
+    check_text(text, "version label")
     return text or None
 
 

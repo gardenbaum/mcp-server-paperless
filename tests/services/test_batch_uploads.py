@@ -25,6 +25,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.allowed_paths import upload_name
 from mcp_server_paperless.services.batch_uploads import (
     CHANGED,
     FAILED,
@@ -39,7 +40,6 @@ from mcp_server_paperless.services.batch_uploads import (
     _File,  # pyright: ignore[reportPrivateUsage] -- for the seam of the tests below
     cursor,
     position,
-    upload_name,
 )
 from mcp_server_paperless.services.duplicates import (
     HIDDEN_REJECTED,

@@ -38,7 +38,7 @@ jobs:
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
           git merge-base --is-ancestor "$TAGGED_SHA" origin/main
 
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           python-version: "3.14"
           enable-cache: false
@@ -91,7 +91,7 @@ jobs:
           jq --arg v "$VERSION" '.version = $v | .packages[].version = $v' server.json > server.tmp
           mv server.tmp server.json
 
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
 
       # As the registry's GitHub Actions guide does it: the archive must be signed by the release
       # workflow of modelcontextprotocol/registry at exactly the pinned tag.
