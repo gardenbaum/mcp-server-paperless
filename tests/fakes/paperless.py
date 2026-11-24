@@ -26,6 +26,7 @@ import sys
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
+from itertools import dropwhile, takewhile
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Concatenate, Literal, cast
 
@@ -119,7 +120,7 @@ from mcp_server_paperless.domain.instance import (
     InstanceStatistics,
     SystemStatus,
 )
-from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, StartedTasks
+from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, RotationSearch, StartedTasks
 from mcp_server_paperless.domain.permissions import (
     GroupPage,
     GroupRow,
@@ -175,10 +176,13 @@ from mcp_server_paperless.paperless.documents import (
 from mcp_server_paperless.paperless.errors import ai_disabled
 from mcp_server_paperless.paperless.pdf import (
     AT_ONCE,
+    NO_HISTORY,
     NO_TIMES,
     NO_USER,
     PENDING,
+    SEVERAL,
     TASKED,
+    UNREADABLE,
     edit_failed,
     not_editable,
     wrong_password,
@@ -190,7 +194,7 @@ from mcp_server_paperless.paperless.trash import refused as trash_refused
 from mcp_server_paperless.paperless.views import unseen_view
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Callable, Collection, Mapping, Sequence
+    from collections.abc import AsyncGenerator, Callable, Collection, Iterable, Mapping, Sequence
     from types import CoroutineType
 
     from _typeshed import SupportsRichComparison
@@ -435,6 +439,8 @@ class FakeFile:
     content: str
     mime_type: str
     page_count: int | None = None
+    # The name it was uploaded under; None: the document's.
+    file_name: str | None = None
 
 
 @dataclass(kw_only=True)
@@ -521,17 +527,22 @@ class FakeDocument(Owned):
 
 @dataclass
 class FakeCopying:
-    """A queued operation that made new documents, and what their file names start with."""
+    """A queued operation that made files, and what the names of new documents start with."""
 
     request: str
     owner: int | None
     started: datetime
     family: str
+    count: int = 1
 
     @property
     def operation(self) -> str:
         """The operation, which its file names tell."""
-        kinds = {"_merged.pdf": "merge", "_unprotected.pdf": "remove_password"}
+        kinds = {
+            "_merged.pdf": "merge",
+            "_unprotected.pdf": "remove_password",
+            "_rotated.pdf": "rotate",
+        }
         return next((v for k, v in kinds.items() if self.family.endswith(k)), "edit_pdf")
 
 
@@ -1873,8 +1884,9 @@ class FakePaperless:
         version_id = self._next_id()
         # The fake reads no PDF: one whose pages cannot be counted is taken to have as many.
         pages = counted_pages(upload.content) or document.page_count
-        file = FakeFile(upload.content, archive, text, upload.mime_type, pages)
+        file = FakeFile(upload.content, archive, text, upload.mime_type, pages, upload.filename)
         self._push(document, version_id, file, upload.label or None, now)
+        self._log_version(document, version_id, now)
         task.status, task.document_ids = "success", (version_id,)
         return task.task_id
 
@@ -2095,14 +2107,34 @@ class FakePaperless:
         return task.task_id
 
     def _new_version(
-        self, document: FakeDocument, file: FakeFile, *, pages: int | None, marker: bytes
+        self,
+        document: FakeDocument,
+        file: FakeFile,
+        *,
+        pages: int | None,
+        marker: bytes,
+        name: str | None = None,
     ) -> int:
         """Add ``file``, edited, as the newest version of ``document``; returns the version id."""
         version_id = self._next_id()
         archive = None if file.archive is None else file.archive + marker
-        made = FakeFile(file.original + marker, archive, file.content, "application/pdf", pages)
-        self._push(document, version_id, made, None, datetime.now(UTC))
+        original = file.original + marker
+        made = FakeFile(original, archive, file.content, "application/pdf", pages, name)
+        now = datetime.now(UTC)
+        self._push(document, version_id, made, None, now)
+        self._log_version(document, version_id, now)
         return version_id
+
+    def _log_version(self, document: FakeDocument, version_id: int, now: datetime) -> None:
+        """The entry Paperless writes for an added version, by the user who asked for it."""
+        entry = HistoryEntry(
+            id=version_id * 10,
+            timestamp=now,
+            action="update",
+            actor=self.user.username,
+            changes={"Version Added": ["None", version_id]},
+        )
+        document.history.insert(0, entry)
 
     def _copying(self, names: Sequence[str], included: tuple[int, ...] | None) -> CopiedFiles:
         """Record an operation that makes new documents, and how its files are found."""
@@ -2134,7 +2166,11 @@ class FakePaperless:
             and d.added >= own.started
             and d.original_filename in files.names
         }
-        mine = [c for c in copying.values() if c.owner == own.owner and c is not own]
+        mine = [
+            c
+            for c in copying.values()
+            if c.owner == own.owner and c is not own and c.operation != "rotate"
+        ]
         if any(c.started >= own.started for c in mine):
             return FoundCopies(ids=nothing, doubt=AT_ONCE)
         if any(
@@ -2149,6 +2185,105 @@ class FakePaperless:
         if whole and any(c.family == own.family and c.started >= hour for c in mine):
             return FoundCopies(ids=nothing, doubt=PENDING, passing=True)
         return FoundCopies(ids=tuple(found.get(name) for name in files.names))
+
+    @write  # a read, but of the writer port
+    async def find_rotations(self, search: RotationSearch, *, final: bool = False) -> FoundCopies:
+        """`PdfWriter.find_rotations`: the versions with the name of a rotation, by this user.
+
+        The fake works at once; an earlier rotation is unsettled where its versions are not there
+        (a test deleted them, or recorded an operation that made none).
+        """
+        if not self.user.has("view_paperlesstask"):
+            raise self._denied()
+        nothing = (None,) * len(search.hidden)
+        own = next((c for c in self.state.copying if c.request == search.request), None)
+        if not self.user.has("view_uisettings") or own is None:
+            user_known = self.user.has("view_uisettings")
+            return FoundCopies(ids=nothing, doubt=NO_TIMES if user_known else NO_USER)
+        ids: list[int | None] = []
+        doubt: str | None = None
+        for number in search.hidden:
+            found = self._rotation_of(number, search.before[number], own) if doubt is None else None
+            doubt = found if isinstance(found, str) else doubt
+            ids.append(found if isinstance(found, int) else None)
+        doubt = doubt or self._rotated_else(search, own, whole=final or None not in ids)
+        if doubt is not None:
+            return FoundCopies(ids=nothing, doubt=doubt, passing=doubt == PENDING)
+        return FoundCopies(ids=tuple(ids))
+
+    def _rotation_of(self, number: int, newest: int, own: FakeCopying) -> int | str | None:
+        """The version a rotation made of the document, None if there is none, or a doubt."""
+        seen = (d for d in self.state.documents if d.id == number and d.visible_to(self.user))
+        document = next(seen, None)
+        if document is None:
+            return UNREADABLE.format(document=number)
+        newer = takewhile(lambda v: v.id != newest, document.versions)
+        named = self._turned_versions(document, newer, own.started)
+        if named and not (self.state.audit_log_enabled and self.user.has("view_logentry")):
+            return NO_HISTORY
+        mine = self._added(document, named)
+        if len(mine) > 1:
+            return SEVERAL.format(versions=", ".join(map(str, mine)), document=number)
+        return mine[0] if mine else None
+
+    def _rotated_else(self, search: RotationSearch, own: FakeCopying, *, whole: bool) -> str | None:
+        """Why the versions may be another request's of this user."""
+        names = {f"{number}_rotated.pdf" for number in search.hidden}
+        if any(t.file_name in names and t.created >= own.started for t in self.state.tasks):
+            return TASKED
+        others = [
+            c
+            for c in self.state.copying
+            if c is not own and c.owner == self.user.id and c.operation == "rotate"
+        ]
+        if any(c.started >= own.started for c in others):
+            return AT_ONCE
+        earlier = [c for c in others if c.started >= own.started - timedelta(hours=1)]
+        if earlier and whole:
+            since = min(c.started for c in earlier)
+            made = [
+                version
+                for document in self.state.documents
+                if document.visible_to(self.user)
+                for version in self._added(
+                    document,
+                    self._turned_versions(
+                        document,
+                        self._not_own(document, search, own),
+                        since,
+                    ),
+                )
+            ]
+            if len(made) < sum(c.count for c in earlier):
+                return PENDING
+        return None
+
+    def _not_own(
+        self, document: FakeDocument, search: RotationSearch, own: FakeCopying
+    ) -> list[DocumentVersion]:
+        """The versions that cannot be of the request of the search."""
+        if document.id not in search.before:
+            return document.versions
+        shown = search.before[document.id]
+        rest = dropwhile(lambda v: v.id != shown, document.versions)
+        return [v for v in rest if v.added < own.started]
+
+    def _turned_versions(
+        self, document: FakeDocument, versions: Iterable[DocumentVersion], since: datetime
+    ) -> list[int]:
+        """Those added since then that have the file name of a rotation."""
+        name = f"{document.id}_rotated.pdf"
+        late = [v.id for v in versions if not v.is_root and v.added >= since]
+        return [n for n in late if self._file_of(document, n).file_name == name]
+
+    def _added(self, document: FakeDocument, versions: Sequence[int]) -> list[int]:
+        """Those of the versions that the user added, as the history says."""
+        by = {
+            str(added[-1]): entry.actor
+            for entry in document.history
+            if isinstance(added := entry.changes.get("Version Added"), list)
+        }
+        return [n for n in versions if by.get(str(n)) == self.user.username]
 
     def _new_document(
         self,
@@ -2222,17 +2357,30 @@ class FakePaperless:
         documents = self._pdf_documents(document_ids)
         self._pdf_allowed(documents, adds=False, owner_only=True)
         marker = f"\n%rotated {degrees}".encode()
+        request = self._copying(("_rotated.pdf",), None).request
+        self.state.copying[-1].count = len(documents)
         tasks: list[str] = []
         for document in documents:
             file = self._first_or_newest(document, first=original_files)
-            version = self._new_version(document, file, pages=file.page_count, marker=marker)
+            version = self._new_version(
+                document,
+                file,
+                pages=file.page_count,
+                marker=marker,
+                name=f"{document.id}_rotated.pdf",
+            )
             tasks.append(self._pdf_task("consume_file", (version,)))
         shown = [n for n, d in enumerate(documents) if not self._hidden_by_date(d)]
-        return self._seen_tasks(
+        started = self._seen_tasks(
             tuple(tasks[n] for n in shown),
             len(documents),
             sources=tuple(documents[n].id for n in shown),
         )
+        listed = started.sources
+        names = tuple(f"{d.id}_rotated.pdf" for d in documents if d.id not in listed)
+        if started.problem or None in listed or not names:
+            return started
+        return started.model_copy(update={"files": CopiedFiles(request=request, names=names)})
 
     @write
     async def merge_documents(
@@ -3844,7 +3992,7 @@ class FakePaperless:
         original = (number, "original") not in lost
         archive = file.archive if (number, "archive") not in lost else None
         return FileMetadata(
-            original_filename=document.original_filename if named else None,
+            original_filename=(file.file_name or document.original_filename) if named else None,
             original_mime_type=file.mime_type,
             original_size=len(file.original) if original else None,
             original_checksum=sha256(file.original),
@@ -3997,7 +4145,7 @@ class FakePaperless:
                 "task_id": c.request,
                 "task_type": "bulk_update",
                 "owner": c.owner,
-                "input_data": {"operation": c.operation, "document_count": 1},
+                "input_data": {"operation": c.operation, "document_count": c.count},
             }
             for c in seen
         ]
