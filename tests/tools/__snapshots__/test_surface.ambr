@@ -14651,10 +14651,10 @@
         The merged documents vanish for good (not even into the trash): their titles, tags,
         correspondents, notes and other metadata are lost and only their files stay, as versions of
         the root document, which keeps its own metadata. Without confirm a dialog, or an error for you
-        to show the user, first names the documents and what would happen (see confirm). Documents that
-        already have versions of their own cannot be merged in. Needs the permissions to change and to
-        delete documents, and the user must own every document (or be a superuser, or the documents
-        must be unowned); a change grant is not enough.
+        to show the user, first names the documents, what would happen and which files Paperless cannot
+        find (see confirm). Documents that already have versions of their own cannot be merged in. Needs
+        the permissions to change and to delete documents, and the user must own every document (or be a
+        superuser, or the documents must be unowned); a change grant is not enough.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -14719,7 +14719,7 @@
               }),
             ]),
             'default': None,
-            'description': 'Set when the versions could not be listed or the merge is unconfirmed.',
+            'description': 'Set when the versions could not be listed, the merge is unconfirmed or Paperless cannot find a file.',
           }),
           'unconfirmed_task_id': dict({
             'anyOf': list([
@@ -15621,9 +15621,12 @@
         their files stay. dry_run=true previews; without confirm a dialog, or an error for you to show
         the user, first describes the effect (see confirm). Every document has to be a duplicate of the
         kept one now, outside the trash: otherwise nothing changes and each one that is not is named.
-        Documents you cannot see are never compared. Needs the permissions to change and delete
-        documents and ownership of the duplicates, for a merge of the kept document too (or no owner).
-        resolved, not_resolved and kept_seen say what was seen afterwards.
+        Documents you cannot see are never compared. Keeping a document whose file Paperless cannot find
+        is refused while a duplicate still has it, and so are merging a duplicate whose file is missing
+        and trashing one that could not be checked for a kept document without its original; otherwise a
+        missing file is named. Needs the permissions to change and delete documents and ownership of the
+        duplicates, for a merge of the kept document too (or no owner). resolved, not_resolved and
+        kept_seen say what was seen afterwards.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
