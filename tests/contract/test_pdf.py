@@ -603,6 +603,11 @@ async def copies(backend: Backend, user: Ports, files: CopiedFiles | None) -> Fo
     deadline = time.monotonic() + SECONDS
     while True:
         found = await user.pdf_writes.find_copies(files)
+        if found.doubt is not None:  # DIAGNOSTIC PLMCP-79.3
+            from e2e.diag793 import dump  # noqa: PLC0415
+
+            if client := getattr(user.pdf_writes, "_client", None):
+                await dump(client, files.request)
         if found.doubt is not None or None not in found.ids:
             for number in found.ids:
                 if number is not None:

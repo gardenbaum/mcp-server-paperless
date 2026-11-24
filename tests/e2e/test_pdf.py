@@ -458,6 +458,25 @@ async def test_parts_of_a_document_with_a_date_field_are_found_by_their_file_nam
         )
         result = cast("Json", answer.structured_content)
 
+        # DIAGNOSTIC PLMCP-79.3
+        import httpx2
+
+        from e2e.diag793 import dump
+        from mcp_server_paperless.paperless.auth import StaticTokenProvider
+        from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
+
+        async with httpx2.AsyncClient(base_url=stack.base_url) as http:
+            client = PaperlessClient(
+                http, StaticTokenProvider(token), retry=RetryPolicy(), upload_timeout=10.0
+            )
+            rows = await client.get(
+                "/api/tasks/",
+                __import__("e2e.diag793").diag793.Raw,
+                params={"task_type": "bulk_update", "ordering": "-date_created"},
+            )
+            newest = next(r for r in rows.root["results"] if r["owner"] is not None)
+            await dump(client, newest["task_id"])
+
         made = scope.made(result)
         assert (result["state"], result["original"]) == ("success", "trashed"), result["message"]
         assert live_in_trash(stack, source)
