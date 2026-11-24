@@ -1,4 +1,4 @@
-"""get_document_pages on Paperless 3.5.1: pages, versions, users and transports.
+"""get_document_pages and inspect_pdf on Paperless 3.5.1: pages, versions, users and transports.
 
 The file types and the limits are in test_pages_files.py.
 """
@@ -12,10 +12,10 @@ from contract.conftest import delete_and_empty_trash
 from fastmcp import Client
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
 from mcp.types import ImageContent
-from rendering.files import QUADRANTS, corners, pdf_of
+from rendering.files import QUADRANTS, corners, pdf_of, quadrants, saved
 from test_http_uploads import DEFAULT, http_settings, listening
 
-from e2e.helpers import pdf_pages
+from e2e.helpers import ENCRYPTED_PDF, pdf_pages
 from e2e.pages import (
     UPRIGHT,
     Json,
@@ -173,3 +173,94 @@ async def test_pages_are_shown_over_http(stack: Stack) -> None:
             )
 
     assert dark(images(result)[0]) > 100
+
+
+INSPECT = "inspect_pdf"
+BLACK = "0 0 0 rg 100 100 300 300 re f"
+
+
+async def test_a_pdf_is_inspected_with_sizes_rotation_and_sheets(
+    stack: Stack, scope: Scope
+) -> None:
+    content = pdf_of([BLACK] * 4, page="/MediaBox [0 0 595.276 841.89] /Rotate  ??")
+    for turn in (b"  0", b"  0", b" 90", b"180"):
+        # As long as what it replaces, so that the offsets in the file stay right.
+        content = content.replace(b" ??", turn, 1)
+    document = scope.document(unique(content), "turned.pdf")
+
+    original = await show(stack, document, INSPECT)
+    plain = await show(stack, document, INSPECT, pages="3-", overview=False)
+    archive = await show(stack, document, INSPECT, source="archive")
+
+    assert report(original)["page_count"] == 4
+    assert report(original)["layout"] == [
+        {"pages": "1-2", "width_mm": 210.0, "height_mm": 297.0, "rotation": 0},
+        {"pages": "3", "width_mm": 297.0, "height_mm": 210.0, "rotation": 90},
+        {"pages": "4", "width_mm": 210.0, "height_mm": 297.0, "rotation": 180},
+    ]
+    [sheet] = images(original)
+    assert (sheet.size, dark(sheet) > 1000) == ((1568, 392), True)
+    assert [run["pages"] for run in cast("list[Json]", report(plain)["layout"])] == ["3", "4"]
+    assert images(plain) == []
+    assert (report(archive)["source"], report(archive)["page_count"]) == ("archive", 4)
+    assert "can differ from this archive version" in str(report(archive)["note"])
+
+
+async def test_sixty_pages_are_inspected_at_a_time(stack: Stack, scope: Scope) -> None:
+    texts = [f"page {n} {uuid.uuid4().hex[:6]}" for n in range(1, 62)]
+    document = scope.document(unique(pdf_pages(texts)), "many.pdf")
+
+    first = await show(stack, document, INSPECT)
+    rest = await show(stack, document, INSPECT, pages=str(report(first)["next_pages"]))
+
+    assert (len(images(first)), report(first)["next_pages"]) == (5, "61")
+    assert (len(images(rest)), report(rest)["next_pages"]) == (1, None)
+
+
+async def test_every_version_is_inspected(stack: Stack, scope: Scope) -> None:
+    document = scope.document(unique(pdf_of([BLACK])), "first.pdf")
+    longer = unique(pdf_of([BLACK, BLACK]))
+    async with Client(server(stack)) as client:
+        _ = await client.call_tool(
+            "upload_document_version",
+            {
+                "document_id": document,
+                "content_base64": base64.b64encode(longer).decode(),
+                "filename": "second.pdf",
+                "wait_seconds": 30,
+            },
+        )
+
+    newest = report(await show(stack, document, INSPECT, overview=False))
+    root = report(await show(stack, document, INSPECT, overview=False, version_id=document))
+
+    assert (newest["page_count"], root["page_count"]) == (2, 1)
+    assert newest["version_id"] != document == root["version_id"]
+
+
+async def test_only_pdfs_and_archive_pdfs_are_inspected(stack: Stack, scope: Scope) -> None:
+    text = scope.document(uuid.uuid4().hex.encode(), "note.txt", "text/plain")
+    picture = quadrants(612, 792)
+    picture.putpixel((5, 5), tuple(uuid.uuid4().bytes[:3]))
+    image = scope.document(saved(picture, "PNG", dpi=(100, 100)), "scan.png", "image/png")
+    locked = scope.document(unique(ENCRYPTED_PDF), "locked.pdf")
+
+    assert "is text/plain, which is not a PDF" in await refused(stack, text, INSPECT)
+    assert "is image/png, which is not a PDF" in await refused(
+        stack, image, INSPECT, source="original"
+    )
+    assert report(await show(stack, image, INSPECT))["source"] == "archive"
+    assert "is encrypted" in await refused(stack, locked, INSPECT, source="original")
+    assert "No document 999999 exists" in await refused(stack, 999_999, INSPECT)
+
+
+async def test_a_restricted_user_inspects_their_documents_only(stack: Stack) -> None:
+    async with Client(server(stack, stack.reader_token)) as client:
+        seen = await client.call_tool(INSPECT, {"document_id": stack.seeded.public_document})
+        hidden = await client.call_tool(
+            INSPECT, {"document_id": stack.seeded.private_document}, raise_on_error=False
+        )
+
+    assert len(images(seen)) == 1
+    assert hidden.is_error
+    assert not [block for block in hidden.content if isinstance(block, ImageContent)]

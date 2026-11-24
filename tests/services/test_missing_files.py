@@ -31,7 +31,12 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from mcp_server_paperless.domain.documents import DocumentFile, FileMetadata, FileVersion
-    from mcp_server_paperless.domain.rendering import Rendered, RenderRequest
+    from mcp_server_paperless.domain.rendering import (
+        Overview,
+        OverviewRequest,
+        Rendered,
+        RenderRequest,
+    )
     from mcp_server_paperless.services.pdf import PdfService
 
 pytestmark = pytest.mark.anyio
@@ -43,6 +48,9 @@ STILL_READ = "Its text and metadata can still be read; restore the file from a b
 
 class NoRenderer:
     async def render(self, content: bytes, request: RenderRequest) -> Rendered:
+        raise AssertionError((content, request))
+
+    async def inspect(self, content: bytes, request: OverviewRequest) -> Overview:
         raise AssertionError((content, request))
 
 

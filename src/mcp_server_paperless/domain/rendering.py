@@ -3,9 +3,9 @@
 The renderer is not a port: it talks to a child process, not to Paperless.
 """
 
-from typing import ClassVar, Final, Literal, Protocol
+from typing import Annotated, ClassVar, Final, Literal, NamedTuple, Protocol
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 # What the renderer reads: the MIME types Paperless has for a PDF and for the images it can open.
 RENDERABLE: Final = frozenset(
@@ -26,6 +26,16 @@ MAX_PAGES: Final = 200_000
 MIN_SIZE: Final = 256
 MAX_SIZE: Final = 2576
 DEFAULT_SIZE: Final = 1568
+# Contact sheets: pages of one (4 x 3), and seconds after which the rest is left to another call.
+TILES: Final = 12
+SHEET_SECONDS: Final = 20.0
+# When the last tile has to be drawn: what is left of the 30 seconds of the child is for writing
+# the sheets, for starting it and for the pipe.
+DRAWN_SECONDS: Final = 24.0
+# Runs of equal pages in one layout.
+MAX_RUNS: Final = 100
+# The longest side of a page that is reported: ten kilometres.
+MAX_SIDE_MM: Final = 10_000_000.0
 
 # Left, top, right and bottom edge, as fractions of the page as shown.
 type Region = tuple[float, float, float, float]
@@ -46,6 +56,7 @@ class RenderRequest(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
+    kind: Literal["pages"] = "pages"
     mime_type: str
     pages: str
     size: int
@@ -82,6 +93,90 @@ class Rendered(BaseModel):
     rest: tuple[int, ...] = ()
 
 
+class OverviewRequest(BaseModel):
+    """Which pages of a PDF to describe, and within which limits.
+
+    Attributes:
+        pages: Page specification (see ``services.page_ranges``).
+        sheets: Whether contact sheets are drawn.
+        seconds: When to stop and leave the rest to another call.
+        drawn_seconds: When the last page has to be drawn, if it is as slow as the slowest.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    kind: Literal["overview"] = "overview"
+    pages: str
+    sheets: bool = True
+    max_sheets: int = MAX_IMAGES
+    max_bytes: int = MAX_IMAGE_BYTES
+    seconds: float = SHEET_SECONDS
+    drawn_seconds: float = DRAWN_SECONDS
+
+
+type Side = Annotated[float, Field(gt=0, le=MAX_SIDE_MM)]
+
+
+class PageShape(BaseModel):
+    """The size of a page as shown, and the rotation stored in the file."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    width_mm: Side
+    height_mm: Side
+    rotation: Literal[0, 90, 180, 270]
+
+
+class PageRun(BaseModel):
+    """Pages after one another with the same shape; None if they cannot be read."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    pages: tuple[int, ...]
+    shape: PageShape | None
+
+
+class ContactSheet(BaseModel):
+    """Small numbered pictures of pages, row by row: a WebP image.
+
+    Attributes:
+        reduced: It did not fit into the bytes of a call, so it has a lower quality or fewer pixels.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    pages: tuple[int, ...]
+    width: int
+    height: int
+    data: bytes
+    reduced: bool = False
+
+
+class Overview(BaseModel):
+    """The layout and the sheets, in the order asked for, and the pages each leaves out."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    page_count: int
+    runs: tuple[PageRun, ...]
+    layout_rest: tuple[int, ...] = ()
+    sheets: tuple[ContactSheet, ...] = ()
+    rest: tuple[int, ...] = ()
+
+
+class SlowPage(NamedTuple):
+    """The page a job was at when its time was over.
+
+    Attributes:
+        drawing: It was being drawn; else only its size was read.
+        alone: It was the only page asked for.
+    """
+
+    page: int
+    drawing: bool
+    alone: bool
+
+
 class RenderFailed(Exception):  # noqa: N818 -- an outcome, as the names of domain/errors.py
     """The file could not be rendered.
 
@@ -89,14 +184,23 @@ class RenderFailed(Exception):  # noqa: N818 -- an outcome, as the names of doma
         reason: Why; the caller turns it into a message.
         page_count: How many pages the file has, if the page specification is wrong.
         megapixels: How large the image is, if it is too large.
+        slow: The page it was at when the time was over, if it is known.
     """
 
-    def __init__(self, *, reason: Reason, page_count: int = 0, megapixels: float = 0.0) -> None:
+    def __init__(
+        self,
+        *,
+        reason: Reason,
+        page_count: int = 0,
+        megapixels: float = 0.0,
+        slow: SlowPage | None = None,
+    ) -> None:
         """Create the failure. No text in it: the file and the child that reads it are untrusted."""
         super().__init__(reason)
         self.reason: Reason = reason
         self.page_count: int = page_count
         self.megapixels: float = megapixels
+        self.slow: SlowPage | None = slow
 
 
 class PageRenderer(Protocol):
@@ -107,6 +211,14 @@ class PageRenderer(Protocol):
 
         Raises:
             RenderFailed: The file or the page specification cannot be used, or a limit was hit.
+        """
+        ...
+
+    async def inspect(self, content: bytes, request: OverviewRequest) -> Overview:
+        """Sizes, rotation and contact sheets of the pages of a PDF, as far as they fit.
+
+        Raises:
+            RenderFailed: See ``render``.
         """
         ...
 
@@ -145,6 +257,66 @@ class PagesReport(BaseModel):
     next_pages: str | None
     web_url: str
     note: str
+
+
+class LayoutRun(BaseModel):
+    """Pages after one another of the same size and rotation.
+
+    Attributes:
+        pages: Their page specification.
+        rotation: As stored in the file; null with the size if the pages cannot be read.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    pages: str
+    width_mm: float | None
+    height_mm: float | None
+    rotation: int | None
+
+
+class ShownSheet(BaseModel):
+    """One contact sheet among the images of a result: the page of each tile, row by row."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    pages: tuple[int, ...]
+    width: int
+    height: int
+    size_bytes: int
+    reduced: bool
+
+
+class InspectionReport(BaseModel):
+    """What a call of inspect_pdf found, and how to go on.
+
+    Attributes:
+        layout_rest: The page specification of the pages the layout does not cover any more.
+        next_pages: The same for the sheets.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    document_id: int
+    version_id: int
+    source: Literal["original", "archive"]
+    filename: str | None
+    page_count: int
+    layout: tuple[LayoutRun, ...]
+    layout_rest: str | None
+    sheets: tuple[ShownSheet, ...]
+    next_pages: str | None
+    web_url: str
+    note: str
+
+
+class Inspection(BaseModel):
+    """The report and the sheets it lists, in the same order."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    report: InspectionReport
+    sheets: tuple[ContactSheet, ...]
 
 
 class DocumentPages(BaseModel):

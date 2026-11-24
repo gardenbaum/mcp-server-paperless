@@ -56,6 +56,7 @@ async def test_the_document_its_versions_and_its_file_metadata_are_read() -> Non
         ("download_document", {"document_id": LOST}, f"{MESSAGE}."),
         ("download_document", {"document_id": LOST, "offset": 0}, f"{MESSAGE} (version {LOST})."),
         ("get_document_pages", {"document_id": LOST}, f"{MESSAGE} (version {LOST})."),
+        ("inspect_pdf", {"document_id": LOST}, f"{MESSAGE} (version {LOST})."),
         (
             "get_document_thumbnail",
             {"document_id": LOST},
