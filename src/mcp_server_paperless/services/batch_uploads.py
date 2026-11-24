@@ -498,10 +498,6 @@ class BatchUploadService:
             PaperlessMcpError: The check or the upload failed.
         """
         sha256 = file.sha256
-        if sha256 in sent:
-            file.twin = sent[sha256]
-            file.done("duplicate", TWIN.format(path=shown_path(file.twin.path)))
-            return
         try:
             name, data = await asyncio.to_thread(self._read, file)
         except PaperlessMcpError as error:
@@ -509,6 +505,10 @@ class BatchUploadService:
             return
         if file.sha256 != sha256:
             file.done("failed", CHANGED)
+            return
+        if sha256 in sent:
+            file.twin = sent[sha256]
+            file.done("duplicate", TWIN.format(path=shown_path(file.twin.path)))
             return
         file.found = await self._duplicates.find(sha256, reading)
         call.gaps += file.found.not_checked
