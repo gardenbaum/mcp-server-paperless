@@ -7,7 +7,9 @@ refusal (decision-44). Handshake connections (up to 2025-11-25) are asked while 
 2026-07-28 the call returns the question, and the client calls again with the answer and the
 server's own state, which the SDK seals and binds to tool, arguments, caller and process.
 
-A client without form dialogs gets the refusal, and ``confirm=true`` is its way on.
+A client without form dialogs gets the refusal, and ``confirm=true`` is its way on. Not so when the
+operator requires dialogs (decision-53): then ``confirm`` never reaches a tool as true, and whatever
+is not an accepted dialog ends the call.
 """
 
 import asyncio
@@ -52,6 +54,18 @@ SCHEMA: Final[dict[str, object]] = {
     "required": [KEY],
 }
 WAITING: Final = "Waiting for the user to confirm."
+# Added to every reason when the operator requires dialogs.
+REQUIRED: Final = (
+    "the operator requires the user's answer in a dialog (PAPERLESS_MCP_REQUIRE_DIALOG=true) and "
+    "confirm=true does not replace it"
+)
+NO_FORMS: Final = (
+    "the user cannot be asked on this connection, or the client does not declare form elicitation "
+    "(MCP dialogs)"
+)
+NOT_SHOWN: Final = "the dialog could not be shown"
+WAY_OUT: Final = "a client that shows dialogs can confirm, or the operator can switch that off"
+KEPT_CHANGING: Final = "what would be changed kept changing while the user was asked"
 
 
 class Asked(BaseModel):
@@ -74,17 +88,19 @@ class Asked(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class Dialogs:
-    """How long dialogs wait, and which states are used up; one per server, for all connections.
+    """How dialogs are run, and which states are used up; one per server, for all connections.
 
     Attributes:
         timeout: Seconds a dialog waits for its answer.
         progress_every: Seconds between progress notifications while a call waits.
         clock: The time in seconds since the epoch.
+        required: Whether only an accepted dialog confirms (``PAPERLESS_MCP_REQUIRE_DIALOG``).
     """
 
     timeout: float = 600.0
     progress_every: float = 30.0
     clock: Callable[[], float] = time.time
+    required: bool = False
     _used: dict[str, float] = field(default_factory=dict[str, float], init=False)
 
     def use(self, nonce: str, expires: float) -> bool:
@@ -104,14 +120,33 @@ def shows_forms(capabilities: ClientCapabilities | None) -> bool:
     return declared is not None and (declared.form is not None or declared.url is None)
 
 
-async def confirmed[R](run: Callable[[], Awaitable[R]]) -> R:
+async def confirmed[**P, R](
+    tool: Callable[P, Awaitable[R]], /, *args: P.args, **kwargs: P.kwargs
+) -> R:
     """Run a tool call; when it needs a confirmation, ask the user for it if the client can.
 
     Raises:
         ConfirmationRequired: The client cannot ask, or the target changed under every dialog.
-        NotConfirmed: The user was asked and did not accept.
+        NotConfirmed: The user was asked and did not accept; or dialogs are required and there was
+            no accepted one, whatever the cause.
     """
     asking = _asking()
+    if not _required():
+        return await _run(lambda: tool(*args, **kwargs), asking)
+    if KEY in kwargs:
+        cast("dict[str, object]", kwargs)[KEY] = False
+    try:
+        return await _run(lambda: tool(*args, **kwargs), asking)
+    except ConfirmationRequired:
+        reason = KEPT_CHANGING if asking else NO_FORMS
+    except NotConfirmed as no:
+        reason = no.reason
+    # Not after a user's no: there is no way around that.
+    parts = [reason, REQUIRED, *([WAY_OUT] if reason in {NO_FORMS, NOT_SHOWN} else [])]
+    raise NotConfirmed("; ".join(parts))
+
+
+async def _run[R](run: Callable[[], Awaitable[R]], asking: _Asking | None) -> R:
     if asking is None:
         return await run()
     accepted = await asking.answered() if asking.sessionless else None
@@ -126,6 +161,16 @@ async def confirmed[R](run: Callable[[], Awaitable[R]]) -> R:
             accepted = await asking.dialog(refusal)
     with accepting(accepted):
         return await run()
+
+
+def _required() -> bool:
+    """Whether the running server accepts no confirmation but a dialog's."""
+    try:
+        ctx = get_context()
+    except RuntimeError:
+        return False  # a tool function called outside a server
+    dialogs = cast("Dialogs | None", ctx.lifespan_context.get(DIALOGS))
+    return dialogs is not None and dialogs.required
 
 
 def _asking() -> _Asking | None:
@@ -193,10 +238,9 @@ class _Asking:
             reason = "nobody answered the dialog in time"
             raise NotConfirmed(reason) from None
         except MCPError as error:
-            if error.error.code == METHOD_NOT_FOUND:
+            if error.error.code == METHOD_NOT_FOUND and not self.dialogs.required:
                 raise refusal from None  # nobody was asked
-            reason = "the dialog could not be shown"
-            raise NotConfirmed(reason) from None
+            raise NotConfirmed(NOT_SHOWN) from None
         except ValidationError:
             answer = None
         finally:
