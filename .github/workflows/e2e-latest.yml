@@ -63,13 +63,13 @@ jobs:
     name: e2e-latest (${{ matrix.shard }})
     needs: resolve
     runs-on: ubuntu-latest
-    # A hang guard, no quality gate: the whole suite is about 50 minutes of tests, split in four (decision-58),
+    # A hang guard, no quality gate: the whole suite is about 72 minutes of tests, split in six (decision-76),
     # so a shard takes about 15 minutes.
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        shard: ["1/4", "2/4", "3/4", "4/4"]
+        shard: ["1/6", "2/6", "3/6", "4/6", "5/6", "6/6"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
