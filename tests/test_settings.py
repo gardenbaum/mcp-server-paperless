@@ -231,6 +231,19 @@ def test_read_only_must_be_a_boolean(monkeypatch: pytest.MonkeyPatch) -> None:
     assert invalid_fields(ServerSettings) == [("read_only",)]
 
 
+def test_require_dialog_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert ServerSettings.model_validate({}).require_dialog is False
+    monkeypatch.setenv("PAPERLESS_MCP_REQUIRE_DIALOG", "true")
+
+    assert ServerSettings.model_validate({}).require_dialog is True
+
+
+def test_require_dialog_must_be_a_boolean(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_REQUIRE_DIALOG", "maybe")
+
+    assert invalid_fields(ServerSettings) == [("require_dialog",)]
+
+
 @pytest.mark.parametrize("variable", ["PAPERLESS_MCP_TOOLSETS", "PAPERLESS_MCP_DISABLED_TOOLS"])
 def test_malformed_json_names_both_accepted_formats(
     monkeypatch: pytest.MonkeyPatch, variable: str

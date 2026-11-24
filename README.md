@@ -285,7 +285,8 @@ takes more than a misunderstanding:
 - **Confirmation before anything final.** Tools that delete, overwrite, publish or grant access
   first say what would happen (which documents, who gains access, what cannot be undone). Where
   your client can show a dialog you are asked in it, and nothing happens unless you accept; with
-  any other client nothing changes until the call is repeated with `confirm=true`
+  any other client nothing changes until the call is repeated with `confirm=true`,
+  unless you allow only dialogs with `PAPERLESS_MCP_REQUIRE_DIALOG=true`
   ([details](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md#confirmation)).
 - **Dry runs for bulk edits.** `bulk_edit_documents`, `bulk_edit_taxonomy` and
   `resolve_duplicates` preview what would change before they ask for confirmation.
@@ -314,6 +315,7 @@ them.
 | `PAPERLESS_PUBLIC_URL` | Base URL for links shown to you, if it differs from `PAPERLESS_URL` |
 | `PAPERLESS_MCP_TOOLSETS` | Toolsets to offer, comma-separated, or `all` (default `core,ai`) |
 | `PAPERLESS_MCP_READ_ONLY` | `true` to offer only tools that change nothing |
+| `PAPERLESS_MCP_REQUIRE_DIALOG` | `true` to let only an accepted dialog confirm, never `confirm=true` (the client must show dialogs) |
 | `PAPERLESS_MCP_DISABLED_TOOLS` | Tools never offered, by name |
 | `PAPERLESS_MCP_UPLOAD_DIRS` | Directories the model may upload files from by path (stdio only; default: none) |
 | `PAPERLESS_MCP_DOWNLOAD_DIRS` | Directories the model may save downloads into (stdio only; default: none) |

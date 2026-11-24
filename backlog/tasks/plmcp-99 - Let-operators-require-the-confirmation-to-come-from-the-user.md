@@ -1,10 +1,11 @@
 ---
 id: PLMCP-99
 title: Let operators require the confirmation to come from the user
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T18:44:54Z'
-updated_date: '2026-11-23T18:51:41Z'
+updated_date: '2026-11-24T07:37:29Z'
 labels:
   - safety
   - config
@@ -38,3 +39,12 @@ With confirmation dialogs the assistant can still skip the dialog by passing con
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Setting PAPERLESS_MCP_REQUIRE_DIALOG (ServerSettings.require_dialog, off); create_server puts it into Dialogs.required.
+2. tools/confirmation.py: with it on, the boundary drops confirm=true before the tool runs, so every confirmation goes through ConfirmationRequired.require and only an accepted dialog passes; every way back to the plain refusal (no forms, no such method, target kept changing, no client) and every NotConfirmed becomes a NotConfirmed that names reason and setting.
+3. Tests first: registry-wide over both servers (HTTP and stdio variants) and both eras, wire tests, stateless HTTP; e2e on both entrypoints.
+4. decision-53, SECURITY.md, configuration reference, README, server.json, plugin.
+<!-- SECTION:PLAN:END -->
