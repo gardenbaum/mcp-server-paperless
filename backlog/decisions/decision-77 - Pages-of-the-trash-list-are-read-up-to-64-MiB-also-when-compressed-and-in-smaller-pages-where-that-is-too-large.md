@@ -1,0 +1,55 @@
+---
+updated_date: '2026-11-24T22:34:31Z'
+id: decision-77
+title: >-
+  Pages of the trash list are read up to 64 MiB also when compressed and in
+  smaller pages where that is too large
+date: '2026-11-24T21:15:38Z'
+status: accepted
+---
+## Context
+<!-- SECTION:CONTEXT:BEGIN -->
+
+The rows of the trash carry the whole text of their documents. Decisions 47, 54 and 55 bound every read of them to 64 MiB but one: the pages of `list_trash`, which restoring and emptying by ids, `get_trashed_file` and the filter `ids` fall back to, and the one request of `empty_trash(all=true)`. Those had no limit, and their answers were unpacked whatever they unpack to. The bounded reads refuse a compressed answer, so the same bound there would stop restoring by ids behind a proxy that compresses (PLMCP-111).
+
+httpx2 unpacks in pieces of at most 1 MiB since 2.16.0, but what unpacks to nothing is not counted: data after the end of a gzip or deflate stream is kept and copied with every piece (67 MB on the wire took 2.6 GB), and empty blocks go on without end. zlib can be read in bounded pieces directly.
+
+<!-- SECTION:CONTEXT:END -->
+## Decision
+<!-- SECTION:DECISION:BEGIN -->
+
+- `TrashReader.list_trash` has the limit of 64 MiB of the other reads, on the bytes that arrive as well as on what they unpack to. It asks for gzip and deflate and takes these, unpacked here in pieces of at most 1 MiB; another encoding is refused unread, with the proxy as the cause. Data after the end of the stream, also a second gzip member or padding, a cut and a broken stream are an unexpected answer. zstd is dropped. The body of an error answer of every read with such a bound is cut to its first 64 KiB as they arrive; what they unpack to is still told, zstd too.
+- Where ids are looked for in pages of 100 entries, a page that is too large is read as pages of 10 and those as single entries, then in pages of 100 again. An entry over the limit on its own is passed. If an id is then missing, the answer adds to the found entries, the missing ids and their reasons that such an entry was not read and may be one of them. Where a blocking id is looked for, it is then unknown.
+- The search makes at most 1,000 requests of pages in total (as before: 100,000 entries, now fewer where pages are small) and says that it stopped there.
+- An error for ids looked for in pages says that pages can skip entries, for restoring, emptying and looking into an entry too, as the filter `ids` did.
+- A page of `list_trash` that is too large is an error that names a smaller `page_size`, for a single entry the next page.
+- `empty_trash(all=true)` reads one request as before. If that is too large it reads the pages, and goes on only if every page counts the same and they hold exactly that many different entries; otherwise it refuses and names `document_ids`. It also refuses, and says so, where the 1,000 requests are not enough: 1,000 entries read one by one take 1,110.
+- The other reads of rows stay as decision-54 has them: uncompressed or refused.
+- Supersedes one statement of decision-55: "Ids still work through pages of 100 entries read with the ordinary request of `list_trash`, which had no size limit before either". Supplements decisions 47 and 54.
+
+<!-- SECTION:DECISION:END -->
+## Consequences
+<!-- SECTION:CONSEQUENCES:BEGIN -->
+
+- Restoring and emptying by ids work behind a compressing proxy and with large texts; only an entry of more than 64 MiB cannot be found, and neither can an id be ruled out beside one.
+- zstd, which httpx2 offers by default, is not asked for and not taken any more here: it would need bounds of its own (window size, skippable frames). A proxy may not send it unasked.
+- gzip may have several members and zero padding by its standard; an answer with them is refused, where httpx2 ignored what follows the first.
+- Not covered: streamed downloads and the error bodies of other streamed reads keep the decoders of httpx2 and so the data after the end (PLMCP-117).
+- A page that is too large costs up to 64 MiB before it is refused; a block of 100 entries at most 111 requests.
+- Emptying the whole trash with more than 64 MiB of text takes several requests, and on PostgreSQL, where pages of equal dates can overlap, may be refused where it was possible before. It never empties entries it did not see.
+- If the trash shrinks while its pages are read, the search ends instead of failing with a page that does not exist; an id that is not found is explained as before.
+
+- The owner accepted this decision on 2026-11-24, in a question dialog with these points named.
+<!-- SECTION:CONSEQUENCES:END -->
+## Alternatives
+<!-- SECTION:ALTERNATIVES:BEGIN -->
+
+- A plain bound that refuses compressed answers: restoring by ids would not work behind such a proxy.
+- Unpacking compressed answers in the bounded reads, too, so that filters and the duplicate check of uploads work behind such a proxy: that changes decisions 47 and 54, so it is left to the owner.
+
+<!-- SECTION:ALTERNATIVES:END -->
+## Enforcement
+
+- `tests/adapter/test_trash.py`: the limit to the byte for every encoding, the memory of a process that reads hostile answers, data after the end, empty blocks, other and broken encodings, and ids found behind a compressing proxy.
+- `tests/services/test_trash_filters.py`: smaller pages, the limit of requests, an entry that is too large, and emptying everything in pages or not at all.
+- `tests/contract/test_trash.py`: the limit on the fake and on Paperless 3.5.1. `tests/e2e/test_trash.py`: restoring by ids from Paperless 3.5.1 through a transport that has every answer compressed.

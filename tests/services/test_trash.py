@@ -331,9 +331,9 @@ async def test_all_asks_for_one_entry_more_than_it_handles_to_see_a_larger_trash
 
     class Recording(FakePaperless):
         @override
-        async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
+        async def list_trash(self, *, page: int, page_size: int, max_bytes: int) -> TrashPage:
             sizes.append(page_size)
-            return await super().list_trash(page=page, page_size=page_size)
+            return await super().list_trash(page=page, page_size=page_size, max_bytes=max_bytes)
 
     recording = Recording(setup.state, user=setup.fake.user.username)
     service = setup.on(recording, max_all=5)
@@ -359,8 +359,8 @@ async def test_an_entry_a_page_read_returns_twice_is_emptied_once() -> None:
 
     class Repeating(FakePaperless):
         @override
-        async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
-            found = await super().list_trash(page=page, page_size=page_size)
+        async def list_trash(self, *, page: int, page_size: int, max_bytes: int) -> TrashPage:
+            found = await super().list_trash(page=page, page_size=page_size, max_bytes=max_bytes)
             return found.model_copy(update={"entries": (*found.entries, *found.entries[:1])})
 
     repeating = Repeating(setup.state, user=fake.user.username, allow_writes=True)

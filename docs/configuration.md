@@ -271,8 +271,9 @@ version is re-attached to its document) and empties the trash.
 `list_trash` filters by title, document type, kind, day of deletion and ids. Paperless cannot filter
 its trash, so the server looks at the first 1,000 entries in one request of at most 64 MiB (if that
 is too large, slow or fails, at 100), and `truncated` says when there are more; `ids` also looks
-beyond them. Of a document in the trash Paperless shows the text, thumbnail and file of its first
-version and no notes or custom field values: restore it to read the rest.
+beyond them. A page of the list, too, is at most 64 MiB, unpacked: a larger one is an error that
+asks for a smaller `page_size`. Of a document in the trash Paperless shows the text, thumbnail and
+file of its first version and no notes or custom field values: restore it to read the rest.
 
 `restore_from_trash` and `empty_trash` take `document_ids` or a `filter`. A filter never acts by
 itself: it lists its matches, and only ids that were shown are acted on, by a dialog or a second

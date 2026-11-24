@@ -1572,7 +1572,7 @@ class FakePaperless:
             page_count=file.page_count,
         )
 
-    async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
+    async def list_trash(self, *, page: int, page_size: int, max_bytes: int) -> TrashPage:
         """`TrashReader.list_trash` (TrashView.get), ordered like the document list.
 
         Paperless sorts by `-created`, a date, with no tie-breaker: on 3.4.2 equal dates came
@@ -1580,9 +1580,11 @@ class FakePaperless:
 
         Needs the global `view_document` permission (403). A user sees the entries of documents
         they own or that have no owner (a view grant is not enough), a superuser all of them. A
-        deleted version is an entry of its own, unless its document is in the trash too.
+        deleted version is an entry of its own, unless its document is in the trash too. The rows
+        carry the text.
 
         Raises:
+            AnswerTooLarge: The texts of the page are larger than `max_bytes`.
             NotFound: `page` is beyond the last page.
             PermissionDenied: See above.
         """
@@ -1600,6 +1602,10 @@ class FakePaperless:
         start = (page - 1) * page_size
         if page > 1 and start >= len(seen):
             raise beyond_trash(page)
+        rows = seen[start : start + page_size]
+        if sum(len(d.content.encode()) for d in rows) > max_bytes:
+            message = f"Paperless sent more than {max_bytes} bytes for GET /api/trash/."
+            raise AnswerTooLarge(message)
         return TrashPage(
             count=len(seen),
             next_page=page + 1 if start + page_size < len(seen) else None,
@@ -1616,18 +1622,13 @@ class FakePaperless:
                     has_archive=self._first_file(d).archive is not None,
                     checksum=root_checksum(d) if d.root_id is None else None,
                 )
-                for d in seen[start : start + page_size]
+                for d in rows
             ),
         )
 
     async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
-        """`TrashReader.read_trash`: one page of `list_trash`; the rows carry the text."""
-        page = await self.list_trash(page=1, page_size=entries)
-        shown = {e.id for e in page.entries}
-        if sum(len(d.content.encode()) for d in self.state.trash if d.id in shown) > max_bytes:
-            message = f"Paperless sent more than {max_bytes} bytes for GET /api/trash/."
-            raise AnswerTooLarge(message)
-        return page
+        """`TrashReader.read_trash`: one page of `list_trash`."""
+        return await self.list_trash(page=1, page_size=entries, max_bytes=max_bytes)
 
     async def find_in_trash(
         self, document_ids: Collection[int], *, entries: int, max_bytes: int
@@ -1675,13 +1676,9 @@ class FakePaperless:
         Notes, custom field values and later versions went to the trash with the document, so
         Paperless does not tell them. A version lists what is left of its document.
         """
-        listed = await self.list_trash(page=page, page_size=page_size)
-        shown = {e.id for e in listed.entries}
-        rows = [d for d in self.state.trash if d.id in shown]
-        if sum(len(d.content.encode()) for d in rows) > max_bytes:
-            message = f"Paperless sent more than {max_bytes} bytes for GET /api/trash/."
-            raise AnswerTooLarge(message)
-        entry = next((d for d in rows if d.id == document_id), None)
+        listed = await self.list_trash(page=page, page_size=page_size, max_bytes=max_bytes)
+        shown = {e.id for e in listed.entries} & {document_id}
+        entry = next((d for d in self.state.trash if d.id in shown), None)
         return TrashLookup(
             entry=None if entry is None else self._trash_row(entry), next_page=listed.next_page
         )
