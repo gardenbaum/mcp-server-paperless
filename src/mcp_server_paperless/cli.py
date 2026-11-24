@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings
 
 from mcp_server_paperless.app import create_app, run_server, uvicorn_server
 from mcp_server_paperless.domain.errors import PaperlessMcpError
-from mcp_server_paperless.observability import configure_logging
+from mcp_server_paperless.observability import configure_logging, server_failure
 from mcp_server_paperless.server import create_server, protect_process
 from mcp_server_paperless.settings import (
     HttpSettings,
@@ -63,7 +63,7 @@ def main(protect: Callable[[], None] = protect_process) -> None:
         # No banner: it is noise on stderr and would check PyPI for updates (decision-7).
         create_server(paperless, settings, stdio=True).run(transport="stdio", show_banner=False)
     except PaperlessMcpError as error:
-        _fail(error.describe())
+        _fail(server_failure(error))
 
 
 def main_http(

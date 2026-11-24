@@ -588,8 +588,11 @@ details). An unreachable Paperless does not stop it; the tools report the proble
 Paperless is back.
 
 Logs go to stderr (the server's own records as JSON lines). At INFO and above, the records of tool
-calls hold no arguments, results or error messages, the API token and bearer tokens are not
-logged, and an internal error in a tool is logged by type. Error messages of resources and prompts
-and a failed startup check are logged and can quote a prompt's argument or Paperless's answer;
-DEBUG can log arguments and document content. The full list is in the
+calls, resources and prompts hold no arguments, results or error messages, and the API token and
+bearer tokens are not logged. Errors, also those of the libraries and of a failed startup check, are
+logged by type, without message or traceback; a fixed text says what a rejected token or API
+version means. `DEBUG` logs the tracebacks, which can quote arguments and what Paperless answered,
+document content included, because an error could not be traced without them; arguments can also
+appear in other records. The answers to the client are not logged, at no level and over neither
+transport. The full list, with the few values that are logged, is in the
 [privacy policy](../PRIVACY.md#what-the-server-logs).

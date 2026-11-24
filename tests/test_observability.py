@@ -2,6 +2,9 @@
 
 import json
 import logging
+import sys
+import threading
+import warnings
 from typing import TYPE_CHECKING, cast
 
 import httpx2
@@ -9,13 +12,21 @@ import pytest
 from fastmcp import Client
 from harness import FailsAfterProbe, admin, serve
 
-from mcp_server_paperless.domain.errors import UpstreamUnavailable
-from mcp_server_paperless.observability import configure_logging, request_id
+from mcp_server_paperless.domain.errors import UpstreamUnavailable, Validation
+from mcp_server_paperless.observability import (
+    RequestContext,
+    configure_logging,
+    error_types,
+    request_id,
+    server_failure,
+)
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from starlette.types import Message, Receive, Scope, Send
 
 pytestmark = pytest.mark.anyio
 
@@ -63,17 +74,98 @@ def test_records_are_json_lines_on_stderr_with_the_request_id(
     assert record["request_id"] == "req-1"
 
 
-@pytest.mark.usefixtures("isolated_logging")
-def test_exceptions_are_rendered_into_the_record(capsys: pytest.CaptureFixture[str]) -> None:
-    configure_logging("INFO")
+def failure() -> ValueError:
+    """An error of two that both quote content."""
     try:
-        message = "boom"
-        raise ValueError(message)  # noqa: TRY301 -- the exception to log
-    except ValueError:
-        logging.getLogger("mcp_server_paperless.test").exception("failed")
+        try:
+            raise KeyError(CONTENT)  # noqa: TRY301 -- the exception to log
+        except KeyError as cause:
+            raise ValueError(CONTENT) from cause
+    except ValueError as error:
+        return error
 
-    [record] = lines(capsys.readouterr().err)
-    assert "ValueError: boom" in str(record["exc_info"])
+
+@pytest.mark.usefixtures("isolated_logging")
+@pytest.mark.parametrize("level", ["INFO", "DEBUG"])
+def test_an_exception_is_logged_by_its_types_and_as_a_whole_only_at_debug(
+    capsys: pytest.CaptureFixture[str], level: str
+) -> None:
+    configure_logging(level)
+
+    logging.getLogger("any.library").error("failed for %s", "x", exc_info=failure())
+
+    *traceback, record = lines(capsys.readouterr().err)
+    assert record["message"] == "failed for x (ValueError from KeyError)"
+    assert record["level"] == "ERROR"
+    assert "exc_info" not in record
+    assert len(traceback) == (level == "DEBUG")
+    for whole in traceback:
+        assert whole["level"] == "DEBUG"
+        assert whole["message"] == "traceback of a record of any.library"
+        assert f"ValueError: {CONTENT}" in str(whole["exc_info"])
+
+
+def test_the_types_of_groups_and_cycles_are_named_once() -> None:
+    cause, other = KeyError(CONTENT), TypeError(CONTENT)
+    cause.__context__ = other
+    other.__context__ = cause
+    group = ExceptionGroup(CONTENT, [cause, OSError(CONTENT)])
+
+    assert error_types(group) == "ExceptionGroup[KeyError from TypeError, OSError]"
+    assert error_types(None) == ""
+
+
+@pytest.mark.usefixtures("isolated_logging")
+def test_messages_that_hold_values_are_logged_without_them(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure_logging("INFO")
+
+    logging.getLogger("asyncio").error(
+        "Task exception was never retrieved\nfuture: %s", CONTENT, exc_info=failure()
+    )
+    logging.getLogger("any.library").error("Error reading resource 'x://canary'")
+
+    event_loop, resource = lines(capsys.readouterr().err)
+    assert event_loop["message"] == "error in the event loop (ValueError from KeyError)"
+    assert resource["message"] == "Error reading resource"
+
+
+class Unraisable:
+    """What ``sys.unraisablehook`` gets."""
+
+    exc_value: BaseException | None = failure()
+
+
+@pytest.mark.usefixtures("isolated_logging")
+@pytest.mark.parametrize("level", ["INFO", "DEBUG"])
+def test_what_python_prints_itself_is_logged_by_type(
+    capsys: pytest.CaptureFixture[str], level: str
+) -> None:
+    configure_logging(level)
+
+    sys.excepthook(ValueError, failure(), None)
+    sys.unraisablehook(cast("sys.UnraisableHookArgs", cast("object", Unraisable())))
+    thread = threading.Thread(target=lambda: int(CONTENT))
+    thread.start()
+    thread.join()
+    warnings.showwarning(UserWarning(CONTENT), UserWarning, "file.py", 3)
+    logging.getLogger("any.library").error("%d", CONTENT)  # a record that cannot be rendered
+
+    records = lines(capsys.readouterr().err)
+    above = [str(r["message"]) for r in records if r["level"] != "DEBUG"]
+    assert above[:2] == ["unhandled error (ValueError from KeyError)"] * 2
+    assert above[2] == "unhandled error (ValueError)"
+    assert above[3] == "UserWarning at file.py:3"
+    assert len(above) == 4
+    assert CONTENT not in str(above)
+    assert (CONTENT in str(records)) == (level == "DEBUG")
+
+
+def test_a_failed_start_is_told_by_the_fixed_text_or_by_type() -> None:
+    assert server_failure(UpstreamUnavailable("Down.", hint="Wait.")) == "Down. Hint: Wait."
+    assert server_failure(Validation(CONTENT)) == "The server failed: Validation."
+    assert server_failure(failure()) == "The server failed: ValueError from KeyError."
 
 
 async def request_with_query() -> None:
@@ -178,3 +270,28 @@ async def test_the_traceback_of_a_bug_is_logged_at_debug(
     [traceback] = [r for r in caplog.records if r.levelno == logging.DEBUG and r.exc_info]
     assert CONTENT in caplog.text
     assert traceback.getMessage() == "get_instance_overview failed"
+
+
+async def test_a_failed_lifespan_is_reported_without_its_traceback() -> None:
+    async def app(_scope: Scope, _receive: Receive, send: Send) -> None:
+        await send({"type": "lifespan.startup.complete"})
+        try:
+            raise failure()
+        except ValueError:
+            await send({"type": "lifespan.shutdown.failed", "message": CONTENT})
+
+    sent: list[Message] = []
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    async def receive() -> Message:
+        raise NotImplementedError
+
+    await RequestContext(app)({"type": "lifespan"}, receive, send)
+
+    text = "The server failed: ValueError from KeyError."
+    assert sent == [
+        {"type": "lifespan.startup.complete"},
+        {"type": "lifespan.shutdown.failed", "message": text},
+    ]

@@ -352,16 +352,15 @@ async def test_a_resource_bug_is_masked_and_logged_by_type_only(
     assert not [line for line in errors if "secret-detail" in line]
 
 
-async def test_a_resource_domain_error_is_logged_at_info_with_its_hint(
+async def test_a_resource_domain_error_is_logged_at_info_by_type(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     caplog.set_level(logging.INFO)
 
     async with Client(serve(admin())) as client:
-        with pytest.raises(MCPError):
+        with pytest.raises(MCPError, match="No document 999 exists"):
             _ = await client.read_resource("paperless://documents/999")
 
     logged = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
-    assert any(
-        "document_detail: No document 999 exists" in line and "Hint:" in line for line in logged
-    )
+    assert "document_detail failed: NotFound" in logged
+    assert "No document 999" not in caplog.text

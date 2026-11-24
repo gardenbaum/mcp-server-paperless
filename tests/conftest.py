@@ -1,6 +1,9 @@
 """Fixtures shared by every test level."""
 
 import logging
+import sys
+import threading
+import warnings
 from typing import TYPE_CHECKING, cast
 
 import e2e_ci
@@ -65,7 +68,12 @@ def isolated_logging() -> Iterator[None]:
     root = logging.getLogger()
     quiet = [logging.getLogger(name) for name in QUIET_LOGGERS]
     handlers, level, levels = root.handlers[:], root.level, [q.level for q in quiet]
+    factory, raising = logging.getLogRecordFactory(), logging.raiseExceptions
+    hooks = sys.excepthook, threading.excepthook, sys.unraisablehook, warnings.showwarning
     yield
+    logging.setLogRecordFactory(factory)
+    logging.raiseExceptions = raising
+    sys.excepthook, threading.excepthook, sys.unraisablehook, warnings.showwarning = hooks
     for handler in root.handlers[:]:
         root.removeHandler(handler)
     for handler in handlers:
