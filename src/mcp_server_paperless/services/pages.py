@@ -145,11 +145,7 @@ def _inspection_note(found: Overview, source: FileVersion) -> str:
             "Call again with layout_rest as pages and overview=false for the rest of the layout."
         )
     if found.rest:
-        said = (
-            "The layout is of the pages on the sheets; overview=false gives the one of all pages. "
-            "Call again with next_pages as pages for the rest of the sheets."
-        )
-        parts.append(said)
+        parts.append("Call again with next_pages as pages for the rest of the sheets.")
     return " ".join(parts + later)
 
 

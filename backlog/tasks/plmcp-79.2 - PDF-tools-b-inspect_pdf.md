@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:15Z'
-updated_date: '2026-11-24T11:34:35Z'
+updated_date: '2026-11-24T11:36:53Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -69,4 +69,6 @@ DoD 1 left open: rendering, service and tool tests were seen red (the service te
 Review fixes (0 Critical, 3 Important, 7 Minor), tests red first (rendering by import, then the number test against the mutant str(page + 1); service and tool tests before the change). I1: contract PDF has 24 to 30 characters of text, so 3.5.1 makes an archive; the E2E PDFs whose archive is read have no text. I2: each number strip is compared with one drawn in the test. I3: no tile is started that would end after 24 s if as slow as the slowest; the child announces each page, a timeout names it; one load per tile (no seam to count loads, so not tested by itself). Supersedes the earlier notes: with sheets the layout is of the pages on them (M5), with overview=false of all. M1: the UserUnit clause (PDFium has no call for it). M2, M3, M4, M6, M7 done; the rest of a list that does not fit 200 characters is named in the note. Surface snapshot: description of inspect_pdf only. The weight of test_pages.py is refreshed with the next hosted runs.
 
 Correction: the service and tool tests of the review fixes were seen red afterwards, by running them against src of 6c41471.
+
+M5 taken back (controller, 2026-11-24): the layout is of all pages asked for, also with sheets, as the owner approved in design 2.1; its cost on next_pages calls is stated in decision-65. I3b is now tested: overview takes the function that opens the PDF, and a counting document shows that each page is loaded once for its size and its tile (the layout keeps the at most 60 pages whose tiles follow). The 24 s bound counts the layout too (tested). This supersedes the notes above on both. Surface snapshot: description of inspect_pdf only.
 <!-- SECTION:NOTES:END -->

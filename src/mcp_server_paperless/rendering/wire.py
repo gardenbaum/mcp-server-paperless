@@ -215,7 +215,7 @@ def overview_of(output: bytes, request: OverviewRequest) -> Overview:
         described
         and described[-1] <= len(wanted)
         and len(shown) <= request.max_sheets
-        and (not shown or shown[-1] == described[-1])
+        and (not shown or shown[-1] <= len(wanted))
         and bool(shown) is request.sheets
         and sum(sizes) == len(data) <= request.max_bytes
     ):
@@ -226,7 +226,7 @@ def overview_of(output: bytes, request: OverviewRequest) -> Overview:
             PageRun(pages=tuple(wanted[end - run.count : end]), shape=run.shape)
             for run, end in zip(head.runs, described, strict=True)
         ),
-        layout_rest=() if shown else tuple(wanted[described[-1] :]),
+        layout_rest=tuple(wanted[described[-1] :]),
         sheets=tuple(
             ContactSheet(
                 pages=tuple(wanted[end - sheet.count : end]),

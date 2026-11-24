@@ -106,6 +106,8 @@ SPACE: Final = 6
 NUMBER_SIZE: Final = 24
 DESK: Final = (200, 200, 200)
 INK: Final = (0, 0, 0)
+# The layout may take this share of the time, so that some is left for the sheets.
+LAYOUT_SHARE: Final = 0.5
 MM_PER_POINT: Final = 25.4 / 72
 
 # Pillow's own pixel limit only warns up to twice its value; every frame is checked here instead.
@@ -133,9 +135,15 @@ def _scaled(width: float, height: float, region: Region, size: int) -> tuple[flo
 class _Pdf(_Source):
     """A PDF, drawn at the final size with annotations and form fields."""
 
-    def __init__(self, content: bytes) -> None:
+    def __init__(
+        self,
+        content: bytes,
+        open_pdf: Callable[[bytes], pypdfium2.PdfDocument] = pypdfium2.PdfDocument,
+    ) -> None:
+        # Pages the layout loaded and whose tiles follow.
+        self._kept: dict[int, tuple[PageShape, pypdfium2.PdfPage] | None] = {}
         try:
-            self._pdf: pypdfium2.PdfDocument = pypdfium2.PdfDocument(content)
+            self._pdf: pypdfium2.PdfDocument = open_pdf(content)
             _ = self._pdf.init_forms()
         except pypdfium2.PdfiumError as error:
             raise RenderFailed(reason=PDF_ERRORS.get(error.err_code, "damaged")) from error
@@ -179,21 +187,23 @@ class _Pdf(_Source):
             return None
         return shape, found
 
-    def shape(self, page: int) -> PageShape | None:
-        """The shape of a page."""
+    def shape(self, page: int, *, keep: bool) -> PageShape | None:
+        """The shape of a page, which is kept for its tile if ``keep``."""
         loaded = self._loaded(page)
+        if keep:
+            self._kept[page] = loaded
         return loaded and loaded[0]
 
-    def tile(self, page: int) -> tuple[PageShape | None, Image.Image]:
-        """The shape of a page, and the page as large as it fits above its number."""
-        loaded = self._loaded(page)
+    def tile(self, page: int) -> Image.Image:
+        """The page as large as it fits above its number."""
+        loaded = self._kept.pop(page) if page in self._kept else self._loaded(page)
         if loaded is None:
-            return None, Image.new("RGB", (1, 1), DESK)
+            return Image.new("RGB", (1, 1), DESK)
         shape, found = loaded
         width, height = CELL - 2 * SPACE, CELL - STRIP - SPACE
         longest = max(shape.width_mm, shape.height_mm)
         fits = min(width * longest / shape.width_mm, height * longest / shape.height_mm)
-        return shape, self._drawn(found, max(1, int(fits)), WHOLE)
+        return self._drawn(found, max(1, int(fits)), WHOLE)
 
 
 def _stored(region: Region, orientation: int) -> Region:
@@ -514,15 +524,13 @@ def _runs(shapes: Iterable[tuple[int, PageShape | None]]) -> list[PageRun]:
 
 
 def _shapes(
-    source: _Pdf, pages: list[int], late: Callable[[], bool]
+    source: _Pdf, pages: list[int], kept: int, late: Callable[[], bool]
 ) -> Iterator[tuple[int, PageShape | None]]:
-    """Pages and their shapes until it is late, at least the first."""
-    for page in pages[:1]:
-        yield page, source.shape(page)
-    for page in pages[1:]:
-        if late():
+    """Pages and their shapes until it is late, at least the first. Tiles of ``kept`` follow."""
+    for place, page in enumerate(pages):
+        if place and late():
             break
-        yield page, source.shape(page)
+        yield page, source.shape(page, keep=place < kept)
 
 
 def _tiles(  # noqa: PLR0913 -- the pages, the limits, the clock, and whom to tell
@@ -533,8 +541,8 @@ def _tiles(  # noqa: PLR0913 -- the pages, the limits, the clock, and whom to te
     clock: Callable[[], float],
     started: float,
     announce: Callable[[int], None],
-) -> Iterator[tuple[int, PageShape | None, Image.Image]]:
-    """Pages, their shapes and tiles while another as slow as the slowest ends in time.
+) -> Iterator[tuple[int, Image.Image]]:
+    """Pages and their tiles while another as slow as the slowest ends in time.
 
     At least the first.
     """
@@ -547,9 +555,9 @@ def _tiles(  # noqa: PLR0913 -- the pages, the limits, the clock, and whom to te
         ):
             break
         announce(page)
-        shape, tile = source.tile(page)
+        tile = source.tile(page)
         slowest = max(slowest or 0.0, clock() - begun)
-        yield page, shape, tile
+        yield page, tile
 
 
 def _sheet(tiles: list[tuple[int, Image.Image]], font: ImageFont.FreeTypeFont) -> Image.Image:
@@ -577,6 +585,7 @@ def overview(  # noqa: PLR0913 -- the file, the job, and one keyword per seam
     clock: Callable[[], float] = time.monotonic,
     started: float | None = None,
     announce: Callable[[int], None] = lambda _: None,
+    open_pdf: Callable[[bytes], pypdfium2.PdfDocument] = pypdfium2.PdfDocument,
 ) -> Overview:
     """Sizes, rotation and contact sheets of the pages ``request`` asks for, until it is late.
 
@@ -588,30 +597,25 @@ def overview(  # noqa: PLR0913 -- the file, the job, and one keyword per seam
         RenderFailed: The file cannot be read, or it has no such page.
     """
     begun = clock() if started is None else started
-    source = _Pdf(content)
+    source = _Pdf(content, open_pdf)
     pages = _pages(source.page_count, request.pages)
-    if not request.sheets:
-        runs = _runs(_shapes(source, pages, lambda: clock() - begun >= request.seconds))
-        described = sum(len(run.pages) for run in runs)
-        return Overview(
-            page_count=source.page_count, runs=tuple(runs), layout_rest=tuple(pages[described:])
-        )
-    most = min(request.max_sheets, math.ceil(len(pages) / TILES))
-    shapes: list[tuple[int, PageShape | None]] = []
+    most = min(request.max_sheets, math.ceil(len(pages) / TILES)) if request.sheets else 0
+    chosen = pages[: most * TILES]
+    end = begun + request.seconds * (LAYOUT_SHARE if request.sheets else 1.0)
+    runs = _runs(_shapes(source, pages, len(chosen), lambda: clock() >= end))
+    described = sum(len(run.pages) for run in runs)
     sheets: list[ContactSheet] = []
     left = request.max_bytes
-    shown = _tiles(
-        source, pages[: most * TILES], request, clock=clock, started=begun, announce=announce
-    )
-    for group in batched(shown, TILES, strict=False):
-        shapes += [(page, shape) for page, shape, _ in group]
-        image = _sheet([(page, tile) for page, _, tile in group], font)
+    shown = 0
+    tiles = _tiles(source, chosen, request, clock=clock, started=begun, announce=announce)
+    for group in batched(tiles, TILES, strict=False):
+        image = _sheet(list(group), font)
         budget = left // (most - len(sheets))
         whole = _webp(image, QUALITY)
         smaller, data = _fitted(image, whole, budget)
         sheets.append(
             ContactSheet(
-                pages=tuple(page for page, _, _ in group),
+                pages=tuple(page for page, _ in group),
                 width=smaller.width,
                 height=smaller.height,
                 data=data,
@@ -619,11 +623,13 @@ def overview(  # noqa: PLR0913 -- the file, the job, and one keyword per seam
             )
         )
         left -= len(data)
+        shown += len(group)
     return Overview(
         page_count=source.page_count,
-        runs=tuple(_runs(shapes)),
+        runs=tuple(runs),
+        layout_rest=tuple(pages[described:]),
         sheets=tuple(sheets),
-        rest=tuple(pages[len(shapes) :]),
+        rest=tuple(pages[shown:]) if request.sheets else (),
     )
 
 

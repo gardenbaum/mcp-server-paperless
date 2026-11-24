@@ -5,8 +5,9 @@ import json
 import sys
 import time
 from hashlib import shake_256
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
+import pypdfium2
 import pytest
 from PIL import Image as PIL_Image
 from PIL import ImageChops, ImageDraw
@@ -89,6 +90,13 @@ def test_the_layout_follows_the_pages_asked_for() -> None:
     found = overview(mixed(A4, A5, A5, A4), asked("4,1-2", sheets=False), FONT)
 
     assert [run.pages for run in found.runs] == [(4, 1), (2,)]
+
+
+def test_the_layout_covers_all_pages_also_with_sheets() -> None:
+    found = overview(pdf_of([""] * 61), asked(), FONT)
+
+    assert [len(run.pages) for run in found.runs] == [61]
+    assert found.rest == (61,)
 
 
 def test_at_most_a_hundred_runs_and_the_rest_is_named() -> None:
@@ -259,17 +267,31 @@ def test_the_layout_alone_stops_after_its_time_and_says_what_is_left() -> None:
 
 def test_sheets_stop_after_their_time_between_two_tiles() -> None:
     # Two looks at the clock a tile: ten tiles in twenty seconds.
-    found = overview(pdf_of([""] * 40), asked(seconds=30.0), FONT, clock=Clock(1.0))
+    found = overview(pdf_of([""] * 3), asked("1-3", seconds=7.0), FONT, clock=Clock(1.0))
 
-    shown = [page for sheet in found.sheets for page in sheet.pages]
-    assert 9 <= len(shown) <= 13
-    assert found.rest == tuple(range(len(shown) + 1, 41))
-    assert [page for run in found.runs for page in run.pages] == shown
+    # Two looks at the clock for the layout, then two a tile: the third begins at seven seconds.
+    assert [sheet.pages for sheet in found.sheets] == [(1, 2)]
+    assert found.rest == (3,)
+
+
+def test_the_layout_takes_at_most_half_of_the_time_and_the_sheets_still_end_in_time() -> None:
+    found = overview(pdf_of([""] * 80), asked(), FONT, clock=Clock(1.0))
+
+    described = sum(len(run.pages) for run in found.runs)
+    shown = sum(len(sheet.pages) for sheet in found.sheets)
+    assert 9 <= described <= 11
+    assert found.layout_rest == tuple(range(described + 1, 81))
+    assert 4 <= shown <= 6
+    assert found.rest == tuple(range(shown + 1, 81))
+    # A tile of eight seconds after a layout of ten is the last: another would end after 24.
+    clock = Clock(0.0, 10.0, 0.0, 8.0, 0.0)
+    slow = overview(pdf_of([""] * 80), asked(), FONT, clock=clock)
+    assert [sheet.pages for sheet in slow.sheets] == [(1,)]
 
 
 def test_no_tile_is_started_that_as_slow_as_the_slowest_would_not_end_in_time() -> None:
-    # (start, tile, look, tile, look, ...): tiles of 1, 9 and 1 seconds, then 16 have passed.
-    clock = Clock(0.0, 0.0, 1.0, 0.0, 9.0, 0.0, 1.0, 5.0, 0.0)
+    # Start, nine looks of the layout, then two a tile: 1, 9 and 1 seconds, and 16 have passed.
+    clock = Clock(*[0.0] * 10, 0.0, 1.0, 0.0, 9.0, 0.0, 1.0, 5.0, 0.0)
 
     found = overview(pdf_of([""] * 10), asked(), FONT, clock=clock)
 
@@ -279,7 +301,7 @@ def test_no_tile_is_started_that_as_slow_as_the_slowest_would_not_end_in_time() 
 
 
 def test_a_first_tile_that_took_long_is_the_last_and_is_kept() -> None:
-    found = overview(pdf_of([""] * 3), asked(), FONT, clock=Clock(0.0, 0.0, 13.0, 0.0))
+    found = overview(pdf_of([""] * 3), asked(), FONT, clock=Clock(0.0, 0.0, 0.0, 0.0, 13.0, 0.0))
 
     assert [sheet.pages for sheet in found.sheets] == [(1,)]
     assert found.rest == (2, 3)
@@ -296,7 +318,7 @@ def test_a_file_slower_than_the_time_still_shows_one_page() -> None:
     layout = overview(pdf_of([""] * 3), asked(sheets=False), FONT, clock=Clock(100.0))
 
     assert [sheet.pages for sheet in found.sheets] == [(1,)]
-    assert found.rest == (2, 3)
+    assert (found.rest, found.layout_rest) == ((2, 3), (2, 3))
     assert ([run.pages for run in layout.runs], layout.layout_rest) == ([(1,)], (2, 3))
 
 
@@ -306,6 +328,32 @@ def test_every_tile_is_announced_before_it_is_drawn() -> None:
     _ = overview(pdf_of([""] * 3), asked("3,1-2"), FONT, announce=announced.append)
 
     assert announced == [3, 1, 2]
+
+
+class Counting(pypdfium2.PdfDocument):
+    """Counts how often each page (from 0) is loaded."""
+
+    loads: list[int] = []  # noqa: RUF012 -- replaced, never changed
+
+    @override
+    def __getitem__(self, i: int) -> pypdfium2.PdfPage:
+        self.loads = [*self.loads, i]
+        return super().__getitem__(i)
+
+
+@pytest.mark.parametrize(("pages", "count"), [("1-", 70), ("69,1-3", 70)])
+def test_each_page_is_loaded_once_for_its_size_and_its_tile(pages: str, count: int) -> None:
+    opened_files: list[Counting] = []
+
+    def counted(content: bytes) -> Counting:
+        opened_files.append(Counting(content))
+        return opened_files[-1]
+
+    found = overview(pdf_of([""] * count), asked(pages), FONT, open_pdf=counted)
+
+    [file] = opened_files
+    assert len(file.loads) == len(set(file.loads))
+    assert {page - 1 for run in found.runs for page in run.pages} == set(file.loads)
 
 
 def drawn_number(number: int) -> Image.Image:
@@ -389,8 +437,8 @@ def test_what_is_left_is_in_the_answer() -> None:
     shown = overview_of(run(content, sheets)[1], sheets)
     described = overview_of(run(content, layout)[1], layout)
 
-    assert (shown.layout_rest, shown.rest[0]) == ((), 13)
-    assert [len(one.pages) for one in shown.runs] == [1] * 12
+    assert (shown.layout_rest, shown.rest[0]) == (tuple(range(101, 121)), 13)
+    assert shown.runs == described.runs
     assert described.layout_rest == tuple(range(101, 121))
 
 
@@ -444,7 +492,7 @@ def test_an_answer_that_adds_up_is_taken_and_the_pages_follow_from_the_request()
     layout = overview_of(said(runs=[(2, SHAPE)], sheets=[]), asked("3,1-2", sheets=False))
 
     assert [run.pages for run in found.runs] == [(3,), (1,)]
-    assert (found.layout_rest, found.sheets[0].pages, found.rest) == ((), (3, 1), (2,))
+    assert (found.layout_rest, found.sheets[0].pages, found.rest) == ((2,), (3, 1), (2,))
     assert (layout.layout_rest, layout.rest) == ((2,), ())
     assert overview_of(said(sheets=[]), asked(sheets=False)) == Overview(
         page_count=3, runs=(PageRun(pages=(1, 2, 3), shape=PageShape.model_validate(SHAPE)),)
@@ -468,8 +516,6 @@ def test_an_answer_that_adds_up_is_taken_and_the_pages_follow_from_the_request()
         said(runs=[(1, {**SHAPE, "width_mm": "wide"})]),
         said(runs=[(1, {**SHAPE, "rotation": 45})]),
         said(sheets=[]),
-        said(sheets=[2]),  # the layout is of the pages on the sheets
-        said(runs=[(2, SHAPE)]),
         b"1\n" + said(sheets=[]),
         b"1\nx\n" + said(),
         said(sheets=[4]),  # more pages than asked for
@@ -516,11 +562,11 @@ def test_more_than_a_call_may_have_is_a_crash(answer: bytes, request_: OverviewR
 
 
 def test_the_most_a_call_may_have_is_taken() -> None:
-    full = overview_of(said(runs=[(1, SHAPE)] * 60, sheets=[12] * 5, count=200), asked())
+    full = overview_of(said(runs=[(1, SHAPE)] * 100, sheets=[12] * 5, count=200), asked())
     alone = asked(sheets=False)
     layout = overview_of(said(runs=[(1, SHAPE)] * 100, sheets=[], count=200), alone)
 
-    assert (len(full.runs), len(full.sheets), full.rest[0]) == (60, 5, 61)
+    assert (len(full.runs), len(full.sheets), full.rest[0]) == (100, 5, 61)
     assert (len(layout.runs), layout.layout_rest[0]) == (100, 101)
     assert len(overview_of(said(), asked(max_bytes=12)).sheets) == 1
 

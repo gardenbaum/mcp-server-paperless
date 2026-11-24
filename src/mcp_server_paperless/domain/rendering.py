@@ -153,10 +153,7 @@ class ContactSheet(BaseModel):
 
 
 class Overview(BaseModel):
-    """The layout and the sheets, in the order asked for, and the pages they leave out.
-
-    With sheets the layout is of the pages on them.
-    """
+    """The layout and the sheets, in the order asked for, and the pages each leaves out."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
