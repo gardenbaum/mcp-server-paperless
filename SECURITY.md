@@ -6,7 +6,7 @@ not in a public issue. Leave out real tokens and document content.
 
 ## Files are rendered, and the renderer is not a sandbox
 
-`get_document_pages` draws pages of your documents with PDFium (pypdfium2) and Pillow. A document
+`get_document_pages` and `inspect_pdf` draw pages of your documents with PDFium (pypdfium2) and Pillow. A document
 can come from anyone, so this is native code reading untrusted files. It runs in a child process of
 its own for each call, with limits on time, memory and output, and it does not inherit the server's
 environment (tokens), stdin, stdout and open files. On Linux and macOS it also cannot write data
@@ -26,7 +26,7 @@ do that for others that hold the same token: started with `uvx`, the `uv` proces
 and has `PAPERLESS_TOKEN` in its environment, and an MCP client keeps it in its configuration file.
 On a Linux desktop with system fonts, or on macOS and Windows, a compromised child can read those;
 on macOS and Windows the server's own environment, too. If this matters to you, run the container
-image, or switch the tool off with `PAPERLESS_MCP_DISABLED_TOOLS=get_document_pages`.
+image, or switch the tools off with `PAPERLESS_MCP_DISABLED_TOOLS=get_document_pages,inspect_pdf`.
 
 Vulnerability scanners do not report PDFium's vulnerabilities for pypdfium2. This repository checks
 weekly whether the newest release is locked; keep the server up to date.

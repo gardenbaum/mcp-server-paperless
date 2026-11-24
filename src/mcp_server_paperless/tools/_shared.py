@@ -20,6 +20,7 @@ from mcp.types import (
     BlobResourceContents,
     ContentBlock,
     EmbeddedResource,
+    ImageContent,
     TextContent,
     ToolAnnotations,
 )
@@ -121,6 +122,7 @@ MEDIA_TOOLS: Final = frozenset(
     {
         *("get_document_thumbnail", "get_document_pages", "download_document", "bulk_download"),
         "get_trashed_file",  # decision-54
+        "inspect_pdf",  # decision-65
     }
 )
 
@@ -168,6 +170,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "get_trashed_file": "trash",
     "restore_from_trash": "trash",
     "empty_trash": "trash",
+    "inspect_pdf": "pdf",
     "rotate_documents": "pdf",
     "merge_documents": "pdf",
     "split_document": "pdf",
@@ -397,6 +400,12 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         read_only_hint=False,
         destructive_hint=True,
         idempotent_hint=False,
+        open_world_hint=False,
+    ),
+    "inspect_pdf": ToolAnnotations(
+        title="Inspect PDF",
+        read_only_hint=True,
+        idempotent_hint=True,
         open_world_hint=False,
     ),
     "split_document": ToolAnnotations(
@@ -1129,6 +1138,17 @@ def resource_boundary[**P, R](resource: Callable[P, Awaitable[R]]) -> Callable[P
 def report_text(report: BaseModel) -> TextContent:
     """The JSON report, the first block of every file result."""
     return TextContent(type="text", text=report.model_dump_json())
+
+
+def images_result(report: BaseModel, images: list[tuple[str, bytes]]) -> ToolResult:
+    """A report, then each WebP image after its label."""
+    content: list[ContentBlock] = [report_text(report)]
+    for label, data in images:
+        content.append(TextContent(type="text", text=label))
+        content.append(
+            ImageContent(type="image", data=base64.b64encode(data).decode(), mime_type="image/webp")
+        )
+    return ToolResult(content=content)
 
 
 def file_result(

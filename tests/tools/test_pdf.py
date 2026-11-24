@@ -69,6 +69,8 @@ async def test_the_pdf_tools_are_offered_only_when_the_toolset_is_selected() -> 
     assert set(TOOLS) <= await names(toolsets=["pdf"])
     assert set(TOOLS) <= await names(toolsets=["all"])
     assert set(TOOLS).isdisjoint(await names(toolsets=["all"], read_only=True))
+    assert "inspect_pdf" not in await names()
+    assert await names(toolsets=["pdf"], read_only=True) == {"inspect_pdf"}
 
 
 async def test_the_input_schemas_bound_the_selections() -> None:

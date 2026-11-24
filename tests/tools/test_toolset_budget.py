@@ -45,11 +45,12 @@ BASE_OVERVIEW_DEFINITION = 4442
 # BASE_INSTRUCTIONS), the guide in a call of the overview, and the growth of the overview's
 # definition in tools/list (its output schema).
 INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut down)
-# Measured 2835 (core alone, nothing cut, stdio with upload directories): 19 bytes of
+# Measured 2849 (core alone, nothing cut, stdio with upload directories): 19 bytes of
 # upload_documents (PLMCP-85) and 21 of resolve_duplicates (PLMCP-86) over the 2758 of HTTP before,
 # both approved by the owner on 2026-11-23; and 37 of get_trash_entry and get_trashed_file
-# (PLMCP-78), approved by the owner on 2026-11-24.
-OVERVIEW_GUIDE_LIMIT = 2835
+# (PLMCP-78), approved by the owner on 2026-11-24; and 14 of inspect_pdf
+# (PLMCP-79.2): the owner approved on 2026-11-24 at most 2880 for the three tools of PLMCP-79.
+OVERVIEW_GUIDE_LIMIT = 2849
 # Measured 879: 747 before, plus 132 of too_old (PLMCP-101); the rise from 750 was approved by the
 # owner on 2026-11-24.
 DEFINITION_ADDED_LIMIT = 879
