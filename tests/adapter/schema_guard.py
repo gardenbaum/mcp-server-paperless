@@ -213,6 +213,10 @@ WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
         "BulkEditView answers HttpResponseForbidden('Insufficient permissions'), text/html "
         "(PLMCP-22)"
     ),
+    ("POST", "/api/documents/bulk_edit/", 400): (
+        "BulkEditView answers HttpResponseBadRequest('Error performing bulk edit, check logs for "
+        "more detail.'), text/html, when queueing fails (PLMCP-80.4)"
+    ),
     ("POST", "/api/documents/delete/", 403): (
         "DeleteDocumentsView answers HttpResponseForbidden('Insufficient permissions'), text/html "
         "(PLMCP-80.2)"

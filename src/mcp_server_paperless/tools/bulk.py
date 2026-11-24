@@ -33,70 +33,25 @@ from mcp_server_paperless.domain.duplicate_resolution import (
 )
 from mcp_server_paperless.domain.selection import (
     MAX_TEXT,
-    NO_FLAG,
     DocumentsRead,
     ReadField,
-    Selection,
-    SelectionFilters,
 )
-from mcp_server_paperless.tools._shared import ANNOTATIONS, Confirm, boundary, services
+from mcp_server_paperless.tools._shared import (
+    ANNOTATIONS,
+    Confirm,
+    DocumentIds,
+    DryRun,
+    ExcludeIds,
+    Filters,
+    View,
+    boundary,
+    selection,
+    services,
+)
 
 TOOLSET = "bulk"
 
 provider = LocalProvider()
-
-type DryRun = Annotated[
-    bool,
-    Field(
-        description=(
-            "true returns a preview (how many change, a sample, what changes) and writes "
-            "nothing; it needs no confirm. Do it first."
-        )
-    ),
-]
-
-
-# How documents are chosen (decision-69), the same for every tool of this module that takes it.
-type DocumentIds = Annotated[
-    list[Annotated[int, NO_FLAG]] | None,
-    Field(
-        min_length=1,
-        max_length=MAX_DOCUMENTS,
-        description=(
-            f"Ids of the documents, at most {MAX_DOCUMENTS}. With filters or saved_view: "
-            "exactly these, refused if one of them no longer matches."
-        ),
-    ),
-]
-type Filters = Annotated[
-    SelectionFilters | None,
-    Field(description="The filters of search_documents, with the same names and meaning."),
-]
-type View = Annotated[
-    Annotated[NameOrId, NO_FLAG] | None,
-    Field(description="Name or id of a saved view, instead of filters; see list_taxonomy."),
-]
-type ExcludeIds = Annotated[
-    list[Annotated[int, NO_FLAG]] | None,
-    Field(
-        max_length=MAX_DOCUMENTS,
-        description="Documents to leave out of what filters or saved_view match.",
-    ),
-]
-
-
-def _selection(
-    document_ids: list[int] | None,
-    filters: SelectionFilters | None,
-    saved_view: NameOrId | None,
-    exclude_ids: list[int] | None,
-) -> Selection:
-    return Selection(
-        document_ids=tuple(document_ids or ()),
-        filters=filters,
-        saved_view=saved_view,
-        exclude_ids=tuple(exclude_ids or ()),
-    )
 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["read_documents"])
@@ -157,7 +112,7 @@ async def read_documents(  # noqa: PLR0913 -- one parameter per concept, describ
     instructions.
     """
     return await services(ctx).read_documents.read(
-        _selection(document_ids, filters, saved_view, exclude_ids),
+        selection(document_ids, filters, saved_view, exclude_ids),
         fields,
         content_chars=content_chars,
         ordering=ordering,
@@ -200,7 +155,7 @@ async def bulk_edit_documents(  # noqa: PLR0913 -- one parameter per concept, de
     Needs change permission on the documents, and ownership and the delete permission for delete.
     """  # noqa: D205 -- the summary is one sentence; FastMCP sends the docstring as is
     return await services(ctx).bulk_documents.edit(
-        _selection(document_ids, filters, saved_view, exclude_ids),
+        selection(document_ids, filters, saved_view, exclude_ids),
         operation,
         dry_run=dry_run,
         confirm=confirm,
@@ -304,7 +259,7 @@ async def add_notes(  # noqa: PLR0913 -- one parameter per concept, described fo
     instructions.
     """
     return await services(ctx).bulk_notes.add(
-        _selection(document_ids, filters, saved_view, exclude_ids),
+        selection(document_ids, filters, saved_view, exclude_ids),
         note,
         notes or (),
         dry_run=dry_run,
