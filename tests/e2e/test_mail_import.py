@@ -14,7 +14,7 @@ import pytest
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import API_VERSION, num, obj, parse, results
+from e2e.helpers import API_VERSION, in_container, num, obj, parse, results
 from e2e.mailbox import BROKEN, PASSWORD, Mailbox, note
 from mcp_server_paperless.domain.urls import ANSWER_NOT_SHOWN
 from mcp_server_paperless.server import create_server
@@ -317,24 +317,29 @@ async def test_an_action_that_fails_leaves_a_traceback(box: Mailbox, client: Con
     assert "Traceback" in str(shown["error"])
 
 
+def lock(command: str) -> None:
+    """Take or give back the lock a running fetch holds in Paperless's cache."""
+    code = f"from django.core.cache import cache; assert cache.{command}"
+    in_container("python", "manage.py", "shell", "-c", code)
+
+
 async def test_a_fetch_while_another_runs_is_skipped(box: Mailbox) -> None:
     """T5: the process call answers OK all the same, and only the log tells (no result_data)."""
-    _ = box.rule()
-    # The mail server answers a wrong password only after two seconds.
-    wrong = box.stack.admin.patch(
-        f"/api/mail_accounts/{box.account}/", json={"password": "wr0ng-Passw0rd"}
-    )
-    assert wrong.is_success
+    rule = box.rule()
+    _ = box.put("Skipped", {"a.txt": note()})
     before = set(box.tasks("mail_fetch"))
-    box.start()
-    box.start()
+    lock("add('paperless_mail_fetch_lock', 'e2e', timeout=300)")
+    try:
+        assert box.fetch() == 0
+    finally:
+        lock("delete('paperless_mail_fetch_lock')")
 
-    box.wait_for_fetches(before, count=2)
-
-    new = [row for number, row in box.tasks("mail_fetch").items() if number not in before]
-    assert [(row["status"], row["result_data"]) for row in new] == [("success", None)] * 2
-    skipped = "Mail account processing is already running; skipping this run."
-    assert any(skipped in line for line in box.log("paperless"))
+    [skipped] = [row for number, row in box.tasks("mail_fetch").items() if number not in before]
+    assert (skipped["status"], skipped["result_data"]) == ("success", None)
+    said = "Mail account processing is already running; skipping this run."
+    assert any(said in line for line in box.log("paperless"))
+    assert box.fetch() == 1
+    _ = box.records(rule, 1)
 
 
 # --- deleting records (P2)

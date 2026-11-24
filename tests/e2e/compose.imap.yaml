@@ -15,6 +15,5 @@ services:
     depends_on:
       - imap
     environment:
-      # The tests start every fetch themselves; two workers, so that one can meet another.
+      # The tests start every fetch themselves.
       PAPERLESS_EMAIL_TASK_CRON: disable
-      PAPERLESS_TASK_WORKERS: "2"

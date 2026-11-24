@@ -21,7 +21,7 @@ PASSWORD: Final = "e2e-imap-Passw0rd-4711"
 PORT: Final = int(os.environ.get("PAPERLESS_E2E_IMAP_PORT", "8018"))
 # Where Paperless reaches the same server.
 HOST, HOST_PORT = "imap", 31143
-# `bulk_delete` of the API takes any number; the numbers of the wire formats.
+# The actions of rules on the wire.
 ACTIONS: Final = {"delete": 1, "move": 2, "mark_read": 3, "flag": 4, "tag": 5}
 TIMEOUT: Final = 120.0
 ENDED: Final = frozenset({"success", "failure", "revoked"})
@@ -153,28 +153,20 @@ class Mailbox:
         rows = results(self.stack.admin.get("/api/tasks/", params=params).raise_for_status())
         return {num(row["id"]): row for row in rows}
 
-    def start(self) -> None:
-        reply = self.stack.admin.post(f"/api/mail_accounts/{self.account}/process/")
-        assert reply.is_success, reply.text
-
-    def wait_for_fetches(self, before: set[int], count: int = 1) -> None:
-        """Wait until `count` fetches ended that are not among those known `before`."""
-
-        def look() -> bool | None:
-            rows = self.tasks("mail_fetch")
-            done = [row for n, row in rows.items() if n not in before and row["status"] in ENDED]
-            return len(done) >= count or None
-
-        assert wait("the fetch", look)
-
     def fetch(self) -> int:
         """Fetch the mail of the account now and wait for the end; how many files it queued.
 
         The task itself says nothing: 3.5.1 gives `result_data` null for mail_fetch.
         """
         fetches, files = set(self.tasks("mail_fetch")), set(self.tasks("consume_file"))
-        self.start()
-        self.wait_for_fetches(fetches)
+        reply = self.stack.admin.post(f"/api/mail_accounts/{self.account}/process/")
+        assert reply.is_success, reply.text
+
+        def look() -> bool | None:
+            rows = self.tasks("mail_fetch").items()
+            return any(n not in fetches and row["status"] in ENDED for n, row in rows) or None
+
+        assert wait("the fetch", look)
         return len(set(self.tasks("consume_file")) - files)
 
     def log(self, name: str) -> list[str]:
