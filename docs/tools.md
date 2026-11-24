@@ -2,7 +2,7 @@
 
 <!-- Generated from the tool surface by `just docs-tools`. Do not edit by hand. -->
 
-99 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
+100 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
 default; the others are switched on with
 [`PAPERLESS_MCP_TOOLSETS`](configuration.md#toolsets), which also says what each toolset is for.
 
@@ -175,6 +175,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | `create_workflow` | write, confirm | Create a workflow with its triggers and actions. |
 | `update_workflow` | write, confirm | Change a workflow; only the settings you name change. |
 | `delete_workflow` | destructive, confirm | Delete a workflow for good: it has no trash. |
+| `run_workflow` | destructive, confirm, dry run | Run a workflow with a manual trigger by hand on chosen documents, at most 100 per call. |
 
 ## Prompts
 

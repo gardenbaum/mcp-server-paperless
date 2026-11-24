@@ -228,7 +228,7 @@ async def run_workflow(  # noqa: PLR0913 -- one parameter per concept, described
     it moves to the trash can be restored with restore_from_trash of the trash toolset) and every
     call runs everything again: after an error, a failed document or an unconfirmed_task_id never
     call it again on your own, ask the user. Needs the permissions to view workflows and to change
-    documents, and ownership of every document (or none has an owner); else nothing runs (blocked).
+    documents, and that you own every document or it has no owner; else nothing runs (blocked).
     """
     return await services(ctx).workflow_runs.run(
         workflow,

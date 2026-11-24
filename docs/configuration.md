@@ -378,7 +378,7 @@ left out; with them Paperless does not tell which documents it skips. If it fail
 answer names them, and a part of the actions may have run there. Whether e-mails, webhooks, password
 removals and AI suggestions worked is not told by Paperless, and a call whose answer was lost is never
 sent again (decision-75). It needs the permissions to view workflows and to change documents, and
-ownership of every document (or none has an owner).
+you have to own every document, or it has no owner.
 
 ### `admin`
 
