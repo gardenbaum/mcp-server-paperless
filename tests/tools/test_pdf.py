@@ -312,8 +312,8 @@ async def test_the_next_calls_of_an_unfinished_replacement_are_accepted_by_their
     [task] = cast("list[Json]", result["tasks"])
     assert result["next"] == (
         f'get_task(task_id="{task["task_id"]}", wait_seconds=30); only if every one succeeded and '
-        "made exactly one document (get_document), with 3 pages: "
-        f"delete_document(document_id={FIRST})"
+        "made exactly one document (get_document), with 3 pages, and "
+        f"only if document {FIRST} is unchanged: delete_document(document_id={FIRST})"
     )
     async with Client(serve(source, toolsets=["core", "pdf"])) as client:
         _ = await client.call_tool("delete_document", {"document_id": FIRST, "confirm": True})

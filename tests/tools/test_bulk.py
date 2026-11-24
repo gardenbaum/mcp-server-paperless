@@ -317,6 +317,7 @@ async def test_resolve_duplicates_is_typed_bounded_and_destructive() -> None:
     description = " ".join((tool.description or "").split())
     assert "for good" in description
     assert "can be restored" in description
+    assert "trashing one that could not be checked for a kept document" in description
 
 
 @pytest.mark.decision("decision-51")
@@ -355,3 +356,34 @@ async def test_a_document_that_is_no_duplicate_is_an_error_that_names_it() -> No
 
     assert "document 1: Paperless does not take it for a duplicate of document 10" in text
     assert "document 999: it does not exist outside the trash" in text
+
+
+@pytest.mark.decision("decision-63")
+@pytest.mark.parametrize("action", ["trash", "merge_as_versions"])
+async def test_the_copy_whose_file_exists_is_the_one_to_keep(action: str) -> None:
+    arguments = {"keep_document_id": 10, "duplicate_ids": [11], "action": action}
+    state = copies()
+    state.missing = {(10, "original")}
+    quiet = FakePaperless(state, user="admin")
+    writer = FakePaperless(state, user="admin", allow_writes=True)
+    why = (
+        "Paperless cannot find its original, only its archive version, and document 11 still has "
+        "that file"
+    )
+
+    preview = await call(quiet, "resolve_duplicates", **arguments, dry_run=True)
+    refused = await refusal(quiet, "resolve_duplicates", **arguments, confirm=True)
+    state.missing.add((11, "original"))
+    if action == "merge_as_versions":
+        merge = await refusal(writer, "resolve_duplicates", **arguments, confirm=True)
+        assert "Use action trash for a duplicate whose file is missing, or leave it out." in merge
+        arguments["action"] = "trash"
+    asked = await refusal(quiet, "resolve_duplicates", **arguments)
+    done = await call(writer, "resolve_duplicates", **arguments, confirm=True)
+
+    [blocked] = cast("list[Json]", preview["not_resolved"])
+    assert (blocked["id"], blocked["why"], preview["resolved"]) == (10, why, [])
+    assert why in refused
+    assert "Keep a document whose file is there instead" in refused
+    for text in (asked, str(done["message"])):
+        assert "WARNING: Paperless cannot find the original of document 10" in text

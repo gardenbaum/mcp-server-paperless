@@ -266,7 +266,6 @@ def test_the_layout_alone_stops_after_its_time_and_says_what_is_left() -> None:
 
 
 def test_sheets_stop_after_their_time_between_two_tiles() -> None:
-    # Two looks at the clock a tile: ten tiles in twenty seconds.
     found = overview(pdf_of([""] * 3), asked("1-3", seconds=7.0), FONT, clock=Clock(1.0))
 
     # Two looks at the clock for the layout, then two a tile: the third begins at seven seconds.

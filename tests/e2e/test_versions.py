@@ -15,7 +15,7 @@ from fastmcp import Client
 from fastmcp.client.transports import StdioTransport
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import consume_text, num
+from e2e.helpers import consume_text, lose_file, num
 from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
@@ -170,6 +170,48 @@ async def test_documents_are_merged_as_versions_only_with_confirm(
     assert [v["id"] for v in found] == [second, first, root]
     gone = await refused(stack, "list_document_versions", document_id=first)
     assert f"No document {first}" in gone
+
+
+@pytest.mark.decision("decision-63")
+async def test_a_merge_into_a_document_without_its_file_says_so(stack: Stack, scope: Scope) -> None:
+    root, source = scope.document(), scope.document()
+    lose_file(stack.admin, root, "original")
+    arguments = {"root_document_id": root, "source_document_ids": [source]}
+
+    asked = await refused(stack, "merge_documents_as_versions", **arguments)
+    merged = await run(stack, "merge_documents_as_versions", **arguments, confirm=True)
+
+    warning = f"WARNING: Paperless cannot find the original of document {root}."
+    assert warning in asked
+    assert warning in str(merged["message"])
+    assert [v["id"] for v in cast("list[Json]", merged["versions"])] == [source, root]
+    # The document has a file again.
+    shown = stack.admin.get(f"/api/documents/{root}/download/", params={"original": "true"})
+    assert shown.raise_for_status().content
+
+
+@pytest.mark.decision("decision-63")
+async def test_a_merge_of_a_source_without_its_file_warns_that_it_then_shows(
+    stack: Stack, scope: Scope
+) -> None:
+    root, source = scope.document(), scope.document()
+    lose_file(stack.admin, source, "original")
+    arguments = {"root_document_id": root, "source_document_ids": [source]}
+
+    asked = await refused(stack, "merge_documents_as_versions", **arguments)
+    merged = await run(stack, "merge_documents_as_versions", **arguments, confirm=True)
+
+    warning = f"WARNING: document {source} becomes the newest version of document {root}"
+    assert warning in asked
+    assert warning in str(merged["message"])
+    shown = stack.admin.get(f"/api/documents/{root}/download/", params={"original": "true"})
+    assert shown.status_code == 404
+    deleted = await run(
+        stack, "delete_document_version", document_id=root, version_id=source, confirm=True
+    )
+    assert deleted["current_version_id"] == root
+    back = stack.admin.get(f"/api/documents/{root}/download/", params={"original": "true"})
+    assert back.raise_for_status().content
 
 
 async def test_a_read_only_user_may_list_but_not_change_versions(

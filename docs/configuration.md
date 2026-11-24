@@ -196,7 +196,11 @@ it as versions (at most 20 a call). `search_documents` with `has_duplicates` fin
 and `get_document` with `include` `duplicates` lists the copies, also in the trash, and what differs.
 Only documents that Paperless takes for duplicates of the kept one at that moment are touched, all or
 none. From the trash they can be restored; a merge is final and drops their metadata and notes.
-Documents the user cannot see are never compared (decision-51 in `backlog/decisions/`).
+Documents the user cannot see are never compared (decision-51 in `backlog/decisions/`). Keeping a
+document whose file Paperless cannot find is refused while a duplicate still has it, otherwise a
+missing file is named; a merge is refused if a duplicate lacks its file or a file cannot be checked,
+the trash if the kept document lacks its original and a duplicate cannot be checked. The check takes
+at most 30 seconds (decision-63).
 
 ### `versions`
 

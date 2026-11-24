@@ -186,7 +186,8 @@ def _unchecked(result: PdfResult, started: StartedTasks, wanted: Replacement) ->
     )
     return (
         f"{', then '.join(waits)}; only if every one succeeded and made exactly one document "
-        f"(get_document), with {made}: {_finish(wanted, wanted.originals, None, serial=True)}"
+        f"(get_document), with {made}, and {_if_unchanged(wanted.originals)}: "
+        f"{_finish(wanted, wanted.originals, None, serial=True)}"
     )
 
 
