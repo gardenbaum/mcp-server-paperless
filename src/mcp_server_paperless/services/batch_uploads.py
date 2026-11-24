@@ -192,6 +192,19 @@ def words(error: PaperlessMcpError) -> str:
     return error.message if isinstance(error, NotFound) else error.describe()
 
 
+def upload_name(found: str) -> str:
+    """The name a file is uploaded under.
+
+    Raises:
+        Validation: It is no usable name, or holds bytes that are no text.
+    """
+    try:
+        return clean_filename(found)
+    except UnicodeEncodeError:
+        message = "The file name is not valid text."
+        raise Validation(message, hint="Rename the file to a plain name.") from None
+
+
 def _given(text: str) -> _File:
     """The file a path of the call names."""
     try:
@@ -424,7 +437,7 @@ class BatchUploadService:
         """
         found, data = read_allowed(file.path, self._dirs, max_bytes=self._max_bytes)
         file.size = len(data)
-        name = clean_filename(found)
+        name = upload_name(found)
         mime_type = sniff(data, name)
         if mime_type is None:
             message = "The file is not a type Paperless can consume."
