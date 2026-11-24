@@ -321,8 +321,8 @@ class FileSink:
 
         ``at`` is a test seam, called with the stage just reached: ``resolved`` (the path is
         approved), ``created`` (the temporary file exists), ``written`` (it is complete),
-        ``commit`` (everything was compared) and ``reserved`` (without hard links: the name is
-        taken).
+        ``commit`` (everything was compared) and, without hard links, ``made`` (the name is taken)
+        and ``reserved`` (what took it was looked at).
         """
         self.roots: tuple[str, ...] = tuple(roots)
         self.max_bytes: int = max_bytes
@@ -603,10 +603,13 @@ class Target:
             reserved = self._make(self._name)
         except FileExistsError:
             raise _appeared() from None
+        self._sink.at("made")
         mine = os.fstat(reserved)
         with contextlib.suppress(OSError):
             self._sink.system.close(reserved)
         ours = _identity(mine)
+        if mine.st_size:
+            raise _meanwhile()  # somebody wrote into it already
         self._sink.at("reserved")
         if self._look() != ours:
             raise _meanwhile()

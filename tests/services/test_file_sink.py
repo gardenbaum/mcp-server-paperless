@@ -862,6 +862,21 @@ async def test_without_hard_links_a_swapped_reservation_is_left_alone(
     assert (target.read_bytes(), tree.names()) == (theirs, [NAME, "filler"])
 
 
+async def test_without_hard_links_bytes_written_before_the_reservation_is_looked_at_are_kept(
+    tree: Tree,
+) -> None:
+    target = tree.sub / NAME
+
+    with pytest.raises(PaperlessMcpError, match="changed meanwhile"):
+        _ = await save(
+            tree,
+            system=without_links(errno.ENOTSUP),
+            at=when("made", lambda: target.write_bytes(b"theirs")),
+        )
+
+    assert (target.read_bytes(), tree.names()) == (b"theirs", [NAME])
+
+
 async def test_without_hard_links_a_written_reservation_is_left_alone(tree: Tree) -> None:
     target = tree.sub / NAME
 
