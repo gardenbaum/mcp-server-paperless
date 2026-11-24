@@ -501,7 +501,7 @@ async def test_reasons_are_looked_up_for_the_first_few_ids_only() -> None:
 class Moody(FakePaperless):
     """Fails as told: the reads after the write, the single reads, or the write itself."""
 
-    after: UpstreamUnavailable | None = None
+    after: UpstreamUnavailable | PermissionDenied | None = None
     single: UpstreamUnreachable | None = None
     refuse: Validation | PermissionDenied | UpstreamUnreachable | None = None
     takes: tuple[int, ...] = ()  # leave the trash although the write fails
@@ -1145,3 +1145,24 @@ async def test_an_entry_whose_owner_changed_meanwhile_is_not_called_deleted() ->
 
     assert [e.outcome for e in result.entries] == ["unverified"]
     assert (result.count, setup.ids()) == (0, [one])
+
+
+async def test_a_permission_lost_after_the_write_leaves_it_unverified_without_more_requests() -> (
+    None
+):
+    """The change is done and reported, but the trash may not be read any more."""
+    setup = Setup()
+    back, gone = await setup.trashed("back"), await setup.trashed("gone")
+    fake = moody(setup)
+    fake.after = PermissionDenied("The Paperless user may not perform this action.")
+
+    restored = await setup.on(fake).restore([back])
+    fake.written = False
+    emptied = await setup.on(fake).empty([gone], everything=False, confirm=True)
+
+    # The single lookups, which would answer here, are not made after a refusal.
+    assert [e.outcome for e in (*restored.entries, *emptied.entries)] == ["unverified"] * 2
+    assert f"Could not be verified: document {back} 'back'." in restored.message
+    assert emptied.count == 0
+    assert back in setup.alive()
+    assert gone not in setup.ids()
