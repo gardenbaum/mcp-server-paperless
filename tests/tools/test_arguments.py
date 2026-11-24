@@ -28,6 +28,7 @@ from harness import serve
 from mcp_server_paperless.domain.admin import CONFIG_READ_ONLY, CONFIG_SETTINGS
 from mcp_server_paperless.domain.views import FilterRule
 from mcp_server_paperless.domain.workflows import Workflow, WorkflowAction, WorkflowTrigger
+from mcp_server_paperless.services.documents import text_state
 from mcp_server_paperless.services.filter_rules import SPECS
 
 if TYPE_CHECKING:
@@ -56,6 +57,7 @@ def values(schema: Json, defs: Json) -> list[object]:
 
 
 FAILED: list[str] = []
+SEED_STATE = text_state(1, 1, "E2E public invoice ACME 2026")
 
 
 @pytest.fixture(autouse=True)
@@ -884,7 +886,11 @@ async def test_documents_are_read_with_every_section_and_slice() -> None:
         {"document_id": 1, "include": ["notes", "history", "metadata", "versions", "suggestions"]},
         (),
     )
-    await sweep("get_document_content", {"document_id": 1, "offset": 1, "max_chars": 10}, ())
+    await sweep(
+        "get_document_content",
+        {"document_id": 1, "offset": 1, "max_chars": 10, "version_id": 1},
+        (),
+    )
     await sweep("get_document_thumbnail", {"document_id": 1}, ())
     await sweep(
         "get_document_pages",
@@ -931,6 +937,24 @@ async def test_documents_are_read_with_every_section_and_slice() -> None:
     await sweep(
         "merge_documents_as_versions",
         {"root_document_id": 1, "source_document_ids": [2], "label": "L"},
+        (),
+    )
+    await sweep(
+        "correct_document_text",
+        {
+            "document_id": 1,
+            "text_state": SEED_STATE,
+            "version_id": 1,
+            "passage": "E2E",
+            "replacement": "e2e",
+            "dry_run": False,
+            "offset": 0,
+        },
+        (),
+    )
+    await sweep(
+        "correct_document_text",
+        {"document_id": 1, "text_state": SEED_STATE, "text": "t"},
         (),
     )
     await sweep("delete_document", {"document_id": 2}, ())

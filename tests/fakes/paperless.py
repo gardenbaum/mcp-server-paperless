@@ -92,6 +92,7 @@ from mcp_server_paperless.domain.documents import (
     DocumentPatch,
     DocumentQuery,
     DocumentRecord,
+    DocumentText,
     DocumentUpload,
     DocumentVersion,
     FileMetadata,
@@ -1090,6 +1091,42 @@ class FakePaperless:
         document.__dict__.update(changes)
         document.modified = datetime.now(UTC)
         return _record(document, self.user, report_change=False)  # an update's answer omits it
+
+    @write
+    async def set_document_text(self, document_id: int, version_id: int, content: str) -> str:
+        """`DocumentWriter.set_document_text` (DocumentViewSet.partial_update with `version`).
+
+        Order: the global `change_document` permission (403), the document among those the user
+        may see (404), the object (403), the version (404; one in the trash is written, too).
+        The text of the root passes the serializer, which rejects NUL characters and lone
+        surrogates and strips. (The adapter cannot send a surrogate: its body is UTF-8.)
+        """
+        if not self.user.has("change_document"):
+            raise self._denied()
+        document = self._seen(document_id)
+        if not document.changeable_by(self.user):
+            raise self._denied()
+        listed = [v.id for v in document.versions]
+        stubs = [d for d in self.state.trash if d.id == version_id and d.root_id == document_id]
+        if version_id not in listed and not stubs:
+            raise unseen_version(document_id, version_id)
+        if version_id == document_id:
+            if "\x00" in content:
+                reject("content", "Null characters are not allowed.")
+            surrogates = [c for c in content if "\ud800" <= c <= "\udfff"]
+            if surrogates:
+                points = ", ".join(f"U+{ord(c):X}" for c in surrogates)
+                reject("content", f"Surrogate characters are not allowed: {points}.")
+            content = content.strip()
+        for stub in stubs:
+            stub.content = content
+        if version_id in document.version_files:
+            file = document.version_files[version_id]
+            document.version_files[version_id] = replace(file, content=content)
+        if version_id == listed[0]:
+            document.content = content
+        document.modified = datetime.now(UTC)
+        return content
 
     @write
     async def upload_document(self, upload: DocumentUpload) -> str:
@@ -3350,9 +3387,25 @@ class FakePaperless:
         state.tasks.append(task)
         return task.task_id
 
-    async def get_document_content(self, document_id: int) -> str:
-        """`DocumentReader.get_document_content` (retrieve with `fields=content`)."""
-        return self._seen(document_id).content
+    async def get_document_content(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> DocumentText:
+        """`DocumentReader.get_document_content` (retrieve with `fields`); listed versions only."""
+        document = self._seen(document_id)
+        newest = document.versions[0].id
+        wanted = newest if version_id is None else version_id
+        if wanted not in [v.id for v in document.versions]:
+            raise unseen_version(document_id, wanted)
+        return DocumentText(
+            id=document_id,
+            title=document.title,
+            version_id=wanted,
+            versions=tuple(document.versions),
+            user_can_change=document.changeable_by(self.user),
+            content=(
+                document.content if wanted == newest else document.version_files[wanted].content
+            ),
+        )
 
     async def list_document_notes(self, document_id: int) -> tuple[Note, ...]:
         """`DocumentReader.list_document_notes` (the `notes` action: `view_note` is required)."""

@@ -268,11 +268,6 @@ reason = "the schema declares a boolean, Paperless takes a user id; a tool sends
 
 [[open_fields]]
 operation = "GET /api/documents/{id}/"
-fields = ["query:version"]
-task = "PLMCP-75"
-
-[[open_fields]]
-operation = "GET /api/documents/{id}/"
 fields = ["query:full_perms"]
 task = "PLMCP-83"
 
@@ -365,11 +360,6 @@ task = "PLMCP-83"
 operation = "PATCH /api/custom_fields/{id}/"
 fields = ["body:data_type"]
 task = "PLMCP-83"
-
-[[open_fields]]
-operation = "PATCH /api/documents/{id}/"
-fields = ["body:content", "query:version"]
-task = "PLMCP-75"
 
 [[open_fields]]
 operation = "PATCH /api/documents/{id}/"

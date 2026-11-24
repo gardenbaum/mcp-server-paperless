@@ -30,7 +30,7 @@ from mcp_server_paperless.services.removal import RESTORE
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from mcp_server_paperless.domain.documents import DocumentRecord
+    from mcp_server_paperless.domain.documents import DocumentRecord, DocumentText
     from mcp_server_paperless.domain.ports import DocumentReader, DocumentWriter
     from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
@@ -53,7 +53,7 @@ def clean_label(label: str | None) -> str | None:
     return text or None
 
 
-def require_change(document: DocumentRecord) -> None:
+def require_change(document: DocumentRecord | DocumentText) -> None:
     """Refuse early when Paperless says the user cannot change ``document`` (False, not None).
 
     Deleting a version and merging also need ownership, which a read does not tell: that is left

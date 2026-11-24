@@ -5,6 +5,8 @@ kind the user may not list leaves its names null instead of failing the search.
 """
 
 import asyncio
+import hashlib
+import json
 import re
 from typing import TYPE_CHECKING, cast
 
@@ -78,6 +80,12 @@ def listed_version(document: DocumentRecord, version_id: int | None) -> int:
         message = f"Document {document.id} has no version {version_id}."
         raise NotFound(message, hint="Its versions are in get_document with include versions.")
     return listed[0] if version_id is None else version_id
+
+
+def text_state(document_id: int, version_id: int, text: str) -> str:
+    """A fingerprint of the whole text of a version; versions often have the same text."""
+    about = json.dumps([document_id, version_id, text])
+    return hashlib.sha256(about.encode()).hexdigest()[:32]
 
 
 def document_link(web_url: str, document_id: int) -> str:
@@ -339,16 +347,19 @@ class DocumentService:
                     )
                 }
 
-    async def content(self, document_id: int, *, offset: int, max_chars: int) -> ContentSlice:
-        """``max_chars`` characters of the OCR text from ``offset``.
+    async def content(
+        self, document_id: int, *, offset: int, max_chars: int, version_id: int | None = None
+    ) -> ContentSlice:
+        """``max_chars`` characters of the OCR text of a version (default: newest) from ``offset``.
 
         An offset at or past the end gives an empty slice, so callers can always read
         ``total_chars``. ``next_offset`` is null once the slice reaches the end.
 
         Raises:
-            NotFound: No such document, or the user may not see it.
+            NotFound: No such document, the user may not see it, or it has no such version.
         """
-        text = await self._reader.get_document_content(document_id)
+        found = await self._reader.get_document_content(document_id, version_id=version_id)
+        text = found.content
         end = offset + max_chars
         return ContentSlice(
             document_id=document_id,
@@ -356,6 +367,8 @@ class DocumentService:
             content=text[offset:end],
             total_chars=len(text),
             next_offset=end if end < len(text) else None,
+            version_id=found.version_id,
+            text_state=text_state(document_id, found.version_id, text),
             web_url=self._link(document_id),
         )
 

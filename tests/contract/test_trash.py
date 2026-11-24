@@ -185,7 +185,7 @@ async def test_a_deleted_version_is_an_entry_of_its_document_and_restored_onto_i
         (version, "kept label"),
         (document, None),
     ]
-    assert await ports.documents.get_document_content(document) == "plmcp27 second file"
+    assert (await ports.documents.get_document_content(document)).content == "plmcp27 second file"
     assert not await find(ports, {version})
 
     # A document in the trash covers its versions: they are not listed, cannot be restored on
