@@ -1,11 +1,11 @@
 ---
 id: PLMCP-112
 title: Return webhook URLs without their credentials
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T11:11:57Z'
-updated_date: '2026-11-24T13:26:42Z'
+updated_date: '2026-11-24T13:35:59Z'
 labels:
   - safety
 dependencies: []
@@ -68,3 +68,9 @@ test_workflow_messages asks for its hidden header on an action that exists (id 6
 
 Codex (P2 on 4c827d9): a URL inside credentials without a scheme (user:secret/https://rest@host) showed their start; such a word is not shown now. 8 rows red first, 1437 targeted tests passed, linear, changed lines covered.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Webhook URLs, log lines, errors and status URLs are returned without credentials (decision-66); written back as shown they keep what is stored. Three independent review rounds and Codex, all findings fixed; copies are announced (owner, 2026-11-24). Hosted full E2E and CI on the PR.
+<!-- SECTION:FINAL_SUMMARY:END -->
