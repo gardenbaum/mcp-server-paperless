@@ -79,6 +79,10 @@ def shell(code: str) -> None:
     )
 
 
+# No word that another document has: more-like-this would find that one too.
+BARE_TEXT = "plmcp80bare plmcp80words plmcp80test"
+
+
 @contextmanager
 def bare_documents(
     count: int, prefix: str = SCRATCH, created: str = "1990-01-01"
@@ -86,7 +90,7 @@ def bare_documents(
     """``count`` documents without a file, removed again without the trash."""
     name = f"{prefix}{uuid.uuid4().hex[:8]}"
     made = (
-        f"Document(title='{name}', content='plmcp80bare words of a test', checksum=f'{name}{{n}}', "
+        f"Document(title='{name}', content='{BARE_TEXT}', checksum=f'{name}{{n}}', "
         f"mime_type='text/plain', created='{created}')"
     )
     shell(f"Document.objects.bulk_create([{made} for n in range({count})])")
