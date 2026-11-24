@@ -4,7 +4,7 @@ title: Let the mutation run collect its stats again
 status: In Progress
 assignee: []
 created_date: '2026-11-23T23:25:36Z'
-updated_date: '2026-11-24T00:20:27Z'
+updated_date: '2026-11-24T00:21:56Z'
 labels: []
 dependencies: []
 priority: high
@@ -35,4 +35,6 @@ The weekly mutation run fails on main since PLMCP-91: mutmut renames the adapter
 
 <!-- SECTION:NOTES:BEGIN -->
 Also fixed here: the proxy of tests/e2e/pages.py (PLMCP-74) left its connection to Paperless open when a client dropped a slow answer; the ResourceWarning failed an unrelated test (tests/e2e/test_search.py) in the hosted full E2E of PLMCP-76 (run 45293962464). Reproduced against a local stand-in before the fix, gone after it.
+
+The run also outgrew its 60 minutes (28 minutes on 2026-11-22): since PLMCP-74 the renderer's image tests ran in every full pass of mutmut although they test none of the mutated code. They are left out (this can only lower the score) and the time limit is 150 minutes.
 <!-- SECTION:NOTES:END -->
