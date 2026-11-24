@@ -11,6 +11,8 @@ from harness import admin, serve
 from mcp.shared.exceptions import MCPError
 from mcp.types import TextResourceContents
 
+from mcp_server_paperless.services.documents import text_state
+
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.documents import DocumentRecord
 
@@ -205,6 +207,8 @@ async def test_get_document_content_returns_a_slice_with_the_next_offset() -> No
         "content": "23456",
         "total_chars": 10,
         "next_offset": 7,
+        "version_id": 1,
+        "text_state": text_state(1, 1, "0123456789"),
         "web_url": "http://paperless.test/documents/1/details",
     }
 
@@ -231,6 +235,7 @@ async def test_get_document_content_past_the_end_is_empty_with_the_total() -> No
     ("arguments", "message"),
     [
         ({"document_id": 999}, "No document 999"),
+        ({"document_id": 1, "version_id": 2}, "No version 2 exists on document 1"),
         ({"document_id": 1, "offset": -1}, "greater than or equal to 0"),
         ({"document_id": 1, "max_chars": 0}, "greater than or equal to 1"),
         ({"document_id": 1, "max_chars": 20_001}, "less than or equal to 20000"),

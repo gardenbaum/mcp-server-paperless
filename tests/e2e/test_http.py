@@ -109,7 +109,10 @@ async def test_the_setting_the_guide_names_switches_the_toolset_wanted_on_over_h
     setting = re.search(r"PAPERLESS_MCP_TOOLSETS=(\S+)", seen.instructions)
     assert setting is not None, seen.instructions
     assert setting[1] == "core,ai,<name>"
-    assert "HTTP and image: environment of the process or container" in seen.instructions
+    assert (
+        "HTTP and image: environment, restart the process or recreate the container"
+        in seen.instructions
+    )
     wanted = "permissions"  # neither the first of the toolsets that are off nor the last
     [entry] = [
         e for e in cast("list[dict[str, object]]", seen.guide["off"]) if e["toolset"] == wanted

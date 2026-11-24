@@ -3,7 +3,7 @@ id: doc-1
 title: paperless-mcp design
 type: specification
 created_date: '2026-11-09T19:21:00Z'
-updated_date: '2026-11-23T22:38:31Z'
+updated_date: '2026-11-24T01:05:44Z'
 ---
 # mcp-server-paperless — Design
 
@@ -243,12 +243,12 @@ Names are indicative; the builder finalises parameters within §5.5. "Phase" ref
 
 | Toolset (default) | Tools | Phase |
 |---|---|---|
-| **core** (on) — read | `search_documents` (full text, more-like, structured filters by name/id, dates, custom-field query, paging, ordering) · `get_document` (detail + names; `include`: notes, history, metadata, versions, suggestions) · `get_document_content` (sliced) · `get_document_thumbnail` · `get_document_pages` (page images, decision-42) · `download_document` (original/archive, any version; whole, in parts, or saved over stdio: decision-45) · `list_taxonomy(kind, name_contains)` · `get_instance_overview` (statistics, system status, versions, current user, capabilities) · `get_task(task_id, wait_seconds)` · `run_saved_view` (moved from views by decision-34) | M1 |
+| **core** (on) — read | `search_documents` (full text, more-like, structured filters by name/id, dates, custom-field query, paging, ordering) · `get_document` (detail + names; `include`: notes, history, metadata, versions, suggestions) · `get_document_content` (sliced, any version: decision-48) · `get_document_thumbnail` · `get_document_pages` (page images, decision-42) · `download_document` (original/archive, any version; whole, in parts, or saved over stdio: decision-45) · `list_taxonomy(kind, name_contains)` · `get_instance_overview` (statistics, system status, versions, current user, capabilities) · `get_task(task_id, wait_seconds)` · `run_saved_view` (moved from views by decision-34) | M1 |
 | **core** (on) — write | `update_document` (merge semantics) · `add_note` · `delete_note` · `delete_document` (→ trash, confirm) · `upload_document` (base64 / stdio allowlisted path; metadata by name; optional wait) · `create_taxonomy_item` · `update_taxonomy_item` · `delete_taxonomy_item` (confirm) | M2 |
 | **ai** (on if Paperless AI enabled) | `ask_paperless_ai` (RAG chat over all or given documents) · `get_ai_suggestions` | M2 |
 | bulk | `bulk_edit_documents` (typed operations: tags add/remove/modify, correspondent, type, storage path, custom fields, delete, reprocess; `dry_run`, confirm) · `bulk_edit_taxonomy` (delete, permissions) | M3 |
 | pdf | `rotate_documents` · `merge_documents` · `split_document` · `delete_pages` · `edit_pdf` · `remove_document_password` · `reprocess_documents` | M3 |
-| versions | `list_document_versions` · `upload_document_version` · `set_document_version_label` · `delete_document_version` (confirm) · `merge_documents_as_versions` | M3 |
+| versions | `list_document_versions` · `upload_document_version` · `set_document_version_label` · `delete_document_version` (confirm) · `merge_documents_as_versions` · `correct_document_text` (dry_run, confirm: decision-48) | M3 |
 | views | saved views list/get/create/update/delete (`run_saved_view`, which translates a view's filter rules into a document query, is in core: decision-34) | M3 |
 | sharing | share links list/create/delete · share-link bundles list/create/rebuild/delete · `email_documents` | M3 |
 | trash | `list_trash` · `restore_from_trash` · `empty_trash` (explicit ids or `all=true`, confirm) | M3 |

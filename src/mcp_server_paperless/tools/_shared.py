@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.tasks import TaskService
     from mcp_server_paperless.services.taxonomy import TaxonomyResolver
     from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
+    from mcp_server_paperless.services.text_edits import TextEditor
     from mcp_server_paperless.services.trash import TrashService
     from mcp_server_paperless.services.uploads import UploadService
     from mcp_server_paperless.services.version_uploads import VersionUploadService
@@ -81,8 +82,8 @@ TOOLSETS: Final = frozenset(
 TOOLSET_SUMMARIES: Final[Mapping[str, str]] = {
     "core": "documents and taxonomy",
     "ai": "Paperless AI questions and suggestions",
-    "bulk": "change many documents at once",
-    "versions": "document versions",
+    "bulk": "change many documents",
+    "versions": "document versions, text fixes",
     "views": "saved views",
     "trash": "restore and empty deleted documents",
     "pdf": "PDF edits",
@@ -136,6 +137,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "set_document_version_label": "versions",
     "delete_document_version": "versions",
     "merge_documents_as_versions": "versions",
+    "correct_document_text": "versions",
     "list_saved_views": "views",
     "get_saved_view": "views",
     "create_saved_view": "views",
@@ -652,6 +654,15 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=False,
         open_world_hint=False,
     ),
+    # Destructive (decision-48): Paperless keeps the old text only in its audit log. A repeated call
+    # is refused, because the text is another one by then.
+    "correct_document_text": ToolAnnotations(
+        title="Correct document text",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     # Destructive (decision-6): it can trash documents and overwrite what many of them hold, so
     # every execution needs confirm, and dry_run previews it. Not idempotent: a repeated trashing
     # or reprocessing is another action (a repeated tag change leaves the state as it is).
@@ -943,6 +954,7 @@ class Services:
     uploads: UploadService
     versions: VersionService
     version_uploads: VersionUploadService
+    text_edits: TextEditor
     bulk_documents: BulkDocumentEditor
     bulk_taxonomy: BulkTaxonomyEditor
     views: ViewService

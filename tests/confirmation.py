@@ -14,6 +14,7 @@ from fastmcp.client.elicitation import ElicitResult
 
 from mcp_server_paperless.domain.documents import DocumentVersion
 from mcp_server_paperless.domain.workflows import Workflow, WorkflowAction, WorkflowTrigger
+from mcp_server_paperless.services.documents import text_state
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -102,6 +103,11 @@ CALLS: Final[dict[str, Json]] = {
     },
     "delete_document_version": {"document_id": 1, "version_id": 20},
     "merge_documents_as_versions": {"root_document_id": 10, "source_document_ids": [11]},
+    "correct_document_text": {
+        "document_id": 10,
+        "text_state": text_state(10, 10, ""),
+        "text": "typed from the page",
+    },
     "delete_saved_view": {"view": "e2e-view"},
     "empty_trash": {"all": True},
     "merge_documents": {"document_ids": [10, 11], "delete_originals": True},

@@ -69,6 +69,7 @@ from mcp_server_paperless.services.sharing import SharingService
 from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
+from mcp_server_paperless.services.text_edits import TextEditor
 from mcp_server_paperless.services.trash import TrashService
 from mcp_server_paperless.services.uploads import UploadService
 from mcp_server_paperless.services.version_uploads import VersionUploadService
@@ -484,6 +485,9 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 ),
                 versions=VersionService(
                     adapters.documents, adapters.document_writes, taxonomy, web_url=web_url
+                ),
+                text_edits=TextEditor(
+                    adapters.documents, adapters.document_writes, web_url=web_url
                 ),
                 version_uploads=VersionUploadService(
                     adapters.documents,

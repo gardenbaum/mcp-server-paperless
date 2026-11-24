@@ -19,6 +19,7 @@ from mcp_server_paperless.domain.documents import (
     DocumentPage,
     DocumentPatch,
     DocumentRecord,
+    DocumentText,
     DocumentUpload,
     DocumentVersion,
     FileMetadata,
@@ -65,6 +66,8 @@ DETAIL_FIELDS = (
     "storage_path,tags,custom_fields,original_file_name,mime_type,page_count,"
     "notes,versions,user_can_change"
 )
+# The text of one version, and what identifies it.
+TEXT_FIELDS = "content,title,versions,user_can_change"
 
 
 class _Value(BaseModel):
@@ -170,6 +173,13 @@ class _Checksum(BaseModel):
 
 class _Root(BaseModel):
     root_id: int
+
+
+class _Text(BaseModel):
+    content: str
+    title: str
+    versions: list[_Version]
+    user_can_change: bool
 
 
 class _Content(BaseModel):
@@ -449,9 +459,30 @@ class PaperlessDocumentReader:
         row = await self._one(document_id, "", _Readable, {"fields": DETAIL_FIELDS})
         return _record(row, can_change=row.user_can_change)
 
-    async def get_document_content(self, document_id: int) -> str:
-        """See ``DocumentReader.get_document_content``."""
-        return (await self._one(document_id, "", _Content, {"fields": "content"})).content
+    async def get_document_content(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> DocumentText:
+        """See ``DocumentReader.get_document_content``.
+
+        Paperless answers the text of a version in the trash, too, so the version has to be among
+        those the same answer lists.
+        """
+        params: Params = {"fields": TEXT_FIELDS, **_of_version(version_id)}
+        try:
+            row = await self._one(document_id, "", _Text, params)
+        except NotFound:
+            raise _unseen(document_id, version_id) from None
+        listed = [version.id for version in row.versions] or [document_id]
+        if version_id is not None and version_id not in listed:
+            raise unseen_version(document_id, version_id)
+        return DocumentText(
+            id=document_id,
+            title=row.title,
+            version_id=listed[0] if version_id is None else version_id,
+            versions=tuple(_version(v) for v in row.versions),
+            user_can_change=row.user_can_change,
+            content=row.content,
+        )
 
     async def list_document_notes(self, document_id: int) -> tuple[Note, ...]:
         """See ``DocumentReader.list_document_notes``."""
@@ -685,6 +716,25 @@ class PaperlessDocumentWriter:
         except NotFound:
             raise unseen_document(document_id) from None
         return _record(row, can_change=None)
+
+    async def set_document_text(self, document_id: int, version_id: int, content: str) -> str:
+        """See ``DocumentWriter.set_document_text``.
+
+        Always names the version, also the newest: a version added meanwhile would get the text.
+        ``fields`` limits what a PATCH writes, not only its answer: without ``content`` Paperless
+        answers 200 and leaves the text of the root version as it is.
+        """
+        try:
+            row = await self._client.call(
+                "PATCH",
+                f"{PATH}{document_id}/",
+                _Content,
+                params={"fields": "id,content", "version": version_id},
+                json={"content": content},
+            )
+        except NotFound:
+            raise unseen_version(document_id, version_id) from None
+        return row.content
 
     async def add_note(self, document_id: int, text: str) -> Note:
         """See ``DocumentWriter.add_note``.

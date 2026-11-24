@@ -332,3 +332,60 @@ async def test_an_upload_is_sent_once_even_when_paperless_is_busy(
         _ = await PaperlessDocumentWriter(make_client(server)).upload_document(upload)
 
     assert len(server.requests) == 1
+
+
+class Raw:
+    """Answers with `body` and records the method, query and raw bytes of every request."""
+
+    def __init__(self, body: object, status: int = 200) -> None:
+        self.body: object = body
+        self.status: int = status
+        self.sent: list[tuple[str, str, dict[str, str], bytes]] = []
+
+    def __call__(self, request: httpx2.Request) -> httpx2.Response:
+        self.sent.append(
+            (request.method, request.url.path, dict(request.url.params), request.content)
+        )
+        return httpx2.Response(self.status, json=self.body)
+
+
+@pytest.mark.decision("decision-48")
+@pytest.mark.parametrize("version", [1, 7])
+async def test_a_text_is_written_to_a_named_version_with_the_content_among_the_fields(
+    make_client: ClientFactory, version: int
+) -> None:
+    server = Raw({"id": 1, "content": "stored"})
+    sent = 'Zürich \U0001f600\n"quoted"'
+
+    stored = await PaperlessDocumentWriter(make_client(server)).set_document_text(1, version, sent)
+
+    assert stored == "stored"
+    [(method, path, params, body)] = server.sent
+    assert (method, path) == ("PATCH", "/api/documents/1/")
+    # Without content among the fields Paperless answers 200 and writes nothing to the root.
+    assert params == {"fields": "id,content", "version": str(version)}
+    # What services/text_edits.py measures against the limit of Paperless.
+    assert body == json.dumps({"content": sent}, ensure_ascii=False, separators=(",", ":")).encode()
+
+
+@pytest.mark.decision("decision-48")
+@pytest.mark.parametrize(
+    ("status", "body", "error"),
+    [
+        (400, {"content": ["Null characters are not allowed."]}, Validation),
+        (403, {"detail": "You do not have permission to perform this action."}, PermissionDenied),
+        (404, {"detail": "No Document matches the given query."}, NotFound),
+        (503, {"detail": "busy"}, UpstreamUnavailable),
+    ],
+)
+async def test_a_refused_text_is_an_error_and_sent_once(
+    make_client: ClientFactory, status: int, body: object, error: type[Exception]
+) -> None:
+    server = Raw(body, status)
+
+    with pytest.raises(error) as raised:
+        _ = await PaperlessDocumentWriter(make_client(server)).set_document_text(1, 7, "text")
+
+    assert len(server.sent) == 1
+    if status == 404:
+        assert "No version 7 exists on document 1" in str(raised.value)

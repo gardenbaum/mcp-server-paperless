@@ -42,7 +42,7 @@ BASE_OVERVIEW_DEFINITION = 4442
 # The limits, in bytes: the instructions as a whole (so the guide adds at most the difference to
 # BASE_INSTRUCTIONS), the guide in a call of the overview, and the growth of the overview's
 # definition in tools/list (its output schema).
-INSTRUCTIONS_LIMIT = 1450  # measured 1447 at most (core alone, AI unknown, cut down)
+INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut down)
 OVERVIEW_GUIDE_LIMIT = 2760  # measured 2758 (core alone, nothing cut); raised by the 14 bytes of
 # the field name offered_after_restart over pending, which the overview shows instead of a text
 DEFINITION_ADDED_LIMIT = 750  # measured 747, 28 more than with the name pending (twice 14 bytes)

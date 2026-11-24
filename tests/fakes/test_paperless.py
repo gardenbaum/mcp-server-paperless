@@ -379,3 +379,16 @@ async def test_a_superuser_deletes_any_tree() -> None:
     await writer(state, "admin").delete_taxonomy_item("tag", 20)
 
     assert {20, 21, 22}.isdisjoint(tag.id for tag in state.tags)
+
+
+@pytest.mark.decision("decision-48")
+@pytest.mark.parametrize("wrong", ["a\x00b", "a\ud800b"])
+async def test_the_text_of_the_root_takes_no_nul_and_no_lone_surrogate(wrong: str) -> None:
+    state = state_with()
+    before = state.documents[0].content
+    fake = FakePaperless(state, user="admin", allow_writes=True)
+
+    with pytest.raises(Validation, match="not allowed"):
+        _ = await fake.set_document_text(1, 1, wrong)
+
+    assert state.documents[0].content == before

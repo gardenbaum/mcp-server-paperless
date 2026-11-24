@@ -2,7 +2,7 @@
 
 <!-- Generated from the tool surface by `just docs-tools`. Do not edit by hand. -->
 
-88 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
+89 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
 default; the others are switched on with
 [`PAPERLESS_MCP_TOOLSETS`](configuration.md#toolsets), which also says what each toolset is for.
 
@@ -144,6 +144,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | `set_document_version_label` | write | Set or clear the label of one version of a document, the root version's too. |
 | `delete_document_version` | destructive, confirm | Delete one version of a document by moving it to the Paperless trash. |
 | `merge_documents_as_versions` | destructive, confirm | Merge documents into another document as its newest versions. |
+| `correct_document_text` | destructive, confirm, dry run | Correct the OCR text of a document, so that search finds it: replace one exact passage, or the whole text. |
 
 ## `views`
 

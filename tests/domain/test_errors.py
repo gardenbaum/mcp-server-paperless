@@ -1,3 +1,4 @@
+import json
 from typing import TYPE_CHECKING
 
 import pytest
@@ -9,6 +10,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
     accepting,
     destination,
+    excerpt,
     listed,
     quoted,
 )
@@ -342,3 +344,95 @@ def test_a_refused_url_drops_the_credentials_it_is_sure_of() -> None:
 
     assert "s3cret" not in message
     assert ".org/end'" in message
+
+
+@pytest.mark.decision("decision-48")
+@pytest.mark.parametrize(
+    ("code", "shown"),
+    [
+        (0x0A, r"\n"),
+        (0x09, r"\t"),
+        (0x00, r"\u0000"),
+        (0x22, r"\""),
+        (0x5C, r"\\"),
+        (0x00A0, r"\u00a0"),  # a separator that is no plain space
+        (0x202E, r"\u202e"),  # bidi override
+        (0x200B, r"\u200b"),  # zero width
+        (0x200D, r"\u200d"),  # a joiner, which a title may hold
+        (0x2028, r"\u2028"),
+        (0xE000, r"\ue000"),
+        (0xD800, r"\ud800"),
+        (0x2800, r"\u2800"),  # looks like a space
+        (0x3164, r"\u3164"),
+        (0xFE0F, r"\ufe0f"),
+        (0xE0041, r"\udb40\udc41"),
+        (0x00E9, chr(0xE9)),
+        (0x27, "'"),
+    ],
+)
+def test_an_excerpt_shows_what_hides_reorders_or_would_close_its_quotes(
+    code: int, shown: str
+) -> None:
+    assert excerpt(f"a{chr(code)}b") == f'"a{shown}b"'
+    # And it survives the one line of a refusal unchanged.
+    message = ConfirmationRequired.for_effect(f"write {excerpt(f'a{chr(code)}b')}").message
+    assert f'"a{shown}b"' in message
+
+
+@pytest.mark.decision("decision-48")
+def test_an_excerpt_shows_every_space() -> None:
+    assert excerpt(" a b ") == '" a b "'
+    assert excerpt("a  b   c") == r'"a \u0020b \u0020\u0020c"'
+    assert excerpt("") == '""'
+
+
+LOOK_ALIKE_QUOTES = (
+    *(0x02BA, 0x02DD, 0x02EE, 0x02F5, 0x02F6, 0x05F2, 0x05F4, 0x201C, 0x201D, 0x201E, 0x201F),
+    *(0x2033, 0x2034, 0x2036, 0x2037, 0x2057, 0x275D, 0x275E, 0x2760, 0x2E42, 0x3003, 0x301D),
+    *(0x301E, 0x301F, 0xFF02, 0x1F676, 0x1F677, 0x1F678, 0x030E, 0x1CD3),
+)
+
+
+@pytest.mark.decision("decision-48")
+@pytest.mark.parametrize("code", LOOK_ALIKE_QUOTES)
+def test_an_excerpt_escapes_what_reads_as_its_closing_quote(code: int) -> None:
+    shown = excerpt(f"a{chr(code)}b")
+
+    assert shown.isascii()
+    assert shown[2:].startswith(r"\u")
+    assert json.loads(shown) == f"a{chr(code)}b"
+
+
+@pytest.mark.decision("decision-48")
+def test_two_single_quotes_side_by_side_do_not_read_as_a_double_quote() -> None:
+    for code in (
+        *(0x27, 0x60, 0xB4, 0x2B9, 0x2BC, 0x2018, 0x2019, 0x201B, 0x2032, 0xFF07, 0x1FEF, 0xA78B),
+        *(0xA78C, 0x374, 0x7F4, 0x7F5, 0x1FBD, 0x2BE, 0x2BF, 0x2F4, 0x144A, 0x16CC),
+    ):
+        single = chr(code)
+        assert excerpt(f"it{single}s") == f'"it{single}s"'
+        assert excerpt(f"a{single}{single}{single}b").count(single) == 1
+        assert excerpt(f"a{single}'b") == rf'"a{single}\u0027b"'
+
+
+@pytest.mark.decision("decision-48")
+def test_an_excerpt_keeps_guillemets_and_ordinary_letters() -> None:
+    text = "".join(map(chr, (0xAB, 0xE9, 0xBB, 0x203A, 0x65E5, 0x627, 0x5D0, 0x2026)))
+
+    assert excerpt(text) == f'"{text}"'
+
+
+@pytest.mark.decision("decision-48")
+@pytest.mark.parametrize("code", [0x1D159, 0x13441, 0x13442])
+def test_an_excerpt_escapes_signs_that_show_as_nothing(code: int) -> None:
+    assert excerpt(f"a{chr(code)}b").isascii()
+
+
+@pytest.mark.decision("decision-48")
+def test_an_excerpt_escapes_a_mark_that_has_no_letter_to_stand_on() -> None:
+    mark = chr(0x301)
+
+    assert excerpt(f"e{mark}{mark}x") == f'"e{mark}{mark}x"'
+    assert excerpt(f"e{chr(0)}{mark}{mark}") == r'"e\u0000\u0301\u0301"'  # not on an escape
+    for before in ("", " ", "."):
+        assert excerpt(f"{before}{mark}x") == rf'"{before}\u0301x"'

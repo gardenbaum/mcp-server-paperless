@@ -38,6 +38,7 @@ if TYPE_CHECKING:
         DocumentPatch,
         DocumentQuery,
         DocumentRecord,
+        DocumentText,
         DocumentUpload,
         DocumentVersion,
         FileMetadata,
@@ -131,11 +132,14 @@ class DocumentReader(Protocol):
         """
         ...
 
-    async def get_document_content(self, document_id: int) -> str:
-        """The whole OCR text of a document; services slice it.
+    async def get_document_content(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> DocumentText:
+        """The whole OCR text of a version of a document (default: the newest); services slice it.
 
         Raises:
-            NotFound: No such document, or the user may not see it.
+            NotFound: No such document, the user may not see it, or it lists no such version (a
+                deleted one is not listed).
             PermissionDenied: The user lacks the global ``view_document`` permission.
         """
         ...
@@ -309,6 +313,19 @@ class DocumentWriter(Protocol):
             NotFound: No such document, or the user may not see it.
             PermissionDenied: The user may not change documents, or this one.
             Validation: Paperless rejected a value (unknown id, wrong type, duplicate ASN).
+        """
+        ...
+
+    async def set_document_text(self, document_id: int, version_id: int, content: str) -> str:
+        """Replace the whole text of one version and return the text as it is stored.
+
+        Paperless strips the text of the root version, and writes a deleted version, too:
+        callers check that the document lists it. There is no conditional write. Not retried.
+
+        Raises:
+            NotFound: No such document, the user may not see it, or it never had such a version.
+            PermissionDenied: The user may not change documents, or this one.
+            Validation: Paperless rejected the text.
         """
         ...
 

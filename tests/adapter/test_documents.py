@@ -511,13 +511,67 @@ async def test_a_user_without_the_document_permission_is_denied(make_client: Cli
         _ = await PaperlessDocumentReader(make_client(server)).get_document(1)
 
 
-async def test_the_content_is_asked_for_alone(make_client: ClientFactory) -> None:
-    server = Resource({"content": "E2E public invoice ACME 2026"})
+def version_json(number: int, *, root: bool = False) -> Json:
+    return {
+        "id": number,
+        "added": "2026-11-11T19:47:00Z",
+        "version_label": None,
+        "checksum": f"{number}",
+        "is_root": root,
+    }
+
+
+TEXT: Json = {
+    "content": "E2E public invoice ACME 2026",
+    "title": "Invoice",
+    "versions": [version_json(7), version_json(1, root=True)],
+    "user_can_change": True,
+}
+TEXT_FIELDS = "content,title,versions,user_can_change"
+
+
+async def test_the_text_is_asked_for_with_what_identifies_it(make_client: ClientFactory) -> None:
+    server = Resource(TEXT)
 
     text = await PaperlessDocumentReader(make_client(server)).get_document_content(1)
 
-    assert text == "E2E public invoice ACME 2026"
-    assert server.sent == [("/api/documents/1/", {"fields": "content"})]
+    assert (text.id, text.title, text.version_id) == (1, "Invoice", 7)
+    assert (text.content, text.user_can_change) == ("E2E public invoice ACME 2026", True)
+    assert [v.id for v in text.versions] == [7, 1]
+    assert "ACME" not in repr(text)
+    assert server.sent == [("/api/documents/1/", {"fields": TEXT_FIELDS})]
+
+
+async def test_the_text_of_one_version_is_asked_for_by_its_id(make_client: ClientFactory) -> None:
+    server = Resource(TEXT)
+
+    text = await PaperlessDocumentReader(make_client(server)).get_document_content(1, version_id=1)
+
+    assert text.version_id == 1
+    assert server.sent == [("/api/documents/1/", {"fields": TEXT_FIELDS, "version": "1"})]
+
+
+async def test_a_document_that_lists_no_versions_is_its_own(make_client: ClientFactory) -> None:
+    server = Resource({**TEXT, "versions": []})
+
+    reader = PaperlessDocumentReader(make_client(server))
+
+    assert (await reader.get_document_content(1)).version_id == 1
+    assert (await reader.get_document_content(1, version_id=1)).version_id == 1
+
+
+async def test_the_text_of_a_version_in_the_trash_is_not_found(make_client: ClientFactory) -> None:
+    server = Resource(TEXT)  # Paperless answers the text of a deleted version, too
+
+    with pytest.raises(NotFound, match="No version 8 exists on document 1"):
+        _ = await PaperlessDocumentReader(make_client(server)).get_document_content(1, version_id=8)
+
+
+async def test_the_text_of_a_missing_version_is_not_found(make_client: ClientFactory) -> None:
+    server = Resource({"detail": "No Document matches the given query."}, status=404)
+
+    with pytest.raises(NotFound, match="No version 8 exists on document 9"):
+        _ = await PaperlessDocumentReader(make_client(server)).get_document_content(9, version_id=8)
 
 
 async def test_the_content_of_a_missing_document_is_not_found(make_client: ClientFactory) -> None:

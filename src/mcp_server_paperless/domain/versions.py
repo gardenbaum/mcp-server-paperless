@@ -52,6 +52,24 @@ class VersionPage(BaseModel):
     rows: tuple[VersionRow, ...]
 
 
+class TextEdit(BaseModel):
+    """A correction of the text of a version: an exact passage, or the whole text.
+
+    Attributes:
+        version_id: The version, or None for the newest.
+        passage: The text to replace, which must occur exactly once.
+        replacement: What the passage becomes.
+        text: The whole new text, instead of the other two.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    version_id: int | None = None
+    passage: str | None = Field(default=None, repr=False)
+    replacement: str | None = Field(default=None, repr=False)
+    text: str | None = Field(default=None, repr=False)
+
+
 # Output models are tool output schemas: a one-line class docstring each, and field descriptions
 # only where the name does not say enough.
 
@@ -164,3 +182,36 @@ class VersionsMerged(BaseModel):
             )
         ),
     ] = None
+
+
+class TextChange(BaseModel):
+    """A part of what a correction would change; the text around it stays."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    position: Annotated[int, Field(description="Character of the text the change starts at.")]
+    offset: Annotated[int, Field(description="Where this part starts within the change.")]
+    before: Annotated[str, Field(description="This part of the text that goes.")]
+    after: Annotated[str, Field(description="This part of the text that comes instead.")]
+    total_before: Annotated[int, Field(description="Characters that go in all.")]
+    total_after: Annotated[int, Field(description="Characters that come in all.")]
+    next_offset: Annotated[
+        int | None, Field(description="Offset of the next part, null at the end of the change.")
+    ]
+
+
+class TextCorrected(BaseModel):
+    """A correction of the text of a version, or with dry_run what it would change."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    document_id: int
+    version_id: int
+    is_newest: Annotated[bool, Field(description="Search finds this text only if true.")]
+    dry_run: Annotated[bool, Field(description="true: a preview, nothing was changed.")]
+    chars_before: int
+    chars_after: int
+    text_state: Annotated[str, Field(description="State of the text as it is stored now.")]
+    change: Annotated[TextChange | None, Field(description="With dry_run only.")]
+    message: str
+    web_url: Annotated[str, Field(description="Link to the document in the Paperless web UI.")]
