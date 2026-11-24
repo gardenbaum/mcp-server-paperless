@@ -17,3 +17,5 @@ services:
     environment:
       # The tests start every fetch themselves.
       PAPERLESS_EMAIL_TASK_CRON: disable
+      # Takes about half the time of one worker (4 instead of 7 minutes).
+      PAPERLESS_TASK_WORKERS: "2"
