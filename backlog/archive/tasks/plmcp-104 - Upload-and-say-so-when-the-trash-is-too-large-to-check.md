@@ -1,11 +1,11 @@
 ---
 id: PLMCP-104
 title: Upload and say so when the trash is too large to check
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T07:06:13Z'
-updated_date: '2026-11-24T07:23:34Z'
+updated_date: '2026-11-24T08:24:01Z'
 labels: []
 dependencies: []
 priority: high
@@ -30,7 +30,7 @@ Above 64 MiB of trash the duplicate check fails and nothing can be uploaded (dec
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -47,4 +47,12 @@ Red before the code at service, batch, adapter, contract (fake) and tool level (
 Full local run: 7371 passed; diff-cover 100 % (18 lines). Not run: the live side of the contract test (CI).
 
 Review of 6745069: m1 to m3 added to decision-52 as consequences; m4: the sentence says that the first 500 entries are meant.
+
+Review clean on 546650c, one wording fixed in 81e53b7; merged with #120 (9f79fd4). Codex without findings; hosted full E2E 45349964929 green on acff734, whose tree equals the merged one. DoD 2 stays unchecked (the macOS-only failure).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+An upload is no longer refused because the trash is larger than 64 MiB: the duplicate check names the gap in not_checked and in the confirmation (decision-52 supersedes that part of decision-47). Every other failure still refuses.
+<!-- SECTION:FINAL_SUMMARY:END -->
