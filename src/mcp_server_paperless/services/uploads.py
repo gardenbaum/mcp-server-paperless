@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentUpload, UploadResult
 from mcp_server_paperless.domain.errors import Validation, quoted
-from mcp_server_paperless.services.allowed_paths import upload_name
+from mcp_server_paperless.services.allowed_paths import check_text, upload_name
 from mcp_server_paperless.services.custom_values import linked, require_visible, resolve_values
 from mcp_server_paperless.services.document_edits import MAX_TITLE
 from mcp_server_paperless.services.documents import document_link
@@ -163,6 +163,7 @@ class UploadService:
         if title is not None and len(title) > MAX_TITLE:
             message = f"The title is longer than {MAX_TITLE} characters."
             raise Validation(message, hint="Shorten the title.")
+        check_text(title or "", "title")
         number = metadata.archive_serial_number
         if number is not None and not 0 <= number <= MAX_ASN:
             message = f"The archive serial number must be between 0 and {MAX_ASN}."

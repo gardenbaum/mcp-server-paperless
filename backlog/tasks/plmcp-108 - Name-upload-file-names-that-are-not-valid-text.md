@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T07:06:17Z'
-updated_date: '2026-11-24T21:09:24Z'
+updated_date: '2026-11-24T21:51:21Z'
 labels: []
 dependencies: []
 priority: low
@@ -43,4 +43,6 @@ upload_document and upload_document_version end with a bare UnicodeEncodeError (
 
 <!-- SECTION:NOTES:BEGIN -->
 upload_name of PLMCP-85 moved from batch_uploads to allowed_paths; UploadService and VersionUploadService use it (content, given name with a path, the path's own name), with the same refusal as upload_documents. clean_filename is unchanged, so the download sink keeps its own message (its tests are unchanged). Over HTTP (required filename) the schema already refuses such a name with a reason; the internal error came from the stdio variants (optional filename). Red before the change: 4 service tests and both stdio variants of the tools. The case of a file whose own name is no text runs on Linux only (macOS refuses such names), so in CI. No surface change, no decision.
+
+Extended on review: a title (upload_document) and a version label (upload_document_version, set_document_version_label, merge_documents_as_versions) with lone surrogates are refused with a reason, too; tool tests red first, over both variants for uploads. upload_documents has no title. Names and custom field values were not looked at.
 <!-- SECTION:NOTES:END -->
