@@ -43,7 +43,6 @@ from mcp_server_paperless.services.bulk_documents import DRY_RUN, READ_AGAIN, TO
 from mcp_server_paperless.services.bulk_operations import named
 from mcp_server_paperless.services.custom_values import linked
 from mcp_server_paperless.services.document_edits import (
-    MAX_TITLE,
     EditPlan,
     affected,
     implicit,
@@ -475,7 +474,7 @@ class BulkUpdates:
         parts = [f"change {count_documents(len(told))}: {', '.join(told)}"]
         if call.new_tags:
             noun = "tag" if len(call.new_tags) == 1 else "tags"
-            listed = ", ".join(quoted(name, MAX_TITLE) for name in call.new_tags)
+            listed = ", ".join(quoted(name) for name in call.new_tags)
             parts.append(f"create the {noun} {listed}, private to you until shared")
         owners = [i for i in call.changing if "owner" in call.patches[i.id].model_fields_set]
         if owners:
@@ -636,7 +635,7 @@ class BulkUpdates:
         if stop:
             details.append(f"Stopped: {stop}")
         if created:
-            listed = ", ".join(quoted(name, MAX_TITLE) for name in created)
+            listed = ", ".join(quoted(name) for name in created)
             details.append(f"Tags created: {listed}.")
         if not changed and why:
             message = f"No document is known to be changed; {' '.join([lacking, *details])}"

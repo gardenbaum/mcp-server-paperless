@@ -699,7 +699,9 @@ async def test_owner_changes_and_new_tags_are_shown_in_full_also_beyond_twenty()
         create=True,
     )
 
-    assert f"create the tags '{long}', 'Other', private to you" in refusal.message
+    # As every text the server did not write: cut to 60 characters (decision-44), but bound.
+    shown = long[:59] + "…"
+    assert f"create the tags '{shown}', 'Other', private to you" in refusal.message
     told = (
         "change the owner of document 121 'Scan 21' to 'e2e-reader' (id 3) and of document 122 "
         "'Scan 22' to no owner (every user who may view documents sees it): a new owner takes it "
@@ -781,6 +783,17 @@ async def test_an_accepted_dialog_does_not_cover_what_changed_while_it_was_open(
         again = await setup.asked(*items, create=True)
 
     assert again.fingerprint != refusal.fingerprint
+
+
+async def test_other_new_tags_behind_the_same_text_ask_again() -> None:
+    setup = Setup(writes=False)
+    start = "x" * 70
+
+    one = await setup.asked(item(101, tags_add=[start + "1"]), create=True)
+    two = await setup.asked(item(101, tags_add=[start + "2"]), create=True)
+
+    assert one.message == two.message
+    assert one.fingerprint != two.fingerprint
 
 
 async def test_other_new_values_behind_the_same_text_ask_again() -> None:

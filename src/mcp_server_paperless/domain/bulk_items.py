@@ -28,11 +28,25 @@ class DocumentValues(BaseModel):
     created: Annotated[date, CALENDAR] | None = None
     archive_serial_number: Annotated[int, NO_FLAG, Field(ge=0)] | None = None
     owner: Named | None = None
-    clear: tuple[Clearable, ...] | None = None
+    clear: Annotated[
+        tuple[Clearable, ...] | None,
+        Field(description="Fields to empty; no owner makes the document visible to every user."),
+    ] = None
     tags_add: tuple[Named, ...] | None = None
     tags_remove: tuple[Named, ...] | None = None
-    tags_set: tuple[Named, ...] | None = None
-    custom_fields: dict[str, JsonValue] | None = None
+    tags_set: Annotated[
+        tuple[Named, ...] | None, Field(description="Replace all tags with exactly these.")
+    ] = None
+    custom_fields: Annotated[
+        dict[str, JsonValue] | None,
+        Field(
+            description=(
+                "Values to set by field name or id, others stay: text; url with scheme; date "
+                "'YYYY-MM-DD'; true/false; numbers; 'EUR12.50'; a list of document ids for links; "
+                "a select option's label."
+            )
+        ),
+    ] = None
     remove_custom_fields: tuple[Named, ...] | None = None
 
     def edit(self, *, create_missing_tags: bool) -> DocumentEdit:
