@@ -13,6 +13,7 @@ from typing import Annotated, ClassVar, Final, Literal, NamedTuple
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from mcp_server_paperless.domain.documents import NameOrId
+from mcp_server_paperless.domain.tasks import Unconfirmed
 from mcp_server_paperless.domain.taxonomy import TaxonomyKind  # noqa: TC001 -- NamedTuple needs it
 
 # The types of Paperless 3.5.1 (WorkflowTrigger.WorkflowTriggerType, WorkflowAction.
@@ -556,3 +557,81 @@ class WorkflowDeletion(BaseModel):
     id: int
     name: str
     message: Annotated[str, Field(description="What was deleted.")]
+
+
+class WorkflowRun(BaseModel):
+    """A run of a workflow on documents, as far as its queued task tells.
+
+    Attributes:
+        task_id: The queued task.
+        failed: The documents the workflow failed on; some of its actions may have run there.
+        unconfirmed: Set when the task could not be followed to its end.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    task_id: str
+    failed: tuple[int, ...] = ()
+    unconfirmed: Unconfirmed | None = None
+
+
+class WorkflowRunReport(BaseModel):
+    """A run of a workflow by hand: the preview of a dry run, or what was asked of Paperless."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    workflow_id: int
+    workflow: Annotated[str, Field(description="Its name.")]
+    actions: Annotated[
+        tuple[str, ...], Field(description="What it does to each document, in order.")
+    ]
+    apply_filters: bool
+    dry_run: Annotated[bool, Field(description="true: a preview, nothing was run.")]
+    started: Annotated[bool, Field(description="true: Paperless was asked to run it.")]
+    unconfirmed_task_id: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Set when the end of the run could not be observed: it may still be running or "
+                "may have failed. Read it with get_task; do not run the workflow again."
+            )
+        ),
+    ] = None
+    matched: Annotated[
+        int,
+        Field(
+            description="How many documents the ids, filters or view match, exclude_ids included."
+        ),
+    ]
+    selected_ids: Annotated[
+        tuple[int, ...],
+        Field(
+            description=(
+                "The documents it is run on; after a preview with filters or saved_view they are "
+                "the document_ids of the next call."
+            )
+        ),
+    ]
+    also_matching: Annotated[
+        tuple[int, ...],
+        Field(
+            description=(
+                "With document_ids and filters or saved_view: what matches besides and is not "
+                "touched."
+            )
+        ),
+    ] = ()
+    failed: Annotated[
+        tuple[int, ...],
+        Field(description="Documents it failed on; some of its actions may have run there."),
+    ] = ()
+    blocked: Annotated[
+        tuple[int, ...],
+        Field(
+            description=(
+                "Documents you may not change or do not own. While there are any, the whole run "
+                "is refused."
+            )
+        ),
+    ] = ()
+    message: str

@@ -33,7 +33,7 @@ from mcp_server_paperless.domain.errors import (
     UpstreamUnavailable,
     Validation,
 )
-from mcp_server_paperless.domain.tasks import TaskState, Unconfirmed
+from mcp_server_paperless.domain.tasks import TaskStatus, Unconfirmed
 from mcp_server_paperless.paperless.tasks import PaperlessTaskReader
 
 if TYPE_CHECKING:
@@ -122,15 +122,15 @@ class TaskWaiter:
         Raises:
             Validation: ``failed(task_id)``, when the task failed or was revoked.
         """
-        outcome = await self._settled(answer.task_id, stop_on_limit=stop_on_limit)
+        outcome = await self.ended(answer.task_id, stop_on_limit=stop_on_limit)
         if isinstance(outcome, Unconfirmed):
             return outcome
-        if outcome in {"failure", "revoked"}:
+        if outcome.state in {"failure", "revoked"}:
             raise failed(answer.task_id)
         return None
 
-    async def _settled(self, task_id: str, *, stop_on_limit: bool) -> TaskState | Unconfirmed:
-        """The final state of the task, or why it could not be followed to its end.
+    async def ended(self, task_id: str, *, stop_on_limit: bool) -> TaskStatus | Unconfirmed:
+        """The task once it has ended, or why it could not be followed to its end.
 
         A 403 and a row that never shows up end the wait early (after the grace), and a 429 with
         ``stop_on_limit`` at once; other errors, also after the row was seen, are waited
@@ -152,7 +152,7 @@ class TaskWaiter:
                 unreadable = error
             elapsed = self._clock() - started
             if row is not None and row.is_final:
-                return row.state
+                return row
             if row is None and unreadable is None and elapsed >= self._visible:
                 return await self._unobserved_for(task_id, INVISIBLE_REASON)
             if elapsed >= self._wait:

@@ -93,7 +93,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.trash import TrashedRecord, TrashLookup, TrashPage
     from mcp_server_paperless.domain.versions import VersionPage, VersionUpload
     from mcp_server_paperless.domain.views import SavedView, ViewValues
-    from mcp_server_paperless.domain.workflows import Workflow, WorkflowValues
+    from mcp_server_paperless.domain.workflows import Workflow, WorkflowRun, WorkflowValues
 
 
 class InstanceReader(Protocol):
@@ -1347,6 +1347,24 @@ class WorkflowWriter(Protocol):
         Raises:
             NotFound: No such workflow.
             PermissionDenied: The user may not delete workflows.
+        """
+        ...
+
+    async def run_workflow(
+        self, workflow_id: int, document_ids: Sequence[int], *, filter_documents: bool
+    ) -> WorkflowRun:
+        """Run a workflow with a manual trigger on the documents, one after the other.
+
+        With ``filter_documents`` the documents that match none of its manual triggers are skipped;
+        Paperless does not tell which. A failure on one document does not stop the others. What its
+        e-mails, webhooks and AI actions come to is not told either: they fail in the log only.
+
+        Raises:
+            PermissionDenied: The user may not view workflows or change documents, or does not own
+                (or may not change) one of the documents. Nothing was run.
+            Validation: No such workflow, it is not enabled or has no manual trigger, or a document
+                does not exist. Nothing was run.
+            TaskFailed: The queued task failed without naming the documents; part may have run.
         """
         ...
 

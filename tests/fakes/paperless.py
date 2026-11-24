@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Concatenate, Literal, cast
 
 from pydantic import JsonValue
 
-from fakes import mail, raw, sharing, workflows
+from fakes import mail, raw, sharing, workflow_runs, workflows
 from fakes.accounts import (
     ADMIN,
     BLIND,
@@ -140,7 +140,7 @@ from mcp_server_paperless.domain.trash import (
 )
 from mcp_server_paperless.domain.versions import VersionPage, VersionRow
 from mcp_server_paperless.domain.views import FilterRule, SavedView
-from mcp_server_paperless.domain.workflows import Workflow
+from mcp_server_paperless.domain.workflows import Workflow, WorkflowRun
 from mcp_server_paperless.paperless.admin import (
     ACK_TASKS,
     ADD_GROUP,
@@ -183,6 +183,7 @@ from mcp_server_paperless.paperless.pdf import (
     not_editable,
     wrong_password,
 )
+from mcp_server_paperless.paperless.queued import FORBIDDEN_REASON
 from mcp_server_paperless.paperless.tasks import not_found
 from mcp_server_paperless.paperless.taxonomy import TAG_DELETE_HINT
 from mcp_server_paperless.paperless.trash import beyond_last_page as beyond_trash
@@ -606,6 +607,11 @@ class FakeState:
     workflows: list[Workflow] = field(default_factory=list[Workflow])
     # The last id given to a workflow's trigger or action (a one-item list, shared by reference).
     workflow_object_id: list[int] = field(default_factory=lambda: [0])
+    # What was asked to run (workflow, documents, with filters), and documents every run fails on.
+    workflow_runs: list[tuple[int, tuple[int, ...], bool]] = field(
+        default_factory=list[tuple[int, tuple[int, ...], bool]]
+    )
+    workflow_fails_on: set[int] = field(default_factory=set[int])
     tasks: list[FakeTask] = field(default_factory=list[FakeTask])
     copying: list[FakeCopying] = field(default_factory=list[FakeCopying])
     # Deleted documents, newest last; reads no longer see them, the Paperless trash does.
@@ -3382,6 +3388,52 @@ class FakePaperless:
         """`WorkflowWriter.delete_workflow`."""
         data, actor = self._workflows()
         workflows.delete_workflow(data, actor, workflow_id)
+
+    @write
+    async def run_workflow(
+        self, workflow_id: int, document_ids: Sequence[int], *, filter_documents: bool
+    ) -> WorkflowRun:
+        """`WorkflowWriter.run_workflow` (the logic is in fakes/workflow_runs.py)."""
+        state, user = self.state, self.user
+        workflow = next((w for w in state.workflows if w.id == workflow_id), None)
+        known = {d.id: d for d in state.documents}
+        chosen = workflow_runs.check(
+            user, workflow, document_ids, known, changeable=lambda d: d.changeable_by(user)
+        )
+        state.workflow_runs.append((workflow_id, tuple(document_ids), filter_documents))
+        failed = workflow_runs.run(
+            self,
+            next(w for w in state.workflows if w.id == workflow_id),
+            chosen,
+            filter_documents=filter_documents,
+            fails=lambda document: document.id in state.workflow_fails_on,
+        )
+        now = datetime.now(UTC)
+        task = FakeTask(
+            id=len(state.tasks) + 1,
+            task_id=str(uuid.uuid4()),
+            task_type="bulk_update",
+            created=now,
+            finished=now,
+            status="failure" if failed else "success",
+        )
+        state.tasks.append(task)
+        if not user.has("view_paperlesstask"):
+            unconfirmed = Unconfirmed(task_id=task.task_id, reason=FORBIDDEN_REASON)
+            return WorkflowRun(task_id=task.task_id, unconfirmed=unconfirmed)
+        return WorkflowRun(task_id=task.task_id, failed=tuple(failed))
+
+    def retag(self, document: FakeDocument, add: Sequence[int], remove: Sequence[int]) -> None:
+        """`workflow_runs.Instance`."""
+        self._tags([document], TagsChange(add=tuple(add), remove=tuple(remove)))
+
+    def to_trash(self, document: FakeDocument) -> None:
+        """`workflow_runs.Instance`."""
+        self._to_trash(document)
+
+    def integer(self, field: int) -> bool:
+        """`workflow_runs.Instance`."""
+        return any(f.id == field and f.data_type == "integer" for f in self.state.custom_fields)
 
     # --- AdminReader and AdminWriter (the input rules are in fakes/admin.py)
 
