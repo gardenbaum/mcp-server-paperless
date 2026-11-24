@@ -6,7 +6,6 @@ that writes a file (decision-7, decision-45). The parameters and the wording are
 saving variant.
 """
 
-import base64
 import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated
@@ -14,23 +13,26 @@ from typing import TYPE_CHECKING, Annotated
 from fastmcp import Context
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
-from mcp.types import BlobResourceContents, ContentBlock, EmbeddedResource, TextContent
 from pydantic import Field
 
 from mcp_server_paperless.domain.admin import ArchiveContent, Compression
 from mcp_server_paperless.domain.documents import FileVersion
 from mcp_server_paperless.services.admin_system import MAX_DOCUMENTS
 from mcp_server_paperless.services.transfer import check_part
-from mcp_server_paperless.tools._shared import ANNOTATIONS, DOCUMENT_TEXT, boundary, services
+from mcp_server_paperless.tools._shared import (
+    ANNOTATIONS,
+    DOCUMENT_TEXT,
+    OCTETS,
+    boundary,
+    file_result,
+    services,
+)
 
 if TYPE_CHECKING:
-    from pydantic import BaseModel
-
     from mcp_server_paperless.services.admin_system import SystemAdmin
     from mcp_server_paperless.services.files import FileService
 
 CORE, ADMIN = "core", "admin"
-OCTETS = "application/octet-stream"
 
 # The tools' names are the same in both variants; the server registers exactly one of them.
 remote = LocalProvider()
@@ -127,26 +129,6 @@ class Part:
         return (self.offset, self.max_bytes, self.checksum) != (None, None, None)
 
 
-def text(report: BaseModel) -> TextContent:
-    """The JSON report, the first block of every result."""
-    return TextContent(type="text", text=report.model_dump_json())
-
-
-def _result(
-    report: BaseModel, data: bytes | None, uri: str, mime_type: str, filename: str | None
-) -> ToolResult:
-    content: list[ContentBlock] = [text(report)]
-    if data is not None:
-        blob = BlobResourceContents(
-            uri=uri,
-            mime_type=mime_type,
-            blob=base64.b64encode(data).decode(),
-            _meta=None if filename is None else {"filename": filename},
-        )
-        content.append(EmbeddedResource(type="resource", resource=blob))
-    return ToolResult(content=content)
-
-
 async def read_file(
     files: FileService,
     document_id: int,
@@ -162,7 +144,7 @@ async def read_file(
         delivery = await files.download(document_id, kind, version_id=version_id)
         uri = f"{base}/{kind}" if version_id is None else f"{base}/versions/{version_id}/{kind}"
         report = delivery.report
-        return _result(report, delivery.data, uri, report.mime_type, report.filename)
+        return file_result(report, delivery.data, uri, report.mime_type, report.filename)
     found = await files.part(
         document_id,
         kind,
@@ -173,7 +155,7 @@ async def read_file(
     )
     window = f"?offset={offset}&length={found.report.length}"
     uri = f"{base}/versions/{found.report.version_id}/{kind}{window}"
-    return _result(found.report, found.data or None, uri, OCTETS, found.report.filename)
+    return file_result(found.report, found.data or None, uri, OCTETS, found.report.filename)
 
 
 async def read_archive(  # noqa: PLR0913 -- the tool's parameters
@@ -199,7 +181,7 @@ async def read_archive(  # noqa: PLR0913 -- the tool's parameters
         )
         report = delivery.report
         uri = f"{base}/{report.filename}"
-        return _result(report, delivery.data, uri, report.mime_type, report.filename)
+        return file_result(report, delivery.data, uri, report.mime_type, report.filename)
     found = await system.part(
         document_ids,
         content=content,
@@ -210,7 +192,7 @@ async def read_archive(  # noqa: PLR0913 -- the tool's parameters
         checksum=checksum,
     )
     uri = f"{base}/{found.report.filename}?offset={offset}&length={found.report.length}"
-    return _result(found.report, found.data or None, uri, OCTETS, found.report.filename)
+    return file_result(found.report, found.data or None, uri, OCTETS, found.report.filename)
 
 
 @remote.tool(

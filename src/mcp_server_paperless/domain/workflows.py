@@ -507,6 +507,10 @@ class WorkflowInfo(BaseModel):
     enabled: bool
     triggers: tuple[TriggerInfo, ...]
     actions: tuple[ActionInfo, ...]
+    note: Annotated[
+        str | None,
+        Field(description="After a change: how to get back what a move to trash deletes."),
+    ] = None
 
 
 class WorkflowListing(BaseModel):

@@ -31,7 +31,12 @@ if TYPE_CHECKING:
         UserValues,
     )
     from mcp_server_paperless.domain.ai import AiSuggestions, ChatAnswer
-    from mcp_server_paperless.domain.bulk import BulkKind, DocumentChange, PermissionsChange
+    from mcp_server_paperless.domain.bulk import (
+        BulkKind,
+        DocumentChange,
+        ObjectPermissions,
+        PermissionsChange,
+    )
     from mcp_server_paperless.domain.documents import (
         DocumentFile,
         DocumentPage,
@@ -77,7 +82,7 @@ if TYPE_CHECKING:
         TaxonomyValues,
         WritableKind,
     )
-    from mcp_server_paperless.domain.trash import TrashedRecord, TrashPage
+    from mcp_server_paperless.domain.trash import TrashedRecord, TrashLookup, TrashPage
     from mcp_server_paperless.domain.versions import VersionPage, VersionUpload
     from mcp_server_paperless.domain.views import SavedView, ViewValues
     from mcp_server_paperless.domain.workflows import Workflow, WorkflowValues
@@ -190,7 +195,7 @@ class DocumentReader(Protocol):
         ...
 
     async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
-        """The thumbnail image of a document (WebP).
+        """The thumbnail image of a document (WebP), also in the trash (of its first version).
 
         Raises:
             NotFound: No such document, or Paperless cannot find the thumbnail.
@@ -252,6 +257,10 @@ class DocumentReader(Protocol):
         Raises:
             NotFound: No such document or version, or the user may not see its document.
         """
+        ...
+
+    async def document_exists(self, document_id: int) -> bool:
+        """Whether a document or version has this id: also in the trash, also if it is hidden."""
         ...
 
     async def get_duplicates(self, document_id: int) -> tuple[DuplicateRecord, ...]:
@@ -682,6 +691,29 @@ class TrashReader(Protocol):
         """Those of the documents that are among the first ``entries`` entries, by id.
 
         Versions are left out. One request, like ``read_trash``, with the same bounds and errors.
+        """
+        ...
+
+    async def look_up_in_trash(
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
+    ) -> TrashLookup:
+        """Everything of one entry, a version too, if it is on this page of the trash.
+
+        The text is the entry's own: of a document the first version's, of a version its own. One
+        request, bounded like ``read_trash``, with the same errors.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+        """
+        ...
+
+    async def get_trash_permissions(
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
+    ) -> ObjectPermissions | None:
+        """Who may view and change an entry, if it is on this page; read like ``look_up_in_trash``.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
         """
         ...
 

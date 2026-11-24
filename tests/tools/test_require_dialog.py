@@ -431,3 +431,53 @@ async def test_it_is_off_by_default() -> None:
 
     assert not result.is_error
     assert state.documents[0].notes == []
+
+
+# --- emptying the trash by a filter (decision-55) -------------------------------------------------
+
+TRASH_CALLS: list[Json] = [
+    {"filter": {"title": "Old"}},
+    {"filter": {"title": "Old"}, "confirm": True},
+    {"document_ids": [30]},
+    {"document_ids": [30], "confirm": True},
+]
+
+
+@pytest.mark.decision("decision-55")
+@both_eras
+@pytest.mark.parametrize("arguments", TRASH_CALLS)
+async def test_emptying_by_filter_or_ids_takes_an_accepted_dialog_and_tells_no_other_way(
+    mode: Mode, arguments: Json
+) -> None:
+    refused = await call(
+        server(source(world(), writes=False)), mode, None, "empty_trash", arguments
+    )
+    seen: list[str] = []
+    declined = await call(
+        server(source(world(), writes=False)),
+        mode,
+        answering("decline", seen=seen),
+        "empty_trash",
+        arguments,
+    )
+    state = world()
+    accepted = await call(
+        server(source(state)), mode, answering("accept", YES, seen=seen), "empty_trash", arguments
+    )
+
+    assert text(refused) == refusal(NO_FORMS)
+    assert "document_ids" not in text(refused)
+    assert declined.is_error
+    assert len(seen) == 2
+    assert all("document 30 'Old'" in message for message in seen)
+    assert not accepted.is_error, text(accepted)
+    assert state.trash == []
+
+
+@pytest.mark.decision("decision-55")
+async def test_without_the_setting_the_same_filter_names_the_ids_to_pass() -> None:
+    served = server(source(world(), writes=False), required=False)
+
+    refused = await call(served, "auto", None, "empty_trash", TRASH_CALLS[1])
+
+    assert "document_ids=[30] and confirm=true" in text(refused)

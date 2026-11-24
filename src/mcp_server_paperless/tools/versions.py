@@ -168,7 +168,8 @@ async def delete_document_version(
     what the document shows afterwards (see confirm). If it is the newest version, the document's
     file and text revert to the version before it. The root version (the original upload) cannot be
     deleted this way: delete the whole document with delete_document. The trash keeps the version
-    until it is emptied; restore it in the Paperless web UI or with the trash toolset if enabled.
+    until it is emptied; restore it in the Paperless web UI or with restore_from_trash if the trash
+    toolset is enabled.
     Needs the permission to delete documents, and the user must own the document, be a superuser,
     or the document must be unowned (a change grant is not enough).
     """

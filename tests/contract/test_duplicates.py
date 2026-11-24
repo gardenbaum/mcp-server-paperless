@@ -12,10 +12,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from contract.test_document_upload import ended
+from contract.test_document_upload import uploaded
 from contract.test_document_versions import add_version
 from contract.test_trash import find
-from mcp_server_paperless.domain.documents import DocumentPatch, DocumentQuery, DocumentUpload
+from mcp_server_paperless.domain.documents import DocumentPatch, DocumentQuery
 from mcp_server_paperless.domain.errors import AnswerTooLarge, NotFound, PermissionDenied
 from mcp_server_paperless.services.duplicates import Bounds, DuplicateFinder
 
@@ -43,18 +43,6 @@ def unique() -> bytes:
 
 def sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
-
-
-async def uploaded(backend: Backend, content: bytes) -> int:
-    """A text document of the admin with this file."""
-    name = f"plmcp77-{uuid.uuid4().hex}"
-    upload = DocumentUpload(
-        filename=f"{name}.txt", mime_type="text/plain", content=content, title=name
-    )
-    status = await ended(backend, await backend.admin.document_writes.upload_document(upload))
-    assert status.state == "success"
-    [document] = status.document_ids
-    return document
 
 
 async def with_checksum(ports: Ports, checksum: str) -> set[int]:
