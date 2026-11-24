@@ -127,7 +127,7 @@ _ENDINGS: Final[Mapping[str, tuple[str, ...]]] = {
     f"{_OPEN}graphics": (".odg",),
 }
 
-type _Identity = tuple[int, int, int, int]
+type _Identity = tuple[int, int, int, int, int]
 
 
 class System:
@@ -248,6 +248,17 @@ def _shown(text: str, what: str) -> str:
     except Validation as refusal:
         hint = "Choose another name with save_as, or another directory."
         raise Validation(refusal.message, hint=hint) from None
+
+
+def _identity(found: os.stat_result) -> _Identity:
+    """What tells a file from another one, and from itself with other content."""
+    return (
+        found.st_dev,
+        found.st_ino,
+        found.st_size,
+        found.st_mtime_ns,
+        found.st_ctime_ns,  # nobody can set it back
+    )
 
 
 def _meanwhile() -> PaperlessMcpError:
@@ -408,11 +419,11 @@ class Target:
             system.close(self._fd)
         self._fd = None
 
-    async def claim(self, name: str, *, confirm: bool, source: object) -> None:
+    async def claim(self, name: str, *, confirm: bool, what: str, source: object) -> None:
         """Decide what becomes of ``name``, before anything is downloaded.
 
-        ``source`` is what would be saved: an acceptance in the dialog covers that only, and only
-        the file that was there.
+        ``what`` would be saved, in words; ``source`` is the same exactly: an acceptance in the
+        dialog covers that only, and only the file that was there.
 
         Raises:
             ConfirmationRequired: A file of that name exists and ``confirm`` is not set.
@@ -423,11 +434,13 @@ class Target:
         self._existing = await _blocking(self._look)
         if self._existing is None:
             return
-        file, directory = _shown(name, "file name"), _shown(self._given, "directory")
+        # Not as given: a link inside the allowed directory leads elsewhere in it.
+        real = str(PurePath(self._root, *self._parts))
+        file, directory = _shown(name, "file name"), _shown(real, "directory")
         if not confirm:
-            _, _, size, changed = self._existing
+            _, _, size, changed, _ = self._existing
             day = self._sink.system.date(changed / 1e9)
-            effect = f"replace the file {file} ({size} bytes{day}) in {directory}"
+            effect = f"replace the file {file} ({size} bytes{day}) in {directory} with {what}"
             held = os.fstat(self._directory)
             scope = (self._existing, (held.st_dev, held.st_ino), source)
             ConfirmationRequired.require(effect, scope=scope)
@@ -465,7 +478,7 @@ class Target:
         if not stat.S_ISREG(found.st_mode) or found.st_nlink != 1:
             message = f"{quoted(self._name)} in that directory is not a plain file of its own."
             raise Validation(message, hint="Choose another name with save_as.")
-        return found.st_dev, found.st_ino, found.st_size, found.st_mtime_ns
+        return _identity(found)
 
     def _make(self, name: str) -> int:
         flags = os.O_RDWR | NEW | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -593,7 +606,7 @@ class Target:
         mine = os.fstat(reserved)
         with contextlib.suppress(OSError):
             self._sink.system.close(reserved)
-        ours = (mine.st_dev, mine.st_ino, 0, mine.st_mtime_ns)
+        ours = _identity(mine)
         self._sink.at("reserved")
         if self._look() != ours:
             raise _meanwhile()

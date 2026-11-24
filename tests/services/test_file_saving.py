@@ -420,13 +420,20 @@ async def test_an_acceptance_names_the_document_the_kind_the_version_and_its_con
 
     first = await refusal(asked("archive", 7))
     others = [await refusal(asked("original", 7)), await refusal(asked("archive", 9))]
+    assert first.message.endswith(" with the archive version of document 7 (version 7).")
+    assert others[0].message.endswith(" with the original of document 7 (version 7).")
+    assert others[1].message.endswith(" with the archive version of document 7 (version 9).")
+    fake.facts = {"archive_size": 99}
+    others.append(await refusal(asked("archive", 7)))
+    assert others[-1].message == first.message
+    fake.facts = None
     fake.state.documents[-1].version_files[7] = FakeFile(
         ORIGINAL, b"reprocessed", "", "application/pdf"
     )
     others.append(await refusal(asked("archive", 7)))
 
-    assert {other.message for other in others} == {first.message}
-    assert len({first.fingerprint, *(other.fingerprint for other in others)}) == 4
+    assert others[-1].message == first.message
+    assert len({first.fingerprint, *(other.fingerprint for other in others)}) == 5
 
 
 @pytest.mark.decision("decision-44")
@@ -443,5 +450,11 @@ async def test_an_acceptance_names_the_documents_and_options_of_an_archive(tmp_p
         await refusal(service.save([7], directory=where, follow_formatting=True)),
     ]
 
-    assert {other.message for other in others} == {first.message}
+    assert first.message.endswith(" with a ZIP of 1 document (7).")
+    assert others[1].message.endswith(" with a ZIP of 2 documents (7, 1).")
+    assert {other.message for other in others[2:]} == {first.message}
     assert len({first.fingerprint, *(other.fingerprint for other in others)}) == 6
+    many = await refusal(service.save(list(range(1, 13)), directory=where))
+    assert many.message.endswith(
+        " with a ZIP of 12 documents (1, 2, 3, 4, 5, 6, 7, 8, 9, 10 and 2 more)."
+    )

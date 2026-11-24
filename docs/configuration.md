@@ -361,7 +361,8 @@ ranges and the server keeps nothing between calls, so every part reads the file 
   title and no text of a document can make the server write a script, a program or a `CLAUDE.md`.
   Names that start with a dot are refused.
 - An existing file is replaced only after a confirmation (a dialog where your client can show one,
-  else `confirm=true`), which names the file and the directory in full; if either is longer than 254
+  else `confirm=true`), which says what would be saved and names the file and the directory (where a
+  link leads) in full; if either is longer than 254
   characters or holds characters that may not show, the replacement is refused. And only a plain file: never a link, a file
   with a second name (hard link) or a device.
 - Up to 2 GiB and 30 minutes; 256 MiB of the disk stay free, checked while the file arrives. Only a complete file gets its name, and
