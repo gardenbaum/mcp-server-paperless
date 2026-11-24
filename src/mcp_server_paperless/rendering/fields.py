@@ -7,6 +7,8 @@ content of the page leaves behind (a clip, invisible text), as more content woul
 """
 
 import ctypes
+import re
+from itertools import combinations
 from typing import TYPE_CHECKING, Final
 
 import pypdfium2
@@ -20,14 +22,20 @@ if TYPE_CHECKING:
 # Annotation flags: not shown (the two), and printed.
 HIDDEN: Final = 2
 NO_VIEW: Final = 32
+NO_ROTATE: Final = 16
 PRINT: Final = 4
 # Printed, and neither changed nor moved by accident: read only, locked, locked contents.
 STAMP: Final = PRINT | 64 | 128 | 512
 
+# How PDFium writes that an object is a field, or shows one.
+FIELD: Final = re.compile(rb"/Subtype\s*/Widget\b|/FT\s*/(?:Tx|Btn|Ch|Sig)\b")
 # What tells the value of a field, and the way to the field above it.
-VALUES: Final = (b"V", b"DV", b"RV", b"I", b"AS", b"Parent")
+VALUES: Final = (b"V", b"DV", b"RV", b"I", b"Parent")
+# Which of its appearances a field shows.
+STATES: Final = (b"AS",)
 # Pointed at, pressed, and last the normal one, with which all go.
 APPEARANCES: Final = (1, 2, 0)
+NOTHING: Final = (ctypes.c_ushort * 1)()
 # Stamps of one page; each draws the whole picture, cut to its rectangle.
 MAX_STAMPS: Final = 100
 
@@ -53,6 +61,11 @@ def has_fields(page: pypdfium2.PdfPage) -> bool:
     return any(field for _, field, _ in _annotations(page))
 
 
+def fields_in(content: bytes) -> int:
+    """At least how many fields a file PDFium wrote has; what looks like one in a stream counts."""
+    return sum(1 for _ in FIELD.finditer(content))
+
+
 def remove_fields(page: pypdfium2.PdfPage) -> None:
     """Take the fields off a page; everything else stays."""
     for place, field, _ in _annotations(page):
@@ -60,28 +73,67 @@ def remove_fields(page: pypdfium2.PdfPage) -> None:
             require(pdfium.FPDFPage_RemoveAnnot(page, place))
 
 
-def blank_fields(page: pypdfium2.PdfPage) -> None:
-    """Empty the fields of a page, because links and comments of other pages can refer to them.
+def blank_fields(pdf: pypdfium2.PdfDocument) -> None:
+    """Empty the fields of every page of a file, because a page can refer to those of others.
 
     A value that stands in a field above the ones of the pages is out of reach.
+
+    Raises:
+        RenderFailed: A page cannot be read, and so its fields cannot be emptied.
     """
-    nothing = (ctypes.c_ushort * 1)()
-    for place, field, _ in _annotations(page):
-        if field:
-            note = pdfium.FPDFPage_GetAnnot(page, place)
-            done = [pdfium.FPDFAnnot_SetStringValue(note, key, nothing) for key in VALUES]
-            _ = [pdfium.FPDFAnnot_SetAP(note, mode, None) for mode in APPEARANCES]
-            pdfium.FPDFPage_CloseAnnot(note)
-            require(all(done))
+    for number in range(len(pdf)):
+        try:
+            page = pdf[number]
+        except pypdfium2.PdfiumError as error:
+            raise RenderFailed(reason="fields", of_source=True) from error
+        for place, field, _ in _annotations(page):
+            if field:
+                _empty_field(page, place)
+        page.close()
+
+
+def _empty_field(page: pypdfium2.PdfPage, place: int) -> None:
+    """Take the value off a field, and how it looks."""
+    note = pdfium.FPDFPage_GetAnnot(page, place)
+    _set_empty([note], (*VALUES, *STATES), look=True)
+    pdfium.FPDFPage_CloseAnnot(note)
+
+
+def _set_empty(
+    notes: Sequence[pdfium.FPDF_ANNOTATION], keys: Sequence[bytes], *, look: bool = False
+) -> None:
+    """Empty entries of annotations; with ``look`` also how they look."""
+    for note in notes:
+        for key in keys:
+            require(pdfium.FPDFAnnot_SetStringValue(note, key, NOTHING))
+        for mode in APPEARANCES if look else ():
+            _ = pdfium.FPDFAnnot_SetAP(note, mode, None)  # 0: there was none
+
+
+def cut_parents(page: pypdfium2.PdfPage) -> None:
+    """Take the way to a parent off the annotations of an imported page.
+
+    PDFium does not translate it: its number is that of another object here.
+    """
+    for place, _, _ in _annotations(page):
+        note = pdfium.FPDFPage_GetAnnot(page, place)
+        if pdfium.FPDFAnnot_HasKey(note, b"Parent"):
+            require(pdfium.FPDFAnnot_SetStringValue(note, b"Parent", NOTHING))
+        pdfium.FPDFPage_CloseAnnot(note)
 
 
 def draw_fields(
-    source: bytes, into: pypdfium2.PdfDocument, places: Sequence[tuple[int, int]]
+    source: bytes,
+    into: pypdfium2.PdfDocument,
+    places: Sequence[tuple[int, int]],
+    *,
+    blank: bool,
 ) -> None:
     """Draw the fields of pages (from 0) of ``source`` on the pages they became in ``into``.
 
     The form is loaded, so PDFium draws a field as a reader of the source would where nothing is
-    stored or the file asks for that. No script runs: the builds have no V8.
+    stored or the file asks for that. No script runs: the builds have no V8. With ``blank`` nothing
+    but the picture comes along.
 
     Raises:
         RenderFailed: The fields of a page cannot be drawn.
@@ -91,12 +143,17 @@ def draw_fields(
         return
     forms = _opened(source)
     for number, place in places:
-        if not has_fields(forms[number]):
-            forms = _opened(source)  # two pages are one object, whose fields are used up
+        # A copy for each page if it is emptied: pages can share their fields. And two pages can be
+        # one object, whose fields are used up.
+        if blank or not has_fields(forms[number]):
+            forms = _opened(source)
         page = into[place]
         box = _ordered(*page.get_mediabox())
-        rectangles = _flattened(forms, number, box)
+        rectangles = _flattened(forms, number, box, blank=blank)
         if rectangles:
+            if blank:
+                # The resources of a page come along with its picture, and what they refer to.
+                blank_fields(forms)
             _stamp(forms, number, page, into, box, rectangles)
         page.close()
 
@@ -119,7 +176,7 @@ def require(result: object) -> None:
         raise pypdfium2.PdfiumError(message)
 
 
-def _flattened(forms: pypdfium2.PdfDocument, number: int, box: Box) -> list[Box]:
+def _flattened(forms: pypdfium2.PdfDocument, number: int, box: Box, *, blank: bool) -> list[Box]:
     """Make the fields of a page its only content; the rectangles of those that are shown.
 
     Shown is what a screen shows, also where it would not be printed.
@@ -127,16 +184,20 @@ def _flattened(forms: pypdfium2.PdfDocument, number: int, box: Box) -> list[Box]
     page = forms[number]
     shown: list[Box] = []
     for place, field, flags in _annotations(page):
-        if field and not flags & (HIDDEN | NO_VIEW):
-            # Only printed ones are flattened, but a value on the screen must not be lost.
-            note = pdfium.FPDFPage_GetAnnot(page, place)
-            require(pdfium.FPDFAnnot_SetFlags(note, PRINT))
-            at = pdfium.FS_RECTF()
-            require(pdfium.FPDFAnnot_GetRect(note, at))
-            shown.append(_ordered(at.left, at.bottom, at.right, at.top))
-            pdfium.FPDFPage_CloseAnnot(note)
-        else:
+        rectangle = _rectangle(page, place)
+        if not field or flags & (HIDDEN | NO_VIEW) or _empty(rectangle):
+            if field and blank:
+                _empty_field(page, place)  # the resources of the page can refer to it
             require(pdfium.FPDFPage_RemoveAnnot(page, place))
+            continue
+        if flags & NO_ROTATE and page.get_rotation():
+            # A picture turns with its page.
+            raise RenderFailed(reason="fields", of_source=True)
+        shown.append(rectangle)
+        # Only printed ones are flattened, but a value on the screen must not be lost.
+        note = pdfium.FPDFPage_GetAnnot(page, place)
+        require(pdfium.FPDFAnnot_SetFlags(note, PRINT))
+        pdfium.FPDFPage_CloseAnnot(note)
     if not shown:
         return []
     for place in reversed(range(pdfium.FPDFPage_CountObjects(page))):
@@ -145,9 +206,17 @@ def _flattened(forms: pypdfium2.PdfDocument, number: int, box: Box) -> list[Box]
         pdfium.FPDFPageObj_Destroy(part)
     require(pdfium.FPDFPage_GenerateContent(page))
     page.set_rotation(0)
-    page.close()
-    page = forms[number]
-    require(pdfium.FPDFPage_Flatten(page, pdfium.FLAT_PRINT) == pdfium.FLATTEN_SUCCESS)
+    # Not before: loaded again, a field would be drawn without its value.
+    places = _annotations(page) if blank else []
+    notes = [pdfium.FPDFPage_GetAnnot(page, place) for place, _, _ in places]
+    _set_empty(notes, VALUES)
+    flattened = pdfium.FPDFPage_Flatten(page, pdfium.FLAT_PRINT)
+    # And these not before: how it looks is in the picture now, and must not be drawn anew there
+    # when another page with the same field is loaded.
+    _set_empty(notes, STATES, look=True)
+    for note in notes:
+        pdfium.FPDFPage_CloseAnnot(note)
+    require(flattened == pdfium.FLATTEN_SUCCESS)
     page.set_mediabox(*box)
     page.set_cropbox(*box)
     page.close()
@@ -161,6 +230,22 @@ def _flattened(forms: pypdfium2.PdfDocument, number: int, box: Box) -> list[Box]
 def _ordered(left: float, bottom: float, right: float, top: float) -> Box:
     """A rectangle whose corners may be exchanged."""
     return min(left, right), min(bottom, top), max(left, right), max(bottom, top)
+
+
+def _rectangle(page: pypdfium2.PdfPage, place: int) -> Box:
+    """Where an annotation is."""
+    note, at = pdfium.FPDFPage_GetAnnot(page, place), pdfium.FS_RECTF()
+    _ = pdfium.FPDFAnnot_GetRect(note, at)  # without one it stays empty
+    pdfium.FPDFPage_CloseAnnot(note)
+    return _ordered(at.left, at.bottom, at.right, at.top)
+
+
+def _empty(box: Box) -> bool:
+    return box[0] == box[2] or box[1] == box[3]
+
+
+def _overlap(one: Box, other: Box) -> bool:
+    return one[0] < other[2] and other[0] < one[2] and one[1] < other[3] and other[1] < one[3]
 
 
 def _alone(page: pypdfium2.PdfPage) -> bool:
@@ -189,10 +274,15 @@ def _stamp(  # noqa: PLR0913, PLR0917 -- a page and what is put on which other
     """Put a page of ``forms`` on ``page``, a page of ``into``, as stamps.
 
     PDFium can only add a stamp above the other annotations. So where there are some, there is a
-    stamp for each field, and what is between them stays reachable; else one for all.
+    stamp for each field, and what is between them stays reachable; else one for all, as where
+    fields overlap (they would be drawn twice).
     """
-    cuts = list(dict.fromkeys(rectangles))
-    if not pdfium.FPDFPage_GetAnnotCount(page) or len(cuts) > MAX_STAMPS:
+    cuts = rectangles
+    if (
+        not pdfium.FPDFPage_GetAnnotCount(page)
+        or len(cuts) > MAX_STAMPS
+        or any(_overlap(one, other) for one, other in combinations(cuts, 2))
+    ):
         lefts, bottoms, rights, tops = zip(*cuts, strict=True)
         cuts = [(min(lefts), min(bottoms), max(rights), max(tops))]
     picture = pdfium.FPDF_NewXObjectFromPage(into, forms, number)

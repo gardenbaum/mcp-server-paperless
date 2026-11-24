@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:17Z'
-updated_date: '2026-11-24T14:28:17Z'
+updated_date: '2026-11-24T14:45:51Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -78,4 +78,6 @@ Surface snapshot: description of insert_pages only.
 Coordinator: fields without the print flag are drawn, only hidden and NoView ones are left out (5 tests red first). Supersedes the owner question above.
 
 Last delta review, 15 tests red first. F1: values, appearances and the way to the parent emptied in all fields of the source in memory before the import (a parent value referred to directly stays; stated and pinned by a test). F2: stamp as large as the fields; PDFium cannot order annotations, so beside other annotations one stamp per field (over 100: one). F3: reason fields with a hint. F4: streams decompressed in the tests.
+
+Closing round on 7ab516e, tests red first (17, and 2 of shared fields, 1 of /Parent). S1/S2/G4: fields are counted in the written result; only if some came along everything is done again with every field of every page emptied, whatever the form type, in the source and in the copies of the pictures; an unreadable page then is fields. Covers /AA, /B, /A chains, /IRT, /Popup, private data, resources. Found on the way: page resources came along with the picture (values leaked), /Parent of annotations stays untranslated by PDFium (cut off), and a source closed before saving can crash PDFium (order kept). G1 to G6 done; measured again: 49 + 50 MiB with a field 0.75 s, 600 MB.
 <!-- SECTION:NOTES:END -->

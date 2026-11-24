@@ -34,8 +34,9 @@ pages and size, not what is on them; the earlier version stays in Paperless. Wit
 comes what they refer to, also where it is not visible: links, comments with the files in them,
 actions, private and page data, and resources shared with other pages of the source. Everybody who
 may see the document can read all of that. Form fields become a picture of what they show, hidden
-ones do not come along. A link or comment that refers to a field brings it without its value, except
-a value that stands in a field above those of the pages. No script of a PDF is run.
+ones do not come along. Fields that the pages refer to come without values, except what PDFium does
+not reach: fields on no page, values in a field above, captions and private entries. No script of a
+PDF is run.
 
 Vulnerability scanners do not report PDFium's vulnerabilities for pypdfium2. This repository checks
 weekly whether the newest release is locked; keep the server up to date.

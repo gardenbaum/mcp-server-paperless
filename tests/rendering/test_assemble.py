@@ -265,6 +265,24 @@ def test_links_and_annotations_come_with_their_page() -> None:
     assert b"app.beep" in unpacked(assemble(TARGET, source, wanted()).content)
 
 
+def test_what_pdfium_leaves_pointing_into_the_source_is_cut_off() -> None:
+    """It does not translate /Parent: the number would be one of another object here."""
+    source = pdf_of(
+        [""],
+        page="/MediaBox [0 0 600 800] /Annots [5 0 R 6 0 R]",
+        extra=[
+            "<< /Type /Annot /Subtype /Text /Rect [0 0 9 9] /Contents (note) /Popup 6 0 R >>",
+            "<< /Type /Annot /Subtype /Popup /Rect [0 0 9 9] /Parent 5 0 R >>",
+        ],
+    )
+
+    made = assemble(TARGET, source, wanted()).content
+
+    assert len(subtypes(made, 1)) == 2
+    assert b"/Subtype/Popup" in made
+    assert re.search(rb"/Parent *\d+ 0 R[^>]*/Subtype/Popup", made) is None
+
+
 def attached() -> bytes:
     """A page with a comment that holds a file."""
     return pdf_of(
@@ -330,7 +348,7 @@ def unpacked(content: bytes) -> bytes:
     return b"\n".join(texts)
 
 
-def referring(annotation: str, *, parent: bool = False) -> bytes:
+def referring(annotation: str, *, parent: bool = False, page: str = "", form: bool = True) -> bytes:
     """Two pages with fields, and on the first an annotation that refers to some of them."""
     above = "/Parent 12 0 R" if parent else ""
     look = "/Type /Annot /Subtype /Widget /FT /Tx /DA (/Helv 12 Tf 0 g)"
@@ -339,7 +357,9 @@ def referring(annotation: str, *, parent: bool = False) -> bytes:
         pdf_of(
             ["", "", ""],
             page="/MediaBox [0 0 600 800] /Annots [XX]",
-            catalog="/AcroForm << /Fields [10 0 R 11 0 R] /NeedAppearances true >>",
+            catalog=(
+                "/AcroForm << /Fields [10 0 R 11 0 R] /NeedAppearances true >>" if form else ""
+            ),
             extra=[
                 f"<< {look} /T (a) /V (VISIBLE) /Rect [10 10 200 40] /F 4 >>",
                 f"<< {look} /T (b) /V (HIDDENV) {stored} /Rect [10 60 200 90] /F 2 {above} >>",
@@ -351,7 +371,7 @@ def referring(annotation: str, *, parent: bool = False) -> bytes:
                 ),
             ],
         )
-        .replace(b"[XX]", f"[9 0 R 10 0 R {annotation}]".encode(), 1)
+        .replace(b"[XX]", f"[9 0 R 10 0 R {annotation}] {page}".encode(), 1)
         .replace(b"[XX]", b"[11 0 R]", 1)
     )
 
@@ -380,6 +400,102 @@ def test_values_of_fields_do_not_come_along_by_a_reference(
     values = [b"HIDDENV", b"OTHERPAGE", b"DEFAULT", b"RICH", b"STOREDAP", b"PARENTV"]
     assert [value for value in values if value in made] == []
     assert b"VISIBLE" in made  # in the picture
+
+
+PATHS = {
+    "page action": ("", "/AA << /O << /S /Hide /T [10 0 R 11 0 R] >> >>"),
+    "bead": ("", "/B [<< /Type /Bead /N 11 0 R /V 10 0 R >>]"),
+    "private data": ("", "/PieceInfo << /X << /Private [10 0 R 11 0 R] >> >>"),
+    "structure": ("", "/Resources << /Properties << /P << /O [10 0 R 11 0 R] >> >> >>"),
+    "comment action": (
+        (
+            "<< /Type /Annot /Subtype /Text /Rect [0 0 9 9] "
+            "/AA << /E << /S /Hide /T [10 0 R 11 0 R] >> >> >>"
+        ),
+        "",
+    ),
+    "popup": ("<< /Type /Annot /Subtype /Text /Rect [0 0 9 9] /Popup 11 0 R >>", ""),
+    "chain": (
+        (
+            "<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] /A << /S /URI /URI (x) "
+            "/Next << /S /Hide /T [10 0 R 11 0 R] >> >> >>"
+        ),
+        "",
+    ),
+}
+
+
+@pytest.mark.parametrize("form", [True, False])
+@pytest.mark.parametrize(("annotation", "page"), PATHS.values(), ids=PATHS)
+def test_values_do_not_come_along_by_any_way(annotation: str, page: str, *, form: bool) -> None:
+    source = referring(annotation, page=page, form=form)
+    made = unpacked(assemble(TARGET, source, wanted("1")).content)
+
+    assert [v for v in (b"HIDDENV", b"OTHERPAGE", b"STOREDAP") if v in made] == []
+    assert b"/Subtype/Widget" in made  # it did come along, emptied
+
+
+@pytest.mark.parametrize("form", [True, False])
+def test_a_page_that_hides_its_fields_from_a_reference_is_refused(*, form: bool) -> None:
+    link = "<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] /A << /S /Hide /T 11 0 R >> >>"
+    broken = referring(link, form=form).replace(
+        b"/Kids [3 0 R 5 0 R 7 0 R]", b"/Kids [3 0 R 5 0 R 99 0 R]"
+    )
+
+    with pytest.raises(RenderFailed) as raised:
+        _ = assemble(TARGET, broken, wanted("1"))
+
+    assert (raised.value.reason, raised.value.of_source) == ("fields", True)
+
+
+@pytest.mark.parametrize("target", [TARGET, filled_form()], ids=["no form", "form"])
+def test_the_other_pages_are_walked_only_if_a_field_came_along(target: bytes) -> None:
+    count_ = len(pypdfium2.PdfDocument(target))
+    loaded: list[int] = []
+
+    class Watched(pypdfium2.PdfDocument):
+        @override
+        def __getitem__(self, i: int) -> pypdfium2.PdfPage:
+            if len(self) == 3:
+                loaded.append(i)
+            return super().__getitem__(i)
+
+    link = "<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] /A << /S /%s >> >>"
+    sources = [
+        referring(link % "URI /URI (x)", page="/AA << /O << /S /GoTo /D [5 0 R /Fit] >> >>"),
+        referring(link % "Hide /T 11 0 R"),
+    ]
+    walked: list[bool] = []
+    for source in sources:
+        loaded.clear()
+        target_ = target if count_ != 3 else sized(301, 302, 303, 304)
+        pages = len(pypdfium2.PdfDocument(target_))
+        _ = assemble(target_, source, wanted("1", 1, pages), open_pdf=Watched)
+        walked.append(1 in loaded)
+
+    assert walked == [False, True]
+
+
+def test_fields_of_the_target_keep_their_values() -> None:
+    target = field("/FT /Tx /V (MINE)")
+    link = "<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] /A << /S /Hide /T 11 0 R >> >>"
+
+    made = unpacked(assemble(target, referring(link), wanted("1", 1, 1)).content)
+
+    assert (b"MINE" in made, b"OTHERPAGE" in made) == (True, False)
+
+
+def test_fields_of_no_page_captions_and_private_entries_stay() -> None:
+    """The stated rest."""
+    link = "<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] /A << /S /Hide /T [10 0 R %s] >> >>"
+    orphan = "<< /FT /Tx /T (z) /V (ORPHAN) >>"
+    source = referring(link % orphan).replace(
+        b"/T (b)", b"/T (b) /MK << /CA (CAPTION) >> /PMD << /X (PRIVATE) >>"
+    )
+
+    made = unpacked(assemble(TARGET, source, wanted("1")).content)
+
+    assert [v in made for v in (b"ORPHAN", b"CAPTION", b"PRIVATE")] == [True, True, True]
 
 
 def test_a_value_of_a_field_above_the_fields_of_the_pages_comes_along_if_referred_to() -> None:
@@ -428,6 +544,63 @@ def several(count_: int, *, others: str = "") -> bytes:
 
 
 NOTE = "<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] >>"
+
+
+def overlapping(first: str, second: str, *, others: str = NOTE) -> bytes:
+    """Two fields, half transparent, and other annotations."""
+    look = "/Type /Annot /Subtype /Widget /FT /Tx /V (x) /F 4 /AP << /N 5 0 R >>"
+    return pdf_of(
+        [""],
+        page=(
+            f"/MediaBox [0 0 600 800] /Annots [{others} << {look} /T (a) /Rect [{first}] >> "
+            f"<< {look} /T (b) /Rect [{second}] >>]"
+        ),
+        catalog="/AcroForm << /Fields [] /DA (/Helv 9 Tf 0 g) >>",
+        extra=[
+            (
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 300 50] /Length 32 "
+                "/Resources << /ExtGState << /G << /ca 0.4 >> >> >> >>\nstream\n"
+                "/G gs 0 0 0 rg 0 0 300 50 re f  \nendstream"
+            )
+        ],
+    )
+
+
+def test_fields_that_overlap_are_drawn_once() -> None:
+    source = overlapping("100 100 300 200", "200 150 400 250")
+
+    made = assemble(TARGET, source, wanted()).content
+
+    assert stamps(made, 1) == [(100, 100, 400, 250)]
+    shown, expected = drawn(made, 1, forms=False), drawn(source, 0, forms=True)
+    assert sum(ImageChops.difference(shown, expected).histogram()[20:]) < 60
+
+
+@pytest.mark.parametrize("empty", ["0 0 0 0", "100 100 100 200", "100 100 300 100"])
+def test_a_field_without_a_size_has_no_stamp(empty: str) -> None:
+    beside = assemble(TARGET, overlapping(empty, "200 150 400 250"), wanted()).content
+    alone = assemble(TARGET, overlapping(empty, empty, others=""), wanted()).content
+
+    assert (stamps(beside, 1), stamps(alone, 1)) == ([(200, 150, 400, 250)], [])
+
+
+@pytest.mark.parametrize("flags", [4 + 16, 16])
+def test_a_field_that_does_not_turn_with_its_page_is_refused_on_a_turned_one(flags: int) -> None:
+    upright = field("/FT /Tx /V (23.11.2026)").replace(b"/F 4", b"/F %d" % flags)
+    turned = upright.replace(b"/MediaBox", b"/Rotate 90 /MediaBox", 1)
+
+    require_drawn_alike(upright)
+    with pytest.raises(RenderFailed) as raised:
+        _ = assemble(TARGET, turned, wanted())
+
+    assert (raised.value.reason, raised.value.of_source) == ("fields", True)
+
+
+def test_a_hidden_field_that_does_not_turn_does_not_matter() -> None:
+    source = field("/FT /Tx /V (x)").replace(b"/F 4", b"/F 22")
+    turned = source.replace(b"/MediaBox", b"/Rotate 90 /MediaBox", 1)
+
+    assert subtypes(assemble(TARGET, turned, wanted()).content, 1) == []
 
 
 def test_the_stamp_covers_the_fields_and_no_more() -> None:
@@ -663,6 +836,26 @@ def test_every_page_with_fields_gets_its_own_also_where_pages_are_one_object() -
 
     for page in (1, 2):
         assert differing(drawn(made, page, forms=False), expected) < 60
+
+
+@pytest.mark.parametrize("link", ["", "/AA << /O << /S /Hide /T [7 0 R] >> >>"])
+def test_pages_that_share_their_fields_all_show_them(link: str) -> None:
+    source = pdf_of(
+        ["", ""],
+        page=f"/MediaBox [0 0 600 800] /Annots 8 0 R {link}",
+        catalog="/AcroForm << /Fields [7 0 R] /NeedAppearances true /DA (/Helv 24 Tf 0 g) >>",
+        extra=[
+            "<< /Type /Annot /Subtype /Widget /FT /Tx /T (a) /F 4 /V (i) /Rect [0 0 300 50] >>",
+            "[7 0 R]",
+        ],
+    )
+
+    made = assemble(TARGET, source, wanted("1-2")).content
+
+    for page in (0, 1):
+        expected = drawn(source, page, forms=True)
+        assert black(expected) > 10
+        assert differing(drawn(made, page + 1, forms=False), expected) < 5
 
 
 def test_the_pages_of_a_source_bring_only_their_own_fields() -> None:

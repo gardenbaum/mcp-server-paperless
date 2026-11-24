@@ -63,7 +63,8 @@ KEPT = (
         "what the inserted pages refer to, also where it is not visible: links, comments with the "
         "replies to them and the files in them, actions, private and page data, and resources "
         "they share with other pages of the source; fields they refer to come without values, "
-        "except one that stands in a field above those of the pages"
+        "except what PDFium does not reach: fields on no page, values in a field above, captions "
+        "and private entries"
     ),
     f"document {OTHER} 'Annex': unchanged",
 )
@@ -744,7 +745,7 @@ REWRITE = (
             "timeout",
             False,
             "Putting the files together took longer than 30 seconds and was stopped.",
-            "Insert fewer pages.",
+            "Insert fewer pages. A source with many form fields is faster printed to a new PDF.",
         ),
         (
             "memory",

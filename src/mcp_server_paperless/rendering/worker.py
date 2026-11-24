@@ -43,7 +43,9 @@ from mcp_server_paperless.domain.rendering import (
 from mcp_server_paperless.rendering import limits
 from mcp_server_paperless.rendering.fields import (
     blank_fields,
+    cut_parents,
     draw_fields,
+    fields_in,
     has_fields,
     remove_fields,
 )
@@ -689,23 +691,16 @@ def assemble(
         # Importing next to a page that is not there crashes PDFium.
         sizes = _sizes(into)
         _require_sizes(sizes, of_source=False)
-        _require_places(target, sizes, request.after_page, len(pages))
+        own_fields = _require_places(target, sizes, request.after_page, len(pages))
         of_source = True
         inserted = _sizes(origin, pages)
         _require_sizes(inserted, of_source=True)
-        rotations, fields = _prepared(origin, pages)
-        into.import_pages(origin, [page - 1 for page in pages], request.after_page)
-        first = request.after_page
-        draw_fields(source, into, [(pages[n] - 1, first + n) for n in fields])
-        for place, rotation in enumerate(rotations, request.after_page):
-            made = into[place]
-            # What the page does not say itself it would take from the pages around it.
-            made.set_rotation(rotation)
-            made.set_cropbox(*made.get_cropbox())
-            made.close()
-        content = _saved(into)
-        origin.close()
         sizes[request.after_page : request.after_page] = inserted
+        content = _joined(into, origin, source, pages, request.after_page)
+        if fields_in(content) > own_fields:
+            # The pages refer to fields by a way that PDFium follows: again, without any value.
+            into, origin = open_pdf(target), open_pdf(source)
+            content = _joined(into, origin, source, pages, request.after_page, blank=True)
         if not _alike(content, sizes):
             raise RenderFailed(reason="damaged", of_source=True)
     except pypdfium2.PdfiumError as error:
@@ -713,6 +708,37 @@ def assemble(
     if len(content) > request.max_bytes:
         raise RenderFailed(reason="large")
     return Assembled(content=content, source_pages=source_pages, inserted=tuple(pages))
+
+
+def _joined(  # noqa: PLR0913 -- two opened files, and what goes where
+    into: pypdfium2.PdfDocument,
+    origin: pypdfium2.PdfDocument,
+    source: bytes,
+    pages: list[int],
+    first: int,
+    *,
+    blank: bool = False,
+) -> bytes:
+    """The file of ``into`` with pages of ``origin``, the opened ``source``; both are closed.
+
+    With ``blank`` every field of the source is emptied first.
+    """
+    if blank:
+        blank_fields(origin)
+    rotations, fields = _prepared(origin, pages)
+    into.import_pages(origin, [page - 1 for page in pages], first)
+    draw_fields(source, into, [(pages[n] - 1, first + n) for n in fields], blank=blank)
+    for place, rotation in enumerate(rotations, first):
+        made = into[place]
+        cut_parents(made)
+        # What the page does not say itself it would take from the pages around it.
+        made.set_rotation(rotation)
+        made.set_cropbox(*made.get_cropbox())
+        made.close()
+    # Only then: what was imported can still point into the source.
+    content = _saved(into)
+    origin.close()
+    return content
 
 
 def _prepared(origin: pypdfium2.PdfDocument, pages: list[int]) -> tuple[list[int], list[int]]:
@@ -724,24 +750,12 @@ def _prepared(origin: pypdfium2.PdfDocument, pages: list[int]) -> tuple[list[int
         if has_fields(original):
             fields.append(place)
         original.close()
-    _blank(origin, {page - 1 for page in pages})
     # Afterwards: two pages can be one object.
     for place in fields:
         original = origin[pages[place] - 1]
         remove_fields(original)
         original.close()
     return rotations, fields
-
-
-def _blank(origin: pypdfium2.PdfDocument, wanted: set[int]) -> None:
-    """Empty every field of the file; of a file without a form those of the ``wanted`` pages."""
-    for number in range(len(origin)) if origin.get_formtype() else wanted:
-        try:
-            page = origin[number]
-        except pypdfium2.PdfiumError:
-            continue  # the wanted ones were read before
-        blank_fields(page)
-        page.close()
 
 
 def _saved(pdf: pypdfium2.PdfDocument) -> bytes:
@@ -772,11 +786,11 @@ def _require_sizes(sizes: list[tuple[float, float]], *, of_source: bool) -> None
 
 def _require_places(
     target: bytes, sizes: list[tuple[float, float]], after_page: int, pages: int
-) -> None:
+) -> int:
     """Insert marked pages into a copy, and look for each where it has to be in the saved file.
 
     In a page tree whose counts are wrong PDFium puts a page elsewhere or where no reader finds it,
-    and the sizes of real pages cannot tell them apart.
+    and the sizes of real pages cannot tell them apart. Returns how many fields the target has.
 
     Raises:
         RenderFailed: A page is not where it has to be.
@@ -790,8 +804,10 @@ def _require_places(
         page.set_rotation(0)
         page.set_cropbox(0, 0, width, height)
         page.close()
-    if not _alike(_saved(probe), [*sizes[:after_page], *markers, *sizes[after_page:]]):
+    saved = _saved(probe)
+    if not _alike(saved, [*sizes[:after_page], *markers, *sizes[after_page:]]):
         raise RenderFailed(reason="damaged")
+    return fields_in(saved)
 
 
 def count(content: bytes) -> Counted:
