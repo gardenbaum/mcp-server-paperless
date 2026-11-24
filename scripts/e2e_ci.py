@@ -25,77 +25,79 @@ from pathlib import Path
 from typing import TextIO, cast
 
 # The number of parallel jobs of the full run. Its matrix lists the same shards (a test checks it).
-SHARDS = 3
+SHARDS = 4
 
-# Seconds per module on a hosted runner (ubuntu-latest, 4 vCPUs): the median of four e2e-full runs,
-# 45032837175, 45033555760 and 45037907901 on main and 45044592721 on the PLMCP-44 branch
-# (PLMCP-44), a module's time being the gap of the Actions timestamps of its pytest progress lines,
-# 30 s of stack seeding taken off the first module of a shard. The Celery-bound modules (bulk,
-# writer, pdf, sharing, versions) took 2x the time of the 4-core sandbox the first table came from
-# and vary 1.5 to 2x between runs (the median ignores one fast or slow runner). The weight the
-# split balances; a module not listed counts as the average of the listed ones, so a new module
-# lands in some shard without anyone editing this table; refresh the numbers when the balance
-# drifts (a test checks the split of the current table against the measured seconds). Keys are
-# paths relative to the repository.
-# PLMCP-82: test_toolset_guide 62 s, test_http 15 s and test_instance_reader 16 s are ONE
-# pull-request-tier run, 45223357290 (hosted, the timestamp gap of each module's progress line, as
-# above), not the median of several full runs; the next e2e-full runs should replace them
-# (PLMCP-44).
-# PLMCP-74: test_pages and test_pages_files were measured on macOS (2026-11-23), not hosted; the
-# next e2e-full runs should replace them.
-# PLMCP-75: test_text_edits is an estimate (its version uploads against those of
-# test_document_versions and test_versions), not measured; the next e2e-full runs should replace it.
+# Seconds per module on a hosted runner (ubuntu-latest, 4 vCPUs): the median of four green e2e-full
+# runs of 2026-11-24, 45349506723, 45349964929, 45353668848 and 45355735636 (PLMCP-44), a module's
+# time being the gap of the Actions timestamps of its pytest progress lines, 30 s of stack seeding
+# taken off the first module of a shard. The Celery-bound modules (bulk, writer, pdf, sharing,
+# versions, duplicates) vary 1.5 to 2x between runs (the median ignores one fast or slow runner).
+# The weight the split balances; a module not listed counts as the average of the listed ones, so a
+# new module lands in some shard without anyone editing this table; refresh the numbers when the
+# balance drifts (a test checks the split of the current table against the measured seconds). Keys
+# are paths relative to the repository. test_trash_order and test_rejected_duplicates are skipped in
+# the shards (they run in the jobs e2e-postgres and e2e-duplicates).
 MODULE_SECONDS: dict[str, float] = {
-    "tests/contract/test_bulk.py": 284,
-    "tests/contract/test_document_writer.py": 174,
-    "tests/contract/test_pdf.py": 140,
-    "tests/contract/test_sharing.py": 107,
-    "tests/contract/test_document_versions.py": 103,
-    "tests/e2e/test_pdf.py": 88,
-    "tests/e2e/test_bulk.py": 59,
-    "tests/e2e/test_update_document.py": 57,
-    "tests/contract/test_taxonomy_edits.py": 54,
-    "tests/e2e/test_versions.py": 51,
-    "tests/contract/test_document_upload.py": 48,
-    "tests/contract/test_permissions.py": 43,
-    "tests/contract/test_trash.py": 41,
-    "tests/contract/test_notes_and_trash.py": 40,
-    "tests/e2e/test_permissions.py": 40,
-    "tests/contract/test_text_edits.py": 40,
-    "tests/e2e/test_pages_files.py": 218,
-    "tests/e2e/test_pages.py": 42,
-    "tests/e2e/test_admin.py": 39,
-    "tests/contract/test_document_reader.py": 31,
-    "tests/contract/test_admin.py": 30,
-    "tests/e2e/test_upload_document.py": 28,
-    "tests/e2e/test_raw.py": 21,
-    "tests/e2e/test_notes_and_trash.py": 17,
+    "tests/contract/test_pdf.py": 253,
+    "tests/contract/test_bulk.py": 248,
+    "tests/contract/test_duplicates.py": 207,
+    "tests/e2e/test_pages_files.py": 206,
+    "tests/contract/test_document_versions.py": 205,
+    "tests/contract/test_document_writer.py": 160,
+    "tests/e2e/test_duplicates.py": 111,
+    "tests/e2e/test_pdf.py": 111,
+    "tests/contract/test_sharing.py": 106,
+    "tests/e2e/test_confirmation.py": 96,
+    "tests/e2e/test_bulk.py": 69,
+    "tests/e2e/test_upload_duplicates.py": 68,
+    "tests/contract/test_document_upload.py": 62,
+    "tests/contract/test_notes_and_trash.py": 58,
+    "tests/contract/test_admin.py": 57,
+    "tests/contract/test_taxonomy_edits.py": 56,
+    "tests/e2e/test_text_edits.py": 56,
+    "tests/e2e/test_toolset_guide.py": 54,
+    "tests/e2e/test_versions.py": 52,
+    "tests/e2e/test_upload_batches.py": 50,
+    "tests/e2e/test_pages.py": 49,
+    "tests/e2e/test_update_document.py": 48,
+    "tests/contract/test_trash.py": 47,
+    "tests/e2e/test_permissions.py": 44,
+    "tests/e2e/test_search.py": 41,
+    "tests/e2e/test_admin.py": 40,
+    "tests/contract/test_permissions.py": 38,
+    "tests/contract/test_batch_uploads.py": 37,
+    "tests/contract/test_text_edits.py": 34,
+    "tests/e2e/test_downloads.py": 28,
+    "tests/e2e/test_upload_document.py": 25,
+    "tests/contract/test_document_reader.py": 23,
+    "tests/contract/test_instance_reader.py": 22,
+    "tests/e2e/test_raw.py": 20,
+    "tests/contract/test_task_reader.py": 16,
+    "tests/e2e/test_mail.py": 16,
+    "tests/e2e/test_notes_and_trash.py": 16,
     "tests/e2e/test_taxonomy_edits.py": 16,
-    "tests/e2e/test_trash.py": 16,
-    "tests/contract/test_task_reader.py": 15,
-    "tests/e2e/test_mail.py": 15,
-    "tests/e2e/test_files.py": 14,
-    "tests/e2e/test_stdio.py": 14,
-    "tests/e2e/test_toolset_guide.py": 62,
-    "tests/e2e/test_tasks.py": 12,
-    "tests/contract/test_ai_reader.py": 10,
-    "tests/e2e/test_sharing.py": 10,
-    "tests/contract/test_workflows.py": 8,
-    "tests/e2e/test_documents.py": 8,
-    "tests/contract/test_views.py": 7,
+    "tests/e2e/test_files.py": 15,
     "tests/e2e/test_http.py": 15,
-    "tests/e2e/test_search.py": 6,
+    "tests/e2e/test_stdio.py": 15,
+    "tests/e2e/test_sharing.py": 11,
+    "tests/e2e/test_trash.py": 10,
+    "tests/contract/test_ai_reader.py": 8,
+    "tests/e2e/test_documents.py": 8,
+    "tests/contract/test_workflows.py": 7,
+    "tests/contract/test_mail.py": 6,
+    "tests/contract/test_views.py": 6,
     "tests/e2e/test_views.py": 6,
-    "tests/contract/test_mail.py": 5,
-    "tests/e2e/test_workflows.py": 5,
-    "tests/contract/test_instance_reader.py": 16,
-    "tests/contract/test_view_filters.py": 3,
+    "tests/e2e/test_workflows.py": 6,
+    "tests/e2e/test_tasks.py": 4,
+    "tests/contract/test_taxonomy_reader.py": 2,
+    "tests/contract/test_view_filters.py": 2,
     "tests/e2e/test_ai.py": 2,
     "tests/e2e/test_stack.py": 2,
     "tests/contract/test_raw.py": 1,
-    "tests/contract/test_taxonomy_reader.py": 1,
     "tests/contract/test_taxonomy_writer.py": 1,
     "tests/e2e/test_client.py": 0,
+    "tests/e2e/test_rejected_duplicates.py": 0,
+    "tests/e2e/test_trash_order.py": 0,
 }
 
 # The hang guards of the two workflows in minutes (a test reads the real files): the fast tier is
@@ -105,18 +107,16 @@ PR_TIMEOUT_MINUTES = 20
 SHARD_TIMEOUT_MINUTES = 25
 
 # A tier heavier than this (recorded seconds) is split over up to TIER_PARTS parallel jobs of the
-# `e2e` matrix (a cross-cutting change would pass the 20-minute guard on a hosted runner: 450 s was
-# about 13 minutes with the stack's start while the weights were sandbox seconds). The weights are
-# hosted-runner seconds since PLMCP-44, so the same number now splits tiers earlier (decision-30,
-# which supersedes decision-23: a smaller tier only runs in more parallel jobs). The full run
-# covers everything after the merge.
+# `e2e` matrix (a cross-cutting change would pass the 20-minute guard on a hosted runner). Weights
+# and budget are hosted-runner seconds (decision-30); the number of shards and parts is
+# decision-58's. The full run covers everything after the merge.
 TIER_BUDGET_SECONDS = 450.0
-TIER_PARTS = 3
+TIER_PARTS = 4
 
 # What every pull request that changes code runs: the stdio smoke test.
 STDIO = "tests/e2e/test_stdio.py"
 # What a change outside the toolset map (shared code, helpers, build files) adds to the tier: the
-# stdio test, the stack's own seeding test and a read-only sample across the adapter, about 35 s.
+# stdio test, the stack's own seeding test and a read-only sample across the adapter, about 65 s.
 # The full suite follows after the merge.
 SMOKE_TARGETS = frozenset(
     {
