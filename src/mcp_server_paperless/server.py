@@ -555,6 +555,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 trashed=TrashedDocuments(
                     adapters.trash,
                     adapters.documents,
+                    adapters.permissions,
                     documents,
                     trash_scan,
                     web_url=web_url,

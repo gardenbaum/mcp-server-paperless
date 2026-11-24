@@ -233,10 +233,13 @@ class TrashEntryDetail(DocumentOverview):
     ]
     created_date: Annotated[date, Field(description="Deprecated copy of created.")]
     archived_file_name: str | None
-    is_shared_by_requester: bool
-    user_can_change: bool | None
+    is_shared_by_requester: Annotated[bool | None, Field(description="Null for a version.")]
+    user_can_change: Annotated[
+        bool | None, Field(description="Of a version: its document's. Null: see limits.")
+    ]
     permissions: Annotated[
-        TrashGrants | None, Field(description="Null if they could not be read; see limits.")
+        TrashGrants | None,
+        Field(description="Of a version: its document's. Null if not readable: see limits."),
     ]
     notes: tuple[TrashedNote, ...]
     versions: Annotated[

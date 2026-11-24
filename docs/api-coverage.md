@@ -90,7 +90,7 @@ Limits.
 | `GET /api/documents/{id}/notes/` | `delete_note`, `get_document` |  |
 | `POST /api/documents/{id}/notes/` | `add_note` |  |
 | `GET /api/documents/{id}/preview/` |  | PLMCP-83 |
-| `GET /api/documents/{id}/root/` | `upload_document`, `upload_document_version`, `upload_documents` |  |
+| `GET /api/documents/{id}/root/` | `empty_trash`, `upload_document`, `upload_document_version`, `upload_documents` |  |
 | `GET /api/documents/{id}/share_links/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/suggestions/` | `get_document` |  |
 | `GET /api/documents/{id}/thumb/` | `get_document_thumbnail`, `get_trashed_file` |  |

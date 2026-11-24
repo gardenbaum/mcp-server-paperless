@@ -4,8 +4,8 @@ Pages of that order can overlap or skip entries (seen on PostgreSQL, decision-47
 looked for in one bounded request first; pages follow only for ids that were not in it.
 """
 
-import contextlib
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.documents import DocumentQuery
@@ -56,6 +56,11 @@ def all_too_large() -> AnswerTooLarge:
     return AnswerTooLarge(message, hint=hint)
 
 
+def limited(error: PaperlessMcpError) -> bool:
+    """Whether Paperless asks for fewer requests, so that no other one is made instead."""
+    return isinstance(error, UpstreamUnavailable) and error.status == HTTPStatus.TOO_MANY_REQUESTS
+
+
 def following(page: int, next_page: int | None) -> int | None:
     """The page to read after ``page``; None at the end, or if the answer does not get on."""
     return next_page if next_page is not None and page < next_page <= MAX_PAGES else None
@@ -68,10 +73,12 @@ class Scan:
     Attributes:
         entries: The entries, each once, in Paperless order.
         total: How many entries the trash holds.
+        small: The large request did not work, so it is not made again.
     """
 
     entries: tuple[TrashedDocument, ...]
     total: int
+    small: bool = False
 
     @property
     def complete(self) -> bool:
@@ -128,31 +135,35 @@ class TrashScan:
         self._taxonomy: TaxonomyResolver = taxonomy
         self.cap: int = cap
 
-    async def first(self) -> Scan:
-        """The first ``cap`` entries in one request, or fewer if that does not work.
+    async def first(self, *, small: bool = False) -> Scan:
+        """The first ``cap`` entries in one request, or fewer (``small``) if that does not work.
 
         Raises:
             AnswerTooLarge: Even few entries are too large.
             UpstreamUnavailable: Even few entries could not be read.
         """
+        size = min(PAGE, self.cap) if small else self.cap
         try:
-            page = await self._reader.read_trash(entries=self.cap, max_bytes=TRASH_BYTES)
-        except AnswerTooLarge, UpstreamUnavailable:
-            try:
-                page = await self._reader.read_trash(
-                    entries=min(PAGE, self.cap), max_bytes=TRASH_BYTES
-                )
-            except AnswerTooLarge:
-                raise all_too_large() from None
-        return Scan(tuple({e.id: e for e in page.entries}.values()), page.count)
+            page = await self._reader.read_trash(entries=size, max_bytes=TRASH_BYTES)
+        except (AnswerTooLarge, UpstreamUnavailable) as error:
+            if limited(error):
+                raise
+            if not small:
+                return await self.first(small=True)
+            raise (all_too_large() if isinstance(error, AnswerTooLarge) else error) from None
+        return Scan(tuple({e.id: e for e in page.entries}.values()), page.count, small)
 
-    async def locate(self, ids: Sequence[int]) -> tuple[dict[int, TrashedDocument], Scan]:
+    async def locate(
+        self, ids: Sequence[int], *, small: bool = False
+    ) -> tuple[dict[int, TrashedDocument], Scan]:
         """Those of ``ids`` that are in the trash, reading on until all are found."""
         wanted = set(ids)
         try:
-            scan = await self.first()
-        except AnswerTooLarge, AnswerCompressed, UpstreamUnavailable:
-            scan = Scan((), 1)  # nothing is known of it: pages follow
+            scan = await self.first(small=small)
+        except (AnswerTooLarge, AnswerCompressed, UpstreamUnavailable) as error:
+            if limited(error):
+                raise
+            scan = Scan((), 1, small=True)  # nothing is known of it: pages follow
         found = {e.id: e for e in scan.entries if e.id in wanted}
         page: int | None = None if scan.complete else 1
         while page is not None and wanted - found.keys():
@@ -161,20 +172,17 @@ class TrashScan:
             page = following(page, listed.next_page) if listed.entries else None
         return found, scan
 
-    async def require(self, ids: Sequence[int]) -> list[TrashedDocument]:
-        """The entries with these ids, in that order.
+    async def require(self, ids: Sequence[int]) -> tuple[list[TrashedDocument], bool]:
+        """The entries with these ids, in that order, and whether only small requests worked.
 
         Raises:
             NotFound: Some ids are not in the trash, or not visible to the user; each is named.
         """
-        found, _ = await self.locate(ids)
+        found, scan = await self.locate(ids)
         missing = [number for number in ids if number not in found]
         if missing:
             raise await self.unlisted(missing)
-        entries = [found[number] for number in ids]
-        with contextlib.suppress(PaperlessMcpError):  # only titles: acting does not need them
-            return await self.rooted(entries)
-        return entries
+        return await self.titled([found[number] for number in ids]), scan.small
 
     async def unlisted(self, missing: Sequence[int]) -> NotFound:
         """The error for ids that are not listed, with the reason where Paperless tells one."""
@@ -205,7 +213,8 @@ class TrashScan:
             found, scan = await self.locate(ids)
             entries = [found[number] for number in ids if number in found]
             missing = [number for number in ids if number not in found]
-        entries = await self.rooted(entries)
+        by_document = wanted.title is not None or type_id is not None
+        entries = await (self.rooted(entries) if by_document else self.titled(entries))
         title = (wanted.title or "").casefold()
         matching = [
             e
@@ -217,6 +226,13 @@ class TrashScan:
             and (last is None or e.deleted_on <= last)
         ]
         return Selection(tuple(matching), scan, tuple(missing), by_id=wanted.ids is not None)
+
+    async def titled(self, entries: Sequence[TrashedDocument]) -> list[TrashedDocument]:
+        """The entries ``rooted``; as they are if their documents cannot be read."""
+        try:
+            return await self.rooted(entries)
+        except PaperlessMcpError:
+            return list(entries)
 
     async def rooted(self, entries: Sequence[TrashedDocument]) -> list[TrashedDocument]:
         """The entries; versions with the title and document type their document has now.

@@ -424,3 +424,21 @@ async def test_the_grants_of_an_entry_are_told_to_those_who_see_it(backend: Back
     assert len(found.view_users) == len(found.change_users) == 1
     assert (found.view_groups, found.change_groups) == ((), ())
     assert await grants(granted) is None
+
+
+@pytest.mark.contract("TrashReader.get_trash_permissions")
+@pytest.mark.contract("PermissionReader.get_permissions")
+async def test_the_grants_of_a_deleted_version_are_those_of_its_document(backend: Backend) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp78 granted root")
+    version = await add_version(backend, document, "plmcp78 granted version")
+    _ = backend.restricted(frozenset({"view_document"}), change=[document])
+    _ = await ports.document_writes.delete_version(document, version)
+
+    [access] = await ports.permissions.get_permissions("document", [document])
+    hidden = await backend.reader.permissions.get_permissions("document", [document])
+
+    assert len(access.permissions.view_users) == len(access.permissions.change_users) == 1
+    assert hidden == []
+    # A deleted version is no document of the list, so its root has to be asked for.
+    assert await ports.permissions.get_permissions("document", [version]) == []

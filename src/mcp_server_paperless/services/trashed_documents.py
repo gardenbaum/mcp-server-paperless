@@ -6,6 +6,7 @@ metadata, notes and history are 404. Files of a trashed document answer anyone w
 here the entry has to be in the trash list of the user, which shows owners and superusers only.
 """
 
+import contextlib
 import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -29,11 +30,11 @@ from mcp_server_paperless.services.transfer import (
     time_limit,
 )
 from mcp_server_paperless.services.trash import trash_link
-from mcp_server_paperless.services.trash_scan import PAGE, all_too_large, following
+from mcp_server_paperless.services.trash_scan import PAGE, all_too_large, following, limited
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.documents import FileKind, FileVersion
-    from mcp_server_paperless.domain.ports import DocumentReader, TrashReader
+    from mcp_server_paperless.domain.ports import DocumentReader, PermissionReader, TrashReader
     from mcp_server_paperless.domain.trash import TrashedDetail, TrashGrants, TrashLookup
     from mcp_server_paperless.services.documents import DocumentService
     from mcp_server_paperless.services.trash_scan import TrashScan
@@ -46,10 +47,12 @@ DOCUMENT_LIMITS = (
 )
 VERSION_LIMITS = (
     "Text, thumbnail and file are those of this version, and its title, type, owner and other "
-    "fields are those of its upload. Its history and the size of its files "
-    "are not shown in the trash: restore it first with restore_from_trash, which attaches it to "
-    "its document again, without confirm."
+    "fields are those of its upload. Access follows the document, so permissions and "
+    "user_can_change are those of its document; is_shared_by_requester is not known. Its "
+    "history and the size of its files are not shown in the trash: restore it first with "
+    "restore_from_trash, which attaches it to its document again, without confirm."
 )
+NO_CHANGE = " Whether the user may change it could not be read just now."
 NO_PERMISSIONS = " Who may view or change it could not be read just now."
 RESTORE_FIRST = "Restore it first with restore_from_trash, then use the tools for documents."
 NO_FILE = "Paperless does not serve this file while the document is in the trash."
@@ -70,19 +73,21 @@ class TrashedDocuments:
         self,
         trash: TrashReader,
         reader: DocumentReader,
+        access: PermissionReader,
         documents: DocumentService,
         scan: TrashScan,
         *,
         web_url: str,
         max_bytes: int,
     ) -> None:
-        """Read rows through ``trash`` and files through ``reader``.
+        """Read rows through ``trash``, files through ``reader`` and grants through ``access``.
 
         Files over ``max_bytes`` bytes are reported, not attached. ``documents`` names what an
         entry refers to.
         """
         self._trash: TrashReader = trash
         self._reader: DocumentReader = reader
+        self._access: PermissionReader = access
         self._documents: DocumentService = documents
         self._scan: TrashScan = scan
         self._web_url: str = web_url
@@ -100,7 +105,12 @@ class TrashedDocuments:
             PermissionDenied: The user may not view documents.
         """
         found, where = await self._find(document_id)
-        permissions = await self._permissions(document_id, where)
+        if found.version_of is None:
+            permissions = await self._permissions(document_id, where)
+            can_change, shared = found.user_can_change, found.is_shared_by_requester
+        else:
+            permissions, can_change = await self._of_document(found.version_of)
+            shared = None
         overview = await self._documents.detail(found)
         whole = found.content
         end = offset + max_chars
@@ -115,8 +125,8 @@ class TrashedDocuments:
             version_of=found.version_of,
             created_date=found.created_date,
             archived_file_name=found.archived_file_name,
-            is_shared_by_requester=found.is_shared_by_requester,
-            user_can_change=found.user_can_change,
+            is_shared_by_requester=shared,
+            user_can_change=can_change,
             permissions=permissions,
             notes=found.notes,
             versions=found.versions,
@@ -130,7 +140,8 @@ class TrashedDocuments:
             if text
             else None,
             limits=(DOCUMENT_LIMITS if found.version_of is None else VERSION_LIMITS)
-            + (NO_PERMISSIONS if permissions is None else ""),
+            + (NO_PERMISSIONS if permissions is None else "")
+            + (NO_CHANGE if can_change is None else ""),
         )
 
     async def _find(self, document_id: int) -> tuple[TrashedDetail, _Page]:
@@ -138,8 +149,9 @@ class TrashedDocuments:
         page: int | None = 1
         try:
             found = await self._look_up(document_id, large := _Page(1, self._scan.cap))
-        except AnswerTooLarge, UpstreamUnavailable:
-            pass
+        except (AnswerTooLarge, UpstreamUnavailable) as error:
+            if limited(error):
+                raise
         else:
             if found.entry is not None:
                 return found.entry, large
@@ -169,6 +181,19 @@ class TrashedDocuments:
         except PaperlessMcpError:
             return None
         return None if found is None else await self._documents.grants(found)
+
+    async def _of_document(self, document_id: int) -> tuple[TrashGrants | None, bool | None]:
+        """Who may use the document of a version, and whether the user may change it.
+
+        A version has grants of its own, but nothing looks at them. None for what could not be read.
+        """
+        grants, can_change = None, None
+        with contextlib.suppress(PaperlessMcpError):
+            for access in await self._access.get_permissions("document", [document_id]):
+                grants = await self._documents.grants(access.permissions)
+        with contextlib.suppress(PaperlessMcpError):
+            can_change = (await self._reader.get_document(document_id)).user_can_change
+        return grants, can_change
 
     async def thumbnail(self, document_id: int) -> Thumbnail:
         """The thumbnail of an entry.
@@ -273,7 +298,7 @@ class TrashedDocuments:
 
     async def _check_file(self, document_id: int, file: FileVersion) -> None:
         """Refuse what is no entry, or has no such file: Paperless would send the original."""
-        [entry] = await self._scan.require([document_id])
+        [entry], _ = await self._scan.require([document_id])
         if file == "archive" and not entry.has_archive:
             message = f"Trash entry {document_id} has no archive version."
             raise NotFound(message, hint='Ask for file="original"; it is the only file it has.')

@@ -24,6 +24,7 @@ from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.trash_scan import TrashScan
 from mcp_server_paperless.services.trashed_documents import (
     DOCUMENT_LIMITS,
+    NO_CHANGE,
     NO_FILE,
     NO_PERMISSIONS,
     RESTORE_FIRST,
@@ -33,7 +34,11 @@ from mcp_server_paperless.services.trashed_documents import (
 from services.test_trash import WEB, Setup
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from mcp_server_paperless.domain.bulk import ObjectPermissions
+    from mcp_server_paperless.domain.documents import DocumentRecord
+    from mcp_server_paperless.domain.permissions import ObjectAccess, PermissionKind
     from mcp_server_paperless.domain.trash import TrashLookup
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-54")]
@@ -47,7 +52,7 @@ def looking(
     reader = fake or setup.fake
     documents = DocumentService(reader, reader, setup.taxonomy, web_url=WEB)
     scan = TrashScan(reader, reader, setup.taxonomy, cap=cap)
-    return TrashedDocuments(reader, reader, documents, scan, web_url=WEB, max_bytes=limit)
+    return TrashedDocuments(reader, reader, reader, documents, scan, web_url=WEB, max_bytes=limit)
 
 
 async def versioned(setup: Setup) -> tuple[int, int]:
@@ -414,3 +419,72 @@ async def test_grants_that_could_not_be_read_do_not_lose_the_entry(
 
     assert (found.id, found.permissions) == (one, None)
     assert found.limits == DOCUMENT_LIMITS + NO_PERMISSIONS
+
+
+async def test_who_may_use_a_version_is_what_its_document_says() -> None:
+    setup = Setup()
+    document, version = await setup.version("Report")
+    [live] = [d for d in setup.state.documents if d.id == document]
+    live.viewers, live.editors, live.view_groups = {3}, {3}, {1}
+
+    found = await looking(setup).entry(version, max_chars=1)
+
+    assert found.permissions
+    assert [r.name for r in found.permissions.view_users] == [READER[0]]
+    assert [r.name for r in found.permissions.change_users] == [READER[0]]
+    assert [r.name for r in found.permissions.view_groups] == ["e2e-group"]
+    assert (found.user_can_change, found.is_shared_by_requester) == (True, None)
+    assert found.limits == VERSION_LIMITS
+    assert "permissions and user_can_change are those of its document" in found.limits
+    assert "is_shared_by_requester is not known" in found.limits
+
+
+class NoDocument(FakePaperless):
+    """The document of a version cannot be read, or not who may use it."""
+
+    failure: PaperlessMcpError | None = None
+    both: bool = True
+
+    @override
+    async def get_document(self, document_id: int) -> DocumentRecord:
+        if self.both and self.failure:
+            raise self.failure
+        return await super().get_document(document_id)
+
+    @override
+    async def get_permissions(
+        self, kind: PermissionKind, object_ids: Sequence[int]
+    ) -> list[ObjectAccess]:
+        if self.failure:
+            raise self.failure
+        return []
+
+
+@pytest.mark.parametrize("failure", [None, UpstreamTimeout("slow"), PermissionDenied("no")])
+async def test_what_could_not_be_read_of_the_document_of_a_version_is_named(
+    failure: PaperlessMcpError | None,
+) -> None:
+    setup = Setup()
+    _, version = await setup.version("Report")
+    fake = NoDocument(setup.state, user="admin")
+    fake.failure = failure
+
+    found = await looking(setup, fake).entry(version, max_chars=1)
+
+    assert (found.id, found.permissions) == (version, None)
+    assert found.user_can_change is (True if failure is None else None)
+    gap = NO_PERMISSIONS + (NO_CHANGE if failure else "")
+    assert found.limits == VERSION_LIMITS + gap
+
+
+async def test_too_many_requests_do_not_lead_to_smaller_ones() -> None:
+    setup = Setup()
+    one = await setup.trashed("Doc")
+    fake = Pages(setup.state, user="admin")
+    fake.error = UpstreamUnavailable("Paperless is temporarily unavailable.", status=429)
+    fake.fits = 100
+
+    with pytest.raises(UpstreamUnavailable):
+        _ = await looking(setup, fake).entry(one, max_chars=1)
+
+    assert fake.asked == [(1, 1000)]

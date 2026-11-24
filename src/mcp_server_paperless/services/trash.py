@@ -10,6 +10,7 @@ means "everything" to it. What became of each entry is read afterwards: Paperles
 when emptying failed.
 """
 
+import asyncio
 import contextlib
 from typing import TYPE_CHECKING, Final
 
@@ -36,6 +37,7 @@ from mcp_server_paperless.domain.trash import (
 )
 from mcp_server_paperless.services.document_edits import COUNTED
 from mcp_server_paperless.services.documents import document_link, known_items, maybe_ref
+from mcp_server_paperless.services.trash_scan import limited
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine, Sequence
@@ -50,6 +52,9 @@ if TYPE_CHECKING:
 SHOWN: Final = 10
 # Most entries ``all=true`` handles at once (it names every id to Paperless).
 MAX_ALL: Final = 1000
+# Looking entries up one by one after a change: how many at once, and for how long.
+AT_ONCE: Final = 10
+CHECK_SECONDS: Final = 20.0
 
 LOST = (
     "They cannot be restored afterwards: the files, text, notes and metadata of documents, and "
@@ -134,12 +139,14 @@ class TrashService:
         *,
         web_url: str,
         max_all: int = MAX_ALL,
+        check_seconds: float = CHECK_SECONDS,
     ) -> None:
         """Read through ``reader`` and ``scan``, change through ``writer``.
 
         ``documents`` tells what became of an entry. ``taxonomy`` forgets the document counts
         after a restore; ``web_url`` is the Paperless web UI, for links. ``max_all`` is the most
-        entries ``all=true`` empties at once.
+        entries ``all=true`` empties at once, ``check_seconds`` how long looking for what became
+        of entries may take.
         """
         self._reader: TrashReader = reader
         self._writer: TrashWriter = writer
@@ -148,6 +155,7 @@ class TrashService:
         self._taxonomy: TaxonomyResolver = taxonomy
         self._web_url: str = web_url
         self._max_all: int = max_all
+        self._check_seconds: float = check_seconds
 
     async def list(self, wanted: TrashFilter, *, page: int, page_size: int) -> TrashList:
         """One page of the trash, or of the entries that match ``wanted``.
@@ -164,7 +172,7 @@ class TrashService:
                 count=found.count,
                 page=page,
                 next_page=found.next_page,
-                entries=await self._rows(await self._scan.rooted(found.entries)),
+                entries=await self._rows(await self._scan.titled(found.entries)),
             )
         selection = await self._scan.select(wanted)
         start, count = (page - 1) * page_size, len(selection.entries)
@@ -230,8 +238,10 @@ class TrashService:
             )
             raise Validation(message, hint=hint)
         ids = self._distinct(document_ids or ())
-        entries = await self._scan.require(ids)
-        outcomes, failure = await self._act(self._writer.restore_from_trash, entries, "restored")
+        entries, small = await self._scan.require(ids)
+        outcomes, failure = await self._act(
+            self._writer.restore_from_trash, entries, "restored", small=small
+        )
         for kind in COUNTED:
             self._taxonomy.invalidate(kind)
         done = [e for e in entries if outcomes[e.id] == "restored"]
@@ -292,12 +302,12 @@ class TrashService:
                 ONE_OF_THREE, hint="Use document_ids for some entries, all=true for every one."
             )
         if wanted is not None:
-            entries = await self._accepted(wanted)
+            entries, small = await self._accepted(wanted)
         else:
-            entries = await (
-                self._scan.require(self._distinct(document_ids))
+            entries, small = (
+                await self._scan.require(self._distinct(document_ids))
                 if document_ids
-                else self._everything()
+                else (await self._everything(), False)
             )
             if not entries:
                 return TrashEmptied(
@@ -311,7 +321,9 @@ class TrashService:
                     self._effect(entries, everything=everything),
                     scope=sorted(e.id for e in entries),
                 )
-        outcomes, failure = await self._act(self._writer.empty_trash, entries, "deleted")
+        outcomes, failure = await self._act(
+            self._writer.empty_trash, entries, "deleted", small=small
+        )
         done = [e for e in entries if outcomes[e.id] == "deleted"]
         if not done:
             message = "No entry was seen to be deleted."
@@ -355,8 +367,8 @@ class TrashService:
         newest = sorted(selection.entries, key=lambda e: (e.deleted_at, e.id), reverse=True)
         return selection, tuple(newest[:MAX_IDS])
 
-    async def _accepted(self, wanted: TrashFilter) -> tuple[TrashedDocument, ...]:
-        """The entries ``wanted`` matches, if the user accepted exactly them in a dialog."""
+    async def _accepted(self, wanted: TrashFilter) -> tuple[tuple[TrashedDocument, ...], bool]:
+        """The entries ``wanted`` matches, if the user accepted exactly them; see ``require``."""
         selection, shown = await self._matches(wanted, "deleted")
         ids = [e.id for e in shown]
         effect = (
@@ -368,13 +380,15 @@ class TrashService:
             f"document_ids={ids} and confirm=true. confirm=true does not count with a filter."
         )
         ConfirmationRequired.require(effect, scope=sorted(ids), hint=hint)
-        return shown
+        return shown, selection.scan.small
 
     async def _act(
         self,
         write: Callable[[Sequence[int]], Coroutine[object, object, None]],
         entries: Sequence[TrashedDocument],
         done: Outcome,
+        *,
+        small: bool,
     ) -> tuple[dict[int, Outcome], str]:
         """Send the ids, then read what became of each entry, also after a failure.
 
@@ -389,25 +403,25 @@ class TrashService:
         try:
             await write([e.id for e in entries])
         except (Validation, PermissionDenied) as error:
-            message = f"{error.message} {await self._blocking(entries)}"
+            message = f"{error.message} {await self._blocking(entries, small=small)}"
             raise type(error)(message, hint=error.hint) from None
         except PaperlessMcpError as error:
             failure = error
-        outcomes = await self._outcomes(entries, done)
+        outcomes = await self._outcomes(entries, done, small=small)
         if failure is not None and done not in outcomes.values():
             raise failure
         return outcomes, "" if failure is None else f" Paperless reported: {failure.message}"
 
-    async def _blocking(self, entries: Sequence[TrashedDocument]) -> str:
+    async def _blocking(self, entries: Sequence[TrashedDocument], *, small: bool) -> str:
         try:
-            found, _ = await self._scan.locate([e.id for e in entries])
+            found, _ = await self._scan.locate([e.id for e in entries], small=small)
         except PaperlessMcpError:
             return "Which id it refuses is unknown."
         gone = [str(e.id) for e in entries if e.id not in found]
         return f"No longer listed: {', '.join(gone)}." if gone else NO_ID
 
     async def _outcomes(
-        self, entries: Sequence[TrashedDocument], done: Outcome
+        self, entries: Sequence[TrashedDocument], done: Outcome, *, small: bool
     ) -> dict[int, Outcome]:
         """What the trash shows of each entry now.
 
@@ -415,26 +429,32 @@ class TrashService:
         """
         outcomes: dict[int, Outcome] = dict.fromkeys((e.id for e in entries), "unverified")
         try:
-            scan = await self._scan.first()
-        except AnswerTooLarge, AnswerCompressed, UpstreamUnavailable:
+            scan = await self._scan.first(small=small)
+        except (AnswerTooLarge, AnswerCompressed, UpstreamUnavailable) as error:
+            if limited(error):
+                return outcomes
             scan = None
         except PaperlessMcpError:
             return outcomes
         listed = {e.id for e in scan.entries} if scan else set[int]()
         outcomes.update(dict.fromkeys(listed & outcomes.keys(), "still_in_trash"))
         left = [e for e in entries if e.id not in listed]
-        with contextlib.suppress(PaperlessMcpError):  # the rest stays unverified
-            live = await self._live([e.id for e in left if e.version_of is None])
-            gone = bool(scan and scan.complete)
-            looked = 0
-            for entry in left:
-                if entry.version_of is None and entry.id in live:
-                    outcomes[entry.id] = "restored" if done == "restored" else "unverified"
-                elif entry.version_of is None and gone:
-                    outcomes[entry.id] = "deleted" if done == "deleted" else "unverified"
-                elif looked < MAX_IDS:
-                    looked += 1
-                    outcomes[entry.id] = await self._outcome(entry, done)
+        with contextlib.suppress(PaperlessMcpError, TimeoutError):  # the rest stays unverified
+            async with asyncio.timeout(self._check_seconds):
+                live = await self._live([e.id for e in left if e.version_of is None])
+                outcomes.update(
+                    dict.fromkeys(live, "restored" if done == "restored" else "unverified")
+                )
+                unseen = [e for e in left if e.id not in live]
+                for start in range(0, len(unseen), AT_ONCE):
+                    some = unseen[start : start + AT_ONCE]
+                    looks = await asyncio.gather(
+                        *(self._outcome(e, done) for e in some), return_exceptions=True
+                    )
+                    for entry, look in zip(some, looks, strict=True):
+                        if isinstance(look, BaseException):
+                            raise look
+                        outcomes[entry.id] = look
         return outcomes
 
     async def _live(self, ids: Sequence[int]) -> set[int]:
@@ -446,7 +466,7 @@ class TrashService:
         return found
 
     async def _outcome(self, entry: TrashedDocument, done: Outcome) -> Outcome:
-        """What became of a version, or of a document that could not be looked for in the trash."""
+        """What became of one entry that is neither listed nor a document outside the trash."""
         try:
             root = await self._documents.get_root(entry.id)
         except NotFound:
@@ -490,9 +510,7 @@ class TrashService:
             raise Validation(message, hint="Empty in steps with document_ids from list_trash.")
         # Offset paging has no tie-breaker in Paperless, so a read may repeat an entry.
         entries = list({e.id: e for e in listed.entries}.values())
-        with contextlib.suppress(PaperlessMcpError):  # only titles: acting does not need them
-            return await self._scan.rooted(entries)
-        return entries
+        return await self._scan.titled(entries)
 
     @staticmethod
     def _effect(entries: Sequence[TrashedDocument], *, everything: bool) -> str:

@@ -88,10 +88,10 @@ async def list_trash(  # noqa: PLR0913 -- one parameter per filter, described fo
     entry of its own, with version_of set to the document; while the document itself is in the
     trash, its entry covers the versions. You see the entries of documents you own or that have no
     owner; a superuser sees every entry. Filters are combined with AND. They look at up to 1000
-    entries (fewer if their texts are over 64 MiB): truncated is true when the trash holds more,
-    and the notice says how to go on; ids also looks beyond them. web_url is the
-    trash page of the web UI. count is the total; pass next_page as page to see more. Needs the
-    permission to view documents.
+    entries (100 if their texts are over 64 MiB or reading them is slow or fails): truncated is true
+    when the trash holds more, and the notice says how to go on; ids also looks beyond them. web_url
+    is the trash page of the web UI. count is the total; pass next_page as page to see more. Needs
+    the permission to view documents.
     """
     wanted = TrashFilter(
         title=title,

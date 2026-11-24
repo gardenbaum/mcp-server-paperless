@@ -3,6 +3,7 @@
 The fakes of the filter refusals are created without `allow_writes`: any write would raise.
 """
 
+import asyncio
 import itertools
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, override
@@ -25,7 +26,14 @@ from mcp_server_paperless.domain.errors import (
 )
 from mcp_server_paperless.domain.trash import MAX_IDS, TrashFilter, TrashLookup
 from mcp_server_paperless.services.documents import DocumentService
-from mcp_server_paperless.services.trash import CHECKED, NO_FILTER, NO_ID, ONE_OF, TrashService
+from mcp_server_paperless.services.trash import (
+    AT_ONCE,
+    CHECKED,
+    NO_FILTER,
+    NO_ID,
+    ONE_OF,
+    TrashService,
+)
 from mcp_server_paperless.services.trash_scan import (
     EXPLAINED,
     MAX_PAGES,
@@ -37,7 +45,7 @@ from mcp_server_paperless.services.trashed_documents import TrashedDocuments
 from services.test_trash import DAY, WEB, Setup
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
+    from collections.abc import Awaitable, Callable, Collection, Sequence
 
     from mcp_server_paperless.domain.documents import DocumentPage, DocumentQuery, DocumentRecord
     from mcp_server_paperless.domain.trash import TrashList, TrashPage
@@ -492,7 +500,7 @@ async def test_reasons_are_looked_up_for_the_first_few_ids_only() -> None:
 class Moody(FakePaperless):
     """Fails as told: the reads after the write, the single reads, or the write itself."""
 
-    after: UpstreamUnreachable | None = None
+    after: UpstreamUnavailable | None = None
     single: UpstreamUnreachable | None = None
     refuse: Validation | PermissionDenied | UpstreamUnreachable | None = None
     takes: tuple[int, ...] = ()  # leave the trash although the write fails
@@ -717,15 +725,29 @@ async def test_a_lookup_that_fails_leaves_the_reason_out() -> None:
     assert raised.value.hint == NOT_LISTED_HINT
 
 
-async def test_at_most_a_hundred_entries_are_looked_up_one_by_one() -> None:
+async def test_looking_up_one_by_one_ends_after_its_time() -> None:
     setup = Setup()
-    for number in range(MAX_IDS + 1):
+    for number in range(AT_ONCE + 1):
         _ = await setup.trashed(f"doc {number}")
 
-    result = await setup.on(bounded(setup, fits=0)).empty(None, everything=True, confirm=True)
+    class Slow(FakePaperless):
+        looks: int = 0
+
+        @override
+        async def get_root(self, document_id: int) -> int:
+            self.looks += 1
+            if self.looks > AT_ONCE:
+                await asyncio.sleep(30)
+            return await super().get_root(document_id)
+
+    fake = Slow(setup.state, user="admin", allow_writes=True)
+    scan = TrashScan(fake, fake, setup.taxonomy)
+    service = TrashService(fake, fake, fake, scan, setup.taxonomy, web_url=WEB, check_seconds=0.05)
+
+    result = await service.empty(None, everything=True, confirm=True)
 
     outcomes = [e.outcome for e in result.entries]
-    assert (outcomes.count("deleted"), outcomes.count("unverified")) == (MAX_IDS, 1)
+    assert (outcomes.count("deleted"), outcomes.count("unverified")) == (AT_ONCE, 1)
 
 
 class Endless(FakePaperless):
@@ -774,7 +796,7 @@ async def test_an_answer_that_always_names_a_next_page_ends(
     fake.next_is, fake.empty = next_is, empty
     scan = TrashScan(fake, fake, setup.taxonomy, cap=1)
     documents = DocumentService(fake, fake, setup.taxonomy, web_url=WEB)
-    looking = TrashedDocuments(fake, fake, documents, scan, web_url=WEB, max_bytes=10)
+    looking = TrashedDocuments(fake, fake, fake, documents, scan, web_url=WEB, max_bytes=10)
 
     found, _ = await scan.locate([4242])
     pages, fake.pages = fake.pages, 0
@@ -976,3 +998,102 @@ async def test_a_document_that_cannot_be_read_leaves_the_reason_out() -> None:
         _ = await setup.on(NoDocument(setup.state, user="admin")).restore([alive])
 
     assert raised.value.hint == NOT_LISTED_HINT
+
+
+async def test_the_list_works_while_the_titles_of_documents_cannot_be_looked_up() -> None:
+    setup = Setup()
+    _, version = await setup.version("Report")
+    service = setup.on(NoSearch(setup.state, user="admin"))
+
+    for wanted in (
+        TrashFilter(),
+        TrashFilter(kind="version"),
+        TrashFilter(deleted_from=DAY.date()),
+        TrashFilter(ids=(version,)),
+    ):
+        listed = await service.list(wanted, page=1, page_size=5)
+        assert [(e.id, e.title) for e in listed.entries] == [(version, "Report")]
+    for wanted in (
+        TrashFilter(title="Report"),
+        TrashFilter(document_type=setup.state.document_types[0].id),
+    ):
+        with pytest.raises(UpstreamUnreachable):
+            _ = await service.list(wanted, page=1, page_size=5)
+
+
+class Counting(Straining):
+    sizes: tuple[int, ...] = ()
+
+    @override
+    async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
+        self.sizes = (*self.sizes, entries)
+        return await super().read_trash(entries=entries, max_bytes=max_bytes)
+
+
+async def test_a_large_request_that_failed_is_not_made_again_after_the_write() -> None:
+    setup = Setup()
+    numbers = [await setup.trashed(f"doc {n}") for n in range(4)]
+    acts: list[tuple[int, Callable[[TrashService], Awaitable[object]]]] = [
+        (PAGE, lambda s: s.restore([numbers[0]])),
+        (0, lambda s: s.restore([numbers[1]])),
+        (PAGE, lambda s: s.empty([numbers[2]], everything=False, confirm=True)),
+    ]
+    for fits, act in acts:
+        fake = Counting(setup.state, user="admin", allow_writes=True)
+        fake.fits = fits
+        _ = await act(capped(setup, 1000, fake))
+        assert fake.sizes == (1000, PAGE, PAGE)
+
+
+async def test_too_many_requests_do_not_lead_to_more() -> None:
+    setup = Setup()
+    one = await setup.trashed("doc")
+    limited = UpstreamUnavailable("Paperless is temporarily unavailable.", status=429)
+
+    calls: list[Callable[[TrashService], Awaitable[object]]] = [
+        lambda s: s.restore([one]),
+        lambda s: s.list(TrashFilter(title="doc"), page=1, page_size=5),
+    ]
+    for call in calls:
+        fake = Counting(setup.state, user="admin")
+        fake.error = limited
+        with pytest.raises(UpstreamUnavailable):
+            _ = await call(capped(setup, 1000, fake))
+        assert fake.sizes == (1000,)
+
+
+async def test_too_many_requests_after_the_write_leave_it_unverified() -> None:
+    setup = Setup()
+    one = await setup.trashed("doc")
+    fake = moody(setup)
+    fake.after = UpstreamUnavailable("Paperless is temporarily unavailable.", status=429)
+
+    result = await setup.on(fake).restore([one])
+
+    assert [e.outcome for e in result.entries] == ["unverified"]
+
+
+async def test_an_entry_that_left_the_list_but_still_answers_is_not_called_deleted() -> None:
+    """Its owner changed at the same moment: it is in the trash, but listed for someone else."""
+    setup = Setup()
+    one = await setup.trashed("doc")
+    document, version = await setup.version("Report")
+    await setup.writer.delete_document(document)
+    stay = {one, document, version}
+
+    class Hidden(FakePaperless):
+        @override
+        async def empty_trash(self, document_ids: Sequence[int]) -> None:
+            self.state.stuck = stay
+
+        @override
+        async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
+            found = await super().list_trash(page=page, page_size=page_size)
+            if not self.state.stuck:
+                return found
+            return found.model_copy(update={"entries": (), "count": 0})
+
+    hidden = Hidden(setup.state, user="admin", allow_writes=True)
+    result = await setup.on(hidden).empty([one], everything=False, confirm=True)
+
+    assert [e.outcome for e in result.entries] == ["still_in_trash"]

@@ -307,6 +307,29 @@ async def test_all_or_none_and_the_id_that_blocks_is_named(stack: Stack, users: 
         assert live_in_trash(stack, ready)
 
 
+async def test_a_version_shows_who_may_use_its_document(stack: Stack, users: Users) -> None:
+    document = users.document(unique())
+    _ = users.user("view_document")
+    grant: Json = {"users": [users.users[0]], "groups": []}
+    _ = stack.admin.patch(
+        f"/api/documents/{document}/",
+        json={"set_permissions": {"view": grant, "change": grant}},
+    ).raise_for_status()
+    version = num(output(await users.upload(unique(), document_id=document))["version_id"])
+    _ = output(
+        await users.call(
+            "delete_document_version", document_id=document, version_id=version, confirm=True
+        )
+    )
+
+    entry = output(await users.call("get_trash_entry", document_id=version))
+
+    given = cast("Json", entry["permissions"])
+    for who in ("view_users", "change_users"):
+        assert [num(r["id"]) for r in cast("list[Json]", given[who])] == users.users
+    assert (entry["user_can_change"], entry["is_shared_by_requester"]) == (True, None)
+
+
 async def test_a_restricted_user_sees_and_changes_only_owned_and_unowned_entries(
     stack: Stack, users: Users
 ) -> None:
