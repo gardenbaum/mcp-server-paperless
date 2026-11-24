@@ -618,11 +618,12 @@ async def test_a_kept_document_that_is_gone_afterwards_is_said_loudly(
     assert done.kept_seen is False
     assert done.resolved == ()
     assert [d.why for d in done.not_resolved] == ["what became of it could not be seen"]
-    assert done.message.startswith(
+    expected = (
         "WARNING: the kept document 10 'Document 10' was gone when read again (deleted, merged or "
         "hidden meanwhile). Look for both in the trash with list_trash, and restore one if none "
         "is left. Not known to be resolved: document 11 'Document 11'"
     )
+    assert done.message.startswith(expected)
 
 
 async def test_a_kept_document_that_is_gone_leaves_a_duplicate_that_is_still_there() -> None:
