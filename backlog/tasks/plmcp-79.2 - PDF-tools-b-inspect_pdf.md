@@ -1,11 +1,11 @@
 ---
 id: PLMCP-79.2
 title: 'PDF tools b: inspect_pdf'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:15Z'
-updated_date: '2026-11-24T11:51:24Z'
+updated_date: '2026-11-24T12:55:24Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -23,14 +23,14 @@ Second part of PLMCP-79 (design approved by the owner on 2026-11-24 (all 14 deci
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 inspect_pdf gives page count, sizes, rotation and contact sheets within the limits of decision-42
-- [ ] #2 OVERVIEW_GUIDE_LIMIT rises for the three tools of PLMCP-79 at most to 2880 (owner, 2026-11-24)
-- [ ] #3 Rendering, service, tool, contract and E2E tests
+- [x] #1 inspect_pdf gives page count, sizes, rotation and contact sheets within the limits of decision-42
+- [x] #2 OVERVIEW_GUIDE_LIMIT rises for the three tools of PLMCP-79 at most to 2880 (owner, 2026-11-24)
+- [x] #3 Rendering, service, tool, contract and E2E tests
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
@@ -76,3 +76,9 @@ Delta review (6 Minor and the layout): sheets first, then the layout of the rema
 
 Last review (d1 to d4): decision-65 corrected in two places; the timeout says overview=false only where a tile was drawn (a mark of its own for layout pages) and asks for the page alone only if others were asked for; announcements are taken off the start of the answer only (the test fails with sub); the test with a page that does not end gives the child 10 s. Red: by import error, the start-only test by its mutant.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+inspect_pdf: page count, sizes, rotation and contact sheets in the child process of decision-42, limits unchanged (guide limit 2849 of at most 2880). Rendering, service, tool, contract and E2E tests; full hosted E2E 45390991339 green on a86e077; independent review clean; Codex without findings.
+<!-- SECTION:FINAL_SUMMARY:END -->
