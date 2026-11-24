@@ -8,7 +8,7 @@ services on it and probes Paperless before the first request is served.
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Final
 
 from fastmcp import FastMCP
@@ -50,6 +50,7 @@ from mcp_server_paperless.rendering.runner import ChildRenderer
 from mcp_server_paperless.services.admin_accounts import AccountAdmin
 from mcp_server_paperless.services.admin_system import SystemAdmin
 from mcp_server_paperless.services.ai import AiService
+from mcp_server_paperless.services.batch_uploads import BatchUploadService
 from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
 from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
 from mcp_server_paperless.services.document_edits import DocumentEditor
@@ -80,6 +81,7 @@ from mcp_server_paperless.tools import (
     admin,
     ai,
     bulk,
+    bulk_stdio,
     core,
     downloads,
     downloads_stdio,
@@ -101,6 +103,8 @@ from mcp_server_paperless.tools._shared import (
     ANNOTATIONS,
     DOCUMENT_TEXT,
     GUIDE,
+    LOCAL_ANNOTATIONS,
+    LOCAL_TOOLSETS,
     SERVICES,
     TOOL_TOOLSETS,
     TOOLSET_REQUIRES,
@@ -201,6 +205,9 @@ class Catalogue:
         tool_toolsets: The toolset of every tool, keyed by tool name.
         toolsets: Every toolset name.
         requires: Toolsets that need a Paperless capability, mapped to it.
+        local_annotations: The annotations of the tools only ``local_providers`` have.
+        local_tool_toolsets: The toolsets of these tools. In every other mode nothing names them,
+            but ``PAPERLESS_MCP_DISABLED_TOOLS`` knows them.
         prompt_specs: What each prompt needs, keyed by prompt name; a prompt is offered only
             while every tool it names can be called (decision-20). A prompt without an entry
             is never offered.
@@ -218,6 +225,10 @@ class Catalogue:
     stdio_providers: Sequence[Provider] = ()
     plain_downloads: Sequence[Provider] = ()
     saving_downloads: Sequence[Provider] = ()
+    local_annotations: Mapping[str, ToolAnnotations] = field(
+        default_factory=dict[str, "ToolAnnotations"]
+    )
+    local_tool_toolsets: Mapping[str, str] = field(default_factory=dict[str, str])
     prompt_specs: Mapping[str, prompts.PromptSpec] = field(
         default_factory=dict[str, prompts.PromptSpec]
     )
@@ -246,7 +257,9 @@ CATALOGUE: Final = Catalogue(
     toolsets=TOOLSETS,
     requires=TOOLSET_REQUIRES,
     remote_providers=(upload.remote, versions.remote),
-    local_providers=(upload_stdio.local, versions_stdio.local),
+    local_providers=(upload_stdio.local, versions_stdio.local, bulk_stdio.local),
+    local_annotations=LOCAL_ANNOTATIONS,
+    local_tool_toolsets=LOCAL_TOOLSETS,
     stdio_providers=(upload.hinted, versions.hinted),
     plain_downloads=(downloads.remote,),
     saving_downloads=(downloads_stdio.local,),
@@ -396,6 +409,10 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     uploads = catalogue.remote_providers
     if stdio:
         uploads = catalogue.local_providers if by_path else catalogue.stdio_providers
+    known_tools = {**catalogue.annotations, **catalogue.local_annotations}
+    if by_path:
+        toolsets = {**catalogue.tool_toolsets, **catalogue.local_tool_toolsets}
+        catalogue = replace(catalogue, tool_toolsets=toolsets)
     path_hint = PATH_OFF if stdio and not by_path else ""
     saving = stdio and bool(settings.download_dirs) and not settings.read_only
     variants = [
@@ -408,7 +425,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     # later visibility rules override earlier ones.
     enabled = selected_toolsets(settings.toolsets, catalogue.toolsets)
     hidden = hidden_tools(
-        catalogue.annotations, read_only=settings.read_only, disabled=settings.disabled_tools
+        known_tools, read_only=settings.read_only, disabled=settings.disabled_tools
     )
     selected = visible_tools(catalogue.tool_toolsets, enabled, hidden)
     if not selected:
@@ -432,6 +449,17 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
             documents = DocumentService(adapters.documents, taxonomy, web_url=web_url)
             duplicates = DuplicateFinder(adapters.documents, adapters.trash, web_url=web_url)
             tasks = TaskService(adapters.tasks, sleep=sleep, clock=clock, duplicates=duplicates)
+            uploading = UploadService(
+                adapters.documents,
+                adapters.document_writes,
+                taxonomy,
+                tasks,
+                duplicates,
+                web_url=web_url,
+                max_bytes=settings.max_upload_bytes,
+                upload_dirs=settings.upload_dirs if by_path else (),
+                path_hint=path_hint,
+            )
             services = Services(
                 instance=InstanceService(adapters.instance),
                 taxonomy=taxonomy,
@@ -472,16 +500,16 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     max_bytes=settings.max_download_bytes,
                     sink=sink,
                 ),
-                uploads=UploadService(
-                    adapters.documents,
+                uploads=uploading,
+                upload_batches=BatchUploadService(
+                    uploading,
                     adapters.document_writes,
-                    taxonomy,
                     tasks,
                     duplicates,
                     web_url=web_url,
                     max_bytes=settings.max_upload_bytes,
                     upload_dirs=settings.upload_dirs if by_path else (),
-                    path_hint=path_hint,
+                    clock=clock,
                 ),
                 versions=VersionService(
                     adapters.documents, adapters.document_writes, taxonomy, web_url=web_url

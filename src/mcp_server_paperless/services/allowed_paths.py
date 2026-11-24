@@ -63,8 +63,17 @@ def unreadable(parts: Sequence[str]) -> bool:
     A dot name counts as one behind format characters, too (see ``unseen``); elsewhere in a name
     they are fine (the joiner in an emoji), other characters that are not shown never are.
     """
-    plain = ["".join(c for c in part if unicodedata.category(c) != FORMAT) for part in parts]
+    plain = [_plain(part) for part in parts]
     return any(part.startswith(".") or unseen(part) for part in plain)
+
+
+def dotted(name: str) -> bool:
+    """Whether a name starts with a dot, also behind format characters."""
+    return _plain(name).startswith(".")
+
+
+def _plain(name: str) -> str:
+    return "".join(c for c in name if unicodedata.category(c) != FORMAT)
 
 
 def unwritable(parts: Sequence[str]) -> bool:
@@ -74,8 +83,12 @@ def unwritable(parts: Sequence[str]) -> bool:
 
 def inside(resolved: str, roots: Sequence[str]) -> tuple[str, tuple[str, ...]] | None:
     """The allowlisted directory holding ``resolved`` and the path components below it."""
-    for root in roots:
-        real = os.path.realpath(root)
+    return inside_real(resolved, [os.path.realpath(root) for root in roots])
+
+
+def inside_real(resolved: str, roots: Sequence[str]) -> tuple[str, tuple[str, ...]] | None:
+    """Like ``inside``, for directories that are resolved already."""
+    for real in roots:
         try:
             relative = PurePath(resolved).relative_to(real).parts
         except ValueError:

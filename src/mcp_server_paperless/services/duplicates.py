@@ -11,6 +11,7 @@ the check before sending; the report afterwards shows it.
 import asyncio
 import hashlib
 import logging
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Final
 
@@ -33,7 +34,7 @@ from mcp_server_paperless.domain.errors import (
 from mcp_server_paperless.services.documents import document_link
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import AsyncGenerator, Iterable, Mapping
 
     from mcp_server_paperless.domain.documents import DocumentRecord
     from mcp_server_paperless.domain.ports import DocumentReader, TrashReader
@@ -161,6 +162,18 @@ class Snapshot:
     trash_count: int | None
 
 
+@dataclass(slots=True)
+class Reading:
+    """What was read for the files that are to be checked, see ``DuplicateFinder.read_for``.
+
+    Attributes:
+        early: The originals of every file, looked up before the snapshot was taken.
+    """
+
+    early: Mapping[str, list[DuplicateMatch]]
+    snapshot: Snapshot
+
+
 @dataclass(frozen=True, slots=True)
 class Before:
     """What was found before sending; ``count`` may be more than ``matches`` holds."""
@@ -168,6 +181,13 @@ class Before:
     matches: tuple[DuplicateMatch, ...]
     count: int
     not_checked: tuple[str, ...]
+
+    def where(self) -> str:
+        """The first matches in words, and how many more there are."""
+        named = ", ".join(describe(m) for m in self.matches[:SHOWN])
+        more = self.count - len(self.matches[:SHOWN])
+        rest = f"{more} {'more' if named else 'document(s) that could not be named'}"
+        return named + (f"{' and ' if named else ''}{rest}" if more else "")
 
     def checked(self, report: DuplicateReport | None) -> DuplicateCheck:
         """The duplicates of an upload: these, and what its task says once it ended."""
@@ -279,50 +299,93 @@ class DuplicateFinder:
             PaperlessMcpError: The check could not run, so nothing may be sent.
         """
         sha256 = hashlib.sha256(content).hexdigest()
-        try:
-            async with asyncio.timeout(self._bounds.seconds):
-                found = await self._checked(sha256, own)
-        except TimeoutError:
-            message = (
-                f"The duplicate check took longer than {self._bounds.seconds:g} seconds; the file "
-                "was not uploaded."
-            )
-            raise UpstreamTimeout(message, hint=AGAIN) from None
+        async with self._in_time():
+            found = await self._checked(sha256, own)
         if found.count and not confirm:
-            named = ", ".join(describe(m) for m in found.matches[:SHOWN])
-            more = found.count - len(found.matches[:SHOWN])
-            rest = f"{more} {'more' if named else 'document(s) that could not be named'}"
-            named += f"{' and ' if named else ''}{rest}" if more else ""
             trash = RESTORABLE if any(m.in_trash for m in found.matches) else ""
             ConfirmationRequired.require(
                 (
-                    f"{action} although the same file is already in Paperless: {named}. "
+                    f"{action} although the same file is already in Paperless: {found.where()}. "
                     f"{trash}Paperless may reject it, if it is configured to"
                 ),
                 scope=(sha256, found.count, *sorted(key_of(m) for m in found.matches)),
             )
         return found
 
+    async def read_for(self, checksums: Iterable[str]) -> Reading:
+        """The originals of several files, then the versions and the trash once for all of them.
+
+        Raises:
+            CheckMovedError: Documents moved while they were read, twice.
+            UpstreamTimeout: It took too long.
+            PaperlessMcpError: The check could not run, so nothing may be sent.
+        """
+        shas = tuple(checksums)
+        async with self._in_time():
+            try:
+                return await self._read(shas)
+            except CheckMovedError:
+                return await self._read(shas)
+
+    async def find(self, sha256: str, reading: Reading) -> Before:
+        """Where one of the files of ``reading`` is already.
+
+        A trash that changed since is a reason to read everything again, once, for the files
+        that follow, too. A version that others add after the reading is missed, like an upload
+        at the same time.
+
+        Raises:
+            CheckMovedError: Documents moved while they were read again.
+            UpstreamTimeout: The check took too long.
+            PaperlessMcpError: The check could not run, so the file may not be sent.
+        """
+        async with self._in_time():
+            try:
+                return await self._found(sha256, reading)
+            except CheckMovedError:
+                fresh = await self._read(reading.early)
+                reading.early, reading.snapshot = fresh.early, fresh.snapshot
+                return await self._found(sha256, reading)
+
+    @asynccontextmanager
+    async def _in_time(self) -> AsyncGenerator[None]:
+        try:
+            async with asyncio.timeout(self._bounds.seconds):
+                yield
+        except TimeoutError:
+            message = (
+                f"The duplicate check took longer than {self._bounds.seconds:g} seconds; the file "
+                "was not uploaded."
+            )
+            raise UpstreamTimeout(message, hint=AGAIN) from None
+
     async def _checked(self, sha256: str, own: DocumentRecord | None) -> Before:
         """One check, and a second one if documents moved while the first one read them."""
         try:
-            return await self._once(sha256, own)
+            return await self._found(sha256, await self._read((sha256,)), own)
         except CheckMovedError:
-            return await self._once(sha256, own)
+            return await self._found(sha256, await self._read((sha256,)), own)
 
-    async def _once(self, sha256: str, own: DocumentRecord | None) -> Before:
-        """The originals are read first and last.
+    async def _read(self, checksums: Iterable[str]) -> Reading:
+        early: dict[str, list[DuplicateMatch]] = {}
+        for sha256 in checksums:
+            try:
+                early[sha256], _ = await self._originals(sha256)
+            except PermissionDenied:
+                early[sha256] = []  # ``before`` names the gap
+        return Reading(early, await self.snapshot())
+
+    async def _found(
+        self, sha256: str, reading: Reading, own: DocumentRecord | None = None
+    ) -> Before:
+        """The originals were read first and are read last.
 
         One that is merged into another document in between is a version only after the versions
         were read, and no original any more at the end. A version keeps the id it had.
         """
-        try:
-            early, _ = await self._originals(sha256)
-        except PermissionDenied:
-            early = []  # ``before`` names the gap
-        found = await self.before(sha256, await self.snapshot(), own=own)
+        found = await self.before(sha256, reading.snapshot, own=own)
         seen = {n for m in found.matches for n in (m.document_id, m.version_id)}
-        missed = [m for m in early if m.document_id not in seen]
+        missed = [m for m in reading.early[sha256] if m.document_id not in seen]
         return replace(found, matches=(*missed, *found.matches), count=found.count + len(missed))
 
     async def after(self, consumed: int) -> DuplicateReport:

@@ -346,6 +346,7 @@ modules = [
     "mcp_server_paperless.tools.core",
     "mcp_server_paperless.tools.ai",
     "mcp_server_paperless.tools.bulk",
+    "mcp_server_paperless.tools.bulk_stdio",
     "mcp_server_paperless.tools.downloads",
     "mcp_server_paperless.tools.downloads_stdio",
     "mcp_server_paperless.tools.mail",
