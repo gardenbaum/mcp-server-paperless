@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.admin_accounts import AccountAdmin
     from mcp_server_paperless.services.admin_system import SystemAdmin
     from mcp_server_paperless.services.ai import AiService
+    from mcp_server_paperless.services.batch_uploads import BatchUploadService
     from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
     from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
     from mcp_server_paperless.services.document_edits import DocumentEditor
@@ -199,6 +200,10 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "run_task": "admin",
     "bulk_download": "admin",
 }
+
+# Tools that exist only over stdio with upload directories (decision-50): beside the table above,
+# because over HTTP nothing may name them.
+LOCAL_TOOLSETS: Final[Mapping[str, str]] = {"upload_documents": "bulk"}
 
 # Toolsets that need a Paperless capability, mapped to it (only "ai" so far); the startup probe
 # hides such a toolset when the capability is known to be missing.
@@ -884,6 +889,18 @@ SAVING_ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
     for name in ("download_document", "bulk_download")
 }
 
+# The annotations of ``LOCAL_TOOLSETS``. Like upload_document it adds documents and takes nothing
+# away, and every call adds more. It asks for no confirm, because it never sends a known duplicate.
+LOCAL_ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
+    "upload_documents": ToolAnnotations(
+        title="Upload several documents",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+}
+
 logger = logging.getLogger(__name__)
 
 # The `confirm` parameter of every destructive tool (decision-6, decision-15, decision-44).
@@ -941,6 +958,7 @@ class Services:
     tasks: TaskService
     ai: AiService
     uploads: UploadService
+    upload_batches: BatchUploadService
     versions: VersionService
     version_uploads: VersionUploadService
     bulk_documents: BulkDocumentEditor

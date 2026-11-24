@@ -21,6 +21,8 @@ from mcp_server_paperless.app import create_app
 from mcp_server_paperless.settings import HttpSettings, ServerSettings
 from mcp_server_paperless.tools._shared import (
     ANNOTATIONS,
+    LOCAL_ANNOTATIONS,
+    LOCAL_TOOLSETS,
     MEDIA_TOOLS,
     SAVING_ANNOTATIONS,
     TOOL_TOOLSETS,
@@ -39,12 +41,14 @@ pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-4")]
 
 # Default profile budget (design 6): the core and ai toolsets together.
 TOOL_BUDGET = 20
-# (tool, parameter) pairs that may take a server-side path: stdio-only uploads (decision-7) and
-# saved downloads (decision-45).
+# (tool, parameter) pairs that may take a server-side path: stdio-only uploads (decision-7,
+# decision-50) and saved downloads (decision-45).
 STDIO_PATH_PARAMETERS: frozenset[tuple[str, str]] = frozenset(
     {
         ("upload_document", "path"),
         ("upload_document_version", "path"),
+        ("upload_documents", "paths"),
+        ("upload_documents", "directory"),
         ("download_document", "save_dir"),
         ("bulk_download", "save_dir"),
     }
@@ -559,6 +563,8 @@ async def test_the_path_parameter_exists_over_stdio_with_an_allowlist_and_is_all
     expected = {
         "upload_document.path",
         "upload_document_version.path",
+        "upload_documents.paths",
+        "upload_documents.directory",
         "download_document.save_dir",
         "bulk_download.save_dir",
     }
@@ -584,6 +590,26 @@ async def test_the_server_that_saves_downloads_follows_the_rules_of_every_tool(
     assert unconfirmed(tools) == []
     assert {t.name for t in tools if destructive(t)} >= set(SAVING_ANNOTATIONS)
     assert without_schema(tools, MEDIA_TOOLS) == media_with_schema(tools, MEDIA_TOOLS) == []
+
+
+@pytest.mark.decision("decision-50")
+async def test_the_server_with_upload_directories_follows_the_rules_of_every_tool(
+    tmp_path: Path,
+) -> None:
+    """It has a tool the other tests do not see: its annotations and toolset are in own tables."""
+    server = serve(
+        admin(ai_enabled=True), toolsets=["all"], stdio=True, upload_dirs=[str(tmp_path)]
+    )
+    tools = list(await server.list_tools())
+
+    assert off_table(tools, {**ANNOTATIONS, **LOCAL_ANNOTATIONS}) == []
+    assert off_toolset_table(tools, {**TOOL_TOOLSETS, **LOCAL_TOOLSETS}) == []
+    assert (untitled(tools), undescribed(tools), unguarded(tools)) == ([], [], [])
+    assert (not_one_toolset(tools), unconfirmed(tools)) == ([], [])
+    local = [tool for tool in tools if tool.name in LOCAL_TOOLSETS]
+    assert (len(local), overlong(local)) == (len(LOCAL_TOOLSETS), [])
+    assert without_schema(tools, MEDIA_TOOLS) == media_with_schema(tools, MEDIA_TOOLS) == []
+    assert credentials_in_output(tools) == readable_credential_inputs(tools) == []
 
 
 @pytest.mark.decision("decision-11")

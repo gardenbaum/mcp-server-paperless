@@ -143,6 +143,19 @@ class UploadService:
         self, data: bytes, name: str, mime_type: str, metadata: UploadMetadata
     ) -> DocumentUpload:
         """The upload with every name an id and every value checked; nothing is sent."""
+        template = await self.template(metadata)
+        return template.model_copy(
+            update={"filename": name, "mime_type": mime_type, "content": data}
+        )
+
+    async def template(self, metadata: UploadMetadata) -> DocumentUpload:
+        """An upload without a file, with every name an id and every value checked.
+
+        Raises:
+            Validation: A value is not acceptable.
+            NotFound: A name or linked document matches nothing.
+            Ambiguous: A name matches more than one object.
+        """
         title = None if metadata.title is None else metadata.title.strip()
         if title is not None and not title:
             message = "The title cannot be blank."
@@ -176,9 +189,9 @@ class UploadService:
             },
         )
         return DocumentUpload(
-            filename=name,
-            mime_type=mime_type,
-            content=data,
+            filename="",
+            mime_type="",
+            content=b"",
             title=title,
             created=metadata.created,
             archive_serial_number=number,

@@ -22,10 +22,10 @@ if TYPE_CHECKING:
 # toolset is a placeholder, so that the text is no example to follow, and `all` is not offered.
 ENABLE = (
     "The operator, not you, switches one on: ask the user; do not edit the configuration "
-    "yourself. The operator sets PAPERLESS_MCP_TOOLSETS={value} (the current ones plus the one "
+    "yourself. The operator sets PAPERLESS_MCP_TOOLSETS={value} (the current plus the one "
     "needed, never `all`, which offers every tool) in the server's environment and "
     "restarts it. Claude Code plugin: option Toolsets, restart Claude Code. Cursor plugin: no "
-    "such option, add the server by hand. stdio: env of the server entry in the MCP client's "
+    "option, add the server by hand. stdio: env of the server in the client's "
     "config (docker run -i: -e), restart the client. HTTP and image: environment of the process "
     "or container, restart the process or recreate the container."
 )

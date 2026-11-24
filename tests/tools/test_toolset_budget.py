@@ -12,6 +12,7 @@ from the real catalogue and searched, not sampled:
   The instructions name no tool, so the count of tools does not matter.
 - Guide of the overview: its text lists the tools of every toolset that is off, so the worst case
   is ``core`` alone with nothing cut down, Paperless AI unknown or on (the overview needs ``core``).
+  Both over stdio with and without upload directories, which add ``upload_documents`` (PLMCP-85).
 - Definition: the output schema of the overview tool in tools/list.
 
 The default tool budget counts tools only.
@@ -76,10 +77,19 @@ def cut_down() -> list[str]:
 
 
 async def measure(
-    toolsets: Sequence[str], disabled: Sequence[str], reader: FakePaperless | None = None
+    toolsets: Sequence[str],
+    disabled: Sequence[str],
+    reader: FakePaperless | None = None,
+    upload_dirs: Sequence[str] = (),
 ) -> tuple[int, int | None]:
     """Bytes of the instructions, and of the overview's guide if the overview tool is offered."""
-    server = serve(reader or unknown_ai(), toolsets=toolsets, disabled_tools=disabled)
+    server = serve(
+        reader or unknown_ai(),
+        toolsets=toolsets,
+        disabled_tools=disabled,
+        stdio=True,
+        upload_dirs=upload_dirs,
+    )
     async with Client(server) as client:
         guide = None
         if OVERVIEW in {tool.name for tool in await client.list_tools()}:
@@ -92,11 +102,12 @@ async def worst() -> tuple[int, int]:
     """The longest instructions over every single-toolset selection, and the longest guide."""
     instructions = guide = 0
     readers = (unknown_ai, lambda: admin(ai_enabled=True))
-    for name, cut, overview, reader in itertools.product(
-        TOOLSETS, (False, True), (True, False), readers
+    directories = ((), ("/srv/scans",))
+    for name, cut, overview, reader, dirs in itertools.product(
+        TOOLSETS, (False, True), (True, False), readers, directories
     ):
         disabled = [*(cut_down() if cut else []), *([] if overview else [OVERVIEW])]
-        text, listed = await measure([name], disabled, reader())
+        text, listed = await measure([name], disabled, reader(), dirs)
         instructions = max(instructions, text)
         guide = max(guide, listed or 0)
     return instructions, guide

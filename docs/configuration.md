@@ -154,7 +154,8 @@ read-only tools will run them unasked. Use `PAPERLESS_MCP_TOOLSETS=core` to leav
 
 ### `bulk`
 
-Off by default. `bulk_edit_documents` changes many documents in one step (tags, correspondent,
+Off by default. Over stdio with upload directories it also has `upload_documents`, see
+[Uploads and downloads](#uploads-and-downloads). `bulk_edit_documents` changes many documents in one step (tags, correspondent,
 type, storage path, custom fields, trash, reprocess) and `bulk_edit_taxonomy` deletes many tags,
 correspondents, document types or storage paths or sets who owns and may see them. Both work in
 three steps: `dry_run=true` previews how many objects change, a call without `confirm` asks you
@@ -336,6 +337,16 @@ model names the file instead of encoding it.
   hard link are read, `..` in a path is refused, and files or folders whose name starts with a
   dot below an entry (`.ssh`, `.env`) are never read, also when zero-width or direction
   marks stand before the dot, nor any with control or line-break characters.
+- With the toolset `bulk`, `upload_documents` uploads several files, or the files of a directory, in
+  one call, each with its own report (uploaded, duplicate, refused or failed). It exists in this mode
+  only. The assistant then sees the names in these directories; names that start with a dot are only
+  counted. The rules above hold for every file, and a link to a directory is followed only inside
+  these directories. Subdirectories are read only with `recursive`.
+- One such call takes at most 25 files and 100 MiB together, starts no file after 40 seconds, and
+  refuses a directory of more than 10,000 entries. What does not fit is named, and `next_after` goes
+  on with the directory. It never sends a known duplicate: `upload_document` with `confirm` does, one
+  by one. Equal files in two calls at once are not noticed until Paperless consumed the first. The
+  rules are decision-50 (`backlog/decisions/`).
 - The server runs these tools over stdio only, whatever `FASTMCP_TRANSPORT` says.
 
 **Downloads.** `download_document` attaches the original or archive file up to

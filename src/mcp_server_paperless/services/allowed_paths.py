@@ -40,6 +40,8 @@ def clean_filename(name: str) -> str:
         problem = "is empty or only dots"
     elif unseen(last):
         problem = "has control characters"
+    elif any("\ud800" <= c <= "\udfff" for c in last):  # bytes that are no UTF-8
+        problem = "is not valid text"
     elif len(last.encode()) > MAX_NAME_BYTES:
         problem = f"is longer than {MAX_NAME_BYTES} bytes"
     if problem:
@@ -63,8 +65,17 @@ def unreadable(parts: Sequence[str]) -> bool:
     A dot name counts as one behind format characters, too (see ``unseen``); elsewhere in a name
     they are fine (the joiner in an emoji), other characters that are not shown never are.
     """
-    plain = ["".join(c for c in part if unicodedata.category(c) != FORMAT) for part in parts]
+    plain = [_plain(part) for part in parts]
     return any(part.startswith(".") or unseen(part) for part in plain)
+
+
+def dotted(name: str) -> bool:
+    """Whether a name starts with a dot, also behind format characters."""
+    return _plain(name).startswith(".")
+
+
+def _plain(name: str) -> str:
+    return "".join(c for c in name if unicodedata.category(c) != FORMAT)
 
 
 def unwritable(parts: Sequence[str]) -> bool:

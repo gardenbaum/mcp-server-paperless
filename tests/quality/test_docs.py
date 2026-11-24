@@ -17,7 +17,7 @@ from mcp_server_paperless.settings import (
     PaperlessSettings,
     ServerSettings,
 )
-from mcp_server_paperless.tools._shared import TOOL_TOOLSETS, TOOLSETS
+from mcp_server_paperless.tools._shared import LOCAL_TOOLSETS, TOOL_TOOLSETS, TOOLSETS
 
 if TYPE_CHECKING:
     from pydantic_settings import BaseSettings
@@ -63,6 +63,10 @@ OLD_NAMES = re.compile(
 )
 
 
+# The tools of every mode: one exists only over stdio with upload directories.
+ALL_TOOLS = {**TOOL_TOOLSETS, **LOCAL_TOOLSETS}
+
+
 def prose(page: Path) -> str:
     """The page without its code blocks, where a `#` starts a comment and `](` is no link."""
     return FENCE.sub("", page.read_text(encoding="utf-8"))
@@ -87,7 +91,7 @@ def test_the_anchor_of_a_heading_is_the_one_github_makes() -> None:
 @pytest.mark.parametrize("page", PAGES, ids=NAMES)
 def test_the_stated_size_of_the_catalogue_is_the_real_one(page: Path) -> None:
     for found in SIZE.finditer(prose(page)):
-        assert (int(found[1]), int(found[2])) == (len(TOOL_TOOLSETS), len(TOOLSETS))
+        assert (int(found[1]), int(found[2])) == (len(ALL_TOOLS), len(TOOLSETS))
 
 
 def test_the_readme_states_the_size_of_the_catalogue_and_of_the_default_profile() -> None:
@@ -103,7 +107,7 @@ def test_the_readme_states_the_size_of_the_catalogue_and_of_the_default_profile(
 def test_the_readme_overview_has_every_toolset_with_its_number_of_tools() -> None:
     rows = {found[1]: int(found[2]) for found in TOOLSET_ROW.finditer(prose(README))}
     sizes = dict.fromkeys(TOOLSETS, 0)
-    for toolset in TOOL_TOOLSETS.values():
+    for toolset in ALL_TOOLS.values():
         sizes[toolset] += 1
 
     assert rows == sizes
