@@ -197,6 +197,10 @@ async def test_the_bundles_are_listed_with_their_build_state(make_client: Client
         pytest.param("plain text", "plain text", id="text"),
         pytest.param({"error": "x"}, '{"error": "x"}', id="object without message"),
         pytest.param({"message": 5}, '{"message": 5}', id="message that is no text"),
+        pytest.param("no https://u:p@h/x", "no https://h/x", id="credentials"),
+        pytest.param(
+            {"error": "https://u:p\uff20h"}, '{"error": a URL that is not shown', id="unclear"
+        ),
         pytest.param("x" * 500, "x" * 199 + "…", id="long"),
         pytest.param("x" * 201, "x" * 199 + "…", id="one too long"),
     ],

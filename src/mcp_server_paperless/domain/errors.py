@@ -13,6 +13,8 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING, Final, Literal
 from urllib.parse import urlsplit
 
+from mcp_server_paperless.domain.urls import without_credentials
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Iterator, Sequence
 
@@ -324,18 +326,6 @@ _ODD_IN_EMAIL: Final = frozenset('()<>[]",;:\\')
 _UNCERTAIN: Final = "it is not certain which host it leads to"
 _ODD_IN_HOST: Final = frozenset("/\\#?@%")
 _URL: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
-# A URL with credentials in the plain characters RFC 3986 gives them, which nobody reads otherwise.
-_CREDENTIALS: Final = re.compile(
-    r"([A-Za-z][A-Za-z0-9+.-]*://)[A-Za-z0-9._~!$&'()*+,;=:%-]*@([^@]*)"
-)
-
-
-def without_credentials(url: str) -> str | None:
-    """A service URL without its credentials; None if it is not certain what else they are."""
-    if "@" not in url:
-        return url
-    found = _CREDENTIALS.fullmatch(url)
-    return found[1] + found[2] if found else None
 
 
 def _host_of(text: str, kind: DestinationKind) -> str:

@@ -936,6 +936,20 @@ async def test_a_task_whose_result_has_no_error_text_has_no_message(
     assert found.rows[0].message is None
 
 
+@pytest.mark.decision("decision-66")
+async def test_a_listed_task_holds_no_credentials_of_a_url_even_where_it_is_cut(
+    make_client: ClientFactory,
+) -> None:
+    said = {"error_message": "to https://user:p\nw@h.example"}
+    server = Recording(page({**TASK_WIRE, "result_data": said}))
+
+    found = await PaperlessAdminReader(make_client(server)).list_tasks(
+        state=None, task_type=None, acknowledged=None, page=1, page_size=25
+    )
+
+    assert found.rows[0].message == "to a URL that is not shown"
+
+
 # --- exact bodies, texts and request options (mutation tests)
 
 

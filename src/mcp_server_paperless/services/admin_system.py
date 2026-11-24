@@ -11,7 +11,6 @@ download is a read: the archive is attached only within the download limit.
 
 import hashlib
 import json
-import re
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.admin import (
@@ -38,9 +37,15 @@ from mcp_server_paperless.domain.errors import (
     both_ends,
     destination,
     quoted,
-    without_credentials,
 )
 from mcp_server_paperless.domain.files import ArchivePartReport, FilePart, SavedArchiveReport
+from mcp_server_paperless.domain.urls import (
+    URL_NOT_SHOWN,
+    lines_without_credentials,
+    shown_url,
+    without_credentials,
+    without_empty_user,
+)
 from mcp_server_paperless.services.file_sink import NO_SINK, Expected, file_name
 from mcp_server_paperless.services.transfer import (
     APPEND,
@@ -90,10 +95,6 @@ SAVE_WAIT_SECONDS: Final = 600.0
 SHOWN_IDS: Final = 10
 # The settings that are URLs.
 ENDPOINTS: Final = frozenset({"llm_endpoint", "llm_embedding_endpoint", "remote_ocr_endpoint"})
-# What stands for a URL whose credentials are not certain; its spaces keep it from being written.
-NOT_SHOWN: Final = "a URL that is not shown"
-# A service URL that asks for the stored credentials to be removed (decision-64).
-EMPTY_USER: Final = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://):?@([^@]*)")
 # Settings a confirmation names in full; the rest are counted.
 SHOWN: Final = 5
 TASK_EFFECTS: Final[dict[str, str]] = {
@@ -132,7 +133,7 @@ def _went(name: str, value: JsonValue) -> str:
         return _shown(value)
     text = without_credentials(_text(value)) if name in ENDPOINTS else _text(value)
     if text is None:
-        return NOT_SHOWN
+        return URL_NOT_SHOWN
     return both_ends(text) + _credentials(name, value) if text else "empty"
 
 
@@ -168,8 +169,7 @@ def _plural(count: int, noun: str) -> str:
 
 def _written(name: str, value: JsonValue) -> JsonValue:
     """The value to write: a service URL with an empty user name becomes one without any."""
-    found = EMPTY_USER.fullmatch(value) if name in ENDPOINTS and isinstance(value, str) else None
-    return found[1] + found[2] if found else value
+    return without_empty_user(value) if name in ENDPOINTS and isinstance(value, str) else value
 
 
 def _returned(name: str, value: JsonValue) -> JsonValue:
@@ -177,8 +177,8 @@ def _returned(name: str, value: JsonValue) -> JsonValue:
     if name not in ENDPOINTS:
         return value
     text = _text(value)
-    shown = without_credentials(text)
-    return value if shown == text else shown or NOT_SHOWN
+    shown = shown_url(text)
+    return value if shown == text else shown
 
 
 def _config(record: AppConfigRecord) -> AppConfig:
@@ -374,7 +374,10 @@ class SystemAdmin:
         if not 1 <= lines <= MAX_LOG_LINES:
             message = f"lines must be between 1 and {MAX_LOG_LINES}."
             raise Validation(message, hint="Ask for fewer lines, or read the log in the web UI.")
-        found = await self._reader.get_log(name, limit=lines)
+        read = await self._reader.get_log(name, limit=MAX_LOG_LINES)
+        # Read all, show the last: the record a shown line belongs to can start before it.
+        shown = lines_without_credentials(read)
+        found, read = shown[-lines:], read[-lines:]
         kept: list[str] = []
         used = 0
         for line in reversed(found):
@@ -386,8 +389,15 @@ class SystemAdmin:
         truncated = len(kept) < len(found)
         if found and not kept:
             kept = ["…" + found[-1][-(MAX_LOG_CHARS - 2) :]]
+        start = len(found) - len(kept)
+        hidden = sum(new != old for new, old in zip(found[start:], read[start:], strict=True))
+        note = f"{hidden} line(s) are shown without the credentials of the URLs in them."
         return LogExcerpt(
-            name=name, lines=tuple(kept), truncated=truncated, returned_lines=len(kept)
+            name=name,
+            lines=tuple(kept),
+            truncated=truncated,
+            returned_lines=len(kept),
+            note=note if hidden else None,
         )
 
     async def list_tasks(

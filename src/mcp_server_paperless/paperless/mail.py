@@ -52,6 +52,7 @@ from mcp_server_paperless.domain.mail import (
     TitleSource,
     check_password,
 )
+from mcp_server_paperless.domain.urls import text_without_credentials
 from mcp_server_paperless.paperless.pagination import MAX_ITEMS, Page, collect
 
 if TYPE_CHECKING:
@@ -285,7 +286,7 @@ def _processed(row: _ProcessedRow) -> ProcessedMail:
         received=row.received,
         processed=row.processed,
         status=row.status,
-        error=row.error or None,
+        error=text_without_credentials(row.error or "") or None,
     )
 
 

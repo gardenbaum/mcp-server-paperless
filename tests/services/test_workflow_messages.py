@@ -178,7 +178,7 @@ async def test_workflow_service_errors(snapshot: SnapshotAssertion) -> None:
     )
     found["update, hidden header"] = await said_later(
         lambda: flows.update(
-            "Hook", WorkflowEdit(actions=(ActionInput(type=4, id=9, webhook=hook),)), confirm=False
+            "Hook", WorkflowEdit(actions=(ActionInput(type=4, id=6, webhook=hook),)), confirm=False
         )
     )
     found["update, hidden header moved"] = await said_later(

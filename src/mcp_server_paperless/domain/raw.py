@@ -46,6 +46,7 @@ class RawApiResult(_Frozen):
         Field(description="The first part of the JSON as text when truncated (not valid JSON)."),
     ]
     redacted: Annotated[
-        int, Field(description="How many secret values (passwords, keys) were replaced.")
+        int,
+        Field(description="How many secret values (passwords, keys) were replaced or left out."),
     ]
     note: Annotated[str | None, Field(description="What to do next, when there is something.")]
