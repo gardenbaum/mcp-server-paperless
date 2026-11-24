@@ -346,8 +346,8 @@ It applies to every user and to every document consumed from now on, and the AI 
 which service gets the document text, so every change needs confirm: without it a dialog, or an
 error for you to show the user, first lists each setting with its old and new value, never a key
 (see confirm). Settings you leave out stay. A service URL written back as it was returned keeps
-its stored credentials; reset it with null first to remove them. A call that changes nothing
-says so. Needs the change_applicationconfiguration permission. Settings:
+its stored credentials; with an empty user name (https://@host/path) it loses them. A call that
+changes nothing says so. Needs the change_applicationconfiguration permission. Settings:
 {SETTINGS_HELP}
 """
 

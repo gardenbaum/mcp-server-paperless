@@ -11,6 +11,7 @@ download is a read: the archive is attached only within the download limit.
 
 import hashlib
 import json
+import re
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.admin import (
@@ -91,6 +92,8 @@ SHOWN_IDS: Final = 10
 ENDPOINTS: Final = frozenset({"llm_endpoint", "llm_embedding_endpoint", "remote_ocr_endpoint"})
 # What stands for a URL whose credentials are not certain; its spaces keep it from being written.
 NOT_SHOWN: Final = "a URL that is not shown"
+# A service URL that asks for the stored credentials to be removed (decision-64).
+EMPTY_USER: Final = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://):?@([^@]*)")
 # Settings a confirmation names in full; the rest are counted.
 SHOWN: Final = 5
 TASK_EFFECTS: Final[dict[str, str]] = {
@@ -145,9 +148,9 @@ def _credentials_only(name: str, old: JsonValue, new: JsonValue) -> str | None:
     public = without_credentials(_text(new))
     if name not in ENDPOINTS or public is None or public != without_credentials(_text(old)):
         return None
-    had = _credentials(name, old)
-    # A URL that is the stored one without its credentials leaves it as it is (decision-64).
-    verb = "replace the credentials of" if had else "add credentials to"
+    had, has = _credentials(name, old), _credentials(name, new)
+    verb = "replace the credentials of" if had and has else "add credentials to"
+    verb = verb if has else "remove the credentials of"
     return f"{verb} {name} {destination(public, name, 'url')} (not shown)"
 
 
@@ -161,6 +164,12 @@ def _shown(value: JsonValue) -> str:
 
 def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _written(name: str, value: JsonValue) -> JsonValue:
+    """The value to write: a service URL with an empty user name becomes one without any."""
+    found = EMPTY_USER.fullmatch(value) if name in ENDPOINTS and isinstance(value, str) else None
+    return found[1] + found[2] if found else value
 
 
 def _returned(name: str, value: JsonValue) -> JsonValue:
@@ -279,13 +288,17 @@ class SystemAdmin:
         effects: list[str] = []
         changes: dict[str, JsonValue] = {}
         kept: list[str] = []
-        for name, value in wanted.items():
+        removed: list[str] = []
+        for name, given in wanted.items():
             now = current.settings.get(name)
-            if value == now:
+            value = _written(name, given)
+            if now in (given, value):
                 continue
             if now is not None and value == _returned(name, now):
-                kept.append(name)
-                continue
+                if value == given:
+                    kept.append(name)
+                    continue
+                removed.append(name)
             changes[name] = value
             new, old = _goes(name, value), _went(name, now)
             if value is None:
@@ -301,12 +314,15 @@ class SystemAdmin:
             else f"replace the saved {name} (its value is never shown)"
             for name in secrets
         )
-        credentials = f" Kept as stored, with the credentials: {', '.join(kept)}." if kept else ""
+        note = f" Removed the credentials of: {', '.join(removed)}." if removed else ""
+        note += f" Kept as stored, with any credentials: {', '.join(kept)}." if kept else ""
         if not effects:
             return ConfigOutcome(
                 config=_config(current),
                 changed=(),
-                message=f"Nothing changed: the configuration already is as asked.{credentials}",
+                message=f"Nothing changed.{note}"
+                if kept
+                else "Nothing changed: the configuration already is as asked.",
             )
         if not confirm:
             ConfirmationRequired.require(
@@ -318,7 +334,7 @@ class SystemAdmin:
         return ConfigOutcome(
             config=_config(written),
             changed=done,
-            message=f"Changed {_plural(len(done), 'setting')}: {', '.join(done)}.{credentials}",
+            message=f"Changed {_plural(len(done), 'setting')}: {', '.join(done)}.{note}",
         )
 
     @staticmethod

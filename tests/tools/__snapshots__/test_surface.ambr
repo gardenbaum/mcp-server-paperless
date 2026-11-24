@@ -18178,8 +18178,8 @@
         which service gets the document text, so every change needs confirm: without it a dialog, or an
         error for you to show the user, first lists each setting with its old and new value, never a key
         (see confirm). Settings you leave out stay. A service URL written back as it was returned keeps
-        its stored credentials; reset it with null first to remove them. A call that changes nothing
-        says so. Needs the change_applicationconfiguration permission. Settings:
+        its stored credentials; with an empty user name (https://@host/path) it loses them. A call that
+        changes nothing says so. Needs the change_applicationconfiguration permission. Settings:
         - output_type: Output PDF type: pdf, pdfa, pdfa-1, pdfa-2 or pdfa-3.
         - pages: OCR only pages 1 to this number (at least 1).
         - language: OCR languages, e.g. 'eng+deu'.

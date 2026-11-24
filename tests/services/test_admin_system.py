@@ -119,8 +119,7 @@ async def test_a_url_written_back_as_it_was_returned_keeps_its_credentials(
 
     assert outcome.changed == ()
     assert outcome.message == (
-        "Nothing changed: the configuration already is as asked. "
-        "Kept as stored, with the credentials: llm_endpoint."
+        "Nothing changed. Kept as stored, with any credentials: llm_endpoint."
     )
     assert setup.state.config["llm_endpoint"] == stored
 
@@ -138,7 +137,7 @@ async def test_a_url_written_back_is_not_part_of_another_change() -> None:
     assert "endpoint" not in message
     assert outcome.changed == ("pages",)
     assert outcome.message == (
-        "Changed 1 setting: pages. Kept as stored, with the credentials: "
+        "Changed 1 setting: pages. Kept as stored, with any credentials: "
         "llm_endpoint, llm_embedding_endpoint, remote_ocr_endpoint."
     )
     assert setup.state.config == {**stored, "pages": 3}
@@ -154,15 +153,73 @@ async def test_a_stored_url_without_credentials_is_kept_without_a_word_about_the
     assert outcome.message == "Nothing changed: the configuration already is as asked."
 
 
+EMPTY_USER = pytest.mark.parametrize("empty", ["@", ":@"])
+
+
 @pytest.mark.decision("decision-64")
-async def test_credentials_are_removed_by_a_reset_and_not_by_the_same_url() -> None:
+@EMPTY_USER
+async def test_an_empty_user_over_the_stored_url_removes_its_credentials(empty: str) -> None:
     setup = Setup()
-    setup.state.config = {"llm_endpoint": "https://u:s3cret@e.x/v1"}
+    setup.state.config = {"llm_endpoint": "https://u:s3cret@e.x:8443/v1?a=b"}
+    asked = {"llm_endpoint": f"https://{empty}e.x:8443/v1?a=b"}
 
-    _ = await setup.service.update_config({"llm_endpoint": None}, confirm=True)
-    _ = await setup.service.update_config({"llm_endpoint": "https://e.x/v1"}, confirm=True)
+    message = await refusal(setup.service.update_config(asked))
+    outcome = await setup.service.update_config(asked, confirm=True)
 
-    assert setup.state.config == {"llm_endpoint": "https://e.x/v1"}
+    assert "remove the credentials of llm_endpoint 'https://e.x:8443/v1?a=b' (not" in message
+    assert "s3cret" not in message
+    assert outcome.changed == ("llm_endpoint",)
+    assert outcome.message == (
+        "Changed 1 setting: llm_endpoint. Removed the credentials of: llm_endpoint."
+    )
+    assert outcome.config.shown_in_part == ()
+    assert setup.state.config == {"llm_endpoint": "https://e.x:8443/v1?a=b"}
+
+
+@pytest.mark.decision("decision-64")
+@EMPTY_USER
+async def test_an_empty_user_over_a_url_without_credentials_changes_nothing(empty: str) -> None:
+    setup = Setup(writes=False)
+    setup.state.config = {"llm_endpoint": "https://e.x/v1"}
+
+    outcome = await setup.service.update_config({"llm_endpoint": f"https://{empty}e.x/v1"})
+
+    assert outcome.message == "Nothing changed: the configuration already is as asked."
+
+
+@pytest.mark.decision("decision-64")
+@EMPTY_USER
+@pytest.mark.parametrize(
+    ("stored", "old"),
+    [
+        (None, "set llm_endpoint to 'https://new.x/' (it follows"),
+        ("https://u:s3cret@e.x/", "from 'https://e.x/' with credentials (not shown) to 'https://n"),
+        ("https://u:s3cret@b@e.x/", "from a URL that is not shown to 'https://new.x/';"),
+        ("https://e.x/", "from 'https://e.x/' to 'https://new.x/';"),
+    ],
+)
+async def test_a_new_url_is_written_without_its_empty_user(
+    stored: str | None, old: str, empty: str
+) -> None:
+    setup = Setup()
+    setup.state.config = {"llm_endpoint": stored} if stored else {}
+    asked = {"llm_endpoint": f"https://{empty}new.x/"}
+
+    message = await refusal(setup.service.update_config(asked))
+    outcome = await setup.service.update_config(asked, confirm=True)
+
+    assert old in message
+    assert outcome.message == "Changed 1 setting: llm_endpoint."
+    assert setup.state.config == {"llm_endpoint": "https://new.x/"}
+
+
+@pytest.mark.decision("decision-64")
+async def test_only_a_service_url_loses_an_empty_user() -> None:
+    setup = Setup()
+
+    _ = await setup.service.update_config({"app_title": "https://@e.x", "pages": 3}, confirm=True)
+
+    assert setup.state.config["app_title"] == "https://@e.x"
 
 
 @pytest.mark.decision("decision-64")

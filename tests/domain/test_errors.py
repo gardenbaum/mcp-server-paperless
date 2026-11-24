@@ -391,7 +391,7 @@ ESCAPED = BACKSLASH + "u05f4"
 LOOK_ALIKE_QUOTES = (
     *(0x02BA, 0x02DD, 0x02EE, 0x02F5, 0x02F6, 0x05F2, 0x05F4, 0x201C, 0x201D, 0x201E, 0x201F),
     *(0x2033, 0x2034, 0x2036, 0x2037, 0x2057, 0x275D, 0x275E, 0x2760, 0x2E42, 0x3003, 0x301D),
-    *(0x301E, 0x301F, 0xFF02, 0x1F676, 0x1F677, 0x1F678, 0x030E, 0x1CD3),
+    *(0x301E, 0x301F, 0xFF02, 0x1F676, 0x1F677, 0x1F678, 0x030E, 0x1CD3, 0x1425),
 )
 
 
@@ -466,6 +466,8 @@ def test_gershayim_that_stand_at_the_edge_of_a_word_are_escaped(text: str) -> No
         "\u17b4",
         "\U000e0080",
         "\u2065",
+        "\ue000",
+        "\U0001d159",
         "\u0301",
         "\u200d\ufe0f",
     ],
@@ -558,6 +560,16 @@ def test_a_text_shown_with_both_ends_takes_at_most_240_or_600_characters() -> No
             assert head.count("\\") % 2 == tail.count("\\") % 2 == 0  # no half escape
             assert tail.endswith(".end" if text[0] == "a" else "ude76")
             assert len(tail) > len(head)
+
+
+@pytest.mark.decision("decision-64")
+def test_no_accent_is_carried_by_a_letter_that_is_escaped_or_invisible() -> None:
+    accent = chr(0x30B)
+    escapes = [f"{BACKSLASH}u{code:04x}" for code in (0x2BA, 0x30B)]
+
+    assert quoted(chr(0x2BA) + accent) == f"'{''.join(escapes)}'"
+    blank = chr(0x13441)
+    assert quoted(f"o{blank}{accent}") == f"'o{blank}{escapes[1]}'"
 
 
 @pytest.mark.decision("decision-64")

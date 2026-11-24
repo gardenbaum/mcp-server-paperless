@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T07:06:16Z'
-updated_date: '2026-11-24T11:22:49Z'
+updated_date: '2026-11-24T11:24:39Z'
 labels: []
 dependencies: []
 priority: medium
@@ -68,4 +68,6 @@ Evidence: red first, then 2150 passed, 1 skipped in named modules; diff-cover 10
 Correction of ruling b (replaces the numbers above): one text takes at most 240 characters in quoted(), quotes, escapes and cut mark included; both_ends() 240 at 60 and 600 at 254 (the larger of 240 and limit * 600 / 254). Above that the cut moves forward until it fits, always at a whole escape. New worst cases: 237 characters for a name of 12-character escapes (722 before), both ends at 254 at most 600 (3039 before), longest refusal 3403 (8716 before; test pin 9000 -> 3403, the measured value).
 
 Measured: a name of 12-character escapes 231, of 6-character escapes 237 (not 237 for the former); at most 240. Both ends at 254: 591 and 597. Named modules: 1033 passed, 1 skipped; diff-cover 100 %.
+
+Delta review of f05766d (replaces what is said above about removing credentials by null and about the removed confirmation): N1/N2 an empty user name over the stored URL removes its credentials in one call; confirmation and result say 'remove(d) the credentials of', the empty user name is never written. The reset advice is gone (reason in decision-64). The sentence fits the description budget. N3, N4 message texts. N5 U+1425 added to the shared list, so excerpts of correct_document_text escape it too; two U+0301 on a space named as open. N6: cases added for a letter that is escaped or invisible not carrying an accent, and for private-use and blank signs between two quotes; the delta review text with the two mutants was not available here, so these are chosen from the code. Snapshot test_surface.ambr: update_app_config description only.
 <!-- SECTION:NOTES:END -->
