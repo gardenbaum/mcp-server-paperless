@@ -24,6 +24,7 @@ TOOLS = {
     "create_workflow",
     "update_workflow",
     "delete_workflow",
+    "run_workflow",
 }
 NEVER = {"type": "consumption", "filename": "never-*.pdf"}
 
@@ -70,7 +71,7 @@ async def test_the_workflows_are_not_in_the_default_profile() -> None:
     assert names.isdisjoint(TOOLS)
 
 
-async def test_the_workflows_toolset_offers_five_tools_and_read_only_mode_keeps_two() -> None:
+async def test_the_workflows_toolset_offers_six_tools_and_read_only_mode_keeps_two() -> None:
     async with Client(serve(fake(), toolsets=["workflows"])) as client:
         names = {tool.name for tool in await client.list_tools()}
     async with Client(serve(fake(), toolsets=["workflows"], read_only=True)) as client:

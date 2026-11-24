@@ -26,6 +26,7 @@ from mcp.types import (
 )
 from pydantic import BaseModel, Field, JsonValue
 
+from mcp_server_paperless.domain.bulk import MAX_DOCUMENTS
 from mcp_server_paperless.domain.documents import NameOrId
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
@@ -33,6 +34,7 @@ from mcp_server_paperless.domain.errors import (
     PaperlessMcpError,
     Validation,
 )
+from mcp_server_paperless.domain.selection import NO_FLAG, Selection, SelectionFilters
 from mcp_server_paperless.tools.confirmation import confirmed
 
 if TYPE_CHECKING:
@@ -74,6 +76,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.version_uploads import VersionUploadService
     from mcp_server_paperless.services.versions import VersionService
     from mcp_server_paperless.services.views import ViewService
+    from mcp_server_paperless.services.workflow_runs import WorkflowRuns
     from mcp_server_paperless.services.workflows import WorkflowService
 
 # Every toolset; each tool carries exactly one of them as its only tag.
@@ -217,6 +220,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "create_workflow": "workflows",
     "update_workflow": "workflows",
     "delete_workflow": "workflows",
+    "run_workflow": "workflows",
     "get_user": "admin",
     "create_user": "admin",
     "update_user": "admin",
@@ -983,6 +987,15 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    # Destructive, open world and not idempotent (decision-75): it can trash, e-mail and call
+    # webhooks, and every call does so again.
+    "run_workflow": ToolAnnotations(
+        title="Run workflow",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=True,
+    ),
 }
 
 # The two tools where the server may save what they read (decision-45): registered instead of their
@@ -1025,6 +1038,61 @@ type Confirm = Annotated[
         )
     ),
 ]
+
+type DryRun = Annotated[
+    bool,
+    Field(
+        description=(
+            "true returns a preview (how many change, a sample, what changes) and writes "
+            "nothing; it needs no confirm. Do it first."
+        )
+    ),
+]
+
+
+# How documents are chosen (decision-69), the same for every tool that takes it.
+type DocumentIds = Annotated[
+    list[Annotated[int, NO_FLAG]] | None,
+    Field(
+        min_length=1,
+        max_length=MAX_DOCUMENTS,
+        description=(
+            f"Ids of the documents, at most {MAX_DOCUMENTS}. With filters or saved_view: "
+            "exactly these, refused if one of them no longer matches."
+        ),
+    ),
+]
+type Filters = Annotated[
+    SelectionFilters | None,
+    Field(description="The filters of search_documents, with the same names and meaning."),
+]
+type View = Annotated[
+    Annotated[NameOrId, NO_FLAG] | None,
+    Field(description="Name or id of a saved view, instead of filters; see list_taxonomy."),
+]
+type ExcludeIds = Annotated[
+    list[Annotated[int, NO_FLAG]] | None,
+    Field(
+        max_length=MAX_DOCUMENTS,
+        description="Documents to leave out of what filters or saved_view match.",
+    ),
+]
+
+
+def selection(
+    document_ids: list[int] | None,
+    filters: SelectionFilters | None,
+    saved_view: NameOrId | None,
+    exclude_ids: list[int] | None,
+) -> Selection:
+    """The arguments of a tool that chooses documents as one selection."""
+    return Selection(
+        document_ids=tuple(document_ids or ()),
+        filters=filters,
+        saved_view=saved_view,
+        exclude_ids=tuple(exclude_ids or ()),
+    )
+
 
 # What the upload tools take for the new documents.
 type Named = Annotated[NameOrId | None, Field(description="Name or id; see list_taxonomy.")]
@@ -1076,6 +1144,7 @@ class Services:
     """The use cases tools call, one field per service; built by the composition root."""
 
     workflows: WorkflowService
+    workflow_runs: WorkflowRuns
 
     instance: InstanceService
     taxonomy: TaxonomyResolver

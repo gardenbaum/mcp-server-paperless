@@ -49,6 +49,7 @@ DESTINATIONS: Final = frozenset(
         "update_mail_rule",
         "create_workflow",
         "update_workflow",
+        "run_workflow",
         "update_user",
     }
 )
@@ -136,7 +137,30 @@ def hostile(evil: str = EVIL) -> FakeState:
                 WorkflowAction(id=3, type=4, settings=settings),
                 WorkflowAction(id=4, type=99, settings=settings),
             ),
-        )
+        ),
+        Workflow(
+            id=2,
+            name=evil,
+            order=1,
+            enabled=True,
+            triggers=(WorkflowTrigger(id=5, type=5, settings={"filter_filename": evil}),),
+            actions=(
+                WorkflowAction(
+                    id=6,
+                    type=1,
+                    settings={
+                        "assign_title": evil,
+                        "assign_tags": [1, 4],
+                        "assign_owner": 3,
+                        "assign_custom_fields": [1],
+                        "assign_custom_fields_values": {"1": evil, "8": [evil, 11]},
+                    },
+                ),
+                WorkflowAction(id=7, type=2, settings={"remove_tags": [1]}),
+                WorkflowAction(id=8, type=3, settings=settings),
+                WorkflowAction(id=9, type=4, settings=settings),
+            ),
+        ),
     ]
     state.config = {"app_title": evil, "user_args": evil}
     next(d for d in state.documents if d.id == 10).content = STORED
@@ -236,6 +260,7 @@ HOSTILE: Final[dict[str, Json]] = {
     },
     "update_workflow": {"workflow": 1, "enabled": True},
     "delete_workflow": {"workflow": 1},
+    "run_workflow": {"workflow": 2, "document_ids": [10, 11]},
     "upload_document": {**CALLS["upload_document"], "filename": EVIL},
     "upload_document_version": {**CALLS["upload_document_version"], "filename": EVIL},
 }

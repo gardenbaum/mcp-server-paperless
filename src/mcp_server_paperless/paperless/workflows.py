@@ -118,14 +118,14 @@ def _body(values: WorkflowValues) -> dict[str, object]:
 
 def run_refused() -> PermissionDenied:
     """The error for a 403 of a run."""
-    return PermissionDenied(
-        "Paperless refused to run the workflow; it checks every document first, so nothing was "
-        "run.",
-        hint=(
-            "You need the permissions to view workflows and to change documents, and must own "
-            "every document (or it must have no owner)."
-        ),
+    message = (
+        "Paperless refused to run the workflow; it checks every document first, so nothing was run."
     )
+    hint = (
+        "You need the permissions to view workflows and to change documents, and must own every "
+        "document (or it must have no owner)."
+    )
+    return PermissionDenied(message, hint=hint)
 
 
 def _failed_on(task: TaskStatus, workflow_id: int, document_ids: Sequence[int]) -> tuple[int, ...]:

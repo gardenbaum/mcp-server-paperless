@@ -202,6 +202,9 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "bulk_notes": ("test_bulk_items",),
     "document_runner": ("test_bulk_items",),
     "bulk_taxonomy": ("test_bulk",),
+    "workflows": ("test_run_workflow", "test_workflow_runs"),
+    "workflow_runs": ("test_run_workflow",),
+    "run_workflow": ("test_workflow_runs",),
     # tools/selection.py selects toolsets; domain/ and services/selection.py choose documents.
     "selection": ("test_bulk", "test_read_documents", "test_toolset_guide"),
     "read_documents": ("test_bulk_items", "test_selection"),

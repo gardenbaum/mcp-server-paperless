@@ -33,6 +33,8 @@ from mcp_server_paperless.services.selection import DocumentSelector
 from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.views import ViewService
+from mcp_server_paperless.services.workflow_runs import WorkflowRuns
+from mcp_server_paperless.services.workflows import WorkflowService
 from mcp_server_paperless.settings import PaperlessSettings, ServerSettings
 
 if TYPE_CHECKING:
@@ -162,6 +164,17 @@ def bulk_notes(fake: FakePaperless, *, clock: Callable[[], float]) -> BulkNotes:
     views = ViewService(fake, fake, taxonomy, documents)
     selector = DocumentSelector(fake, documents, views, taxonomy)
     return BulkNotes(fake, fake, selector, web_url=web, clock=clock)
+
+
+def workflow_runs(fake: FakePaperless, taxonomy: TaxonomyResolver | None = None) -> WorkflowRuns:
+    """`WorkflowRuns` on the fake, with everything it is built from."""
+    web = "https://paperless.example"
+    taxonomy = taxonomy or TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
+    documents = DocumentService(fake, fake, taxonomy, web_url=web)
+    views = ViewService(fake, fake, taxonomy, documents)
+    selector = DocumentSelector(fake, documents, views, taxonomy)
+    flows = WorkflowService(fake, fake, taxonomy)
+    return WorkflowRuns(fake, fake, flows, selector, taxonomy)
 
 
 def serve(  # noqa: PLR0913 -- one keyword per seam of the server

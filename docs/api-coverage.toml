@@ -402,12 +402,6 @@ fields = ["body:from_webui"]
 task = "PLMCP-83"
 
 [[open_fields]]
-operation = "POST /api/documents/bulk_edit/"
-fields = ["body:method=run_workflow"]
-task = "PLMCP-80.4"
-reason = "Paperless runs a workflow with a manual trigger on selected documents; no tool does, and the workflows toolset does not write manual triggers (PLMCP-97)"
-
-[[open_fields]]
 operation = "POST /api/documents/edit_pdf/"
 fields = ["body:from_webui"]
 task = "PLMCP-83"

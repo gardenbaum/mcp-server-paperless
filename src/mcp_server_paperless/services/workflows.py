@@ -106,6 +106,10 @@ OWNERSHIP: Final = (
     "assign_change_groups",
 )
 TRASH_ACTION: Final = 6
+# E-mail, webhook, password removal and AI suggestions: Paperless tells no one whether they worked.
+UNSEEN_ACTIONS: Final = frozenset({3, 4, 5, 8})
+ASSIGNMENT, REMOVAL, REMOTE_OCR = 1, 2, 7
+NO_OCR: Final = "run remote OCR (Paperless ignores it here: it needs a document being consumed)"
 TRASH_NOTE: Final = f"A document this workflow moves to the trash {WAY_BACK}"
 SUGGESTIONS: Final = 5
 # What the actions that need no settings do; password removal and AI suggestions cannot be written
@@ -573,7 +577,8 @@ def _acts(
     return found
 
 
-def _trigger_text(trigger: WorkflowTrigger) -> str:
+def trigger_text(trigger: WorkflowTrigger) -> str:
+    """The type of a trigger and which filters it has."""
     text = TRIGGER_TYPES.get(trigger.type, f"unknown type {trigger.type}")
     filters = ", ".join(_set(TRIGGER_FIELDS, trigger.settings))
     if filters:
@@ -583,10 +588,15 @@ def _trigger_text(trigger: WorkflowTrigger) -> str:
     return text
 
 
+def unfiltered(triggers: Sequence[WorkflowTrigger]) -> bool:
+    """Whether a manual trigger has no filters, so that every document matches."""
+    return any(not _set(TRIGGER_FIELDS, t.settings) for t in triggers if t.type == MANUAL)
+
+
 def _effect(lead: str, triggers: Sequence[WorkflowTrigger], acts: Sequence[str]) -> str:
     """What an enabled workflow does: by itself, or only when a user runs it (manual triggers)."""
-    automatic = "; ".join(_trigger_text(t) for t in triggers if t.type != MANUAL)
-    by_hand = "; ".join(_trigger_text(t) for t in triggers if t.type == MANUAL)
+    automatic = "; ".join(trigger_text(t) for t in triggers if t.type != MANUAL)
+    by_hand = "; ".join(trigger_text(t) for t in triggers if t.type == MANUAL)
     will = "; ".join(acts)
     if not triggers:
         automatic = "no trigger yet: it does nothing until one is added"
@@ -638,8 +648,28 @@ class WorkflowService:
             Ambiguous: The name matches several workflows.
             PermissionDenied: The user may not view workflows.
         """
-        found = await self._find(workflow)
+        found = await self.find(workflow)
         return self._info(found, await self._names([found]))
+
+    async def told(self, workflow: Workflow) -> tuple[str, ...]:
+        """What the workflow does to a document, action by action, with the values it writes.
+
+        Raises:
+            Validation: It has a destination that cannot be shown, or too many of them.
+        """
+        _ = _acts(workflow.actions)  # counts the destinations of all actions together
+        names = await self._names([workflow])
+        found: list[str] = []
+        for action in workflow.actions:
+            if action.type in {ASSIGNMENT, REMOVAL}:
+                values = _values_text(action, names)
+                verb = "assign" if action.type == ASSIGNMENT else "remove"
+                found += [f"{verb} {values}"] if values else []
+            elif action.type == REMOTE_OCR:
+                found.append(NO_OCR)
+            if action.type != REMOVAL:
+                found += _acts([action])
+        return tuple(found) or ("do nothing",)
 
     async def create(self, spec: WorkflowCreate, *, confirm: bool) -> WorkflowInfo:
         """Create a workflow; names are resolved and types checked before anything is sent.
@@ -757,7 +787,7 @@ class WorkflowService:
             Ambiguous: The name matches several workflows.
             PermissionDenied: The user may not view or delete workflows.
         """
-        found = await self._find(workflow)
+        found = await self.find(workflow)
         subject = f"the workflow {quoted(found.name)} (id {found.id})"
         if not confirm:
             parts = (
@@ -773,7 +803,8 @@ class WorkflowService:
         message = f"{subject[0].upper()}{subject[1:]} was deleted; no document was touched."
         return WorkflowDeletion(id=found.id, name=found.name, message=message)
 
-    async def _find(self, workflow: NameOrId) -> Workflow:
+    async def find(self, workflow: NameOrId) -> Workflow:
+        """The workflow as Paperless stores it, like ``get``."""
         return self._pick(await self._reader.list_workflows(), workflow)
 
     @staticmethod
@@ -1066,6 +1097,29 @@ def _nested(value: JsonValue) -> dict[str, JsonValue]:
     if "headers" in shown:
         shown["headers"] = dict.fromkeys(_object(shown["headers"]), HIDDEN)
     return shown
+
+
+def _values_text(action: WorkflowAction, names: Mapping[TaxonomyKind, Mapping[int, str]]) -> str:
+    """What an assignment or removal writes or takes away, each name and text quoted and cut."""
+    fields = ACTION_FIELDS[action.type]
+
+    def text(value: JsonValue) -> str:
+        return quoted(value if isinstance(value, str) else json.dumps(value))
+
+    def one(value: JsonValue) -> str:  # a hidden object has no name
+        return f"#{value}" if isinstance(value, int) else text(value)
+
+    found: list[str] = []
+    for name, value in _set(fields, action.settings).items():
+        what = name.removeprefix("assign_").removeprefix("remove_").replace("_", " ")
+        shown = _show(name, fields[name], value, names)
+        if isinstance(shown, dict):
+            what += f" {', '.join(f'{quoted(k)}: {text(v)}' for k, v in shown.items())}"
+        elif fields[name].shape != "flag":
+            rows = shown if isinstance(shown, list) else [shown]
+            what += f" {', '.join(map(one, rows))}"
+        found.append(what)
+    return ", ".join(found)
 
 
 def _show(

@@ -38,7 +38,7 @@ claude mcp add paperless --env PAPERLESS_URL=https://paperless.example.org \
 
 mcp-server-paperless is a [Model Context Protocol](https://modelcontextprotocol.io) server for
 paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai, Cursor, VS
-Code and any other MCP client 99 tools in 13 toolsets that cover most of what the Paperless API
+Code and any other MCP client 100 tools in 13 toolsets that cover most of what the Paperless API
 can do, from a search to saved views, mail rules and workflows. It starts small and careful: 20
 tools by default, names instead of ids, and a confirmation step before anything that cannot be
 undone.
@@ -99,7 +99,7 @@ people who want all of the following in one server:
 - 🛡️ **Nothing final without your yes.** Before a tool deletes, overwrites, publishes or shares
   anything, it reports what would happen and waits for your confirmation. Changes to many
   documents at once can be previewed first.
-- 🪶 **Small to start with.** Only 20 tools by default out of the 99, so the assistant starts
+- 🪶 **Small to start with.** Only 20 tools by default out of the 100, so the assistant starts
   with the essentials and you decide what else it may do. Search results are short lists and long
   documents are read piece by piece, so a conversation does not fill up with text it does not
   need.
@@ -251,7 +251,7 @@ variables: [Connect claude.ai](https://github.com/gardenbaum/mcp-server-paperles
 
 ## Toolsets
 
-The 99 tools are grouped into toolsets, and only two are on by default, so the model is not
+The 100 tools are grouped into toolsets, and only two are on by default, so the model is not
 handed tools you never use. Switch more on with `PAPERLESS_MCP_TOOLSETS=core,ai,pdf,trash` or
 `all`, and restart the server. The assistant is told which toolsets are off, what each adds and how to
 switch them on (never for a session: only you decide, see
@@ -269,7 +269,7 @@ switch them on (never for a session: only you decide, see
 | `sharing` | 8 | | Public share links and bundles, and sending documents by e-mail |
 | `permissions` | 3 | | Owners and view and change rights of documents and taxonomy; list users and groups |
 | `mail` | 13 | | Mail accounts and rules for the mail import, and what it processed |
-| `workflows` | 5 | | The workflows Paperless runs by itself: triggers and actions |
+| `workflows` | 6 | | The workflows Paperless runs by itself: triggers and actions; run one by hand on chosen documents |
 | `admin` | 16 | | Users, groups, application configuration, logs, tasks, bulk download |
 | `raw` | 1 | | A read-only escape hatch: GET any path of the Paperless API the other tools do not cover |
 
@@ -289,7 +289,7 @@ takes more than a misunderstanding:
   unless you allow only dialogs with `PAPERLESS_MCP_REQUIRE_DIALOG=true`
   ([details](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md#confirmation)).
 - **Dry runs for bulk edits.** `bulk_edit_documents`, `update_documents`, `add_notes`,
-  `bulk_edit_taxonomy` and `resolve_duplicates` preview what would change before they ask for confirmation. A search filter or
+  `bulk_edit_taxonomy`, `resolve_duplicates` and `run_workflow` preview what would change before they ask for confirmation. A search filter or
   saved view never acts by itself: every document it would change is named first.
 - **The trash first.** Deleting a document moves it to the Paperless trash, from where it can be
   restored. Emptying the trash is a separate tool in a toolset that is off by default.

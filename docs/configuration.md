@@ -354,7 +354,7 @@ Off by default. Manages the mail import: `list_mail_accounts`, `get_mail_account
 ### `workflows`
 
 Off by default: `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow`,
-`delete_workflow`. Manages the workflows Paperless runs by itself, with triggers and actions as
+`delete_workflow`, `run_workflow`. Manages the workflows Paperless runs by itself, with triggers and actions as
 nested objects and tags, correspondents, document types, storage paths, custom fields, users and
 groups given by name. An enabled workflow keeps acting on every matching document, so
 `create_workflow` and `update_workflow` need `confirm` when it moves documents to the trash,
@@ -369,6 +369,16 @@ does not belong to its trigger or action type is an error.
   so. Written back as returned, on an action with the id it has now, the URL keeps what is stored;
   with an empty user name (`https://@host/path`) it loses them. Without the id, it is refused.
   A copy of it in another workflow is written without them, and the result says so.
+
+`run_workflow` runs an enabled workflow with a manual trigger on up to 100 documents, chosen like those
+of `bulk_edit_documents`; manual triggers are set up in the Paperless web UI. Every run is confirmed:
+every document and every action is named before, with all e-mail recipients and webhook hosts, and a
+filter or a view alone never runs anything. With `apply_filters=false` the filters of the trigger are
+left out; with them Paperless does not tell which documents it skips. If it fails on some documents the
+answer names them, and a part of the actions may have run there. Whether e-mails, webhooks, password
+removals and AI suggestions worked is not told by Paperless, and a call whose answer was lost is never
+sent again (decision-75). It needs the permissions to view workflows and to change documents, and
+ownership of every document (or none has an owner).
 
 ### `admin`
 

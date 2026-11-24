@@ -21,8 +21,20 @@ from mcp_server_paperless.domain.workflows import (
     WorkflowEdit,
     WorkflowInfo,
     WorkflowListing,
+    WorkflowRunReport,
 )
-from mcp_server_paperless.tools._shared import ANNOTATIONS, Confirm, boundary, services
+from mcp_server_paperless.tools._shared import (
+    ANNOTATIONS,
+    Confirm,
+    DocumentIds,
+    DryRun,
+    ExcludeIds,
+    Filters,
+    View,
+    boundary,
+    selection,
+    services,
+)
 
 TOOLSET = "workflows"
 
@@ -179,3 +191,49 @@ async def delete_workflow(
     user, first says how many triggers and actions are lost (see confirm).
     """
     return await services(ctx).workflows.delete(workflow, confirm=confirm)
+
+
+@provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["run_workflow"])
+@boundary
+async def run_workflow(  # noqa: PLR0913 -- one parameter per concept, described for the LLM
+    ctx: Context,
+    workflow: Workflow,
+    *,
+    document_ids: DocumentIds = None,
+    filters: Filters = None,
+    saved_view: View = None,
+    exclude_ids: ExcludeIds = None,
+    apply_filters: Annotated[
+        bool,
+        Field(
+            description=(
+                "true: documents that do not match the filters of its manual trigger are skipped, "
+                "and Paperless does not tell which. false: it runs on every chosen document."
+            )
+        ),
+    ] = True,
+    dry_run: DryRun = False,
+    confirm: Confirm = False,
+) -> WorkflowRunReport:
+    """Run a workflow with a manual trigger by hand on chosen documents, at most 100 per call.
+
+    The workflow has to be enabled; what it does is in list_workflows. Choose the documents by ids,
+    filters or saved_view. dry_run=true shows what it would do; without confirm a dialog, or an
+    error for you to show the user, names every document and every action first, with all e-mail
+    recipients and webhook hosts (see confirm). filters or saved_view alone never run anything on
+    confirm=true: pass the same again with the shown document_ids; the call is refused if one no
+    longer matches. Paperless runs it on one document after the other: failed names those it
+    failed on, where a part of the actions may have run, and the others go on. Whether e-mails,
+    webhooks, password removals and AI suggestions worked is not told. A run cannot be undone (what
+    it moves to the trash can be restored with restore_from_trash of the trash toolset) and every
+    call runs everything again: after an error, a failed document or an unconfirmed_task_id never
+    call it again on your own, ask the user. Needs the permissions to view workflows and to change
+    documents, and ownership of every document (or none has an owner); else nothing runs (blocked).
+    """
+    return await services(ctx).workflow_runs.run(
+        workflow,
+        selection(document_ids, filters, saved_view, exclude_ids),
+        apply_filters=apply_filters,
+        dry_run=dry_run,
+        confirm=confirm,
+    )
