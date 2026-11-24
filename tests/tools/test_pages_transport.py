@@ -17,12 +17,20 @@ from rendering.files import saved
 from test_http_uploads import DEFAULT, http_settings, listening
 
 from mcp_server_paperless.app import build_app
-from mcp_server_paperless.domain.rendering import MAX_IMAGE_BYTES, PageImage, Rendered
+from mcp_server_paperless.domain.rendering import (
+    MAX_IMAGE_BYTES,
+    ContactSheet,
+    Overview,
+    PageImage,
+    PageRun,
+    PageShape,
+    Rendered,
+)
 
 if TYPE_CHECKING:
     from fastmcp.client.client import CallToolResult
 
-    from mcp_server_paperless.domain.rendering import PageRenderer, RenderRequest
+    from mcp_server_paperless.domain.rendering import OverviewRequest, PageRenderer, RenderRequest
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-42")]
 
@@ -45,6 +53,29 @@ class Full:
         rest = tuple(range(6, 200, 2))
         return Rendered(page_count=200, images=images, rest=rest)
 
+    async def inspect(self, content: bytes, request: OverviewRequest) -> Overview:
+        assert (content, request.sheets) == (b"x", True)
+        size = MAX_IMAGE_BYTES // 5
+        sheets = tuple(
+            ContactSheet(
+                pages=tuple(range(n * 12 + 1, n * 12 + 13)),
+                width=1568,
+                height=1176,
+                data=os.urandom(size),
+            )
+            for n in range(5)
+        )
+        # The longest report: as many runs as there can be, of pages none next to another.
+        runs = tuple(
+            PageRun(
+                pages=tuple(range(100_001 + n, 200_000, 20_000)),
+                shape=PageShape(width_mm=1_234_567.8, height_mm=1_234_567.8, rotation=270),
+            )
+            for n in range(100)
+        )
+        rest = tuple(range(61, 200, 2))
+        return Overview(page_count=200, runs=runs, layout_rest=rest, sheets=sheets, rest=rest)
+
 
 def reader(original: bytes, mime_type: str) -> FakePaperless:
     state = seeded()
@@ -53,14 +84,20 @@ def reader(original: bytes, mime_type: str) -> FakePaperless:
 
 
 async def over_http(
-    fake: FakePaperless, renderer: PageRenderer | None, mode: str, arguments: dict[str, object]
+    fake: FakePaperless,
+    renderer: PageRenderer | None,
+    mode: str,
+    arguments: dict[str, object],
+    tool: str = "get_document_pages",
 ) -> CallToolResult:
     app = build_app(
-        serve(fake, renderer=renderer), http_settings(with_token=False), max_upload_bytes=DEFAULT
+        serve(fake, renderer=renderer, toolsets=["core", "pdf"]),
+        http_settings(with_token=False),
+        max_upload_bytes=DEFAULT,
     )
     with listening(app) as url:
         async with Client(StreamableHttpTransport(url), mode=mode) as client:
-            return await client.call_tool("get_document_pages", {"document_id": 7, **arguments})
+            return await client.call_tool(tool, {"document_id": 7, **arguments})
 
 
 def images(result: CallToolResult) -> list[bytes]:
@@ -76,6 +113,13 @@ async def test_the_bytes_of_a_call_fit_into_an_event_of_the_mcp_client(
 
     found = images(result)
     assert (len(found), sum(map(len, found))) == (parts, MAX_IMAGE_BYTES)
+
+
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+async def test_the_sheets_of_a_call_fit_into_an_event_of_the_mcp_client(mode: str) -> None:
+    result = await over_http(reader(b"x", "application/pdf"), Full(5), mode, {}, "inspect_pdf")
+
+    assert [len(image) for image in images(result)] == [MAX_IMAGE_BYTES // 5] * 5
 
 
 async def test_a_page_that_hardly_compresses_fits_over_http_and_says_it_is_reduced() -> None:
@@ -98,7 +142,8 @@ from harness import serve
 from rendering.files import QUADRANTS, pdf_of
 state = seeded()
 state.documents.append(FakeDocument(id=7, title="Scan", original=pdf_of([QUADRANTS])))
-serve(FakePaperless(state, user="admin"), stdio=True).run(transport="stdio", show_banner=False)
+server = serve(FakePaperless(state, user="admin"), stdio=True, toolsets=["core", "pdf"])
+server.run(transport="stdio", show_banner=False)
 """
 
 
@@ -112,7 +157,9 @@ async def test_pages_are_shown_over_stdio_and_the_stream_stays_clean() -> None:
         first = await client.call_tool("get_document_pages", {"document_id": 7})
         second = await client.call_tool("get_document_pages", {"document_id": 7, "size": 256})
 
-    assert len(images(first)) == len(images(second)) == 1
+        sheet = await client.call_tool("inspect_pdf", {"document_id": 7})
+
+    assert len(images(first)) == len(images(second)) == len(images(sheet)) == 1
 
 
 async def test_the_console_script_offers_the_tool_and_reports_an_unreachable_paperless() -> None:

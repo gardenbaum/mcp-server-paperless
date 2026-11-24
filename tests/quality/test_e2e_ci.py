@@ -343,7 +343,8 @@ def test_the_scope_command_prints_the_job_outputs_for_a_toolset_change() -> None
     assert code == 0
     lines = out.splitlines()
     assert lines[0] == "mode=fast"
-    assert lines[1] == f"targets={STDIO} {contract('test_pdf')} {e2e('test_pdf')}"
+    live = f"{contract('test_pdf')} {e2e('test_pages')} {e2e('test_pdf')}"
+    assert lines[1] == f"targets={STDIO} {live}"
 
 
 def test_the_scope_command_gives_each_part_its_group_and_skips_the_parts_without_work() -> None:
@@ -761,3 +762,11 @@ def test_a_changed_renderer_runs_the_live_tests_of_page_images(path: str) -> Non
     targets = e2e_ci.select([f"src/mcp_server_paperless/{path}"], live_modules=live).targets
 
     assert {e2e("test_pages"), e2e("test_pages_files")} <= set(targets)
+
+
+def test_a_changed_pdf_tool_runs_the_live_tests_of_inspect_pdf() -> None:
+    live = {path.relative_to(ROOT).as_posix() for path in (ROOT / "tests").glob("e2e/test_*.py")}
+
+    targets = e2e_ci.select(["src/mcp_server_paperless/tools/pdf.py"], live_modules=live).targets
+
+    assert {e2e("test_pages"), e2e("test_pdf")} <= set(targets)

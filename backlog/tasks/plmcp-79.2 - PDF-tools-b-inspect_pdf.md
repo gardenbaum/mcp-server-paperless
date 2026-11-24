@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:15Z'
-updated_date: '2026-11-24T11:06:35Z'
+updated_date: '2026-11-24T11:22:14Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -30,7 +30,7 @@ Second part of PLMCP-79 (design approved by the owner on 2026-11-24 (all 14 deci
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
@@ -45,3 +45,22 @@ Second part of PLMCP-79 (design approved by the owner on 2026-11-24 (all 14 deci
 4. Decision for MEDIA_TOOLS (design D3, inspect part; 61 holds the dry_run part).
 5. Tool, transport, missing file, registry, sweep and E2E tests; docs/tools.md and api-coverage.md regenerated.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner approval (copied from the design): "Presented to the owner as numbered decisions 1 to 14 with the recommendations above (1 B, 2 four pull requests with a Backlog task each, 3a incl. merge and remove_document_password, 4 no, 5a, 6a incl. delete_original(s), 7 limit 2,880, 8 dry_run, 9 contact sheets, 10 first option, 11 yes, 12 without finish_split, 13 skip, 14 PDFs only). Owner: 'Bitte alles wie von dir empfohlen umsetzen.' Excluded parameters (6) are thereby owner-approved exclusions of 2026-11-24."
+
+Changed on purpose, with reasons:
+- OVERVIEW_GUIDE_LIMIT 2835 -> 2849: the 14 bytes of the name inspect_pdf (owner: at most 2880 for the three tools). DEFINITION_ADDED_LIMIT unchanged (879).
+- Surface snapshot (all, read-only): inspect_pdf added, no other entry changed. docs/tools.md and docs/api-coverage.md regenerated.
+- MEDIA_TOOLS + inspect_pdf: decision-65 (number from the CLI; inspect part of design D3, 61 holds the dry_run part).
+- test_every_writing_pdf_tool_has_a_preview counts writing tools only (inspect_pdf has nothing to preview); still 7.
+- e2e_ci: a change of the pdf toolset also runs tests/e2e/test_pages.py, which holds the live tests of inspect_pdf; the pinned scope test says so.
+- get_document_pages: source="archive" of a file it cannot show and without an archive now says that at once instead of sending the caller to source="original", which was refused then.
+- README said 91 tools in one place: now 94 everywhere.
+
+Design choices: layout covers the pages asked for (default all), also with the overview; a page that cannot be read is a run without size and an empty tile instead of failing the call; sheets share the 720 KiB (a lower quality first) so 60 pages are always shown if time allows; the 20 s stop is between tiles, the layout takes at most half of it, at least one page is always shown. Measured on macOS: 60 A4 scans of 300 dpi (120 MB, one picture repeated) 2.6 s, 360 MB.
+Known limit: a UserUnit of the file is not applied to sizes (PDFium does not report it); in docs/configuration.md.
+Not run locally: E2E, the full suite, the runner tests near 100 megapixels, mutation. The weight of test_pages.py (49 s) was not re-measured.
+<!-- SECTION:NOTES:END -->

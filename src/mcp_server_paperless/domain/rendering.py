@@ -232,6 +232,66 @@ class PagesReport(BaseModel):
     note: str
 
 
+class LayoutRun(BaseModel):
+    """Pages after one another of the same size and rotation.
+
+    Attributes:
+        pages: Their page specification.
+        rotation: As stored in the file; null with the size if the pages cannot be read.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    pages: str
+    width_mm: float | None
+    height_mm: float | None
+    rotation: int | None
+
+
+class ShownSheet(BaseModel):
+    """One contact sheet among the images of a result: the page of each tile, row by row."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    pages: tuple[int, ...]
+    width: int
+    height: int
+    size_bytes: int
+    reduced: bool
+
+
+class InspectionReport(BaseModel):
+    """What a call of inspect_pdf found, and how to go on.
+
+    Attributes:
+        layout_rest: The page specification of the pages the layout does not cover any more.
+        next_pages: The same for the sheets.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    document_id: int
+    version_id: int
+    source: Literal["original", "archive"]
+    filename: str | None
+    page_count: int
+    layout: tuple[LayoutRun, ...]
+    layout_rest: str | None
+    sheets: tuple[ShownSheet, ...]
+    next_pages: str | None
+    web_url: str
+    note: str
+
+
+class Inspection(BaseModel):
+    """The report and the sheets it lists, in the same order."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    report: InspectionReport
+    sheets: tuple[ContactSheet, ...]
+
+
 class DocumentPages(BaseModel):
     """The report and the images it lists, in the same order."""
 

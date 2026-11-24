@@ -17,6 +17,8 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.domain.rendering import (
+    Overview,
+    OverviewRequest,
     PageImage,
     Rendered,
     RenderFailed,
@@ -55,6 +57,9 @@ class Renderer:
         if isinstance(self.found, RenderFailed):
             raise self.found
         return self.found
+
+    async def inspect(self, content: bytes, request: OverviewRequest) -> Overview:
+        raise AssertionError((content, request))
 
 
 class Slow(Renderer):

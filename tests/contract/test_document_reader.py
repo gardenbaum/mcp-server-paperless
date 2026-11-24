@@ -9,11 +9,13 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import pytest
-from e2e.helpers import pdf
+from e2e.helpers import pdf, pdf_pages
 from fakes.accounts import PRIVATE_CONTENT, PUBLIC_ASN, PUBLIC_NOTE
 
 from mcp_server_paperless.domain.documents import DocumentQuery
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.rendering.runner import ChildRenderer
+from mcp_server_paperless.services.pages import PageService
 
 if TYPE_CHECKING:
     from e2e.helpers import FilePart
@@ -710,3 +712,22 @@ async def test_a_document_without_its_thumbnail_says_so(backend: Backend) -> Non
 
     with pytest.raises(NotFound, match=f"cannot find the thumbnail of document {number}"):
         _ = await backend.admin.documents.get_document_thumbnail(number)
+
+
+@pytest.mark.contract("DocumentReader.get_document_file")
+@pytest.mark.contract("DocumentReader.get_document_metadata")
+async def test_the_original_and_the_archive_of_a_pdf_can_be_inspected(backend: Backend) -> None:
+    title = named("inspect")
+    content = pdf_pages([f"{title} {n}" for n in range(1, 4)])
+    number = backend.upload(title, "inspect.pdf", content, "application/pdf")
+    service = PageService(backend.admin.documents, ChildRenderer(), web_url="http://paperless/")
+
+    for source in ("original", "archive"):
+        found = await service.inspect(number, "1-", source=source)
+
+        assert (found.report.source, found.report.page_count) == (source, 3)
+        assert [run.pages for run in found.report.layout] == ["1-3"]
+        assert [sheet.pages for sheet in found.report.sheets] == [(1, 2, 3)]
+    hidden = PageService(backend.reader.documents, ChildRenderer(), web_url="http://paperless/")
+    with pytest.raises(NotFound):
+        _ = await hidden.inspect((await document(backend.admin, PRIVATE)).id, "1-")
