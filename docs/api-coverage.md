@@ -244,7 +244,6 @@ TOML file.
 | `POST /api/documents/reprocess/` | `body:from_webui` | PLMCP-83 |
 | `POST /api/documents/rotate/` | `body:all`, `body:excluded_documents`, `body:filters`, `body:source_mode` | PLMCP-79 |
 | `POST /api/documents/rotate/` | `body:from_webui` | PLMCP-83 |
-| `GET /api/documents/{id}/` | `query:version` | PLMCP-75 |
 | `GET /api/documents/{id}/` | `query:full_perms` | PLMCP-83 |
 | `PATCH /api/documents/{id}/` | `body:content`, `query:version` | PLMCP-75 |
 | `PATCH /api/documents/{id}/` | `body:created_date`, `body:remove_inbox_tags` | PLMCP-83 |

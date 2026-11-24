@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 
 import pytest
 from fakes.accounts import ADMIN, PUBLIC_NOTE, READER
-from fakes.paperless import FakePaperless, FakeTaxonomy, FakeUser, seeded
+from fakes.paperless import FakeFile, FakePaperless, FakeTaxonomy, FakeUser, seeded
 
 from mcp_server_paperless.domain.documents import (
     DocumentQuery,
@@ -21,6 +21,7 @@ from mcp_server_paperless.services.documents import (
     DEFAULT_SLICE,
     DocumentService,
     document_link,
+    text_state,
 )
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
@@ -408,6 +409,41 @@ async def test_content_comes_in_slices_with_the_offset_of_the_next() -> None:
     assert (last.content, last.next_offset, last.total_chars) == ("89", None, 10)
     assert last.document_id == 1
     assert last.web_url == "https://paperless.example/documents/1/details"
+
+
+@pytest.mark.decision("decision-48")
+async def test_a_slice_names_its_version_and_the_state_of_the_whole_text() -> None:
+    state = seeded()
+    [root] = state.documents[0].versions
+    newer = root.model_copy(update={"id": 20, "is_root": False})
+    state.documents[0].versions.insert(0, newer)
+    state.documents[0].version_files = {
+        1: FakeFile(b"", None, "same text", "text/plain"),
+        20: FakeFile(b"", None, "same text", "text/plain"),
+    }
+    state.documents[0].content = "same text"
+    search = service(FakePaperless(state, user=ADMIN[0]))
+
+    first = await search.content(1, offset=0, max_chars=4)
+    rest = await search.content(1, offset=4, max_chars=400)
+    old = await search.content(1, offset=0, max_chars=4, version_id=1)
+
+    assert (first.version_id, old.version_id) == (20, 1)
+    assert first.text_state == rest.text_state == text_state(1, 20, "same text")
+    # Versions often have the same text: the state tells them apart.
+    assert old.text_state == text_state(1, 1, "same text") != first.text_state
+    state.documents[0].content = "same texT"
+    assert (await search.content(1, offset=0, max_chars=4)).text_state != first.text_state
+
+
+@pytest.mark.decision("decision-48")
+def test_the_state_of_a_text_takes_any_text() -> None:
+    states = {
+        text_state(*parts) for parts in ((1, 1, ""), (1, 1, "\ud800"), (1, 2, ""), (2, 1, ""))
+    }
+
+    assert len(states) == 4
+    assert all(len(state) == 32 for state in states)
 
 
 async def test_a_slice_ending_exactly_at_the_end_has_no_next() -> None:

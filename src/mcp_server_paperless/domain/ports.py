@@ -38,6 +38,7 @@ if TYPE_CHECKING:
         DocumentPatch,
         DocumentQuery,
         DocumentRecord,
+        DocumentText,
         DocumentUpload,
         DocumentVersion,
         FileMetadata,
@@ -131,11 +132,14 @@ class DocumentReader(Protocol):
         """
         ...
 
-    async def get_document_content(self, document_id: int) -> str:
-        """The whole OCR text of a document; services slice it.
+    async def get_document_content(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> DocumentText:
+        """The whole OCR text of a version of a document (default: the newest); services slice it.
 
         Raises:
-            NotFound: No such document, or the user may not see it.
+            NotFound: No such document, the user may not see it, or it lists no such version (a
+                deleted one is not listed).
             PermissionDenied: The user lacks the global ``view_document`` permission.
         """
         ...

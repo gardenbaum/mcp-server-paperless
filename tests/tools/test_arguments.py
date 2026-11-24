@@ -884,7 +884,11 @@ async def test_documents_are_read_with_every_section_and_slice() -> None:
         {"document_id": 1, "include": ["notes", "history", "metadata", "versions", "suggestions"]},
         (),
     )
-    await sweep("get_document_content", {"document_id": 1, "offset": 1, "max_chars": 10}, ())
+    await sweep(
+        "get_document_content",
+        {"document_id": 1, "offset": 1, "max_chars": 10, "version_id": 1},
+        (),
+    )
     await sweep("get_document_thumbnail", {"document_id": 1}, ())
     await sweep(
         "get_document_pages",

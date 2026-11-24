@@ -1,10 +1,11 @@
 ---
 id: PLMCP-75
 title: Correct the text of a document
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T12:14:46Z'
-updated_date: '2026-11-23T19:20:37Z'
+updated_date: '2026-11-24T00:41:32Z'
 labels: []
 dependencies:
   - PLMCP-74
@@ -37,6 +38,18 @@ Once a page can be read as an image, a wrong or missing OCR passage should be co
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Approved design (2026-11-23) with the controller decisions: tool correct_document_text in versions, short preview plus full dry_run, documented race window.
+1. Read: get_document_content with version_id and text_state (domain, port, adapter, fake, contract, service, tool).
+2. Write port set_document_text: PATCH always with version and content in fields; adapter, fake, contract.
+3. domain excerpt and services/text_edits.py: text_state check, unique passage, limits, preview through ConfirmationRequired.require with scope (version, text read, new text), dry_run with the full change in parts, re-read after the write.
+4. Tool, confirmation tables, E2E, snapshot and budgets (declared).
+5. Decision, docs, api coverage, doc-1.
+Every step: failing test first.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

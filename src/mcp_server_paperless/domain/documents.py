@@ -438,6 +438,19 @@ class DocumentRecord(BaseModel):
         return self.id, self.versions[0].id if self.versions else None
 
 
+class DocumentText(BaseModel):
+    """The whole OCR text of one version of a document, and what a change of it needs to know."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    title: str
+    version_id: int
+    versions: tuple[DocumentVersion, ...]
+    user_can_change: bool
+    content: str = Field(repr=False)
+
+
 class SuggestionNames(BaseModel):
     """Suggestions with names; a name is null if the user may not see that object."""
 
@@ -560,6 +573,8 @@ class ContentSlice(BaseModel):
     next_offset: Annotated[
         int | None, Field(description="Offset of the next slice, null at the end of the text.")
     ]
+    version_id: Annotated[int, Field(description="The version this text belongs to.")]
+    text_state: Annotated[str, Field(description="Fingerprint of the whole text of this version.")]
     web_url: Annotated[str, Field(description="Link to the document in the Paperless web UI.")]
 
 

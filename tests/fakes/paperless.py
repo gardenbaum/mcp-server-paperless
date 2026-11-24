@@ -92,6 +92,7 @@ from mcp_server_paperless.domain.documents import (
     DocumentPatch,
     DocumentQuery,
     DocumentRecord,
+    DocumentText,
     DocumentUpload,
     DocumentVersion,
     FileMetadata,
@@ -3340,9 +3341,25 @@ class FakePaperless:
         state.tasks.append(task)
         return task.task_id
 
-    async def get_document_content(self, document_id: int) -> str:
-        """`DocumentReader.get_document_content` (retrieve with `fields=content`)."""
-        return self._seen(document_id).content
+    async def get_document_content(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> DocumentText:
+        """`DocumentReader.get_document_content` (retrieve with `fields`); listed versions only."""
+        document = self._seen(document_id)
+        newest = document.versions[0].id
+        wanted = newest if version_id is None else version_id
+        if wanted not in [v.id for v in document.versions]:
+            raise unseen_version(document_id, wanted)
+        return DocumentText(
+            id=document_id,
+            title=document.title,
+            version_id=wanted,
+            versions=tuple(document.versions),
+            user_can_change=document.changeable_by(self.user),
+            content=(
+                document.content if wanted == newest else document.version_files[wanted].content
+            ),
+        )
 
     async def list_document_notes(self, document_id: int) -> tuple[Note, ...]:
         """`DocumentReader.list_document_notes` (the `notes` action: `view_note` is required)."""
