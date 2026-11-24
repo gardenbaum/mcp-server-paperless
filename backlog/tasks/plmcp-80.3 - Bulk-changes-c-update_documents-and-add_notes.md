@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:34Z'
-updated_date: '2026-11-24T17:39:35Z'
+updated_date: '2026-11-24T17:51:48Z'
 labels:
   - bulk
 dependencies:
@@ -24,10 +24,10 @@ Third part of PLMCP-80: different values need one call per document. Design appr
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 update_documents changes up to 100 documents with individual values in one call, every field update_document knows, with preview, confirmation and a result per document
-- [ ] #2 Everything that can be known beforehand is checked before the first write; a failure names what was and was not changed
-- [ ] #3 add_notes adds notes to many documents with a result per document and skips a note whose text is already there
-- [ ] #4 Contract, tool and E2E tests cover limits, rate, partial failures and a restricted user
+- [x] #1 update_documents changes up to 100 documents with individual values in one call, every field update_document knows, with preview, confirmation and a result per document
+- [x] #2 Everything that can be known beforehand is checked before the first write; a failure names what was and was not changed
+- [x] #3 add_notes adds notes to many documents with a result per document and skips a note whose text is already there
+- [x] #4 Contract, tool and E2E tests cover limits, rate, partial failures and a restricted user
 <!-- AC:END -->
 
 ## Definition of Done
@@ -80,4 +80,9 @@ Deviations not listed before: different notes show the start of the first 20 onl
 Second review round (from 49a3ca9; the hosted full E2E of 49a3ca9, 45443967598, was green, with the silence rule that is now taken back).
 A: what an earlier item mirrors is simulated, so two documents given away that link each other are changed; a list that would be sent again after giving away is refused, and where no order helps an earlier call is named. B: my cuts at 300/600 characters shortened ordinary refusals and are gone; a refusal is told in full up to 100,000 characters. OPEN, owner: that bound, together with the 100,000 of the answer. C: two lost answers in a row stop again, also if looked up (design 3.3), in both services. Cause of the failed 100-document test: the bare rows had no filename, so Paperless's handler returns before refresh_from_db and the POST answers the notes prefetched before [read in the source]. The rows get the name Paperless itself would generate, so the handler refreshes and moves no file; that the generated name equals the stored one and nothing is moved is read, not run. D: an answer without a note of the sent text is unusable (add_note too); an adapter test that pinned the opposite is replaced. Paperless only strips the text (DRF CharField) [read in the source; contract test]. E, G: affected ids named. F: decision-73 says what the 40 s do not bound. An owner change that ended unknown is named as perhaps given away, in the error too. Mutants at LINK_NEEDS and six more: killed.
 Correction of the dialog sizes: 598 links with 120-character titles give 47,769 characters (11,207 was with short titles).
+
+Owner, 2026-11-24, approved as recommended by the main agent: "Bitte alles wie von dir empfohlen." (a) names of new tags uncut in the dialog (6a), escaped as usual: done, also where every character is escaped; the hostile-text test allows it in exactly that one place. (b) 100,000 characters for the update_documents answer and for refusals. (c) WORST 3403 to 4897 for the restored hostile case, dialog not capped, owner changes and new tags first. decision-73 records all three and supersedes the 3403 of decision-64 and the cut of new tag names.
+OPEN, owner: with (a) the same hostile case measures 5388 characters, above the approved 4897. WORST stays 4897, so test_names_made_of_escapes_only_do_not_make_a_refusal_endless[update_documents] is RED.
+Evidence for the acceptance criteria, live on 5c33911 (PR e2e tier of CI 45451032212, four parts green, on Paperless 3.5.1): 12 contract tests and the E2E tests of tests/*/test_bulk_items.py passed; update_documents 100 documents in 8.3 s, add_notes 100 in 6.3 s without a lost answer (so the rows with a file name take the normal path). The commit after that changes the dialog text of new tags only.
+Not ticked: the Definition of Done (one test red, not merged).
 <!-- SECTION:NOTES:END -->

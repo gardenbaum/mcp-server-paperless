@@ -756,10 +756,8 @@ async def test_owner_changes_and_new_tags_are_shown_in_full_also_beyond_twenty()
         create=True,
     )
 
-    # As every text the server did not write: cut to 60 characters (decision-44), but bound.
-    shown = long[:59] + "…"
     also = "'Other' (also for 'OTHER')"
-    assert f"create the tags '{shown}', {also}, private to you" in refusal.message
+    assert f"create the tags '{long}', {also}, private to you" in refusal.message
     start = "Nothing was changed. Confirming would change the owner of document 121"
     assert refusal.message.startswith(start)
     places = [refusal.message.index(part) for part in (start, "create the tags", "change 24")]
@@ -862,12 +860,28 @@ async def test_other_documents_behind_the_same_count_ask_again() -> None:
     assert prints[0] != prints[1]
 
 
+@pytest.mark.parametrize("letter", ["x", chr(0x1F676)])
+async def test_the_longest_new_tag_is_shown_whole_with_every_spelling(letter: str) -> None:
+    # Also one made of escapes only, which other texts are cut for (decision-64).
+    setup = Setup(writes=False)
+    shown = "x" if letter == "x" else r"\ud83d\ude76"
+
+    refusal = await setup.asked(
+        item(101, tags_add=[letter * 124 + "case"]),
+        item(102, tags_add=[letter * 124 + "CASE"]),
+        create=True,
+    )
+
+    whole = f"create the tag '{shown * 124}case' (also for '{shown * 124}CASE'), private"
+    assert whole in refusal.message
+    assert letter == "x" or letter not in refusal.message
+
+
 async def test_other_new_tags_behind_the_same_text_ask_again() -> None:
     setup = Setup(writes=False)
-    start = "x" * 70
-
-    one = await setup.asked(item(101, tags_add=[start + "1"]), create=True)
-    two = await setup.asked(item(101, tags_add=[start + "2"]), create=True)
+    # Hidden characters are dropped from what is shown.
+    one = await setup.asked(item(101, tags_add=["new"]), create=True)
+    two = await setup.asked(item(101, tags_add=["n\u200bew"]), create=True)
 
     assert one.message == two.message
     assert one.fingerprint != two.fingerprint

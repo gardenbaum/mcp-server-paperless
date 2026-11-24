@@ -48,6 +48,7 @@ from mcp_server_paperless.services.bulk_documents import DRY_RUN, READ_AGAIN, TO
 from mcp_server_paperless.services.bulk_operations import named
 from mcp_server_paperless.services.custom_values import linked
 from mcp_server_paperless.services.document_edits import (
+    MAX_TITLE,
     EditPlan,
     affected,
     implicit,
@@ -121,6 +122,9 @@ NOT_OWNER: Final = "Only its owner may change the owner."
 MAX_NUMBER: Final = 2**32 - 1
 GO_ON: Final = "Pass the items in left again; what is done stays as it is."
 CORRECT: Final = "Correct these items or leave them out; the others were not changed."
+# A new tag's name is shown whole (owner, 2026-11-24): the room ``quoted`` gives 768 characters holds
+# the longest name with every character escaped.
+NEW_TAG: Final = 6 * MAX_TITLE
 # Characters of a refusal around what is wrong with an item, at most.
 ITEM_CHARS: Final = 100
 # What was sent to Paperless, or would be.
@@ -796,8 +800,8 @@ def _all(wrong: Mapping[int, str]) -> str:
 
 
 def _spelled(name: str, also: Sequence[str]) -> str:
-    more = f" (also for {', '.join(map(quoted, also))})" if also else ""
-    return f"{quoted(name)}{more}"
+    more = f" (also for {', '.join(quoted(n, NEW_TAG) for n in also)})" if also else ""
+    return f"{quoted(name, NEW_TAG)}{more}"
 
 
 def _joined(changes: Sequence[_Change]) -> str:

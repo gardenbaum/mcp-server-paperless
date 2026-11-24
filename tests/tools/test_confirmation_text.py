@@ -54,6 +54,10 @@ DESTINATIONS: Final = frozenset(
 )
 
 
+# A tag that update_documents would create is named whole (decision-73), in this place only.
+NEW_TAG: Final = f"; create the tag '{SHOWN}', private to you until shared"
+
+
 # The one tool that shows a piece of document text: as JSON, both ends of it (decision-48).
 EXCERPT: Final = re.compile(rf'''"(?:(?!'')[^"\\{CLOSING}]|\\u[0-9a-f]{{4}}|\\.){{0,190}}"''')
 FORGED: Final = "".join(
@@ -247,15 +251,19 @@ async def test_hostile_text_stands_in_a_refusal_only_quoted_and_cut(tool: str) -
     message = "".join(getattr(block, "text", "") for block in result.content)
     assert message.startswith("Nothing was changed. Confirming would "), message
     excerpts = tool == "correct_document_text"
+    if tool == "update_documents":  # the name of a new tag, whole and escaped, in one place
+        assert message.count(NEW_TAG) == 1
+        message = message.replace(NEW_TAG, "")
     # Only a destination is shown as it is (decision-64).
     assert tool in DESTINATIONS or not set(CLOSING).intersection(message)
     assert leaks(message, whole=tool in DESTINATIONS, excerpts=excerpts) == ""
     assert ("(left out: " in EXCERPT.sub("", message)) == excerpts
 
 
-# The server itself caps no refusal. The longest here (update_user, which names the user and their
-# groups and permissions many times) has 3403 characters.
-WORST: Final = 3403
+# The server itself caps no refusal. The owner approved 4897 on 2026-11-24 for update_documents
+# (decision-73; before 3403, update_user, which names the user and their groups and permissions many
+# times).
+WORST: Final = 4897
 
 
 @pytest.mark.decision("decision-64")
