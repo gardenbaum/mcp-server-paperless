@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
     from mcp_server_paperless.domain.documents import DocumentText, Ordering
     from mcp_server_paperless.domain.selection import DocumentRow, DocumentsRead, ReadField
+    from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-70")]
 
@@ -52,6 +53,12 @@ class Reading(FakePaperless):
         self.errors: dict[int, PaperlessMcpError] = {}
         self.vanished: set[int] = set()
         self.row_error: PaperlessMcpError | None = None
+        self.listed: list[TaxonomyKind] = []
+
+    @override
+    async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
+        self.listed.append(kind)
+        return await super().list_taxonomy(kind)
 
     @override
     async def read_rows(
@@ -220,6 +227,7 @@ async def test_names_are_looked_up_only_for_the_fields_asked_for() -> None:
     found = await setup.read(("title", "tags"), document_ids=(PUBLIC,))
 
     assert [tag.name for tag in found.documents[0].tags or ()] == [None, None, None]
+    assert setup.fake.listed == ["tag"]
 
 
 async def test_pages_go_through_one_selection_and_the_first_names_all_of_it() -> None:
@@ -236,6 +244,8 @@ async def test_pages_go_through_one_selection_and_the_first_names_all_of_it() ->
     assert (second.matched, second.selected_ids) == (5, ())
     assert (first.page, first.next_page) == (1, 2)
     assert (second.page, second.next_page) == (2, None)
+    last = await setup.read(("title",), page=2, page_size=3, filters=scratch, exclude_ids=(12,))
+    assert ids(last) == [10]
     with pytest.raises(NotFound) as raised:
         _ = await setup.read(page=3, page_size=2, filters=scratch, exclude_ids=(12,))
     assert raised.value.message == "Page 3 is beyond the last page of the selection."
@@ -398,6 +408,19 @@ async def test_rows_beyond_the_size_of_the_answer_are_left_out_and_named() -> No
     assert found.truncated
     assert (*ids(found), *found.left) == found.selected_ids
     assert len(found.left) > 10
+
+
+async def test_the_size_holds_whatever_the_rows_add_up_to() -> None:
+    setup = Setup()
+    for number in range(1001, 1101):
+        setup.add(number)
+
+    for length in range(1000, 2000, 25):
+        for document in setup.state.documents:
+            document.notes = [note("n" * length)]
+        found = await setup.read(("notes",), filters={"title_contains": "scratch"}, page_size=100)
+        assert size(found) <= MAX_ANSWER
+        assert found.truncated
 
 
 async def test_a_row_too_large_alone_is_shown_without_its_largest_field() -> None:
