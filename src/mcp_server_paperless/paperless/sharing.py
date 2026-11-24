@@ -30,6 +30,7 @@ from mcp_server_paperless.domain.sharing import (
     ShareBundle,
     ShareLink,
 )
+from mcp_server_paperless.domain.urls import text_without_credentials
 from mcp_server_paperless.paperless.pagination import MAX_ITEMS, Page, collect
 
 if TYPE_CHECKING:
@@ -139,8 +140,8 @@ def _error_text(error: object) -> str | None:
     elif isinstance(error, dict) and isinstance(error.get("message"), str):  # pyright: ignore[reportUnknownMemberType] -- JSON
         text = str(error["message"])  # pyright: ignore[reportUnknownArgumentType] -- JSON
     else:
-        text = json.dumps(error)
-    line = " ".join(text.split())
+        text = json.dumps(error, ensure_ascii=False)
+    line = " ".join(text_without_credentials(text).split())
     return line if len(line) <= MAX_ERROR else line[: MAX_ERROR - 1] + "…"
 
 

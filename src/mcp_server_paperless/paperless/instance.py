@@ -18,6 +18,7 @@ from mcp_server_paperless.domain.instance import (
     InstanceStatistics,
     SystemStatus,
 )
+from mcp_server_paperless.domain.urls import text_without_credentials
 from mcp_server_paperless.paperless.client import parse, unexpected
 
 if TYPE_CHECKING:
@@ -80,21 +81,24 @@ class _UiSettings(BaseModel):
     settings: _Settings
 
 
+def _component(status: str, error: str | None) -> ComponentStatus:
+    shown = None if error is None else text_without_credentials(error)
+    return ComponentStatus(status=status, error=shown)
+
+
 def _system_status(wire: _Status) -> SystemStatus:
     tasks = wire.tasks
     return SystemStatus(
         install_type=wire.install_type,
         storage_total_bytes=wire.storage.total,
         storage_available_bytes=wire.storage.available,
-        database=ComponentStatus(status=wire.database.status, error=wire.database.error),
-        redis=ComponentStatus(status=tasks.redis_status, error=tasks.redis_error),
-        celery=ComponentStatus(status=tasks.celery_status, error=tasks.celery_error),
-        search_index=ComponentStatus(status=tasks.index_status, error=tasks.index_error),
-        classifier=ComponentStatus(status=tasks.classifier_status, error=tasks.classifier_error),
-        sanity_check=ComponentStatus(
-            status=tasks.sanity_check_status, error=tasks.sanity_check_error
-        ),
-        llm_index=ComponentStatus(status=tasks.llmindex_status, error=tasks.llmindex_error),
+        database=_component(wire.database.status, wire.database.error),
+        redis=_component(tasks.redis_status, tasks.redis_error),
+        celery=_component(tasks.celery_status, tasks.celery_error),
+        search_index=_component(tasks.index_status, tasks.index_error),
+        classifier=_component(tasks.classifier_status, tasks.classifier_error),
+        sanity_check=_component(tasks.sanity_check_status, tasks.sanity_check_error),
+        llm_index=_component(tasks.llmindex_status, tasks.llmindex_error),
     )
 
 

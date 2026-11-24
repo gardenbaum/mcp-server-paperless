@@ -109,6 +109,17 @@ async def test_a_failed_task_reports_the_error_message_never_the_traceback(
     assert "consumer.py" not in status.model_dump_json()
 
 
+@pytest.mark.decision("decision-66")
+async def test_the_message_of_a_task_holds_no_credentials_of_a_url(
+    make_client: ClientFactory,
+) -> None:
+    row: Json = {**FAILED, "result_data": {"error_message": "to https://user:pw@h.example/x"}}
+
+    status = await PaperlessTaskReader(make_client(Tasks(row))).get_task(UUID)
+
+    assert status.message == "to https://h.example/x"
+
+
 async def test_a_task_that_wrote_several_documents_reports_them_all(
     make_client: ClientFactory,
 ) -> None:

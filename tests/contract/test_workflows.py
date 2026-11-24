@@ -137,6 +137,26 @@ async def test_an_email_and_a_webhook_keep_their_nested_settings(backend: Backen
     assert made.actions[1].settings["webhook"] == hook
 
 
+@pytest.mark.decision("decision-66")
+@pytest.mark.contract(CREATE)
+@pytest.mark.contract(UPDATE)
+async def test_a_webhook_url_is_stored_as_sent_and_written_back_under_a_new_action_id(
+    backend: Backend,
+) -> None:
+    hook: dict[str, JsonValue] = {"url": "https://user:pw@example.org/hook?a=b@c", "params": {}}
+    actions = (WorkflowAction(type=4, settings={"webhook": hook}),)
+    writer = backend.admin.workflow_writes
+    made = await writer.create_workflow(scratch(), safe(actions=actions))
+
+    again = await writer.update_workflow(made.id, WorkflowValues(actions=actions))
+
+    for workflow in (made, again):
+        stored = workflow.actions[0].settings["webhook"]
+        assert isinstance(stored, dict)
+        assert stored["url"] == hook["url"]
+    assert made.actions[0].id != again.actions[0].id
+
+
 @pytest.mark.contract(CREATE)
 async def test_a_scheduled_trigger_keeps_its_schedule(backend: Backend) -> None:
     schedule: dict[str, JsonValue] = {
