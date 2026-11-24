@@ -75,9 +75,17 @@ def world() -> FakeState:
             enabled=False,
             triggers=(WorkflowTrigger(id=1, type=2, settings={"filter_has_tags": [1]}),),
             actions=(WorkflowAction(id=2, type=5, settings={}),),
-        )
+        ),
+        Workflow(
+            id=2,
+            name="By hand",
+            order=1,
+            enabled=True,
+            triggers=(WorkflowTrigger(id=3, type=5, settings={"filter_has_tags": [1]}),),
+            actions=(WorkflowAction(id=4, type=1, settings={"assign_tags": [4]}),),
+        ),
     ]
-    state.workflow_object_id[0] = 2
+    state.workflow_object_id[0] = 4
     return state
 
 
@@ -168,6 +176,7 @@ CALLS: Final[dict[str, Json]] = {
     },
     "update_workflow": {"workflow": "Filing", "enabled": True},
     "delete_workflow": {"workflow": "Filing"},
+    "run_workflow": {"workflow": "By hand", "document_ids": [10, 11], "apply_filters": False},
     "upload_document": {
         "content_base64": base64.b64encode(KNOWN).decode(),
         "filename": "x.pdf",

@@ -5540,11 +5540,11 @@
         webhook: url, headers, params or body, include_document), 'move to trash' (undo with
         restore_from_trash, trash toolset, or in the web UI) and 'remote OCR' (consumption triggers only).
         Settings of another action type than the one given are an error. Password removal and applying AI
-        suggestions cannot be written here; use the Paperless web UI. A 'manual' trigger (run by hand) is
-        listed but cannot be written here either.
+        suggestions cannot be written here; use the Paperless web UI. A 'manual' trigger (for
+        run_workflow) is listed but cannot be written here either.
         
         A workflow runs by itself on every matching document once it is enabled (one with only manual
-        triggers runs when a user runs it by hand). Without confirm, an
+        triggers runs only with run_workflow or in the web UI). Without confirm, an
         enabled workflow that moves to trash, e-mails, calls a webhook, removes things or changes owner or
         permissions needs the user's yes: a dialog, or an error for you to show the user, first says what
         it would do (see confirm). Disabled workflows and plain filing (tags, title, correspondent and so
@@ -21248,6 +21248,540 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'workflows',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': True,
+        'idempotentHint': False,
+        'openWorldHint': True,
+        'readOnlyHint': False,
+        'title': 'Run workflow',
+      }),
+      'description': '''
+        Run a workflow with a manual trigger by hand on chosen documents, at most 100 per call.
+        
+        The workflow has to be enabled; what it does is in list_workflows. Choose the documents by ids,
+        filters or saved_view. dry_run=true shows what it would do; without confirm a dialog, or an
+        error for you to show the user, names every action and every document first, with all e-mail
+        recipients and webhook hosts (see confirm). A run whose confirmation would be longer than 100000
+        characters is refused, confirm=true included; the preview shows the actions that fit into that
+        (incomplete). filters or saved_view alone never run anything on
+        confirm=true: pass the same again with the shown document_ids; the call is refused if one no
+        longer matches. Paperless runs it on one document after the other: failed names those it
+        failed on, where a part of the actions may have run, and the others go on. Whether e-mails,
+        webhooks, password removals and AI suggestions worked is not told. A run cannot be undone (what
+        it moves to the trash can be restored with restore_from_trash of the trash toolset) and every
+        call runs everything again: after an error, a failed document or an unconfirmed_task_id never
+        call it again on your own, ask the user. Needs the permissions to view workflows and to change
+        documents, and that you own every document or it has no owner; else nothing runs (blocked).
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'apply_filters': dict({
+            'default': True,
+            'description': 'true: documents that do not match the filters of its manual trigger are skipped, and Paperless does not tell which. false: it runs on every chosen document.',
+            'type': 'boolean',
+          }),
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'document_ids': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'type': 'integer',
+                }),
+                'maxItems': 100,
+                'minItems': 1,
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Ids of the documents, at most 100. With filters or saved_view: exactly these, refused if one of them no longer matches.',
+          }),
+          'dry_run': dict({
+            'default': False,
+            'description': 'true shows what it would do and on which documents, and runs nothing; it needs no confirm. Do it first.',
+            'type': 'boolean',
+          }),
+          'exclude_ids': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'type': 'integer',
+                }),
+                'maxItems': 100,
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Documents to leave out of what filters or saved_view match.',
+          }),
+          'filters': dict({
+            'anyOf': list([
+              dict({
+                'additionalProperties': False,
+                'description': 'The filters of search_documents, with the same names and meaning; all are ANDed.',
+                'properties': dict({
+                  'added_from': dict({
+                    'anyOf': list([
+                      dict({
+                        'format': 'date',
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'added_to': dict({
+                    'anyOf': list([
+                      dict({
+                        'format': 'date',
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'correspondent': dict({
+                    'anyOf': list([
+                      dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'integer',
+                          }),
+                        ]),
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'created_from': dict({
+                    'anyOf': list([
+                      dict({
+                        'format': 'date',
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'created_to': dict({
+                    'anyOf': list([
+                      dict({
+                        'format': 'date',
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'custom_field_query': dict({
+                    'anyOf': list([
+                      dict({
+                        'items': dict({
+                        }),
+                        'type': 'array',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'document_type': dict({
+                    'anyOf': list([
+                      dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'integer',
+                          }),
+                        ]),
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'has_correspondent': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'boolean',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'has_document_type': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'boolean',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'has_duplicates': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'boolean',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'has_storage_path': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'boolean',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'has_tags': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'boolean',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'inbox': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'boolean',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'more_like_id': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'integer',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'owner': dict({
+                    'anyOf': list([
+                      dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'integer',
+                          }),
+                        ]),
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'query': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'storage_path': dict({
+                    'anyOf': list([
+                      dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'integer',
+                          }),
+                        ]),
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'tags_all': dict({
+                    'anyOf': list([
+                      dict({
+                        'items': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        'type': 'array',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'tags_any': dict({
+                    'anyOf': list([
+                      dict({
+                        'items': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        'type': 'array',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'tags_none': dict({
+                    'anyOf': list([
+                      dict({
+                        'items': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        'type': 'array',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'title_contains': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                }),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'The filters of search_documents, with the same names and meaning.',
+          }),
+          'saved_view': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Name or id of a saved view, instead of filters; see list_taxonomy.',
+          }),
+          'workflow': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'The workflow: its name or id.',
+          }),
+        }),
+        'required': list([
+          'workflow',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'run_workflow',
+      'outputSchema': dict({
+        'description': 'A run of a workflow by hand: the preview of a dry run, or what was asked of Paperless.',
+        'properties': dict({
+          'actions': dict({
+            'description': 'What it does to each document, the most far-reaching first.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'also_matching': dict({
+            'default': list([
+            ]),
+            'description': 'With document_ids and filters or saved_view: what matches besides and is not touched.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
+          'apply_filters': dict({
+            'type': 'boolean',
+          }),
+          'blocked': dict({
+            'default': list([
+            ]),
+            'description': 'Documents you may not change or do not own. While there are any, the whole run is refused.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
+          'dry_run': dict({
+            'description': 'true: a preview, nothing was run.',
+            'type': 'boolean',
+          }),
+          'failed': dict({
+            'default': list([
+            ]),
+            'description': 'Documents it failed on; some of its actions may have run there.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
+          'incomplete': dict({
+            'default': False,
+            'description': 'true: actions that did not fit are left out; the run is refused.',
+            'type': 'boolean',
+          }),
+          'matched': dict({
+            'description': 'How many documents the ids, filters or view match, exclude_ids included.',
+            'type': 'integer',
+          }),
+          'message': dict({
+            'type': 'string',
+          }),
+          'selected_ids': dict({
+            'description': 'The documents it is run on; after a preview with filters or saved_view they are the document_ids of the next call.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
+          'started': dict({
+            'description': 'true: Paperless was asked to run it.',
+            'type': 'boolean',
+          }),
+          'unconfirmed_task_id': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Set when the end of the run could not be observed: it may still be running or may have failed. Read it with get_task; do not run the workflow again.',
+          }),
+          'workflow': dict({
+            'description': 'Its name.',
+            'type': 'string',
+          }),
+          'workflow_id': dict({
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'workflow_id',
+          'workflow',
+          'actions',
+          'apply_filters',
+          'dry_run',
+          'started',
+          'matched',
+          'selected_ids',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Run workflow',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'core',
           ]),
         }),
@@ -26849,11 +27383,11 @@
         webhook: url, headers, params or body, include_document), 'move to trash' (undo with
         restore_from_trash, trash toolset, or in the web UI) and 'remote OCR' (consumption triggers only).
         Settings of another action type than the one given are an error. Password removal and applying AI
-        suggestions cannot be written here; use the Paperless web UI. A 'manual' trigger (run by hand) is
-        listed but cannot be written here either.
+        suggestions cannot be written here; use the Paperless web UI. A 'manual' trigger (for
+        run_workflow) is listed but cannot be written here either.
         
         A workflow runs by itself on every matching document once it is enabled (one with only manual
-        triggers runs when a user runs it by hand). Without confirm, an
+        triggers runs only with run_workflow or in the web UI). Without confirm, an
         enabled workflow that moves to trash, e-mails, calls a webhook, removes things or changes owner or
         permissions needs the user's yes: a dialog, or an error for you to show the user, first says what
         it would do (see confirm). Disabled workflows and plain filing (tags, title, correspondent and so

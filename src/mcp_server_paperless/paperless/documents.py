@@ -608,10 +608,14 @@ class PaperlessDocumentReader:
     async def get_signed_in(self) -> SignedIn | None:
         """See ``DocumentReader.get_signed_in``: ``/api/ui_settings/`` names the user."""
         try:
-            user = (await self._client.get("/api/ui_settings/", _Rights)).user
+            rights = await self._client.get("/api/ui_settings/", _Rights)
         except PermissionDenied:
             return None
-        return SignedIn(id=user.id, is_superuser=user.is_superuser)
+        return SignedIn(
+            id=rights.user.id,
+            is_superuser=rights.user.is_superuser,
+            permissions=None if rights.permissions is None else tuple(rights.permissions),
+        )
 
     async def list_document_notes(self, document_id: int) -> tuple[Note, ...]:
         """See ``DocumentReader.list_document_notes``."""
