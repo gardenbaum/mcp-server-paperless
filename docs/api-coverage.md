@@ -62,9 +62,9 @@ Limits.
 | `GET /api/document_types/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/document_types/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/document_types/{id}/` |  | PLMCP-83 |
-| `GET /api/documents/` | `add_notes`, `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents` and 15 more |  |
+| `GET /api/documents/` | `add_notes`, `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents` and 16 more |  |
 | `POST /api/documents/bulk_download/` | `bulk_download` |  |
-| `POST /api/documents/bulk_edit/` | `bulk_edit_documents` |  |
+| `POST /api/documents/bulk_edit/` | `bulk_edit_documents`, `run_workflow` |  |
 | `POST /api/documents/chat/` | `ask_paperless_ai` |  |
 | `POST /api/documents/delete/` | `bulk_edit_documents`, `resolve_duplicates` |  |
 | `POST /api/documents/edit_pdf/` | `delete_pages`, `edit_pdf`, `extract_pages`, `split_document` |  |
@@ -132,7 +132,7 @@ Limits.
 | `GET /api/profile/totp/` |  | PLMCP-83 |
 | `POST /api/profile/totp/` |  | PLMCP-83 |
 | `GET /api/remote_version/` |  | PLMCP-83 |
-| `GET /api/saved_views/` | `add_notes`, `bulk_edit_documents`, `create_saved_view`, `delete_saved_view`, `get_saved_view` and 5 more |  |
+| `GET /api/saved_views/` | `add_notes`, `bulk_edit_documents`, `create_saved_view`, `delete_saved_view`, `get_saved_view` and 6 more |  |
 | `POST /api/saved_views/` | `create_saved_view` |  |
 | `DELETE /api/saved_views/{id}/` | `delete_saved_view` |  |
 | `GET /api/saved_views/{id}/` |  | PLMCP-88 |
@@ -158,13 +158,13 @@ Limits.
 | `GET /api/storage_paths/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/storage_paths/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/storage_paths/{id}/` |  | PLMCP-83 |
-| `GET /api/tags/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_taxonomy_item`, `delete_taxonomy_item` and 15 more |  |
+| `GET /api/tags/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_taxonomy_item`, `delete_taxonomy_item` and 16 more |  |
 | `POST /api/tags/` | `create_taxonomy_item`, `update_document`, `update_documents` |  |
 | `DELETE /api/tags/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/tags/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/tags/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/tags/{id}/` |  | PLMCP-83 |
-| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `extract_pages`, `get_task` and 12 more |  |
+| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `extract_pages`, `get_task` and 13 more |  |
 | `POST /api/tasks/acknowledge/` | `acknowledge_tasks` |  |
 | `GET /api/tasks/active/` |  | PLMCP-89 |
 | `POST /api/tasks/run/` | `run_task` |  |
@@ -174,7 +174,7 @@ Limits.
 | `POST /api/token/` |  | PLMCP-83 |
 | `GET /api/trash/` | `empty_trash`, `get_trash_entry`, `get_trashed_file`, `list_trash`, `restore_from_trash` and 3 more |  |
 | `POST /api/trash/` | `empty_trash`, `restore_from_trash` |  |
-| `GET /api/ui_settings/` | `delete_pages`, `delete_user`, `edit_pdf`, `email_documents`, `extract_pages` and 8 more |  |
+| `GET /api/ui_settings/` | `delete_pages`, `delete_user`, `edit_pdf`, `email_documents`, `extract_pages` and 9 more |  |
 | `POST /api/ui_settings/` |  | PLMCP-88 |
 | `GET /api/users/` | `create_mail_rule`, `create_workflow`, `delete_user`, `get_document`, `get_user` and 10 more |  |
 | `POST /api/users/` | `create_user` |  |
@@ -195,7 +195,7 @@ Limits.
 | `GET /api/workflow_triggers/{id}/` |  | PLMCP-87 |
 | `PATCH /api/workflow_triggers/{id}/` |  | PLMCP-87 |
 | `PUT /api/workflow_triggers/{id}/` |  | PLMCP-87 |
-| `GET /api/workflows/` | `create_workflow`, `delete_workflow`, `get_workflow`, `list_workflows`, `update_workflow` |  |
+| `GET /api/workflows/` | `create_workflow`, `delete_workflow`, `get_workflow`, `list_workflows`, `run_workflow` and 1 more |  |
 | `POST /api/workflows/` | `create_workflow` |  |
 | `DELETE /api/workflows/{id}/` | `delete_workflow` |  |
 | `GET /api/workflows/{id}/` |  | PLMCP-87 |
@@ -225,7 +225,6 @@ TOML file.
 | `GET /api/documents/` | `query:shared_by__id=false`, `query:shared_by__id=true` | PLMCP-83 |
 | `POST /api/documents/bulk_download/` | `body:all`, `body:excluded_documents`, `body:filters` | excluded, "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits." (2026-11-24, backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md) |
 | `POST /api/documents/bulk_edit/` | `body:from_webui` | PLMCP-83 |
-| `POST /api/documents/bulk_edit/` | `body:method=run_workflow` | PLMCP-80.4 |
 | `POST /api/documents/bulk_edit/` | `body:all`, `body:excluded_documents`, `body:filters` | excluded, "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits." (2026-11-24, backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md) |
 | `POST /api/documents/bulk_edit/` | `body:method=add_tag`, `body:method=remove_tag` | excluded, "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits." (2026-11-24, backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md) |
 | `POST /api/documents/bulk_edit/` | `body:method=set_permissions` | excluded, "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits." (2026-11-24, backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md) |

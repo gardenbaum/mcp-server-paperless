@@ -848,6 +848,16 @@ def with_workflow(state: FakeState) -> None:
             actions=(WorkflowAction(id=2, type=1, settings={"assign_tags": [4]}),),
         )
     )
+    state.workflows.append(
+        Workflow(
+            id=2,
+            name="By hand",
+            order=1,
+            enabled=True,
+            triggers=(WorkflowTrigger(id=3, type=5),),
+            actions=(WorkflowAction(id=4, type=1, settings={"assign_tags": [4]}),),
+        )
+    )
 
 
 async def test_workflows_take_every_trigger_and_action_with_every_setting() -> None:
@@ -871,6 +881,13 @@ async def test_workflows_take_every_trigger_and_action_with_every_setting() -> N
     await sweep("get_workflow", {"workflow": 1}, (), prepare=with_workflow)
     await sweep("list_workflows", {}, (), prepare=with_workflow)
     await sweep("delete_workflow", {"workflow": 1}, (), prepare=with_workflow)
+    filters: Json = {"title_contains": "e2e"}
+    for chosen in (
+        {"document_ids": [1], "exclude_ids": [2], "filters": filters},
+        {"document_ids": [1], "saved_view": "e2e-view"},
+    ):
+        arguments: Json = {"workflow": 2, **chosen, "apply_filters": False, "dry_run": False}
+        await sweep("run_workflow", arguments, (), prepare=with_workflow)
     assert not FAILED, "\n".join(FAILED)
 
 

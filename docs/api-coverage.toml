@@ -379,7 +379,7 @@ task = "PLMCP-87"
 operation = "PATCH /api/workflows/{id}/"
 fields = ["body:actions[].type=5", "body:actions[].type=8", "body:triggers[].type=5"]
 task = "PLMCP-87"
-reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them. A manual trigger (type 5) is read but not written: it is run by hand from the web UI (PLMCP-97; PLMCP-87 decides whether to write it)."
+reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them. A manual trigger (type 5) is read but not written: a workflow with it is run with run_workflow, but the trigger is made in the web UI (PLMCP-97; PLMCP-87 decides whether to write it)."
 
 [[open_fields]]
 operation = "POST /api/correspondents/"
@@ -400,12 +400,6 @@ task = "PLMCP-83"
 operation = "POST /api/documents/delete/"
 fields = ["body:from_webui"]
 task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/bulk_edit/"
-fields = ["body:method=run_workflow"]
-task = "PLMCP-80.4"
-reason = "Paperless runs a workflow with a manual trigger on selected documents; no tool does, and the workflows toolset does not write manual triggers (PLMCP-97)"
 
 [[open_fields]]
 operation = "POST /api/documents/edit_pdf/"
@@ -512,7 +506,7 @@ task = "PLMCP-87"
 operation = "POST /api/workflows/"
 fields = ["body:actions[].type=5", "body:actions[].type=8", "body:triggers[].type=5"]
 task = "PLMCP-87"
-reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them. A manual trigger (type 5) is read but not written: it is run by hand from the web UI (PLMCP-97; PLMCP-87 decides whether to write it)."
+reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them. A manual trigger (type 5) is read but not written: a workflow with it is run with run_workflow, but the trigger is made in the web UI (PLMCP-97; PLMCP-87 decides whether to write it)."
 
 [[exclusion]]
 operation = "POST /api/bulk_edit_objects/"

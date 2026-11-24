@@ -8,6 +8,7 @@ server cannot write. Secrets (webhook header values, credentials in
 webhook URLs, PDF passwords) are never shown.
 """
 
+import dataclasses
 import json
 import re
 from typing import TYPE_CHECKING, Final, cast
@@ -50,12 +51,14 @@ from mcp_server_paperless.domain.workflows import (
     WorkflowTrigger,
     WorkflowValues,
 )
+from mcp_server_paperless.services.documents import readable
 from mcp_server_paperless.services.removal import WAY_BACK
+from mcp_server_paperless.services.tag_hierarchy import close_over_ancestors, descendants
 from mcp_server_paperless.services.taxonomy import fold, pick
 from mcp_server_paperless.services.views import plural
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Awaitable, Callable, Mapping, Sequence
 
     from pydantic import JsonValue
 
@@ -91,7 +94,7 @@ TRIGGER_ALIASES: Final[Mapping[int, tuple[str, ...]]] = {
 ACTION_ALIASES: Final[Mapping[int, tuple[str, ...]]] = {6: ("trash",), 7: ("ocr",)}
 # Why a tool may not write a trigger type that Paperless has.
 UNWRITABLE_TRIGGERS: Final[Mapping[int, str]] = {
-    5: "a workflow with it is run by hand from the Paperless web UI",
+    5: "this server runs such a workflow (run_workflow) but does not make its trigger",
 }
 # Why a tool may not write an action type that Paperless has.
 UNWRITABLE: Final[Mapping[int, str]] = {
@@ -106,6 +109,25 @@ OWNERSHIP: Final = (
     "assign_change_groups",
 )
 TRASH_ACTION: Final = 6
+# E-mail, webhook, password removal and AI suggestions: Paperless tells no one whether they worked.
+UNSEEN_ACTIONS: Final = frozenset({3, 4, 5, 8})
+ASSIGNMENT, REMOVAL, REMOTE_OCR, SUGGEST = 1, 2, 7, 8
+AI_FIELDS: Final = frozenset(
+    {"title", "tags", "correspondent", "document_type", "storage_path", "created"}
+)
+STORED: Final = (
+    "It is stored in the workflow: change that with update_workflow, or run the workflow in the "
+    "Paperless web UI."
+)
+# Paperless does it last, wherever it stands.
+TRASHES: Final = "move each of them to the trash, after everything else"
+# What Paperless 3.5.1 reads of a manual trigger: not where a document came from, nor a schedule,
+# nor a match without an algorithm.
+MANUAL_FILTERS: Final = frozenset(
+    {"matching_algorithm", "filename", "custom_field_query"}
+    | {name for name in TRIGGER_FIELDS if name.startswith("has_")}
+)
+NO_OCR: Final = "run remote OCR (Paperless ignores it here: it needs a document being consumed)"
 TRASH_NOTE: Final = f"A document this workflow moves to the trash {WAY_BACK}"
 SUGGESTIONS: Final = 5
 # What the actions that need no settings do; password removal and AI suggestions cannot be written
@@ -573,9 +595,16 @@ def _acts(
     return found
 
 
-def _trigger_text(trigger: WorkflowTrigger) -> str:
+def _filters(trigger: WorkflowTrigger) -> list[str]:
+    """The filters of a trigger that limit it."""
+    found = list(_set(TRIGGER_FIELDS, trigger.settings))
+    return [n for n in found if n in MANUAL_FILTERS] if trigger.type == MANUAL else found
+
+
+def trigger_text(trigger: WorkflowTrigger) -> str:
+    """The type of a trigger and which filters it has."""
     text = TRIGGER_TYPES.get(trigger.type, f"unknown type {trigger.type}")
-    filters = ", ".join(_set(TRIGGER_FIELDS, trigger.settings))
+    filters = ", ".join(_filters(trigger))
     if filters:
         text += f", filtered by {filters}"
     if trigger.type == SCHEDULED:
@@ -583,10 +612,15 @@ def _trigger_text(trigger: WorkflowTrigger) -> str:
     return text
 
 
+def unfiltered(triggers: Sequence[WorkflowTrigger]) -> bool:
+    """Whether a manual trigger has no filters, so that every document matches."""
+    return any(not _filters(t) for t in triggers if t.type == MANUAL)
+
+
 def _effect(lead: str, triggers: Sequence[WorkflowTrigger], acts: Sequence[str]) -> str:
     """What an enabled workflow does: by itself, or only when a user runs it (manual triggers)."""
-    automatic = "; ".join(_trigger_text(t) for t in triggers if t.type != MANUAL)
-    by_hand = "; ".join(_trigger_text(t) for t in triggers if t.type == MANUAL)
+    automatic = "; ".join(trigger_text(t) for t in triggers if t.type != MANUAL)
+    by_hand = "; ".join(trigger_text(t) for t in triggers if t.type == MANUAL)
     will = "; ".join(acts)
     if not triggers:
         automatic = "no trigger yet: it does nothing until one is added"
@@ -638,8 +672,52 @@ class WorkflowService:
             Ambiguous: The name matches several workflows.
             PermissionDenied: The user may not view workflows.
         """
-        found = await self._find(workflow)
+        found = await self.find(workflow)
         return self._info(found, await self._names([found]))
+
+    async def told(
+        self, workflow: Workflow, titles: Callable[[Sequence[int]], Awaitable[Mapping[int, str]]]
+    ) -> tuple[str, ...]:
+        """What a run does to a document, the most far-reaching first, with the values it writes.
+
+        Each clause has the number of its step, because the order decides what is left.
+
+        ``titles`` reads the titles of linked documents the user may see.
+
+        Raises:
+            Validation: It has a destination that cannot be shown, or too many of them.
+        """
+        try:
+            _ = _acts(workflow.actions)  # counts the destinations of all actions together
+        except Validation as error:
+            message = error.message.replace("Nothing was changed", "Nothing was run", 1)
+            raise Validation(message, hint=STORED) from None
+        if any("tag" in _kinds(_action_fields(a), a.settings) for a in workflow.actions):
+            self._taxonomy.invalidate("tag")  # a new child tag would come off unnamed
+        texts = _Texts(
+            names=await self._names([workflow]),
+            fields=await self._known("custom_field", workflow),
+            tags=await self._known("tag", workflow),
+        )
+        linked = [n for action in workflow.actions for n in texts.linked(action)]
+        texts.titles = await titles(linked) if linked else {}
+        found: list[tuple[bool, str]] = []
+        total = len(workflow.actions)
+        for place, action in enumerate(workflow.actions, start=1):
+            step = f"step {place} of {total}: "
+            found += [(not _far(action), f"{step}{text}") for text in texts.of(action)]
+        return tuple(text for _, text in sorted(found, key=lambda row: row[0])) or ("do nothing",)
+
+    async def _known(
+        self, kind: TaxonomyKind, workflow: Workflow
+    ) -> dict[int, TaxonomyItem] | None:
+        """The objects of ``kind`` by id, if an action uses it; None if the user may not list it."""
+        if not any(kind in _kinds(_action_fields(a), a.settings) for a in workflow.actions):
+            return {}
+        try:
+            return {item.id: item for item in await self._taxonomy.items(kind)}
+        except PermissionDenied:
+            return None
 
     async def create(self, spec: WorkflowCreate, *, confirm: bool) -> WorkflowInfo:
         """Create a workflow; names are resolved and types checked before anything is sent.
@@ -757,7 +835,7 @@ class WorkflowService:
             Ambiguous: The name matches several workflows.
             PermissionDenied: The user may not view or delete workflows.
         """
-        found = await self._find(workflow)
+        found = await self.find(workflow)
         subject = f"the workflow {quoted(found.name)} (id {found.id})"
         if not confirm:
             parts = (
@@ -773,7 +851,8 @@ class WorkflowService:
         message = f"{subject[0].upper()}{subject[1:]} was deleted; no document was touched."
         return WorkflowDeletion(id=found.id, name=found.name, message=message)
 
-    async def _find(self, workflow: NameOrId) -> Workflow:
+    async def find(self, workflow: NameOrId) -> Workflow:
+        """The workflow as Paperless stores it, like ``get``."""
         return self._pick(await self._reader.list_workflows(), workflow)
 
     @staticmethod
@@ -1066,6 +1145,134 @@ def _nested(value: JsonValue) -> dict[str, JsonValue]:
     if "headers" in shown:
         shown["headers"] = dict.fromkeys(_object(shown["headers"]), HIDDEN)
     return shown
+
+
+def _far(action: WorkflowAction) -> bool:
+    """Whether an action does more than file: sends, trashes, asks the AI, changes rights."""
+    if action.type in {ASSIGNMENT, REMOVAL}:
+        fields = _set(_action_fields(action), action.settings)
+        return any(re.search("owner|permissions|_users|_groups", name) for name in fields)
+    return action.type != REMOTE_OCR
+
+
+def _ids(value: JsonValue) -> list[int]:
+    return [n for n in value if isinstance(n, int)] if isinstance(value, list) else []
+
+
+@dataclasses.dataclass(slots=True)
+class _Texts:
+    """Words for the actions of a run; every name and text is quoted and cut."""
+
+    names: Mapping[TaxonomyKind, Mapping[int, str]]
+    # None where the user may not list them.
+    fields: Mapping[int, TaxonomyItem] | None
+    tags: Mapping[int, TaxonomyItem] | None
+    titles: Mapping[int, str] = dataclasses.field(default_factory=dict[int, str])
+
+    def of(self, action: WorkflowAction) -> list[str]:
+        """What the action does, in one or two clauses."""
+        if action.type == REMOTE_OCR:
+            return [NO_OCR]
+        if action.type == TRASH_ACTION:
+            return [TRASHES]
+        if action.type == SUGGEST:
+            return [_suggestions(action.settings)]
+        if action.type not in {ASSIGNMENT, REMOVAL}:
+            return _acts([action])
+        values = self._values(action)
+        verb = "assign" if action.type == ASSIGNMENT else "remove"
+        told = [f"{verb} {values}"] if values else []
+        return [*_acts([action]), *told] if action.type == ASSIGNMENT else told
+
+    def linked(self, action: WorkflowAction) -> list[int]:
+        """The documents an assignment links to."""
+        values = _object(action.settings.get("assign_custom_fields_values"))
+        fields = _ids(action.settings.get("assign_custom_fields"))
+        return [n for at in fields if self._links(at) for n in _ids(values.get(str(at)))]
+
+    def _links(self, number: int) -> bool:
+        item = (self.fields or {}).get(number)
+        return item is not None and item.data_type == "documentlink"
+
+    def _name(self, kind: TaxonomyKind | None, number: int) -> str:
+        name = self.names.get(kind, {}).get(number) if kind is not None else None
+        return f"#{number}" if name is None else quoted(name)
+
+    def _values(self, action: WorkflowAction) -> str:
+        found: list[str] = []
+        for name, value in _set(ACTION_FIELDS[action.type], action.settings).items():
+            setting = ACTION_FIELDS[action.type][name]
+            if name == "assign_custom_fields_values":
+                continue  # Paperless writes those of assign_custom_fields only
+            what = name.removeprefix("assign_").removeprefix("remove_").replace("_", " ")
+            if name == "assign_custom_fields":
+                values = _object(action.settings.get("assign_custom_fields_values"))
+                what += f" {', '.join(self._field(n, values.get(str(n))) for n in _ids(value))}"
+            elif setting.shape == "list":
+                what += f" {', '.join(self._name(setting.kind, n) for n in _ids(value))}"
+                what += self._along(action, _ids(value)) if setting.kind == "tag" else ""
+            elif isinstance(value, int) and setting.shape == "one":
+                what += f" {self._name(setting.kind, value)}"
+            elif setting.shape != "flag":
+                what += f" {quoted(str(value))}"
+            found.append(what)
+        return ", ".join(found)
+
+    def _field(self, number: int, value: JsonValue) -> str:
+        name = self._name("custom_field", number)
+        if value in (None, ""):
+            return f"{name} (without a value, where it is missing)"
+        if self._links(number):
+            rows = [
+                f"{n} {quoted(self.titles[n])}" if n in self.titles else f"#{n}"
+                for n in _ids(value)
+            ]
+            return f"{name}: {', '.join(rows) or 'no document'}"
+        shown = readable(value, (self.fields or {}).get(number))
+        return f"{name}: {quoted(shown if isinstance(shown, str) else json.dumps(shown))}"
+
+    def _along(self, action: WorkflowAction, named: list[int]) -> str:
+        """The tags Paperless adds or removes with those that are named."""
+        adds = action.type == ASSIGNMENT
+        which = "parent" if adds else "child"
+        if self.tags is None:
+            return f" (with their {which} tags, which you may not list)"
+        parents = {number: tag.parent for number, tag in self.tags.items()}
+        if adds:
+            others = [n for n in close_over_ancestors(named, parents) if n not in named]
+        else:
+            others = sorted({n for tag in named for n in descendants(tag, parents)} - set(named))
+        listed = ", ".join(self._name("tag", n) for n in others)
+        if adds:
+            return f" (with their parent tags {listed})" if listed else ""
+        if listed:
+            return f" (with their child tags {listed} and any you cannot see)"
+        return " (with any child tags you cannot see)"
+
+
+def _suggestions(settings: Mapping[str, JsonValue]) -> str:
+    """What an action that applies AI suggestions may do."""
+    given = settings.get("ai_suggestion_fields")
+    fields = [str(name) for name in given] if isinstance(given, list) else []
+    if not fields:
+        return "apply AI suggestions to no field (Paperless skips it)"
+    told = ", ".join(
+        name.replace("_", " ") if name in AI_FIELDS else quoted(name) for name in fields
+    )
+    over = "only where there is no value"
+    if settings.get("ai_overwrite_existing"):
+        over = "over existing values"
+    if "tags" in fields:
+        over += " (tags are only added)"
+    makes = (
+        "creating tags, correspondents and document types that do not exist"
+        if settings.get("ai_create_missing")
+        else "without creating anything"
+    )
+    return (
+        "ask the AI backend about the text of each of them and apply what it suggests for "
+        f"{told}, {over}, {makes}"
+    )
 
 
 def _show(

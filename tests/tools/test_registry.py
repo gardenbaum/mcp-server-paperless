@@ -321,6 +321,7 @@ TRASHING_TOOLS = frozenset(
         *("delete_document", "delete_document_version", "bulk_edit_documents"),
         *("resolve_duplicates", "merge_documents", "split_document", "delete_pages", "edit_pdf"),
         *("remove_document_password", "create_workflow", "update_workflow"),
+        "run_workflow",
     }
 )
 
