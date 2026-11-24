@@ -4,6 +4,7 @@ title: Let the mutation run collect its stats again
 status: In Progress
 assignee: []
 created_date: '2026-11-23T23:25:36Z'
+updated_date: '2026-11-24T00:20:27Z'
 labels: []
 dependencies: []
 priority: high
@@ -29,3 +30,9 @@ The weekly mutation run fails on main since PLMCP-91: mutmut renames the adapter
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Also fixed here: the proxy of tests/e2e/pages.py (PLMCP-74) left its connection to Paperless open when a client dropped a slow answer; the ResourceWarning failed an unrelated test (tests/e2e/test_search.py) in the hosted full E2E of PLMCP-76 (run 45293962464). Reproduced against a local stand-in before the fix, gone after it.
+<!-- SECTION:NOTES:END -->

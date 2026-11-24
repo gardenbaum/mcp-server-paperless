@@ -111,6 +111,7 @@ class Proxy:
         self.slow: bool = slow
         self.requests: list[str] = []
         self.url: str = ""
+        self._serving: set[asyncio.Task[None]] = set()
 
     async def _forward(self, source: asyncio.StreamReader, target: asyncio.StreamWriter) -> None:
         while data := await source.read(65536):
@@ -130,11 +131,18 @@ class Proxy:
         target.close()
 
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self._serving.add(cast("asyncio.Task[None]", asyncio.current_task()))
         with contextlib.suppress(ConnectionError):
             upstream = await asyncio.open_connection("127.0.0.1", int(PORT))
-            async with asyncio.TaskGroup() as group:
-                _ = group.create_task(self._forward(reader, upstream[1]))
-                _ = group.create_task(self._answer(upstream[0], writer))
+            try:
+                async with asyncio.TaskGroup() as group:
+                    _ = group.create_task(self._forward(reader, upstream[1]))
+                    _ = group.create_task(self._answer(upstream[0], writer))
+            finally:
+                # The transports go now: what is left of them at the end of the event loop is
+                # reported in whatever test happens to run when it is collected.
+                upstream[1].transport.abort()
+                writer.transport.abort()
 
     @contextlib.asynccontextmanager
     async def listening(self) -> AsyncGenerator[Proxy]:
@@ -147,6 +155,10 @@ class Proxy:
         finally:
             server.close()
             server.close_clients()
+            for task in self._serving:
+                _ = task.cancel()
+            _ = await asyncio.gather(*self._serving, return_exceptions=True)
+            await asyncio.sleep(0)  # an aborted transport closes its socket in the next round
 
 
 @contextlib.asynccontextmanager
