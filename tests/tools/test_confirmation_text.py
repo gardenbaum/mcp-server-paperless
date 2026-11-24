@@ -158,6 +158,21 @@ HOSTILE: Final[dict[str, Json]] = {
         "operation": {"op": "add_tags", "tags": [4]},
         "dry_run": False,
     },
+    "update_documents": {
+        "documents": [
+            {
+                "document_id": 10,
+                "title": EVIL,
+                "owner": 3,
+                "correspondent": 1,
+                "tags_add": [EVIL],
+                "custom_fields": {"1": EVIL, "10": "kept", "8": [11]},
+            },
+            {"document_id": 14, "clear": ["owner"], "tags_add": [1]},
+        ],
+        "create_missing_tags": True,
+    },
+    "add_notes": {"notes": [{"document_id": 10, "note": EVIL}, {"document_id": 11, "note": EVIL}]},
     "bulk_edit_taxonomy": {
         "kind": "correspondent",
         "items": [1],

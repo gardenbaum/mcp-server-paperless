@@ -46,7 +46,9 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.ai import AiService
     from mcp_server_paperless.services.batch_uploads import BatchUploadService
     from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
+    from mcp_server_paperless.services.bulk_notes import BulkNotes
     from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
+    from mcp_server_paperless.services.bulk_updates import BulkUpdates
     from mcp_server_paperless.services.document_edits import DocumentEditor
     from mcp_server_paperless.services.documents import DocumentService
     from mcp_server_paperless.services.duplicate_resolution import DuplicateResolver
@@ -153,6 +155,8 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "delete_taxonomy_item": "core",
     "read_documents": "bulk",
     "bulk_edit_documents": "bulk",
+    "update_documents": "bulk",
+    "add_notes": "bulk",
     "bulk_edit_taxonomy": "bulk",
     "resolve_duplicates": "bulk",
     "list_document_versions": "versions",
@@ -725,6 +729,23 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=False,
         open_world_hint=False,
     ),
+    # Destructive (decision-73): it overwrites what many documents hold and can give them away, so
+    # every execution needs confirm. Idempotent: what is as asked is left alone.
+    "update_documents": ToolAnnotations(
+        title="Update documents",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # As add_note: it adds and overwrites nothing (decision-73).
+    "add_notes": ToolAnnotations(
+        title="Add notes",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
     # Destructive (decision-6, decision-14): deleting objects is final and permissions can lock
     # users out, so every execution needs confirm, and dry_run previews it.
     "bulk_edit_taxonomy": ToolAnnotations(
@@ -1063,6 +1084,8 @@ class Services:
     text_edits: TextEditor
     read_documents: ReadDocuments
     bulk_documents: BulkDocumentEditor
+    bulk_updates: BulkUpdates
+    bulk_notes: BulkNotes
     bulk_taxonomy: BulkTaxonomyEditor
     duplicate_resolver: DuplicateResolver
     views: ViewService

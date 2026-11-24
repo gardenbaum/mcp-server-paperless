@@ -1369,9 +1369,15 @@ class FakePaperless:
             if any(taken):
                 message = "document with this archive serial number already exists."
                 reject("archive_serial_number", message)
+            if any(d.archive_serial_number == number for d in self.state.trash):
+                message = "Document with this Archive Serial Number already exists in the trash."
+                reject("archive_serial_number", message)
 
     def _mirror_links(self, document: FakeDocument, new: dict[int, JsonValue]) -> None:
         """Keep document links symmetrical like Paperless: link and unlink the other side.
+
+        Every target of the list that is sent gets the link back, also one that already was in the
+        list and lost it (a bulk edit to a shorter list leaves it one-sided).
 
         Linking needs change permission on every document linked to (403 otherwise, also for a
         document the user cannot see); the other side keeps an empty list when unlinked.
@@ -1387,9 +1393,10 @@ class FakePaperless:
             message = "Insufficient permissions."
             raise PermissionDenied(message)
         for number in link_fields:
-            for target in added[number]:
+            for target in targets(new, number) - {document.id}:
                 other = by_id[target].custom_fields
-                other[number] = [*cast("list[int]", other.get(number) or []), document.id]
+                if document.id not in targets(other, number):
+                    other[number] = [*cast("list[int]", other.get(number) or []), document.id]
             for target in targets(document.custom_fields, number) - targets(new, number):
                 if target in by_id:
                     other = by_id[target].custom_fields

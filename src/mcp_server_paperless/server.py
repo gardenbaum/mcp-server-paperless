@@ -52,7 +52,9 @@ from mcp_server_paperless.services.admin_system import SystemAdmin
 from mcp_server_paperless.services.ai import AiService
 from mcp_server_paperless.services.batch_uploads import BatchUploadService
 from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
+from mcp_server_paperless.services.bulk_notes import BulkNotes
 from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
+from mcp_server_paperless.services.bulk_updates import BulkUpdates
 from mcp_server_paperless.services.document_edits import DocumentEditor
 from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.duplicate_resolution import DuplicateResolver
@@ -576,6 +578,21 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     DocumentSelector(adapters.documents, documents, views, taxonomy),
                     taxonomy,
                     web_url=web_url,
+                ),
+                bulk_updates=BulkUpdates(
+                    adapters.documents,
+                    adapters.document_writes,
+                    edits,
+                    taxonomy,
+                    web_url=web_url,
+                    clock=clock,
+                ),
+                bulk_notes=BulkNotes(
+                    adapters.documents,
+                    adapters.document_writes,
+                    DocumentSelector(adapters.documents, documents, views, taxonomy),
+                    web_url=web_url,
+                    clock=clock,
                 ),
                 bulk_taxonomy=BulkTaxonomyEditor(adapters.taxonomy, adapters.bulk_writes, taxonomy),
                 duplicate_resolver=DuplicateResolver(
