@@ -8,7 +8,8 @@ content of the page leaves behind (a clip, invisible text), as more content woul
 
 import ctypes
 import re
-from itertools import combinations
+from collections import Counter
+from itertools import combinations, pairwise
 from typing import TYPE_CHECKING, Final
 
 import pypdfium2
@@ -27,8 +28,13 @@ PRINT: Final = 4
 # Printed, and neither changed nor moved by accident: read only, locked, locked contents.
 STAMP: Final = PRINT | 64 | 128 | 512
 
-# How PDFium writes that an object is a field, or shows one.
-FIELD: Final = re.compile(rb"/Subtype\s*/Widget\b|/FT\s*/(?:Tx|Btn|Ch|Sig)\b")
+# What a field has in a file that PDFium wrote: names and keys are written as they are (a regular
+# character is never escaped), and the kind of every other annotation as a name.
+MARK: Final = re.compile(
+    rb"/(?:FT|Ff|V|DV|RV|TU|TM|MK|MaxLen|Widget)(?![^\s/()<>\[\]{}%])|/Subtype(?![A-Za-z0-9/])"
+)
+# Keys of a field. An annotation of no known kind that has one is taken for a field.
+FIELD_KEYS: Final = (b"FT", b"Ff", b"V", b"DV", b"RV", b"MK", b"TU", b"MaxLen", b"Parent")
 # What tells the value of a field, and the way to the field above it.
 VALUES: Final = (b"V", b"DV", b"RV", b"I", b"Parent")
 # Which of its appearances a field shows.
@@ -42,6 +48,19 @@ MAX_STAMPS: Final = 100
 type Box = tuple[float, float, float, float]
 
 
+def _is_field(note: pdfium.FPDF_ANNOTATION) -> bool:
+    """Whether an annotation is a field, for PDFium or for a reader that looks closer.
+
+    PDFium knows a kind that is written as a direct name only; others follow a reference, too.
+    """
+    kind = pdfium.FPDFAnnot_GetSubtype(note)
+    if kind != pdfium.FPDF_ANNOT_UNKNOWN:
+        return kind == pdfium.FPDF_ANNOT_WIDGET
+    written = pdfium.FPDFAnnot_GetValueType(note, b"Subtype")
+    odd = written not in {pdfium.FPDF_OBJECT_UNKNOWN, pdfium.FPDF_OBJECT_NAME}
+    return odd or any(pdfium.FPDFAnnot_HasKey(note, key) for key in FIELD_KEYS)
+
+
 def _annotations(page: pypdfium2.PdfPage) -> list[tuple[int, bool, int]]:
     """Of each annotation of a page its place, whether it is a field, and its flags.
 
@@ -50,8 +69,7 @@ def _annotations(page: pypdfium2.PdfPage) -> list[tuple[int, bool, int]]:
     found: list[tuple[int, bool, int]] = []
     for place in reversed(range(pdfium.FPDFPage_GetAnnotCount(page))):
         note = pdfium.FPDFPage_GetAnnot(page, place)
-        kind, flags = pdfium.FPDFAnnot_GetSubtype(note), pdfium.FPDFAnnot_GetFlags(note)
-        found.append((place, kind == pdfium.FPDF_ANNOT_WIDGET, flags))
+        found.append((place, _is_field(note), pdfium.FPDFAnnot_GetFlags(note)))
         pdfium.FPDFPage_CloseAnnot(note)
     return found
 
@@ -61,9 +79,24 @@ def has_fields(page: pypdfium2.PdfPage) -> bool:
     return any(field for _, field, _ in _annotations(page))
 
 
-def fields_in(content: bytes) -> int:
-    """At least how many fields a file PDFium wrote has; what looks like one in a stream counts."""
-    return sum(1 for _ in FIELD.finditer(content))
+def marks_in(content: bytes) -> Counter[str] | None:
+    """What fields have, in the objects of a file that PDFium wrote; None if it cannot be told.
+
+    Streams are left out: an object ends where the next one of the table begins, and no line break
+    stands in an object before its stream (PDFium escapes those of strings).
+    """
+    start = re.search(rb"startxref\r\n(\d+)\r\n%%EOF\r\n\Z", content[-64:])
+    if start is None or not content.startswith(b"xref\r\n", int(start[1])):
+        return None
+    table = int(start[1])
+    places = re.finditer(rb"(\d{10}) \d{5} n", content[table:])
+    ends = sorted({table, *(int(place[1]) for place in places)})
+    marks = Counter[str]()
+    for begin, end in pairwise(ends):
+        stream = content.find(b"stream\r\n", begin, end)
+        body = content[begin : end if stream < 0 else stream]
+        marks.update(found[0].decode() for found in MARK.finditer(body))
+    return marks
 
 
 def remove_fields(page: pypdfium2.PdfPage) -> None:
@@ -194,8 +227,11 @@ def _flattened(forms: pypdfium2.PdfDocument, number: int, box: Box, *, blank: bo
             # A picture turns with its page.
             raise RenderFailed(reason="fields", of_source=True)
         shown.append(rectangle)
-        # Only printed ones are flattened, but a value on the screen must not be lost.
         note = pdfium.FPDFPage_GetAnnot(page, place)
+        if pdfium.FPDFAnnot_GetSubtype(note) != pdfium.FPDF_ANNOT_WIDGET:
+            # Other readers show it, PDFium cannot draw it.
+            raise RenderFailed(reason="fields", of_source=True)
+        # Only printed ones are flattened, but a value on the screen must not be lost.
         require(pdfium.FPDFAnnot_SetFlags(note, PRINT))
         pdfium.FPDFPage_CloseAnnot(note)
     if not shown:

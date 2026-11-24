@@ -45,8 +45,8 @@ from mcp_server_paperless.rendering.fields import (
     blank_fields,
     cut_parents,
     draw_fields,
-    fields_in,
     has_fields,
+    marks_in,
     remove_fields,
 )
 from mcp_server_paperless.rendering.limits import MEMORY_EXIT
@@ -54,6 +54,7 @@ from mcp_server_paperless.rendering.wire import DONE, READING, STARTED, Job, ans
 from mcp_server_paperless.services.page_ranges import parse_pages
 
 if TYPE_CHECKING:
+    from collections import Counter
     from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
     from mcp_server_paperless.domain.rendering import Reason, Region, RenderRequest
@@ -691,14 +692,15 @@ def assemble(
         # Importing next to a page that is not there crashes PDFium.
         sizes = _sizes(into)
         _require_sizes(sizes, of_source=False)
-        own_fields = _require_places(target, sizes, request.after_page, len(pages))
+        own_marks = _require_places(target, sizes, request.after_page, len(pages))
         of_source = True
         inserted = _sizes(origin, pages)
         _require_sizes(inserted, of_source=True)
         sizes[request.after_page : request.after_page] = inserted
         content = _joined(into, origin, source, pages, request.after_page)
-        if fields_in(content) > own_fields:
-            # The pages refer to fields by a way that PDFium follows: again, without any value.
+        marks = marks_in(content)
+        if marks is None or own_marks is None or marks - own_marks:
+            # Nothing proves that no field came along by a reference: again, without any value.
             into, origin = open_pdf(target), open_pdf(source)
             content = _joined(into, origin, source, pages, request.after_page, blank=True)
         if not _alike(content, sizes):
@@ -786,11 +788,11 @@ def _require_sizes(sizes: list[tuple[float, float]], *, of_source: bool) -> None
 
 def _require_places(
     target: bytes, sizes: list[tuple[float, float]], after_page: int, pages: int
-) -> int:
+) -> Counter[str] | None:
     """Insert marked pages into a copy, and look for each where it has to be in the saved file.
 
     In a page tree whose counts are wrong PDFium puts a page elsewhere or where no reader finds it,
-    and the sizes of real pages cannot tell them apart. Returns how many fields the target has.
+    and the sizes of real pages cannot tell them apart. Returns the marks of fields in the target.
 
     Raises:
         RenderFailed: A page is not where it has to be.
@@ -807,7 +809,7 @@ def _require_places(
     saved = _saved(probe)
     if not _alike(saved, [*sizes[:after_page], *markers, *sizes[after_page:]]):
         raise RenderFailed(reason="damaged")
-    return fields_in(saved)
+    return marks_in(saved)
 
 
 def count(content: bytes) -> Counted:

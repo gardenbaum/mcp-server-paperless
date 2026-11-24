@@ -23,7 +23,7 @@ from mcp_server_paperless.domain.rendering import (
     RenderRequest,
 )
 from mcp_server_paperless.rendering import worker
-from mcp_server_paperless.rendering.fields import require
+from mcp_server_paperless.rendering.fields import marks_in, require
 from mcp_server_paperless.rendering.runner import ChildRenderer
 from mcp_server_paperless.rendering.wire import Job, assembled_of, counted_of, encoded
 from mcp_server_paperless.rendering.worker import assemble, count, main, render
@@ -369,6 +369,8 @@ def referring(annotation: str, *, parent: bool = False, page: str = "", form: bo
                     "<< /Type /XObject /Subtype /Form /BBox [0 0 9 9] /Length 12 >>\nstream\n"
                     "(STOREDAP) Tj\nendstream"
                 ),
+                "/Widget",
+                "/Tx",
             ],
         )
         .replace(b"[XX]", f"[9 0 R 10 0 R {annotation}] {page}".encode(), 1)
@@ -400,6 +402,123 @@ def test_values_of_fields_do_not_come_along_by_a_reference(
     values = [b"HIDDENV", b"OTHERPAGE", b"DEFAULT", b"RICH", b"STOREDAP", b"PARENTV"]
     assert [value for value in values if value in made] == []
     assert b"VISIBLE" in made  # in the picture
+
+
+HIDE = "<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] /A << /S /Hide /T [10 0 R 11 0 R] >> >>"
+SUBTYPES = [
+    *("/Subtype /Widget", "/Subtype 14 0 R", "/Subtype (Widget)", "/Subtype <576964676574>"),
+    *("/Subtype [/Widget]", "", "/S#75btype /W#69dget", "/Subtype /Unknown"),
+]
+KINDS = ["/FT /Tx", "/FT 15 0 R", "/FT (Tx)", "", "/F#54 /T#78", "/FT [/Tx]", "/FT /Xx"]
+
+
+def spelled(source: bytes, subtype: str, kind: str, *numbers: int) -> bytes:
+    """The fields that are these objects, with another spelling."""
+    old = b"/Type /Annot /Subtype /Widget /FT /Tx"
+    parts = source.split(old)
+    out = parts[0]
+    for number, part in enumerate(parts[1:], start=9):
+        new = f"/Type /Annot {subtype} {kind}".encode() if number in numbers else old
+        out += new + part
+    # Without its table, whose places are no longer right, the file is read object by object.
+    return out.split(b"\nxref\n")[0] + b"\ntrailer\n<< /Size 16 /Root 1 0 R >>\n"
+
+
+def packed(source: bytes) -> bytes:
+    """A file of `pdf_of` whose objects without a stream are in an object stream."""
+    found: list[tuple[bytes, bytes]] = re.findall(rb"(\d+) 0 obj\n(.*?)\nendobj", source, re.DOTALL)
+    objects = {int(number): body for number, body in found}
+    inner = {n: body for n, body in objects.items() if b"stream" not in body}
+    holder, table = max(objects) + 1, max(objects) + 2
+    heads, bodies = b"", b""
+    for number, body in inner.items():
+        heads += b"%d %d " % (number, len(bodies))
+        bodies += body + b" "
+    packed_ = zlib.compress(heads + bodies)
+    head = b"<< /Type /ObjStm /N %d /First %d /Filter /FlateDecode /Length %d >>" % (
+        *(len(inner), len(heads), len(packed_)),
+    )
+    plain = {n: body for n, body in objects.items() if n not in inner}
+    plain[holder] = head + b"\nstream\n" + packed_ + b"\nendstream"
+    out, places = b"%PDF-1.7\n", dict[int, int]()
+    for number, body in plain.items():
+        places[number] = len(out)
+        out += b"%d 0 obj\n%b\nendobj\n" % (number, body)
+    places[table] = len(out)
+    rows = [struct.pack(">BIB", 0, 0, 255)]
+    for number in range(1, table + 1):
+        at = places.get(number)
+        row = (2, holder, list(inner).index(number)) if at is None else (1, at, 0)
+        rows.append(struct.pack(">BIB", *row))
+    data = b"".join(rows)
+    return out + (
+        b"%d 0 obj\n<< /Type /XRef /Size %d /Root 1 0 R /W [1 4 1] /Length %d >>\n"
+        % (table, table + 1, len(data))
+        + b"stream\n%b\nendstream\nendobj\nstartxref\n%d\n%%%%EOF\n" % (data, len(out))
+    )
+
+
+@pytest.mark.parametrize("pack", [False, True], ids=["plain", "packed"])
+@pytest.mark.parametrize("kind", KINDS)
+@pytest.mark.parametrize("subtype", SUBTYPES)
+def test_no_spelling_of_a_field_brings_its_value(subtype: str, kind: str, *, pack: bool) -> None:
+    """The hidden field of the page and the one of another page."""
+    source = spelled(referring(HIDE), subtype, kind, 10, 11)
+
+    made = unpacked(assemble(TARGET, packed(source) if pack else source, wanted("1")).content)
+
+    values = [b"HIDDENV", b"OTHERPAGE", b"DEFAULT", b"RICH", b"STOREDAP"]
+    assert [value for value in values if value in made] == []
+    assert b"VISIBLE" in made
+
+
+@pytest.mark.parametrize("kind", KINDS)
+@pytest.mark.parametrize("subtype", SUBTYPES[1:6])
+def test_a_shown_field_is_drawn_or_refused_in_any_spelling(subtype: str, kind: str) -> None:
+    """Other readers draw it where PDFium does not: leaving it out would be a silent loss.
+
+    (Without a kind at all no reader draws it; it is refused all the same.)
+    """
+    source = spelled(referring(""), subtype, kind, 9)
+
+    try:
+        shown = black(drawn(assemble(TARGET, source, wanted("1")).content, 1, forms=False)) > 50
+    except RenderFailed as failure:
+        shown = (failure.reason, failure.of_source) == ("fields", True)
+
+    assert shown
+
+
+def test_an_annotation_of_an_unknown_kind_that_is_no_field_stays() -> None:
+    note = "<< /Type /Annot /Subtype /Unknown /Rect [0 0 9 9] /Contents (note) >>"
+    source = pdf_of([""], page=f"/MediaBox [0 0 600 800] /Annots [{note}]")
+
+    assert b"(note)" in assemble(TARGET, source, wanted()).content
+
+
+def test_what_comes_along_is_told_from_what_the_target_has() -> None:
+    plain = pypdfium2.PdfDocument(field("/FT /Tx /V (MINE)"))
+    buffer = io.BytesIO()
+    plain.save(buffer)
+    own = marks_in(buffer.getvalue())
+
+    assert own
+    assert own["/Widget"] == 1
+    assert marks_in(b"not a file") is None
+    assert marks_in(b"startxref\r\n5\r\n%%EOF") is None
+    assert marks_in(buffer.getvalue().replace(b"xref\r\n0", b"xrex\r\n0")) is None
+
+
+def test_a_stream_is_not_taken_for_fields() -> None:
+    """A scan has many bytes that look like a key."""
+    text = "/Subtype/Widget /FT/Tx /V (x) /Subtype 5 0 R " * 100
+    pdf = pypdfium2.PdfDocument(pdf_of([text]))
+    buffer = io.BytesIO()
+    pdf.save(buffer)
+    marks = marks_in(buffer.getvalue().replace(b"/Filter/FlateDecode", b"/Filter/ASCIIHexxxx"))
+
+    assert marks is not None
+    assert not marks
 
 
 PATHS = {
