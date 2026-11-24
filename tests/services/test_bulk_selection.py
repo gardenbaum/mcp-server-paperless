@@ -289,6 +289,7 @@ async def test_ids_with_the_filter_change_exactly_these_and_name_what_matches_be
     assert (report.matched, report.requested, report.affected_count) == (5, 2, 2)
     # 104 matches too, but is as asked already.
     assert (report.also_matching, report.remaining) == ((103, 105), 2)
+    assert report.unchanged_count == 0
     assert report.message == (
         "Applied to 2 documents: add the tags 'e2e-inbox' to the selected documents. 2 other "
         "documents match and were not touched (also_matching)."
@@ -337,6 +338,62 @@ async def test_ids_alone_are_bound_to_the_current_values_too() -> None:
 
     assert again.message == refusal.message
     assert again.fingerprint != refusal.fingerprint
+
+
+async def test_another_field_of_the_document_may_change_meanwhile() -> None:
+    setup = Setup()
+    operation = ModifyCustomFields(op="modify_custom_fields", values={"e2e-string": "x"})
+    refusal = await setup.asked(operation)
+    number = next(f.id for f in setup.state.custom_fields if f.name == "e2e-integer")
+    setup.document(102).custom_fields = {number: 5}
+
+    with accepting(refusal.fingerprint):
+        report = await setup.run(operation)
+
+    assert report.applied
+
+
+async def test_a_filter_with_a_document_the_user_may_not_change_names_it_to_leave_out() -> None:
+    setup = Setup(READER[0], writes=False, scans=102)
+    for document in setup.state.documents:
+        document.owner = setup.fake.user.id
+    document = setup.document(102)
+    document.owner, document.viewers = 2, {setup.fake.user.id}
+
+    with pytest.raises(PermissionDenied, match=r"1 document \(102 'Scan 2'\)"):
+        _ = await setup.run()
+    preview = await setup.run(dry_run=True)
+
+    assert [row.id for row in preview.blocked] == [102]
+    assert "go on" not in preview.message
+
+
+async def test_hidden_documents_a_link_is_dropped_from_are_told_by_number() -> None:
+    setup = Setup(READER[0], writes=False)
+    links = next(f.id for f in setup.state.custom_fields if f.name == "e2e-documentlink")
+    setup.document(101).owner = setup.fake.user.id
+    setup.document(101).custom_fields = {links: [2]}
+
+    refusal = await setup.asked(
+        ModifyCustomFields(op="modify_custom_fields", remove=["e2e-documentlink"]),
+        document_ids=[101],
+    )
+
+    assert refusal.message.endswith(" also changes 1 document besides (#2).")
+
+
+async def test_of_mirrored_documents_a_hundred_are_named_and_the_rest_counted() -> None:
+    setup = Setup(writes=False, scans=102)
+
+    refusal = await setup.asked(
+        ModifyCustomFields(
+            op="modify_custom_fields", values={"e2e-documentlink": [*range(102, 203)]}
+        ),
+        document_ids=[101],
+    )
+
+    assert "201 'Scan 101' and 1 more)." in refusal.message
+    assert "202 " not in refusal.message
 
 
 @pytest.mark.parametrize("dry_run", [False, True])
@@ -451,6 +508,7 @@ async def test_more_than_a_hundred_are_changed_in_several_calls() -> None:
 
     assert "100 documents" in first.message
     assert (report.matched, report.affected_count, report.remaining) == (102, 100, 1)
+    assert (report.unchanged_count, report.also_matching) == (1, ())
     assert report.selected_ids == setup.fake.sent[0]
     assert len(report.selected_ids) == 100
     assert report.message.endswith(

@@ -137,8 +137,9 @@ class _Outcome:
     @property
     def scope(self) -> object:
         """What the text does not tell apart."""
+        # The documents that links are mirrored on follow from both.
         touched = [(hit.id, self.resolved.touched(hit)) for hit in self.changing]
-        return touched, [number for number, _ in self.others], self.resolved.change
+        return touched, self.resolved.change
 
     def rest(self, *, applied: bool) -> str:
         """What also matches and is not touched, as a sentence."""
