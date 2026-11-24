@@ -94,7 +94,7 @@ TRIGGER_ALIASES: Final[Mapping[int, tuple[str, ...]]] = {
 ACTION_ALIASES: Final[Mapping[int, tuple[str, ...]]] = {6: ("trash",), 7: ("ocr",)}
 # Why a tool may not write a trigger type that Paperless has.
 UNWRITABLE_TRIGGERS: Final[Mapping[int, str]] = {
-    5: "a workflow with it is run by hand from the Paperless web UI",
+    5: "this server runs such a workflow (run_workflow) but does not make its trigger",
 }
 # Why a tool may not write an action type that Paperless has.
 UNWRITABLE: Final[Mapping[int, str]] = {
@@ -676,12 +676,16 @@ class WorkflowService:
     ) -> tuple[str, ...]:
         """What a run does to a document, the most far-reaching first, with the values it writes.
 
+        Each clause has the number of its step, because the order decides what is left.
+
         ``titles`` reads the titles of linked documents the user may see.
 
         Raises:
             Validation: It has a destination that cannot be shown, or too many of them.
         """
         _ = _acts(workflow.actions)  # counts the destinations of all actions together
+        if any("tag" in _kinds(_action_fields(a), a.settings) for a in workflow.actions):
+            self._taxonomy.invalidate("tag")  # a new child tag would come off unnamed
         texts = _Texts(
             names=await self._names([workflow]),
             fields=await self._known("custom_field", workflow),
@@ -690,8 +694,10 @@ class WorkflowService:
         linked = [n for action in workflow.actions for n in texts.linked(action)]
         texts.titles = await titles(linked) if linked else {}
         found: list[tuple[bool, str]] = []
-        for action in workflow.actions:
-            found += [(not _far(action), text) for text in texts.of(action)]
+        total = len(workflow.actions)
+        for place, action in enumerate(workflow.actions, start=1):
+            step = f"step {place} of {total}: "
+            found += [(not _far(action), f"{step}{text}") for text in texts.of(action)]
         return tuple(text for _, text in sorted(found, key=lambda row: row[0])) or ("do nothing",)
 
     async def _known(

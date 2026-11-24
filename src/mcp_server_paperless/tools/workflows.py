@@ -67,11 +67,11 @@ remove_* lists), 'email' (email: subject, body, to, include_document), 'webhook'
 webhook: url, headers, params or body, include_document), 'move to trash' (undo with
 restore_from_trash, trash toolset, or in the web UI) and 'remote OCR' (consumption triggers only).
 Settings of another action type than the one given are an error. Password removal and applying AI
-suggestions cannot be written here; use the Paperless web UI. A 'manual' trigger (run by hand) is
-listed but cannot be written here either.
+suggestions cannot be written here; use the Paperless web UI. A 'manual' trigger (for
+run_workflow) is listed but cannot be written here either.
 
 A workflow runs by itself on every matching document once it is enabled (one with only manual
-triggers runs when a user runs it by hand). Without confirm, an
+triggers runs only with run_workflow or in the web UI). Without confirm, an
 enabled workflow that moves to trash, e-mails, calls a webhook, removes things or changes owner or
 permissions needs the user's yes: a dialog, or an error for you to show the user, first says what
 it would do (see confirm). Disabled workflows and plain filing (tags, title, correspondent and so
@@ -226,7 +226,7 @@ async def run_workflow(  # noqa: PLR0913 -- one parameter per concept, described
 
     The workflow has to be enabled; what it does is in list_workflows. Choose the documents by ids,
     filters or saved_view. dry_run=true shows what it would do; without confirm a dialog, or an
-    error for you to show the user, names every document and every action first, with all e-mail
+    error for you to show the user, names every action and every document first, with all e-mail
     recipients and webhook hosts (see confirm). filters or saved_view alone never run anything on
     confirm=true: pass the same again with the shown document_ids; the call is refused if one no
     longer matches. Paperless runs it on one document after the other: failed names those it

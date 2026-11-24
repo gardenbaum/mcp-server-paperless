@@ -10,6 +10,7 @@ Paperless then runs what is stored at that moment.
 """
 
 from dataclasses import dataclass
+from itertools import batched
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.bulk import MAX_DOCUMENTS
@@ -42,6 +43,8 @@ from mcp_server_paperless.services.workflows import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from mcp_server_paperless.domain.documents import DocumentHit, NameOrId, SignedIn
     from mcp_server_paperless.domain.ports import DocumentReader, WorkflowWriter
     from mcp_server_paperless.domain.selection import Selection
@@ -124,8 +127,8 @@ class _Call:
     def effect(self) -> str:
         """What confirming would do: every action, then every document."""
         return (
-            f"run {self.subject}, which will (the most far-reaching first, not in the order it "
-            f"runs): {'; '.join(self.actions)}. It runs on {self.target}"
+            f"run {self.subject}, which will (the most far-reaching first, the numbers are the "
+            f"order it runs in): {'; '.join(self.actions)}. It runs on {self.target}"
         )
 
     @property
@@ -220,7 +223,7 @@ class WorkflowRuns:
             raise Validation(message, hint="Work in several calls.")
         found = await self._workflows.find(workflow)
         _require_usable(found)
-        actions = await self._workflows.told(found, self._reader.get_document_titles)
+        actions = await self._workflows.told(found, self._titles)
         chosen = await self._selector.select(selection, change=True)
         require_all(chosen.missing)
         require_exclusions(chosen)
@@ -245,6 +248,13 @@ class WorkflowRuns:
             alone=by_filter and not ids,
             beside=by_filter and bool(ids),
         )
+
+    async def _titles(self, document_ids: Sequence[int]) -> dict[int, str]:
+        """The titles of the documents the user may see, read a hundred at a time."""
+        found: dict[int, str] = {}
+        for part in batched(sorted(set(document_ids)), MAX_DOCUMENTS, strict=False):
+            found |= await self._reader.get_document_titles(part)
+        return found
 
     async def _owners(self, chosen: Selected) -> dict[int, int | None]:
         if not chosen.hits:

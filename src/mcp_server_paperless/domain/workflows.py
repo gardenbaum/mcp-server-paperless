@@ -54,8 +54,8 @@ SCHEDULE_DATE_FIELDS: Final = ("added", "created", "modified", "custom_field")
 
 # The types a tool may write. Password removal stores passwords this server must never echo, so it
 # could neither show nor keep them; applying AI suggestions makes Paperless query its AI backend
-# for every document that matches. A manual trigger is run by hand from the web UI. All three
-# stay with the Paperless web UI.
+# for every document that matches. A workflow with a manual trigger is run with run_workflow, but
+# the trigger is made in the web UI. All three stay with the Paperless web UI.
 WRITABLE_TRIGGER_TYPES: Final = frozenset({1, 2, 3, 4})
 WRITABLE_ACTION_TYPES: Final = frozenset({1, 2, 3, 4, 6, 7})
 

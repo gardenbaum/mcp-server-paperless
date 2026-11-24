@@ -44,11 +44,12 @@ from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.workflows import MAX_DESTINATIONS, TRASH_NOTE
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Collection, Sequence
 
     from pydantic import JsonValue
 
-    from mcp_server_paperless.domain.documents import NameOrId
+    from mcp_server_paperless.domain.documents import NameOrId, SignedIn
+    from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
     from mcp_server_paperless.domain.workflows import WorkflowRunReport
     from mcp_server_paperless.services.workflow_runs import WorkflowRuns
 
@@ -80,7 +81,27 @@ class World(FakePaperless):
     def __init__(self, state: FakeState, *, user: str, writes: bool) -> None:
         super().__init__(state, user=user, allow_writes=writes)
         self.ends: PaperlessMcpError | Unconfirmed | None = None
-        self.invalidated: int = 0
+        self.listed: list[str] = []
+        self.titled: list[tuple[int, ...]] = []
+        # Whether Paperless does not list the permissions of the signed-in user.
+        self.unlisted: bool = False
+
+    @override
+    async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
+        self.listed.append(kind)
+        return await super().list_taxonomy(kind)
+
+    @override
+    async def get_document_titles(self, document_ids: Collection[int]) -> dict[int, str]:
+        self.titled.append(tuple(document_ids))
+        return await super().get_document_titles(document_ids)
+
+    @override
+    async def get_signed_in(self) -> SignedIn | None:
+        user = await super().get_signed_in()
+        if user is None or not self.unlisted:
+            return user
+        return user.model_copy(update={"permissions": None})
 
     @override
     async def run_workflow(
@@ -169,6 +190,11 @@ class Setup:
         return raised.value
 
 
+def bare(actions: Sequence[str]) -> tuple[str, ...]:
+    """What the actions do, without the numbers of their steps."""
+    return tuple(told.partition(": ")[2] for told in actions)
+
+
 def action(number: int, **settings: JsonValue) -> WorkflowAction:
     return WorkflowAction(id=number + 10, type=number, settings=settings)
 
@@ -205,14 +231,15 @@ async def test_the_confirmation_names_the_workflow_every_document_and_what_it_do
 
     assert refusal.message == (
         "Nothing was changed. Confirming would run the workflow 'Paid' (id 3), which will (the "
-        "most far-reaching first, not in the order it runs): send an e-mail to 'a@example.org', "
-        "'b@example.org' with the document attached; send a POST request to 'hooks.example.org', "
-        "with credentials (not shown); move each of them to the trash, after everything else; "
-        "assign title '{{ created_year }} paid', tags 'e2e-finance', 'e2e-inbox', correspondent "
-        "'e2e-acme', custom fields 'e2e-string': 'settled'; remove tags 'e2e-finance' (with their "
+        "most far-reaching first, the numbers are the order it runs in): step 3 of 5: send an "
+        "e-mail to 'a@example.org', 'b@example.org' with the document attached; step 4 of 5: send "
+        "a POST request to 'hooks.example.org', with credentials (not shown); step 5 of 5: move "
+        "each of them to the trash, after everything else; step 1 of 5: assign title "
+        "'{{ created_year }} paid', tags 'e2e-finance', 'e2e-inbox', correspondent 'e2e-acme', "
+        "custom fields 'e2e-string': 'settled'; step 2 of 5: remove tags 'e2e-finance' (with their "
         "child tags 'e2e-invoices' and any you cannot see), all correspondents. It runs on 2 "
-        "documents (101 'Scan 1', 102 "
-        "'Scan 2'), all of which match: its manual trigger has no filters."
+        "documents (101 'Scan 1', 102 'Scan 2'), all of which match: its manual trigger has no "
+        "filters."
     )
     assert refusal.hint == CONFIRM_HINT
 
@@ -258,7 +285,10 @@ async def test_every_kind_of_action_is_told(actions: tuple[WorkflowAction, ...],
 
     refusal = await setup.asked()
 
-    assert f"not in the order it runs): {told} It runs on 2 documents" in refusal.message
+    assert (
+        f"the numbers are the order it runs in): {told} It runs on 2 documents"
+        in refusal.message.replace("step 1 of 1: ", "")
+    )
     assert "hush" not in refusal.message
 
 
@@ -345,7 +375,7 @@ async def test_confirmed_ids_run_exactly_there_with_the_filters_as_asked() -> No
         assert setup.state.workflow_runs == [(3, (101, 102), apply_filters)]
         assert [INBOX in setup.document(n).tags for n in (101, 102, 103)] == [True, True, False]
         assert (report.workflow_id, report.workflow) == (3, "Paid")
-        assert report.actions == ("assign tags 'e2e-inbox'",)
+        assert report.actions == ("step 1 of 1: assign tags 'e2e-inbox'",)
         assert (report.apply_filters, report.dry_run, report.started) == (
             apply_filters,
             False,
@@ -592,7 +622,7 @@ async def test_a_preview_runs_nothing_and_says_what_confirming_would_do() -> Non
     report = await setup.run(dry_run=True)
 
     assert (report.dry_run, report.started, report.selected_ids) == (True, False, (101, 102))
-    assert report.actions == ("assign tags 'e2e-inbox'",)
+    assert report.actions == ("step 1 of 1: assign tags 'e2e-inbox'",)
     assert report.message == (
         "Dry run, nothing was run. Confirming would run the workflow 'Paid' (id 3) and do what "
         "actions says on 2 documents (101 'Scan 1', 102 'Scan 2'), all of which match: its manual "
@@ -1055,16 +1085,16 @@ async def test_the_far_reaching_actions_come_first_wherever_they_stand() -> None
         action(6),
     )
 
-    report = await setup.run(dry_run=True)
+    actions = bare((await setup.run(dry_run=True)).actions)
 
-    assert [told.split(" ")[0] for told in report.actions[-2:]] == ["assign", "remove"]
-    assert report.actions[-2:] == (
+    assert [told.split(" ")[0] for told in actions[-2:]] == ["assign", "remove"]
+    assert actions[-2:] == (
         "assign tags 'e2e-inbox'",
         "remove tags 'e2e-finance' (with their child tags 'e2e-invoices' and any you cannot see)",
     )
     starts = ("change", "assign owner", "remove all owners", "remove change groups", "ask the AI")
     for start in (*starts, "unlock", "run an action", "send an e-mail", "send a POST", "move"):
-        assert any(told.startswith(start) for told in report.actions[:-2]), start
+        assert any(told.startswith(start) for told in actions[:-2]), start
 
 
 @pytest.mark.parametrize(
@@ -1157,18 +1187,18 @@ async def test_every_setting_that_writes_or_takes_away_is_told(number: int, name
     value = given[shape]
     setup.flow(action(number, **{name: value}))
 
-    report = await setup.run(dry_run=True)
+    actions = bare((await setup.run(dry_run=True)).actions)
 
     what = name.removeprefix("assign_").removeprefix("remove_").replace("_", " ")
     verb = "assign" if number == 1 else "remove"
-    assert any(told.startswith(f"{verb} {what}") for told in report.actions), report.actions
+    assert any(told.startswith(f"{verb} {what}") for told in actions), actions
 
 
 async def test_removed_custom_fields_are_told() -> None:
     setup = Setup(writes=False)
     setup.flow(action(2, remove_custom_fields=[1]), action(2, remove_all_custom_fields=True))
 
-    actions = (await setup.run(dry_run=True)).actions
+    actions = bare((await setup.run(dry_run=True)).actions)
 
     assert actions == ("remove custom fields 'e2e-string'", "remove all custom fields")
 
@@ -1266,12 +1296,12 @@ async def test_removed_permissions_come_first_and_ignored_ocr_does_not() -> None
     setup = Setup(writes=False)
     setup.flow(action(7), TAGGING, action(2, remove_all_permissions=True))
 
-    actions = (await setup.run(dry_run=True)).actions
+    actions = bare((await setup.run(dry_run=True)).actions)
 
     assert actions[0] == "remove all permissions"
 
     setup.flow(TAGGING, action(7))
-    assert (await setup.run(dry_run=True)).actions[0] == "assign tags 'e2e-inbox'"
+    assert bare((await setup.run(dry_run=True)).actions)[0] == "assign tags 'e2e-inbox'"
 
 
 async def test_an_empty_text_writes_no_value() -> None:
@@ -1282,3 +1312,133 @@ async def test_an_empty_text_writes_no_value() -> None:
         "custom fields 'e2e-string' (without a value, where it is missing)"
         in (await setup.asked()).message
     )
+
+
+# --- the order it runs in, and fresh tags
+
+
+async def test_workflows_that_run_the_same_actions_in_another_order_are_told_apart() -> None:
+    setup = Setup(writes=False)
+    clear, give = action(2, remove_all_tags=True), action(1, assign_tags=[INBOX])
+    setup.flow(clear, give)
+    first = await setup.run(dry_run=True)
+    asked = await setup.asked()
+    setup.flow(give, clear)
+    second = await setup.run(dry_run=True)
+    again = await setup.asked()
+
+    assert first.actions == (
+        "step 1 of 2: remove all tags",
+        "step 2 of 2: assign tags 'e2e-inbox'",
+    )
+    assert second.actions == (
+        "step 1 of 2: assign tags 'e2e-inbox'",
+        "step 2 of 2: remove all tags",
+    )
+    assert asked.message != again.message
+
+
+async def test_the_trash_keeps_its_number_and_comes_after_everything_else() -> None:
+    setup = Setup(writes=False)
+    setup.flow(action(6), mail("a@example.org"), TAGGING)
+
+    assert (await setup.run(dry_run=True)).actions == (
+        "step 1 of 3: move each of them to the trash, after everything else",
+        "step 2 of 3: send an e-mail to 'a@example.org'",
+        "step 3 of 3: assign tags 'e2e-inbox'",
+    )
+
+
+async def test_both_clauses_of_one_action_have_its_number() -> None:
+    setup = Setup(writes=False)
+    setup.flow(TAGGING, action(1, assign_owner=READER_ID))
+
+    assert (await setup.run(dry_run=True)).actions == (
+        "step 2 of 2: change who owns or may see the matching documents",
+        "step 2 of 2: assign owner 'e2e-reader'",
+        "step 1 of 2: assign tags 'e2e-inbox'",
+    )
+
+
+@pytest.mark.parametrize(
+    "acting",
+    [action(2, remove_tags=[FINANCE]), action(1, assign_tags=[FINANCE])],
+    ids=["remove", "assign"],
+)
+async def test_tags_are_listed_anew_once_per_run(acting: WorkflowAction) -> None:
+    setup = Setup(writes=False)
+    setup.flow(acting)
+    refusal = await setup.asked()
+    before = setup.fake.listed.count("tag")
+    if acting.type == 2:
+        setup.state.tags.append(FakeTag(id=61, name="New child", parent=FINANCE))
+    else:
+        setup.state.tags = [
+            replace(t, parent=INBOX) if t.id == FINANCE else t for t in setup.state.tags
+        ]
+
+    with accepting(refusal.fingerprint):
+        again = await setup.asked(confirm=False)
+
+    assert setup.fake.listed.count("tag") - before == 1
+    assert again.fingerprint != refusal.fingerprint
+    assert ("'New child'" if acting.type == 2 else "parent tags 'e2e-inbox'") in again.message
+
+
+async def test_without_tags_in_the_actions_they_are_not_listed_anew() -> None:
+    setup = Setup(writes=False)
+    setup.flow(action(1, assign_correspondent=1), triggers=(FILTERED,))
+    _ = await setup.asked()
+    before = setup.fake.listed.count("tag")
+
+    _ = await setup.asked()
+
+    assert setup.fake.listed.count("tag") == before
+
+
+async def test_the_children_of_two_removed_parents_are_all_named() -> None:
+    setup = Setup(writes=False)
+    setup.state.tags += [
+        FakeTag(id=61, name="Child", parent=FINANCE),
+        FakeTag(id=62, name="Other child", parent=INBOX),
+    ]
+    setup.flow(action(2, remove_tags=[FINANCE, INBOX]))
+
+    assert (
+        "(with their child tags 'e2e-invoices', 'Child', 'Other child' and any you cannot see)"
+    ) in (await setup.asked()).message
+
+
+async def test_where_permissions_are_not_listed_paperless_decides() -> None:
+    setup = restricted(owner=None, writes=True)
+    setup.without(READER[0], "change_document")
+    setup.fake.unlisted = True
+
+    preview = await setup.run(dry_run=True)
+    with pytest.raises(PermissionDenied, match="refused to run the workflow"):
+        _ = await setup.run(confirm=True)
+
+    assert preview.blocked == ()
+
+
+@pytest.mark.parametrize("listed", [True, False])
+async def test_documents_that_all_have_no_owner_run(*, listed: bool) -> None:
+    setup = restricted(owner=None, writes=True)
+    setup.document(101).owner = None
+    setup.fake.unlisted = not listed
+
+    assert (await setup.run(confirm=True)).started
+
+
+async def test_linked_documents_are_read_a_hundred_at_a_time() -> None:
+    setup = Setup(writes=False)
+    link = next(f.id for f in setup.state.custom_fields if f.name == "e2e-documentlink")
+    linked: list[JsonValue] = [*range(5000, 5201), 101, 101]
+    setup.flow(
+        action(1, assign_custom_fields=[link], assign_custom_fields_values={str(link): linked})
+    )
+
+    message = (await setup.run(dry_run=True)).actions[0]
+
+    assert [len(ids) for ids in setup.fake.titled[:3]] == [100, 100, 2]
+    assert "#5200, 101 'Scan 1'" in message

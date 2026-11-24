@@ -106,7 +106,7 @@ async def test_named_documents_run_after_the_second_call() -> None:
     assert "assign tags 'e2e-inbox'. It runs on 2 documents" in text(refused)
     assert state.workflow_runs == [(3, (10, 11), True)]
     assert (done["started"], done["selected_ids"], done["failed"]) == (True, [10, 11], [])
-    assert done["actions"] == ["assign tags 'e2e-inbox'"]
+    assert done["actions"] == ["step 1 of 1: assign tags 'e2e-inbox'"]
 
 
 async def test_the_call_a_refusal_by_filter_names_goes_through() -> None:
@@ -360,9 +360,9 @@ async def sized(title: str, name: str) -> tuple[str, str]:
         (
             "Scan of a long and quite ordinary invoice, page 1 of the second quarter",
             "Value ",
-            (11_917, 7_164),
+            (12_020, 7_164),
         ),
-        ("Scan " + chr(0x201D) * 123, chr(0x1F676) * 60, (42_821, 24_564)),
+        ("Scan " + chr(0x201D) * 123, chr(0x1F676) * 60, (42_924, 24_564)),
     ],
     ids=["ordinary", "hostile"],
 )
