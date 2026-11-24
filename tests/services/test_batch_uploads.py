@@ -3,6 +3,9 @@
 import asyncio
 import hashlib
 import os
+import threading
+import time
+import unicodedata
 from typing import TYPE_CHECKING, override
 
 import pytest
@@ -23,14 +26,18 @@ from mcp_server_paperless.domain.errors import (
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.batch_uploads import (
     CHANGED,
+    FAILED,
     NOT_TAKEN,
     ONE_BY_ONE,
+    TWIN_LOST,
     UNEXPECTED,
     UNKNOWN,
     UNREAD,
     BatchUploadService,
     Limits,
     _File,  # pyright: ignore[reportPrivateUsage] -- for the seam of the tests below
+    cursor,
+    position,
 )
 from mcp_server_paperless.services.duplicates import (
     HIDDEN_REJECTED,
@@ -52,6 +59,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.tasks import TaskStatus
     from mcp_server_paperless.domain.trash import TrashPage
     from mcp_server_paperless.domain.uploads import UploadBatch
+    from mcp_server_paperless.services.upload_listing import Listing
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-50")]
 
@@ -196,6 +204,9 @@ class Setup:
             paths, UploadMetadata(), wait_seconds=wait, dry_run=dry_run
         )
 
+    def cursor(self, name: str, *, recursive: bool = False) -> str:
+        return cursor(f"{self.root}/{name}", str(self.root), recursive=recursive)
+
     def rows(self, batch: UploadBatch) -> list[tuple[str, str]]:
         return [(f.path.removeprefix(f"{self.root}/"), f.status) for f in batch.files]
 
@@ -325,7 +336,7 @@ async def test_an_unexpected_error_of_the_reading_is_one_report(root: Path) -> N
     class Odd(BatchUploadService):
         @override
         def _read(self, file: _File) -> tuple[str, bytes]:
-            if "2.pdf" in file.path:
+            if file.path.endswith("2.pdf"):
                 raise RuntimeError
             return super()._read(file)
 
@@ -512,7 +523,7 @@ async def test_a_restricted_user_gets_the_gaps_once_and_no_hidden_document(root:
 
 async def test_the_approved_limits() -> None:
     assert Limits() == Limits(
-        files=25, total_bytes=100 * 1024 * 1024, looking=10, starting=40, ending=55
+        files=25, total_bytes=100 * 1024 * 1024, listing=10, looking=15, starting=40, ending=55
     )
     assert Limits().total_bytes == MAX_UPLOAD_LIMIT
 
@@ -527,7 +538,7 @@ async def test_two_calls_cover_a_directory_once(root: Path) -> None:
 
     assert setup.rows(first) == [("a.pdf", "uploaded"), ("b.pdf", "uploaded")]
     assert (first.left_out, first.left_out_count) == ((f"{root}/c.pdf",), 1)
-    assert first.next_after == f"{root}/b.pdf"
+    assert first.next_after == setup.cursor("b.pdf")
     assert first.notes == (
         "Files not started: 1 (at most 2 files per call); call again with after=next_after.",
     )
@@ -565,7 +576,7 @@ async def test_the_total_is_exact_and_counts_what_was_read(root: Path) -> None:
     batch = await setup.directory()
 
     assert setup.rows(batch) == [("1.txt", "uploaded"), ("2.txt", "uploaded")]
-    assert batch.next_after == f"{root}/2.txt"
+    assert batch.next_after == setup.cursor("2.txt")
     assert "at most 200 bytes per call" in batch.notes[0]
 
     small = Setup(root, limits=Limits(total_bytes=2 * size - 1))
@@ -594,7 +605,7 @@ async def test_no_file_is_started_late_and_the_rest_is_left_out(root: Path) -> N
     assert setup.rows(batch) == [("a.pdf", "uploaded"), ("b.pdf", "uploaded")]
     # d.pdf was looked at already; it is reported by the next call.
     assert batch.left_out == (f"{root}/c.pdf", f"{root}/d.pdf")
-    assert batch.next_after == f"{root}/b.pdf"
+    assert batch.next_after == setup.cursor("b.pdf")
     assert "no file is started after 40 seconds" in batch.notes[0]
 
 
@@ -607,14 +618,14 @@ async def test_the_first_file_is_always_tried_so_every_call_gets_on(root: Path) 
     batch = await setup.directory()
 
     assert setup.rows(batch) == [("a.pdf", "uploaded")]
-    assert batch.next_after == f"{root}/a.pdf"
+    assert batch.next_after == setup.cursor("a.pdf")
 
 
 async def test_reading_that_takes_too_long_is_cut_and_gets_on(root: Path) -> None:
     class Slow(BatchUploadService):
         @override
         def _read(self, file: _File) -> tuple[str, bytes]:
-            setup.clock.now += 6
+            setup.clock.now += 10
             return super()._read(file)
 
     setup = Setup(root, kind=Slow)
@@ -624,7 +635,7 @@ async def test_reading_that_takes_too_long_is_cut_and_gets_on(root: Path) -> Non
     batch = await setup.directory()
 
     assert setup.rows(batch) == [("a.pdf", "uploaded"), ("b.pdf", "uploaded")]
-    assert "reading took longer than 10 seconds" in batch.notes[0]
+    assert "reading took longer than 15 seconds" in batch.notes[0]
 
 
 async def test_paths_are_continued_by_name(root: Path) -> None:
@@ -662,7 +673,7 @@ async def test_an_outage_is_not_waited_for_by_every_file(root: Path) -> None:
     assert [f.status for f in batch.files] == ["uploaded", "failed", "failed"]
     assert batch.files[2].reason == "Down. Hint: Later."
     assert batch.left_out_count == 2
-    assert batch.next_after == f"{root}/2.pdf"
+    assert batch.next_after == setup.cursor("2.pdf")
     assert "Paperless did not answer for 2 files in a row" in batch.notes[0]
 
 
@@ -783,23 +794,172 @@ async def test_names_that_hide_something_are_refused_and_escaped(root: Path) -> 
     assert setup.rows(batch) == [("a\\u202eb.pdf", "refused"), ("c\\nd.pdf", "refused")]
 
 
-@pytest.mark.parametrize("after", ["/etc", "b.pdf", ""])
-async def test_a_cursor_of_another_directory_is_refused(root: Path, after: str) -> None:
-    setup = Setup(root)
+async def test_a_cursor_survives_only_letter_for_letter(root: Path) -> None:
+    """NFD names come back composed from many writers: the rest must not be skipped silently."""
+    setup = Setup(root, limits=Limits(files=1))
+    decomposed = unicodedata.normalize("NFD", "\u00e4")
+    _ = setup.file(f"{decomposed}.txt", b"one")
+    _ = setup.file("z.txt", b"two")
+    _ = setup.file("\u4e00.txt", b"three")
 
-    with pytest.raises(Validation, match="after"):
+    first = await setup.directory()
+    after = first.next_after or ""
+    second = await setup.directory(after=after)
+    third = await setup.directory(after=second.next_after)
+
+    assert after.isascii()
+    assert [f.status for b in (first, second, third) for f in b.files] == ["uploaded"] * 3
+    assert third.next_after is None
+    assert "Files that sort before after, not looked at in this call: 2." in third.notes
+    plain = after.encode().decode("unicode_escape")
+    for changed in (unicodedata.normalize("NFC", plain), after[:-1], after.upper()):
+        with pytest.raises(Validation, match="not a next_after"):
+            _ = await setup.directory(after=changed)
+
+
+@pytest.mark.parametrize("form", ["plain", "other directory", "other mode", "malformed", "empty"])
+async def test_a_cursor_that_proves_no_position_is_refused(root: Path, form: str) -> None:
+    setup = Setup(root)
+    _ = setup.file("a.txt", b"x")
+    after = {
+        "plain": f"{root}/a.txt",
+        "other directory": cursor(f"{root}2/a.txt", f"{root}2", recursive=False),
+        "other mode": setup.cursor("a.txt", recursive=True),
+        "malformed": "\\q#000000000000",
+        "empty": "",
+    }[form]
+
+    with pytest.raises(Validation, match="after is not a next_after of this directory"):
         _ = await setup.directory(after=after)
+    assert setup.fake.sent == []
 
 
-async def test_a_cursor_is_text_only(root: Path) -> None:
+@pytest.mark.parametrize("name", ["a#b.txt", "a\\nb", "a\nb", "x\udcff", "\U0001f9fe"])
+def test_every_path_has_its_own_cursor(name: str) -> None:
+    made = cursor(f"/d/{name}", "/d", recursive=False)
+
+    assert made.isascii()
+    assert position(made, "/d", recursive=False) == f"/d/{name}"
+
+
+async def test_a_cursor_whose_file_is_gone_still_marks_its_place(root: Path) -> None:
+    setup = Setup(root, limits=Limits(files=1))
+    for name in ("a.txt", "b.txt"):
+        _ = setup.file(name, name.encode())
+    first = await setup.directory()
+    (root / "a.txt").unlink()
+
+    assert setup.rows(await setup.directory(after=first.next_after)) == [("b.txt", "uploaded")]
+
+
+async def test_reported_paths_work_as_paths_directory_and_cursor(root: Path) -> None:
+    setup = Setup(root, limits=Limits(files=1))
+    odd = root / f"in{chr(0x200D)}box\\1"
+    _ = setup.file(f"{odd.name}/a.txt", b"one")
+    _ = setup.file(f"{odd.name}/b.txt", b"two")
+
+    [shown] = (await setup.directory()).directories
+    assert (chr(0x200D) in shown, "box\\\\1" in shown) == (False, True)
+    first = await setup.service.from_directory(shown, UploadMetadata())
+    second = await setup.service.from_directory(shown, UploadMetadata(), after=first.next_after)
+    again = await setup.paths(first.files[0].path)
+
+    assert [f.status for b in (first, second) for f in b.files] == ["uploaded", "uploaded"]
+    assert (again.files[0].path, again.files[0].status) == (first.files[0].path, "duplicate")
+
+
+async def test_a_path_with_a_backslash_that_is_no_escape_is_refused_alone(root: Path) -> None:
     setup = Setup(root)
-    _ = setup.file("a.pdf")
-    _ = setup.file("c.pdf")
+    good = setup.file("a.txt", b"x")
 
-    batch = await setup.directory(after=f"{root}/../nothing")  # sorts before every name
+    batch = await setup.paths(f"{root}/b\\q.txt", good)
 
-    assert len(batch.files) == 2
-    assert setup.rows(await setup.directory(after=f"{root}/b")) == [("c.pdf", "duplicate")]
+    assert [f.status for f in batch.files] == ["refused", "uploaded"]
+    assert "written twice" in (batch.files[0].reason or "")
+    with pytest.raises(Validation, match="no escape"):
+        _ = await setup.service.from_directory(f"{root}\\q", UploadMetadata())
+
+
+async def test_files_that_failed_are_counted_when_there_is_more(root: Path) -> None:
+    setup = Setup(root, limits=Limits(files=1))
+    for name in ("a.txt", "b.txt"):
+        _ = setup.file(name, name.encode())
+    setup.fake.on_upload[1] = raising(PermissionDenied("no"))
+
+    assert FAILED.format(count=1) in (await setup.directory()).notes
+
+
+async def test_a_twin_of_a_file_that_fails_later_says_so(root: Path) -> None:
+    setup = Setup(root)
+    _ = setup.file("a.txt", b"same")
+    _ = setup.file("b.txt", b"same")
+    setup.fake.outcome = {"state": "failure", "message": "Broken.", "document_ids": ()}
+
+    batch = await setup.directory()
+
+    assert setup.rows(batch) == [("a.txt", "failed"), ("b.txt", "duplicate")]
+    assert batch.files[1].reason == TWIN_LOST.format(path=f"{root}/a.txt", status="failed")
+
+
+async def test_a_deep_directory_is_named(root: Path) -> None:
+    setup = Setup(root)
+    _ = setup.file("/".join(["d"] * 33) + "/a.txt", b"x")
+
+    batch = await setup.directory(recursive=True)
+
+    assert batch.files == ()
+    assert batch.directories == (f"{root}/" + "/".join(["d"] * 33),)
+    assert "more than 32 levels down: 1" in batch.notes[0]
+
+
+async def test_a_listing_that_takes_too_long_stops_the_call_and_the_walk(root: Path) -> None:
+    stopped = threading.Event()
+
+    class Endless(BatchUploadService):
+        @override
+        def _walk(self, directory: str, *, recursive: bool, stop: Callable[[], bool]) -> Listing:
+            while not stop():
+                time.sleep(0.005)
+            stopped.set()
+            return super()._walk(directory, recursive=recursive, stop=stop)
+
+    setup = Setup(root, kind=Endless, limits=Limits(listing=0.05))
+
+    with pytest.raises(Validation, match=r"took longer than 0\.05 seconds"):
+        _ = await setup.directory()
+    assert await asyncio.to_thread(stopped.wait, 5)
+    assert setup.fake.sent == []
+
+
+async def test_reading_blocks_no_other_call(root: Path) -> None:
+    class Slow(BatchUploadService):
+        @override
+        def _read(self, file: _File) -> tuple[str, bytes]:
+            assert ticked.wait(5)  # would never come if this ran on the event loop
+            return super()._read(file)
+
+    ticked = threading.Event()
+    setup = Setup(root, kind=Slow)
+    _ = setup.file("a.txt", b"x")
+    call = asyncio.create_task(setup.directory())
+    await asyncio.sleep(0.01)
+    ticked.set()
+
+    assert (await call).counts == {"uploaded": 1}
+
+
+async def test_what_paperless_accepted_is_in_the_log(
+    root: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A cancelled call loses its report."""
+    setup = Setup(root)
+    _ = setup.file("a.txt", b"x")
+
+    with caplog.at_level("INFO"):
+        _ = await setup.directory()
+
+    assert setup.state.tasks[0].task_id in caplog.text
+    assert "a.txt" not in caplog.text
 
 
 @pytest.mark.parametrize("change", ["swap", "grow", "remove", "link"])

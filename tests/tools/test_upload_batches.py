@@ -15,6 +15,7 @@ from harness import admin, paperless_settings, serve
 
 from mcp_server_paperless.app import create_app
 from mcp_server_paperless.domain.errors import InvalidConfiguration
+from mcp_server_paperless.services.batch_uploads import cursor
 from mcp_server_paperless.settings import HttpSettings, ServerSettings
 from mcp_server_paperless.tools._shared import (
     ANNOTATIONS,
@@ -243,7 +244,7 @@ async def test_every_argument_reaches_the_call(tmp_path: Path) -> None:
         fake,
         directory=str(tmp_path),
         recursive=True,
-        after=str(tmp_path / "a.pdf"),
+        after=cursor(str(tmp_path / "a.pdf"), str(tmp_path), recursive=True),
         document_type=1,
         storage_path=1,
         tags=["e2e-inbox"],

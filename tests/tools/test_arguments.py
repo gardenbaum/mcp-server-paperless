@@ -29,6 +29,7 @@ from harness import serve
 from mcp_server_paperless.domain.admin import CONFIG_READ_ONLY, CONFIG_SETTINGS
 from mcp_server_paperless.domain.views import FilterRule
 from mcp_server_paperless.domain.workflows import Workflow, WorkflowAction, WorkflowTrigger
+from mcp_server_paperless.services.batch_uploads import cursor
 from mcp_server_paperless.services.documents import text_state
 from mcp_server_paperless.services.filter_rules import SPECS
 from mcp_server_paperless.tools._shared import LOCAL_TOOLSETS
@@ -464,11 +465,11 @@ async def test_several_files_are_uploaded_with_every_argument(tmp_path: Path) ->
     }
     async with serving(only=frozenset(LOCAL_TOOLSETS), stdio=True, upload_dirs=[str(tmp_path)]):
         await sweep("upload_documents", {**common, "paths": [str(tmp_path / "a.pdf")]}, ())
-        await sweep(
-            "upload_documents",
-            {**common, "directory": str(tmp_path), "after": str(tmp_path / "a.pdf")},
-            ("recursive", "dry_run"),
-        )
+        await sweep("upload_documents", {**common, "directory": str(tmp_path)}, ("dry_run",))
+        for recursive in (True, False):
+            after = cursor(str(tmp_path / "a.pdf"), str(tmp_path), recursive=recursive)
+            given = {"directory": str(tmp_path), "recursive": recursive, "after": after}
+            await sweep("upload_documents", {**common, **given}, ())
     assert not FAILED, "\n".join(FAILED)
 
 

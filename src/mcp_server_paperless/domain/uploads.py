@@ -18,7 +18,15 @@ class BatchFile(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
-    path: Annotated[str, Field(description="As given; characters nobody sees are escaped.")]
+    path: Annotated[
+        str,
+        Field(
+            description=(
+                "With characters nobody sees escaped and a backslash doubled; paths and "
+                "directory take it so, upload_document takes the plain path."
+            )
+        ),
+    ]
     status: Annotated[
         BatchStatus,
         Field(
@@ -60,7 +68,8 @@ class UploadBatch(BaseModel):
         tuple[str, ...], Field(description="Subdirectories not read; at most 25 named.")
     ]
     next_after: Annotated[
-        str | None, Field(description="Pass as after to go on with the directory; null: done.")
+        str | None,
+        Field(description="Pass unchanged as after to go on with the directory; null: done."),
     ]
     notes: Annotated[tuple[str, ...], Field(description="What was left out and how to go on.")]
     not_checked: Annotated[

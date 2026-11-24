@@ -7,19 +7,22 @@ description's wording are shared with the stdio variant, which differs only in t
 bytes.
 """
 
-from datetime import date
 from typing import Annotated
 
 from fastmcp import Context
 from fastmcp.server.providers import LocalProvider
-from pydantic import Field, JsonValue
+from pydantic import Field
 
-from mcp_server_paperless.domain.documents import NameOrId, UploadMetadata, UploadResult
+from mcp_server_paperless.domain.documents import UploadMetadata, UploadResult
 from mcp_server_paperless.services.tasks import MAX_WAIT_SECONDS
 from mcp_server_paperless.tools._shared import (
     ANNOTATIONS,
     DOCUMENT_TEXT,
     Confirm,
+    Created,
+    CustomFields,
+    Named,
+    Tags,
     boundary,
     services,
 )
@@ -32,32 +35,13 @@ remote = LocalProvider()
 # The remote form with the hint at paths, for stdio without an allowlist.
 hinted = LocalProvider()
 
-type Named = Annotated[NameOrId | None, Field(description="Name or id; see list_taxonomy.")]
 type Title = Annotated[
     str | None,
     Field(description="Title (at most 128 characters); default: the file name without extension."),
 ]
-type Created = Annotated[
-    date | None, Field(description="Creation date (YYYY-MM-DD); default: Paperless reads it.")
-]
 type SerialNumber = Annotated[
     int | None,
     Field(ge=0, le=4_294_967_295, description="Archive serial number; it must be unused."),
-]
-type Tags = Annotated[
-    list[NameOrId] | None,
-    Field(description="Tag names or ids; they must exist (none is created)."),
-]
-type CustomFields = Annotated[
-    dict[str, JsonValue] | None,
-    Field(
-        description=(
-            "Custom field values keyed by field name or id. Values by data type: string/longtext "
-            "text; url with scheme; date 'YYYY-MM-DD'; boolean true/false; integer; float; "
-            "monetary 'EUR12.50' (or 12.5); documentlink a list of document ids; select the "
-            "option's label."
-        )
-    ),
 ]
 type Wait = Annotated[
     int,

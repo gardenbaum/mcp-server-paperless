@@ -10,12 +10,14 @@ calls on ``Services``. The registry tests
 import functools
 import logging
 from dataclasses import dataclass
+from datetime import date
 from typing import TYPE_CHECKING, Annotated, Final, Protocol, cast
 
 from fastmcp.exceptions import ResourceError, ToolError
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import Field, JsonValue
 
+from mcp_server_paperless.domain.documents import NameOrId
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     NotConfirmed,
@@ -923,6 +925,27 @@ type Confirm = Annotated[
             "user, and the tool runs only if they accept; with any other nothing changes and the "
             "error says what would happen. Describe that to the user and pass true only once they "
             "agree, or if they already asked for exactly this."
+        )
+    ),
+]
+
+# What the upload tools take for the new documents.
+type Named = Annotated[NameOrId | None, Field(description="Name or id; see list_taxonomy.")]
+type Created = Annotated[
+    date | None, Field(description="Creation date (YYYY-MM-DD); default: Paperless reads it.")
+]
+type Tags = Annotated[
+    list[NameOrId] | None,
+    Field(description="Tag names or ids; they must exist (none is created)."),
+]
+type CustomFields = Annotated[
+    dict[str, JsonValue] | None,
+    Field(
+        description=(
+            "Custom field values keyed by field name or id. Values by data type: string/longtext "
+            "text; url with scheme; date 'YYYY-MM-DD'; boolean true/false; integer; float; "
+            "monetary 'EUR12.50' (or 12.5); documentlink a list of document ids; select the "
+            "option's label."
         )
     ),
 ]

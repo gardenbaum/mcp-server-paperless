@@ -13,8 +13,11 @@ import pytest
 
 from mcp_server_paperless.domain.errors import NotFound, Validation
 from mcp_server_paperless.services.upload_listing import (
+    MAX_DEPTH,
     MAX_ENTRIES,
     Listing,
+    StoppedError,
+    given_path,
     list_allowed,
     shown_path,
 )
@@ -74,6 +77,7 @@ def test_the_files_are_sorted_and_subdirectories_are_only_named(allowed: Path) -
     assert found == Listing(
         files=(f"{allowed}/a.pdf", f"{allowed}/b.pdf"),
         directories=(f"{allowed}/sub",),
+        deeper=(),
         hidden=0,
     )
 
@@ -217,25 +221,34 @@ def test_special_and_hard_linked_files_are_named_and_refused_when_read(allowed: 
         ("Käse 日本語 🧾.pdf", "Käse 日本語 🧾.pdf"),
         ("x\udcff.pdf", "x\\udcff.pdf"),
         ("a\nb.pdf", "a\\nb.pdf"),
+        ("del\x7f", "del\\x7f"),
         ("gpj.\u202eexe", "gpj.\\u202eexe"),
-        (f"f{chr(0x1F468)}{chr(0x200D)}{chr(0x1F469)}", f"f{chr(0x1F468)}\\u200d{chr(0x1F469)}"),
-        ("a\\nb.pdf", "a\\nb.pdf"),
+        ("tag\U000e0001", "tag\\U000e0001"),
+        ("a\\nb.pdf", "a\\\\nb.pdf"),  # never taken for a line break
     ],
 )
-def test_a_path_is_shown_without_what_hides_or_cannot_be_sent(name: str, shown: str) -> None:
+def test_a_path_is_shown_without_what_hides_and_read_back_as_it_was(name: str, shown: str) -> None:
     assert shown_path(name) == shown
     assert shown_path(name).encode()
+    assert given_path(shown) == name
 
 
-def test_names_that_hide_something_are_listed_and_sorted_by_what_is_shown(allowed: Path) -> None:
-    _ = (allowed / "a\nb.pdf").write_bytes(b"x")
-    _ = (allowed / "a\u202eb.pdf").write_bytes(b"x")
+@pytest.mark.parametrize(
+    "text", ["a\\b.pdf", "x\\", "\\x4", "\\u12", "\\u12g4", "\\U0000", "\\Uffffffff", "\\N{DASH}"]
+)
+def test_an_escape_no_report_holds_is_refused(text: str) -> None:
+    with pytest.raises(Validation, match="escape"):
+        _ = given_path(text)
+
+
+def test_files_are_sorted_by_what_they_are_not_by_what_is_shown(allowed: Path) -> None:
+    for name in ("a\nb.pdf", "a\\nb.pdf", "a\u202eb.pdf"):
+        _ = (allowed / name).write_bytes(b"x")
 
     found = listing(allowed, allowed)
 
-    shown = [shown_path(path) for path in found.files]
-    assert shown == sorted(shown)
-    assert len(shown) == 4
+    assert list(found.files) == sorted(found.files)
+    assert len({shown_path(path) for path in found.files}) == 5
 
 
 @pytest.mark.skipif(sys.platform == "darwin", reason="macOS refuses names that are not UTF-8")
@@ -267,6 +280,47 @@ def test_the_limit_counts_the_whole_walk(allowed: Path) -> None:
     with pytest.raises(Validation, match="more than 5 entries"):
         _ = listing(allowed, allowed, recursive=True, most=5)
     assert MAX_ENTRIES == 10_000
+
+
+def test_directories_below_the_depth_limit_are_named_and_not_read(allowed: Path) -> None:
+    deep = allowed / "a" / "b" / "c"
+    deep.mkdir(parents=True)
+    _ = (deep / "x.pdf").write_bytes(b"x")
+    (allowed / "a" / "link").symlink_to(deep, target_is_directory=True)
+
+    found = listing(allowed, allowed, recursive=True, depth=2)
+
+    assert found.deeper == (f"{allowed}/a/b/c",)
+    assert "a/link/x.pdf" in names(found, allowed)  # two levels down
+    shallow = listing(allowed, allowed, recursive=True, depth=1)
+    assert shallow.deeper == (f"{allowed}/a/b", f"{allowed}/a/link", f"{allowed}/sub/deep")
+    assert listing(allowed, allowed, recursive=True).deeper == ()
+    assert MAX_DEPTH == 32
+
+
+def test_a_chain_of_many_levels_ends_at_the_limit(allowed: Path) -> None:
+    deepest = allowed
+    for _ in range(100):
+        deepest /= "d"
+        deepest.mkdir()
+
+    found = listing(allowed, allowed, recursive=True)
+
+    assert found.deeper == (str(allowed / Path(*["d"] * 33)),)
+
+
+def test_a_walk_stops_when_it_is_told_to(allowed: Path) -> None:
+    (allowed / "link").symlink_to(allowed / "nothing")
+    asked = 0
+
+    def stop() -> bool:
+        nonlocal asked
+        asked += 1
+        return asked == 6
+
+    with pytest.raises(StoppedError):
+        _ = listing(allowed, allowed, recursive=True, stop=stop)
+    assert asked == 6
 
 
 # --- races ---------------------------------------------------------------------------------------

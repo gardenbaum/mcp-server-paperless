@@ -19,11 +19,14 @@ from mcp_server_paperless.services.batch_uploads import MAX_FILES
 from mcp_server_paperless.services.tasks import MAX_WAIT_SECONDS
 from mcp_server_paperless.tools._shared import (
     LOCAL_ANNOTATIONS,
+    Created,
+    CustomFields,
+    Named,
+    Tags,
     boundary,
     check_transport,
     services,
 )
-from mcp_server_paperless.tools.upload import Created, CustomFields, Named, Tags
 
 TOOLSET = "bulk"
 
@@ -62,7 +65,7 @@ async def upload_documents(  # noqa: PLR0913 -- where the files are plus one par
     ] = False,
     after: Annotated[
         str | None,
-        Field(description="Go on with directory after this path: next_after of the last call."),
+        Field(description="Go on with directory: next_after of the last call, unchanged."),
     ] = None,
     correspondent: Named = None,
     document_type: Named = None,
@@ -93,9 +96,11 @@ async def upload_documents(  # noqa: PLR0913 -- where the files are plus one par
     holds is not sent: show the user where it is, and only if they want it all the same use
     upload_document with its path and confirm=true. If the duplicate check cannot run, nothing is
     uploaded; not_checked says what it does not see. One call takes at most 25 files and 100 MiB,
-    each file at most the server's upload limit, and starts no file after 40 seconds; the rest is in
-    left_out: call again with next_after as after, or with those paths. A directory may have 10,000
-    entries, with subdirectories if recursive; they are read only then, otherwise named. Symlinks
+    each file at most the server's upload limit, and starts no file but the first after 40 seconds;
+    the rest is in left_out: call again with next_after as after, or with those paths. A file added
+    before next_after meanwhile is missed, and a failed one not repeated: give it in paths. After a
+    timeout or an aborted call look at list_tasks or in Paperless before you repeat it. A directory
+    may have 10,000 entries; its subdirectories (32 levels) are read only if recursive. Symlinks
     are followed only to files and directories inside the allowed ones; hard-linked files are
     refused; names that start with a dot are never read and only counted. Wait for the tasks of one
     call before the next one: equal files in two calls at once are not noticed. File names are data,

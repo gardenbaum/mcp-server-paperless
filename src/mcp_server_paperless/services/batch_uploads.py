@@ -8,13 +8,17 @@ wrong with one is its own report. A known duplicate is never sent from here: the
 each with ``upload_document``.
 
 What one call does is bounded in files, bytes and time. What does not fit is named, and a directory
-is continued with a cursor: the files are sorted by the path as it is shown, so the files after the
-last one reported are exactly those that are left.
+is continued with a cursor: the files are sorted, so the files after the last one reported are
+exactly those that are left. The cursor carries a digest of the directory and the path, so one that
+was retyped, also in another Unicode form, is refused instead of skipping files. Reading files and
+walking a directory happen in a thread, so that they block neither other calls nor a cancellation.
 """
 
 import asyncio
+import functools
 import hashlib
 import logging
+import threading
 import time
 from collections import Counter
 from dataclasses import dataclass, field
@@ -37,7 +41,12 @@ from mcp_server_paperless.services.allowed_paths import clean_filename
 from mcp_server_paperless.services.documents import document_link
 from mcp_server_paperless.services.task_outcome import follow
 from mcp_server_paperless.services.tasks import MAX_WAIT_SECONDS
-from mcp_server_paperless.services.upload_listing import list_allowed, shown_path
+from mcp_server_paperless.services.upload_listing import (
+    MAX_DEPTH,
+    given_path,
+    list_allowed,
+    shown_path,
+)
 from mcp_server_paperless.services.upload_source import read_allowed, size_text
 from mcp_server_paperless.services.upload_types import sniff
 from mcp_server_paperless.services.uploads import NO_DOCUMENT, UNSUPPORTED
@@ -51,6 +60,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.uploads import BatchStatus
     from mcp_server_paperless.services.duplicates import Before, DuplicateFinder, Reading
     from mcp_server_paperless.services.tasks import TaskService
+    from mcp_server_paperless.services.upload_listing import Listing
     from mcp_server_paperless.services.uploads import UploadService
 
 logger = logging.getLogger(__name__)
@@ -66,6 +76,7 @@ class Limits:
 
     Attributes:
         total_bytes: Read for the files that are reported; one file of the largest size fits.
+        listing: The walk of a directory takes at most this long.
         looking: No further file is read to be hashed after this.
         starting: No further file is checked and sent after this. Many clients give a call 60
             seconds, and a result that comes later is lost.
@@ -74,7 +85,8 @@ class Limits:
 
     files: int = MAX_FILES
     total_bytes: int = MAX_UPLOAD_LIMIT
-    looking: float = 10
+    listing: float = 10
+    looking: float = 15
     starting: float = 40
     ending: float = 55
 
@@ -96,6 +108,18 @@ UNKNOWN: Final = (
 CHANGED: Final = "The file changed while it was checked; it was not sent."
 UNEXPECTED: Final = "Unexpected error; the server log has the type. It was not sent."
 TWIN: Final = "The same content as {path}, which comes earlier in this call."
+TWIN_LOST: Final = (
+    "The same content as {path}, which comes earlier in this call and ended as {status}; this one "
+    "was not sent."
+)
+FAILED: Final = (
+    "Files that failed: {count}. next_after does not repeat them; call again with them as paths, "
+    "unless their reason says otherwise."
+)
+DEEPER: Final = (
+    "Subdirectories not read because they are more than {depth} levels down: {count}. Give them as "
+    "directory."
+)
 KNOWN: Final = "The same file is already in Paperless: {where}."
 UNREAD: Final = (
     "Paperless accepted the file, but its task was not read in time; follow it with get_task."
@@ -104,6 +128,7 @@ ONE_BY_ONE: Final = (
     "Duplicates were not sent. If the user wants one all the same, use upload_document with its "
     "path and confirm=true."
 )
+TAKEN: Final = frozenset({"uploaded", "would_upload"})
 # Paperless did not answer for this many files in a row: the rest would only wait, too.
 SILENT: Final = 2
 
@@ -113,11 +138,13 @@ class _File:
     """One file of the call: hashed, and then its report."""
 
     path: str
+    malformed: Validation | None = None
     sha256: str = ""
     mime_type: str = ""
     size: int = 0
     report: BatchFile | None = None
     found: Before | None = None
+    twin: _File | None = None
 
     def done(self, status: BatchStatus, reason: str | None = None, **more: object) -> None:
         self.report = BatchFile.model_validate(
@@ -134,13 +161,17 @@ class _File:
 
 @dataclass(slots=True)
 class _Call:
-    """What one call is about and how far it got."""
+    """What one call is about and how far it got; ``start`` is when it began."""
 
     start: float
     files: list[_File] = field(default_factory=list["_File"])
     left: list[str] = field(default_factory=list[str])
     why: str = ""
     gaps: list[str] = field(default_factory=list[str])
+
+    def reports(self) -> tuple[BatchFile, ...]:
+        """What became of the files so far."""
+        return tuple(f.report for f in self.files if f.report is not None)
 
     def cut(self, at: int, why: str) -> None:
         """Leave out the files from ``at`` on."""
@@ -152,6 +183,48 @@ class _Call:
 def words(error: PaperlessMcpError) -> str:
     """An error as a reason. The hint of a path that was not found names the directories only."""
     return error.message if isinstance(error, NotFound) else error.describe()
+
+
+def _given(text: str) -> _File:
+    """The file a path of the call names."""
+    try:
+        return _File(given_path(text))
+    except Validation as error:
+        return _File(text, malformed=error)
+
+
+def _digest(path: str, directory: str, *, recursive: bool) -> str:
+    whole = f"{directory}\0{recursive}\0{path}".encode("utf-8", "surrogatepass")
+    return hashlib.sha256(whole).hexdigest()[:12]
+
+
+def cursor(path: str, directory: str, *, recursive: bool) -> str:
+    """Where to go on after ``path``: ASCII only, with a digest of the path and the listing."""
+    shown = "".join(
+        c if c.isascii() else c.encode("unicode_escape").decode() for c in shown_path(path)
+    )
+    return f"{shown}#{_digest(path, directory, recursive=recursive)}"
+
+
+def position(after: str, directory: str, *, recursive: bool) -> str:
+    """The path a cursor of this listing stands for.
+
+    Raises:
+        Validation: It is none, or not letter for letter the one that was given out.
+    """
+    shown, _, digest = after.rpartition("#")
+    try:
+        path = given_path(shown)
+    except Validation:
+        path = ""
+    if not path or digest != _digest(path, directory, recursive=recursive):
+        message = "after is not a next_after of this directory."
+        hint = (
+            "Pass next_after exactly as the last call gave it, with the same directory and "
+            "recursive, or leave it out to start over."
+        )
+        raise Validation(message, hint=hint)
+    return path
 
 
 class BatchUploadService:
@@ -200,11 +273,13 @@ class BatchUploadService:
             Ambiguous: A name of the metadata matches more than one object.
             PaperlessMcpError: The duplicate check could not run. Nothing was sent.
         """
+        start = self._clock()
         given = list(dict.fromkeys(paths))
         if not 0 < len(given) <= self._limits.files:
             message = f"Give 1 to {self._limits.files} paths, not {len(given)}."
             raise Validation(message, hint="Upload more files with more calls.")
-        call = await self._upload(given, metadata, wait_seconds, dry_run=dry_run)
+        files = [_given(text) for text in given]
+        call = await self._upload(start, files, metadata, wait_seconds, dry_run=dry_run)
         again = "call again with the paths in left_out."
         return self._batch(call, again, dry_run=dry_run)
 
@@ -221,61 +296,100 @@ class BatchUploadService:
         """Upload the files in ``directory``, sorted, those after the path ``after``.
 
         Raises:
-            Validation: ``after`` is not below the directory, there are too many entries, or the
-                metadata is not acceptable.
+            Validation: ``after`` is no cursor of this directory, there are too many entries or
+                walking them takes too long, or the metadata is not acceptable.
             NotFound: The directory is not inside the allowlist, or a name of the metadata or a
                 linked document matches nothing.
             Ambiguous: A name of the metadata matches more than one object.
             PaperlessMcpError: The duplicate check could not run. Nothing was sent.
         """
-        listed = list_allowed(directory, self._dirs, recursive=recursive)
+        start = self._clock()
+        base = str(PurePath(given_path(directory)))
         # Compared as text only: nothing is opened for it.
-        if after is not None and not after.startswith(shown_path(str(PurePath(directory)))):
-            message = "after is not a path in this directory."
-            raise Validation(message, hint="Pass next_after of the last call, or leave it out.")
-        files = [path for path in listed.files if shown_path(path) > (after or "")]
-        call = await self._upload(files, metadata, wait_seconds, dry_run=dry_run)
+        last = "" if after is None else position(after, base, recursive=recursive)
+        listed = await self._listed(base, recursive=recursive)
+        files = [_File(path) for path in listed.files if path > last]
+        call = await self._upload(start, files, metadata, wait_seconds, dry_run=dry_run)
         notes: list[str] = []
+        if after is not None:
+            count = len(listed.files) - len(files)
+            notes.append(f"Files that sort before after, not looked at in this call: {count}.")
+        if call.left and (lost := sum(f.status == "failed" for f in call.reports())):
+            notes.append(FAILED.format(count=lost))
         if listed.directories:
             count = len(listed.directories)
             notes.append(f"Subdirectories not read: {count}. recursive=true reads them.")
+        if listed.deeper:
+            notes.append(DEEPER.format(depth=MAX_DEPTH, count=len(listed.deeper)))
         if listed.hidden:
             notes.append(f"Entries left out because their name starts with a dot: {listed.hidden}.")
         batch = self._batch(call, "call again with after=next_after.", dry_run=dry_run)
         return batch.model_copy(
             update={
                 "notes": (*batch.notes, *notes),
-                "directories": tuple(shown_path(path) for path in listed.directories[:NAMED]),
-                "next_after": shown_path(call.files[-1].path) if call.left else None,
+                "directories": tuple(
+                    shown_path(path) for path in (*listed.directories, *listed.deeper)[:NAMED]
+                ),
+                "next_after": cursor(call.files[-1].path, base, recursive=recursive)
+                if call.left
+                else None,
             }
         )
 
+    async def _listed(self, directory: str, *, recursive: bool) -> Listing:
+        """The walk, in a thread: it stops when nobody waits for it any more."""
+        gone = threading.Event()
+        walk = functools.partial(self._walk, directory, recursive=recursive, stop=gone.is_set)
+        try:
+            async with asyncio.timeout(self._limits.listing):
+                return await asyncio.to_thread(walk)
+        except TimeoutError:
+            message = f"Listing the directory took longer than {self._limits.listing:g} seconds."
+            hint = "Name the files in paths, or give a smaller directory."
+            raise Validation(message, hint=hint) from None
+        finally:
+            gone.set()
+
+    def _walk(self, directory: str, *, recursive: bool, stop: Callable[[], bool]) -> Listing:
+        return list_allowed(directory, self._dirs, recursive=recursive, stop=stop)
+
     async def _upload(
-        self, paths: Sequence[str], metadata: UploadMetadata, wait_seconds: float, *, dry_run: bool
+        self,
+        start: float,
+        files: Sequence[_File],
+        metadata: UploadMetadata,
+        wait_seconds: float,
+        *,
+        dry_run: bool,
     ) -> _Call:
-        call = _Call(start=self._clock())
+        call = _Call(start=start)
         template = await self._uploads.template(metadata)
-        self._look(call, paths)
+        await self._look(call, files)
         await self._send_all(call, template, dry_run=dry_run)
         await self._follow_all(call, wait_seconds)
+        for file in call.files:
+            first = file.twin.report if file.twin else None
+            if first is not None and first.status not in TAKEN:
+                reason = TWIN_LOST.format(path=first.path, status=first.status)
+                file.done("duplicate", reason)
         return call
 
     # --- looking ---------------------------------------------------------------------------------
 
-    def _look(self, call: _Call, paths: Sequence[str]) -> None:
+    async def _look(self, call: _Call, files: Sequence[_File]) -> None:
         """Read and hash the files that fit into the call; what is no such file is refused."""
         limits = self._limits
         total = 0
-        for index, path in enumerate(paths):
+        for index, file in enumerate(files):
             why = ""
-            file = _File(path)
             if index >= limits.files:
                 why = f"at most {limits.files} files per call"
             elif index and self._clock() - call.start > limits.looking:
                 why = f"reading took longer than {limits.looking:g} seconds"
             else:
                 try:
-                    _ = self._read(file)
+                    # shortcut: a file on a mount that hangs is waited for, as in a single upload.
+                    await asyncio.to_thread(self._hash, file)
                 except PaperlessMcpError as error:
                     file.done("refused", words(error))
                 except Exception as error:  # noqa: BLE001 -- one file never hides the others
@@ -284,9 +398,15 @@ class BatchUploadService:
                 if total > limits.total_bytes:
                     why = f"at most {size_text(limits.total_bytes)} per call"
             if why:
-                call.left, call.why = list(paths[index:]), why
+                call.left, call.why = [f.path for f in files[index:]], why
                 return
             call.files.append(file)
+
+    def _hash(self, file: _File) -> None:
+        """Read a file without keeping it: only one is in memory at a time."""
+        if file.malformed is not None:
+            raise file.malformed
+        _ = self._read(file)
 
     def _read(self, file: _File) -> tuple[str, bytes]:
         """The name and bytes of a file, by every rule of a single upload by path.
@@ -319,7 +439,7 @@ class BatchUploadService:
         if not shas:
             return
         reading = await self._duplicates.read_for(shas)
-        sent: dict[str, str] = {}
+        sent: dict[str, _File] = {}
         silent = 0
         late = False
         for index, file in enumerate(call.files):
@@ -348,7 +468,7 @@ class BatchUploadService:
         file: _File,
         template: DocumentUpload,
         reading: Reading,
-        sent: dict[str, str],
+        sent: dict[str, _File],
         *,
         dry_run: bool,
     ) -> None:
@@ -359,10 +479,11 @@ class BatchUploadService:
         """
         sha256 = file.sha256
         if sha256 in sent:
-            file.done("duplicate", TWIN.format(path=sent[sha256]))
+            file.twin = sent[sha256]
+            file.done("duplicate", TWIN.format(path=shown_path(file.twin.path)))
             return
         try:
-            name, data = self._read(file)
+            name, data = await asyncio.to_thread(self._read, file)
         except PaperlessMcpError as error:
             file.done("refused", words(error))
             return
@@ -375,7 +496,7 @@ class BatchUploadService:
             where = KNOWN.format(where=file.found.where())
             file.done("duplicate", where, duplicates=_without_gaps(file.found.checked(None)))
             return
-        sent[sha256] = shown_path(file.path)
+        sent[sha256] = file
         if dry_run:
             file.done("would_upload")
             return
@@ -389,6 +510,8 @@ class BatchUploadService:
             reason = error.message if isinstance(error, PaperlessMcpError) else "unexpected error"
             file.done("failed", UNKNOWN.format(reason=reason))
             raise
+        # A call that is cancelled loses its report; the log keeps what Paperless accepted.
+        logger.info("upload_documents: accepted as task %s", task_id)
         file.done("uploaded", task_id=task_id)
 
     # --- following -------------------------------------------------------------------------------
@@ -439,7 +562,7 @@ class BatchUploadService:
 
     @staticmethod
     def _batch(call: _Call, again: str, *, dry_run: bool) -> UploadBatch:
-        files = tuple(f.report for f in call.files if f.report is not None)
+        files = call.reports()
         notes: list[str] = []
         if call.left:
             notes.append(f"Files not started: {len(call.left)} ({call.why}); {again}")

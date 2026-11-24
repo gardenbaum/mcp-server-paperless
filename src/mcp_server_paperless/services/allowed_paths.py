@@ -85,8 +85,12 @@ def unwritable(parts: Sequence[str]) -> bool:
 
 def inside(resolved: str, roots: Sequence[str]) -> tuple[str, tuple[str, ...]] | None:
     """The allowlisted directory holding ``resolved`` and the path components below it."""
-    for root in roots:
-        real = os.path.realpath(root)
+    return inside_real(resolved, [os.path.realpath(root) for root in roots])
+
+
+def inside_real(resolved: str, roots: Sequence[str]) -> tuple[str, tuple[str, ...]] | None:
+    """Like ``inside``, for directories that are resolved already."""
+    for real in roots:
         try:
             relative = PurePath(resolved).relative_to(real).parts
         except ValueError:

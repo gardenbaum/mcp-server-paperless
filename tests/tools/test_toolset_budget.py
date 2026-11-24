@@ -12,7 +12,8 @@ from the real catalogue and searched, not sampled:
   The instructions name no tool, so the count of tools does not matter.
 - Guide of the overview: its text lists the tools of every toolset that is off, so the worst case
   is ``core`` alone with nothing cut down, Paperless AI unknown or on (the overview needs ``core``).
-  Both over stdio with and without upload directories, which add ``upload_documents`` (PLMCP-85).
+  Over HTTP and over stdio with and without upload directories, which add ``upload_documents``
+  (PLMCP-85).
 - Definition: the output schema of the overview tool in tools/list.
 
 The default tool budget counts tools only.
@@ -44,8 +45,11 @@ BASE_OVERVIEW_DEFINITION = 4442
 # BASE_INSTRUCTIONS), the guide in a call of the overview, and the growth of the overview's
 # definition in tools/list (its output schema).
 INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut down)
-OVERVIEW_GUIDE_LIMIT = 2760  # measured 2758 (core alone, nothing cut); raised by the 14 bytes of
-# the field name offered_after_restart over pending, which the overview shows instead of a text
+OVERVIEW_GUIDE_LIMIT = (
+    2779  # measured 2777 (core alone, nothing cut, stdio with upload
+    # directories:
+)
+# 19 bytes of upload_documents over the 2758 of the other modes; PLMCP-85, approved by the owner)
 DEFINITION_ADDED_LIMIT = 750  # measured 747, 28 more than with the name pending (twice 14 bytes)
 # The limit of every instructions text (test_registry.py TEXT_LIMIT): Claude Code cuts at 4,096.
 TEXT_LIMIT = 2048
@@ -80,15 +84,15 @@ async def measure(
     toolsets: Sequence[str],
     disabled: Sequence[str],
     reader: FakePaperless | None = None,
-    upload_dirs: Sequence[str] = (),
+    upload_dirs: Sequence[str] | None = None,
 ) -> tuple[int, int | None]:
     """Bytes of the instructions, and of the overview's guide if the overview tool is offered."""
     server = serve(
         reader or unknown_ai(),
         toolsets=toolsets,
         disabled_tools=disabled,
-        stdio=True,
-        upload_dirs=upload_dirs,
+        stdio=upload_dirs is not None,
+        upload_dirs=upload_dirs or (),
     )
     async with Client(server) as client:
         guide = None
@@ -102,7 +106,7 @@ async def worst() -> tuple[int, int]:
     """The longest instructions over every single-toolset selection, and the longest guide."""
     instructions = guide = 0
     readers = (unknown_ai, lambda: admin(ai_enabled=True))
-    directories = ((), ("/srv/scans",))
+    directories = (None, (), ("/srv/scans",))  # HTTP, stdio, stdio with upload directories
     for name, cut, overview, reader, dirs in itertools.product(
         TOOLSETS, (False, True), (True, False), readers, directories
     ):
