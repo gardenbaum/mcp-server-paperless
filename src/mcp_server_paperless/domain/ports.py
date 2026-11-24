@@ -247,8 +247,21 @@ class DocumentReader(Protocol):
         """
         ...
 
-    async def list_versions(self, *, page: int, page_size: int) -> VersionPage:
-        """One page of the documents the user may see with their versions, last changed first.
+    async def get_version_checksum(self, document_id: int, version_id: int) -> str | None:
+        """The SHA-256 of a version's file, also of a deleted one, whether the file is there or not.
+
+        Raises:
+            NotFound: No such document outside the trash, or no such version of it.
+            PermissionDenied: The user may not see the document.
+        """
+        ...
+
+    async def list_versions(
+        self, *, page: int, page_size: int, recent: bool = False
+    ) -> VersionPage:
+        """One page of the documents the user may see with their versions.
+
+        Highest id first, an order that edits do not move; with ``recent`` last changed first.
 
         Raises:
             NotFound: ``page`` is beyond the last page.

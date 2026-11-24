@@ -986,8 +986,14 @@ class FakePaperless:
             for d in self._duplicates(self._seen(document_id))
         )
 
-    async def list_versions(self, *, page: int, page_size: int) -> VersionPage:
-        """`DocumentReader.list_versions` (the list view, ordered by `-modified,-id`).
+    async def get_version_checksum(self, document_id: int, version_id: int) -> str | None:
+        """`DocumentReader.get_version_checksum` (the `metadata` action)."""
+        return sha256(self._file_of(self._sub(document_id), version_id).original)
+
+    async def list_versions(
+        self, *, page: int, page_size: int, recent: bool = False
+    ) -> VersionPage:
+        """`DocumentReader.list_versions` (the list view, ordered by `-id` or `-modified,-id`).
 
         Raises:
             NotFound: `page` is beyond the last page.
@@ -997,7 +1003,7 @@ class FakePaperless:
             raise self._denied()
         seen = sorted(
             (d for d in self.state.documents if d.visible_to(self.user)),
-            key=lambda d: (d.modified, d.id),
+            key=lambda d: (d.modified if recent else datetime.min.replace(tzinfo=UTC), d.id),
             reverse=True,
         )
         try:

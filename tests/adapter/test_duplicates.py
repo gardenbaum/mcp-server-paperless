@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
+from adapter.conftest import streaming
 from adapter.test_admin import TASK_WIRE
 from adapter.test_tasks import FAILED, UUID, Tasks
 from adapter.test_trash import DOCUMENT, VERSION, Recorded, listing
@@ -45,7 +46,10 @@ async def test_the_checksum_is_a_filter_of_the_search(make_client: ClientFactory
     assert (path, params["checksum__iexact"]) == ("/api/documents/", SHA)
 
 
-async def test_the_versions_are_listed_without_anything_else(make_client: ClientFactory) -> None:
+@pytest.mark.parametrize("recent", [False, True])
+async def test_the_versions_are_listed_without_anything_else(
+    make_client: ClientFactory, *, recent: bool
+) -> None:
     row = {k: DOCUMENT[k] for k in ("id", "title", "versions")}
     body = {
         "count": 3,
@@ -55,13 +59,15 @@ async def test_the_versions_are_listed_without_anything_else(make_client: Client
     }
     server = Recorded(body)
 
-    page = await PaperlessDocumentReader(make_client(server)).list_versions(page=2, page_size=1)
+    page = await PaperlessDocumentReader(make_client(server)).list_versions(
+        page=2, page_size=1, recent=recent
+    )
 
     [(method, path, params, _)] = server.sent
     assert (method, path) == ("GET", "/api/documents/")
     assert params == {
         "fields": "id,title,versions",
-        "ordering": "-modified,-id",
+        "ordering": "-modified,-id" if recent else "-id",
         "page": "2",
         "page_size": "1",
     }
@@ -180,3 +186,44 @@ async def test_a_listing_without_the_permission_is_denied(make_client: ClientFac
 
     with pytest.raises(PermissionDenied):
         _ = await PaperlessDocumentReader(make_client(server)).list_versions(page=1, page_size=1)
+
+
+@pytest.mark.parametrize("checksum", [SHA, None])
+async def test_the_checksum_of_a_version_needs_nothing_else_of_the_metadata(
+    checksum: str | None,
+) -> None:
+    """Paperless answers sizes and names as null when the file is gone, but keeps the checksum.
+
+    Without the schema guard: the schema says they are never null (documents/views.py does not).
+    """
+    server = Recorded(
+        {
+            "original_checksum": checksum,
+            "original_size": None,
+            "original_mime_type": "text/plain",
+            "media_filename": None,
+            "has_archive_version": False,
+            "original_metadata": None,
+            "archive_checksum": None,
+            "archive_media_filename": None,
+            "original_filename": None,
+            "archive_size": None,
+            "archive_metadata": None,
+            "barcodes": [],
+            "lang": "en",
+        }
+    )
+
+    client, _ = streaming(server)
+
+    found = await PaperlessDocumentReader(client).get_version_checksum(3, 5)
+
+    assert found == checksum
+    assert server.sent == [("GET", "/api/documents/3/metadata/", {"version": "5"}, None)]
+
+
+async def test_a_version_that_is_gone_has_no_checksum(make_client: ClientFactory) -> None:
+    reader = PaperlessDocumentReader(make_client(Recorded({"detail": "Not found."}, 404)))
+
+    with pytest.raises(NotFound, match="No version 5"):
+        _ = await reader.get_version_checksum(3, 5)

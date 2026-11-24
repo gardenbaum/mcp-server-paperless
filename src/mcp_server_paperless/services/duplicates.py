@@ -8,6 +8,7 @@ document the user may not see is never named. Two uploads of one file at the sam
 the check before sending; the report afterwards shows it.
 """
 
+import asyncio
 import hashlib
 import logging
 from dataclasses import dataclass, field
@@ -22,7 +23,9 @@ from mcp_server_paperless.domain.duplicates import (
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     NotFound,
+    PaperlessMcpError,
     PermissionDenied,
+    UpstreamTimeout,
     quoted,
 )
 from mcp_server_paperless.services.documents import document_link
@@ -30,14 +33,19 @@ from mcp_server_paperless.services.documents import document_link
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
-    from mcp_server_paperless.domain.documents import DocumentRecord, DocumentVersion
+    from mcp_server_paperless.domain.documents import DocumentRecord
     from mcp_server_paperless.domain.ports import DocumentReader, TrashReader
     from mcp_server_paperless.domain.trash import TrashedDocument
+    from mcp_server_paperless.domain.versions import VersionRow
 
 logger = logging.getLogger(__name__)
 
 UNCOMPARED: Final = (
     "Not compared before sending: archive files, and versions of documents in the trash."
+)
+ALTERED: Final = (
+    "Not found: copies that Paperless altered before storing them (pre-consume scripts, split "
+    "barcodes), and documents that still have the MD5 checksum of an older release."
 )
 OWN_TRASH: Final = (
     "Trash: documents of others that are shared with this user are not listed there (superusers "
@@ -50,6 +58,11 @@ VERSION_AFTER: Final = (
     "originals of documents outside the trash and the other versions of this document only."
 )
 UNREAD_AFTER: Final = "After consumption the duplicates could not be read."
+CAPPED: Final = (
+    "Versions: only the {read} most recently changed of {total} documents were read; a document "
+    "changed meanwhile may be missed."
+)
+UNNAMED: Final = "{more} more documents with the same file are not named."
 REJECTED_FOR: Final = "Paperless rejected the file: it already holds the same file, {where}."
 HIDDEN_REJECTED: Final = REJECTED_FOR.format(
     where="in a document that this user cannot see or that no longer exists"
@@ -57,6 +70,7 @@ HIDDEN_REJECTED: Final = REJECTED_FOR.format(
 UNREAD_REJECTED: Final = REJECTED_FOR.format(where="but where could not be read")
 # Matches a confirmation and a result name one by one; the rest are counted.
 SHOWN: Final = 10
+AGAIN: Final = "Try again in a moment."
 RESTORABLE: Final = (
     "What is in the trash can be restored in the Paperless web UI or with restore_from_trash. "
 )
@@ -68,23 +82,56 @@ class Bounds:
 
     Attributes:
         documents: Documents with the file that are read; more are only counted.
+        trash_page: Small, because the rows of the trash carry the whole text of the documents.
         trashed_versions: Deleted versions, each of which costs a request of its own.
+        seconds: The whole check. Many clients give a call 60 seconds; a wait of 30 still fits.
     """
 
     documents: int = 100
     version_pages: int = 10
     version_page: int = 500
-    trash_pages: int = 5
-    trash_page: int = 100
+    trash_pages: int = 20
+    trash_page: int = 25
     trashed_versions: int = 20
+    seconds: float = 25
+
+
+class CheckMovedError(PaperlessMcpError):
+    """Documents came or went while the check read them, so some may be missed."""
+
+    def __init__(self) -> None:
+        """Create the error; nothing was sent."""
+        message = (
+            "The duplicate check did not add up, because documents were added, deleted or restored "
+            "while it ran; the file was not uploaded."
+        )
+        super().__init__(message, hint=AGAIN)
+
+
+class ChecksumMissingError(PaperlessMcpError):
+    """Paperless does not tell the checksum of a file, so it could be the same one."""
+
+    def __init__(self, document_id: int) -> None:
+        """Create the error; nothing was sent."""
+        message = (
+            "The duplicate check failed, because Paperless gave no checksum for document "
+            f"{document_id} or one of its versions; the file was not uploaded."
+        )
+        hint = "An administrator can check the document with the Paperless sanity checker."
+        super().__init__(message, hint=hint)
 
 
 @dataclass(frozen=True, slots=True)
 class Snapshot:
-    """The versions and the trash by checksum, as they were read once."""
+    """The versions and the trash by checksum, as they were read once.
+
+    Attributes:
+        trash_count: How many entries the trash had; None if the user may not list it.
+    """
 
     matches: Mapping[str, tuple[DuplicateMatch, ...]]
     not_checked: tuple[str, ...]
+    trash_count: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +160,7 @@ class _Scan:
         default_factory=list[tuple[str, DuplicateMatch]]
     )
     gaps: list[str] = field(default_factory=list[str])
+    trash_count: int | None = None
 
 
 def key_of(match: DuplicateMatch) -> tuple[int, int, bool]:
@@ -146,19 +194,24 @@ class DuplicateFinder:
         self._web_url: str = web_url
         self._bounds: Bounds = bounds or Bounds()
 
-    async def snapshot(self) -> Snapshot:
+    async def snapshot(self, *, one_trash_page: bool = False) -> Snapshot:
         """The versions and the trash, read once within the bounds.
 
+        The trash comes first and ``before`` counts it again, so a document or version that is
+        deleted or restored in between is noticed. ``one_trash_page`` reads it in one request: it
+        has no order of its own, so its pages may overlap.
+
         Raises:
+            CheckMovedError: What was read does not add up.
             PaperlessMcpError: Paperless could not be read. What the user may not read is a gap.
         """
         scan = _Scan()
+        await self._read_trash(scan, one_page=one_trash_page)
         await self._versions(scan)
-        await self._read_trash(scan)
         matches: dict[str, tuple[DuplicateMatch, ...]] = {}
         for checksum, match in scan.found:
             matches[checksum] = (*matches.get(checksum, ()), match)
-        return Snapshot(matches=matches, not_checked=tuple(scan.gaps))
+        return Snapshot(matches=matches, not_checked=tuple(scan.gaps), trash_count=scan.trash_count)
 
     async def before(
         self, sha256: str, snapshot: Snapshot, *, own: DocumentRecord | None = None
@@ -166,6 +219,7 @@ class DuplicateFinder:
         """Where the file ``sha256`` is already; ``own`` is the document that gets a version.
 
         Raises:
+            CheckMovedError: The trash changed since the snapshot.
             PaperlessMcpError: Paperless could not be read. What the user may not read is a gap.
         """
         gaps: list[str] = []
@@ -176,11 +230,15 @@ class DuplicateFinder:
         except PermissionDenied:
             gaps.append("Documents: this user may not list them.")
         matches += [] if own is None else self._of(own, sha256)
+        if snapshot.trash_count is not None:
+            trash = await self._trash.list_trash(page=1, page_size=1)
+            if trash.count != snapshot.trash_count:
+                raise CheckMovedError
         unique = _unique([*matches, *snapshot.matches.get(sha256, ())])
         return Before(
-            matches=unique,
+            matches=tuple(sorted(unique, key=lambda m: m.in_trash)),
             count=len(unique) + more,
-            not_checked=(UNCOMPARED, *gaps, *snapshot.not_checked, OWN_TRASH, HIDDEN),
+            not_checked=(UNCOMPARED, ALTERED, *gaps, *snapshot.not_checked, OWN_TRASH, HIDDEN),
         )
 
     async def cleared(
@@ -190,22 +248,42 @@ class DuplicateFinder:
 
         Raises:
             ConfirmationRequired: Paperless already holds the file and ``confirm`` is not set.
+            CheckMovedError: Documents moved while they were read, twice.
+            UpstreamTimeout: The check took too long.
             PaperlessMcpError: The check could not run, so nothing may be sent.
         """
         sha256 = hashlib.sha256(content).hexdigest()
-        found = await self.before(sha256, await self.snapshot(), own=own)
-        if found.matches and not confirm:
+        try:
+            async with asyncio.timeout(self._bounds.seconds):
+                found = await self._checked(sha256, own)
+        except TimeoutError:
+            message = (
+                f"The duplicate check took longer than {self._bounds.seconds:g} seconds; the file "
+                "was not uploaded."
+            )
+            raise UpstreamTimeout(message, hint=AGAIN) from None
+        if found.count and not confirm:
             named = ", ".join(describe(m) for m in found.matches[:SHOWN])
-            more = f" and {found.count - SHOWN} more" if found.count > SHOWN else ""
+            more = found.count - len(found.matches[:SHOWN])
+            rest = f"{more} {'more' if named else 'document(s) that could not be named'}"
+            named += f"{' and ' if named else ''}{rest}" if more else ""
             trash = RESTORABLE if any(m.in_trash for m in found.matches) else ""
             ConfirmationRequired.require(
                 (
-                    f"{action} although the same file is already in Paperless: {named}{more}. "
+                    f"{action} although the same file is already in Paperless: {named}. "
                     f"{trash}Paperless may reject it, if it is configured to"
                 ),
                 scope=(sha256, found.count, *sorted(key_of(m) for m in found.matches)),
             )
         return found
+
+    async def _checked(self, sha256: str, own: DocumentRecord | None) -> Before:
+        """One check, and a second one if documents moved while the first one read them."""
+        try:
+            return await self.before(sha256, await self.snapshot(), own=own)
+        except CheckMovedError:
+            snapshot = await self.snapshot(one_trash_page=True)
+            return await self.before(sha256, snapshot, own=own)
 
     async def after(self, consumed: int) -> DuplicateReport:
         """The duplicates of a document or version that was just consumed; never raises."""
@@ -214,13 +292,14 @@ class DuplicateFinder:
             if root == consumed:
                 found = await self._reported(root)
                 return DuplicateReport(after=found, not_checked=(VERSIONS_AFTER, HIDDEN))
-            found = await self._compared(root, consumed)
+            found, more = await self._compared(root, consumed)
         except Exception as error:  # noqa: BLE001 -- the file is in Paperless: the task must get out
             logger.info("duplicates could not be read: %s", type(error).__name__)
-            found = None
+            found, more = None, 0
         if found is None:
             return DuplicateReport(not_checked=(UNREAD_AFTER,))
-        return DuplicateReport(after=found, not_checked=(VERSION_AFTER, HIDDEN))
+        unnamed = (UNNAMED.format(more=more),) if more else ()
+        return DuplicateReport(after=found, not_checked=(VERSION_AFTER, *unnamed, HIDDEN))
 
     async def rejected(self, duplicate_of: int) -> tuple[DuplicateReport, str]:
         """The document Paperless rejected a file for, if the user may see it; never raises.
@@ -242,67 +321,95 @@ class DuplicateFinder:
     async def _originals(self, sha256: str) -> tuple[list[DuplicateMatch], int]:
         """The documents whose original is the file, and how many more there are."""
         page = await self._documents.search_documents(
-            DocumentQuery(checksum=sha256), page=1, page_size=self._bounds.documents
+            DocumentQuery(checksum=sha256, ordering="id"), page=1, page_size=self._bounds.documents
         )
         return [self._live(hit.id, hit.title) for hit in page.hits], page.count - len(page.hits)
 
     async def _versions(self, scan: _Scan) -> None:
-        read = total = 0
+        """The versions of every document, or of the last changed ones if there are too many."""
         try:
-            for page in range(1, self._bounds.version_pages + 1):
-                listed = await self._documents.list_versions(
-                    page=page, page_size=self._bounds.version_page
-                )
-                read, total = read + len(listed.rows), listed.count
-                for row in listed.rows:
-                    for version in row.versions:
-                        if not version.is_root and version.checksum:
-                            match = self._live(row.id, row.title, version.id)
-                            scan.found.append((version.checksum.lower(), match))
-                if listed.next_page is None:
-                    return
+            await self._read_versions(scan)
         except PermissionDenied:
             scan.gaps.append("Versions: this user may not list them.")
-        except NotFound:
-            if not read:
-                raise  # a later page that is gone is the end; the first one always exists
-        else:
-            scan.gaps.append(
-                f"Versions: only the {read} most recently changed of {total} documents were read."
-            )
 
-    async def _read_trash(self, scan: _Scan) -> None:
+    async def _read_versions(self, scan: _Scan) -> None:
+        bounds = self._bounds
+        listed = await self._documents.list_versions(page=1, page_size=bounds.version_page)
+        capped = listed.count > bounds.version_pages * bounds.version_page
+        if capped:
+            listed = await self._documents.list_versions(
+                page=1, page_size=bounds.version_page, recent=True
+            )
+        first, read = listed.count, set[int]()
+        page = 1
+        while True:
+            for row in listed.rows:
+                read.add(row.id)
+                scan.found += self._of_row(row)
+            if listed.next_page is None or page == bounds.version_pages:
+                break
+            page += 1
+            try:
+                listed = await self._documents.list_versions(
+                    page=page, page_size=bounds.version_page, recent=capped
+                )
+            except NotFound:
+                raise CheckMovedError from None
+        if capped and listed.next_page is not None:
+            scan.gaps.append(CAPPED.format(read=len(read), total=first))
+        elif not len(read) == first == listed.count:
+            raise CheckMovedError
+
+    def _of_row(self, row: VersionRow) -> list[tuple[str, DuplicateMatch]]:
+        found: list[tuple[str, DuplicateMatch]] = []
+        for version in row.versions:
+            if not version.checksum:
+                raise ChecksumMissingError(row.id)
+            if not version.is_root:  # the originals are found by the filter
+                found.append((version.checksum.lower(), self._live(row.id, row.title, version.id)))
+        return found
+
+    async def _read_trash(self, scan: _Scan, *, one_page: bool) -> None:
         versions: list[TrashedDocument] = []
         try:
-            entries, total, complete = await self._trash_entries()
+            entries, total = await self._trash_entries(one_page=one_page)
         except PermissionDenied:
             scan.gaps.append("Trash: this user may not list it.")
             return
+        scan.trash_count = total
         for entry in entries:
             if entry.version_of is not None:
                 versions.append(entry)
             elif entry.checksum:
                 scan.found.append((entry.checksum.lower(), _trashed(entry)))
-        if not complete:
+            else:
+                raise ChecksumMissingError(entry.id)
+        if len(entries) < total:
             scan.gaps.append(f"Trash: only {len(entries)} of {total} entries were read.")
         await self._trashed_versions(versions, scan)
 
-    async def _trash_entries(self) -> tuple[list[TrashedDocument], int, bool]:
-        """The entries within the bounds, how many there are, and whether these are all."""
-        entries: list[TrashedDocument] = []
-        total = 0
-        for page in range(1, self._bounds.trash_pages + 1):
-            try:
-                listed = await self._trash.list_trash(page=page, page_size=self._bounds.trash_page)
-            except NotFound:
-                if not entries:
-                    raise
-                return entries, total, True
-            entries += listed.entries
-            total = listed.count
+    async def _trash_entries(self, *, one_page: bool) -> tuple[list[TrashedDocument], int]:
+        """The entries within the bounds, and how many there are.
+
+        Raises:
+            CheckMovedError: Entries within the bounds are missing, or their number changed.
+        """
+        most = self._bounds.trash_pages * self._bounds.trash_page
+        size = most if one_page else self._bounds.trash_page
+        listed = await self._trash.list_trash(page=1, page_size=size)
+        first = listed.count
+        entries = {e.id: e for e in listed.entries}
+        for page in range(2, most // size + 1):
             if listed.next_page is None:
-                return entries, total, True
-        return entries, total, False
+                break
+            try:
+                listed = await self._trash.list_trash(page=page, page_size=size)
+            except NotFound:
+                raise CheckMovedError from None
+            entries |= {e.id: e for e in listed.entries}
+        if listed.count != first or (first <= most and len(entries) != first):
+            raise CheckMovedError
+        return list(entries.values()), first
 
     async def _trashed_versions(self, entries: list[TrashedDocument], scan: _Scan) -> None:
         """Deleted versions: their checksum is in the metadata of the document, one by one."""
@@ -310,11 +417,15 @@ class DuplicateFinder:
         for entry in entries[: self._bounds.trashed_versions]:
             root = entry.version_of or entry.id
             try:
-                facts = await self._documents.get_document_metadata(root, version_id=entry.id)
-            except NotFound, PermissionDenied:
+                checksum = await self._documents.get_version_checksum(root, entry.id)
+            except NotFound:
+                raise CheckMovedError from None
+            except PermissionDenied:
                 unread += 1
                 continue
-            scan.found.append((facts.original_checksum.lower(), _trashed(entry)))
+            if not checksum:
+                raise ChecksumMissingError(root)
+            scan.found.append((checksum.lower(), _trashed(entry)))
         if unread:
             scan.gaps.append(f"Trash: deleted versions this user could not read: {unread}.")
         if len(entries) > (most := self._bounds.trashed_versions):
@@ -331,15 +442,17 @@ class DuplicateFinder:
             for d in await self._documents.get_duplicates(document)
         )
 
-    async def _compared(self, root: int, version: int) -> tuple[DuplicateMatch, ...] | None:
-        """Where else the file of a version is; None if its checksum is not known."""
+    async def _compared(
+        self, root: int, version: int
+    ) -> tuple[tuple[DuplicateMatch, ...] | None, int]:
+        """Where else the file of a version is, and how many more; None: its checksum is unknown."""
         record = await self._documents.get_document(root)
         checksum = next((v.checksum for v in record.versions if v.id == version), None)
         if not checksum:
-            return None
-        originals, _ = await self._originals(checksum)
+            return None, 0
+        originals, more = await self._originals(checksum)
         found = _unique([*originals, *self._of(record, checksum.lower())])
-        return tuple(m for m in found if m.version_id != version)
+        return tuple(m for m in found if m.version_id != version), more
 
     async def _existing(self, number: int) -> DuplicateMatch:
         """The document or version ``number``, in the trash or not.
@@ -363,8 +476,8 @@ class DuplicateFinder:
     async def _in_trash(self, root: int, version: int | None) -> DuplicateMatch:
         """A document in the trash; its title only if the user's trash lists it."""
         try:
-            entries, _, _ = await self._trash_entries()
-        except PermissionDenied:
+            entries, _ = await self._trash_entries(one_page=False)
+        except CheckMovedError, PermissionDenied:
             entries = []
         entry = next((e for e in entries if e.id == root), None)
         return DuplicateMatch(
@@ -387,11 +500,13 @@ class DuplicateFinder:
 
     def _of(self, record: DocumentRecord, sha256: str) -> list[DuplicateMatch]:
         """The versions of one document with the file; its root is the document itself."""
-
-        def match(version: DocumentVersion) -> DuplicateMatch:
-            return self._live(record.id, record.title, None if version.is_root else version.id)
-
-        return [match(v) for v in record.versions if (v.checksum or "").lower() == sha256]
+        if not all(v.checksum for v in record.versions):
+            raise ChecksumMissingError(record.id)
+        return [
+            self._live(record.id, record.title, None if v.is_root else v.id)
+            for v in record.versions
+            if (v.checksum or "").lower() == sha256
+        ]
 
 
 def _trashed(entry: TrashedDocument) -> DuplicateMatch:

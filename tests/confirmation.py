@@ -40,7 +40,9 @@ def world() -> FakeState:
         ]
     )
     [root] = state.documents[0].versions
-    newer = DocumentVersion(id=20, added=root.added, version_label=None, is_root=False)
+    newer = DocumentVersion(
+        id=20, added=root.added, version_label=None, is_root=False, checksum="20"
+    )
     state.documents[0].versions.insert(0, newer)
     for version in (root, newer):
         state.documents[0].version_files[version.id] = FakeFile(

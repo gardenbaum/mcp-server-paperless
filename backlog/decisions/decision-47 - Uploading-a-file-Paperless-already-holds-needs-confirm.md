@@ -11,7 +11,10 @@ Paperless keeps a file it already holds as a second document, unless it is confi
 ## Decision
 
 - `upload_document` and `upload_document_version` compare the SHA-256 of the file with what the user can see before anything is sent. A match needs `confirm`, asked through `ConfirmationRequired.require` (decision-44) with the checksum, the number of matches and up to 100 original documents plus every other match in the scope. The tools stay non-destructive: the match is the one case that asks.
-- Compared before sending: the originals of documents (checksum filter, complete), the versions of the 5,000 most recently changed documents, the first 500 trash entries and 20 deleted versions among them, and every version of the document that gets one. Not compared: archive files, versions of trashed documents, trashed documents that are only shared with the user, and whatever the user cannot see. The bounds are in code, and every result says in `duplicates.not_checked` what was not read.
+- Compared before sending: the originals of documents (checksum filter), the versions of the 5,000 most recently changed documents, the first 500 trash entries and 20 deleted versions among them, and every version of the document that gets one. Not compared: archive files, versions of trashed documents, trashed documents that are only shared with the user, and whatever the user cannot see. The bounds are in code, and every result says in `duplicates.not_checked` what was not read.
+- A scan that does not add up is a failed check, not a complete one. Pages are read by descending id, which edits do not move; the distinct ids read have to equal the count of the first and of the last page, and the trash, read first, has to have the same number of entries at the end. On a mismatch (a document added, deleted or restored, a page that is gone) the check runs once more, the trash then in one request because Paperless orders it by date only, and then fails. Above 5,000 documents the order is last changed first, id as tie-break, and the gap says that a document changed meanwhile may be missed. A checksum that Paperless does not tell is a failed check too.
+- The whole check has 25 seconds and fails after them: many clients give a call 60 seconds, so that it, a wait of 30 seconds and the sending of an ordinary file fit. Trash pages hold 25 entries, because their rows carry the whole text and `fields` is ignored there.
+- Departure from decision-44, which wants every target behind "and 5 more" in the scope: beyond 100 original documents the scope holds the SHA-256 and the count, not the ids. The action is the sending of exactly this file, whichever documents already hold it.
 - After consumption the result, and `get_task` for an upload that was not waited for, report the duplicates Paperless itself finds for a document. For a version Paperless reports none, so this server compares the checksum and says so.
 - A part of the check the user has no permission for is named and the rest runs. Any other failure stops the upload, also with `confirm=true`: an outage is never "no duplicates".
 - A document the user cannot see is never named, also when Paperless rejects the file for it: no id and no title, the same answer as for one that no longer exists. That a rejection reveals that an equal file exists somewhere is Paperless' own behaviour. `get_task` and `list_tasks` do not show the existing document as one the task created or changed. The raw toolset shows what Paperless answers.
@@ -20,10 +23,10 @@ Paperless keeps a file it already holds as a second document, unless it is confi
 
 ## Consequences
 
-- An upload costs up to 36 more requests (1 filter, 10 pages of versions, 5 pages of the trash with the text of its documents, 20 deleted versions); typical archives need three. Asking in a dialog reads twice.
+- An upload costs up to 53 more requests (1 filter, 11 pages of versions, 21 of the trash, 20 deleted versions); typical archives need four. An archive too slow for 25 seconds cannot be uploaded to. Asking in a dialog reads twice.
 - Two uploads of one file at the same time both pass the check; the report after consumption shows it.
 - A file that Paperless changes before it stores it (pre-consume scripts, barcode splitting), and a checksum left from before 3.5 where the file was missing, are not found.
-- One deleted version whose file Paperless can no longer read stops uploads until the trash is emptied.
+- A deletion and a restore of another document that cancel out in all counts during one scan are not noticed. Only the checksum of a deleted version is read, so a missing file does not stop uploads.
 
 ## Alternatives
 

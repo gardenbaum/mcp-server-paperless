@@ -162,6 +162,10 @@ class _Duplicates(BaseModel):
     duplicate_documents: list[_Duplicate]
 
 
+class _Checksum(BaseModel):
+    original_checksum: str | None
+
+
 class _Root(BaseModel):
     root_id: int
 
@@ -563,11 +567,24 @@ class PaperlessDocumentReader:
             for d in row.duplicate_documents
         )
 
-    async def list_versions(self, *, page: int, page_size: int) -> VersionPage:
+    async def get_version_checksum(self, document_id: int, version_id: int) -> str | None:
+        """See ``DocumentReader.get_version_checksum``.
+
+        Nothing else is read: sizes and file names are null when the file is missing.
+        """
+        try:
+            row = await self._one(document_id, "metadata/", _Checksum, _of_version(version_id))
+        except NotFound:
+            raise unseen_version(document_id, version_id) from None
+        return row.original_checksum
+
+    async def list_versions(
+        self, *, page: int, page_size: int, recent: bool = False
+    ) -> VersionPage:
         """See ``DocumentReader.list_versions``; the id breaks ties, so pages do not overlap."""
         sent: Params = {
             "fields": "id,title,versions",
-            "ordering": "-modified,-id",
+            "ordering": "-modified,-id" if recent else "-id",
             "page": page,
             "page_size": page_size,
         }

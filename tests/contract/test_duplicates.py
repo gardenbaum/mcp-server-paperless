@@ -15,7 +15,7 @@ import pytest
 from contract.test_document_upload import ended
 from contract.test_document_versions import add_version
 from contract.test_trash import find
-from mcp_server_paperless.domain.documents import DocumentQuery, DocumentUpload
+from mcp_server_paperless.domain.documents import DocumentPatch, DocumentQuery, DocumentUpload
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied
 
 if TYPE_CHECKING:
@@ -62,7 +62,7 @@ async def with_checksum(ports: Ports, checksum: str) -> set[int]:
 
 async def row_of(ports: Ports, document: int) -> VersionRow:
     """The row of a document that has just changed, so it is among the first."""
-    page = await ports.documents.list_versions(page=1, page_size=100)
+    page = await ports.documents.list_versions(page=1, page_size=100, recent=True)
     [row] = [r for r in page.rows if r.id == document]
     return row
 
@@ -133,6 +133,40 @@ async def test_the_rows_are_paged_and_only_those_the_user_may_see(backend: Backe
         _ = await backend.blind.documents.list_versions(page=1, page_size=1)
 
 
+@pytest.mark.contract(ROWS)
+async def test_an_edit_does_not_move_a_document_unless_the_last_changed_are_asked_for(
+    backend: Backend,
+) -> None:
+    first, second = [await uploaded(backend, unique()) for _ in range(2)]
+    patch = DocumentPatch(title=f"plmcp77-{uuid.uuid4().hex}")
+    _ = await backend.admin.document_writes.update_document(first, patch)
+
+    async def order(*, recent: bool) -> list[int]:
+        page = await backend.admin.documents.list_versions(page=1, page_size=100, recent=recent)
+        return [r.id for r in page.rows if r.id in {first, second}]
+
+    assert await order(recent=False) == [second, first]
+    assert await order(recent=True) == [first, second]
+
+
+@pytest.mark.contract("DocumentReader.get_version_checksum")
+async def test_the_checksum_of_a_version_also_of_a_deleted_one(backend: Backend) -> None:
+    content = unique()
+    document = await uploaded(backend, unique())
+    version = await add_version(backend, document, content.decode())
+
+    async def read(ports: Ports) -> str | None:
+        return await ports.documents.get_version_checksum(document, version)
+
+    assert await read(backend.admin) == sha256(content)
+    with pytest.raises(PermissionDenied):
+        _ = await read(backend.reader)
+    _ = await backend.admin.document_writes.delete_version(document, version)
+    assert await read(backend.admin) == sha256(content)
+    with pytest.raises(NotFound):
+        _ = await backend.admin.documents.get_version_checksum(document, MISSING)
+
+
 @pytest.mark.contract("TrashReader.list_trash")
 async def test_a_document_in_the_trash_has_the_checksum_of_its_root_file(backend: Backend) -> None:
     content, deleted = unique(), unique()
@@ -144,15 +178,14 @@ async def test_a_document_in_the_trash_has_the_checksum_of_its_root_file(backend
     # The entry of a version does not tell its checksum; the metadata of the live document does.
     entry = (await find(ports, {version}))[version]
     assert (entry.version_of, entry.checksum) == (document, None)
-    facts = await ports.documents.get_document_metadata(document, version_id=version)
-    assert facts.original_checksum == sha256(deleted)
+    assert await ports.documents.get_version_checksum(document, version) == sha256(deleted)
 
     await ports.document_writes.delete_document(document)
 
     entry = (await find(ports, {document}))[document]
     assert (entry.version_of, entry.checksum) == (None, sha256(content))
     with pytest.raises(NotFound):
-        _ = await ports.documents.get_document_metadata(document, version_id=version)
+        _ = await ports.documents.get_version_checksum(document, version)
 
 
 @pytest.mark.contract(DUPLICATES)
