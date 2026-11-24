@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T11:11:57Z'
-updated_date: '2026-11-24T13:08:20Z'
+updated_date: '2026-11-24T13:15:26Z'
 labels:
   - safety
 dependencies: []
@@ -59,4 +59,6 @@ PENDING, the owner decides: a webhook URL with an @ after its host is returned a
 Second independent review (of 89deffd): I1, I2, M2 to M10 fixed, M1 (copies) taken in. Red first: 65 failing rows before the fix (plus test_urls, which failed to import lines_without_credentials), 9 for M1, then green. The old without_credentials of domain/errors.py is gone: one stricter function in domain/urls.py for results, confirmations, refusals and text. Also found: a refusal of a webhook repeated an encoded @ host (https://s3cret%40h). Own tests changed deliberately: log lines of two tests carry the time Paperless writes; note of an empty user name without an id and of replaced credentials; id 99 moved. Snapshot: one sentence in create_workflow (test_surface); docs/tools.md unchanged after just docs-tools. No limit, budget or gate changed.
 Owner rulings of 2026-11-24 (no longer pending): a webhook URL with an @ after its host is not shown; the stricter rule also applies to service URLs with a full-width @ or %40; in log lines/errors the text between a URL and a later e-mail address may go. M1: option A approved ("Wie von dir empfohlen."): a copy is announced, never copied, the other workflow is not named, no further read.
 Targeted tests only: 2417 passed, diff coverage 100 %, ruff, basedpyright of the changed files, hygiene, import contracts. tests/quality/test_backlog_instructions.py::test_the_menu_driver_reports_a_failing_cli failed locally with EIO on a pseudo-terminal (code untouched).
+
+Delta review of 2650c31, after merging main (bdf8bf9): red first (28 failing rows), then green. get_log reads 1000 lines, redacts and shows the last ones asked for; the undated head of a cut log is not shown up to its last line with an @ (get_log, /api/logs/). Own hint for an unknown action id; anchored spelling comparison (linear, tested); an empty user name alone is not called credentials in workflows; *_url keys, and url in /api/status/, are redacted (the vendored docs do not say whether redis_url holds a password; the status tool does not return it). Own tests changed: the record tests pass from_start, one raw log text carries a date. 1914 targeted tests passed, diff coverage 100 %. No snapshot, limit, budget or gate changed.
 <!-- SECTION:NOTES:END -->

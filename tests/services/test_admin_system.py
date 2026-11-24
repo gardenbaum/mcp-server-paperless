@@ -471,6 +471,38 @@ async def test_log_lines_hold_no_credentials_of_the_urls_paperless_called() -> N
     assert found.note == "4 line(s) are shown without the credentials of the URLs in them."
 
 
+CUT_SECRET = ["[2026-11-24 10:00:00,1] to https://user:se", "cr", "et@h.example/x", "end"]
+
+
+@pytest.mark.decision("decision-66")
+@pytest.mark.parametrize("before", [0, 2 * MAX_LOG_LINES])
+@pytest.mark.parametrize("lines", [1, 2, 3, 4])
+async def test_a_window_that_starts_inside_a_record_shows_no_rest_of_a_password(
+    lines: int, before: int
+) -> None:
+    setup = Setup()
+    setup.state.logs["paperless"] = ["[2026-11-24 09:00:00,1] a"] * before + CUT_SECRET
+
+    found = await setup.service.get_log("paperless", lines=lines)
+
+    hidden = "a URL that is not shown"
+    whole = (f"[2026-11-24 10:00:00,1] to {hidden}", hidden, hidden, "end")
+    assert found.lines == whole[-lines:]
+    assert (found.returned_lines, found.truncated) == (lines, False)
+    note = f"{lines - 1} line(s) are shown without the credentials of the URLs in them."
+    assert found.note == (note if lines > 1 else None)
+
+
+@pytest.mark.decision("decision-66")
+async def test_a_record_longer_than_all_that_is_read_shows_no_rest_of_a_password() -> None:
+    setup = Setup()
+    setup.state.logs["paperless"] = [*CUT_SECRET[:1], *["p"] * MAX_LOG_LINES, "et@h", "end"]
+
+    found = await setup.service.get_log("paperless", lines=3)
+
+    assert found.lines == ("a URL that is not shown", "a URL that is not shown", "end")
+
+
 async def test_a_log_without_credentials_has_no_note() -> None:
     assert (await Setup().service.get_log("paperless", lines=3)).note is None
 

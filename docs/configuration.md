@@ -326,8 +326,8 @@ does not belong to its trigger or action type is an error.
 - Webhook URLs are returned without the user name and password in them (a query string is
   returned; a URL in which they cannot be told apart is not); `shown_in_part` of the action says
   so. Written back as returned, on an action with the id it has now, the URL keeps what is stored;
-  with an empty user name (`https://@host/path`) it loses them. Without the id, it is refused. A copy of it in another
-  workflow is written without them, and the result says so.
+  with an empty user name (`https://@host/path`) it loses them. Without the id, it is refused. A copy of it
+  in another workflow is written without them, and the result says so.
 
 ### `admin`
 

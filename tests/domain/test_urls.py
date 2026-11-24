@@ -239,7 +239,7 @@ def test_a_hostile_text_is_read_in_linear_time(part: str) -> None:
 def test_a_url_split_over_lines_of_a_record_loses_its_credentials(
     lines: list[str], shown: list[str]
 ) -> None:
-    assert lines_without_credentials(lines) == shown
+    assert lines_without_credentials(lines, from_start=True) == shown
 
 
 @pytest.mark.parametrize("line", ["https://u:p", "q@h", "[2026-11-24 1:0:0] https://u", "\n", ""])
@@ -250,3 +250,24 @@ def test_many_lines_are_read_in_linear_time(line: str) -> None:
 
     assert len(shown) == 300_000
     assert time.process_time() - started < 5  # quadratic would take minutes
+
+
+DATED = "[2026-11-24 10:00:00,123] [INFO] by a@b"
+
+
+@pytest.mark.parametrize(
+    ("lines", "shown"),
+    [
+        (["x p", "q@h/x ok", "z", DATED], [URL_NOT_SHOWN, URL_NOT_SHOWN, "z", DATED]),
+        (["a@b", "c", "d%40e", "z"], [*[URL_NOT_SHOWN] * 3, "z"]),
+        (["x\ny", "q\uff20h"], [f"{URL_NOT_SHOWN}\n{URL_NOT_SHOWN}", URL_NOT_SHOWN]),
+        (["q@h", "see https://h/x", "z"], [URL_NOT_SHOWN, "see https://h/x", "z"]),
+        (["x", "https://h/x", DATED], ["x", "https://h/x", DATED]),
+        ([DATED, "a@b"], [DATED, "a@b"]),
+        ([], []),
+    ],
+)
+def test_the_rest_of_a_record_that_starts_before_the_window_is_not_shown(
+    lines: list[str], shown: list[str]
+) -> None:
+    assert lines_without_credentials(lines) == shown

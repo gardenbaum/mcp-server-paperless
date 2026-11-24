@@ -300,7 +300,7 @@ def _origin(url: JsonValue) -> tuple[str, str | None, int | None]:
         return str(url), None, None  # unreadable: the same only as itself
 
 
-_SCHEME_AND_HOST: Final = re.compile(r"[^/?#]*//[^/?#]*")
+_SCHEME_AND_HOST: Final = re.compile(r"\A[^/?#]*//[^/?#]*")
 
 
 def _url(action: WorkflowAction | None) -> str | None:
@@ -313,6 +313,11 @@ def _url(action: WorkflowAction | None) -> str | None:
 def _hides(url: str | None) -> bool:
     """Whether ``url`` is shown only in part, because of its credentials."""
     return url is not None and shown_url(url) != url
+
+
+def _has_credentials(url: str | None) -> bool:
+    """Whether ``url`` has, or may have, credentials: an empty user name alone is none."""
+    return url is not None and _hides(url) and without_empty_user(url) != without_credentials(url)
 
 
 def _certain(url: str) -> bool:
@@ -351,7 +356,9 @@ def _kept_or_given(url: str, held: str | None, stored: Sequence[str | None], pla
         return plain
     if held is not None and (url == held or _shown_as(url, held)):
         return held
-    if url.strip() == URL_NOT_SHOWN or any(_shown_as(url, old) for old in stored):
+    if url.strip() == URL_NOT_SHOWN or any(
+        _has_credentials(old) and _shown_as(url, old) for old in stored
+    ):
         message = (
             f"The webhook URL of action {place} is a stored one as it is shown, without its "
             "credentials, but the action has no id that says which stored URL it stands for."
@@ -362,10 +369,10 @@ def _kept_or_given(url: str, held: str | None, stored: Sequence[str | None], pla
 
 def _fate(old: str, new: str | None) -> str:
     """What becomes of the credentials of the stored URL ``old`` where ``new`` is written."""
-    if new is None or not _hides(new):
+    if not _has_credentials(new):
         verb = "remove"
     else:
-        verb = "replace" if _certain(new) else "remove or replace"
+        verb = "replace" if _certain(new or "") else "remove or replace"
     return f"{verb} {'the' if _certain(old) else 'any'} credentials"
 
 
@@ -401,14 +408,20 @@ def _credentials(
                 f"Nothing was changed: action {place} is a webhook with the id {spec.id}, which is "
                 "not (or no longer) in the workflow."
             )
-            raise _not_told(message)
+            raise Validation(
+                message,
+                hint=(
+                    "Send the id the action has in get_workflow now, or leave the id out for a new "
+                    "webhook."
+                ),
+            )
         new = _url(action)
         old = stored[spec.id] if spec.id is not None else None
         if spec.id is None or old is None:
             loose.append(new)
             continue
         claimed.add(spec.id)
-        if not _hides(old):
+        if not _has_credentials(old):
             continue
         if new != old:
             changed[place] = spec.id, _fate(old, new)
@@ -422,7 +435,7 @@ def _credentials(
         holders[spec.id] = place
         if spec.webhook.url != old:
             kept.append(place)
-    gone = [u for n, u in stored.items() if u and n not in claimed and _hides(u)]
+    gone = [u for n, u in stored.items() if u and n not in claimed and _has_credentials(u)]
     gone = [u for u in gone if loose and u not in loose]
     which = "the" if all(_certain(u) for u in gone) else "any"
     return (
@@ -451,7 +464,7 @@ def _copies(
         given = spec.webhook.url if spec.webhook else None
         if url is None or url != given or (spec.id is not None and held.get(spec.id) == url):
             continue
-        if any(_shown_as(url, other) for other in stored):
+        if any(_has_credentials(other) and _shown_as(url, other) for other in stored):
             places.append(place)
     return places
 
@@ -507,7 +520,7 @@ def _post(settings: Mapping[str, JsonValue], said: str) -> str:
     text = f"send a POST request to {_webhook(url)}"
     if hook.get("include_document"):
         text += " with the document"
-    if _hides(url):
+    if _has_credentials(url):
         told = "with" if _certain(url) else "with, or possibly with,"
         text += f", {told} credentials (not shown)"
     return text + said

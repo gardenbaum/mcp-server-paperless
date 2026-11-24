@@ -1,5 +1,6 @@
 """Webhook URLs without their credentials, and what writing them back does."""
 
+import time
 from typing import TYPE_CHECKING, cast, override
 
 import pytest
@@ -367,7 +368,10 @@ async def test_a_webhook_with_an_id_that_is_not_in_the_workflow_is_refused(
         _ = await write(service, given(written, 99), confirm=True)
 
     assert "action 1" in raised.value.message
-    assert "Send the id the action has in get_workflow now" in str(raised.value.hint)
+    if written not in {SHOWN, URL_NOT_SHOWN} or (written == SHOWN and not stored):
+        assert raised.value.hint == (
+            "Send the id the action has in get_workflow now, or leave the id out for a new webhook."
+        )
     assert "pw" not in f"{raised.value.message}{raised.value.hint}"
     assert state.workflows[0] == before
 
@@ -557,3 +561,45 @@ async def test_a_user_who_may_not_see_workflows_gets_no_copy_and_learns_nothing(
 
     assert "credentials" not in raised.value.message
     assert len(state.workflows) == 1
+
+
+async def test_a_url_without_a_host_is_compared_in_linear_time() -> None:
+    service, _ = seeding(hooked(7, SECRET))
+    hook = WebhookSettings.model_construct(url="a" * 100_000)
+    started = time.process_time()
+
+    with pytest.raises(Validation):
+        _ = await write(service, ActionInput.model_construct(type="webhook", webhook=hook))
+
+    assert time.process_time() - started < 5  # quadratic would take much longer
+
+
+@pytest.mark.parametrize("stored", ["https://@h.example/x", "https://:@h.example/x"])
+async def test_an_empty_user_name_alone_is_not_called_credentials(stored: str) -> None:
+    plain = "https://h.example/x"
+    service, state = seeding(hooked(7, stored), enabled=True)
+
+    for sent in (
+        given(plain, 7),
+        given(plain),
+        given("https://n.example/x", 7),
+        given("https://n.example/x"),
+    ):
+        with pytest.raises(ConfirmationRequired) as raised:
+            _ = await write(service, sent)
+        assert "redential" not in raised.value.message
+    state.workflows.append(
+        state.workflows[0].model_copy(update={"id": 2, "name": "other", "enabled": False})
+    )
+    made = await service.create(WorkflowCreate(name="n", actions=(given(plain),)), confirm=True)
+    changed = await write(service, given("https://n.example/x", 7), confirm=True)
+
+    assert (made.note, changed.note) == (None, None)
+
+
+async def test_an_unclear_url_after_an_empty_user_name_may_hold_credentials() -> None:
+    service, _ = seeding(hooked(7, "https://@us/er:pw@h.example/x"))
+
+    done = await write(service, given("https://n.example/x", 7))
+
+    assert done.note == "Removed any credentials of: the webhook URL of action 1."

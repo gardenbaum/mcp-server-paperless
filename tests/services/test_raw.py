@@ -966,7 +966,9 @@ async def test_log_lines_lose_the_credentials_of_the_urls_in_them() -> None:
 @pytest.mark.parametrize(
     ("body", "shown"),
     [
-        ("to https://user:pw@h", "to https://h"),
+        ("[2026-11-24 10:00:00,1] to https://user:pw@h", "[2026-11-24 10:00:00,1] to https://h"),
+        ("pw@h", "a URL that is not shown"),
+        ({"redis_url": "redis://user:pw@h:6379/0"}, {"redis_url": "redis://h:6379/0"}),
         ({"webhook": "https://user:pw@h"}, {"webhook": "https://h"}),
         (
             {"webhook": [{"x": {"url": "https://user:pw@h"}}]},
@@ -1008,3 +1010,36 @@ async def test_a_cut_answer_has_no_credentials_either() -> None:
     assert result.truncated
     assert "pw" not in str(result.text)
     assert "shown without credentials" in str(result.note)
+
+
+@pytest.mark.decision("decision-66")
+@pytest.mark.parametrize(
+    ("params", "head"),
+    [
+        ({"limit": 3}, "me@b.example"),  # fewer lines than asked: the log starts here
+        ({"limit": 2}, "a URL that is not shown"),
+        ({"limit": "x"}, "a URL that is not shown"),
+        ({}, "a URL that is not shown"),
+    ],
+)
+async def test_the_rest_of_a_record_at_the_top_of_a_log_is_not_shown(
+    params: dict[str, str | int | bool], head: str
+) -> None:
+    reply = json_reply(["me@b.example", "[2026-11-24 10:00:00,1] by a@b"])
+
+    result = await RawApiService(Recording(reply)).get("/api/logs/mail/", params)
+
+    assert result.data == [head, "[2026-11-24 10:00:00,1] by a@b"]
+
+
+@pytest.mark.decision("decision-66")
+async def test_the_urls_of_the_status_have_no_credentials() -> None:
+    body = {"database": {"url": "postgres://u:pw@db/x"}, "tasks": {"redis_url": "redis://:pw@h"}}
+
+    result = await RawApiService(Recording(json_reply(body))).get("/api/status/", {})
+
+    assert result.data == {
+        "database": {"url": "postgres://db/x"},
+        "tasks": {"redis_url": "redis://h"},
+    }
+    assert result.redacted == 2

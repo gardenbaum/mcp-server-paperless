@@ -211,24 +211,28 @@ def _is_error(key: str) -> bool:
 
 
 def _url_hidden(
-    value: JsonValue, *, in_webhook: bool = False, in_error: bool = False
+    value: JsonValue, *, has_urls: bool = False, in_error: bool = False
 ) -> tuple[JsonValue, int]:
-    """``value`` without the credentials in webhook URLs and error texts, and how many had some."""
+    """``value`` without the credentials in URLs and error texts, and how many had some.
+
+    URLs are what ``*_url`` and ``webhook`` hold, and ``url`` below a webhook or if it ``has_urls``.
+    """
     if isinstance(value, dict):
         cleaned: dict[str, JsonValue] = {}
         count = 0
         for key, item in value.items():
-            webhook = in_webhook or key == "webhook"
-            if webhook and key in {"webhook", "url"} and isinstance(item, str):
+            inside = has_urls or key == "webhook"
+            named = key == "webhook" or key.endswith("_url") or (inside and key == "url")
+            if named and isinstance(item, str):
                 cleaned[key] = shown_url(item)
                 count += cleaned[key] != item
             else:
                 error = in_error or _is_error(key)
-                cleaned[key], inner = _url_hidden(item, in_webhook=webhook, in_error=error)
+                cleaned[key], inner = _url_hidden(item, has_urls=inside, in_error=error)
                 count += inner
         return cleaned, count
     if isinstance(value, list):
-        rows = [_url_hidden(item, in_webhook=in_webhook, in_error=in_error) for item in value]
+        rows = [_url_hidden(item, has_urls=has_urls, in_error=in_error) for item in value]
         return [row for row, _ in rows], sum(count for _, count in rows)
     if in_error and isinstance(value, str):
         text = text_without_credentials(value)
@@ -236,10 +240,13 @@ def _url_hidden(
     return value, 0
 
 
-def _lines_hidden(value: JsonValue) -> tuple[JsonValue, int]:
+def _lines_hidden(value: JsonValue, limit: str) -> tuple[JsonValue, int]:
     """The lines of a log without the credentials of URLs, and how many had some."""
     lines = value if isinstance(value, list) else [value]
-    shown = iter(lines_without_credentials([line for line in lines if isinstance(line, str)]))
+    # Fewer lines than asked for: the log starts here.
+    whole = limit.isascii() and limit.isdigit() and len(lines) < int(limit)
+    texts = [line for line in lines if isinstance(line, str)]
+    shown = iter(lines_without_credentials(texts, from_start=whole))
     cleaned = [next(shown) if isinstance(line, str) else line for line in lines]
     count = sum(new != old for new, old in zip(cleaned, lines, strict=True))
     return (cleaned if isinstance(value, list) else cleaned[0]), count
@@ -270,10 +277,10 @@ class RawApiService:
         checked = check_path(path)
         query = check_params(params)
         reply = await self._reader.get(checked, query, max_bytes=READ_LIMIT)
-        return _result(checked, reply)
+        return _result(checked, reply, query.get("limit", ""))
 
 
-def _result(path: str, reply: RawReply) -> RawApiResult:
+def _result(path: str, reply: RawReply, limit: str) -> RawApiResult:
     """The result for an answer: parsed and redacted JSON, cut at ``MAX_OUTPUT``."""
     if reply.truncated:
         return _cut(path, reply, text=None, redacted=0)
@@ -296,7 +303,11 @@ def _result(path: str, reply: RawReply) -> RawApiResult:
         message = f"Paperless sent an unexpected response for GET {path}."
         raise PaperlessMcpError(message) from None
     is_log = path.lower().startswith("/api/logs/")
-    parsed, urls = _lines_hidden(parsed) if is_log else _url_hidden(parsed)
+    if is_log:
+        parsed, urls = _lines_hidden(parsed, limit)
+    else:
+        is_status = path.lower().startswith("/api/status")
+        parsed, urls = _url_hidden(parsed, has_urls=is_status)
     data, redacted = redact(parsed)
     text = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
     if len(text) > MAX_OUTPUT:

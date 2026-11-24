@@ -1,7 +1,7 @@
 """URLs without user name and password, in results and texts (decision-64, decision-66)."""
 
 import re
-from itertools import groupby, islice
+from itertools import groupby, islice, takewhile
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
@@ -110,21 +110,27 @@ def text_without_credentials(text: str) -> str:
     return "".join([*words[:first], *part, *words[end:]])
 
 
-def lines_without_credentials(lines: Sequence[str]) -> list[str]:
+def lines_without_credentials(lines: Sequence[str], *, from_start: bool = False) -> list[str]:
     """The lines of a log without the credentials of URLs, also of those split over lines.
 
     A URL is looked for in all lines of a record, but no further: what stands between it and an
-    e-mail address of another record is not lost.
+    e-mail address of another record is not lost. The lines before the first record can be the rest
+    of one whose URL is not among them: unless the log starts here (``from_start``), all up to the
+    last of them with an @ are not shown.
     """
     record = 0
+    shown: list[str] = []
+    if not from_start:
+        head = list(takewhile(lambda line: _RECORD.match(line) is None, lines))
+        end = max((n for n, line in enumerate(head, start=1) if _AT.search(line)), default=0)
+        shown = ["\n".join(URL_NOT_SHOWN for _ in line.split("\n")) for line in head[:end]]
 
     def number(line: str) -> int:
         nonlocal record
         record += _RECORD.match(line) is not None
         return record
 
-    shown: list[str] = []
-    for _, group in groupby(lines, number):
+    for _, group in groupby(lines[len(shown) :], number):
         block = list(group)
         parts: Iterator[str] = iter(text_without_credentials("\n".join(block)).split("\n"))
         shown += ["\n".join(islice(parts, line.count("\n") + 1)) for line in block]
