@@ -403,6 +403,7 @@ async def test_what_concerns_every_request_ends_the_texts_and_names_the_rest(
     "error",
     [
         UpstreamUnavailable("Paperless answered 500.", status=500),
+        UpstreamUnavailable("Paperless is busy.", status=503),
         UpstreamTimeout("Paperless did not respond in time."),
         PermissionDenied("The Paperless user may not perform this action."),
         PaperlessMcpError("Paperless sent an unexpected response."),
@@ -422,7 +423,64 @@ async def test_a_lasting_error_of_one_text_is_named_and_the_others_go_on(
     assert [row.content for row in found.documents] == [None, "x", None, "x"]
     # Not among what to ask for again: that would fail for ever.
     assert (found.left, found.failed) == ((), (10, 12))
-    assert found.notices == (f"The text of documents 10 and 12 could not be read: {error.message}",)
+    assert found.notices == (
+        f"The text of documents 10 and 12 could not be read in this call: {error.message}",
+    )
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        UpstreamTimeout("Paperless did not respond in time."),
+        UpstreamUnavailable("Bad gateway.", status=502),
+        UpstreamUnavailable("Paperless is busy.", status=503),
+        UpstreamUnavailable("Gateway timeout.", status=504),
+    ],
+)
+async def test_two_outages_in_a_row_end_the_texts_and_both_are_left(
+    error: PaperlessMcpError,
+) -> None:
+    setup = Setup()
+    for number in (10, 11, 12, 13, 14):
+        setup.add(number, content="x")
+    # One outage alone is of its document, so that one text can never block the others for good.
+    setup.fake.errors |= {10: error, 12: error, 13: error}
+
+    found = await setup.read(("content",), document_ids=(10, 11, 12, 13, 14))
+
+    assert setup.fake.texts == [10, 11, 12, 13]
+    assert (found.left, found.failed) == ((12, 13, 14), (10,))
+    assert found.notices == (
+        f"The text of document 10 could not be read in this call: {error.message}",
+        f"Reading text stopped: {error.message}",
+    )
+
+
+async def test_two_different_outages_leave_nothing_that_failed() -> None:
+    setup = Setup()
+    for number in (10, 11, 12):
+        setup.add(number, content="x")
+    setup.fake.errors |= {
+        10: UpstreamTimeout("Too late."),
+        11: UpstreamUnavailable("Busy.", status=503),
+    }
+
+    found = await setup.read(("content",), document_ids=(10, 11, 12))
+
+    assert (found.left, found.failed) == ((10, 11, 12), ())
+    assert found.notices == ("Reading text stopped: Busy.",)
+
+
+async def test_a_lasting_error_after_an_outage_does_not_end_the_texts() -> None:
+    setup = Setup()
+    for number in (10, 11, 12, 13):
+        setup.add(number, content="x")
+    outage = UpstreamUnavailable("Paperless is busy.", status=503)
+    setup.fake.errors |= {10: outage, 11: PaperlessMcpError("Broken."), 12: outage}
+
+    found = await setup.read(("content",), document_ids=(10, 11, 12, 13))
+
+    assert (found.left, set(found.failed)) == ((), {10, 11, 12})
 
 
 async def test_different_errors_are_told_apart() -> None:
@@ -434,8 +492,8 @@ async def test_different_errors_are_told_apart() -> None:
     found = await setup.read(("content",), document_ids=(10, 11))
 
     assert found.notices == (
-        "The text of document 10 could not be read: One.",
-        "The text of document 11 could not be read: Two.",
+        "The text of document 10 could not be read in this call: One.",
+        "The text of document 11 could not be read in this call: Two.",
     )
 
 
@@ -615,3 +673,46 @@ async def test_many_notices_together_are_bounded() -> None:
     assert sum(map(len, found.notices)) <= 5000
     assert len(found.notices) > 15
     assert len(found.failed) == 60
+
+
+async def test_a_document_that_failed_and_was_cut_is_only_left() -> None:
+    setup = Setup()
+    for number in range(10, 60):
+        setup.add(number, notes=[note("n" * 9000)])
+        setup.fake.errors[number] = PaperlessMcpError("Broken.")
+
+    found = await setup.read(
+        ("notes", "content"), filters={"title_contains": "scratch"}, page_size=50
+    )
+
+    assert found.truncated
+    assert found.failed == tuple(ids(found))
+    assert set(found.left) == set(found.selected_ids) - set(ids(found))
+    assert found.notices[0].endswith("could not be read in this call: Broken.")
+
+
+@pytest.mark.parametrize("length", [4997, 4998, 4999, 5000])
+async def test_notices_hold_their_limit_to_the_last_character(length: int) -> None:
+    setup = Setup()
+    lead = len("The text of document 10 could not be read in this call: ")
+    for number, message in ((10, "x" * (length - lead)), (11, "y" * 9000), (12, "z" * 200)):
+        setup.add(number)
+        setup.fake.errors[number] = PaperlessMcpError(message)
+
+    found = await setup.read(("content",), document_ids=(10, 11, 12))
+
+    assert len(found.notices[0]) == length
+    assert sum(map(len, found.notices)) <= 5000
+    assert all(found.notices)
+
+
+async def test_why_a_text_is_missing_is_told_before_the_notices_of_a_query() -> None:
+    setup = Setup()
+    setup.fake.errors[PUBLIC] = PaperlessMcpError("Broken.")
+    query = " ".join(f"a{number}:e2e" for number in range(2000))
+    setup.state.documents[0].content = query
+
+    found = await setup.read(("content",), document_ids=(PUBLIC,), filters={"query": query})
+
+    assert found.notices[0] == "The text of document 1 could not be read in this call: Broken."
+    assert len(found.notices) == 2

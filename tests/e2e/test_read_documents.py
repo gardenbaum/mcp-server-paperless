@@ -80,12 +80,14 @@ def shell(code: str) -> None:
 
 
 @contextmanager
-def bare_documents(count: int) -> Generator[str]:
+def bare_documents(
+    count: int, prefix: str = SCRATCH, created: str = "1990-01-01"
+) -> Generator[str]:
     """``count`` documents without a file, removed again without the trash."""
-    name = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
+    name = f"{prefix}{uuid.uuid4().hex[:8]}"
     made = (
         f"Document(title='{name}', content='plmcp80bare words of a test', checksum=f'{name}{{n}}', "
-        "mime_type='text/plain', created='1990-01-01')"
+        f"mime_type='text/plain', created='{created}')"
     )
     shell(f"Document.objects.bulk_create([{made} for n in range({count})])")
     try:
@@ -97,8 +99,11 @@ def bare_documents(count: int) -> Generator[str]:
 
 @pytest.fixture(scope="module")
 def indexed(stack: Stack) -> Iterator[str]:
-    """A thousand bare documents that are also in the full-text index."""
-    with bare_documents(1000) as name:
+    """A thousand bare documents that are also in the full-text index.
+
+    Their title and date keep them out of the test that counts a thousand and one.
+    """
+    with bare_documents(1000, "indexed80-", "1991-01-01") as name:
         rebuild_search_index(stack.admin)
         yield name
     rebuild_search_index(stack.admin)

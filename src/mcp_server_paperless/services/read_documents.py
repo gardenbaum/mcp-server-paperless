@@ -5,6 +5,7 @@ document, until the call has enough. What does not fit into the answer is named,
 """
 
 import time
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.errors import (
@@ -13,6 +14,8 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
+    UpstreamTimeout,
+    UpstreamUnavailable,
     UpstreamUnreachable,
 )
 from mcp_server_paperless.domain.files import joined
@@ -65,6 +68,21 @@ KINDS: Final[Mapping[ReadField, TaxonomyKind]] = {
 NOTICE_CHARS: Final = 5000
 # The fields of a row whose size nothing bounds, and the text (as JSON up to six times as long).
 GROWING: Final[tuple[ReadField, ...]] = ("notes", "custom_fields", "tags", "content")
+
+
+ENDING: Final = (AuthenticationFailed, UpstreamUnreachable)
+OUTAGES: Final = (
+    HTTPStatus.BAD_GATEWAY,
+    HTTPStatus.SERVICE_UNAVAILABLE,
+    HTTPStatus.GATEWAY_TIMEOUT,
+)
+
+
+def _outage(error: PaperlessMcpError) -> bool:
+    """Whether the server did not answer, rather than the document being broken."""
+    return isinstance(error, UpstreamTimeout) or (
+        isinstance(error, UpstreamUnavailable) and error.status in OUTAGES
+    )
 
 
 def _size(row: ReadRow) -> int:
@@ -127,7 +145,7 @@ class ReadDocuments:
         failed: tuple[int, ...] = ()
         if "content" in wanted:
             rows, failed, notice = await self._with_texts(rows, content_chars, until)
-            notices += notice
+            notices = (*notice, *notices)
             left = tuple(row.id for row in rows if row.content is None and row.id not in failed)
         shown = {row.id for row in rows}
         answer = DocumentsRead(
@@ -214,11 +232,13 @@ class ReadDocuments:
         """The rows with the start of their text as far as the call allows, what failed, and why.
 
         What concerns one text leaves the others. What concerns every request ends them: a 429
-        (after the client's own retries), a rejected credential, no connection.
+        (after the client's own retries), a rejected credential, no connection, and two outages
+        in a row (one alone can be of its document, and would end every call at it).
         """
         room = MAX_TEXT
         done = list(rows)
         failed: dict[str, list[int]] = {}
+        outage: str | None = None  # why the document before has no text, if it was an outage
         end: tuple[str, ...] = ()
         for at, row in enumerate(rows):
             if not room:
@@ -231,11 +251,16 @@ class ReadDocuments:
             except NotFound:  # deleted meanwhile: missing in the next call
                 continue
             except PaperlessMcpError as error:
-                if limited(error) or isinstance(error, AuthenticationFailed | UpstreamUnreachable):
+                again = _outage(error)
+                if again and outage is not None:
+                    _ = failed[outage].pop()
+                if (again and outage is not None) or limited(error) or isinstance(error, ENDING):
                     end = (f"Reading text stopped: {error.message}",)
                     break
                 failed.setdefault(error.message, []).append(row.id)
+                outage = error.message if again else None
                 continue
+            outage = None
             part = text[: min(chars, room)]
             room -= len(part)
             done[at] = row.model_copy(
@@ -246,7 +271,9 @@ class ReadDocuments:
                 }
             )
         told = [
-            f"The text of {joined(ids)} could not be read: {why}" for why, ids in failed.items()
+            f"The text of {joined(ids)} could not be read in this call: {why}"
+            for why, ids in failed.items()
+            if ids
         ]
         ids = tuple(number for group in failed.values() for number in group)
         return done, ids, (*told, *end)
@@ -258,9 +285,9 @@ def _short(notices: Sequence[str]) -> tuple[str, ...]:
     told: list[str] = []
     for notice in notices:
         if len(notice) > room:
-            return (*told, f"{notice[: room - 1]}…")
+            return (*told, f"{notice[: room - 1]}…") if room > 0 else tuple(told)
         told.append(notice)
-        room -= len(notice) + 1
+        room -= len(notice)
     return tuple(told)
 
 
@@ -279,7 +306,12 @@ def _bounded(answer: DocumentsRead, rows: Sequence[ReadRow]) -> DocumentsRead:
     cut = {row.id for row in rows[len(shown) :]}
     left = tuple(row.id for row in rows if row.id in cut or row.id in answer.left)
     return answer.model_copy(
-        update={"documents": tuple(shown), "truncated": bool(cut), "left": left}
+        update={
+            "documents": tuple(shown),
+            "truncated": bool(cut),
+            "left": left,
+            "failed": tuple(number for number in answer.failed if number not in cut),
+        }
     )
 
 

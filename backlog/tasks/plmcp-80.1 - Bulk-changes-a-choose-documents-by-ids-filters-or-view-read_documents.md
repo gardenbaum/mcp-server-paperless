@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:32Z'
-updated_date: '2026-11-24T14:22:36Z'
+updated_date: '2026-11-24T14:31:37Z'
 labels:
   - bulk
 dependencies:
@@ -59,4 +59,8 @@ Evidence: domain, adapter, contract (fake), service and tool tests red before th
 Review of f802555 (0 Critical, 3 Important, 9 Minor), all fixed, tests red first: I1 the domain test sets all 21 filters, contract cases go through parts() and each leaves out a seeded document; the 13 mutants of the review are killed. I2 one failing text is named in failed and the others go on; 429, a rejected credential and no connection end the texts. I3 a document that was not asked for refuses the call, one named twice counts once. M1 stated: 429 is told after the client's own retries (three tries, decision-70), proven for the three reads. M2 the notes check fails closed. M3 tags can be left out of an oversized row. M4 true and false are no ids, dates are YYYY-MM-DD, in the strict filters and the id arguments of read_documents only; search_documents hands over values FastMCP has already parsed, so it is unchanged. M5 view 0. M6 decision-69 and Selected.excluded_unknown. M7 'both named and excluded'. M8 fake refuses AND/OR without a condition. M9 text. Also: notices at most 5,000 characters (a hostile query made the answer 209,434 characters), also_matching on page 1 only, one ViewService.
 
 Live on f802555 (CI run 45410532339, part 4/4): the six tests of tests/e2e/test_read_documents.py pass on 3.5.1, with 1,000 and 1,001 documents (16 s for the whole test), a deleted tag in a view (P10) and the restricted user. New: time of 1,000 matches by title, text and more-like.
+
+Delta review of ab8d5a9 (3 Important, 4 Minor), all fixed, red first: N1 the indexed documents have a title and a date of their own. N2 excluded_absent (listed and absent: deleted, or hidden; noticed conditionally, since a hidden one does exclude) apart from excluded_unchecked (kind may not be listed, no notice). N3 two outages in a row (502, 503, 504, timeout) end the texts and go back into left; one alone stays per document, so that one text cannot block every call. N4 to N6 notices to the last character, own before query, failed without cut rows. N7 decision-69 says what the similarity measurement is.
+
+Live on f802555 (CI 45410532339): all 27 cases of tests/contract/test_selection.py pass on 3.5.1: P1 (each field), P9 (rows hold notes also for a user without view_note, as decision-70 says), P10 (ids with filters, a deleted tag). The four failures of that run are tests of PLMCP-79.3 (test_pdf.py contract and E2E, search by file name).
 <!-- SECTION:NOTES:END -->

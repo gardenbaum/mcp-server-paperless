@@ -9,9 +9,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, cast
 
 from mcp_server_paperless.domain.documents import DocumentQuery
-from mcp_server_paperless.domain.errors import AnswerTooLarge, PaperlessMcpError, Validation
+from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
+    PaperlessMcpError,
+    PermissionDenied,
+    Validation,
+)
 from mcp_server_paperless.domain.selection import MAX_MATCHES, SelectionFilters
-from mcp_server_paperless.services.documents import known_items
 from mcp_server_paperless.services.search_syntax import query_notices
 
 if TYPE_CHECKING:
@@ -39,7 +43,7 @@ EXCLUDING: Final[Mapping[str, TaxonomyKind]] = {
 }
 NARROW: Final = "Narrow the filters (dates, tags, correspondent) or pass document_ids."
 EXCLUDES_NOTHING: Final = (
-    "The view excludes what does not exist or is hidden, so it may match more: "
+    "The selection excludes what you cannot see; if it was deleted, more may match: "
 )
 # Most ids an error names that nobody asked for.
 SHOWN: Final = 10
@@ -55,9 +59,11 @@ class Selected:
         matched: How many documents match, the excluded ones too.
         missing: Named ids that do not exist or are hidden from the user.
         also_matching: With ids and filters: what matches now and was not named.
-        excluded_unknown: What a view excludes although it does not exist, or the user may not
-            see or list it: Paperless then leaves out nothing, so more may match than was meant.
-            Noticed, not refused; whoever changes documents decides on it (PLMCP-80.2).
+        excluded_absent: What is excluded although the user's list does not hold it. An object
+            that was deleted excludes nothing, so more matches than was meant; one that is hidden
+            from the user does exclude. The two cannot be told apart, so it is noticed, not
+            refused; whoever changes documents decides on it (PLMCP-80.2).
+        excluded_unchecked: What is excluded of a kind the user may not list: not known.
         notices: What the caller should know of the filters.
     """
 
@@ -65,7 +71,8 @@ class Selected:
     matched: int
     missing: tuple[int, ...] = ()
     also_matching: tuple[int, ...] = ()
-    excluded_unknown: tuple[str, ...] = ()
+    excluded_absent: tuple[str, ...] = ()
+    excluded_unchecked: tuple[str, ...] = ()
     notices: tuple[str, ...] = ()
 
 
@@ -135,7 +142,7 @@ class DocumentSelector:
 
         ``ordering`` replaces the order of the ids, of the view or of the search. With ``change``
         what matches more than was meant is refused instead of noticed. It does not
-        refuse ``missing`` or ``excluded_unknown``: the caller has to.
+        refuse ``missing`` or ``excluded_absent``: the caller has to.
 
         Raises:
             Validation: Nothing or too much was chosen, a filter is empty or contradicts another,
@@ -161,11 +168,11 @@ class DocumentSelector:
             message = f"The full-text query may match more than was meant: {' '.join(notices)}"
             hint = "Write the query as the notice says, or use structured filters."
             raise Validation(message, hint=hint)
-        unknown = await self._unknown(query)
-        if unknown:
-            notices += (f"{EXCLUDES_NOTHING}{', '.join(unknown)}.",)
+        absent, unchecked = await self._excluded(query)
         if everything:
-            notices += (EVERYTHING,)
+            notices = (EVERYTHING, *notices)
+        if absent:
+            notices = (f"{EXCLUDES_NOTHING}{', '.join(absent)}.", *notices)
         matches = await self._read(query)
         excluded = set(selection.exclude_ids)
         hits = tuple(hit for hit in matches if hit.id not in excluded)
@@ -178,7 +185,8 @@ class DocumentSelector:
             hits,
             len(matches),
             also_matching=also,
-            excluded_unknown=unknown,
+            excluded_absent=absent,
+            excluded_unchecked=unchecked,
             notices=notices,
         )
 
@@ -189,17 +197,23 @@ class DocumentSelector:
         query = await self._views.query(selection.saved_view)
         return query if ordering is None else query.model_copy(update={"ordering": ordering})
 
-    async def _unknown(self, query: DocumentQuery) -> tuple[str, ...]:
-        """What ``query`` excludes and the user cannot see; read anew, not from the cache."""
-        unknown: list[str] = []
+    async def _excluded(self, query: DocumentQuery) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """What ``query`` excludes and the list lacks, and what cannot be listed; read anew."""
+        absent: list[str] = []
+        unchecked: list[str] = []
         for field, kind in EXCLUDING.items():
             ids = cast("tuple[int, ...]", getattr(query, field))
-            if ids:
-                self._taxonomy.invalidate(kind)
-                known = await known_items(self._taxonomy, kind)
-                label = kind.replace("_", " ")
-                unknown += [f"{label} {number}" for number in ids if number not in known]
-        return tuple(unknown)
+            if not ids:
+                continue
+            named = {number: f"{kind.replace('_', ' ')} {number}" for number in ids}
+            self._taxonomy.invalidate(kind)
+            try:
+                listed = {item.id for item in await self._taxonomy.items(kind)}
+            except PermissionDenied:
+                unchecked += named.values()
+            else:
+                absent += [name for number, name in named.items() if number not in listed]
+        return tuple(absent), tuple(unchecked)
 
     async def _read(self, query: DocumentQuery) -> tuple[DocumentHit, ...]:
         try:

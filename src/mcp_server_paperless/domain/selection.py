@@ -263,6 +263,6 @@ class DocumentsRead(BaseModel):
     ] = ()
     failed: Annotated[
         tuple[int, ...],
-        Field(description="Shown without text: it could not be read, notices says why."),
+        Field(description="Shown without text: it could not be read in this call, see notices."),
     ] = ()
     notices: tuple[str, ...] = ()

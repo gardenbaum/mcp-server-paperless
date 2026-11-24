@@ -30,7 +30,7 @@ The design was put to the owner with the alternatives (decisions 1 to 4 of the d
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
 - A matched set is compared by what it matches, not by the text of the filter or the rules of the view: an edited view with the same matches passes.
-- **A view that excludes a tag (or another object) that was deleted excludes nothing and matches more**; the web UI does the same. The selection names such objects (`excluded_unknown`, looked up anew, also those hidden from the user) and says so in a notice. Reading goes on. Whether a change is refused then is decided with the tools that change documents (PLMCP-80.2); what they need is there.
+- **A selection that excludes a tag (or another object) that was deleted excludes nothing there and matches more**; the web UI does the same. An object that is only hidden from the user does exclude on 3.5.1 (the filter checks no permission). The user's list tells neither apart, so the selection names what is not in it (`excluded_absent`, looked up anew) and says so in a notice; what is of a kind the user may not list is named apart (`excluded_unchecked`), without a notice. Reading goes on. Whether a change is refused is decided with the tools that change documents (PLMCP-80.2).
 - A document another user changes between the check and a write is not protected (Paperless has no conditional write).
 - A full-text match comes from the search index, which can be older than the document.
 - A selection reads up to 1,001 rows in one request.
@@ -40,4 +40,4 @@ The design was put to the owner with the alternatives (decisions 1 to 4 of the d
 
 - `tests/services/test_selection.py` (marker decision-69): limits (1,000 and 1,001, 64 MiB), every refusal, a set that changed (also as a property), a deleted object in a view, a restricted user.
 - `tests/contract/test_selection.py`: every filter on the fake and on Paperless 3.5.1 gives what a search gives; `tests/adapter/test_selection.py`: the request.
-- `tests/tools/test_read_documents.py`: the filters equal those of `search_documents`; `tests/e2e/test_read_documents.py`: 1,000 and 1,001 documents, the time of 1,000 matches by title, text and similarity (under 30 of the 60 s), a document that stops matching, a restricted user, on Paperless 3.5.1.
+- `tests/tools/test_read_documents.py`: the filters equal those of `search_documents`; `tests/e2e/test_read_documents.py`: 1,000 and 1,001 documents, the time of 1,000 matches by title and by text, and of a more-like search among 1,000 similar documents, which returns as many as Paperless takes for similar (under 30 of the 60 s), a document that stops matching, a restricted user, on Paperless 3.5.1.

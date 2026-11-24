@@ -227,12 +227,13 @@ async def test_a_view_0_is_looked_for_as_one() -> None:
 )
 async def test_an_excluding_rule_for_something_that_is_gone_is_named(rule: int, gone: str) -> None:
     setup = Setup()
-    setup.view(FilterRule(rule_type=rule, value="1,77"), FilterRule(rule_type=0, value="e2e"))
+    setup.view(FilterRule(rule_type=rule, value="77"), FilterRule(rule_type=0, value="e2e"))
 
     found = await setup.select(saved_view="mine", change=True)
 
-    assert gone in found.excluded_unknown
-    notice = "The view excludes what does not exist or is hidden, so it may match more: "
+    assert found.excluded_absent == (gone,)
+    assert found.excluded_unchecked == ()
+    notice = "The selection excludes what you cannot see; if it was deleted, more may match: "
     assert any(text.startswith(notice) and gone in text for text in found.notices)
 
 
@@ -242,19 +243,43 @@ async def test_rules_for_what_exists_name_nothing() -> None:
 
     found = await setup.select(saved_view="mine")
 
-    assert (found.excluded_unknown, found.notices) == ((), ())
+    assert (found.excluded_absent, found.excluded_unchecked, found.notices) == ((), (), ())
 
 
 async def test_a_tag_deleted_after_it_was_listed_is_gone() -> None:
     setup = Setup()
     setup.view(FilterRule(rule_type=17, value="3"))
-    assert (await setup.select(saved_view="mine")).excluded_unknown == ()
+    assert (await setup.select(saved_view="mine")).excluded_absent == ()
     setup.state.tags = [tag for tag in setup.state.tags if tag.id != 3]
 
-    assert (await setup.select(saved_view="mine")).excluded_unknown == ("tag 3",)
+    assert (await setup.select(saved_view="mine")).excluded_absent == ("tag 3",)
 
 
-async def test_what_the_user_may_not_list_cannot_be_checked_and_is_named() -> None:
+async def test_filters_that_exclude_a_deleted_tag_say_so_too() -> None:
+    setup = Setup()
+    filters = {"tags_none": ["e2e-private"]}
+    assert (await setup.select(filters=filters)).notices == ()
+    setup.state.tags = [tag for tag in setup.state.tags if tag.name != "e2e-private"]
+
+    found = await setup.select(filters=filters)  # the name is still in the cache
+
+    assert found.excluded_absent == ("tag 3",)
+    assert [text.startswith("The selection excludes") for text in found.notices] == [True]
+
+
+async def test_own_notices_come_before_those_of_the_query() -> None:
+    setup = Setup()
+    setup.view(
+        FilterRule(rule_type=17, value="77"), FilterRule(rule_type=20, value="acme and invoice")
+    )
+
+    first, second = (await setup.select(saved_view="mine")).notices
+
+    assert first.startswith("The selection excludes")
+    assert "and" in second
+
+
+async def test_what_the_user_may_not_list_cannot_be_checked_and_is_named_apart() -> None:
     setup = Setup(READER[0])
     reader = setup.fake.user
     setup.fake.user = replace(reader, permissions=reader.permissions | {"view_savedview"})
@@ -262,7 +287,11 @@ async def test_what_the_user_may_not_list_cannot_be_checked_and_is_named() -> No
         FakeSavedView(id=9, name="mine", filter_rules=(FilterRule(rule_type=35, value="2"),))
     )
 
-    assert (await setup.select(saved_view="mine")).excluded_unknown == ("user 2",)
+    found = await setup.select(saved_view="mine")
+
+    # A hidden object does exclude, so there is nothing to warn of.
+    assert (found.excluded_absent, found.excluded_unchecked) == ((), ("user 2",))
+    assert found.notices == ()
 
 
 @pytest.mark.parametrize("filters", [{}, {"query": None}])
