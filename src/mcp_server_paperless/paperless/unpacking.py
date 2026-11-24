@@ -6,14 +6,16 @@ the bytes that arrive are counted here, and the end of the stream is the end of 
 """
 
 import zlib
-from typing import TYPE_CHECKING, Final, cast, final
+from typing import TYPE_CHECKING, Final, cast, final, override
+
+from httpx2 import AsyncByteStream
 
 from mcp_server_paperless.domain.errors import AnswerTooLarge
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Iterator
 
-    from httpx2 import AsyncByteStream, Response
+    from httpx2 import Response
 
 # The encodings that are unpacked here, as they are asked for.
 ENCODINGS: Final = ("gzip", "deflate")
@@ -24,6 +26,28 @@ HEADER: Final = 2
 
 class BrokenBodyError(Exception):
     """A compressed body is broken, cut off or goes on after its end."""
+
+
+@final
+class Cut(AsyncByteStream):
+    """The first ``limit`` bytes of a stream, as they arrive."""
+
+    def __init__(self, stream: object, limit: int) -> None:
+        """Cut ``stream``, the one of an async response."""
+        self._stream: AsyncByteStream = cast("AsyncByteStream", stream)
+        self._left: int = limit
+
+    @override
+    async def __aiter__(self) -> AsyncGenerator[bytes]:
+        async for chunk in self._stream:
+            yield chunk[: self._left]
+            self._left -= len(chunk)
+            if self._left <= 0:
+                return
+
+    @override
+    async def aclose(self) -> None:
+        await self._stream.aclose()
 
 
 @final

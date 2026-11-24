@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import zlib
+from compression import zstd
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast, override
@@ -17,6 +18,7 @@ from adapter.conftest import streaming
 from mcp_server_paperless.domain.errors import (
     AnswerCompressed,
     AnswerTooLarge,
+    FeatureUnavailable,
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
@@ -26,6 +28,7 @@ from mcp_server_paperless.domain.errors import (
 )
 from mcp_server_paperless.domain.trash import TrashedDetail
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.errors import AI_DISABLED_BODY, error_for_status
 from mcp_server_paperless.paperless.trash import (
     SCAN_TIMEOUT,
     PaperlessTrashReader,
@@ -707,7 +710,57 @@ async def test_the_body_of_an_error_is_read_within_bounds(body_: str) -> None:
     with pytest.raises(NotFound, match="Page 1 of the trash"):
         _ = await list_page(httpx2.Response(404, headers=headers, stream=stream))
 
-    assert stream.sent <= 2
+    assert stream.sent <= 67  # 64 KiB of it
+
+
+@pytest.mark.parametrize("encoding", ["", "gzip", "deflate", "zstd"])
+@pytest.mark.parametrize("large", [False, True])
+async def test_the_words_of_an_error_are_read_whatever_packs_them_and_cut_not_emptied(
+    encoding: str,
+    large: bool,  # noqa: FBT001 -- a parametrised flag, not a switch
+) -> None:
+    text = AI_DISABLED_BODY.encode() + b" " * 200_000 if large else b'{"document_id": ["wrong"]}'
+    data = zstd.compress(text) if encoding == "zstd" else packed(encoding or "identity", text)
+    headers = {"Content-Encoding": encoding} if encoding else {}
+
+    def answer(_: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(400, headers=headers, stream=Chunks(data))
+
+    client, _ = streaming(answer)
+    reader = PaperlessTrashReader(client)
+    seen: list[PaperlessMcpError] = []
+    for call in (
+        reader.read_trash(entries=5, max_bytes=100),
+        reader.list_trash(page=1, page_size=5, max_bytes=100),
+    ):
+        with pytest.raises(PaperlessMcpError) as raised:
+            _ = await call
+        seen.append(raised.value)
+
+    known = error_for_status(httpx2.Response(400, content=text))
+    assert [(type(error), error.message) for error in seen] == [(type(known), known.message)] * 2
+    assert "wrong" in known.message or isinstance(known, FeatureUnavailable)
+
+
+async def test_a_stream_whose_end_is_missing_is_refused_although_its_text_is_whole() -> None:
+    whole = gzip.compress(body(DOCUMENT))[:-8]
+    response = httpx2.Response(200, headers={"Content-Encoding": "gzip"}, stream=Chunks(whole))
+
+    with pytest.raises(UnexpectedAnswer):
+        _ = await list_page(response)
+
+
+async def test_a_raw_stream_that_starts_like_a_zlib_one_is_read() -> None:
+    """The first byte of both can be 0x08; only the second tells them apart."""
+    whole = body(DOCUMENT)
+    size = len(whole).to_bytes(2, "little")
+    stored = b"\x08" + size + bytes(255 - b for b in size) + whole + b"\x01\0\0\xff\xff"
+    assert int.from_bytes(stored[:2]) % 31
+    response = httpx2.Response(200, headers={"Content-Encoding": "deflate"}, stream=Chunks(stored))
+
+    page, _ = await list_page(response)
+
+    assert [e.id for e in page.entries] == [3301]
 
 
 MEMORY = """

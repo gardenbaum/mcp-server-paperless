@@ -54,7 +54,9 @@ NOT_LISTED_HINT: Final = (
 
 OVER: Final = "An entry over the limit of 64 MiB was not read"
 TOO_LARGE: Final = f"{OVER}, so it may be one of these: look in the Paperless web UI."
-STOPPED: Final = f"The trash was looked through in {MAX_PAGES} requests and is longer."
+STOPPED: Final = (
+    f"The search stopped after {MAX_PAGES} requests: the trash may go on after what they showed."
+)
 
 
 def all_too_large() -> AnswerTooLarge:

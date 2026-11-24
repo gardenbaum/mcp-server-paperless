@@ -78,6 +78,7 @@ CHECKED: Final = (
 UNKNOWN_ID: Final = "Which id it refuses is unknown."
 NO_ID: Final = "Paperless does not say which id it refuses, and every one is still listed."
 IN_STEPS: Final = "Empty in steps with document_ids from list_trash."
+NOTHING: Final = "Nothing was emptied."
 NOT_ALL: Final = (
     "The trash is too large to be read at once, and its pages do not show every entry once: "
     "nothing was emptied."
@@ -544,7 +545,8 @@ class TrashService:
             async with contextlib.aclosing(self._scan.pages()) as pages:
                 async for page in pages:
                     if isinstance(page, str):
-                        message = f"{OVER}: nothing was emptied." if page == TOO_LARGE else NOT_ALL
+                        over = page == TOO_LARGE
+                        message = f"{OVER}: nothing was emptied." if over else f"{page} {NOTHING}"
                         raise AnswerTooLarge(message, hint=IN_STEPS) from None
                     self._check_all(page.count)
                     counts.add(page.count)

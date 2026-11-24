@@ -1324,7 +1324,9 @@ async def test_the_pages_search_makes_a_thousand_requests_at_most() -> None:
 
     assert len(fake.asked) == 2 + 1000
     assert STOPPED in (raised.value.hint or "")
-    assert STOPPED == "The trash was looked through in 1000 requests and is longer."
+    assert STOPPED == (
+        "The search stopped after 1000 requests: the trash may go on after what they showed."
+    )
 
 
 async def test_a_page_of_the_list_that_is_too_large_says_how_to_go_on() -> None:
@@ -1392,6 +1394,23 @@ async def test_everything_is_refused_where_the_pages_do_not_show_every_entry(why
         else NOT_ALL
     )
     assert len(setup.ids()) == 12
+
+
+async def test_everything_that_takes_too_many_requests_is_refused_for_that_reason() -> None:
+    setup = Setup(writes=False)
+    for number in range(1000):
+        _ = setup.document(f"doc {number}")
+    made = [d for d in setup.state.documents if d.title.startswith("doc ")]
+    setup.state.documents = [d for d in setup.state.documents if d not in made]
+    setup.state.trash += [replace(d, deleted_at=DAY) for d in made]
+    fake = heavy(setup, 1)
+
+    with pytest.raises(AnswerTooLarge) as raised:
+        _ = await capped(setup, 1000, fake).empty(None, everything=True, confirm=True)
+
+    assert raised.value.message == f"{STOPPED} Nothing was emptied."
+    assert raised.value.hint == "Empty in steps with document_ids from list_trash."
+    assert len(fake.asked) == 1 + 1000
 
 
 async def test_the_pages_are_closed_when_everything_is_refused() -> None:

@@ -36,7 +36,7 @@ from mcp_server_paperless.paperless.errors import (
     error_for_status,
     error_for_transport,
 )
-from mcp_server_paperless.paperless.unpacking import ENCODINGS, BrokenBodyError, unpacked
+from mcp_server_paperless.paperless.unpacking import ENCODINGS, BrokenBodyError, Cut, unpacked
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.credentials import CredentialProvider
@@ -174,16 +174,16 @@ COMPRESSED_HINT = (
 ERROR_BODY_LIMIT = 64 * 1024
 
 
-async def _with_capped_body(
-    response: httpx2.Response, chunks: AsyncGenerator[bytes] | None = None
-) -> httpx2.Response:
+async def _with_capped_body(response: httpx2.Response, *, cut: bool = False) -> httpx2.Response:
     """``response`` with at most ``ERROR_BODY_LIMIT`` bytes of its streamed body read.
 
-    ``chunks`` is the body if it is not read as httpx2 decodes it; what is broken of it is left out.
+    With ``cut`` no more than that arrives either, and what cannot be unpacked is left out.
     """
+    if cut:
+        response.stream = Cut(response.stream, ERROR_BODY_LIMIT)
     body = b""
-    with contextlib.suppress(AnswerTooLarge, BrokenBodyError):
-        async for chunk in chunks or response.aiter_bytes():
+    with contextlib.suppress(*([httpx2.DecodingError] if cut else [])):
+        async for chunk in response.aiter_bytes():
             body += chunk
             if len(body) >= ERROR_BODY_LIMIT:
                 body = body[:ERROR_BODY_LIMIT]
@@ -328,8 +328,7 @@ class PaperlessClient:
         try:
             encoding = response.headers.get("Content-Encoding", "").strip().lower()
             if response.is_error:
-                chunks = unpacked(response, encoding, ERROR_BODY_LIMIT)
-                raise error_for_status(await _with_capped_body(response, chunks))
+                raise error_for_status(await _with_capped_body(response, cut=True))
             if encoding not in {"", "identity", *taken}:
                 message = (
                     f"The answer to GET {outgoing.url.path} was compressed although that was not "
