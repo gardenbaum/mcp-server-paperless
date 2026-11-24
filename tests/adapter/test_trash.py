@@ -316,9 +316,16 @@ async def test_a_compressed_body_is_refused_unread(encoding: str) -> None:
     stream = Chunks(b"anything")
     response = httpx2.Response(200, headers={"Content-Encoding": encoding}, stream=stream)
 
-    with pytest.raises(PaperlessMcpError, match="unexpected response"):
+    with pytest.raises(PaperlessMcpError) as raised:
         _ = await read(response)
 
+    assert raised.value.message == (
+        "The answer to GET /api/trash/ was compressed although that was not asked for."
+    )
+    assert raised.value.hint == (
+        "Check the proxy between this server and Paperless: it must honour Accept-Encoding: "
+        "identity."
+    )
     assert stream.sent == 0
 
 

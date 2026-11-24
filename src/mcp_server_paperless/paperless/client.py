@@ -159,6 +159,9 @@ class Streamed:
     truncated: bool
 
 
+COMPRESSED_HINT = (
+    "Check the proxy between this server and Paperless: it must honour Accept-Encoding: identity."
+)
 # The most bytes of an error answer that are read to describe it (they are only messages).
 ERROR_BODY_LIMIT = 64 * 1024
 
@@ -296,7 +299,11 @@ class PaperlessClient:
             if response.is_error:
                 raise error_for_status(await _with_capped_body(response))
             if response.headers.get("Content-Encoding", "identity") != "identity":
-                raise unexpected(response)
+                message = (
+                    f"The answer to GET {outgoing.url.path} was compressed although that was not "
+                    "asked for."
+                )
+                raise PaperlessMcpError(message, hint=COMPRESSED_HINT)
             async for chunk in response.aiter_raw():
                 if len(body) + len(chunk) > max_bytes:
                     message = f"Paperless sent more than {max_bytes} bytes for GET {path}."
