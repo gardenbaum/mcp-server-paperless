@@ -94,13 +94,13 @@ it would do. **dry run** marks a tool that can preview its effect first.
 
 | Tool | Kind | What it does |
 |---|---|---|
-| `rotate_documents` | write | Rotate every page of PDF documents clockwise. |
-| `merge_documents` | destructive, confirm | Merge PDF documents, in the order given, into one new document. |
-| `split_document` | destructive, confirm | Split a PDF into one new document per page range. |
-| `delete_pages` | destructive, confirm | Delete pages from a PDF by making a file without them. |
-| `edit_pdf` | destructive, confirm | Build PDF files from the pages of one document: pick, reorder, rotate and group pages. |
-| `remove_document_password` | destructive, confirm | Remove the password from an encrypted PDF. |
-| `reprocess_documents` | destructive, confirm | Run OCR and archiving again for documents, one background task each. |
+| `rotate_documents` | write, confirm, dry run | Rotate every page of PDF documents clockwise. |
+| `merge_documents` | destructive, confirm, dry run | Merge PDF documents, in the order given, into one new document. |
+| `split_document` | destructive, confirm, dry run | Split a PDF into one new document per page range. |
+| `delete_pages` | destructive, confirm, dry run | Delete pages from a PDF by making a file without them. |
+| `edit_pdf` | destructive, confirm, dry run | Build PDF files from the pages of one document: pick, reorder, rotate and group pages. |
+| `remove_document_password` | destructive, confirm, dry run | Remove the password from an encrypted PDF. |
+| `reprocess_documents` | destructive, confirm, dry run | Run OCR and archiving again for documents, one background task each. |
 
 ## `permissions`
 

@@ -238,8 +238,11 @@ in both cases, because it removes documents for good.
 Off by default: `rotate_documents`, `merge_documents`, `split_document`, `delete_pages`,
 `edit_pdf`, `remove_document_password`, `reprocess_documents`. Runs Paperless's server-side PDF
 operations; each returns the background tasks Paperless starts (`wait_seconds` waits for them)
-and page ranges are checked against the page count first. Deleting originals (they move to the
-Paperless trash), dropping pages from what a document shows and reprocessing need `confirm`.
+and page ranges are checked against the page count of the file that is read first. `dry_run`
+returns the plan (what is made, kept and lost) and starts nothing. Deleting originals, dropping
+pages from what a document shows, showing an older file again and reprocessing need `confirm`.
+Originals move to the Paperless trash last, by this server, once everything that was made is
+checked; until then they stay and the result names the next calls.
 `reprocess_documents` does the same as the `reprocess` operation of `bulk_edit_documents` but
 returns its tasks.
 

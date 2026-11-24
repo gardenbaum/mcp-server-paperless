@@ -1031,9 +1031,11 @@ async def test_documents_are_read_with_every_section_and_slice() -> None:
 
 
 async def test_the_pdf_tools_take_every_option() -> None:
+    # A preview sends nothing, so every case runs for real.
+    one = {"document_id": 1, "version_id": 1, "wait_seconds": 0, "dry_run": False}
     await sweep(
         "rotate_documents",
-        {"document_ids": [1], "degrees": 90, "wait_seconds": 0},
+        {"document_ids": [1], "degrees": 90, "wait_seconds": 0, "dry_run": False},
         ("degrees", "use_original_files"),
         prepare=with_pages,
     )
@@ -1044,6 +1046,7 @@ async def test_the_pdf_tools_take_every_option() -> None:
             "metadata_document_id": 1,
             "delete_originals": True,
             "wait_seconds": 0,
+            "dry_run": False,
         },
         ("delete_originals", "archive_fallback", "use_original_files"),
         prepare=with_pages,
@@ -1055,37 +1058,44 @@ async def test_the_pdf_tools_take_every_option() -> None:
             "parts": ["1-2", "3-4"],
             "output": "replace_original",
             "wait_seconds": 0,
+            "dry_run": False,
         },
         (),
         prepare=with_pages,
     )
     await sweep(
         "split_document",
-        {"document_id": 1, "parts": ["1-2", "3-4"], "output": "new_document", "wait_seconds": 0},
+        {
+            "document_id": 1,
+            "parts": ["1-2", "3-4"],
+            "output": "new_document",
+            "version_id": 1,
+            "keep_metadata": False,
+        },
         (),
         prepare=with_pages,
     )
     await sweep(
         "edit_pdf",
-        {"document_id": 1, "pages": [{"page": 1, "rotate": 90}, {"page": 2}], "wait_seconds": 0},
+        {**one, "pages": [{"page": 1, "rotate": 90}, {"page": 2}]},
         ("output", "keep_metadata"),
         prepare=with_pages,
     )
     await sweep(
         "delete_pages",
-        {"document_id": 1, "pages": "1", "wait_seconds": 0},
+        {**one, "pages": "1", "keep_metadata": True},
         ("output",),
         prepare=with_pages,
     )
     await sweep(
         "remove_document_password",
-        {"document_id": 1, "password": "pw", "wait_seconds": 0},
+        {**one, "password": "pw"},
         ("output", "keep_metadata"),
         prepare=with_pages,
     )
     await sweep(
         "reprocess_documents",
-        {"document_ids": [1], "remote_ocr": True, "wait_seconds": 0},
+        {"document_ids": [1], "remote_ocr": True, "wait_seconds": 0, "dry_run": False},
         ("remote_ocr",),
     )
     await sweep(
