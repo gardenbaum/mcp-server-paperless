@@ -37,7 +37,6 @@ pytestmark = [
 ]
 LOG = logging.getLogger("mail.import")
 type Connected = Client[FastMCPTransport]
-NOTHING = "No new documents were added."
 SEEN, FLAGGED = "\\Seen", "\\Flagged"
 
 
@@ -93,7 +92,7 @@ async def test_a_marked_mail_is_only_taken_again_without_its_record_and_its_mark
     rule = box.rule(action, action_parameter=parameter)
     uid = box.put("Invoice", {"a.txt": note()})
 
-    assert "Added 1 document(s)." in box.fetch()
+    assert box.fetch() == 1
     [first] = box.records(rule, 1)
     assert (first["status"], first["uid"]) == ("SUCCESS", uid)
     assert flag in box.flags(uid)
@@ -103,13 +102,13 @@ async def test_a_marked_mail_is_only_taken_again_without_its_record_and_its_mark
 
     # The mark without the record, and the record without the mark, both keep it out.
     box.unflag(uid, flag)
-    assert NOTHING in box.fetch()
+    assert box.fetch() == 0
     box.forget(num(first["id"]))
-    assert "Added 1 document(s)." in box.fetch()
+    assert box.fetch() == 1
     [second] = box.records(rule, 1)
     assert flag in box.flags(uid)
     box.forget(num(second["id"]))
-    assert NOTHING in box.fetch()
+    assert box.fetch() == 0
     assert box.records(rule, 0) == []
     assert len(box.documents("Invoice")) == 2
 
@@ -119,7 +118,7 @@ async def test_a_deleted_mail_is_gone_and_a_moved_one_has_a_new_uid_when_it_is_b
 ) -> None:
     rule = box.rule("delete")
     _ = box.put("Deleted", {"a.txt": note()})
-    assert "Added 1" in box.fetch()
+    assert box.fetch() == 1
     [deleted] = box.records(rule, 1)
     assert box.uids() == []
     assert "The rule deletes the mail" in str((await record(client, deleted))["refetch"])
@@ -128,13 +127,13 @@ async def test_a_deleted_mail_is_gone_and_a_moved_one_has_a_new_uid_when_it_is_b
     _ = box.imap.create("Done")
     moving = box.rule("move", action_parameter="Done")
     uid = box.put("Moved", {"a.txt": note()})
-    assert "Added 1" in box.fetch()
+    assert box.fetch() == 1
     [moved] = box.records(moving, 1)
     assert "The rule moves the mail to 'Done'" in str((await record(client, moved))["refetch"])
     assert (box.uids(), len(box.uids("Done"))) == ([], 1)
     box.move(box.uids("Done")[0], "Done", "INBOX")
     assert box.uids() != [uid]
-    assert "Added 1" in box.fetch()
+    assert box.fetch() == 1
     assert len(box.records(moving, 2)) == 2
     assert len(box.documents("Moved")) == 2
 
@@ -156,11 +155,11 @@ async def test_a_failed_mail_is_left_alone_until_its_record_is_gone_and_then_tak
     assert SEEN not in box.flags(uid)
     assert len(box.documents("Half")) == 1
     assert "takes the mail again" in str(shown["refetch"])
-    assert NOTHING in box.fetch()
+    assert box.fetch() == 0
 
     box.change_rule(rule, filter_attachment_filename_exclude="broken*")
     box.forget(num(failed["id"]))
-    assert "Added 1" in box.fetch()
+    assert box.fetch() == 1
     [taken] = box.records(rule, 1)
     assert taken["status"] == "SUCCESS"
     assert len(box.documents("Half")) == 2
@@ -177,7 +176,7 @@ async def test_a_mail_without_a_file_is_looked_at_again_and_taken_once_the_rule_
     uid = box.put("Excluded", {"a.txt": note()})
     _ = box.put("Bare")
 
-    assert NOTHING in box.fetch()
+    assert box.fetch() == 0
     rows = box.records(rule, 2)
     assert {row["status"] for row in rows} == {"PROCESSED_WO_CONSUMPTION"}
     assert SEEN not in box.flags(uid)
@@ -190,9 +189,9 @@ async def test_a_mail_without_a_file_is_looked_at_again_and_taken_once_the_rule_
     assert shown["error"] is None
 
     box.change_rule(rule, filter_attachment_filename_include="*")
-    assert NOTHING in box.fetch()
+    assert box.fetch() == 0
     box.forget(*(num(row["id"]) for row in rows))
-    assert "Added 1" in box.fetch()
+    assert box.fetch() == 1
     statuses = {str(row["subject"])[-8:]: row["status"] for row in box.records(rule, 2)}
     assert statuses["Excluded"] == "SUCCESS"
     assert SEEN in box.flags(uid)
@@ -203,14 +202,14 @@ async def test_a_disabled_rule_fetches_nothing_also_without_the_record(
 ) -> None:
     rule = box.rule("flag")
     uid = box.put("Off", {"a.txt": note()})
-    assert "Added 1" in box.fetch()
+    assert box.fetch() == 1
     [taken] = box.records(rule, 1)
     box.change_rule(rule, enabled=False)
     box.unflag(uid, FLAGGED)
     assert str((await record(client, taken))["refetch"]).startswith("The rule is disabled")
     box.forget(num(taken["id"]))
 
-    assert NOTHING in box.fetch()
+    assert box.fetch() == 0
     assert box.records(rule, 0) == []
 
 
@@ -221,7 +220,7 @@ async def test_a_mail_with_two_records_is_blocked_by_either(
     rule = box.rule("flag", consumption_scope=3)
     uid = box.put("Both", {"a.txt": note()})
 
-    assert "Added 2" in box.fetch()
+    assert box.fetch() == 2
     rows = box.records(rule, 2)
     seen("P1 siblings:", [(row["status"], row["error"]) for row in rows])
     assert {row["uid"] for row in rows} == {uid}
@@ -229,9 +228,9 @@ async def test_a_mail_with_two_records_is_blocked_by_either(
     assert f"until they are deleted too: {rows[1]['id']}." in str(shown["refetch"])
     box.unflag(uid, FLAGGED)
     box.forget(num(rows[0]["id"]))
-    assert NOTHING in box.fetch()
+    assert box.fetch() == 0
     box.forget(num(rows[1]["id"]))
-    assert "Added 2" in box.fetch()
+    assert box.fetch() == 2
     assert len(box.records(rule, 2)) == 2
 
 
@@ -242,11 +241,11 @@ async def test_every_rule_has_a_record_of_its_own_and_skips_what_another_took_in
     first, second = box.rule("flag", order=1), box.rule("flag", order=2)
     uid = box.put("Once", {"a.txt": note()})
 
-    assert "Added 1" in box.fetch()
+    assert box.fetch() == 1
     _ = box.records(first, 1)
     assert box.records(second, 0) == []
     box.unflag(uid, FLAGGED)
-    assert "Added 1" in box.fetch()
+    assert box.fetch() == 1
     assert len(box.records(second, 1)) == 1
 
 
@@ -265,10 +264,7 @@ async def test_the_answer_to_a_failed_login_is_in_no_result_and_no_log(
     said = box.fetch()
     seen("P3 task of a failed login:", said)
 
-    raw = {
-        name: cast("list[str]", parse(box.stack.admin.get(f"/api/logs/{name}/")))
-        for name in ("mail", "paperless", "celery")
-    }
+    raw = {name: box.log(name) for name in ("mail", "paperless", "celery")}
     for name, lines in raw.items():
         for number, line in enumerate(lines):
             if box.name in line or "mailbox_login" in line:
@@ -295,7 +291,7 @@ async def test_a_login_that_fails_when_the_rule_acts_shows_no_answer(
     """The password changes while the attachments are imported: the action cannot sign in."""
     rule = box.rule("flag")
     uid = box.put("Late", {f"{n}.txt": note() for n in range(8)})
-    assert "Added 8" in box.fetch()
+    assert box.fetch() == 8
     wrong = box.stack.admin.patch(
         f"/api/mail_accounts/{box.account}/", json={"password": "wr0ng-Passw0rd"}
     )
@@ -325,7 +321,7 @@ async def test_an_action_that_fails_leaves_a_traceback(box: Mailbox, client: Con
     _ = box.imap.create("Gone")
     rule = box.rule("move", action_parameter="Gone")
     _ = box.put("Late", {f"{n}.txt": note() for n in range(8)})
-    assert "Added 8" in box.fetch()
+    assert box.fetch() == 8
     _ = box.imap.delete("Gone")
 
     [failed] = box.records(rule, 1)
@@ -342,13 +338,17 @@ async def test_a_fetch_while_another_runs_is_skipped(box: Mailbox) -> None:
     _ = box.rule()
     for number in range(60):
         _ = box.put(f"Many {number}")
-    before = box.known()
+    before = set(box.tasks("mail_fetch"))
     box.start()
     box.start()
 
-    said = box.ended(before, count=2)
-    seen("P3 two fetches:", said)
-    assert any("Skipped: mail account processing already in progress." in text for text in said)
+    box.wait_for_fetches(before, count=2)
+    new = [row for number, row in box.tasks("mail_fetch").items() if number not in before]
+    seen("P3 two fetches:", [(row["status"], row["result_data"]) for row in new])
+    assert {row["status"] for row in new} == {"success"}
+    assert {row["result_data"] for row in new} == {None}  # so nothing but the log tells it
+    skipped = "Mail account processing is already running; skipping this run."
+    assert any(skipped in line for line in box.log("paperless"))
 
 
 # --- deleting records (P2)

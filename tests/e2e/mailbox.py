@@ -1,7 +1,6 @@
 """A mail server for the live mail tests: mailboxes, Paperless accounts and fetches, cleaned up."""
 
 import imaplib
-import json
 import os
 import time
 import uuid
@@ -149,8 +148,8 @@ class Mailbox:
         changed = self.stack.admin.patch(f"/api/mail_rules/{rule}/", json=fields)
         assert changed.is_success, changed.text
 
-    def _fetches(self) -> dict[int, Json]:
-        params = {"task_type": "mail_fetch", "page_size": 100}
+    def tasks(self, task_type: str) -> dict[int, Json]:
+        params = {"task_type": task_type, "page_size": 100}
         rows = results(self.stack.admin.get("/api/tasks/", params=params).raise_for_status())
         return {num(row["id"]): row for row in rows}
 
@@ -158,24 +157,28 @@ class Mailbox:
         reply = self.stack.admin.post(f"/api/mail_accounts/{self.account}/process/")
         assert reply.is_success, reply.text
 
-    def ended(self, before: set[int], count: int = 1) -> list[str]:
-        """What the fetches that were started since say, once they ended."""
+    def wait_for_fetches(self, before: set[int], count: int = 1) -> None:
+        """Wait until `count` fetches ended that are not among those known `before`."""
 
-        def look() -> list[str] | None:
-            new = [row for number, row in self._fetches().items() if number not in before]
-            done = [json.dumps(row["result_data"]) for row in new if row["status"] in ENDED]
-            return done if len(done) >= count else None
+        def look() -> bool | None:
+            rows = self.tasks("mail_fetch")
+            done = [row for n, row in rows.items() if n not in before and row["status"] in ENDED]
+            return len(done) >= count or None
 
-        return wait("the fetch", look)
+        assert wait("the fetch", look)
 
-    def known(self) -> set[int]:
-        return set(self._fetches())
+    def fetch(self) -> int:
+        """Fetch the mail of the account now and wait for the end; how many files it queued.
 
-    def fetch(self) -> str:
-        """Fetch the mail of the account now and wait for the end; what its task says."""
-        before = self.known()
+        The task itself says nothing: 3.5.1 gives `result_data` null for mail_fetch.
+        """
+        fetches, files = set(self.tasks("mail_fetch")), set(self.tasks("consume_file"))
         self.start()
-        return self.ended(before)[0]
+        self.wait_for_fetches(fetches)
+        return len(set(self.tasks("consume_file")) - files)
+
+    def log(self, name: str) -> list[str]:
+        return cast("list[str]", parse(self.stack.admin.get(f"/api/logs/{name}/")))
 
     def records(self, rule: int, count: int) -> list[Json]:
         """The records of the rule, newest first, once there are `count` and nothing is running."""
