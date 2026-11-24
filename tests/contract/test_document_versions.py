@@ -405,6 +405,45 @@ async def test_an_owner_without_admin_rights_deletes_a_version_and_merges(backen
         _ = await user.documents.get_document(source)
 
 
+@pytest.mark.contract("DocumentReader.open_document_file")
+async def test_a_version_is_opened_by_its_id_and_has_the_checksum_of_its_metadata(
+    backend: Backend,
+) -> None:
+    ports, document = backend.admin, backend.new_document()
+    reader = ports.documents
+    text = "plmcp76 second version"
+    version = await add_version(backend, document, text)
+
+    for wanted in (document, version, None):
+        facts = await reader.get_document_metadata(document, version_id=wanted)
+        async with reader.open_document_file(document, "original", version_id=wanted) as opened:
+            content = b"".join([chunk async for chunk in opened.chunks])
+        assert len(content) == facts.original_size
+        assert hashlib.sha256(content).hexdigest() == facts.original_checksum
+        assert (content == text.encode()) == (wanted != document)
+        assert opened.mime_type.partition(";")[0] == facts.original_mime_type
+
+
+@pytest.mark.contract("DocumentReader.open_document_file")
+async def test_paperless_still_opens_a_deleted_version_but_not_one_of_another_document(
+    backend: Backend,
+) -> None:
+    ports, document = backend.admin, backend.new_document()
+    version = await add_version(backend, document, "plmcp76 deleted version")
+    _ = await ports.document_writes.delete_version(document, version)
+
+    async with ports.documents.open_document_file(
+        document, "original", version_id=version
+    ) as opened:
+        content = b"".join([chunk async for chunk in opened.chunks])
+
+    assert content == b"plmcp76 deleted version"
+    for missing in (MISSING, 1):  # 1 is another document
+        with pytest.raises(NotFound):
+            async with ports.documents.open_document_file(document, "original", version_id=missing):
+                raise AssertionError
+
+
 @pytest.mark.contract("DocumentReader.get_newest_versions")
 async def test_an_added_version_is_the_newest_until_it_is_deleted(backend: Backend) -> None:
     document = backend.new_document()

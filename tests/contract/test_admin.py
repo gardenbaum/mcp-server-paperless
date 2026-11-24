@@ -20,13 +20,15 @@ from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Valid
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from contract.conftest import Backend
+    from contract.conftest import Backend, Ports
+    from mcp_server_paperless.domain.admin import ArchiveContent, Compression
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
 GET_USER, GET_GROUP = "AdminReader.get_user", "AdminReader.get_group"
 GET_CONFIG, LIST_LOGS = "AdminReader.get_config", "AdminReader.list_logs"
 GET_LOG, LIST_TASKS = "AdminReader.get_log", "AdminReader.list_tasks"
 DOWNLOAD = "AdminReader.download_documents"
+OPEN = "AdminReader.open_archive"
 CURRENT = "AdminReader.get_current_user_id"
 CREATE_USER, UPDATE_USER = "AdminWriter.create_user", "AdminWriter.update_user"
 DELETE_USER = "AdminWriter.delete_user"
@@ -543,6 +545,49 @@ async def test_unknown_or_hidden_documents_are_refused(backend: Backend) -> None
         _ = await backend.reader.management.download_documents(
             [hidden], content="archive", compression="none", follow_formatting=False, max_bytes=9
         )
+    assert raised.value.hint
+
+
+async def opened_archive(
+    ports: Ports, ids: list[int], content: ArchiveContent, compression: Compression = "none"
+) -> tuple[str, str | None, bytes]:
+    async with ports.management.open_archive(
+        ids, content=content, compression=compression, follow_formatting=False, wait_seconds=60
+    ) as opened:
+        data = b"".join([chunk async for chunk in opened.chunks])
+    return opened.mime_type, opened.filename, data
+
+
+@pytest.mark.contract(OPEN)
+@pytest.mark.parametrize("compression", ["none", "deflated", "bzip2", "lzma"])
+async def test_an_opened_archive_holds_the_files_and_is_the_same_bytes_every_time(
+    backend: Backend, compression: Compression
+) -> None:
+    ids = backend.new_documents(2)
+    originals = {
+        (await backend.admin.documents.get_document_file(n, "original", max_bytes=10**7)).content
+        for n in ids
+    }
+
+    first = await opened_archive(backend.admin, ids, "originals", compression)
+    # The order of the ids does not matter: Paperless has its own.
+    again = await opened_archive(backend.admin, ids[::-1], "originals", compression)
+
+    mime_type, filename, data = first
+    assert (mime_type, filename) == ("application/zip", "documents.zip")
+    assert set(members(data)) == originals
+    assert again == first  # what reading a ZIP in parts relies on
+
+
+@pytest.mark.contract(OPEN)
+async def test_opening_an_archive_of_unknown_or_hidden_documents_is_refused(
+    backend: Backend,
+) -> None:
+    hidden = 2  # the seeded private document of the admin
+    with pytest.raises(Validation):
+        _ = await opened_archive(backend.admin, [UNKNOWN], "archive")
+    with pytest.raises(PermissionDenied) as raised:
+        _ = await opened_archive(backend.reader, [hidden], "archive")
     assert raised.value.hint
 
 

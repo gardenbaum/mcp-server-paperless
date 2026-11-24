@@ -5,6 +5,7 @@ permissions. Full-text and more-like searches add ``__search_hit__`` to each row
 """
 
 import asyncio
+import contextlib
 import json
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Final
@@ -32,15 +33,16 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from mcp_server_paperless.paperless.client import MAY_BE_APPLIED
+from mcp_server_paperless.paperless.client import MAY_BE_APPLIED, opened
 from mcp_server_paperless.paperless.disposition import filename
 from mcp_server_paperless.paperless.pagination import Page
 from mcp_server_paperless.paperless.queued import Queued, TaskWaiter, not_applied
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Collection, Sequence
+    from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Sequence
 
     from mcp_server_paperless.domain.documents import DocumentQuery, FileVersion
+    from mcp_server_paperless.domain.files import OpenedFile
     from mcp_server_paperless.domain.tasks import Unconfirmed
     from mcp_server_paperless.domain.versions import VersionUpload
     from mcp_server_paperless.paperless.client import PaperlessClient, Params
@@ -502,6 +504,28 @@ class PaperlessDocumentReader:
             return await self._file(document_id, "download/", max_bytes, params)
         except NotFound:
             raise _unseen(document_id, version_id) from None
+
+    @contextlib.asynccontextmanager
+    async def open_document_file(
+        self, document_id: int, version: FileVersion, *, version_id: int | None = None
+    ) -> AsyncGenerator[OpenedFile]:
+        """See ``DocumentReader.open_document_file``.
+
+        Paperless ignores a ``Range`` header and compresses its answers, so there is no part to
+        ask for and often no ``Content-Length`` (probed on 3.5.1).
+        """
+        params: Params = {
+            "original": "true" if version == "original" else "false",
+            **_of_version(version_id),
+        }
+        async with contextlib.AsyncExitStack() as stack:
+            try:
+                response = await stack.enter_async_context(
+                    self._client.stream("GET", f"{PATH}{document_id}/download/", params=params)
+                )
+            except NotFound:
+                raise _unseen(document_id, version_id) from None
+            yield opened(response)
 
     async def get_document_titles(self, document_ids: Collection[int]) -> dict[int, str]:
         """See ``DocumentReader.get_document_titles``; ``id__in`` leaves hidden ids out."""

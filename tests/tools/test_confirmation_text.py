@@ -18,6 +18,8 @@ from mcp_server_paperless.domain.taxonomy import SelectOption
 from mcp_server_paperless.domain.workflows import Workflow, WorkflowAction, WorkflowTrigger
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from confirmation import Json
     from pydantic import JsonValue
 
@@ -287,6 +289,44 @@ async def test_every_description_fits_clients_with_and_without_dialogs() -> None
     described = {t.name: t.description or "" for t in tools if t.name in CALLS}
     assert described.keys() == CALLS.keys()
     assert one_sided(described) == []
+
+
+SAVING: Final[dict[str, Json]] = {
+    "download_document": {"document_id": 1},
+    "bulk_download": {"document_ids": [1]},
+}
+
+
+@pytest.mark.parametrize("tool", SAVING)
+async def test_the_saving_downloads_name_only_the_whole_file_and_directory_quoted(
+    tool: str, tmp_path: Path
+) -> None:
+    """They exist only over stdio with download directories, so they are not in `CALLS`."""
+    directory, name = tmp_path / EVIL.strip("⟧"), EVIL[:60].strip()
+    directory.mkdir()
+    ending = ".pdf" if tool == "download_document" else ".zip"
+    _ = (directory / f"{name}{ending}").write_bytes(b"old")
+    served = serve(
+        source(hostile(), writes=False),
+        toolsets=["all"],
+        stdio=True,
+        download_dirs=[str(tmp_path)],
+    )
+    async with Client(served) as client:
+        result = await client.call_tool(
+            tool,
+            {**SAVING[tool], "save_dir": str(directory), "save_as": f"{name}{ending}"},
+            raise_on_error=False,
+        )
+        described = {t.name: t.description or "" for t in await client.list_tools()}
+
+    message = "".join(getattr(block, "text", "") for block in result.content)
+    assert message.startswith("Nothing was changed. Confirming would replace the file '"), message
+    for whole in (f"'{name}{ending}'", f"'{directory}'"):
+        assert message.count(whole) == 1
+        message = message.replace(whole, "")
+    assert leaks(message) == ""
+    assert one_sided({tool: described[tool]}) == []
 
 
 def test_self_test_a_description_of_one_way_only_is_found() -> None:

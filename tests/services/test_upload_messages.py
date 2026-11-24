@@ -11,7 +11,8 @@ from e2e.helpers import pdf
 
 from mcp_server_paperless.domain.documents import MAX_UPLOAD_LIMIT, UploadMetadata
 from mcp_server_paperless.domain.errors import PaperlessMcpError
-from mcp_server_paperless.services.upload_source import clean_filename, decode_base64, read_allowed
+from mcp_server_paperless.services.allowed_paths import clean_filename
+from mcp_server_paperless.services.upload_source import decode_base64, read_allowed
 from services.test_uploads import Setup, b64
 
 if TYPE_CHECKING:

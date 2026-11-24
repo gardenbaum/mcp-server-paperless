@@ -13,9 +13,10 @@ from typing import TYPE_CHECKING
 
 from mcp_server_paperless.domain.errors import Validation
 from mcp_server_paperless.domain.versions import VersionUpload, VersionUploadResult
+from mcp_server_paperless.services.allowed_paths import clean_filename
 from mcp_server_paperless.services.documents import document_link
 from mcp_server_paperless.services.task_outcome import follow
-from mcp_server_paperless.services.upload_source import clean_filename, decode_base64, read_allowed
+from mcp_server_paperless.services.upload_source import decode_base64, read_allowed
 from mcp_server_paperless.services.upload_types import sniff
 from mcp_server_paperless.services.uploads import UNSUPPORTED
 from mcp_server_paperless.services.versions import clean_label, require_change

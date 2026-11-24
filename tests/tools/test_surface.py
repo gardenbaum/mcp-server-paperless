@@ -167,3 +167,21 @@ async def test_upload_document_version_as_a_stdio_server_with_an_allowlist_offer
         [tool] = [t for t in await client.list_tools() if t.name == "upload_document_version"]
 
     assert tool.model_dump(mode="json", by_alias=True, exclude_none=True) == snapshot
+
+
+@pytest.mark.decision("decision-45")
+@pytest.mark.parametrize("name", ["download_document", "bulk_download"])
+async def test_a_download_tool_as_a_stdio_server_with_download_directories_offers_it(
+    snapshot: SnapshotAssertion, name: str
+) -> None:
+    """The two tools that differ in this mode, with save_dir (PLMCP-76)."""
+    server = serve(
+        admin(ai_enabled=True),
+        toolsets=["core", "admin"],
+        stdio=True,
+        download_dirs=["/srv/paperless/exports"],
+    )
+    async with Client(server) as client:
+        [tool] = [t for t in await client.list_tools() if t.name == name]
+
+    assert tool.model_dump(mode="json", by_alias=True, exclude_none=True) == snapshot

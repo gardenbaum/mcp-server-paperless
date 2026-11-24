@@ -20,7 +20,7 @@ from mcp_server_paperless.domain.rendering import (
     RenderRequest,
     ShownPage,
 )
-from mcp_server_paperless.services.documents import document_link
+from mcp_server_paperless.services.documents import document_link, listed_version
 from mcp_server_paperless.services.page_ranges import describe, parse_pages, specification
 
 if TYPE_CHECKING:
@@ -256,14 +256,7 @@ class PageService:
         """
         check_region(region)
         record = await self._reader.get_document(document_id)
-        # The root version has the id of the document.
-        listed = [version.id for version in record.versions] or [document_id]
-        shown = listed[0] if version_id is None else version_id
-        if shown not in listed:
-            # Paperless would answer the file of a deleted version, too.
-            message = f"Document {document_id} has no version {shown}."
-            hint = "Its versions are in get_document with include versions."
-            raise NotFound(message, hint=hint)
+        shown = listed_version(record, version_id)
         metadata = await self._reader.get_document_metadata(document_id, version_id=shown)
         chosen = _choose(document_id, metadata, source)
         file = _File(

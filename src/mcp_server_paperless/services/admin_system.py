@@ -9,6 +9,7 @@ only reads. Acknowledging a task hides it from the list of new ones and needs no
 download is a read: the archive is attached only within the download limit.
 """
 
+import hashlib
 import json
 from typing import TYPE_CHECKING, Final
 
@@ -38,6 +39,23 @@ from mcp_server_paperless.domain.errors import (
     quoted,
     without_credentials,
 )
+from mcp_server_paperless.domain.files import ArchivePartReport, FilePart, SavedArchiveReport
+from mcp_server_paperless.services.file_sink import NO_SINK, Expected, file_name
+from mcp_server_paperless.services.transfer import (
+    APPEND,
+    HEAD_BYTES,
+    MAX_SECONDS,
+    PART_WAIT_SECONDS,
+    TAIL_BYTES,
+    changed,
+    check_archive_type,
+    check_part,
+    is_archive,
+    no_archive,
+    read_all,
+    time_limit,
+    ways,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -54,6 +72,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.errors import DestinationKind
     from mcp_server_paperless.domain.ports import AdminReader, AdminWriter
     from mcp_server_paperless.domain.tasks import TaskState
+    from mcp_server_paperless.services.file_sink import FileSink
 
 DEFAULT_LOG_LINES: Final = 100
 MAX_LOG_LINES: Final = 1000
@@ -62,6 +81,10 @@ MAX_DOCUMENTS: Final = 100
 MAX_TASKS: Final = 100
 ARCHIVE_NAME: Final = "paperless-documents.zip"
 ZIP: Final = "application/zip"
+# The name Paperless gives the archive, for one that is read in parts or saved.
+SAVED_NAME: Final = "documents.zip"
+# How long Paperless may take to build an archive before its first byte, for one that is saved.
+SAVE_WAIT_SECONDS: Final = 600.0
 # The settings that are URLs.
 ENDPOINTS: Final = frozenset({"llm_endpoint", "llm_embedding_endpoint", "remote_ocr_endpoint"})
 # Settings a confirmation names in full; the rest are counted.
@@ -144,11 +167,28 @@ def _config(record: AppConfigRecord) -> AppConfig:
     )
 
 
+def _check_ids(document_ids: Sequence[int]) -> None:
+    if not 1 <= len(document_ids) <= MAX_DOCUMENTS or len(set(document_ids)) != len(document_ids):
+        message = f"Give between 1 and {MAX_DOCUMENTS} document ids, each once."
+        raise Validation(message, hint="Find ids with search_documents.")
+
+
 class SystemAdmin:
     """Configuration, logs, tasks and bulk download."""
 
-    def __init__(self, reader: AdminReader, writer: AdminWriter, *, max_bytes: int) -> None:
-        """Read and write through the ports; archives over ``max_bytes`` bytes are not attached."""
+    def __init__(
+        self,
+        reader: AdminReader,
+        writer: AdminWriter,
+        *,
+        max_bytes: int,
+        sink: FileSink = NO_SINK,
+    ) -> None:
+        """Read and write through the ports; archives over ``max_bytes`` bytes are not attached.
+
+        ``sink`` saves archives; by default it refuses to.
+        """
+        self._sink: FileSink = sink
         self._reader: AdminReader = reader
         self._writer: AdminWriter = writer
         self._max_bytes: int = max_bytes
@@ -373,8 +413,9 @@ class SystemAdmin:
             )
         return (
             f"The archive is over the download limit of {self._max_bytes} bytes, so it is not "
-            "attached. Ask for fewer documents, fetch single files with download_document, or "
-            "ask the administrator to raise PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
+            f"attached. Call again with {ways(saving=bool(self._sink.roots))}, ask for "
+            "fewer documents, fetch single files with download_document, or ask the administrator "
+            "to raise PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
         )
 
     async def download(
@@ -392,11 +433,7 @@ class SystemAdmin:
                 does not exist.
             PermissionDenied: The user may not see one of the documents.
         """
-        if not 1 <= len(document_ids) <= MAX_DOCUMENTS or len(set(document_ids)) != len(
-            document_ids
-        ):
-            message = f"Give between 1 and {MAX_DOCUMENTS} document ids, each once."
-            raise Validation(message, hint="Find ids with search_documents.")
+        _check_ids(document_ids)
         found = await self._reader.download_documents(
             document_ids,
             content=content,
@@ -405,6 +442,9 @@ class SystemAdmin:
             max_bytes=self._max_bytes,
         )
         delivered = not found.truncated
+        whole = found.content
+        if delivered and not is_archive(whole[:HEAD_BYTES], whole[-TAIL_BYTES:], len(whole)):
+            raise no_archive()
         report = ArchiveReport(
             document_ids=tuple(document_ids),
             content=content,
@@ -416,3 +456,111 @@ class SystemAdmin:
             note=None if delivered else self._note(timed_out=found.timed_out),
         )
         return ArchiveDelivery(report=report, data=found.content if delivered else None)
+
+    async def part(  # noqa: PLR0913 -- the archive, the window and the proof
+        self,
+        document_ids: Sequence[int],
+        *,
+        offset: int,
+        content: ArchiveContent = "archive",
+        compression: Compression = "none",
+        follow_formatting: bool = False,
+        max_bytes: int | None = None,
+        checksum: str | None = None,
+    ) -> FilePart[ArchivePartReport]:
+        """The bytes of the archive from ``offset``, at most ``max_bytes`` and the limit.
+
+        Paperless builds the archive anew for every call. It is read and hashed to its end each
+        time: only that proves that the parts are of the same archive (decision-45).
+
+        Raises:
+            Validation: As ``download``; or a part after the first does not say which archive it
+                belongs to, or the archive changed.
+            PermissionDenied: The user may not see one of the documents.
+            PaperlessMcpError: The archive is too large.
+        """
+        check_part(offset, max_bytes, checksum)
+        _check_ids(document_ids)
+        limit = min(max_bytes or self._max_bytes, self._max_bytes)
+        async with (
+            time_limit(MAX_SECONDS),
+            self._reader.open_archive(
+                document_ids,
+                content=content,
+                compression=compression,
+                follow_formatting=follow_formatting,
+                wait_seconds=PART_WAIT_SECONDS,
+            ) as opened,
+        ):
+            check_archive_type(opened)
+            found = await read_all(opened.chunks, offset, limit)
+        if not found.archive:
+            raise no_archive()
+        data, size, known = found.window, found.size, found.sha256
+        if checksum not in {None, known}:
+            raise changed()
+        end = offset + len(data)
+        following = end if end < size else None
+        arguments = (
+            "the same document_ids, content, compression and follow_formatting, "
+            f"offset={end}, max_bytes={limit} and checksum={known}"
+        )
+        report = ArchivePartReport(
+            document_ids=tuple(document_ids),
+            content=content,
+            filename=SAVED_NAME,
+            mime_type=ZIP,
+            offset=offset,
+            length=len(data),
+            total_bytes=size,
+            next_offset=following,
+            part_sha256=hashlib.sha256(data).hexdigest(),
+            checksum=known,
+            next=None if following is None else f"Call again with {arguments}; {APPEND}",
+        )
+        return FilePart(report=report, data=data)
+
+    async def save(  # noqa: PLR0913 -- the archive and where it goes
+        self,
+        document_ids: Sequence[int],
+        *,
+        directory: str,
+        content: ArchiveContent = "archive",
+        compression: Compression = "none",
+        follow_formatting: bool = False,
+        save_as: str | None = None,
+        confirm: bool = False,
+    ) -> SavedArchiveReport:
+        """Save the archive, of any size up to the limit, into ``directory``.
+
+        Raises:
+            NotFound: No usable directory.
+            Validation: As ``download``; or saving is not enabled, or the name is not usable.
+            PermissionDenied: The user may not see one of the documents.
+            ConfirmationRequired: A file of that name exists and ``confirm`` is not set; the
+                archive is not built.
+            PaperlessMcpError: It could not be read or written completely; nothing is saved.
+        """
+        _check_ids(document_ids)
+        async with self._sink.open(directory) as target:
+            source = ("archive", tuple(document_ids), content, compression, follow_formatting)
+            name = file_name(save_as, SAVED_NAME, ZIP)
+            await target.claim(name, confirm=confirm, source=source)
+            async with self._reader.open_archive(
+                document_ids,
+                content=content,
+                compression=compression,
+                follow_formatting=follow_formatting,
+                wait_seconds=SAVE_WAIT_SECONDS,
+            ) as opened:
+                check_archive_type(opened)
+                saved = await target.write(opened.chunks, Expected(zip=True))
+        return SavedArchiveReport(
+            document_ids=tuple(document_ids),
+            content=content,
+            directory=directory,
+            filename=saved.filename,
+            size_bytes=saved.size,
+            sha256=saved.sha256,
+            replaced=saved.replaced,
+        )

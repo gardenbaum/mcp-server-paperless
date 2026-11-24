@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping, Sequence
+    from contextlib import AbstractAsyncContextManager
     from datetime import datetime
 
     from mcp_server_paperless.domain.admin import (
@@ -45,6 +46,7 @@ if TYPE_CHECKING:
         Note,
         Suggestions,
     )
+    from mcp_server_paperless.domain.files import OpenedFile
     from mcp_server_paperless.domain.instance import InstanceOverview
     from mcp_server_paperless.domain.mail import (
         MailAccount,
@@ -205,6 +207,17 @@ class DocumentReader(Protocol):
         Reads at most ``max_bytes`` bytes: a larger file comes back ``truncated`` with its type
         and name but no content. Paperless answers the original for ``archive`` when the
         document has no archive version, so callers check ``has_archive_version`` first.
+
+        Raises:
+            NotFound: No such document, or no such version of it.
+            PermissionDenied: The user may not see the document.
+        """
+        ...
+
+    def open_document_file(
+        self, document_id: int, version: FileVersion, *, version_id: int | None = None
+    ) -> AbstractAsyncContextManager[OpenedFile]:
+        """The same file as ``get_document_file``, handed over chunk by chunk and of any size.
 
         Raises:
             NotFound: No such document, or no such version of it.
@@ -1211,6 +1224,26 @@ class AdminReader(Protocol):
         """The files of the documents as one ZIP archive; at most ``max_bytes`` bytes are read.
 
         Over the limit the archive is ``truncated`` and has no content. Changes nothing.
+
+        Raises:
+            PermissionDenied: A document is hidden from the user (the whole request is refused).
+            Validation: A document does not exist; no archive is made.
+        """
+        ...
+
+    def open_archive(
+        self,
+        document_ids: Sequence[int],
+        *,
+        content: ArchiveContent,
+        compression: Compression,
+        follow_formatting: bool,
+        wait_seconds: float,
+    ) -> AbstractAsyncContextManager[OpenedFile]:
+        """The same archive as ``download_documents``, handed over chunk by chunk, of any size.
+
+        Paperless builds the whole archive before its first byte; ``wait_seconds`` is the longest
+        wait for that byte, and for each later one.
 
         Raises:
             PermissionDenied: A document is hidden from the user (the whole request is refused).

@@ -319,18 +319,18 @@ function_hash = "00e012f88109"
 reason = "httpx2 upper-cases the method when it builds the request, so 'delete' is sent as 'DELETE'."
 
 [[equivalent]]
-mutant = "mcp_server_paperless.services.upload_source.x_clean_filename__mutmut_5"
-function_hash = "c37bbeb7ca2c"
+mutant = "mcp_server_paperless.services.allowed_paths.x_clean_filename__mutmut_5"
+function_hash = "314b5f13ef27"
 reason = "rsplit with another maxsplit and `problem = ''` instead of None: [-1] is the same last component, and an empty problem is falsy like None."
 
 [[equivalent]]
-mutant = "mcp_server_paperless.services.upload_source.x_clean_filename__mutmut_14"
-function_hash = "c37bbeb7ca2c"
+mutant = "mcp_server_paperless.services.allowed_paths.x_clean_filename__mutmut_14"
+function_hash = "314b5f13ef27"
 reason = "rsplit with another maxsplit and `problem = ''` instead of None: [-1] is the same last component, and an empty problem is falsy like None."
 
 [[equivalent]]
-mutant = "mcp_server_paperless.services.upload_source.x_clean_filename__mutmut_17"
-function_hash = "c37bbeb7ca2c"
+mutant = "mcp_server_paperless.services.allowed_paths.x_clean_filename__mutmut_17"
+function_hash = "314b5f13ef27"
 reason = "rsplit with another maxsplit and `problem = ''` instead of None: [-1] is the same last component, and an empty problem is falsy like None."
 
 [[equivalent]]
@@ -355,38 +355,28 @@ reason = "Same outcome for every file: a file over the limit is read on (further
 
 [[equivalent]]
 mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_3"
-function_hash = "c8879a989362"
-reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
+function_hash = "ba98d1cf61e4"
+reason = "O_CLOEXEC cannot be observed (O_RDONLY is 0); a stat that follows links is backed by the O_NOFOLLOW open that comes next."
 
 [[equivalent]]
-mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_9"
-function_hash = "c8879a989362"
-reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
+mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_18"
+function_hash = "ba98d1cf61e4"
+reason = "O_CLOEXEC cannot be observed (O_RDONLY is 0); a stat that follows links is backed by the O_NOFOLLOW open that comes next."
 
 [[equivalent]]
-mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_10"
-function_hash = "c8879a989362"
-reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
+mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_21"
+function_hash = "ba98d1cf61e4"
+reason = "O_CLOEXEC cannot be observed (O_RDONLY is 0); a stat that follows links is backed by the O_NOFOLLOW open that comes next."
 
 [[equivalent]]
-mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_30"
-function_hash = "c8879a989362"
-reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
+mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_22"
+function_hash = "ba98d1cf61e4"
+reason = "O_CLOEXEC cannot be observed (O_RDONLY is 0); a stat that follows links is backed by the O_NOFOLLOW open that comes next."
 
 [[equivalent]]
-mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_33"
-function_hash = "c8879a989362"
-reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
-
-[[equivalent]]
-mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_34"
-function_hash = "c8879a989362"
-reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
-
-[[equivalent]]
-mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_63"
-function_hash = "c8879a989362"
-reason = "O_CLOEXEC and O_DIRECTORY on the root cannot be observed (O_RDONLY is 0; the root is a directory already checked by realpath); a stat that follows links is backed by the O_NOFOLLOW open that comes next; suppress(None) never sees an error because the held directory descriptor is always open."
+mutant = "mcp_server_paperless.services.allowed_paths.x_open_directory__mutmut_3"
+function_hash = "5190daefaeba"
+reason = "O_CLOEXEC cannot be observed, and O_RDONLY is 0."
 
 [[equivalent]]
 mutant = "mcp_server_paperless.services.upload_types.x__zipped__mutmut_22"
