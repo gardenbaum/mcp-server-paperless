@@ -1,6 +1,6 @@
 # The recorder of the demo (`just demo`): vhs, with uv to run the released server from PyPI.
 # renovate: datasource=docker depName=ghcr.io/astral-sh/uv
-FROM ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.9@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d AS uv
 
 # renovate: datasource=docker depName=ghcr.io/charmbracelet/vhs
 FROM ghcr.io/charmbracelet/vhs:v0.12.1@sha256:ea49a6a1c529be83153e88321892b5585964418f0b9055e8c1e0d732194234a3
