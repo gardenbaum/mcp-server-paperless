@@ -1,11 +1,11 @@
 ---
 id: PLMCP-79.3
 title: 'PDF tools c: metadata per part, safe replacing, extract_pages'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:16Z'
-updated_date: '2026-11-24T14:31:44Z'
+updated_date: '2026-11-24T15:13:38Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -23,16 +23,16 @@ Third part of PLMCP-79 (design approved by the owner on 2026-11-24 (all 14 decis
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Split sets title, type, correspondent, date and tags per part; every part reports state, metadata and the next call
-- [ ] #2 extract_pages keeps or removes the pages of the source; every failure row of the design is tested with its state
-- [ ] #3 Nothing is trashed while a part is unfinished, failed, hidden, duplicate, stopped or without its metadata
+- [x] #1 Split sets title, type, correspondent, date and tags per part; every part reports state, metadata and the next call
+- [x] #2 extract_pages keeps or removes the pages of the source; every failure row of the design is tested with its state
+- [x] #3 Nothing is trashed while a part is unfinished, failed, hidden, duplicate, stopped or without its metadata
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -84,4 +84,12 @@ Delta review of b1f34da fixed, tests red first (N1 to N8): N1 the 5 second bound
 Live failure of 9a3985b (full E2E 45402232899, shard 1/4): a new user's first request was in doubt (PENDING). Cause: Paperless queues bulk_update_documents after metadata changes with the type bulk_update, no owner, empty input, trigger source system (source of 3.5.1: signals/handlers.py, bulk_edit.py, tasks.py, serialisers.py, views.py, workflows/actions.py: its only file work is unlocking as a version). Every user who may view tasks sees these rows, and the adapter counted them as operations of the user, so anybody's metadata change in the last hour left everyone in doubt. Only rows with exactly this shape are left out now; a row with an owner, an input or another trigger still counts. Red first: 3 adapter tests; the 4 near misses stay a doubt. The contract test makes such a row itself. The third failure was a wrong fixture password in the test.
 
 Live rows (diagnostic run 45410381343, removed again): the rows counted against a fresh user were bulk_update rows with a named operation and owner null, of users deleted since (PaperlessTask.owner is SET_NULL); no row with empty input was among them, so the earlier note named the wrong cause. Prepared as option A, pending the owner's answer before the merge: in the search by name an operation is the caller's only if the caller owns it. Source of 3.5.1: all bulk views use IsAuthenticated (basic, token, session, remote user and auto login all give a User row), _queue_bulk_operation records request.user.pk, execute_bulk_operation and the consumer load that user by id (a deleted one raises), a deleted user's documents have owner null. The exclusion of the empty system rows is covered by it and gone; the doubt of listed tasks (decision-60) is as in 79.1. Red first: 12 adapter cases. copies() of the contract tests polls on a passing doubt.
+
+Option A approved by the owner on 2026-11-24 ("alles wie empfohlen"); decision-67 says it and its limits. The contract test reads the row of the deleted user (named operation, owner null) and that the same-named document is not taken. A wait for the queued task that breaks hands the task back (unconfirmed), red first. CI 45415118286 (check 3.14 and 3.15, e2e tier) and full E2E 45415099254 of a386d6f green. DoD 1 stays open: the contract and E2E tests, the first service tests of the name search, test_pdf_next.py and the test of the fake were not seen red first. DoD 2 stays open: just check was not run locally (ruling: not locally), CI is green. DoD 4 stays open until the merge.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+split_document sets title, type, correspondent, date and tags per part; every part reports state, metadata and the next call. extract_pages (new) puts pages into a new document and with remove takes them out of the source as a checked new version. Originals go, and pages vanish, only when every new document is verified and has its metadata. Where a date custom field hides the tasks, new documents are found by file name and verified (find_copies, owner ruling; one-hour rule; operations the caller does not own do not count, option A). Unexpected errors after a start are not raised: the result says what is known and where to look. decision-67; OVERVIEW_GUIDE_LIMIT 2865 of the approved 2880; snapshots and docs regenerated. Evidence: failure tables on the fake, contract and E2E tests on Paperless 3.5.1 (full E2E 45415099254 and CI 45415118286 green on a386d6f); the changes after it are tests, the fake, decision text and the handling of a wait that breaks. Risks: see decision-67 (hand-over of a deleted user's documents, a backlog over an hour).
+<!-- SECTION:FINAL_SUMMARY:END -->

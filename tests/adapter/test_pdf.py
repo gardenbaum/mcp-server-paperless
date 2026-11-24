@@ -1428,4 +1428,5 @@ async def test_a_wait_for_the_queued_task_that_breaks_is_reported_not_raised(
 
     tasks = await pdf.rotate_documents((7,), 90)
 
-    assert (tasks.ids, tasks.problem, len(server.posts)) == ((), "failed", 1)
+    assert (tasks.ids, tasks.problem, len(server.posts)) == ((DONE_TASK,), "unconfirmed", 1)
+    assert tasks.detail == "its task could not be followed"

@@ -9,10 +9,11 @@ Every test works on documents of its own, never on a seeded one.
 
 import asyncio
 import io
+import json
 import time
 import uuid
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from e2e.helpers import pdf_pages
@@ -614,6 +615,15 @@ async def copies(backend: Backend, user: Ports, files: CopiedFiles | None) -> Fo
         await asyncio.sleep(0.5)
 
 
+async def queued_row(user: Ports, request: str) -> tuple[object, object, object]:
+    """Type, operation and owner of a queued operation, as this user sees its row."""
+    reply = await user.raw.get("/api/tasks/", {"task_id": request}, max_bytes=100_000)
+    page = cast("dict[str, list[dict[str, object]]]", json.loads(reply.body))
+    [row] = [row for row in page["results"] if row["task_id"] == request]
+    data = cast("dict[str, object]", row["input_data"])
+    return row["task_type"], data["operation"], row["owner"]
+
+
 @pytest.mark.contract(COPIES)
 @pytest.mark.contract(EDIT)
 @pytest.mark.decision("decision-67")
@@ -630,12 +640,16 @@ async def test_parts_whose_tasks_a_date_hides_are_found_by_their_file_names(
     _ = await backend.admin.bulk_writes.bulk_edit_documents((other,), change)
     name = f"contract-gone-{uuid.uuid4().hex[:12]}"
     gone = backend.restricted(FINDING, name=name)
-    _ = await gone.pdf_writes.edit_pdf(other, (PageSlot(page=1),), output="new_version")
-    await until_versions(backend, other, 2)
+    theirs = await gone.pdf_writes.edit_pdf(other, (PageSlot(page=1),), output="new_document")
+    [made] = (await copies(backend, gone, theirs.files)).ids
     accounts = await backend.admin.permissions.list_users(name_contains=name, page=1, page_size=1)
     [account] = accounts.rows
     await backend.admin.management_writes.delete_user(account.id)
     user = backend.restricted(FINDING)
+    assert theirs.files is not None
+    assert await queued_row(user, theirs.files.request) == ("bulk_update", "edit_pdf", None)
+    assert made is not None
+    assert (await backend.admin.documents.get_document(made)).owner is None
     slots = (PageSlot(page=1), PageSlot(page=2, document=1), PageSlot(page=3, document=1))
 
     first = await user.pdf_writes.edit_pdf(other, (PageSlot(page=1),), output="new_document")
@@ -645,6 +659,7 @@ async def test_parts_whose_tasks_a_date_hides_are_found_by_their_file_names(
 
     assert (tasks.ids, tasks.problem) == ((), None)
     assert one is not None
+    assert one != made  # the same file name, but not the caller's
     # The earlier operation is known to have made something else: its file is there.
     assert found.doubt is None
     assert [await pages(backend, n) for n in found.ids if n is not None] == [1, 2]

@@ -33,6 +33,7 @@ from pydantic import AwareDatetime, BaseModel, JsonValue
 
 from mcp_server_paperless.domain.errors import PaperlessMcpError, PermissionDenied, Validation
 from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, StartedTasks
+from mcp_server_paperless.domain.tasks import Unconfirmed
 from mcp_server_paperless.paperless.errors import REJECTED
 from mcp_server_paperless.paperless.pagination import Page
 from mcp_server_paperless.paperless.queued import Queued, TaskWaiter, not_applied, task_failed
@@ -143,6 +144,7 @@ NO_TIMES: Final = "the times of its queued task are not known"
 NOT_OWN: Final = "a file was not handed over by its queued task"
 AT_ONCE: Final = "another operation of this user ran at the same time"
 UNCOMPARED: Final = "its tasks could not be compared"
+BROKE: Final = "its task could not be followed"
 PENDING: Final = "files of earlier operations of this user may still come"
 TASKED: Final = "a task of its own makes a file of one of these names"
 # How long a file may wait for its consumption: operations before that are taken to be done.
@@ -474,7 +476,13 @@ class PaperlessPdfWriter:
         own: _Copies | None,
     ) -> StartedTasks:
         """The tasks of an accepted request; ``found`` holds what is known if it breaks."""
-        unconfirmed = await self._waiter.confirmed(queued, failed)
+        try:
+            unconfirmed = await self._waiter.confirmed(queued, failed)
+        except Validation:
+            raise
+        except Exception as error:  # noqa: BLE001 -- accepted: its queued task can still be followed
+            logger.error("a queued task could not be followed: %s", type(error).__name__)  # noqa: TRY400 -- the type alone
+            unconfirmed = Unconfirmed(task_id=queued.task_id, reason=BROKE)
         if unconfirmed is not None and problem != "forbidden":
             # Accepted, but not followed to its end: hand the queued task back, do not raise,
             # even when the mark failed, because the queued task is still the one to follow.
