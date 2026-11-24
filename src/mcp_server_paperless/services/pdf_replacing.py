@@ -133,26 +133,37 @@ def _named(numbers: Sequence[int]) -> str:
 
 
 def _finish(
-    wanted: Replacement, left: Sequence[DocumentRecord], product: int | None, *, serial: bool
+    wanted: Replacement,
+    left: Sequence[DocumentRecord],
+    product: DocumentRecord | None,
+    *,
+    serial: bool,
 ) -> str:
     """The calls that end the replacement of the originals that are ``left``.
 
-    ``serial``: the number that is to move is still on its original.
+    ``serial``: the number that is to move is still on its original. It never goes over one that
+    the new document has; ``product`` is None where the new document is not known yet.
     """
     steps = [f"delete_document(document_id={d.id})" for d in left]
     moves = wanted.serial if serial and wanted.serial in left else None
+    if product is not None and product.archive_serial_number is not None:
+        moves = None
     if moves is not None and moves.archive_serial_number is not None:
-        new = "<the new document>" if product is None else str(product)
+        new = "<the new document>" if product is None else str(product.id)
         number = moves.archive_serial_number
-        steps = [
-            f'update_document(document_id={moves.id}, clear=["archive_serial_number"])',
-            f"update_document(document_id={new}, archive_serial_number={number})",
-            *steps,
-        ]
+        move = (
+            f'update_document(document_id={moves.id}, clear=["archive_serial_number"]), then '
+            f"update_document(document_id={new}, archive_serial_number={number})"
+        )
+        if product is None:
+            move = f"only if the new document has no archive serial number ({move})"
+        steps = [move, *steps]
     staying = "".join(
         f"; archive serial number {d.archive_serial_number} of document {d.id} does not move"
         for d in left
-        if d.archive_serial_number is not None and d is not wanted.serial
+        if d.archive_serial_number is not None
+        and d is not moves
+        and (serial or d is not wanted.serial)
     )
     return ", then ".join(steps) + staying
 
@@ -160,6 +171,10 @@ def _finish(
 def _if_unchanged(left: Sequence[DocumentRecord]) -> str:
     names = _named([d.id for d in left])
     return f"only if {names} {'is' if len(left) == 1 else 'are'} unchanged"
+
+
+def _if_found(original: DocumentRecord) -> str:
+    return f"only if get_document(document_id={original.id}) still finds it unchanged"
 
 
 def _unchecked(result: PdfResult, started: StartedTasks, wanted: Replacement) -> str:
@@ -284,7 +299,7 @@ class Replacing:
         """Nothing starts without the rights being known, or later than ``LATEST_START``."""
         late = self.clock() - began > LATEST_START
         if wanted.unread or late:
-            then = _finish(wanted, wanted.originals, product.id, serial=True)
+            then = _finish(wanted, wanted.originals, product, serial=True)
             reason = UNREAD if wanted.unread else LATE
             raise _KeptError(reason, f"{_if_unchanged(wanted.originals)}: {then}")
 
@@ -337,10 +352,8 @@ class Replacing:
             note += f"If it did, it {WAY_BACK}"
             if len(left) > 1:
                 note += f" Not moved to the trash: {_named([d.id for d in left[1:]])}."
-            condition = f"only if get_document(document_id={first.id}) still finds it unchanged"
         else:
             note = f"Not moved to the trash: {_named([d.id for d in left])} ({why.cause})."
-            condition = _if_unchanged(left)
         done.notes.append(note)
         original = wanted.serial
         place = _Place(product.id) if moved or original is None else _Place(original.id)
@@ -350,8 +363,13 @@ class Replacing:
             _tell_place(original, product, place, done)
         if place.holder > 0 and not place.taken:
             serial = original is not None and place.holder == original.id
-            then = _finish(wanted, left, product.id, serial=serial)
-            done.next = f"{condition}: {then}"
+            if why.unknown:
+                done.next = ". Whatever became of it, ".join(
+                    f"{_if_found(d)}: {_finish(wanted, [d], product, serial=serial)}" for d in left
+                )
+            else:
+                then = _finish(wanted, left, product, serial=serial)
+                done.next = f"{_if_unchanged(left)}: {then}"
 
     async def _move(
         self, original: DocumentRecord, number: int | None, began: float
@@ -402,7 +420,7 @@ class Replacing:
             _tell_place(original, product, place, done)
             if place.holder > 0 and not place.taken:
                 serial = place.holder == original.id
-                then = _finish(wanted, wanted.originals, product.id, serial=serial)
+                then = _finish(wanted, wanted.originals, product, serial=serial)
                 done.next = f"{_if_unchanged(wanted.originals)}: {then}"
             return None
         return True

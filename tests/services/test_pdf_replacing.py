@@ -520,6 +520,60 @@ async def test_a_deletion_without_an_answer_may_still_happen(*, readable: bool) 
     )
 
 
+@pytest.mark.parametrize("how", ["refused", "late", "unread", "unknown"])
+async def test_next_never_overwrites_a_number_the_new_document_has(how: str) -> None:
+    fake = paperless(NUMBER)
+    if how == "refused":
+        fake.refuse_deletes = {DOC}
+    elif how == "unknown":
+        fake.time_out = {DOC}
+    elif how == "unread":
+        fake.may = None
+
+    def barcode() -> None:
+        fake.state.documents[-1].archive_serial_number = 5
+        if how == "late":
+            fake.now += 46
+
+    fake.after_start = barcode
+
+    result = await shorten(fake)
+
+    condition = (
+        f"only if get_document(document_id={DOC}) still finds it unchanged"
+        if how == "unknown"
+        else f"only if document {DOC} is unchanged"
+    )
+    assert result.next == (
+        f"{condition}: delete_document(document_id={DOC}); archive serial number {NUMBER} of "
+        f"document {DOC} does not move"
+    )
+    assert document(fake, DOC).archive_serial_number == NUMBER
+    assert document(fake, 52).archive_serial_number == 5
+
+
+@pytest.mark.parametrize("numbered", [False, True])
+async def test_after_an_unknown_deletion_every_original_has_its_own_condition(
+    *, numbered: bool
+) -> None:
+    fake = paperless()
+    document(fake, OTHER).archive_serial_number = NUMBER if numbered else None
+    fake.time_out = {DOC}
+
+    result = await merge(fake)
+
+    steps = (
+        f'update_document(document_id={OTHER}, clear=["archive_serial_number"]), then '
+        f"update_document(document_id=52, archive_serial_number={NUMBER}), then "
+    )
+    assert result.next == (
+        f"only if get_document(document_id={DOC}) still finds it unchanged: "
+        f"delete_document(document_id={DOC}). Whatever became of it, "
+        f"only if get_document(document_id={OTHER}) still finds it unchanged: "
+        f"{steps if numbered else ''}delete_document(document_id={OTHER})"
+    )
+
+
 async def test_originals_after_one_whose_deletion_is_not_known_stay_and_are_named() -> None:
     fake = paperless()
     document(fake, OTHER).archive_serial_number = NUMBER
@@ -999,8 +1053,9 @@ async def test_a_kept_merge_names_every_original_it_would_have_trashed() -> None
         fake,
         6,
         then=(
-            f'update_document(document_id={DOC}, clear=["archive_serial_number"]), then '
-            f"update_document(document_id=<the new document>, archive_serial_number={NUMBER}), "
+            "only if the new document has no archive serial number "
+            f'(update_document(document_id={DOC}, clear=["archive_serial_number"]), then '
+            f"update_document(document_id=<the new document>, archive_serial_number={NUMBER})), "
             f"then delete_document(document_id={DOC}), then delete_document(document_id={OTHER}); "
             f"archive serial number 8 of document {OTHER} does not move"
         ),
