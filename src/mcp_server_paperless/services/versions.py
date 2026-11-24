@@ -17,6 +17,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
     quoted,
 )
+from mcp_server_paperless.domain.files import joined
 from mcp_server_paperless.domain.versions import (
     DocumentVersions,
     VersionDeleted,
@@ -25,10 +26,11 @@ from mcp_server_paperless.domain.versions import (
 )
 from mcp_server_paperless.services.document_edits import COUNTED
 from mcp_server_paperless.services.documents import document_link
+from mcp_server_paperless.services.file_checks import check_files
 from mcp_server_paperless.services.removal import RESTORE
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Collection, Sequence
 
     from mcp_server_paperless.domain.documents import DocumentRecord, DocumentText
     from mcp_server_paperless.domain.ports import DocumentReader, DocumentWriter
@@ -79,8 +81,16 @@ def bound(document: DocumentRecord) -> object:
     return document.model_copy(update=lists)
 
 
-def merge_effect(root: DocumentRecord, sources: Sequence[DocumentRecord], label: str | None) -> str:
-    """What merging would do, for a confirmation: the sources vanish for good."""
+def merge_effect(
+    root: DocumentRecord,
+    sources: Sequence[DocumentRecord],
+    label: str | None,
+    lost: Collection[int] = (),
+) -> str:
+    """What merging would do, for a confirmation: the sources vanish for good.
+
+    Paperless cannot find the original of the sources in ``lost``.
+    """
 
     def described(source: DocumentRecord) -> str:
         notes = f"{source.notes_count} note{'' if source.notes_count == 1 else 's'}"
@@ -94,12 +104,20 @@ def merge_effect(root: DocumentRecord, sources: Sequence[DocumentRecord], label:
         versions += f", labelled {quoted(label)}"
     who = "the merged documents vanish" if many else "the merged document vanishes"
     loss = "Their titles" if many else "Its title"
+    stay = "their files stay" if many else "its file stays"
+    if lost:
+        stay = (
+            "those of their files that Paperless can find stay"
+            if many
+            else "what Paperless can find of its files stays"
+        )
+    newest = "text" if sources[-1].id in lost else "file and text"
     return (
         f"merge {shown} into document {root.id} {quoted(root.title)} {versions}: {who} for "
         f"good, not even into the trash. {loss}, tags, correspondents, notes and other "
-        f"metadata are lost; only {'their files stay' if many else 'its file stays'}, as "
+        f"metadata are lost; only {stay}, as "
         f"{'versions' if many else 'a version'} of document {root.id}, which then shows the "
-        f"file and text of document {sources[-1].id}{_numbers(root, sources)}"
+        f"{newest} of document {sources[-1].id}{_numbers(root, sources)}"
     )
 
 
@@ -241,6 +259,7 @@ class VersionService:
                 long or comes with several sources, or a source that has versions of its own.
             NotFound: A document does not exist or the user may not see it.
             PermissionDenied: The user may not change and delete the documents (own them).
+            PaperlessMcpError: Whether the files are there could not be checked.
         """
         text = self._checked(root_id, source_ids, label)
         root = await self._reader.get_document(root_id)
@@ -258,9 +277,32 @@ class VersionService:
                         "document instead, or delete its other versions first."
                     ),
                 )
+        files = await check_files(self._reader, (root, *sources))
+        if files.unchecked:
+            unchecked = list(files.unchecked)
+            s = "" if len(unchecked) == 1 else "s"
+            message = (
+                f"Whether Paperless can find the file{s} of {joined(unchecked)} could not be "
+                "checked, so nothing was merged: a merge is final. "
+                f"The reason: {next(iter(files.unchecked.values()))}"
+            )
+            raise PaperlessMcpError(message, hint="Try again in a moment.")
+        notes = files.notes(root_id)
+        newest = sources[-1].id
+        nouns = files.lost_nouns(newest, newest)
+        if nouns:
+            top = f"WARNING: document {newest} becomes the newest version of document {root_id}"
+            shown = f"a missing {' and '.join(nouns)}"
+            # Deleting it helps only if the version below has its file.
+            below = (root, *sources)[-2]
+            whole = not files.lost_nouns(below.id, below.versions[0].id)
+            until = " until that version is deleted" if whole else ""
+            notes.insert(0, f"{top}, which then shows {shown}{until}")
+        lost = {s.id for s in sources if files.lacks_original(s.id)}
+        missing = "".join(f" {note}." for note in notes)
         if not confirm:
             ConfirmationRequired.require(
-                merge_effect(root, sources, text),
+                ". ".join([merge_effect(root, sources, text, lost), *notes]),
                 scope=[bound(d) for d in (root, *sources)],
             )
         try:
@@ -279,7 +321,7 @@ class VersionService:
                 message=(
                     f"Not confirmed: Paperless queued the merge as task {unconfirmed.task_id}, "
                     f"but {unconfirmed.reason}. Read it with get_task, then list the versions "
-                    "with list_document_versions, before repeating the call."
+                    f"with list_document_versions, before repeating the call.{missing}"
                 ),
             )
         try:
@@ -293,7 +335,7 @@ class VersionService:
                 web_url=link,
                 message=(
                     "The documents were merged, but the versions could not be read afterwards; "
-                    "list them with list_document_versions."
+                    f"list them with list_document_versions.{missing}"
                 ),
             )
         return VersionsMerged(
@@ -301,6 +343,7 @@ class VersionService:
             merged_document_ids=tuple(source_ids),
             versions=versions,
             web_url=link,
+            message=missing.strip() or None,
         )
 
     @staticmethod

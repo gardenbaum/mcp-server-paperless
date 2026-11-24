@@ -371,6 +371,25 @@ async def test_merged_documents_become_versions_in_order_and_vanish_with_their_n
 
 
 @pytest.mark.contract(MERGE)
+@pytest.mark.decision("decision-63")
+@pytest.mark.parametrize("lost", ["root", "source"])
+async def test_a_merge_takes_documents_without_their_file_and_leaves_it_missing(
+    backend: Backend, lost: str
+) -> None:
+    documents = backend.admin.documents
+    root, source = backend.new_documents(2)
+    backend.track_document(source)
+    gone, there = (root, source) if lost == "root" else (source, root)
+    backend.lose_file(gone, "original")
+
+    assert await backend.admin.document_writes.merge_as_versions(root, (source,), None) is None
+
+    assert [v.id for v in await versions(backend.admin, root)] == [source, root]
+    assert (await documents.get_document_metadata(root, version_id=gone)).lacks("original")
+    assert not (await documents.get_document_metadata(root, version_id=there)).lacks("original")
+
+
+@pytest.mark.contract(MERGE)
 async def test_the_first_archive_serial_number_goes_to_a_root_without_one_the_others_go(
     backend: Backend,
 ) -> None:
