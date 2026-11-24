@@ -234,7 +234,7 @@ docker run -d --name mcp-server-paperless -p 127.0.0.1:8001:8000 \
     -e PAPERLESS_TOKEN=your-api-token \
     -e PAPERLESS_MCP_HTTP_AUTH_TOKENS="$MCP_TOKEN" \
     -e PAPERLESS_MCP_HTTP_ALLOWED_HOSTS=localhost \
-    ghcr.io/gardenbaum/mcp-server-paperless:0.3.0
+    ghcr.io/gardenbaum/mcp-server-paperless:0.4.0
 
 claude mcp add --transport http paperless http://127.0.0.1:8001/mcp \
     --header "Authorization: Bearer $MCP_TOKEN"
