@@ -56,6 +56,7 @@ UNDECLARED_QUERY_PARAMETERS: Mapping[tuple[str, str], Mapping[str, str]] = {
             "the update serializer honours it like the retrieve one; without it the answer "
             "carries the whole OCR text (PLMCP-16)"
         ),
+        "version": VERSION_REASON,
         "full_perms": FULL_PERMS_REASON,
     },
     ("PATCH", "/api/tags/{id}/"): {"full_perms": FULL_PERMS_REASON},

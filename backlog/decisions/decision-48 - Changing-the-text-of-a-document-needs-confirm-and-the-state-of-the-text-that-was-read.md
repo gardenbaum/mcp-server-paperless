@@ -42,6 +42,6 @@ The text of a document (OCR) can be wrong or missing, and search and the AI read
 ## Enforcement
 
 - `tests/services/test_text_edits.py`: replacement, uniqueness, the state, limits, the shown excerpt, the scope, the dry run, what is reported after the write; unconfirmed paths run on a fake that refuses writes. `tests/domain/test_errors.py`: the escaping. `tests/services/test_documents.py`: the state of a text.
-- `tests/adapter/test_document_writes.py` and `tests/adapter/test_documents.py`: `version` and `content` in every PATCH, no retry, deleted versions. `tests/contract/test_document_texts.py`: reading and writing the text of versions on the fake and on Paperless 3.5.1, with restricted users.
-- `tests/tools/test_document_texts.py`: opt-in, annotations, description, structured output. `tests/tools/test_confirmation.py` and `tests/tools/test_confirmation_text.py`: both eras, hostile text only in the escaped excerpt. `tests/tools/test_registry.py`: `confirm` and the default budget.
-- `tests/e2e/test_document_texts.py`: correction, search, reprocessing, change in between and a restricted user on Paperless 3.5.1.
+- `tests/adapter/test_document_writes.py` and `tests/adapter/test_documents.py`: `version` and `content` in every PATCH, no retry, deleted versions. `tests/contract/test_document_versions.py` (reading) and `tests/contract/test_text_edits.py` (writing): the text of versions on the fake and on Paperless 3.5.1, with restricted users.
+- `tests/tools/test_text_edits.py`: opt-in, annotations, description, structured output. `tests/tools/test_confirmation.py` and `tests/tools/test_confirmation_text.py`: both eras, hostile text only in the escaped excerpt. `tests/tools/test_registry.py`: `confirm` and the default budget.
+- `tests/e2e/test_text_edits.py`: correction, search, reprocessing, change in between and a restricted user on Paperless 3.5.1.

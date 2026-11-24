@@ -316,6 +316,19 @@ class DocumentWriter(Protocol):
         """
         ...
 
+    async def set_document_text(self, document_id: int, version_id: int, content: str) -> str:
+        """Replace the whole text of one version and return the text as it is stored.
+
+        Paperless strips the text of the root version, and writes a deleted version, too:
+        callers check that the document lists it. There is no conditional write. Not retried.
+
+        Raises:
+            NotFound: No such document, the user may not see it, or it never had such a version.
+            PermissionDenied: The user may not change documents, or this one.
+            Validation: Paperless rejected the text.
+        """
+        ...
+
     async def add_note(self, document_id: int, text: str) -> Note:
         """Add a note authored by the user and return it.
 

@@ -9,6 +9,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
     accepting,
     destination,
+    excerpt,
     listed,
     quoted,
 )
@@ -342,3 +343,43 @@ def test_a_refused_url_drops_the_credentials_it_is_sure_of() -> None:
 
     assert "s3cret" not in message
     assert ".org/end'" in message
+
+
+@pytest.mark.decision("decision-48")
+@pytest.mark.parametrize(
+    ("code", "shown"),
+    [
+        (0x0A, r"\n"),
+        (0x09, r"\t"),
+        (0x00, r"\u0000"),
+        (0x22, r"\""),
+        (0x5C, r"\\"),
+        (0x00A0, r"\u00a0"),  # a separator that is no plain space
+        (0x202E, r"\u202e"),  # bidi override
+        (0x200B, r"\u200b"),  # zero width
+        (0x200D, r"\u200d"),  # a joiner, which a title may hold
+        (0x2028, r"\u2028"),
+        (0xE000, r"\ue000"),
+        (0xD800, r"\ud800"),
+        (0x2800, r"\u2800"),  # looks like a space
+        (0x3164, r"\u3164"),
+        (0xFE0F, r"\ufe0f"),
+        (0xE0041, r"\udb40\udc41"),
+        (0x00E9, chr(0xE9)),
+        (0x27, "'"),
+    ],
+)
+def test_an_excerpt_shows_what_hides_reorders_or_would_close_its_quotes(
+    code: int, shown: str
+) -> None:
+    assert excerpt(f"a{chr(code)}b") == f'"a{shown}b"'
+    # And it survives the one line of a refusal unchanged.
+    message = ConfirmationRequired.for_effect(f"write {excerpt(f'a{chr(code)}b')}").message
+    assert f'"a{shown}b"' in message
+
+
+@pytest.mark.decision("decision-48")
+def test_an_excerpt_shows_every_space() -> None:
+    assert excerpt(" a b ") == '" a b "'
+    assert excerpt("a  b   c") == r'"a \u0020b \u0020\u0020c"'
+    assert excerpt("") == '""'

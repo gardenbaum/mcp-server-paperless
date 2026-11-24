@@ -182,6 +182,10 @@ class _Text(BaseModel):
     user_can_change: bool
 
 
+class _Content(BaseModel):
+    content: str
+
+
 class _HistoryRow(BaseModel):
     id: int
     timestamp: datetime
@@ -712,6 +716,25 @@ class PaperlessDocumentWriter:
         except NotFound:
             raise unseen_document(document_id) from None
         return _record(row, can_change=None)
+
+    async def set_document_text(self, document_id: int, version_id: int, content: str) -> str:
+        """See ``DocumentWriter.set_document_text``.
+
+        Always names the version, also the newest: a version added meanwhile would get the text.
+        ``fields`` limits what a PATCH writes, not only its answer: without ``content`` Paperless
+        answers 200 and leaves the text of the root version as it is.
+        """
+        try:
+            row = await self._client.call(
+                "PATCH",
+                f"{PATH}{document_id}/",
+                _Content,
+                params={"fields": "id,content", "version": version_id},
+                json={"content": content},
+            )
+        except NotFound:
+            raise unseen_version(document_id, version_id) from None
+        return row.content
 
     async def add_note(self, document_id: int, text: str) -> Note:
         """See ``DocumentWriter.add_note``.

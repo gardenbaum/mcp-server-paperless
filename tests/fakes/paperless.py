@@ -1092,6 +1092,37 @@ class FakePaperless:
         return _record(document, self.user, report_change=False)  # an update's answer omits it
 
     @write
+    async def set_document_text(self, document_id: int, version_id: int, content: str) -> str:
+        """`DocumentWriter.set_document_text` (DocumentViewSet.partial_update with `version`).
+
+        Order: the global `change_document` permission (403), the document among those the user
+        may see (404), the object (403), the version (404; one in the trash is written, too).
+        The text of the root passes the serializer, which rejects NUL characters and strips.
+        """
+        if not self.user.has("change_document"):
+            raise self._denied()
+        document = self._seen(document_id)
+        if not document.changeable_by(self.user):
+            raise self._denied()
+        listed = [v.id for v in document.versions]
+        stubs = [d for d in self.state.trash if d.id == version_id and d.root_id == document_id]
+        if version_id not in listed and not stubs:
+            raise unseen_version(document_id, version_id)
+        if version_id == document_id:
+            if "\x00" in content:
+                reject("content", "Null characters are not allowed.")
+            content = content.strip()
+        for stub in stubs:
+            stub.content = content
+        if version_id in document.version_files:
+            file = document.version_files[version_id]
+            document.version_files[version_id] = replace(file, content=content)
+        if version_id == listed[0]:
+            document.content = content
+        document.modified = datetime.now(UTC)
+        return content
+
+    @write
     async def upload_document(self, upload: DocumentUpload) -> str:
         """`DocumentWriter.upload_document` (PostDocumentView): the form is checked, then a task.
 

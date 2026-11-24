@@ -5,6 +5,7 @@ Every message is client-safe: it never carries credentials, stack traces or raw 
 """
 
 import hashlib
+import json
 import re
 import unicodedata
 from contextlib import contextmanager
@@ -13,7 +14,7 @@ from typing import TYPE_CHECKING, Final, Literal
 from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Sequence
+    from collections.abc import Generator, Iterator, Sequence
 
 
 class PaperlessMcpError(Exception):
@@ -114,7 +115,8 @@ class ConfirmationRequired(Validation):
         """The standard refusal: nothing was changed, and confirming would ``effect``.
 
         ``effect`` is a verb phrase such as ``move document 5 to the trash``; it names what is
-        touched but never document content. ``scope`` is what the text does not tell apart, such
+        touched but never document content, save the ``excerpt`` of a text that is corrected
+        (decision-48). ``scope`` is what the text does not tell apart, such
         as the ids behind "and 5 more": anything whose ``repr`` is the same for the same targets.
         """
         return cls(f"Nothing was changed. Confirming would {_line(effect)}.", scope=scope)
@@ -195,6 +197,29 @@ _IGNORABLE: Final = frozenset(
     {0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x2800, 0x3164, 0xFFA0}
     | {*range(0x180B, 0x1810), *range(0xFE00, 0xFE10), *range(0xE0000, 0xE1000)}
 )
+
+
+def _escaped(text: str) -> Iterator[str]:
+    """The characters of ``text`` as ``excerpt`` shows them."""
+    before = ""
+    for character in text:
+        hides = unicodedata.category(character) in _NOT_SHOWN or ord(character) in _IGNORABLE
+        if character == " ":  # a refusal folds doubled spaces into one
+            yield r"\u0020" if before == " " else " "
+        else:
+            yield json.dumps(character)[1:-1] if hides or character in '"\\' else character
+        before = character
+
+
+def excerpt(text: str) -> str:
+    """``text`` in full in double quotes, as JSON, with everything that may not show escaped.
+
+    For showing a piece of document text whose whitespace and hidden characters matter
+    (decision-48); ``quoted`` folds and drops those.
+    """
+    return f'"{"".join(_escaped(text))}"'
+
+
 type DestinationKind = Literal["host", "email", "url", "text"]
 # What a character of a destination could be taken for: a comment, a quotation, another part.
 _ODD_IN_EMAIL: Final = frozenset('()<>[]",;:\\')
