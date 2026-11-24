@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T20:43:01Z'
-updated_date: '2026-11-24T08:11:19Z'
+updated_date: '2026-11-24T08:21:28Z'
 labels:
   - tools
   - config
@@ -41,5 +41,11 @@ The minimum is paperless-ngx 3.5.1 (decision-43), but the server never compares 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Tests first (domain, adapter, server/tool, contract, quality). 2. domain/instance: MINIMUM_RELEASE and update_notice (X.Y.Z only; anything else gives none). 3. PaperlessClient logs the notice once, on any response with X-Version, so also when Paperless was unreachable at start. 4. get_instance_overview carries the notice in paperless_version (a new output field would break DEFINITION_ADDED_LIMIT, 3 bytes left). 5. A missing X-Version reads as unknown. 6. E2E on rewritten headers, docs, decision-57.
+1. Tests first (domain, adapter, server/tool, contract, quality). 2. domain/instance: MINIMUM_RELEASE and update_notice (X.Y.Z only; anything else gives none). 3. PaperlessClient logs the notice once, on any response with X-Version, so also when Paperless was unreachable at start. 4. get_instance_overview carries the notice in a field of its own, too_old (DEFINITION_ADDED_LIMIT 750 to 854, approved by the owner). 5. A missing X-Version reads as unknown. 6. E2E on rewritten headers, docs, decision-57.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner question (2026-11-24): the notice was first in paperless_version, for lack of budget; on the coordinator's instruction it is now a field of its own, too_old. DEFINITION_ADDED_LIMIT 750 -> 854 (measured 747 -> 854, 107 bytes), approved by the owner on 2026-11-24 (own field, as little as possible) before the number was known. Snapshot test_surface.ambr: the new field and its place in required, in each profile that has the overview; nothing else. Choices: only X.Y.Z is compared; a missing X-Version reads as unknown (before, the overview and the start failed); the log line comes from PaperlessClient, once per start, so also after an unreachable start. decision-57 supersedes the sentence of decision-43 that the version is not checked. No other limit or gate changed. Live tests are written but were not run locally.
+<!-- SECTION:NOTES:END -->

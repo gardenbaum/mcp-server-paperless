@@ -125,19 +125,19 @@ class ToolsetGuide(_Frozen):
 class ServerOverview(InstanceOverview):
     """The instance as the current user sees it, and the toolsets."""
 
+    too_old: Annotated[str | None, Field(description="Null if not known to be.")]
     toolsets: ToolsetGuide
 
     @classmethod
     def of(cls, overview: InstanceOverview, toolsets: ToolsetGuide) -> ServerOverview:
         """The overview of the instance, with the toolsets of this server."""
         return cls(
-            # In the version itself: a field of its own costs every session its schema.
-            paperless_version=update_notice(overview.paperless_version)
-            or overview.paperless_version,
+            paperless_version=overview.paperless_version,
             api_version=overview.api_version,
             statistics=overview.statistics,
             system_status=overview.system_status,
             current_user=overview.current_user,
             ai_enabled=overview.ai_enabled,
+            too_old=update_notice(overview.paperless_version),
             toolsets=toolsets,
         )

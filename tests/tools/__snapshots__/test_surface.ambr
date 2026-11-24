@@ -9529,6 +9529,17 @@
             ]),
             'description': 'Null if the user may not view the system status.',
           }),
+          'too_old': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Null if not known to be.',
+          }),
           'toolsets': dict({
             'description': 'The toolsets on and off.',
             'properties': dict({
@@ -9604,6 +9615,7 @@
           'system_status',
           'current_user',
           'ai_enabled',
+          'too_old',
           'toolsets',
         ]),
         'type': 'object',
@@ -25256,6 +25268,17 @@
             ]),
             'description': 'Null if the user may not view the system status.',
           }),
+          'too_old': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Null if not known to be.',
+          }),
           'toolsets': dict({
             'description': 'The toolsets on and off.',
             'properties': dict({
@@ -25331,6 +25354,7 @@
           'system_status',
           'current_user',
           'ai_enabled',
+          'too_old',
           'toolsets',
         ]),
         'type': 'object',
@@ -30994,6 +31018,17 @@
             ]),
             'description': 'Null if the user may not view the system status.',
           }),
+          'too_old': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Null if not known to be.',
+          }),
           'toolsets': dict({
             'description': 'The toolsets on and off.',
             'properties': dict({
@@ -31069,6 +31104,7 @@
           'system_status',
           'current_user',
           'ai_enabled',
+          'too_old',
           'toolsets',
         ]),
         'type': 'object',

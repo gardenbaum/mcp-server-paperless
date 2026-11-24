@@ -31,6 +31,7 @@ async def test_the_overview_is_the_structured_output_of_the_instance() -> None:
     output = result.structured_content
     assert output is not None
     guide = cast("dict[str, object]", output.pop("toolsets"))
+    assert output.pop("too_old") is None
     assert output == (await fake.get_overview()).model_dump(mode="json")
     assert guide["on"] == ["core"]
     assert output["current_user"] == {
@@ -139,7 +140,9 @@ async def test_the_overview_says_so_when_paperless_is_too_old(version: str) -> N
     async with Client(serve(Recorded(overview))) as client:
         result = await client.call_tool("get_instance_overview")
 
-    assert result.structured_content is not None
-    assert result.structured_content["paperless_version"] == (
-        TOO_OLD if version == "3.4.2" else version
+    output = result.structured_content
+    assert output is not None
+    assert (output["paperless_version"], output["too_old"]) == (
+        version,
+        TOO_OLD if version == "3.4.2" else None,
     )

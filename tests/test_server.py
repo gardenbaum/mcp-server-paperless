@@ -98,7 +98,7 @@ async def test_an_old_paperless_that_comes_up_after_the_start_is_still_reported(
             results = [await client.call_tool("get_instance_overview") for _ in range(2)]
 
     assert all(
-        cast("dict[str, str]", result.structured_content)["paperless_version"].startswith(
+        cast("dict[str, str]", result.structured_content)["too_old"].startswith(
             "3.4.2 is older than"
         )
         for result in results

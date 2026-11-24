@@ -118,10 +118,10 @@ async def test_only_an_older_release_is_called_too_old(
         result = await client.call_tool("get_instance_overview")
 
     assert result.structured_content is not None
-    shown = cast("dict[str, str]", result.structured_content)["paperless_version"]
+    output = cast("dict[str, str | None]", result.structured_content)
+    assert output["paperless_version"] == (version or backend.expected_version)
+    notice = f"{version} is older than the minimum release 3.5.1: Paperless must be updated"
     if version in {"3.4.2", "3.5.0"}:
-        assert shown.startswith(
-            f"{version} is older than the minimum release 3.5.1: Paperless must"
-        )
+        assert (output["too_old"] or "").startswith(notice)
     else:
-        assert shown == (version or backend.expected_version)
+        assert output["too_old"] is None

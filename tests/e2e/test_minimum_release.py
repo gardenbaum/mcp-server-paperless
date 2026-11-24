@@ -58,8 +58,10 @@ async def test_only_an_older_release_is_reported(
             tags = await client.call_tool("list_taxonomy", {"kind": "tag"})
 
     assert result.structured_content is not None
-    version = cast("dict[str, str]", result.structured_content)["paperless_version"]
-    assert version.startswith(shown + NOTICE) if old else version == shown
+    output = cast("dict[str, str | None]", result.structured_content)
+    assert output["paperless_version"] == shown
+    said = output["too_old"]
+    assert (said or "").startswith(shown + NOTICE) if old else said is None
     assert not tags.is_error  # it works all the same
     logged = [r.getMessage() for r in caplog.records if "minimum release" in r.getMessage()]
     assert [line.startswith(f"Paperless {shown}{NOTICE}") for line in logged] == [True] * old

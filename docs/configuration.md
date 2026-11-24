@@ -30,7 +30,7 @@ the one the tests run against (a fast tier on every pull request, the whole suit
 merge and nightly); the latest 3.x release is tested weekly. paperless-ngx
 3.4.x, 3.5.0 and 2.x are not supported. Against an older release with API version 10 the server still
 starts, but some tools fail or answer differently: it logs one warning, and `get_instance_overview`
-says in `paperless_version` that Paperless must be updated. A version it cannot read as a release
+says in `too_old` that Paperless must be updated. A version it cannot read as a release
 (such as `unknown` when a proxy removes the `X-Version` header) gives no warning.
 
 ## Server

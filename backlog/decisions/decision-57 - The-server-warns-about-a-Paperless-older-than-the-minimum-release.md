@@ -17,13 +17,13 @@ decision-43 makes 3.5.1 the minimum but lets the server accept any release with 
 - The minimum is `MINIMUM_RELEASE` in `domain/instance.py`, compared with the `X-Version` header. Only `X.Y.Z` in ASCII digits is compared; anything else, and a missing header (read as `unknown`), gives no warning.
 - It is a warning: an older release does not stop the start and takes no tool away.
 - The operator gets one warning line per start, from the first answer that reports the old release, so also when Paperless was unreachable at start.
-- `get_instance_overview` says it in `paperless_version`: the found release, the minimum and that Paperless must be updated.
+- `get_instance_overview` says it in a field of its own, `too_old`: the found release, the minimum and that Paperless must be updated.
 <!-- SECTION:DECISION:END -->
 
 ## Consequences
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
-- For an old release `paperless_version` is a sentence that begins with the release; for every other it is the release alone, as before.
+- `paperless_version` stays the plain release; `too_old` is null where there is nothing to say. It costs 107 bytes of output schema: `DEFINITION_ADDED_LIMIT` rises from 750 to 854, approved by the owner on 2026-11-24.
 - A Paperless behind a proxy that removes `X-Version` (but keeps `X-Api-Version`) no longer fails the overview and the start.
 - A pre-release of the minimum is reported by Paperless as the plain release or is not compared.
 <!-- SECTION:CONSEQUENCES:END -->
@@ -31,7 +31,7 @@ decision-43 makes 3.5.1 the minimum but lets the server accept any release with 
 ## Alternatives
 
 <!-- SECTION:ALTERNATIVES:BEGIN -->
-- A field of its own in the overview: more bytes of output schema in every session than `DEFINITION_ADDED_LIMIT` has left (3 of 750); the limit would have to rise.
+- The sentence in `paperless_version`: no more schema, but the field would no longer be a version that a caller can compare.
 - A comparison at the start only: says nothing when Paperless was unreachable then.
 - Refuse to start: not what was approved.
 <!-- SECTION:ALTERNATIVES:END -->
