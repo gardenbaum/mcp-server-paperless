@@ -70,9 +70,14 @@ LOST = (
     "a signature in the PDF is no longer valid",
     (
         "bookmarks, document attachments and scripts, properties, layer settings (a hidden layer "
-        "can become visible) and the form of the inserted pages are not in the result: their "
-        "fields show their values but cannot be filled in, characters their font lacks are "
-        "missing, and get_document_pages and inspect_pdf draw them only in a file that has a form"
+        "can "
+        "become visible) and the form of the inserted pages are not in the result: each page shows "
+        "its fields as a picture, which cannot be filled in; hidden fields and fields that are not "
+        "printed are left out, and characters their font lacks are missing"
+    ),
+    (
+        "page labels (like iv) stay at their place in the file: pages behind the inserted ones "
+        "show those of others"
     ),
     "accessibility tags and PDF/A conformance of the result are not checked",
 )
@@ -715,6 +720,15 @@ REWRITE = (
         ),
         ("count", True, f"The original of document {OTHER} has more than 200000 pages.", None),
         ("count", False, "The result would have more than 200000 pages.", None),
+        (
+            "size",
+            True,
+            (
+                f"The original of document {OTHER} has a page that is too large to be put together "
+                "(over 3.5 km)."
+            ),
+            None,
+        ),
         ("large", False, "The result would be over 100 bytes.", "Insert fewer pages."),
         (
             "timeout",

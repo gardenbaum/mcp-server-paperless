@@ -12129,13 +12129,15 @@
         document_id, but no grants, notes or archive serial number, and belongs to you. The file of
         document_id keeps its bookmarks, attachments and form; a signature in it is no longer valid.
         With the inserted pages comes what they refer to, also what is not visible: links, comments and
-        files in them, shared resources. Their bookmarks, document attachments and form are lost (fields
-        show their values but cannot be filled in), and a hidden layer of theirs can become visible. Of
-        a source that is not a PDF the archive PDF is used. Encrypted and damaged files are refused;
-        both files together may have 100 MiB. Page numbers count from 1. Needs the permission to add
-        documents, for a new version also the permission to change documents and a change grant on (or
-        ownership of) document_id, and a view of the source. If the outcome is not known, look at the
-        document before repeating the call: it would insert the pages again.
+        files in them, shared resources. Their bookmarks, document
+        attachments and form are lost (a page shows its fields as a picture; hidden ones and those that
+        are not printed are left out), and a hidden layer of theirs can become visible. Page labels of
+        document_id stay at their place. Of a source that is not a PDF the archive PDF is used.
+        Encrypted and damaged files are refused; both files together may have 100 MiB. Page numbers
+        count from 1. Needs the permission to add documents, for a new version also the permission
+        to change documents and a change grant on (or ownership of) document_id, and a view of the
+        source. If the outcome is not known, look at the document before repeating the call: it
+        would insert the pages again.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,

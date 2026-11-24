@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:17Z'
-updated_date: '2026-11-24T14:03:57Z'
+updated_date: '2026-11-24T14:18:45Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -68,4 +68,10 @@ I3: the built file is dropped before the task is followed (weakref test); docs/c
 M2: UnexpectedAnswer (domain) for an unreadable success answer. M3: 429 is a refusal. M4: the import stubs are detected in the saved file. M5: rendering-windows runs tests/rendering with test_assemble (two files of 99 MiB together, memory, time) and was green on 9721107; nothing added, no limit.
 Form values: the form of the source is loaded in memory, PDFium stores appearances; text, lines, check box, radio, combo, list with NeedAppearances true and false, shown by MuPDF, Poppler and Ghostscript; stored ones stay unless the file asks for new ones; no V8 or XFA in the build, scripts do not run (tested). Left as loss: not fillable, missing glyphs, this server draws widgets only in files with a form.
 The restricted hint says that edit_pdf changes that document and needs its ownership. Surface snapshot: description of insert_pages only.
+
+Delta review of a850b6f, tests red first (126 rendering, 4 service):
+N1, N2: fields of inserted pages become one locked stamp annotation per page (rendering/fields.py): taken off in memory, flattened in a second copy, put on the imported page. Deviation from the proposal (form XObject as page content): tried first; a leftover clip, unbalanced q and unterminated string hid the values in PDFium, MuPDF, Poppler and Ghostscript (leaked text state such as 3 Tr would do the same), because PDFium appends without wrapping the old content. The annotation does not depend on it, is drawn by PDFium with and without forms, and pdftotext, MuPDF and Ghostscript extract the values as from the source (measured locally). What could still hide fields in the copy is refused as damaged. 49 + 50 MiB with a field 0.71 s, 600 MB; 2000 pages with a field each 1.9 s.
+Left out: hidden, NoView and not-printed fields (as asked). Fields without the print flag are visible on a screen in the source: owner question.
+n1: page labels in the plan and tool text. n2: reason size (over 10 000 000 points).
+Surface snapshot: description of insert_pages only.
 <!-- SECTION:NOTES:END -->

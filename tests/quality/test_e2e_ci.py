@@ -773,7 +773,9 @@ def test_a_changed_pdf_tool_runs_the_live_tests_of_inspect_pdf() -> None:
     assert {e2e("test_pages"), e2e("test_pdf"), e2e("test_pdf_insert")} <= set(targets)
 
 
-@pytest.mark.parametrize("path", ["rendering/worker.py", "services/pdf_insert.py"])
+@pytest.mark.parametrize(
+    "path", ["rendering/worker.py", "rendering/fields.py", "services/pdf_insert.py"]
+)
 def test_what_inserts_pages_runs_the_live_tests_of_insert_pages(path: str) -> None:
     live = {path.relative_to(ROOT).as_posix() for path in (ROOT / "tests").glob("e2e/test_*.py")}
 

@@ -205,6 +205,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "pdf": ("test_pages", "test_pdf_insert"),
     # The renderer (rendering/ and domain/rendering.py).
     "rendering": ("test_pages", "test_pages_files", "test_pdf_insert"),
+    "fields": ("test_pages", "test_pages_files", "test_pdf_insert"),
     "worker": ("test_pages", "test_pages_files", "test_pdf_insert"),
     "runner": ("test_pages", "test_pages_files", "test_pdf_insert"),
     "wire": ("test_pages", "test_pages_files", "test_pdf_insert"),

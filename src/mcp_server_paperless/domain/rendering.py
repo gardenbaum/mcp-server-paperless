@@ -48,6 +48,7 @@ type Reason = Literal[
     "pages",
     "count",
     "large",
+    "size",
     "timeout",
     "memory",
     "crashed",

@@ -74,9 +74,13 @@ STRUCTURE: Final = (
 )
 SOURCE_LOST: Final = (
     "bookmarks, document attachments and scripts, properties, layer settings (a hidden layer can "
-    "become visible) and the form of the inserted pages are not in the result: their fields show "
-    "their values but cannot be filled in, characters their font lacks are missing, and "
-    "get_document_pages and inspect_pdf draw them only in a file that has a form"
+    "become visible) and the form of the inserted pages are not in the result: each page shows "
+    "its fields as a picture, which cannot be filled in; hidden fields and fields that are not "
+    "printed are left out, and characters their font lacks are missing"
+)
+LABELS: Final = (
+    "page labels (like iv) stay at their place in the file: pages behind the inserted ones show "
+    "those of others"
 )
 ALONG: Final = (
     "what the inserted pages refer to, also where it is not visible: links, comments with the "
@@ -340,6 +344,10 @@ class PageInserter:
                 None,
             ),
             "count": (f"{many} more than {MAX_PAGES} pages.", None),
+            "size": (
+                f"{noun} has a page that is too large to be put together (over 3.5 km).",
+                None,
+            ),
             "large": (f"The result would be over {named_size(self._max_bytes)}.", FEWER),
             "timeout": (
                 (
@@ -454,7 +462,7 @@ def _plan(target: _File, source: _File, pages: int, *, version: bool) -> PdfPlan
         size += f", from the archive PDF of document {source.document.id} (its file is {mime_type})"
     structure = STRUCTURE.format(id=target.document.id)
     untouched = f"{source.name}: unchanged"
-    loses = (UNSIGNED, SOURCE_LOST, UNCHECKED)
+    loses = (UNSIGNED, SOURCE_LOST, LABELS, UNCHECKED)
     if version:
         produces = f"a new version of the document {size}{READABLE}"
         plan = version_plan(produces, target.name, loses=loses)

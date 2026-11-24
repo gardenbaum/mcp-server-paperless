@@ -41,6 +41,7 @@ from mcp_server_paperless.domain.rendering import (
     RenderFailed,
 )
 from mcp_server_paperless.rendering import limits
+from mcp_server_paperless.rendering.fields import draw_fields, has_fields, remove_fields
 from mcp_server_paperless.rendering.limits import MEMORY_EXIT
 from mcp_server_paperless.rendering.wire import DONE, READING, STARTED, Job, answer
 from mcp_server_paperless.services.page_ranges import parse_pages
@@ -56,6 +57,8 @@ WHOLE: Region = (0.0, 0.0, 1.0, 1.0)
 WHITE = (255, 255, 255, 255)
 # FPDF_ERR_PASSWORD and FPDF_ERR_SECURITY (a scheme PDFium does not know).
 PDF_ERRORS: Final[Mapping[int | None, Reason]] = {4: "encrypted", 5: "encrypted"}
+# The longest side of a page that is put together, in points: 3.5 kilometres.
+MAX_SIDE: Final = 10_000_000
 # The only formats Pillow may open, and what its decoders raise for a broken file.
 FORMATS: Final = ("JPEG", "PNG", "TIFF", "WEBP")
 BROKEN: Final = (
@@ -680,18 +683,15 @@ def assemble(
     try:
         # Importing next to a page that is not there crashes PDFium.
         sizes = _sizes(into)
+        _require_sizes(sizes, of_source=False)
         _require_places(target, sizes, request.after_page, len(pages))
         of_source = True
-        inserted = [origin.get_page_size(page - 1) for page in pages]
-        # With its form loaded PDFium stores how the fields of a page look; without V8 in the build
-        # no script runs.
-        _ = origin.init_forms()
-        rotations: list[int] = []
-        for page in pages:
-            original = origin[page - 1]
-            rotations.append(original.get_rotation())
-            original.close()
+        inserted = _sizes(origin, pages)
+        _require_sizes(inserted, of_source=True)
+        rotations, fields = _prepared(origin, pages)
         into.import_pages(origin, [page - 1 for page in pages], request.after_page)
+        first = request.after_page
+        draw_fields(source, into, [(pages[n] - 1, first + n) for n in fields])
         for place, rotation in enumerate(rotations, request.after_page):
             made = into[place]
             # What the page does not say itself it would take from the pages around it.
@@ -708,6 +708,23 @@ def assemble(
     if len(content) > request.max_bytes:
         raise RenderFailed(reason="large")
     return Assembled(content=content, source_pages=source_pages, inserted=tuple(pages))
+
+
+def _prepared(origin: pypdfium2.PdfDocument, pages: list[int]) -> tuple[list[int], list[int]]:
+    """The rotations of pages whose fields are taken off, and the places of those that had some."""
+    rotations, fields = list[int](), list[int]()
+    for place, page in enumerate(pages):
+        original = origin[page - 1]
+        rotations.append(original.get_rotation())
+        if has_fields(original):
+            fields.append(place)
+        original.close()
+    # Afterwards: two pages can be one object.
+    for place in fields:
+        original = origin[pages[place] - 1]
+        remove_fields(original)
+        original.close()
+    return rotations, fields
 
 
 def _saved(pdf: pypdfium2.PdfDocument) -> bytes:
@@ -728,6 +745,12 @@ def _alike(content: bytes, sizes: Sequence[tuple[float, float]]) -> bool:
         for one, other in zip(found, sizes, strict=True)
         for a, b in zip(one, other, strict=True)
     )
+
+
+def _require_sizes(sizes: list[tuple[float, float]], *, of_source: bool) -> None:
+    """Refuse pages so large that their size cannot be written down again."""
+    if any(side > MAX_SIDE for size in sizes for side in size):
+        raise RenderFailed(reason="size", of_source=of_source)
 
 
 def _require_places(
@@ -766,9 +789,12 @@ def count(content: bytes) -> Counted:
         raise RenderFailed(reason="damaged") from error
 
 
-def _sizes(pdf: pypdfium2.PdfDocument) -> list[tuple[float, float]]:
-    """The sizes of all pages."""
-    return [pdf.get_page_size(number) for number in range(len(pdf))]
+def _sizes(
+    pdf: pypdfium2.PdfDocument, pages: Iterable[int] | None = None
+) -> list[tuple[float, float]]:
+    """The sizes of pages (from 1); None: of all."""
+    wanted = range(1, len(pdf) + 1) if pages is None else pages
+    return [pdf.get_page_size(page - 1) for page in wanted]
 
 
 def _work(

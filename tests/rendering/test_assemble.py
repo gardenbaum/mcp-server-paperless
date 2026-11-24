@@ -1,6 +1,5 @@
 """Pages of one PDF inserted into another: the worker, its answer and the child."""
 
-import ctypes
 import io
 import json
 import struct
@@ -12,6 +11,7 @@ from typing import TYPE_CHECKING, override
 import pypdfium2
 import pytest
 from e2e.helpers import RESTRICTED_PDF
+from PIL import ImageChops
 
 from mcp_server_paperless.domain.rendering import (
     Assembled,
@@ -31,6 +31,8 @@ from rendering.test_runner import READ, WITHOUT_FONTS
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from PIL import Image
 
 pytestmark = [pytest.mark.decision("decision-42"), pytest.mark.decision("decision-68")]
 
@@ -287,11 +289,18 @@ def test_a_file_in_a_comment_comes_with_its_page() -> None:
 FONT = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"
 
 
-def field(kind: str, *, need: bool = True, catalog: str = "", extra: Sequence[str] = ()) -> bytes:
+def field(
+    kind: str,
+    *,
+    need: bool = True,
+    catalog: str = "",
+    extra: Sequence[str] = (),
+    content: str = "",
+) -> bytes:
     """A page with one form field."""
     need_appearances = "true" if need else "false"
     return pdf_of(
-        [""],
+        [content],
         page="/MediaBox [0 0 600 800] /Annots [5 0 R]",
         catalog=(
             f"/AcroForm << /Fields [5 0 R] /NeedAppearances {need_appearances} "
@@ -308,69 +317,279 @@ def field(kind: str, *, need: bool = True, catalog: str = "", extra: Sequence[st
     )
 
 
-def appearance(content: bytes, page: int = 1) -> str:
-    """How the first field of a page is drawn by any reader (empty: not stored)."""
+def drawn(content: bytes, page: int, *, forms: bool) -> Image.Image:
+    """A page as PDFium draws it, with or without the fields of the file."""
+    pdf = pypdfium2.PdfDocument(content)
+    if forms:
+        _ = pdf.init_forms()
+    found = pdf[page]
+    width, height = (round(side) for side in found.get_size())
+    bitmap = pypdfium2.PdfBitmap.new_native(width, height, pypdfium2.raw.FPDFBitmap_BGR)
+    bitmap.fill_rect((255, 255, 255, 255), 0, 0, width, height)
+    place = (0, 0, width, height, 0, pypdfium2.raw.FPDF_ANNOT)
+    pypdfium2.raw.FPDF_RenderPageBitmap(bitmap, found, *place)
+    if found.formenv:
+        pypdfium2.raw.FPDF_FFLDraw(found.formenv, bitmap, found, *place)
+    return bitmap.to_pil().convert("L")
+
+
+def black(image: Image.Image) -> int:
+    return sum(image.histogram()[:128])
+
+
+def differing(one: Image.Image, other: Image.Image) -> int:
+    """Pixels that clearly differ (the highlight of live fields is light)."""
+    assert one.size == other.size
+    return sum(ImageChops.difference(one, other).histogram()[100:])
+
+
+def subtypes(content: bytes, page: int) -> list[int]:
     pdf = pypdfium2.PdfDocument(content)
     found = pdf[page]
-    note = pypdfium2.raw.FPDFPage_GetAnnot(found, 0)
-    size = pypdfium2.raw.FPDFAnnot_GetAP(note, 0, None, 0)
-    buffer = ctypes.create_string_buffer(size)
-    read = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ushort))
-    _ = pypdfium2.raw.FPDFAnnot_GetAP(note, 0, read, size)
-    pypdfium2.raw.FPDFPage_CloseAnnot(note)
-    return buffer.raw.decode("utf-16-le").rstrip("\0")
+    kinds: list[int] = []
+    for number in range(pypdfium2.raw.FPDFPage_GetAnnotCount(found)):
+        note = pypdfium2.raw.FPDFPage_GetAnnot(found, number)
+        kinds.append(pypdfium2.raw.FPDFAnnot_GetSubtype(note))
+        pypdfium2.raw.FPDFPage_CloseAnnot(note)
+    return kinds
 
 
+STAMP = pypdfium2.raw.FPDF_ANNOT_STAMP
+TARGETS = {
+    "no form": pdf_of([""]),
+    "form": field("/FT /Tx /V (TTTTTTTTTTTT)", need=False),
+    "new appearances": field("/FT /Tx /V (TTTTTTTTTTTT)", need=True),
+}
+
+
+def require_drawn_alike(source: bytes, target: bytes = TARGETS["no form"]) -> None:
+    """The inserted page looks like the page of the source, in every reader of forms."""
+    made = assemble(target, source, wanted("1", 1, 1)).content
+    expected = drawn(source, 0, forms=True)
+    assert black(expected) > 50
+    for forms in (False, True):
+        assert differing(drawn(made, 1, forms=forms), expected) < 60
+    assert subtypes(made, 1).count(pypdfium2.raw.FPDF_ANNOT_WIDGET) == 0
+    assert black(drawn(made, 0, forms=True)) == black(drawn(target, 0, forms=True))
+
+
+@pytest.mark.parametrize("target", TARGETS.values(), ids=TARGETS)
 @pytest.mark.parametrize("need", [True, False])
+@pytest.mark.parametrize("name", ["f", "g"])
 @pytest.mark.parametrize(
-    ("kind", "drawn"),
+    "kind",
     [
-        ("/FT /Tx /V (23.11.2026)", "(23.11.2026) Tj"),
-        ("/FT /Tx /Ff 4096 /V (one\rtwo)", "(two) Tj"),
-        ("/FT /Btn /V /Yes /AS /Yes /MK << /CA (4) >>", "\nf\n"),
-        ("/FT /Btn /Ff 32768 /V /Yes /AS /Yes", "\nf\n"),
-        ("/FT /Ch /Ff 131072 /Opt [(a) (bbbbb)] /V (bbbbb)", "(bbbbb) Tj"),
-        ("/FT /Ch /Opt [(aaaa) (bbbbb)] /V (bbbbb) /I [1]", "(bbbbb) Tj"),
+        "/FT /Tx /V (23.11.2026)",
+        "/FT /Tx /Ff 4096 /V (one\rtwo)",
+        "/FT /Tx /Ff 8192 /V (topsecret)",
+        "/FT /Btn /V /Yes /AS /Yes /MK << /CA (4) >>",
+        "/FT /Btn /Ff 32768 /V /Yes /AS /Yes",
+        "/FT /Btn /Ff 65536 /MK << /CA (Go) /BG [0 0 0] >>",
+        "/FT /Ch /Ff 131072 /Opt [(a) (bbbbb)] /V (bbbbb)",
+        "/FT /Ch /Opt [(aaaa) (bbbbb)] /V (bbbbb) /I [1]",
     ],
-    ids=["text", "lines", "check box", "radio", "combo box", "list"],
+    ids=["text", "lines", "password", "check box", "radio", "button", "combo box", "list"],
 )
-def test_the_value_of_a_field_is_stored_as_it_is_shown(
-    kind: str, drawn: str, *, need: bool
+def test_fields_look_as_in_the_source_whatever_form_the_target_has(
+    kind: str, name: str, target: bytes, *, need: bool
 ) -> None:
-    source = field(kind, need=need)
-    assert appearance(source, 0) == ""
+    source = field(kind, need=need).replace(b"/T (f)", f"/T ({name})".encode())
+
+    require_drawn_alike(source, target)
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        "/MediaBox [0 0 600 800] /Rotate 90",
+        "/MediaBox [0 0 600 800] /Rotate 180",
+        "/MediaBox [0 0 600 800] /CropBox [50 500 450 700]",
+        "/MediaBox [0 0 600 800] /CropBox [50 500 450 700] /Rotate 270",
+        "/MediaBox [50 100 500 700]",
+        "/MediaBox [-50 -100 600 700] /CropBox [-20 500 450 900]",
+        "/MediaBox [500 700 50 100] /Rotate 180",
+        "/MediaBox [0 0 600 800] /UserUnit 2",
+        "",
+    ],
+)
+def test_fields_are_where_they_were_on_any_page(page: str) -> None:
+    source = field("/FT /Tx /V (23.11.2026)").replace(b"/MediaBox [0 0 600 800]", page.encode(), 1)
+    if not page:
+        source = source.replace(b"/Type /Pages", b"/Type /Pages /MediaBox [20 30 620 830]")
+
+    require_drawn_alike(source)
+
+
+def test_a_turned_field_is_turned() -> None:
+    require_drawn_alike(field("/FT /Tx /V (12) /MK << /R 90 >>"))
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "0 0 10 10 re W n 0 0 5 5 re f",
+        "q 0 0 10 10 re W n 2 0 0 2 0 0 cm 0 0 5 5 re f",
+        "BT 3 Tr 10 Tz 9 Tc ET 0 0 5 5 re f",
+        "Q Q 1 1 1 rg 1 1 1 RG 0 0 5 5 re f",
+        "1 g 0 0 600 800 re f",
+    ],
+    ids=["clip", "unbalanced", "text state", "colours", "background"],
+)
+def test_what_the_content_leaves_behind_does_not_change_the_fields(content: str) -> None:
+    source = field("/FT /Tx /V (23.11.2026)", content=content)
+
+    require_drawn_alike(source)
+
+
+def test_content_that_hides_the_fields_is_damage_and_not_a_silent_loss() -> None:
+    with pytest.raises(RenderFailed) as raised:
+        _ = assemble(TARGET, field("/FT /Tx /V (value)", content="0 0 m ((("), wanted())
+
+    assert (raised.value.reason, raised.value.of_source) == ("damaged", True)
+
+
+@pytest.mark.parametrize("flags", [2, 4 + 2, 4 + 32, 0, 32])
+def test_fields_that_are_hidden_or_not_printed_are_not_there(flags: int) -> None:
+    source = field("/FT /Tx /V (SECRET)").replace(b"/F 4", b"/F %d" % flags)
 
     made = assemble(TARGET, source, wanted()).content
 
-    assert drawn in appearance(made)
+    assert (subtypes(made, 1), b"SECRET" in made) == ([], False)
+    assert black(drawn(made, 1, forms=True)) == 0
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ["/FT /Tx", "/FT /Sig", "/FT /Btn /V /Off /AS /Off /MK << /CA (4) >>"],
+    ids=["no value", "unsigned", "off"],
+)
+def test_fields_without_a_mark_stay_empty(kind: str) -> None:
+    made = assemble(TARGET, field(kind), wanted()).content
+
+    for forms in (False, True):
+        assert black(drawn(made, 1, forms=forms)) == 0
 
 
 OLD = (
-    "<< /Type /XObject /Subtype /Form /BBox [0 0 300 50] /Length 8 >>\nstream\n%STORED \nendstream"
+    "<< /Type /XObject /Subtype /Form /BBox [0 0 300 50] /Length 25 >>\nstream\n"
+    "0 0 0 rg 0 0 300 50 re f \nendstream"
 )
 
 
 @pytest.mark.parametrize("need", [True, False])
-def test_a_stored_appearance_stays_unless_the_file_asks_for_a_new_one(*, need: bool) -> None:
+def test_a_stored_appearance_is_kept_unless_the_file_asks_for_a_new_one(*, need: bool) -> None:
     source = field("/FT /Tx /V (value) /AP << /N 7 0 R >>", need=need, extra=[OLD])
 
-    shown = appearance(assemble(TARGET, source, wanted()).content)
+    made = assemble(TARGET, source, wanted()).content
 
-    assert ("STORED" in shown, "(value) Tj" in shown) == (not need, need)
+    assert (black(drawn(made, 1, forms=False)) > 10_000) is not need
+
+
+def test_a_stored_appearance_of_a_field_without_a_form_is_kept() -> None:
+    source = field("/FT /Tx /V (value) /AP << /N 7 0 R >>", extra=[OLD])
+    source = source.replace(b"/AcroForm", b"/Nothing")
+
+    made = assemble(TARGET, source, wanted()).content
+
+    assert black(drawn(made, 1, forms=False)) > 10_000
+
+
+def test_links_and_comments_beside_fields_stay() -> None:
+    link = "[<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] >> 5 0 R "
+    link += "<< /Type /Annot /Subtype /Text /Rect [0 0 9 9] /Contents (note) >>]"
+    source = field("/FT /Tx /V (value)").replace(b"/Annots [5 0 R]", b"/Annots " + link.encode())
+    raw = pypdfium2.raw
+
+    made = assemble(TARGET, source, wanted()).content
+
+    assert subtypes(made, 1) == [raw.FPDF_ANNOT_LINK, raw.FPDF_ANNOT_TEXT, STAMP]
+
+
+def test_a_page_without_fields_is_not_touched() -> None:
+    assert subtypes(assemble(TARGET, SOURCE, wanted("1")).content, 1) == []
+
+
+def test_every_page_with_fields_gets_its_own_also_where_pages_are_one_object() -> None:
+    source = field("/FT /Tx /V (23.11.2026)").replace(
+        b"/Kids [3 0 R] /Count 1", b"/Kids [3 0 R 3 0 R] /Count 2"
+    )
+    expected = drawn(source, 0, forms=True)
+
+    made = assemble(TARGET, source, wanted("1-2")).content
+
+    for page in (1, 2):
+        assert differing(drawn(made, page, forms=False), expected) < 60
+
+
+def test_the_pages_of_a_source_bring_only_their_own_fields() -> None:
+    fields = "/AcroForm << /Fields [7 0 R 8 0 R] /NeedAppearances true /DA (/Helv 24 Tf 0 g) >>"
+    widget = "<< /Type /Annot /Subtype /Widget /FT /Tx /T (%s) /F 4 /V (%s) /Rect [0 %d 300 %d] >>"
+    source = pdf_of(
+        ["", ""],
+        page="/MediaBox [0 0 600 800] /Annots [XX 0 R]",
+        catalog=fields,
+        extra=[widget % ("a", "FIRST", 0, 50), widget % ("b", "SECOND", 100, 150)],
+    )
+    source = source.replace(b"XX 0 R", b" 7 0 R", 1).replace(b"XX 0 R", b" 8 0 R", 1)
+
+    made = assemble(TARGET, source, wanted("2")).content
+
+    assert differing(drawn(made, 1, forms=False), drawn(source, 1, forms=True)) < 60
+    assert b"FIRST" not in made
 
 
 def test_scripts_of_a_form_do_not_run() -> None:
-    script = "<< /S /JavaScript /JS (this.getField('f').value = event.value = 'HACK';) >>"
+    script = "<< /S /JavaScript /JS (this.getField('f').value = event.value = 'HACKED';) >>"
+    plain = field("/FT /Tx /V (i)")
     source = field(
-        f"/FT /Tx /V (value) /AA << /F {script} /C {script} /V {script} >>",
+        f"/FT /Tx /V (i) /AA << /F {script} /C {script} /V {script} >>",
         catalog=f"/OpenAction {script} /AA << /WS {script} >>",
     )
 
-    shown = appearance(assemble(TARGET, source, wanted()).content)
+    made = assemble(TARGET, source, wanted()).content
 
-    assert "(value) Tj" in shown
-    assert "HACK" not in shown
+    expected = drawn(plain, 0, forms=True)
+    assert differing(drawn(made, 1, forms=False), expected) < 60
     assert not {"V8", "XFA"} & set(pypdfium2.PDFIUM_INFO.flags)
+
+
+@pytest.mark.anyio
+async def test_a_page_with_very_many_fields_is_made_in_time() -> None:
+    count_ = 3000
+    widget = "<< /Type /Annot /Subtype /Widget /FT /Tx /T (f%d) /V (abc) /F 4 /Rect [0 0 99 20] >>"
+    boxes = " ".join(f"{6 + n} 0 R" for n in range(count_))
+    source = pdf_of(
+        [""],
+        page=f"/MediaBox [0 0 600 800] /Annots [{boxes}]",
+        catalog=f"/AcroForm << /Fields [{boxes}] /NeedAppearances true /DA (/Helv 9 Tf 0 g) >>",
+        extra=[
+            "<< >>",
+            *(widget % n for n in range(count_)),
+        ],
+    )
+
+    found = await ChildRenderer().assemble(TARGET, source, wanted(max_bytes=10 * MIB))
+
+    assert subtypes(found.content, 1) == [STAMP]
+
+
+def test_a_field_tree_that_is_a_cycle_ends() -> None:
+    kind = "/FT /Tx /V (value) /Kids [5 0 R] /Parent 5 0 R"
+
+    made = assemble(TARGET, field(kind), wanted()).content
+
+    assert len(pypdfium2.PdfDocument(made)) == 4
+
+
+@pytest.mark.parametrize("of_source", [True, False])
+def test_a_page_of_an_absurd_size_is_named(*, of_source: bool) -> None:
+    huge = mixed("/MediaBox [0 0 1000000000 3000000000]")
+    files = (TARGET, huge) if of_source else (huge, SOURCE)
+
+    with pytest.raises(RenderFailed) as raised:
+        _ = assemble(*files, wanted("1", 1, 3 if of_source else 1))
+
+    assert (raised.value.reason, raised.value.of_source) == ("size", of_source)
 
 
 def test_other_pages_of_the_source_are_not_taken_along() -> None:
