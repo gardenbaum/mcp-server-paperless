@@ -459,6 +459,33 @@ class DocumentRecord(DocumentFacts):
         return self.id, self.versions[0].id if self.versions else None
 
 
+class DocumentState(BaseModel):
+    """What an update can change on a document, as it was read; a record or a row has it all."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, from_attributes=True)
+
+    id: int
+    title: str
+    created: date
+    archive_serial_number: int | None
+    owner: int | None
+    correspondent: int | None
+    document_type: int | None
+    storage_path: int | None
+    tags: tuple[int, ...]
+    custom_fields: tuple[CustomFieldValue, ...]
+    user_can_change: bool | None
+
+
+class SignedIn(BaseModel):
+    """The user the credential belongs to."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    is_superuser: bool
+
+
 class DocumentText(BaseModel):
     """The whole OCR text of one version of a document, and what a change of it needs to know."""
 

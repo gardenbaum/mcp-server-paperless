@@ -81,6 +81,35 @@ class Selected:
         return tuple(hit.id for hit in self.others)
 
 
+def require_exclusions(chosen: Selected) -> None:
+    """Refuse a change whose selection excludes what the user's list does not hold.
+
+    Raises:
+        Validation: It may have been deleted and exclude nothing (decision-71).
+    """
+    if chosen.excluded_absent:
+        message = (
+            f"Nothing was changed: the selection excludes {', '.join(chosen.excluded_absent)}, "
+            "which you cannot see. If it was deleted, it excludes nothing and more matches "
+            "than was meant."
+        )
+        hint = (
+            "Use filters or a view without it, or pass the document_ids that read_documents "
+            "shows instead of the filters."
+        )
+        raise Validation(message, hint=hint)
+
+
+def unchecked(chosen: Selected) -> str:
+    """What could not be checked about a selection, as the end of a confirmation; or nothing."""
+    if not chosen.excluded_unchecked:
+        return ""
+    return (
+        f"; whether {', '.join(chosen.excluded_unchecked)} still exists, which the "
+        "selection excludes, could not be checked: if not, more matches than was meant"
+    )
+
+
 def _empty(value: object) -> bool:
     """Whether a filter with ``value`` filters nothing; false and 0 are values."""
     return value in (None, (), []) or (isinstance(value, str) and not value.strip())
