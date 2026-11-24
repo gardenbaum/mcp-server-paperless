@@ -21,6 +21,7 @@ from mcp_server_paperless.domain.rendering import (
     RenderRequest,
 )
 from mcp_server_paperless.rendering import worker
+from mcp_server_paperless.rendering.fields import require
 from mcp_server_paperless.rendering.runner import ChildRenderer
 from mcp_server_paperless.rendering.wire import Job, assembled_of, counted_of, encoded
 from mcp_server_paperless.rendering.worker import assemble, count, main, render
@@ -571,6 +572,13 @@ async def test_a_page_with_very_many_fields_is_made_in_time() -> None:
     found = await ChildRenderer().assemble(TARGET, source, wanted(max_bytes=10 * MIB))
 
     assert subtypes(found.content, 1) == [STAMP]
+
+
+def test_what_pdfium_does_not_do_is_an_error() -> None:
+    require(1)
+    for answer in (0, False, None):
+        with pytest.raises(pypdfium2.PdfiumError):
+            require(answer)
 
 
 def test_a_field_tree_that_is_a_cycle_ends() -> None:

@@ -49,7 +49,7 @@ def remove_fields(page: pypdfium2.PdfPage) -> None:
     """Take the fields off a page; everything else stays."""
     for place, field, _ in _annotations(page):
         if field:
-            _done(pdfium.FPDFPage_RemoveAnnot(page, place))
+            require(pdfium.FPDFPage_RemoveAnnot(page, place))
 
 
 def draw_fields(
@@ -85,8 +85,12 @@ def _opened(source: bytes) -> pypdfium2.PdfDocument:
     return forms
 
 
-def _done(result: object) -> None:
-    """What PDFium answers, if it did what it was asked for."""
+def require(result: object) -> None:
+    """Check the answer of PDFium, which is 0 or none where it did not do it.
+
+    Raises:
+        pypdfium2.PdfiumError: It did not.
+    """
     if not result:
         message = "Failed to change a page."
         raise pypdfium2.PdfiumError(message)
@@ -103,18 +107,18 @@ def _flattened(forms: pypdfium2.PdfDocument, number: int, box: Box) -> bool:
         if field and flags & PRINT and not flags & (HIDDEN | NO_VIEW):
             shown = True
         else:
-            _done(pdfium.FPDFPage_RemoveAnnot(page, place))
+            require(pdfium.FPDFPage_RemoveAnnot(page, place))
     if not shown:
         return False
     for place in reversed(range(pdfium.FPDFPage_CountObjects(page))):
         part = pdfium.FPDFPage_GetObject(page, place)
-        _done(pdfium.FPDFPage_RemoveObject(page, part))
+        require(pdfium.FPDFPage_RemoveObject(page, part))
         pdfium.FPDFPageObj_Destroy(part)
-    _done(pdfium.FPDFPage_GenerateContent(page))
+    require(pdfium.FPDFPage_GenerateContent(page))
     page.set_rotation(0)
     page.close()
     page = forms[number]
-    _done(pdfium.FPDFPage_Flatten(page, pdfium.FLAT_PRINT) == pdfium.FLATTEN_SUCCESS)
+    require(pdfium.FPDFPage_Flatten(page, pdfium.FLAT_PRINT) == pdfium.FLATTEN_SUCCESS)
     page.set_mediabox(*box)
     page.set_cropbox(*box)
     page.close()
@@ -150,13 +154,13 @@ def _stamp(
     """Put a page of ``forms`` on ``page``, a page of ``into``, as a stamp as large as ``box``."""
     left, bottom, right, top = box
     picture = pdfium.FPDF_NewXObjectFromPage(into, forms, number)
-    _done(picture)
+    require(picture)
     part = pdfium.FPDF_NewFormObjectFromXObject(picture)
     pdfium.FPDF_CloseXObject(picture)
     # The picture of a page begins at its corner.
     pdfium.FPDFPageObj_Transform(part, 1, 0, 0, 1, left, bottom)
     note = pdfium.FPDFPage_CreateAnnot(page, pdfium.FPDF_ANNOT_STAMP)
-    _done(note)
+    require(note)
     # First the rectangle: what is appended gets its box from it.
     done = [
         pdfium.FPDFAnnot_SetRect(note, pdfium.FS_RECTF(left, top, right, bottom)),
@@ -164,4 +168,4 @@ def _stamp(
         pdfium.FPDFAnnot_SetFlags(note, STAMP),
     ]
     pdfium.FPDFPage_CloseAnnot(note)
-    _done(all(done))
+    require(all(done))
