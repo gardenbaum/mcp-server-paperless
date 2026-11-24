@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:34Z'
-updated_date: '2026-11-24T17:51:48Z'
+updated_date: '2026-11-24T17:55:33Z'
 labels:
   - bulk
 dependencies:
@@ -85,4 +85,6 @@ Owner, 2026-11-24, approved as recommended by the main agent: "Bitte alles wie v
 OPEN, owner: with (a) the same hostile case measures 5388 characters, above the approved 4897. WORST stays 4897, so test_names_made_of_escapes_only_do_not_make_a_refusal_endless[update_documents] is RED.
 Evidence for the acceptance criteria, live on 5c33911 (PR e2e tier of CI 45451032212, four parts green, on Paperless 3.5.1): 12 contract tests and the E2E tests of tests/*/test_bulk_items.py passed; update_documents 100 documents in 8.3 s, add_notes 100 in 6.3 s without a lost answer (so the rows with a file name take the normal path). The commit after that changes the dialog text of new tags only.
 Not ticked: the Definition of Done (one test red, not merged).
+
+Third review (from 89228bf), production code clean: the fake checks the change right for every document in the link lists sent (as Paperless's validate_documentlink_targets) and tolerates a missing field on the other side; a contract test for a stored link to an unchangeable document. Above 100,000 characters the room short items leave goes to the long ones. Where no order was found, the refusal says 'or try another order' besides 'in an earlier call'. The test of 100 documents asserts that no answer was lost. Named mutants killed. OPEN, owner: 5388 against WORST 4897.
 <!-- SECTION:NOTES:END -->

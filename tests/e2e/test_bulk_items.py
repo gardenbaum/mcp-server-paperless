@@ -400,6 +400,8 @@ async def test_one_hundred_documents_take_a_few_calls_and_each_ends_in_time(
                 took = time.monotonic() - begun
                 assert took < 60
                 told(f"add_notes: {output['counts']} in {took:.1f} s; {reasons(output)}")
+                # No answer was lost: the normal path is measured.
+                assert reasons(output) == {None}
                 if not output["left"]:
                     break
             assert output["left"] == []

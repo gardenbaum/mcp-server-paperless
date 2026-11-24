@@ -1386,8 +1386,9 @@ class FakePaperless:
         Every target of the list that is sent gets the link back, also one that already was in the
         list and lost it (a bulk edit to a shorter list leaves it one-sided).
 
-        Linking needs change permission on every document linked to (403 otherwise, also for a
-        document the user cannot see); the other side keeps an empty list when unlinked.
+        Every document in the lists that are sent, stored ones included, needs to be changeable
+        (403 otherwise, also for a document the user cannot see; `validate_documentlink_targets`);
+        the other side keeps an empty list when unlinked.
         """
         link_fields = [f.id for f in self.state.custom_fields if f.data_type == "documentlink"]
 
@@ -1395,8 +1396,8 @@ class FakePaperless:
             return set(cast("list[int]", fields.get(number) or []))
 
         by_id = {d.id: d for d in self.state.documents}
-        added = {n: targets(new, n) - targets(document.custom_fields, n) for n in link_fields}
-        if any(not self.user.may_change(by_id[t]) for ids in added.values() for t in ids):
+        sent = {t for n in link_fields for t in targets(new, n)} - {document.id}
+        if not all(by_id[target].changeable_by(self.user) for target in sent):
             message = "Insufficient permissions."
             raise PermissionDenied(message)
         for number in link_fields:
@@ -1407,9 +1408,10 @@ class FakePaperless:
             for target in targets(document.custom_fields, number) - targets(new, number):
                 if target in by_id:
                     other = by_id[target].custom_fields
-                    other[number] = [
-                        n for n in cast("list[int]", other.get(number)) if n != document.id
-                    ]
+                    if document.id in targets(other, number):
+                        other[number] = [
+                            n for n in cast("list[int]", other[number]) if n != document.id
+                        ]
 
     def _custom_fields(self, patch: DocumentPatch) -> dict[int, JsonValue]:
         """The new custom field values; a field named twice keeps its last value."""

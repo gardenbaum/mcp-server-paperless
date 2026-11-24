@@ -191,6 +191,37 @@ async def test_a_link_to_a_document_that_may_not_be_changed_is_refused(backend: 
 
 
 @pytest.mark.contract(UPDATE)
+async def test_a_stored_link_to_a_document_that_may_not_be_changed_refuses_other_fields(
+    backend: Backend,
+) -> None:
+    ports, (first, second) = backend.admin, backend.new_documents(2)
+    link, text = await field(ports, "e2e-documentlink"), await field(ports, "e2e-string")
+    await put(ports, first, {link: [second]})
+    changer = backend.restricted(CHANGER, view=[second])
+    _ = await ports.document_writes.update_document(first, DocumentPatch(owner=None))
+
+    with pytest.raises(PermissionDenied):
+        await put(changer, first, {link: [second], text: "x"})
+
+    assert await values(ports, first) == {link: [second]}
+
+
+@pytest.mark.contract(UPDATE)
+async def test_dropping_a_one_sided_link_leaves_the_other_document_as_it_is(
+    backend: Backend,
+) -> None:
+    ports, (first, second) = backend.admin, backend.new_documents(2)
+    link = await field(ports, "e2e-documentlink")
+    await put(ports, first, {link: [second]})
+    _ = await ports.bulk_writes.bulk_edit_documents((second,), FieldsChange(values={link: []}))
+
+    await put(ports, first, {})
+
+    assert await values(ports, first) == {}
+    assert await values(ports, second) == {link: []}
+
+
+@pytest.mark.contract(UPDATE)
 async def test_an_owner_gives_a_document_away_and_sees_it_in_the_answer_only(
     backend: Backend,
 ) -> None:

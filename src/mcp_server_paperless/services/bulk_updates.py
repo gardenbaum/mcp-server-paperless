@@ -484,7 +484,7 @@ class BulkUpdates:
         named = {item.id for item, _, _ in late}
         first = sorted(call.items, key=lambda item: item.id not in named)
         advice = (
-            "make this change in an earlier call"
+            "make this change in an earlier call, or try another order"
             if _links_to_given_away(call, first, away)
             else "put this item first"
         )
@@ -788,14 +788,13 @@ def _json(value: object) -> JsonValue:
 
 def _all(wrong: Mapping[int, str]) -> str:
     """Every wrong item with what is wrong, in full unless that is larger than an answer may be."""
-    if sum(len(text) + ITEM_CHARS for text in wrong.values()) <= MAX_ANSWER - ITEM_CHARS:
-        room = MAX_ANSWER
-    else:
-        room = MAX_ANSWER // len(wrong) - 2 * ITEM_CHARS
-    told = {
-        n: text if len(text) <= room else f"{text[:room]}… ({len(text) - room} more characters)"
-        for n, text in wrong.items()
-    }
+    left = MAX_ANSWER - ITEM_CHARS * (len(wrong) + 1)
+    told = dict(wrong)  # in the order of the items; what short ones leave goes to the long ones
+    for rank, number in enumerate(sorted(wrong, key=lambda n: len(wrong[n]))):
+        text, room = wrong[number], left // (len(wrong) - rank)
+        if len(text) > room:
+            told[number] = f"{text[:room]}… ({len(text) - room} more characters)"
+        left -= min(len(text), room)
     return "; ".join(f"document {n}: {text}" for n, text in told.items())
 
 
