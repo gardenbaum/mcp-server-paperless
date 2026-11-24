@@ -254,7 +254,7 @@ def test_the_enable_text_names_the_restart_of_every_way_to_run_the_server() -> N
 
     for channel in (
         "Claude Code plugin: option Toolsets, restart Claude Code.",
-        "Cursor plugin: no option, add the server by hand.",
+        "Cursor plugin: no such option, add the server by hand.",
         (
             "stdio: env of the server in the client's config (docker run -i: -e), "
             "restart the client."
