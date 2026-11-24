@@ -1,11 +1,11 @@
 ---
 id: PLMCP-110
 title: Keep the copy whose file exists when resolving duplicates
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:50:41Z'
-updated_date: '2026-11-24T10:34:06Z'
+updated_date: '2026-11-24T11:11:57Z'
 labels:
   - safety
 dependencies: []
@@ -22,16 +22,16 @@ resolve_duplicates with trash can keep the document whose file Paperless cannot 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A kept document whose file Paperless cannot find is refused or named in preview, confirmation and result; the same for merging as versions
-- [ ] #2 Contract tests on the fake and Paperless 3.5.1, service, tool and E2E tests cover it
+- [x] #1 A kept document whose file Paperless cannot find is refused or named in preview, confirmation and result; the same for merging as versions
+- [x] #2 Contract tests on the fake and Paperless 3.5.1, service, tool and E2E tests cover it
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -57,4 +57,12 @@ Review of d4242c4 (0 critical, 2 important, 7 minor). I1: the kept document is r
 Delta review (0/0/4 minor). N1: 'until that version is deleted' only if the version below (the previous source, else the newest of the root) has its file. N2: the test of the shared time limit asserts what was cut off (0.6 s reads, 1.0 s limit), no elapsed time. N3 (controller's ruling): a kept document known to lack its original and a duplicate to be trashed that could not be checked: refused with the reason and 'try again'; a copy known to have the file in spite of an unread version is named as before. N4: the counts in decision-63. Service tests seen red (5 failed) first. No snapshot, limit or gate changes.
 
 Final check: the description of resolve_duplicates names the refusal of an unchecked duplicate (surface snapshot changed deliberately, within all limits); its hint adds 'or leave it out'. Both tests seen red first.
+
+Merged with #129 (e429b87). Review and two delta reviews clean; Codex without findings; hosted full E2E 45375771639 green on e9c9e58, after which only two texts and main came in. DoD 1 stays open (first tests not red first), DoD 2 unchecked (macOS-only failures).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+resolve_duplicates refuses to keep a document that is known to lack its original while a copy has it, to merge a copy without its file, and to trash a copy that could not be checked while the kept one lacks its file; merge_documents_as_versions warns (decision-63).
+<!-- SECTION:FINAL_SUMMARY:END -->
