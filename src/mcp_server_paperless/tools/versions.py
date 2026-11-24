@@ -209,10 +209,10 @@ async def merge_documents_as_versions(
     The merged documents vanish for good (not even into the trash): their titles, tags,
     correspondents, notes and other metadata are lost and only their files stay, as versions of
     the root document, which keeps its own metadata. Without confirm a dialog, or an error for you
-    to show the user, first names the documents and what would happen (see confirm). Documents that
-    already have versions of their own cannot be merged in. Needs the permissions to change and to
-    delete documents, and the user must own every document (or be a superuser, or the documents
-    must be unowned); a change grant is not enough.
+    to show the user, first names the documents, what would happen and which files Paperless cannot
+    find (see confirm). Documents that already have versions of their own cannot be merged in. Needs
+    the permissions to change and to delete documents, and the user must own every document (or be a
+    superuser, or the documents must be unowned); a change grant is not enough.
     """
     return await services(ctx).versions.merge(
         root_document_id, source_document_ids, label, confirm=confirm

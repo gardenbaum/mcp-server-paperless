@@ -78,6 +78,30 @@ async def test_the_checksum_filter_finds_the_root_file_of_live_documents_in_any_
     assert await with_checksum(backend.admin, sha256(other)) == set()
 
 
+@pytest.mark.contract(DUPLICATES)
+@pytest.mark.contract("DocumentReader.get_document_metadata")
+@pytest.mark.decision("decision-63")
+async def test_a_lost_file_changes_neither_the_duplicates_nor_the_checksum(
+    backend: Backend,
+) -> None:
+    content = unique()
+    lost, copy = [await uploaded(backend, content) for _ in range(2)]
+    documents = backend.admin.documents
+    backend.lose_file(lost, "original")
+
+    newer = await add_version(backend, lost, unique().decode())
+    root = await documents.get_document_metadata(lost, version_id=lost)
+    newest = await documents.get_document_metadata(lost, version_id=newer)
+    whole = await documents.get_document_metadata(copy, version_id=copy)
+
+    assert root.lacks("original")
+    assert root.original_checksum == whole.original_checksum == sha256(content)
+    assert not newest.lacks("original")
+    assert not whole.lacks("original")
+    assert [d.id for d in await documents.get_duplicates(lost)] == [copy]
+    assert [d.id for d in await documents.get_duplicates(copy)] == [lost]
+
+
 @pytest.mark.contract(SEARCH)
 async def test_the_checksum_filter_tells_nothing_of_hidden_documents(backend: Backend) -> None:
     content = unique()
