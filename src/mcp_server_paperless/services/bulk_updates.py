@@ -122,7 +122,7 @@ NOT_OWNER: Final = "Only its owner may change the owner."
 MAX_NUMBER: Final = 2**32 - 1
 GO_ON: Final = "Pass the items in left again; what is done stays as it is."
 CORRECT: Final = "Correct these items or leave them out; the others were not changed."
-# A new tag's name is shown whole (owner, 2026-11-24): the room ``quoted`` gives 768 characters holds
+# A new tag's name is shown whole (owner, 2026-11-24): what ``quoted`` gives 768 characters holds
 # the longest name with every character escaped.
 NEW_TAG: Final = 6 * MAX_TITLE
 # Characters of a refusal around what is wrong with an item, at most.
