@@ -138,14 +138,20 @@ async def test_paperless_writes_the_text_of_a_deleted_version(backend: Backend) 
 async def test_changing_the_text_needs_the_permission_and_a_grant(backend: Backend) -> None:
     document = backend.new_document()
     before = await text(backend.admin, document)
-    viewer = backend.restricted(CHANGING, view=[document])
-    no_change = backend.restricted(frozenset({"view_document"}), change=[document])
-    granted = backend.restricted(CHANGING, change=[document])
-    stranger = backend.restricted(CHANGING)
 
-    for denied in (viewer, no_change, backend.blind):
+    # One after the other: a second user's grants replace the first one's.
+    for permissions, view, change in (
+        (CHANGING, [document], []),
+        (frozenset({"view_document"}), [], [document]),
+    ):
+        denied = backend.restricted(permissions, view=view, change=change)
+        assert await text(denied, document) == before  # seen, but not to be changed
         with pytest.raises(PermissionDenied):
             _ = await denied.document_writes.set_document_text(document, document, "plmcp75 no")
+    with pytest.raises(PermissionDenied):
+        _ = await backend.blind.document_writes.set_document_text(document, document, "plmcp75 no")
+    granted = backend.restricted(CHANGING, change=[document])
+    stranger = backend.restricted(CHANGING)
     with pytest.raises(NotFound):
         _ = await stranger.document_writes.set_document_text(document, document, "plmcp75 no")
     assert await text(backend.admin, document) == before

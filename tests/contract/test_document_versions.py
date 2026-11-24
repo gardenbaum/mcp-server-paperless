@@ -192,10 +192,11 @@ async def test_a_read_of_the_text_says_whether_the_user_may_change_the_document(
     backend: Backend,
 ) -> None:
     document = backend.new_document()
-    viewer = backend.restricted(CHANGING, view=[document])
-    granted = backend.restricted(CHANGING, change=[document])
 
+    viewer = backend.restricted(CHANGING, view=[document])
     assert not (await viewer.documents.get_document_content(document)).user_can_change
+    # A second user's grants replace the first one's.
+    granted = backend.restricted(CHANGING, change=[document])
     assert (await granted.documents.get_document_content(document)).user_can_change
 
 
