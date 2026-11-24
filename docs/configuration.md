@@ -200,6 +200,16 @@ in a [dialog](#confirmation) or is refused with a description of the effect, `co
 executes. Paperless checks every object
 first: if one may not be changed, none is. Deleting taxonomy is final (it has no trash).
 
+`bulk_edit_documents` chooses documents like `read_documents`: by ids, filters or a saved view. Every
+document a call changes is named before, and a filter or a view alone never acts: you accept the named
+documents in a dialog, or, in a client without dialogs, a second call repeats the filter and names
+their ids with `confirm=true` (refused if one no longer matches). At most 100 documents change per
+call; the same call goes on with the rest. If what a selection excludes is not there (a deleted tag
+excludes nothing), the change is refused; a filter cannot reprocess more than 100 documents at once.
+Paperless runs the change as a task: if that fails half way, or the answer is lost, the
+documents are read again and the answer says which are as asked, which are not changed and which are
+unknown (decision-71).
+
 `resolve_duplicates` keeps one document and moves its duplicates to the trash or merges them into
 it as versions (at most 20 a call). `search_documents` with `has_duplicates` finds such documents
 and `get_document` with `include` `duplicates` lists the copies, also in the trash, and what differs.

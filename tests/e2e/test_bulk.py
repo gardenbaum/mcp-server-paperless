@@ -4,15 +4,18 @@ Documents and taxonomy are created by the tests and removed again (documents wit
 entries), so nothing is left behind and no seeded object is changed.
 """
 
+import time
 import uuid
 from typing import TYPE_CHECKING, cast
 
 import pytest
+from confirmation import YES, answering
 from contract.conftest import delete_and_empty_trash, live_in_trash
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
 from e2e.helpers import consume_text, num, obj, parse, results, seq
+from e2e.test_read_documents import bare_documents
 from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
@@ -301,6 +304,131 @@ async def test_a_missing_document_and_a_restricted_user_change_nothing(
     assert (preview["dry_run"], preview["affected_count"]) == (True, 1)
     assert all(tag not in tags_of(stack, d) for d in documents)
     assert tags_of(stack, public) == seeded_tags
+
+
+@pytest.mark.decision("decision-71")
+async def test_a_filter_changes_what_the_dialog_named(stack: Stack, scratch: str) -> None:
+    tag = make(stack, "tags", {"name": f"{scratch}tag"})
+    created = [consume_text(stack.admin, f"{scratch}{n}") for n in (1, 2)]
+    try:
+        seen: list[str] = []
+        async with Client(
+            server(stack, stack.admin_token),
+            elicitation_handler=answering("accept", YES, seen=seen),
+        ) as client:
+            result = await client.call_tool(
+                "bulk_edit_documents",
+                {
+                    "filters": {"title_contains": scratch},
+                    "operation": {"op": "add_tags", "tags": [tag]},
+                    "confirm": True,
+                },
+            )
+
+        assert result.structured_content is not None
+        output: Json = result.structured_content
+        assert set(seq(output["selected_ids"])) == set(created)
+        [shown] = seen
+        assert all(f"{number} '{scratch}" in shown for number in created)
+        assert all(tag in tags_of(stack, number) for number in created)
+    finally:
+        delete_and_empty_trash(stack, created)
+
+
+@pytest.mark.decision("decision-71")
+async def test_without_dialogs_only_ids_that_still_match_the_filter_change(
+    stack: Stack, scratch: str
+) -> None:
+    tag = make(stack, "tags", {"name": f"{scratch}tag"})
+    first, second = created = [consume_text(stack.admin, f"{scratch}{n}") for n in (1, 2)]
+    chosen: Json = {
+        "filters": {"title_contains": scratch, "tags_none": [f"{scratch}tag"]},
+        "operation": {"op": "add_tags", "tags": [tag]},
+        "confirm": True,
+    }
+    admin = stack.admin_token
+    try:
+        shown = await refused(stack, admin, "bulk_edit_documents", **chosen)
+        assert all(f"{number} '{scratch}" in shown for number in created)
+        assert not any(tag in tags_of(stack, number) for number in created)
+
+        # Someone else tags one of them in between.
+        body = {"tags": [tag]}
+        _ = stack.admin.patch(f"/api/documents/{first}/", json=body).raise_for_status()
+        changed = await refused(stack, admin, "bulk_edit_documents", document_ids=created, **chosen)
+        assert f"no longer matches: {first}" in changed
+        assert tag not in tags_of(stack, second)
+
+        done = await run(stack, admin, "bulk_edit_documents", document_ids=[second], **chosen)
+        assert (done["applied"], done["selected_ids"], done["remaining"]) == (True, [second], 0)
+        assert tag in tags_of(stack, second)
+        # What was changed no longer matches: the same call changes nothing again.
+        nothing = await run(stack, admin, "bulk_edit_documents", **chosen)
+        assert (nothing["matched"], nothing["applied"]) == (0, False)
+    finally:
+        delete_and_empty_trash(stack, created)
+
+
+@pytest.mark.decision("decision-71")
+async def test_a_hundred_documents_change_per_call_and_the_same_filter_goes_on(
+    stack: Stack, scratch: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    number = make(stack, "correspondents", {"name": f"{scratch}corr"})
+    with bare_documents(101, scratch, "1992-01-01") as name:
+        chosen: Json = {
+            "filters": {"title_contains": name},
+            "operation": {"op": "set_correspondent", "correspondent": number},
+        }
+        done: list[Json] = []
+        for _round in (1, 2):
+            preview = await run(
+                stack, stack.admin_token, "bulk_edit_documents", **chosen, dry_run=True
+            )
+            started = time.monotonic()
+            done.append(
+                await run(
+                    stack,
+                    stack.admin_token,
+                    "bulk_edit_documents",
+                    **chosen,
+                    document_ids=preview["selected_ids"],
+                    confirm=True,
+                )
+            )
+            took = time.monotonic() - started
+            with capsys.disabled():
+                print(f"\nbulk_edit_documents: {preview['affected_count']} in {took:.2f} s")  # noqa: T201 -- the time of P6, read from the log
+        last = await run(stack, stack.admin_token, "bulk_edit_documents", **chosen, dry_run=True)
+
+    assert [(r["affected_count"], r["remaining"]) for r in done] == [(100, 1), (1, 0)]
+    assert (last["matched"], last["affected_count"], last["unchanged_count"]) == (101, 0, 101)
+
+
+@pytest.mark.decision("decision-71")
+async def test_a_restricted_user_changes_nothing_by_filter_and_sees_no_hidden_document(
+    stack: Stack,
+) -> None:
+    public, inbox = stack.seeded.public_document, stack.seeded.inbox_tag
+    before = tags_of(stack, public)
+    chosen: Json = {
+        "filters": {"title_contains": "e2e-p"},
+        "operation": {"op": "remove_tags", "tags": [inbox]},
+    }
+
+    preview = await run(stack, stack.reader_token, "bulk_edit_documents", **chosen, dry_run=True)
+    denied = await refused(
+        stack,
+        stack.reader_token,
+        "bulk_edit_documents",
+        **chosen,
+        document_ids=[public],
+        confirm=True,
+    )
+
+    assert (preview["matched"], preview["selected_ids"]) == (1, [public])
+    assert "nothing was changed" in denied.lower() or "nothing was sent" in denied
+    assert "Seen after that" not in denied
+    assert tags_of(stack, public) == before
 
 
 @pytest.mark.decision("decision-69")
