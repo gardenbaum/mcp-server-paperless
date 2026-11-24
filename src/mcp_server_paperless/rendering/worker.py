@@ -11,14 +11,30 @@ import math
 import re
 import struct
 import sys
+import time
+from functools import partial
 from typing import TYPE_CHECKING, BinaryIO, Final, Protocol, cast, override
 
 import pypdfium2
 import pypdfium2.raw
-from PIL import ExifTags, Image, TiffImagePlugin, UnidentifiedImageError
+from PIL import ExifTags, Image, ImageDraw, ImageFont, TiffImagePlugin, UnidentifiedImageError
+from pydantic import ValidationError
 
 from mcp_server_paperless.domain.errors import Validation
-from mcp_server_paperless.domain.rendering import MAX_PAGES, PageImage, Rendered, RenderFailed
+from mcp_server_paperless.domain.rendering import (
+    DEFAULT_SIZE,
+    MAX_PAGES,
+    MAX_RUNS,
+    TILES,
+    ContactSheet,
+    Overview,
+    OverviewRequest,
+    PageImage,
+    PageRun,
+    PageShape,
+    Rendered,
+    RenderFailed,
+)
 from mcp_server_paperless.rendering import limits
 from mcp_server_paperless.rendering.limits import MEMORY_EXIT
 from mcp_server_paperless.rendering.wire import Job, answer
@@ -80,6 +96,18 @@ SHRINK = 0.75
 REDUCTIONS = 12
 # Faster than the default method at the same size.
 METHOD = 2
+# A contact sheet: its columns, the side of a tile, the strip with the number, and the space
+# around the page.
+COLUMNS: Final = 4
+CELL: Final = DEFAULT_SIZE // COLUMNS
+STRIP: Final = 34
+SPACE: Final = 6
+NUMBER_SIZE: Final = 24
+DESK: Final = (200, 200, 200)
+INK: Final = (0, 0, 0)
+# The layout may take this share of the time, so that some is left for the sheets.
+LAYOUT_SHARE: Final = 0.5
+MM_PER_POINT: Final = 25.4 / 72
 
 # Pillow's own pixel limit only warns up to twice its value; every frame is checked here instead.
 Image.MAX_IMAGE_PIXELS = None
@@ -136,6 +164,26 @@ class _Pdf(_Source):
         if found.formenv:
             pypdfium2.raw.FPDF_FFLDraw(found.formenv, bitmap, found, *place)
         return bitmap.to_pil()
+
+    def shape(self, page: int) -> PageShape | None:
+        """The shape of a page (from 1); None if it is missing or has no usable size."""
+        try:
+            found = self._pdf[page - 1]
+            width, height = (round(side * MM_PER_POINT, 1) for side in found.get_size())
+            return PageShape.model_validate(
+                {"width_mm": width, "height_mm": height, "rotation": found.get_rotation()}
+            )
+        except pypdfium2.PdfiumError, ValidationError:
+            return None
+
+    def tile(self, page: int, shape: PageShape | None) -> Image.Image:
+        """The page as large as it fits above its number; nothing if it cannot be read."""
+        if shape is None:
+            return Image.new("RGB", (1, 1), DESK)
+        width, height = CELL - 2 * SPACE, CELL - STRIP - SPACE
+        longest = max(shape.width_mm, shape.height_mm)
+        fits = min(width * longest / shape.width_mm, height * longest / shape.height_mm)
+        return self.draw(page, max(1, int(fits)), WHOLE)
 
 
 def _stored(region: Region, orientation: int) -> Region:
@@ -377,17 +425,12 @@ def _webp(image: Image.Image, quality: int) -> bytes:
     return buffer.getvalue()
 
 
-def _page_image(page: int, image: Image.Image, *, max_bytes: int, whole: bool) -> PageImage | None:
-    """The page as an image of at most ``max_bytes`` bytes.
+def _fitted(image: Image.Image, data: bytes, max_bytes: int) -> tuple[Image.Image, bytes]:
+    """The image and its file ``data``, made smaller until it has at most ``max_bytes`` bytes.
 
-    A page that does not fit is None with ``whole``; else it gets a lower quality and then fewer
-    pixels, as many times as it takes.
+    It gets a lower quality and then fewer pixels, as many times as it takes.
     """
-    data = _webp(image, QUALITY)
     shown = image
-    reduced = len(data) > max_bytes
-    if reduced and whole:
-        return None
     for step in range(REDUCTIONS):
         if len(data) <= max_bytes:
             break
@@ -395,7 +438,30 @@ def _page_image(page: int, image: Image.Image, *, max_bytes: int, whole: bool) -
         size = (max(1, int(image.width * factor)), max(1, int(image.height * factor)))
         shown = image if step == 0 else image.resize(size, Image.Resampling.LANCZOS)
         data = _webp(shown, LOW_QUALITY)
+    return shown, data
+
+
+def _page_image(page: int, image: Image.Image, *, max_bytes: int, whole: bool) -> PageImage | None:
+    """The page as an image of at most ``max_bytes`` bytes.
+
+    A page that does not fit is None with ``whole``; else it is reduced.
+    """
+    data = _webp(image, QUALITY)
+    reduced = len(data) > max_bytes
+    if reduced and whole:
+        return None
+    shown, data = _fitted(image, data, max_bytes)
     return PageImage(page=page, width=shown.width, height=shown.height, data=data, reduced=reduced)
+
+
+def _pages(page_count: int, wanted: str) -> list[int]:
+    """The pages of a file that were asked for."""
+    if page_count > MAX_PAGES:
+        raise RenderFailed(reason="count")
+    try:
+        return parse_pages(wanted, page_count=page_count)
+    except Validation as error:
+        raise RenderFailed(reason="pages", page_count=page_count) from error
 
 
 def render(content: bytes, request: RenderRequest) -> Rendered:
@@ -407,12 +473,7 @@ def render(content: bytes, request: RenderRequest) -> Rendered:
     source: _Source = (
         _Pdf(content) if request.mime_type == PDF else _Picture(content, request.max_pixels)
     )
-    if source.page_count > MAX_PAGES:
-        raise RenderFailed(reason="count")
-    try:
-        pages = parse_pages(request.pages, page_count=source.page_count)
-    except Validation as error:
-        raise RenderFailed(reason="pages", page_count=source.page_count) from error
+    pages = _pages(source.page_count, request.pages)
     images: list[PageImage] = []
     left = request.max_bytes
     for number in pages[: request.max_images]:
@@ -427,6 +488,105 @@ def render(content: bytes, request: RenderRequest) -> Rendered:
     )
 
 
+def label_font() -> ImageFont.FreeTypeFont:
+    """What numbers are written with. Comes with Pillow; no module or file is opened later."""
+    font = cast("ImageFont.FreeTypeFont", ImageFont.load_default(NUMBER_SIZE))
+    ImageDraw.Draw(Image.new("RGB", (1, 1))).text((0, 0), "0", font=font, anchor="ma")
+    return font
+
+
+def _layout(source: _Pdf, pages: list[int], late: Callable[[], bool]) -> list[PageRun]:
+    """The shapes of the pages until it is late, at least of the first."""
+    runs: list[tuple[PageShape | None, list[int]]] = []
+    for page in pages:
+        if runs and late():
+            break
+        shape = source.shape(page)
+        if runs and runs[-1][0] == shape:
+            runs[-1][1].append(page)
+        elif len(runs) == MAX_RUNS:
+            break
+        else:
+            runs.append((shape, [page]))
+    return [PageRun(pages=tuple(found), shape=shape) for shape, found in runs]
+
+
+def _sheet(tiles: list[tuple[int, Image.Image]], font: ImageFont.FreeTypeFont) -> Image.Image:
+    """The tiles row by row, each with its page number below."""
+    rows = math.ceil(len(tiles) / COLUMNS)
+    sheet = Image.new("RGB", (min(len(tiles), COLUMNS) * CELL, rows * CELL), DESK)
+    draw = ImageDraw.Draw(sheet)
+    for place, (page, tile) in enumerate(tiles):
+        row, column = divmod(place, COLUMNS)
+        x, y = column * CELL, row * CELL
+        sheet.paste(
+            tile,
+            (x + (CELL - tile.width) // 2, y + SPACE + (CELL - STRIP - SPACE - tile.height) // 2),
+        )
+        at = (x + CELL // 2, y + CELL - STRIP + SPACE // 2)
+        draw.text(at, str(page), fill=INK, font=font, anchor="ma")
+    return sheet
+
+
+def overview(
+    content: bytes,
+    request: OverviewRequest,
+    font: ImageFont.FreeTypeFont,
+    *,
+    clock: Callable[[], float] = time.monotonic,
+) -> Overview:
+    """Sizes, rotation and contact sheets of the pages ``request`` asks for, until it is late.
+
+    At least one page is described and shown, so that asking for the rest comes to an end. The
+    sheets share the bytes of a call: all of them are shown, at a lower quality if it must be.
+
+    Raises:
+        RenderFailed: The file cannot be read, or it has no such page.
+    """
+    started = clock()
+
+    def late(share: float) -> bool:
+        return clock() - started >= request.seconds * share
+
+    source = _Pdf(content)
+    pages = _pages(source.page_count, request.pages)
+    runs = _layout(source, pages, lambda: late(LAYOUT_SHARE))
+    shown = 0
+    sheets: list[ContactSheet] = []
+    most = min(request.max_sheets, math.ceil(len(pages) / TILES)) if request.sheets else 0
+    left = request.max_bytes
+    while len(sheets) < most:
+        tiles: list[tuple[int, Image.Image]] = []
+        for page in pages[shown : shown + TILES]:
+            if shown + len(tiles) and late(1.0):
+                break
+            tiles.append((page, source.tile(page, source.shape(page))))
+        if not tiles:
+            break
+        image = _sheet(tiles, font)
+        budget = left // (most - len(sheets))
+        whole = _webp(image, QUALITY)
+        smaller, data = _fitted(image, whole, budget)
+        sheets.append(
+            ContactSheet(
+                pages=tuple(page for page, _ in tiles),
+                width=smaller.width,
+                height=smaller.height,
+                data=data,
+                reduced=len(whole) > budget,
+            )
+        )
+        shown += len(tiles)
+        left -= len(data)
+    return Overview(
+        page_count=source.page_count,
+        runs=tuple(runs),
+        layout_rest=tuple(pages[sum(len(run.pages) for run in runs) :]),
+        sheets=tuple(sheets),
+        rest=tuple(pages[shown:]) if request.sheets else (),
+    )
+
+
 def main(stdin: BinaryIO, stdout: BinaryIO, guard: Callable[[int, float], None]) -> int:
     """Render the job on ``stdin`` and write the answer to ``stdout``; returns the exit code.
 
@@ -437,13 +597,19 @@ def main(stdin: BinaryIO, stdout: BinaryIO, guard: Callable[[int, float], None])
     _ = Image.init()
     _ = Image.new("LAB", (1, 1)).convert("RGB")
     job = Job.model_validate_json(stdin.readline())
+    request = job.request
+    work: Callable[[bytes], Rendered | Overview] = (
+        partial(overview, request=request, font=label_font())
+        if isinstance(request, OverviewRequest)
+        else partial(render, request=request)
+    )
     try:
         guard(job.memory_bytes, job.seconds)
         content = stdin.read(job.content_bytes)
         if len(content) < job.content_bytes:
             return 1  # the server went away
         try:
-            found: Rendered | RenderFailed = render(content, job.request)
+            found: Rendered | Overview | RenderFailed = work(content)
         except RenderFailed as failure:
             found = failure
         _ = stdout.write(answer(found))

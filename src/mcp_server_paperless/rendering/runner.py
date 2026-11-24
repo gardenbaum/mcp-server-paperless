@@ -14,13 +14,19 @@ from typing import TYPE_CHECKING, Final, cast
 
 from mcp_server_paperless.domain.rendering import RenderFailed
 from mcp_server_paperless.rendering.limits import MEMORY_EXIT, TIME_EXIT
-from mcp_server_paperless.rendering.wire import Job, answer_of, encoded
+from mcp_server_paperless.rendering.wire import Job, answer_of, encoded, overview_of
 
 if TYPE_CHECKING:
     from asyncio import StreamReader, StreamWriter
     from collections.abc import Mapping, Sequence
 
-    from mcp_server_paperless.domain.rendering import Reason, Rendered, RenderRequest
+    from mcp_server_paperless.domain.rendering import (
+        Overview,
+        OverviewRequest,
+        Reason,
+        Rendered,
+        RenderRequest,
+    )
 
 COMMAND: Final = (sys.executable, "-I", "-m", "mcp_server_paperless.rendering.worker")
 # The worst ordinary file measured took 2.4 s.
@@ -83,6 +89,14 @@ class ChildRenderer:
 
     async def render(self, content: bytes, request: RenderRequest) -> Rendered:
         """See ``PageRenderer.render``."""
+        return answer_of(await self._answered(content, request), request)
+
+    async def inspect(self, content: bytes, request: OverviewRequest) -> Overview:
+        """See ``PageRenderer.inspect``."""
+        return overview_of(await self._answered(content, request), request)
+
+    async def _answered(self, content: bytes, request: RenderRequest | OverviewRequest) -> bytes:
+        """What the child writes for a job."""
         head = Job(
             request=request,
             content_bytes=len(content),
@@ -128,4 +142,4 @@ class ChildRenderer:
                 transport.close()
         if code:
             raise RenderFailed(reason=_EXITS.get(code, "crashed"))
-        return answer_of(output, request)
+        return output

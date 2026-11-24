@@ -3,9 +3,9 @@
 The renderer is not a port: it talks to a child process, not to Paperless.
 """
 
-from typing import ClassVar, Final, Literal, Protocol
+from typing import Annotated, ClassVar, Final, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 # What the renderer reads: the MIME types Paperless has for a PDF and for the images it can open.
 RENDERABLE: Final = frozenset(
@@ -26,6 +26,13 @@ MAX_PAGES: Final = 200_000
 MIN_SIZE: Final = 256
 MAX_SIZE: Final = 2576
 DEFAULT_SIZE: Final = 1568
+# Contact sheets: pages of one (4 x 3), and seconds after which the rest is left to another call.
+TILES: Final = 12
+SHEET_SECONDS: Final = 20.0
+# Runs of equal pages in one layout.
+MAX_RUNS: Final = 100
+# The longest side of a page that is reported: ten kilometres.
+MAX_SIDE_MM: Final = 10_000_000.0
 
 # Left, top, right and bottom edge, as fractions of the page as shown.
 type Region = tuple[float, float, float, float]
@@ -46,6 +53,7 @@ class RenderRequest(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
+    kind: Literal["pages"] = "pages"
     mime_type: str
     pages: str
     size: int
@@ -82,6 +90,75 @@ class Rendered(BaseModel):
     rest: tuple[int, ...] = ()
 
 
+class OverviewRequest(BaseModel):
+    """Which pages of a PDF to describe, and within which limits.
+
+    Attributes:
+        pages: Page specification (see ``services.page_ranges``).
+        sheets: Whether contact sheets are drawn.
+        seconds: When to stop and leave the rest to another call.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    kind: Literal["overview"] = "overview"
+    pages: str
+    sheets: bool = True
+    max_sheets: int = MAX_IMAGES
+    max_bytes: int = MAX_IMAGE_BYTES
+    seconds: float = SHEET_SECONDS
+
+
+type Side = Annotated[float, Field(gt=0, le=MAX_SIDE_MM)]
+
+
+class PageShape(BaseModel):
+    """The size of a page as shown, and the rotation stored in the file."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    width_mm: Side
+    height_mm: Side
+    rotation: Literal[0, 90, 180, 270]
+
+
+class PageRun(BaseModel):
+    """Pages after one another with the same shape; None if they cannot be read."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    pages: tuple[int, ...]
+    shape: PageShape | None
+
+
+class ContactSheet(BaseModel):
+    """Small numbered pictures of pages, row by row: a WebP image.
+
+    Attributes:
+        reduced: It did not fit into the bytes of a call, so it has a lower quality or fewer pixels.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    pages: tuple[int, ...]
+    width: int
+    height: int
+    data: bytes
+    reduced: bool = False
+
+
+class Overview(BaseModel):
+    """The layout and the sheets, in the order asked for, and the pages neither covers any more."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    page_count: int
+    runs: tuple[PageRun, ...]
+    layout_rest: tuple[int, ...] = ()
+    sheets: tuple[ContactSheet, ...] = ()
+    rest: tuple[int, ...] = ()
+
+
 class RenderFailed(Exception):  # noqa: N818 -- an outcome, as the names of domain/errors.py
     """The file could not be rendered.
 
@@ -107,6 +184,14 @@ class PageRenderer(Protocol):
 
         Raises:
             RenderFailed: The file or the page specification cannot be used, or a limit was hit.
+        """
+        ...
+
+    async def inspect(self, content: bytes, request: OverviewRequest) -> Overview:
+        """Sizes, rotation and contact sheets of the pages of a PDF, as far as they fit.
+
+        Raises:
+            RenderFailed: See ``render``.
         """
         ...
 

@@ -1,9 +1,11 @@
 ---
 id: PLMCP-79.2
 title: 'PDF tools b: inspect_pdf'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T08:51:15Z'
+updated_date: '2026-11-24T11:06:35Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -33,3 +35,13 @@ Second part of PLMCP-79 (design approved by the owner on 2026-11-24 (all 14 deci
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Rendering (red first): a second job kind "overview" in domain/rendering.py, worker.py, wire.py, runner.py: layout runs (pages, size in mm as shown, stored rotation, at most 100 runs) and contact sheets of 4 x 3 numbered tiles, at most 5 sheets, stop after 20 s. The server derives the page numbers itself from the specification; the child only sends counts and ranges-checked numbers.
+2. Service: PageService.inspect shares the turn, download, limits and missing-file answers of show; only PDFs and archive PDFs.
+3. Tool inspect_pdf in tools/pdf.py: media tool, read-only; surface snapshot, guide limit 2835 -> 2849, docs, counts.
+4. Decision for MEDIA_TOOLS (design D3, inspect part; 61 holds the dry_run part).
+5. Tool, transport, missing file, registry, sweep and E2E tests; docs/tools.md and api-coverage.md regenerated.
+<!-- SECTION:PLAN:END -->
