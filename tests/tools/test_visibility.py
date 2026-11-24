@@ -87,6 +87,7 @@ READ_ADMIN = {
     "bulk_download",
 }
 RAW = {"paperless_api_get"}
+READ_PDF = {"inspect_pdf"}
 READ_MAIL = {
     *("list_mail_accounts", "get_mail_account", "list_mail_rules", "get_mail_rule"),
     "list_processed_mail",
@@ -179,6 +180,7 @@ async def test_read_only_mode_offers_only_tools_with_the_read_only_hint() -> Non
         }
         | READ_SHARING
         | READ_MAIL
+        | READ_PDF
         | RAW
         | READ_WORKFLOWS
         | READ_ADMIN

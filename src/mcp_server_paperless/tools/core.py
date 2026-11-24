@@ -10,7 +10,6 @@ from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 from mcp.types import (
-    ContentBlock,
     ImageContent,
     TextContent,
 )
@@ -39,7 +38,6 @@ from mcp_server_paperless.domain.rendering import (
     DEFAULT_SIZE,
     MAX_SIZE,
     MIN_SIZE,
-    PagesReport,
 )
 from mcp_server_paperless.domain.tasks import TaskReport
 from mcp_server_paperless.domain.taxonomy import (
@@ -60,6 +58,7 @@ from mcp_server_paperless.tools._shared import (
     Confirm,
     boundary,
     guide_for,
+    images_result,
     resource_boundary,
     services,
 )
@@ -550,7 +549,7 @@ async def get_document_content(
     )
 
 
-def _text(report: FileReport | PagesReport) -> TextContent:
+def _text(report: FileReport) -> TextContent:
     return TextContent(type="text", text=report.model_dump_json())
 
 
@@ -637,18 +636,10 @@ async def get_document_pages(  # noqa: PLR0913 -- one parameter per choice, desc
     found = await services(ctx).pages.show(
         document_id, pages, source=source, version_id=version_id, size=size, region=edges
     )
-    content: list[ContentBlock] = [_text(found.report)]
-    for image in found.images:
-        label = f"Page {image.page} of {found.report.page_count}"
-        content.append(TextContent(type="text", text=label))
-        content.append(
-            ImageContent(
-                type="image",
-                data=base64.b64encode(image.data).decode(),
-                mime_type="image/webp",
-            )
-        )
-    return ToolResult(content=content)
+    count = found.report.page_count
+    return images_result(
+        found.report, [(f"Page {image.page} of {count}", image.data) for image in found.images]
+    )
 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["update_document"])

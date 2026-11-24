@@ -439,7 +439,11 @@ async def test_rotating_takes_confirm_and_is_not_destructive() -> None:
 
 @pytest.mark.decision("decision-60")
 async def test_every_writing_pdf_tool_has_a_preview() -> None:
-    tools = [t for t in await server_tools() if "pdf" in t.tags]
+    tools = [
+        t
+        for t in await server_tools()
+        if "pdf" in t.tags and not (t.annotations and t.annotations.read_only_hint)
+    ]
 
     assert len(tools) == 7
     for tool in tools:

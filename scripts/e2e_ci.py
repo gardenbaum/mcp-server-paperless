@@ -201,6 +201,8 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "selection": ("test_bulk", "test_toolset_guide"),
     "page_ranges": ("test_pages", "test_pdf"),
     "pages": ("test_pages_files",),
+    # inspect_pdf.
+    "pdf": ("test_pages",),
     # The renderer (rendering/ and domain/rendering.py).
     "rendering": ("test_pages", "test_pages_files"),
     "worker": ("test_pages", "test_pages_files"),

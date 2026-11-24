@@ -2,7 +2,7 @@
 
 <!-- Generated from the tool surface by `just docs-tools`. Do not edit by hand. -->
 
-93 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
+94 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
 default; the others are switched on with
 [`PAPERLESS_MCP_TOOLSETS`](configuration.md#toolsets), which also says what each toolset is for.
 
@@ -94,6 +94,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 
 | Tool | Kind | What it does |
 |---|---|---|
+| `inspect_pdf` | read | See the pages of a PDF at a glance, to decide where to split, cut or rotate. |
 | `rotate_documents` | write, confirm, dry run | Rotate every page of PDF documents clockwise. |
 | `merge_documents` | destructive, confirm, dry run | Merge PDF documents, in the order given, into one new document. |
 | `split_document` | destructive, confirm, dry run | Split a PDF into one new document per page range. |

@@ -250,9 +250,11 @@ read again, and the answer says of every entry what became of it.
 
 ### `pdf`
 
-Off by default: `rotate_documents`, `merge_documents`, `split_document`, `delete_pages`,
-`edit_pdf`, `remove_document_password`, `reprocess_documents`. Runs Paperless's server-side PDF
-operations; each returns the background tasks Paperless starts (`wait_seconds` waits for them)
+Off by default: `inspect_pdf`, `rotate_documents`, `merge_documents`, `split_document`,
+`delete_pages`, `edit_pdf`, `remove_document_password`, `reprocess_documents`. `inspect_pdf` only
+reads, so read-only mode keeps it: page count, sizes, rotation and contact sheets of a PDF (limits
+under [Page images](#page-images)). The others run Paperless's server-side PDF operations;
+each returns the background tasks Paperless starts (`wait_seconds` waits for them)
 and page ranges are checked against the page count of the file that is read first. `dry_run`
 returns the plan (what is made, kept and lost) and starts nothing. Deleting originals, dropping
 pages from what a document shows, showing an older file again and reprocessing need `confirm`.
@@ -503,6 +505,14 @@ more (estimated).
 
 A progressive CMYK JPEG of more than 25 megapixels is drawn by PDFium, whose colours differ visibly
 from those of other CMYK images (8 to 23 levels of 255 measured); the text is the same.
+
+`inspect_pdf` (toolset `pdf`) reads PDFs and archive PDFs within the same limits and the same turn.
+Its images are contact sheets of 12 numbered pages, at most 5 a call; a sheet that does not fit into
+its share of the 720 KiB has a lower quality, and the report says so. After 20 seconds it stops and
+names the pages that are left; a single page that takes longer than the 30 seconds ends the call
+with an error that names it. The layout is of all pages asked for,
+at most 100 runs of equal pages a call. Sizes are in
+millimetres as PDFium shows the page, without a `UserUnit` of the file.
 
 A page that does not fit alone is shown at a lower quality or smaller, and the report says so. Every
 call downloads the file again. Text whose font is not embedded can look different where the system
