@@ -71,6 +71,7 @@ class _Task(BaseModel):
     date_started: AwareDatetime | None = None
     date_done: AwareDatetime | None = None
     owner: int | None = None
+    trigger_source: str = ""
     input_data: JsonValue = None
 
     @property
@@ -88,6 +89,15 @@ class _Task(BaseModel):
         """What a queued task does, as far as it says."""
         named = self.input_data.get("operation") if isinstance(self.input_data, dict) else None
         return named if isinstance(named, str) else None
+
+    @property
+    def own_work(self) -> bool:
+        """Whether Paperless queued it for itself after a metadata change (3.5.1).
+
+        ``bulk_update_documents`` shares its type with the operations of users, but has no owner
+        and no input, and hands over no new document (a workflow may unlock a file as a version).
+        """
+        return self.owner is None and self.input_data == {} and self.trigger_source == "system"
 
     @property
     def leaves_number(self) -> bool:
@@ -689,7 +699,8 @@ def _doubtful(files: CopiedFiles, doubt: str) -> FoundCopies:
 def _copying(rows: Sequence[_Task], queued: str, user: int) -> Iterator[_Task]:
     """The other operations of this user that hand over files a copy could be taken for."""
     for row in rows:
-        if row.task_id != queued and row.owner in {None, user} and row.operation in COPYING:
+        theirs = row.owner in {None, user} and not row.own_work
+        if row.task_id != queued and theirs and row.operation in COPYING:
             yield row
 
 

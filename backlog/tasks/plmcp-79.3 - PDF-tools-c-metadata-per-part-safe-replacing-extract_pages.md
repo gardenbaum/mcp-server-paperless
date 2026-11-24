@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:16Z'
-updated_date: '2026-11-24T13:38:40Z'
+updated_date: '2026-11-24T13:42:32Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -80,4 +80,6 @@ Review of 9a3985b (0 Critical, 3 Important, 9 Minor), owner 2026-11-24 "Bitte wi
 The outer guard (_guarded) now covers merge_documents and rotate_documents too, as the same helper as _run; red first (4 tests). remove_document_password, delete_pages, edit_pdf, split and extract go through _run. reprocess_documents has no such hole: after its start it only follows tasks (follow catches everything) and copies nothing. This replaces the earlier note that merge has no guard.
 
 Delta review of b1f34da fixed, tests red first (N1 to N8): N1 the 5 second bound of unlocking is removed (it shortened an owner-ruled result), N2 a stopped call names every original, what is already in the trash and the task of the removal, N3 a part that cannot be checked does not stop the others, N4 lookups that break after the POST are problem failed, N5 and N6 the message of a stopped call, N7 test_pdf_next validates the arguments against the schemas and covers the guard (not red first; nor the last look of the search), N8 the condition covers both calls. test_pdf_next sets the switches of the fake directly: the setattr was banned by hygiene.
+
+Live failure of 9a3985b (full E2E 45402232899, shard 1/4): a new user's first request was in doubt (PENDING). Cause: Paperless queues bulk_update_documents after metadata changes with the type bulk_update, no owner, empty input, trigger source system (source of 3.5.1: signals/handlers.py, bulk_edit.py, tasks.py, serialisers.py, views.py, workflows/actions.py: its only file work is unlocking as a version). Every user who may view tasks sees these rows, and the adapter counted them as operations of the user, so anybody's metadata change in the last hour left everyone in doubt. Only rows with exactly this shape are left out now; a row with an owner, an input or another trigger still counts. Red first: 3 adapter tests; the 4 near misses stay a doubt. The contract test makes such a row itself. The third failure was a wrong fixture password in the test.
 <!-- SECTION:NOTES:END -->

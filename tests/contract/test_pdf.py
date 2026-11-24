@@ -18,6 +18,7 @@ import pytest
 from e2e.helpers import pdf_pages
 from PIL import Image
 
+from mcp_server_paperless.domain.bulk import TagsChange
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch, DocumentQuery
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, PageSlot, StartedTasks
@@ -620,6 +621,10 @@ async def test_parts_whose_tasks_a_date_hides_are_found_by_their_file_names(
     document, other = backend.new_pdf(3), backend.new_pdf(1)
     value = await dated(backend, document)
     _ = await dated(backend, other)
+    # Somebody's metadata change: Paperless queues an update without owner for it.
+    tags = {tag.name: tag.id for tag in await backend.admin.taxonomy.list_taxonomy("tag")}
+    change = TagsChange(add=(tags["e2e-finance"],))
+    _ = await backend.admin.bulk_writes.bulk_edit_documents((other,), change)
     user = backend.restricted(FINDING)
     slots = (PageSlot(page=1), PageSlot(page=2, document=1), PageSlot(page=3, document=1))
 
@@ -691,7 +696,11 @@ async def two_made(backend: Backend, user: Ports, name: str) -> None:
 async def test_a_merged_and_an_unlocked_document_are_found_by_their_file_names(
     backend: Backend,
 ) -> None:
-    document, second, locked = backend.new_pdf(2), backend.new_pdf(1), backend.new_encrypted("s3c")
+    document, second, locked = (
+        backend.new_pdf(2),
+        backend.new_pdf(1),
+        backend.new_encrypted("s3cret"),
+    )
     for number in (document, second, locked):
         _ = await dated(backend, number)
     merging, unlocking = backend.restricted(FINDING), backend.restricted(FINDING)
@@ -699,7 +708,7 @@ async def test_a_merged_and_an_unlocked_document_are_found_by_their_file_names(
     merged = await merging.pdf_writes.merge_documents(
         (document, second), metadata_document_id=document
     )
-    unlocked = await unlocking.pdf_writes.remove_password(locked, "s3c", output="new_document")
+    unlocked = await unlocking.pdf_writes.remove_password(locked, "s3cret", output="new_document")
 
     [together] = (await copies(backend, merging, merged.files)).ids
     [opened] = (await copies(backend, unlocking, unlocked.files)).ids

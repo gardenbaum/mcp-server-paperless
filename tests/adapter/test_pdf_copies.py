@@ -234,6 +234,38 @@ async def test_an_earlier_operation_that_made_other_files_is_no_doubt(
     assert (await find(make_client, archive)).doubt == PENDING
 
 
+# What Paperless queues for itself after metadata changes (documents.tasks.bulk_update_documents).
+SYSTEM: Json = {"owner": None, "input_data": {}, "trigger_source": "system"}
+
+
+@pytest.mark.parametrize("fields", [{}, {"date_done": None}, {"date_done": LATER}])
+async def test_what_paperless_queues_for_itself_hands_over_no_document(
+    make_client: ClientFactory, fields: Json
+) -> None:
+    archive = Archive(made(61, NAMES[0]), made(62, NAMES[1]))
+    archive.bulk = [QUEUED, other(**SYSTEM, **fields)]
+
+    assert await find(make_client, archive) == FoundCopies(ids=(61, 62))
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"owner": 2},
+        {"trigger_source": "web_ui"},
+        {"input_data": {"operation": "edit_pdf"}},
+        {"input_data": {"document_count": 1}},
+    ],
+)
+async def test_a_row_that_is_only_almost_of_paperless_itself_stays_a_doubt(
+    make_client: ClientFactory, fields: Json
+) -> None:
+    archive = Archive(made(61, NAMES[0]), made(62, NAMES[1]))
+    archive.bulk = [QUEUED, other(**{**SYSTEM, **fields})]
+
+    assert (await find(make_client, archive)).doubt == PENDING
+
+
 async def test_an_earlier_new_version_is_known_by_its_task(make_client: ClientFactory) -> None:
     archive = Archive(made(61, NAMES[0]), made(62, NAMES[1]))
     archive.bulk = [QUEUED, other()]

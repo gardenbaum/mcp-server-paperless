@@ -459,7 +459,7 @@ async def test_parts_of_a_document_with_a_date_field_are_found_by_their_file_nam
         result = cast("Json", answer.structured_content)
 
         made = scope.made(result)
-        assert (result["state"], result["original"]) == ("success", "trashed"), result
+        assert (result["state"], result["original"]) == ("success", "trashed"), result["message"]
         assert live_in_trash(stack, source)
         assert [t["task_id"] for t in cast("list[Json]", result["tasks"])] == [None, None]
         assert [document(stack, n)["title"] for n in made] == ["plmcp79 letter", "plmcp79 second"]
