@@ -245,6 +245,15 @@ async def test_rules_for_what_exists_name_nothing() -> None:
     assert (found.excluded_unknown, found.notices) == ((), ())
 
 
+async def test_a_tag_deleted_after_it_was_listed_is_gone() -> None:
+    setup = Setup()
+    setup.view(FilterRule(rule_type=17, value="3"))
+    assert (await setup.select(saved_view="mine")).excluded_unknown == ()
+    setup.state.tags = [tag for tag in setup.state.tags if tag.id != 3]
+
+    assert (await setup.select(saved_view="mine")).excluded_unknown == ("tag 3",)
+
+
 async def test_what_the_user_may_not_list_cannot_be_checked_and_is_named() -> None:
     setup = Setup(READER[0])
     reader = setup.fake.user

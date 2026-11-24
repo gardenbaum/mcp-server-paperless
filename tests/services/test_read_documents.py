@@ -602,3 +602,16 @@ async def test_notes_nobody_could_check_are_refused() -> None:
     )
     assert raised.value.hint == "Choose the documents again, or leave notes out of fields."
     assert setup.fake.rows == []
+
+
+async def test_many_notices_together_are_bounded() -> None:
+    setup = Setup()
+    for number in range(10, 70):
+        setup.add(number)
+        setup.fake.errors[number] = PaperlessMcpError(f"{number} {'e' * 200}")
+
+    found = await setup.read(("content",), filters={"title_contains": "scratch"}, page_size=100)
+
+    assert sum(map(len, found.notices)) <= 5000
+    assert len(found.notices) > 15
+    assert len(found.failed) == 60
