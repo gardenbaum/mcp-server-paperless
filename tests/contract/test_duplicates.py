@@ -17,10 +17,12 @@ from contract.test_document_versions import add_version
 from contract.test_trash import find
 from mcp_server_paperless.domain.documents import DocumentPatch, DocumentQuery, DocumentUpload
 from mcp_server_paperless.domain.errors import AnswerTooLarge, NotFound, PermissionDenied
+from mcp_server_paperless.services.duplicates import Bounds, DuplicateFinder
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
     from mcp_server_paperless.domain.versions import VersionRow
+    from mcp_server_paperless.services.duplicates import Before
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-47")]
 
@@ -29,6 +31,7 @@ ROOT = "DocumentReader.get_root"
 DUPLICATES = "DocumentReader.get_duplicates"
 ROWS = "DocumentReader.list_versions"
 MISSING = 999_999
+WEB = "https://paperless.example"
 MIB = 1024 * 1024
 SEEDED = 1
 
@@ -322,3 +325,26 @@ async def test_the_trash_is_read_at_once_within_a_byte_limit(backend: Backend) -
         _ = await ports.trash.read_trash(entries=100_000, max_bytes=10)
     with pytest.raises(PermissionDenied):
         _ = await backend.blind.trash.read_trash(entries=1, max_bytes=MIB)
+
+
+@pytest.mark.contract("TrashReader.read_trash")
+@pytest.mark.decision("decision-52")
+async def test_a_trash_over_the_byte_limit_is_a_gap_and_the_rest_is_checked(
+    backend: Backend,
+) -> None:
+    content = unique()
+    trashed, kept = [await uploaded(backend, content) for _ in range(2)]
+    await backend.admin.document_writes.delete_document(trashed)
+    ports = backend.admin
+
+    async def check(bounds: Bounds) -> Before:
+        finder = DuplicateFinder(ports.documents, ports.trash, web_url=WEB, bounds=bounds)
+        return await finder.cleared(content, "upload", confirm=True)
+
+    unread = await check(Bounds(trash_bytes=10))
+    read = await check(Bounds())
+
+    assert [(m.document_id, m.in_trash) for m in unread.matches] == [(kept, False)]
+    assert [g for g in unread.not_checked if g.startswith("Trash: neither")]
+    assert (trashed, True) in {(m.document_id, m.in_trash) for m in read.matches}
+    assert not [g for g in read.not_checked if g.startswith("Trash: neither")]

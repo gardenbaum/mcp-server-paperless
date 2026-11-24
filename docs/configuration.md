@@ -334,10 +334,10 @@ documents, and 500 trash entries. A file that is there already is sent only afte
 and documents the Paperless user cannot see are not compared; the result lists every gap, and after
 consumption it, and `get_task`, report the duplicates Paperless found or the document it rejected the
 file for. If the check cannot run, because Paperless does not answer, because documents come and go while it
-reads, because it takes longer than 25 seconds, or because the trash
-entries with the text of their documents are larger than 64 MiB, nothing is uploaded; no setting and
-no `confirm` skips the check. The rules
-are decision-47 (`backlog/decisions/`).
+reads, or because it takes longer than 25 seconds, nothing is uploaded; no setting and
+no `confirm` skips the check. The one exception is a trash whose entries with the text of their
+documents are larger than 64 MiB: it is not checked, the rest is, and the result and the confirmation
+say so. The rules are decision-47 and decision-52 (`backlog/decisions/`).
 
 **Uploads by path.** With `PAPERLESS_MCP_UPLOAD_DIRS` set, the two tools also take a `path` on
 the machine the server runs on, which is what you want with Claude Code or Claude Desktop: the

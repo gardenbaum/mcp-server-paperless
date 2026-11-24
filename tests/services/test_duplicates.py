@@ -25,6 +25,7 @@ from mcp_server_paperless.services.duplicates import (
     ALTERED,
     CAPPED,
     HIDDEN,
+    MIB,
     NO_SKIP,
     OWN_TRASH,
     UNCOMPARED,
@@ -645,18 +646,169 @@ async def test_a_trash_with_fewer_rows_than_its_count_is_a_failed_check() -> Non
         _ = await found_by(setup)
 
 
-async def test_a_trash_over_the_byte_limit_is_a_failed_check_with_its_cause() -> None:
-    setup = Setup(bounds=Bounds(trash_bytes=2 * 1024 * 1024))
-    _ = setup.document(12, content="x" * (2 * 1024 * 1024 + 1))
+# --- a trash over the byte limit (decision-52) ----------------------------------------------------
+
+
+UNREAD = (
+    "Trash: neither its documents nor its deleted versions were checked, because it is larger than "
+    "2 MiB with the text of its documents."
+)
+LIMIT = 2 * MIB
+
+
+def large() -> Setup:
+    """A trash of two entries that are too large together, the file and a deleted version in it."""
+    setup = moving()
+    setup.finder = DuplicateFinder(
+        setup.fake, setup.fake, web_url=WEB, bounds=replace(SMALL, trash_bytes=LIMIT)
+    )
+    for number in (12, 13):
+        _ = setup.document(number, content="x" * (LIMIT // 2 + 1))
+    return setup
+
+
+@pytest.mark.decision("decision-52")
+async def test_a_trash_over_the_byte_limit_is_a_gap_and_the_rest_is_checked() -> None:
+    setup = large()
+    version = await setup.version(10)
     await setup.delete(12)
+    await setup.delete(13)
+    deleted = await setup.version(11)
+    await setup.delete(11, deleted)
 
-    with pytest.raises(PaperlessMcpError) as raised:
-        _ = await setup.finder.cleared(FILE, "upload", confirm=True)
+    found = await setup.finder.cleared(FILE, "upload", confirm=True)
 
-    assert "the trash of this user is larger than 2 MiB" in raised.value.message
-    assert "the file was not uploaded" in raised.value.message
-    assert "Neither confirm=true nor a setting skips the check" in (raised.value.hint or "")
-    assert setup.fake.trash_reads == [500]
+    assert keys(found.matches) == [(10, version, False)]
+    assert found.not_checked == (UNCOMPARED, ALTERED, UNREAD, OWN_TRASH, HIDDEN)
+    assert found.checked(None).not_checked == found.not_checked
+    assert setup.fake.trash_reads == [500, 1, 1]
+    assert "get_version_checksum" not in setup.fake.calls
+
+
+@pytest.mark.decision("decision-52")
+async def test_a_trash_over_the_byte_limit_asks_nothing_without_a_match() -> None:
+    setup = large()
+    await setup.delete(12)
+    await setup.delete(13)
+
+    found = await setup.finder.cleared(FILE, "upload", confirm=False)
+
+    assert (found.matches, found.count) == ((), 0)
+    assert UNREAD in found.not_checked
+
+
+@pytest.mark.decision("decision-52")
+async def test_a_trash_of_exactly_the_byte_limit_is_checked() -> None:
+    setup = large()
+    for document in setup.state.documents[-2:]:
+        document.content = "x" * (LIMIT // 2)
+    await setup.delete(12)
+    await setup.delete(13)
+
+    found = await setup.finder.cleared(FILE, "upload", confirm=True)
+
+    assert {m.document_id for m in found.matches} == {12, 13}
+    assert UNREAD not in found.not_checked
+
+
+@pytest.mark.decision("decision-52")
+async def test_the_confirmation_says_that_the_trash_was_not_checked() -> None:
+    setup = large()
+    _ = setup.document(14)
+    await setup.delete(12)
+    await setup.delete(13)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.finder.cleared(FILE, "upload 'x'", confirm=False)
+
+    assert raised.value.message == (
+        "Nothing was changed. Confirming would upload 'x' although the same file is already in "
+        f"Paperless: document 14 'Document 14'. {UNREAD} Paperless may reject it, if it is "
+        "configured to."
+    )
+    setup.state.trash.clear()
+    with pytest.raises(ConfirmationRequired) as checked:
+        _ = await setup.finder.cleared(FILE, "upload 'x'", confirm=False)
+    assert checked.value.fingerprint != raised.value.fingerprint
+
+
+@pytest.mark.decision("decision-52")
+async def test_a_trash_over_the_byte_limit_that_changes_is_still_noticed() -> None:
+    setup = large()
+    _ = setup.document(14, original=b"other")
+    await setup.delete(12)
+    await setup.delete(13)
+    setup.fake.changes["list_versions 1"] = [removed(setup, 14)]
+
+    _ = await found_by(setup)
+
+    assert setup.fake.trash_reads == [500, 1, 1, 500, 1, 1]
+
+    _ = [setup.document(number, original=b"x%d" % number) for number in (15, 16)]
+    setup.fake.changes["read_trash"] = [
+        lambda: None,
+        lambda: None,
+        removed(setup, 15),  # right before the count at the end
+        lambda: None,
+        lambda: None,
+        removed(setup, 16),
+    ]
+    with pytest.raises(CheckMovedError, match="the number of entries in the trash changed"):
+        _ = await found_by(setup)
+
+
+@pytest.mark.decision("decision-52")
+async def test_one_entry_over_the_byte_limit_leaves_no_count() -> None:
+    setup = large()
+    _ = setup.document(14, content="x" * (LIMIT + 1))
+    await setup.delete(14)
+
+    found = await setup.finder.cleared(FILE, "upload", confirm=True)
+
+    assert UNREAD in found.not_checked
+    assert setup.fake.trash_reads == [500, 1]
+
+
+@pytest.mark.decision("decision-52")
+async def test_an_entry_over_the_byte_limit_that_comes_meanwhile_is_a_change() -> None:
+    setup = large()
+    _ = setup.document(14, content="x" * (LIMIT + 1))
+    setup.fake.changes["list_versions 1"] = [removed(setup, 14)]
+
+    found = await setup.finder.cleared(FILE, "upload", confirm=True)
+
+    assert UNREAD in found.not_checked
+    assert setup.fake.trash_reads == [500, 1, 500, 1]
+
+
+@pytest.mark.decision("decision-52")
+@pytest.mark.parametrize("entries", [500, 1])
+@pytest.mark.parametrize(
+    "error", [DOWN, UpstreamUnavailable("HTTP 500", status=500), AnswerCompressed("x", hint="y")]
+)
+async def test_every_other_failure_of_the_trash_still_refuses(
+    entries: int, error: Exception
+) -> None:
+    failing = entries
+
+    class Broken(Failing):
+        @override
+        async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
+            if entries == failing:
+                raise error
+            return await super().read_trash(entries=entries, max_bytes=max_bytes)
+
+    setup = large()
+    await setup.delete(12)
+    await setup.delete(13)
+    broken = Broken(setup.state)
+    finder = DuplicateFinder(broken, broken, web_url=WEB, bounds=Bounds(trash_bytes=LIMIT))
+
+    with pytest.raises(type(error)):
+        _ = await finder.cleared(FILE, "upload", confirm=True)
+
+
+# --- what moved, continued -----------------------------------------------------------------------
 
 
 async def test_a_deleted_version_that_vanished_is_read_again() -> None:
