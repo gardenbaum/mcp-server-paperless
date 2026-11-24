@@ -21,7 +21,7 @@ import observation
 import pytest
 from e2e.helpers import pdf
 from fakes.admin import BOOLEANS, CHOICES, MINIMUMS
-from fakes.mail import FakeMailAccount, FakeMailRule
+from fakes.mail import FakeMailAccount, FakeMailRule, FakeProcessedMail
 from fakes.paperless import FakeDocument, FakePaperless, FakeSavedView, FakeState, FakeTask, seeded
 from fastmcp import Client
 from harness import serve
@@ -340,6 +340,11 @@ def with_other_mail(state: FakeState) -> None:
         "filename",
         "name",
     )
+
+
+def with_processed_mail(state: FakeState) -> None:
+    with_mail(state)
+    state.processed_mail.append(FakeProcessedMail(id=1, rule=1, subject="Invoice", owner=2))
 
 
 async def test_documents_are_searched_changed_and_uploaded_with_every_argument() -> None:
@@ -738,7 +743,10 @@ async def test_mail_takes_every_argument() -> None:
     await sweep("update_mail_rule", {"rule_id": 1, "name": "Z"}, ("clear",), prepare=with_mail)
     await sweep("test_mail_account", {"account_id": 1}, (), prepare=with_mail)
     await sweep("process_mail_account", {"account_id": 1}, (), prepare=with_mail)
-    await sweep("list_processed_mail", {}, ())
+    await sweep("list_processed_mail", {}, ("ordering",))
+    await sweep(
+        "get_processed_mail", {"mail_id": 1, "error_from": 0}, (), prepare=with_processed_mail
+    )
     assert not FAILED, "\n".join(FAILED)
 
 
@@ -1519,7 +1527,7 @@ async def test_the_remaining_tools_have_a_scenario_with_all_their_arguments() ->
     await sweep(
         "list_processed_mail",
         {"rule_id": 1, "page": 1, "page_size": 10},
-        ("status",),
+        ("status", "ordering"),
         prepare=with_mail,
     )
     await sweep("ask_paperless_ai", {"question": "q", "document_id": 1}, ())

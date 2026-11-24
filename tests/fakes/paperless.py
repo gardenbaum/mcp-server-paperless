@@ -221,7 +221,9 @@ if TYPE_CHECKING:
         MailAccountValues,
         MailRule,
         MailRuleValues,
+        ProcessedMail,
         ProcessedMailPage,
+        ProcessedOrdering,
         ProcessedStatus,
     )
     from mcp_server_paperless.domain.pdf import FileOutput, PageSlot
@@ -3448,7 +3450,13 @@ class FakePaperless:
         return mail.get_rule(self._mail(), self._mail_viewer(), rule_id)
 
     async def list_processed_mail(
-        self, *, rule_id: int | None, status: ProcessedStatus | None, page: int, page_size: int
+        self,
+        *,
+        rule_id: int | None,
+        status: ProcessedStatus | None,
+        ordering: ProcessedOrdering,
+        page: int,
+        page_size: int,
     ) -> ProcessedMailPage:
         """`MailReader.list_processed_mail`."""
         return mail.list_processed(
@@ -3456,9 +3464,14 @@ class FakePaperless:
             self._mail_viewer(),
             rule_id=rule_id,
             status=status,
+            ordering=ordering,
             page=page,
             page_size=page_size,
         )
+
+    async def get_processed_mail(self, mail_id: int) -> ProcessedMail:
+        """`MailReader.get_processed_mail`."""
+        return mail.get_processed(self._mail(), self._mail_viewer(), mail_id)
 
     @write
     async def create_mail_account(self, values: MailAccountValues) -> MailAccount:

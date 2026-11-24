@@ -62,7 +62,9 @@ if TYPE_CHECKING:
         MailAccountValues,
         MailRule,
         MailRuleValues,
+        ProcessedMail,
         ProcessedMailPage,
+        ProcessedOrdering,
         ProcessedStatus,
     )
     from mcp_server_paperless.domain.pdf import (
@@ -1199,12 +1201,27 @@ class MailReader(Protocol):
         ...
 
     async def list_processed_mail(
-        self, *, rule_id: int | None, status: ProcessedStatus | None, page: int, page_size: int
+        self,
+        *,
+        rule_id: int | None,
+        status: ProcessedStatus | None,
+        ordering: ProcessedOrdering,
+        page: int,
+        page_size: int,
     ) -> ProcessedMailPage:
-        """One page of the processed mail the user may see, newest processed first.
+        """One page of the processed mail the user may see.
 
         Raises:
             NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the global ``view_processedmail`` permission.
+        """
+        ...
+
+    async def get_processed_mail(self, mail_id: int) -> ProcessedMail:
+        """One mail Paperless handled.
+
+        Raises:
+            NotFound: No such record, or the user may not see it.
             PermissionDenied: The user lacks the global ``view_processedmail`` permission.
         """
         ...
@@ -1227,7 +1244,8 @@ class MailWriter(Protocol):
 
         Raises:
             NotFound: No such account, or the user may not see it.
-            Validation: A rejected value.
+            Validation: A rejected value, or a password for an account that signs in with an OAuth
+                access token (read right before the change; nothing is sent).
             PermissionDenied: The user may not change this account.
         """
         ...

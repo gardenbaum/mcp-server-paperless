@@ -303,6 +303,44 @@ async def test_processed_mail_of_a_rule_that_never_ran_is_empty(client: Connecte
     listed = await call(client, "list_processed_mail", rule_id=rule["id"], status="FAILED")
 
     assert (listed["count"], listed["next_page"], listed["mails"]) == (0, None, [])
+    nothing = await call(
+        client,
+        "list_processed_mail",
+        rule_id=rule["id"],
+        status="PROCESSED_WO_CONSUMPTION",
+        ordering="received",
+    )
+    assert nothing["count"] == 0
+    assert "No processed mail" in await error(client, "get_processed_mail", mail_id=999_999)
+
+
+@pytest.mark.decision("decision-79")
+async def test_a_token_account_keeps_its_token_and_takes_other_settings(
+    client: Connected, stack: Stack
+) -> None:
+    body = {
+        "name": f"{PREFIX}oauth",
+        "imap_server": REFUSING,
+        "imap_port": 1,
+        "username": "unset",
+        "password": PASSWORD,
+        "account_type": 3,
+        "is_token": True,
+        "expiration": "2026-01-02T03:04:05Z",
+    }
+    made = stack.admin.post("/api/mail_accounts/", json=body).raise_for_status()
+    number = cast("Json", made.json())["id"]
+
+    read = await call(client, "get_mail_account", account_id=number)
+    refused = await error(
+        client, "update_mail_account", account_id=number, password=NEW_PASSWORD, confirm=True
+    )
+    changed = await call(client, "update_mail_account", account_id=number, username="me")
+
+    assert (read["account_type"], read["is_token"]) == ("outlook_oauth", True)
+    assert read["token_expires"] == changed["token_expires"] == "2026-01-02T03:04:05Z"
+    assert "Paperless web UI" in refused
+    assert changed["username"] == "me"
 
 
 async def test_deleting_a_rule_and_an_account_needs_confirm_and_takes_the_rules_along(

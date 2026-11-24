@@ -111,18 +111,18 @@ Limits.
 | `DELETE /api/mail_accounts/{id}/` | `delete_mail_account` |  |
 | `GET /api/mail_accounts/{id}/` | `create_mail_rule`, `delete_mail_account`, `get_mail_account`, `process_mail_account`, `test_mail_account` and 2 more |  |
 | `PATCH /api/mail_accounts/{id}/` | `update_mail_account` |  |
-| `PUT /api/mail_accounts/{id}/` |  | PLMCP-81 |
+| `PUT /api/mail_accounts/{id}/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `POST /api/mail_accounts/{id}/process/` | `process_mail_account` |  |
 | `GET /api/mail_rules/` | `delete_mail_account`, `list_mail_rules` |  |
 | `POST /api/mail_rules/` | `create_mail_rule` |  |
 | `DELETE /api/mail_rules/{id}/` | `delete_mail_rule` |  |
-| `GET /api/mail_rules/{id}/` | `delete_mail_rule`, `get_mail_rule`, `update_mail_rule` |  |
+| `GET /api/mail_rules/{id}/` | `delete_mail_rule`, `get_mail_rule`, `get_processed_mail`, `update_mail_rule` |  |
 | `PATCH /api/mail_rules/{id}/` | `update_mail_rule` |  |
-| `PUT /api/mail_rules/{id}/` |  | PLMCP-81 |
-| `GET /api/oauth/callback/` |  | PLMCP-81 |
+| `PUT /api/mail_rules/{id}/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
+| `GET /api/oauth/callback/` |  | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `GET /api/processed_mail/` | `list_processed_mail` |  |
-| `POST /api/processed_mail/bulk_delete/` |  | PLMCP-81 |
-| `GET /api/processed_mail/{id}/` |  | PLMCP-81 |
+| `POST /api/processed_mail/bulk_delete/` |  | PLMCP-81.3 |
+| `GET /api/processed_mail/{id}/` | `get_processed_mail` |  |
 | `GET /api/profile/` |  | PLMCP-83 |
 | `PATCH /api/profile/` |  | PLMCP-83 |
 | `POST /api/profile/disconnect_social_account/` |  | PLMCP-83 |
@@ -251,13 +251,13 @@ TOML file.
 | `POST /api/documents/{id}/notes/` | `body:format`, `query:id` | PLMCP-83 |
 | `GET /api/documents/{id}/thumb/` | `query:version` | PLMCP-83 |
 | `GET /api/groups/` | `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
-| `POST /api/mail_accounts/` | `body:account_type`, `body:expiration`, `body:is_token`, `body:owner`, `body:set_permissions` | PLMCP-81 |
-| `POST /api/mail_accounts/test/` | `body:account_type`, `body:character_set`, `body:expiration`, `body:imap_port`, `body:imap_security`, `body:imap_server`, `body:is_token`, `body:name`, `body:owner`, `body:password`, `body:set_permissions`, `body:username` | PLMCP-81 |
-| `PATCH /api/mail_accounts/{id}/` | `body:account_type`, `body:expiration`, `body:is_token`, `body:owner`, `body:set_permissions` | PLMCP-81 |
-| `POST /api/mail_accounts/{id}/process/` | `body:account_type`, `body:expiration`, `body:owner`, `body:set_permissions` | PLMCP-81 |
-| `POST /api/mail_rules/` | `body:set_permissions` | PLMCP-81 |
-| `PATCH /api/mail_rules/{id}/` | `body:set_permissions` | PLMCP-81 |
-| `GET /api/processed_mail/` | `query:ordering` | PLMCP-81 |
+| `POST /api/mail_accounts/` | `body:account_type`, `body:expiration`, `body:is_token`, `body:owner`, `body:set_permissions` | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
+| `POST /api/mail_accounts/test/` | `body:account_type`, `body:character_set`, `body:expiration`, `body:imap_port`, `body:imap_security`, `body:imap_server`, `body:is_token`, `body:name`, `body:owner`, `body:password`, `body:set_permissions`, `body:username` | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
+| `PATCH /api/mail_accounts/{id}/` | `body:owner`, `body:set_permissions` | PLMCP-81.5 |
+| `PATCH /api/mail_accounts/{id}/` | `body:account_type`, `body:expiration`, `body:is_token` | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
+| `POST /api/mail_accounts/{id}/process/` | `body:account_type`, `body:expiration`, `body:owner`, `body:set_permissions` | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
+| `POST /api/mail_rules/` | `body:set_permissions` | excluded, "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
+| `PATCH /api/mail_rules/{id}/` | `body:set_permissions` | PLMCP-81.5 |
 | `GET /api/saved_views/` | `query:full_perms`, `query:ordering` | PLMCP-88 |
 | `POST /api/saved_views/` | `body:display_fields`, `body:display_mode`, `body:icon`, `body:owner`, `body:set_permissions` | PLMCP-88 |
 | `PATCH /api/saved_views/{id}/` | `body:display_fields`, `body:display_mode`, `body:icon`, `body:owner`, `body:set_permissions` | PLMCP-88 |
