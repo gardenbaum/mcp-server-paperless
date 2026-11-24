@@ -77,7 +77,7 @@ if TYPE_CHECKING:
         TaxonomyValues,
         WritableKind,
     )
-    from mcp_server_paperless.domain.trash import TrashPage
+    from mcp_server_paperless.domain.trash import TrashedRecord, TrashPage
     from mcp_server_paperless.domain.versions import VersionPage, VersionUpload
     from mcp_server_paperless.domain.views import SavedView, ViewValues
     from mcp_server_paperless.domain.workflows import Workflow, WorkflowValues
@@ -671,6 +671,15 @@ class TrashReader(Protocol):
             AnswerCompressed: The answer is compressed, so its size is not known.
             AnswerTooLarge: The answer is larger than ``max_bytes``.
             PermissionDenied: The user lacks the global ``view_document`` permission.
+        """
+        ...
+
+    async def find_in_trash(
+        self, document_ids: Collection[int], *, entries: int, max_bytes: int
+    ) -> dict[int, TrashedRecord]:
+        """Those of the documents that are among the first ``entries`` entries, by id.
+
+        Versions are left out. One request, like ``read_trash``, with the same bounds and errors.
         """
         ...
 

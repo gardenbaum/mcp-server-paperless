@@ -69,6 +69,36 @@ async def test_has_tags_false_finds_the_untagged_documents() -> None:
     assert [row["title"] for row in cast("list[Json]", output["documents"])] == ["bare"]
 
 
+@pytest.mark.parametrize(("has", "title"), [(True, "copy"), (False, "bare")])
+async def test_has_duplicates_finds_the_documents_with_or_without_a_copy(
+    title: str, *, has: bool
+) -> None:
+    state = seeded()
+    state.documents = [
+        FakeDocument(id=3, title="bare"),
+        FakeDocument(id=4, title="copy", original=b"%PDF same"),
+    ]
+    state.trash.append(FakeDocument(id=5, title="copy", original=b"%PDF same"))
+
+    output = await call({"has_duplicates": has}, FakePaperless(state, user="admin"))
+
+    assert [row["title"] for row in cast("list[Json]", output["documents"])] == [title]
+
+
+async def test_the_duplicates_of_a_document_are_a_section_of_it() -> None:
+    state = seeded()
+    for number in (3, 4):
+        state.documents.append(FakeDocument(id=number, title="copy", original=b"%PDF same"))
+
+    arguments: Json = {"document_id": 3, "include": ["duplicates"]}
+    output = await get("get_document", arguments, FakePaperless(state, user="admin"))
+
+    found = cast("Json", output["duplicates"])
+    assert (found["total"], found["truncated"]) == (1, False)
+    [copy] = cast("list[Json]", found["documents"])
+    assert (copy["id"], copy["match"]) == (4, "same_file")
+
+
 async def test_unsupported_query_syntax_is_named_in_the_notices() -> None:
     output = await call({"query": "acme -zebra"})
 

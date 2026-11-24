@@ -2,6 +2,7 @@
 
 import os
 import threading
+import time
 from typing import TYPE_CHECKING, Literal, cast
 
 import pytest
@@ -133,8 +134,9 @@ async def test_bulk_is_whole_in_every_mode(tmp_path: Path) -> None:
         entries += [entry for entry in off if entry["toolset"] == "bulk"]
 
     assert entries[0]["what"] == entries[1]["what"] != "some of its tools"
-    assert entries[0]["tools"] == ["bulk_edit_documents", "bulk_edit_taxonomy"]
-    assert entries[1]["tools"] == ["bulk_edit_documents", "bulk_edit_taxonomy", TOOL]
+    shared = ["bulk_edit_documents", "bulk_edit_taxonomy", "resolve_duplicates"]
+    assert entries[0]["tools"] == shared
+    assert entries[1]["tools"] == [*shared, TOOL]
 
 
 async def test_the_default_profile_does_not_have_it(tmp_path: Path) -> None:
@@ -316,13 +318,16 @@ async def test_a_file_swapped_all_the_time_is_never_read_from_outside(tmp_path: 
             _ = new.replace(target)
             _ = new.write_bytes(b"text")
             _ = new.replace(target)
+            _ = done.wait(0.0015)  # long enough to be read whole on a slow machine
 
     thread = threading.Thread(target=swap)
     thread.start()
     seen: set[object] = set()
     try:
         async with Client(local(root)) as client:
-            for _ in range(100):
+            rounds, deadline = 0, time.monotonic() + 30
+            while rounds < 100 or (seen < {None, 4} and time.monotonic() < deadline):
+                rounds += 1
                 result = await client.call_tool(TOOL, {"directory": str(root), "dry_run": True})
                 seen |= {f["size_bytes"] for f in files(result.structured_content or {})}
     finally:

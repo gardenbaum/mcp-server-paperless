@@ -1044,7 +1044,7 @@ def test_the_derivation_sees_the_tools_nested_fields_enum_values_and_saved_views
     assert workflow.used["body:triggers[].type"] == names("create_workflow")
     assert "body:actions[].assign_tags" in workflow.used
     assert "body:method=modify_tags" in sent
-    assert searched["query:has_duplicates"] == names("run_saved_view")  # a saved view only
+    assert searched["query:has_duplicates"] == names("search_documents", "run_saved_view")
     assert searched["query:title__icontains"] >= names("search_documents")
     assert all("paperless_api_get" not in usage.tools for usage in covered.values())
 

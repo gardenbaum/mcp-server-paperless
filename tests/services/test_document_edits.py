@@ -84,7 +84,7 @@ class Setup:
         self.taxonomy: TaxonomyResolver = TaxonomyResolver(
             self.fake, StaticTokenProvider("t"), ttl=3600.0
         )
-        documents = DocumentService(self.fake, self.taxonomy, web_url=WEB)
+        documents = DocumentService(self.fake, self.fake, self.taxonomy, web_url=WEB)
         self.editor: DocumentEditor = DocumentEditor(
             self.fake, self.fake, self.fake, self.taxonomy, documents=documents
         )
@@ -724,7 +724,7 @@ def as_editor() -> Setup:
         setup.fake,
         setup.fake,
         setup.taxonomy,
-        documents=DocumentService(setup.fake, setup.taxonomy, web_url=WEB),
+        documents=DocumentService(setup.fake, setup.fake, setup.taxonomy, web_url=WEB),
     )
     return setup
 
@@ -867,7 +867,7 @@ def failing_with(error: PaperlessMcpError) -> Setup:
         setup.fake,
         setup.fake,
         setup.taxonomy,
-        documents=DocumentService(setup.fake, setup.taxonomy, web_url=WEB),
+        documents=DocumentService(setup.fake, setup.fake, setup.taxonomy, web_url=WEB),
     )
     return setup
 
@@ -959,7 +959,7 @@ async def test_a_later_creation_failing_reports_the_earlier_tags_and_keeps_class
         setup.fake,
         setup.fake,
         setup.taxonomy,
-        documents=DocumentService(setup.fake, setup.taxonomy, web_url=WEB),
+        documents=DocumentService(setup.fake, setup.fake, setup.taxonomy, web_url=WEB),
     )
 
     with pytest.raises(PermissionDenied) as raised:

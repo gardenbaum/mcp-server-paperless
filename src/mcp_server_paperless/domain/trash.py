@@ -11,6 +11,8 @@ from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from mcp_server_paperless.domain.documents import DocumentFacts
+
 
 class TrashedDocument(BaseModel):
     """An entry of the trash: a deleted document, or a version deleted from a document."""
@@ -35,6 +37,16 @@ class TrashedDocument(BaseModel):
         str | None,
         Field(description="SHA-256 of a deleted document's original upload; null for a version."),
     ] = None
+
+
+class TrashedRecord(DocumentFacts):
+    """A document in the trash as the port reads it.
+
+    Paperless does not tell its notes, custom field values and later versions: they are in the
+    trash with it. ``checksum`` is the SHA-256 of the original upload.
+    """
+
+    checksum: str | None
 
 
 class TrashPage(BaseModel):

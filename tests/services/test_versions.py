@@ -4,6 +4,7 @@ The fakes of the "unconfirmed" cases are created without `allow_writes`: the fak
 raises `WriteNotAllowedError` on any write, so a passing test proves nothing was written.
 """
 
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, final, override
 
 import pytest
@@ -271,6 +272,42 @@ async def test_merging_one_document_without_a_label_says_so_in_the_singular() ->
         "for good, not even into the trash. Its title, tags, correspondents, notes and other "
         "metadata are lost; only its file stays, as a version of document 1, which then shows "
         f"the file and text of document {other}."
+    )
+
+
+@pytest.mark.parametrize(
+    ("root", "expected"),
+    [
+        (
+            None,
+            (
+                ". Besides, document 1 takes the archive serial number 7 of document {one}, "
+                "archive serial number 0 of document {two} is released."
+            ),
+        ),
+        (
+            5,
+            (
+                ". Besides, archive serial number 7 of document {one} is released, "
+                "archive serial number 0 of document {two} is released."
+            ),
+        ),
+    ],
+)
+async def test_merging_says_what_becomes_of_the_archive_serial_numbers(
+    root: int | None, expected: str
+) -> None:
+    setup = Setup(writes=False)
+    none, one, two = setup.document(), setup.document(), setup.document()
+    setup.state.documents[0].archive_serial_number = root
+    for number, asn in ((one, 7), (two, 0)):
+        next(d for d in setup.state.documents if d.id == number).archive_serial_number = asn
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.merge(PUBLIC, [none, one, two], None)
+
+    assert raised.value.message.endswith(
+        f"the file and text of document {two}" + expected.format(one=one, two=two)
     )
 
 
@@ -593,3 +630,25 @@ async def test_a_merge_whose_queued_task_cannot_be_followed_is_not_reported_as_m
         "be read. Read it with get_task, then list the versions with list_document_versions, "
         "before repeating the call."
     )
+
+
+@pytest.mark.decision("decision-51")
+@pytest.mark.parametrize("changed", [0, 1])
+@pytest.mark.parametrize("field", ["modified", "correspondent", "created"])
+async def test_an_accepted_merge_does_not_cover_changed_metadata(changed: int, field: str) -> None:
+    setup = Setup(writes=False)
+    other = setup.document()
+    document = setup.state.documents[0 if changed == 0 else -1]
+    values = {
+        "modified": datetime(2027, 1, 1, tzinfo=UTC),
+        "correspondent": 99,
+        "created": date(2020, 1, 1),
+    }
+    with pytest.raises(ConfirmationRequired) as first:
+        _ = await setup.service.merge(PUBLIC, [other], None)
+    vars(document)[field] = values[field]
+    with pytest.raises(ConfirmationRequired) as second:
+        _ = await setup.service.merge(PUBLIC, [other], None)
+
+    assert second.value.message == first.value.message
+    assert second.value.fingerprint != first.value.fingerprint

@@ -30,7 +30,7 @@ decision-47 fails the duplicate check, and so refuses every upload, when the tra
 - With a trash that large, a file that is only in the trash is uploaded without a question; a document that moves between the trash and the rest during the check is noticed by the count only. What Paperless reports after consumption for a document includes the trash.
 - Up to 64 MiB are still transferred before the limit is hit, twice if the trash changes. An instance that needs more than the 25 seconds for it still refuses.
 - One more request in this case. `upload_documents` counts once per file, and a count reads one entry of up to 64 MiB; the 25 seconds of each check and the limit of the call bound it.
-- With several entries of one deletion date, one of them larger than 64 MiB on its own, PostgreSQL may show another one at each count; that reads as a change and can refuse. The same holds for a trash within the limit: above 500 entries with equal dates, the request for one entry may show a row over 64 MiB that is not among the 500, and the check refuses as changed.
+- With several entries with equal created dates, one of them larger than 64 MiB on its own, PostgreSQL may show another one at each count; that reads as a change and can refuse. The same holds for a trash within the limit: above 500 entries with equal dates, the request for one entry may show a row over 64 MiB that is not among the 500, and the check refuses as changed.
 - The trash of a user lists documents without an owner too. Any user who may delete such documents can make it too large and so switch the check of the trash off for others. Every result names the gap.
 <!-- SECTION:CONSEQUENCES:END -->
 

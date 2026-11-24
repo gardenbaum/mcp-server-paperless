@@ -8,6 +8,7 @@ from fastmcp import Client
 from harness import admin, serve
 
 from mcp_server_paperless.domain.bulk import MAX_DOCUMENTS
+from mcp_server_paperless.domain.duplicate_resolution import MAX_DUPLICATES
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -22,7 +23,7 @@ CONFIRM_DESCRIPTION = (
     "error says what would happen. Describe that to the user and pass true only once they "
     "agree, or if they already asked for exactly this."
 )
-TOOLS = ("bulk_edit_documents", "bulk_edit_taxonomy")
+TOOLS = ("bulk_edit_documents", "bulk_edit_taxonomy", "resolve_duplicates")
 INBOX = {"op": "add_tags", "tags": ["e2e-inbox"]}
 
 
@@ -280,3 +281,77 @@ async def test_a_taxonomy_selection_over_the_limit_is_rejected() -> None:
     )
 
     assert "items" in text
+
+
+# --- resolve_duplicates -------------------------------------------------------------------------
+
+
+def copies() -> FakeState:
+    state = seeded()
+    state.documents += [
+        FakeDocument(id=n, title=f"Copy {n}", owner=2, original=b"%PDF same") for n in (10, 11, 12)
+    ]
+    return state
+
+
+@pytest.mark.decision("decision-51")
+async def test_resolve_duplicates_is_typed_bounded_and_destructive() -> None:
+    async with Client(serve(admin(), toolsets=["bulk"])) as client:
+        [tool] = [t for t in await client.list_tools() if t.name == "resolve_duplicates"]
+
+    properties = cast("dict[str, Json]", tool.input_schema["properties"])
+    assert tool.input_schema["required"] == ["keep_document_id", "duplicate_ids", "action"]
+    assert (properties["duplicate_ids"]["minItems"], properties["duplicate_ids"]["maxItems"]) == (
+        1,
+        MAX_DUPLICATES,
+    )
+    assert properties["action"]["enum"] == ["trash", "merge_as_versions"]
+    assert properties["confirm"]["description"] == CONFIRM_DESCRIPTION
+    hints = tool.annotations
+    assert hints is not None
+    assert (hints.read_only_hint, hints.destructive_hint, hints.idempotent_hint) == (
+        False,
+        True,
+        False,
+    )
+    description = " ".join((tool.description or "").split())
+    assert "for good" in description
+    assert "can be restored" in description
+
+
+@pytest.mark.decision("decision-51")
+@pytest.mark.parametrize("action", ["trash", "merge_as_versions"])
+async def test_duplicates_are_previewed_refused_without_confirm_and_resolved(action: str) -> None:
+    arguments = {"keep_document_id": 10, "duplicate_ids": [11], "action": action}
+    state = copies()
+    quiet = FakePaperless(state, user="admin")
+
+    preview = await call(quiet, "resolve_duplicates", **arguments, dry_run=True)
+    text = await refusal(quiet, "resolve_duplicates", **arguments)
+    writer = FakePaperless(state, user="admin", allow_writes=True)
+    done = await call(writer, "resolve_duplicates", **arguments, confirm=True)
+
+    assert (preview["dry_run"], preview["applied"]) == (True, False)
+    assert "Nothing was changed. Confirming would " in text
+    assert "document 11 'Copy 11'" in text
+    assert done["resolved"] == [{"id": 11, "title": "Copy 11"}]
+    assert [o["document_id"] for o in cast("list[Json]", done["other_duplicates"])] == [12]
+    assert 11 not in {d.id for d in state.documents}
+    assert (11 in {d.id for d in state.trash}) is (action == "trash")
+
+
+@pytest.mark.decision("decision-51")
+async def test_a_document_that_is_no_duplicate_is_an_error_that_names_it() -> None:
+    quiet = FakePaperless(copies(), user="admin")
+
+    text = await refusal(
+        quiet,
+        "resolve_duplicates",
+        keep_document_id=10,
+        duplicate_ids=[11, 1, 999],
+        action="trash",
+        confirm=True,
+    )
+
+    assert "document 1: Paperless does not take it for a duplicate of document 10" in text
+    assert "document 999: it does not exist outside the trash" in text
