@@ -2,6 +2,7 @@
 
 import os
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -14,7 +15,6 @@ from e2e.uploading import Json, Scope, matches, output, sha256, text, unique
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
 
     from fastmcp.client.client import CallToolResult
 
@@ -70,7 +70,7 @@ def files(batch: Json) -> list[Json]:
 
 
 def statuses(batch: Json) -> dict[str, object]:
-    return {os.path.basename(str(f["path"])): f["status"] for f in files(batch)}  # noqa: PTH119
+    return {Path(str(f["path"])).name: f["status"] for f in files(batch)}
 
 
 async def test_a_folder_with_every_kind_of_entry(

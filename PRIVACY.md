@@ -26,7 +26,8 @@ services, listed [below](#where-your-data-goes).
   the token's user. `PAPERLESS_MCP_READ_ONLY=true` removes the tools that change anything.
 - **Files on the machine.** The server reads your files only over stdio, and only from the
   directories you list in `PAPERLESS_MCP_UPLOAD_DIRS` (default: none), when the model uploads one
-  of them. It writes files only over stdio, and only into the directories you list in
+  of them. With the toolset `bulk` the model can also list these directories, so it sees the file
+  names in them (names that start with a dot are only counted). It writes files only over stdio, and only into the directories you list in
   `PAPERLESS_MCP_DOWNLOAD_DIRS` (default: none; never with `PAPERLESS_MCP_READ_ONLY=true`), when the
   model saves a download there.
 

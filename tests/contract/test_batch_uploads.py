@@ -6,6 +6,7 @@ tasks of both answer alike while one call uses them for many files.
 
 import os
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -22,8 +23,6 @@ from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.uploads import UploadService
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from contract.conftest import Backend, Ports
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-50")]
@@ -105,7 +104,7 @@ async def test_mixed_outcomes_of_one_call(backend: Backend, tmp_path: Path) -> N
     for file, content in zip(sent, (contents["a-new.txt"], contents["i-new.txt"]), strict=True):
         assert file.document_id is not None
         stored = await backend.admin.documents.get_document(file.document_id)
-        assert stored.original_file_name == os.path.basename(file.path)  # noqa: PTH119
+        assert stored.original_file_name == Path(file.path).name
         assert len(content) == file.size_bytes
     assert any("dot: 1" in note for note in batch.notes)
 
