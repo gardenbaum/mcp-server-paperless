@@ -418,18 +418,23 @@ async def test_the_last_lines_of_a_log_are_returned_oldest_first() -> None:
 async def test_log_lines_hold_no_credentials_of_the_urls_paperless_called() -> None:
     setup = Setup()
     setup.state.logs["paperless"] = [
-        "[paperless.webhooks] Webhook sent to https://user:p w@h.example/x",
+        "Webhook sent to https://user:p w@h.example/x",
         "Error for url 'https://user:pw@h.example/x'",
-        "https://h.example: mail from a@b.example",
+        "mail from a@b.example: https://h.example",
     ]
 
     found = await setup.service.get_log("paperless", lines=3)
 
     assert found.lines == (
-        "(credentials not shown) [paperless.webhooks] Webhook sent to https://h.example/x",
-        "Error for url (credentials not shown) 'https://h.example/x'",
-        "https://h.example: mail from a@b.example",
+        "Webhook sent to a URL that is not shown",
+        "Error for url 'https://h.example/x'",
+        "mail from a@b.example: https://h.example",
     )
+    assert found.note == "2 line(s) are shown without the credentials of the URLs in them."
+
+
+async def test_a_log_without_credentials_has_no_note() -> None:
+    assert (await Setup().service.get_log("paperless", lines=3)).note is None
 
 
 async def test_a_log_over_the_character_limit_keeps_the_newest_lines() -> None:

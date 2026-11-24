@@ -42,8 +42,8 @@ from mcp_server_paperless.domain.errors import (
 from mcp_server_paperless.domain.files import ArchivePartReport, FilePart, SavedArchiveReport
 from mcp_server_paperless.domain.urls import (
     URL_NOT_SHOWN,
-    log_line,
     shown_url,
+    text_without_credentials,
     without_empty_user,
 )
 from mcp_server_paperless.services.file_sink import NO_SINK, Expected, file_name
@@ -374,7 +374,8 @@ class SystemAdmin:
         if not 1 <= lines <= MAX_LOG_LINES:
             message = f"lines must be between 1 and {MAX_LOG_LINES}."
             raise Validation(message, hint="Ask for fewer lines, or read the log in the web UI.")
-        found = [log_line(line) for line in await self._reader.get_log(name, limit=lines)]
+        read = await self._reader.get_log(name, limit=lines)
+        found = [text_without_credentials(line) for line in read]
         kept: list[str] = []
         used = 0
         for line in reversed(found):
@@ -386,8 +387,15 @@ class SystemAdmin:
         truncated = len(kept) < len(found)
         if found and not kept:
             kept = ["…" + found[-1][-(MAX_LOG_CHARS - 2) :]]
+        start = len(found) - len(kept)
+        hidden = sum(new != old for new, old in zip(found[start:], read[start:], strict=True))
+        note = f"{hidden} line(s) are shown without the credentials of the URLs in them."
         return LogExcerpt(
-            name=name, lines=tuple(kept), truncated=truncated, returned_lines=len(kept)
+            name=name,
+            lines=tuple(kept),
+            truncated=truncated,
+            returned_lines=len(kept),
+            note=note if hidden else None,
         )
 
     async def list_tasks(

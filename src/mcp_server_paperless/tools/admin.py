@@ -419,8 +419,8 @@ async def get_log(
     """Read the newest lines of a log, oldest first, to find out why something failed.
 
     The text is cut to about 20 000 characters, dropping the oldest lines (truncated says so).
-    Lines can name documents and mail subjects; URLs in them come without user name and password,
-    marked "(credentials not shown)". Staff users only.
+    Lines can name documents and mail subjects; URLs in them come without user name and password
+    (note says so). Staff users only.
     """
     return await services(ctx).system.get_log(name, lines=lines)
 

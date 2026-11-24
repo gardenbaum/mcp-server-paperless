@@ -10046,8 +10046,8 @@
         Read the newest lines of a log, oldest first, to find out why something failed.
         
         The text is cut to about 20 000 characters, dropping the oldest lines (truncated says so).
-        Lines can name documents and mail subjects; URLs in them come without user name and password,
-        marked "(credentials not shown)". Staff users only.
+        Lines can name documents and mail subjects; URLs in them come without user name and password
+        (note says so). Staff users only.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -10081,6 +10081,18 @@
           }),
           'name': dict({
             'type': 'string',
+          }),
+          'note': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Whether lines are shown without credentials of URLs.',
           }),
           'returned_lines': dict({
             'type': 'integer',
@@ -33229,8 +33241,8 @@
         Read the newest lines of a log, oldest first, to find out why something failed.
         
         The text is cut to about 20 000 characters, dropping the oldest lines (truncated says so).
-        Lines can name documents and mail subjects; URLs in them come without user name and password,
-        marked "(credentials not shown)". Staff users only.
+        Lines can name documents and mail subjects; URLs in them come without user name and password
+        (note says so). Staff users only.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -33264,6 +33276,18 @@
           }),
           'name': dict({
             'type': 'string',
+          }),
+          'note': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Whether lines are shown without credentials of URLs.',
           }),
           'returned_lines': dict({
             'type': 'integer',

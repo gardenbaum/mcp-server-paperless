@@ -18,14 +18,15 @@ Supplements decision-64 (its forms apply to webhook URLs), decision-25 (what the
 - **Another URL** never gets stored credentials. Where an action with the id of a stored one loses them by that or by the empty user name, the confirmation says "remove the credentials of the stored URL" and the note says "Removed the credentials of".
 - **Confirmations** say "with credentials (not shown)" of a webhook whose new or kept URL has some.
 - **Raw.** In `paperless_api_get` the `url` of every `webhook` object has the form of the results, wherever it is nested. `redacted` counts it and `note` says so; a value that is cut loses its credentials first.
-- **Text.** In log lines (`get_log`, `/api/logs/`) and in the error texts of Paperless, what stands between a :// and the last @ of the same word is left out and "(credentials not shown)" put in front. Credentials may hold spaces: in an error, and in a log line that speaks of a webhook, everything up to the last @ after the :// goes.
+- **Text.** In log lines (`get_log`, `/api/logs/`) and in the error texts of Paperless, the URLs lose their credentials by the same function as a value. Where they are certain, nothing else goes. Where they are not, one "a URL that is not shown" stands for all from the first URL to the last word with an @: credentials may hold spaces, quotes and other URLs, so removing more is preferred to showing a password. A URL is whatever a client may take for one: also without or with backward slashes. The time is linear. `note` (of `get_log` and of the raw answer) or the end of the error says so, once.
+- **An @** is also the full-width and the small one (U+FF20, U+FE6B) and, in the authority, the encoded one that no real @ follows: such a URL is not shown. This applies to the service URLs of decision-64 as well.
 
 ## Consequences
 
-- A URL with an @ after its host (`https://host/@name`) is "a URL that is not shown", as a service URL is: `https://us/er:pw@host` looks the same and holds a password. It can be kept, replaced and written, but not read.
+- Pending (PLMCP-112: the owner decides): a URL with an @ after its host (`https://host/@name`) is "a URL that is not shown", as a service URL is: `https://us/er:pw@host` looks the same and holds a password. It can be kept, replaced and written, but not read.
 - A workflow copied with `create_workflow` from what is shown has no credentials: the server does not look for them in other workflows.
 - A second webhook with the same address and no credentials needs the empty user name, because it could also be a copy that lost its id.
-- An error or a webhook's log line can lose text between a URL and an @ after it, such as an e-mail address.
+- A line that holds a URL without credentials and after it an e-mail address or a URL with credentials loses what is between them.
 - A secret in the path or query of a URL is returned and shown (decision-64).
 
 ## Alternatives

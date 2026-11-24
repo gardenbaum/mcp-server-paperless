@@ -11,13 +11,22 @@ URL_NOT_SHOWN: Final = "a URL that is not shown"
 _EMPTY_USER: Final = re.compile(
     r"([A-Za-z][A-Za-z0-9+.-]*://):?@([^@/?#]*(?:[/?#].*)?)", flags=re.DOTALL
 )
-NOTE: Final = "(credentials not shown) "
+# An @, the characters some clients read as one, and its encoded form.
+_AT: Final = re.compile("[@\\uff20\\ufe6b]|%40")
+# Where the URL in a word may start: scheme and colon of a web address, or a colon and slashes.
+_START: Final = re.compile(r"https?:|:[/\\]{2}", flags=re.IGNORECASE)
+# The authority of a URL.
+_AUTHORITY: Final = re.compile(r"[^:]*:[/\\]*([^/?#]*)")
 
 
 def shown_url(url: str) -> str:
     """The URL as results hold it: without its credentials, or ``URL_NOT_SHOWN``."""
     shown = without_credentials(url)
-    return URL_NOT_SHOWN if shown is None else shown
+    if shown is None:
+        return URL_NOT_SHOWN
+    authority = _AUTHORITY.match(shown)
+    unclear = (authority and _AT.search(authority[1])) or re.search("[\\uff20\\ufe6b]", shown)
+    return URL_NOT_SHOWN if unclear else shown
 
 
 def without_empty_user(url: str) -> str:
@@ -26,26 +35,42 @@ def without_empty_user(url: str) -> str:
     return found[1] + found[2] if found else url
 
 
-def _word(word: str) -> str:
-    """A word of a text without what stands between its first :// and its last @."""
-    head, scheme, rest = word.partition("://")
-    return NOTE + head + scheme + rest.rpartition("@")[2] if "@" in rest else word
+def _url_in(word: str) -> int | None:
+    """Where the URL in a word of a text starts; None if there is none."""
+    found = _START.search(word)
+    if found is None:
+        colon = word.find(":")
+        return 0 if colon >= 0 and _AT.search(word, colon) else None
+    start = found.start()
+    while found[0][0] == ":" and start and word[start - 1].isascii() and word[start - 1].isalpha():
+        start -= 1
+    return start
 
 
-def text_without_credentials(text: str, *, spaces: bool = False) -> str:
+def _shown_word(word: str) -> str | None:
+    """A word with the URL in it as shown; None if it is not certain what its credentials are."""
+    start = _url_in(word)
+    if start is None:
+        return None if _AT.search(word) else word
+    url = word[start:]
+    shown = shown_url(url)
+    # Without an @ its credentials may go on in the next word.
+    certain = _AT.search(url) and not _AT.search(word[:start]) and shown != URL_NOT_SHOWN
+    return word[:start] + shown if certain else None
+
+
+def text_without_credentials(text: str) -> str:
     """``text`` (a log line, an error) without the credentials of the URLs in it.
 
-    With ``spaces`` they may hold spaces: then everything up to the last @ after a URL's scheme
-    goes, at the cost of other text in between.
+    Where they are certain, nothing else goes. Otherwise one ``URL_NOT_SHOWN`` stands for all from
+    the first URL to the last word with an @, because credentials may hold spaces, quotes and URLs.
     """
-    shown = "".join(map(_word, re.split(r"(\s+)", text)))
-    if not spaces:
-        return shown
-    first, *rest = shown.split("://")
-    cut = [part.rpartition("@")[2] for part in rest]
-    return shown if cut == rest else NOTE + "://".join([first, *cut])
-
-
-def log_line(line: str) -> str:
-    """A line of a Paperless log without credentials: Paperless logs the URLs it calls."""
-    return text_without_credentials(line, spaces="webhook" in line.lower())
+    words = re.split(r"(\s+)", text)
+    first = next((n for n, word in enumerate(words) if _url_in(word) is not None), len(words))
+    end = max((n for n, word in enumerate(words) if _AT.search(word)), default=-1) + 1
+    if end <= first:
+        return text
+    shown = [_shown_word(word) for word in words[first:end]]
+    known = [word for word in shown if word is not None]
+    part = known if len(known) == len(shown) else [URL_NOT_SHOWN]
+    return "".join([*words[:first], *part, *words[end:]])

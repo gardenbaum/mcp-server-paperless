@@ -353,8 +353,8 @@ groups.
   superuser status through these tools.
 - Paperless decides who may do what: most tools need the matching Paperless permission, the
   logs are for staff users and `run_task` for superusers.
-- Log lines come without the user name and password of the URLs in them, marked
-  `(credentials not shown)`.
+- Log lines come without the user name and password of the URLs in them (`note` says
+  so).
 
 ### `raw`
 

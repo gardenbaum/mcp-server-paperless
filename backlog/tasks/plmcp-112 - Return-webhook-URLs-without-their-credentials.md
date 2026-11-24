@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T11:11:57Z'
-updated_date: '2026-11-24T12:20:50Z'
+updated_date: '2026-11-24T12:24:50Z'
 labels:
   - safety
 dependencies: []
@@ -52,4 +52,7 @@ Beyond the named paths: get_log, /api/logs/ and the error texts of Paperless, wh
 Snapshots: test_surface (descriptions of the workflow tools, get_log, paperless_api_get; shown_in_part of an action), one message of test_workflow_messages and one row of test_workflows (a confirmation says "with credentials (not shown)"). e2e test_raw seeds a URL with credentials. No limit, budget or gate changed.
 Open: a webhook URL with an @ after its host is returned as "a URL that is not shown" (as in decision-64), reported for confirmation.
 Targeted tests only, diff coverage 100 %; no full suite, E2E or mutation run locally.
+
+After the security review of 4934902: one function for values and text (shown_url inside text_without_credentials); loose URL forms, full-width and encoded @, spaces, quotes and several URLs; uncertain text goes from the first URL to the last word with an @; linear (tested); said once per answer (note of get_log, new field, snapshot). Red first: 20 rows of test_urls. Two own test rows with an e-mail address after a URL changed to the ruling to prefer removing more.
+PENDING, the owner decides: a webhook URL with an @ after its host is returned as "a URL that is not shown".
 <!-- SECTION:NOTES:END -->

@@ -947,7 +947,7 @@ async def test_log_lines_lose_the_credentials_of_the_urls_in_them() -> None:
     result = await RawApiService(Recording(json_reply(lines))).get("/api/LOGS/paperless/", {})
 
     assert result.data == [
-        "Webhook sent to (credentials not shown) https://h.example/x",
+        "Webhook sent to https://h.example/x",
         "mail a@b.example",
     ]
     assert result.redacted == 1

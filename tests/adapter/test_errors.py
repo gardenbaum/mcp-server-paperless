@@ -150,10 +150,12 @@ def test_a_400_saying_document_not_found_is_not_found() -> None:
 @pytest.mark.decision("decision-66")
 @pytest.mark.parametrize("padding", ["", "x" * 190])
 def test_a_message_of_paperless_holds_no_credentials_of_a_url(padding: str) -> None:
-    said = f"{padding}Unable to parse URI https://user:p w@h.example, no"
+    said = f"{padding}Unable to parse URI https://user:pw@h.example, no"
+    body = {"actions": [{"webhook": {"url": [said, "at https://user:pw@h.example"]}}]}
 
-    error = error_for_status(httpx2.Response(400, json={"actions": [{"webhook": {"url": [said]}}]}))
+    error = error_for_status(httpx2.Response(400, json=body))
 
-    assert "p w" not in error.message
+    assert "pw" not in error.message
     assert "user" not in error.message
-    assert "(credentials not shown)" in error.message
+    assert error.message.endswith(" Credentials in URLs are not shown.")
+    assert error.message.count("not shown") == 1

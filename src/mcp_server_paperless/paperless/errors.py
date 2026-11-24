@@ -34,12 +34,8 @@ DOCUMENT_NOT_FOUND_BODY = "Document not found"
 
 
 def _clean(text: str) -> str:
-    """One line without control characters and credentials of URLs, cut to a bounded length.
-
-    Paperless repeats a webhook URL it refuses; a stored one is not the caller's to see.
-    """
+    """One line without control characters, cut to a bounded length."""
     line = " ".join("".join(c if c.isprintable() else " " for c in text).split())
-    line = text_without_credentials(line, spaces=True)
     if len(line) > MAX_MESSAGE_LENGTH:
         return line[: MAX_MESSAGE_LENGTH - 1] + "…"
     return line
@@ -65,12 +61,25 @@ def _messages(body: object, path: str = "") -> list[str]:
     return [prefix + _clean(str(body))]
 
 
+def _without_credentials(body: object) -> object:
+    """A DRF error body without the credentials of the URLs in its messages."""
+    if isinstance(body, dict):
+        items = cast("dict[str, object]", body).items()
+        return {key: _without_credentials(value) for key, value in items}
+    if isinstance(body, list):
+        return [_without_credentials(value) for value in cast("list[object]", body)]
+    return text_without_credentials(body) if isinstance(body, str) else body
+
+
 def _details(response: httpx2.Response) -> str:
     try:
         body = cast("object", json.loads(response.content))
     except ValueError:
         return ""
-    return "; ".join(_messages(body)[:MAX_MESSAGES])
+    # Paperless repeats a webhook URL it refuses; a stored one is not the caller's to see.
+    shown = _without_credentials(body)
+    note = "" if shown == body else " Credentials in URLs are not shown."
+    return "; ".join(_messages(shown)[:MAX_MESSAGES]) + note
 
 
 # What a 400 without a JSON body (Paperless's plain-text refusals) says: no details to add.

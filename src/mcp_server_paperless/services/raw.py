@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from mcp_server_paperless.domain.errors import PaperlessMcpError, Validation
 from mcp_server_paperless.domain.raw import RawApiResult
-from mcp_server_paperless.domain.urls import log_line, shown_url
+from mcp_server_paperless.domain.urls import shown_url, text_without_credentials
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -222,7 +222,9 @@ def _url_hidden(value: JsonValue, *, in_webhook: bool = False) -> tuple[JsonValu
 def _lines_hidden(value: JsonValue) -> tuple[JsonValue, int]:
     """The lines of a log without the credentials of URLs, and how many had some."""
     lines = value if isinstance(value, list) else [value]
-    cleaned: list[JsonValue] = [log_line(li) if isinstance(li, str) else li for li in lines]
+    cleaned: list[JsonValue] = [
+        text_without_credentials(li) if isinstance(li, str) else li for li in lines
+    ]
     count = sum(new != old for new, old in zip(cleaned, lines, strict=True))
     return (cleaned if isinstance(value, list) else cleaned[0]), count
 
