@@ -40,8 +40,6 @@ def clean_filename(name: str) -> str:
         problem = "is empty or only dots"
     elif unseen(last):
         problem = "has control characters"
-    elif any("\ud800" <= c <= "\udfff" for c in last):  # bytes that are no UTF-8
-        problem = "is not valid text"
     elif len(last.encode()) > MAX_NAME_BYTES:
         problem = f"is longer than {MAX_NAME_BYTES} bytes"
     if problem:

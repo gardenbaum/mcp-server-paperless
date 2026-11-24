@@ -38,6 +38,7 @@ from mcp_server_paperless.services.batch_uploads import (
     _File,  # pyright: ignore[reportPrivateUsage] -- for the seam of the tests below
     cursor,
     position,
+    upload_name,
 )
 from mcp_server_paperless.services.duplicates import (
     HIDDEN_REJECTED,
@@ -782,6 +783,12 @@ async def test_what_is_not_read_is_named_and_dot_names_are_only_counted(root: Pa
     recursive = await setup.directory(recursive=True)
     assert setup.rows(recursive) == [("sub/a.pdf", "uploaded")]
     assert recursive.directories == ()
+
+
+@pytest.mark.parametrize("name", ["x\udcff.txt", "\ud800"])
+def test_a_name_that_is_no_text_is_no_upload_name(name: str) -> None:
+    with pytest.raises(Validation, match="not valid text"):
+        _ = upload_name(name)
 
 
 async def test_names_that_hide_something_are_refused_and_escaped(root: Path) -> None:

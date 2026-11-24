@@ -62,7 +62,7 @@ def test_a_file_name_loses_its_directories_and_keeps_everything_else(
     ["", "   ", ".", "..", "dir/", "a/..", "a\\..\\", "nul\x00.pdf", "bell\x07.pdf",
      "line\nbreak.pdf", "gpj.exe\u202e.pdf", "ä" * 128, "del\x7f.pdf", "c1\x85.pdf",
      "zero\u200bwidth.pdf", "joiner\u200d.pdf", "isolate\u2066.pdf", "bom\ufeff.pdf",
-     "line\u2028sep.pdf", "para\u2029sep.pdf", "no-text\udcff.pdf"],
+     "line\u2028sep.pdf", "para\u2029sep.pdf"],
 )  # fmt: skip
 def test_a_file_name_without_a_usable_name_is_refused(given: str) -> None:
     with pytest.raises(Validation, match="file name"):
