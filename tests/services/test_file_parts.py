@@ -338,7 +338,7 @@ async def test_a_file_without_size_or_checksum_cannot_be_read_in_parts(
         _ = await files(fake_with(None, facts)).part(7, "archive", offset=0)
 
     assert raised.value.message == (
-        "Paperless does not know the size and checksum of the archive of document 7, so it is not "
+        "Paperless does not give the size and checksum of the archive of document 7, so it is not "
         "read in parts."
     )
     assert raised.value.hint == "Open it at https://paperless.example/documents/7/details."
