@@ -154,6 +154,33 @@ async def test_rotating_returns_the_result_of_the_operation() -> None:
     assert len(cast("list[Json]", result["tasks"])) == 2
 
 
+@pytest.mark.decision("decision-74")
+async def test_a_rotation_whose_task_a_date_hides_is_told_by_its_version_with_a_wait() -> None:
+    waited, unwaited, untold = fake(), fake(), fake()
+    for source in (waited, unwaited, untold):
+        [field] = [f.id for f in source.state.custom_fields if f.data_type == "date"]
+        [dated] = [d for d in source.state.documents if d.id == FIRST]
+        dated.custom_fields = {field: "2026-01-15"}
+    untold.state.audit_log_enabled = False
+    arguments: Json = {"document_ids": [FIRST, SECOND], "degrees": 90}
+
+    done = await call(waited, "rotate_documents", **arguments, wait_seconds=5)
+    sent = await call(unwaited, "rotate_documents", **arguments)
+    unknown = await call(untold, "rotate_documents", **arguments, wait_seconds=5)
+
+    [version] = [d.versions[0].id for d in waited.state.documents if d.id == FIRST]
+    tasks = cast("list[Json]", done["tasks"])
+    assert (done["state"], done["wait"]) == ("success", "finished")
+    assert (tasks[0]["task_id"], tasks[0]["document_ids"]) == (None, [version])
+    assert tasks[1]["task_id"] is not None
+    assert str(done["message"]).startswith("Paperless lists no task for the rotation of document ")
+    assert (sent["state"], unknown["state"]) == ("unknown", "unknown")
+    assert "Which new version is the rotation could not be told" in str(unknown["message"])
+    async with Client(serve(waited, toolsets=["pdf"])) as client:
+        [tool] = [t for t in await client.list_tools() if t.name == "rotate_documents"]
+    assert "only a call that waits" in (tool.description or "")
+
+
 async def test_a_wait_returns_the_finished_tasks_and_the_documents_they_made() -> None:
     source = fake()
 

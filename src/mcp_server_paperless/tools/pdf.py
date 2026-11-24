@@ -263,6 +263,8 @@ async def rotate_documents(  # noqa: PLR0913 -- the documents and the options of
     again it is: then a dialog, or an error for you to show the user, first says so (see confirm).
     The document keeps its id, title and metadata. Needs the permission to change documents and
     ownership of every document (or no owner): a change grant is not enough.
+    A date custom field hides the task: only a call that waits (wait_seconds) can then tell that it
+    is done, by the new version.
     """
     return await services(ctx).pdf.rotate(
         document_ids,

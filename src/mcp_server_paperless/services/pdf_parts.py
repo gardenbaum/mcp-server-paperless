@@ -7,7 +7,8 @@ calls that finish it. Nothing is remembered between calls.
 
 Paperless 3.5 lists no task for a file whose copied metadata holds a date among the custom fields.
 Such documents are found by their file names (``PdfWriter.find_copies``), and only where nothing
-else can be taken for them.
+else can be taken for them. Such a rotation is told by the versions it made
+(``PdfWriter.find_rotations``, decision-74).
 """
 
 import asyncio
@@ -21,7 +22,7 @@ from mcp_server_paperless.domain.pdf import PartOutcome, PdfTask
 from mcp_server_paperless.services.document_edits import check_edit
 from mcp_server_paperless.services.documents import document_link
 from mcp_server_paperless.services.page_ranges import describe, specification
-from mcp_server_paperless.services.pdf_replacing import RUNNING, KeptError, cause, outputs
+from mcp_server_paperless.services.pdf_replacing import RUNNING, KeptError, cause, named, outputs
 from mcp_server_paperless.services.tag_hierarchy import close_over_ancestors
 from mcp_server_paperless.services.tasks import POLL_SECONDS
 
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
 
     from mcp_server_paperless.domain.documents import DocumentRecord, DocumentUpdate
     from mcp_server_paperless.domain.pdf import (
+        FoundCopies,
         PartMetadata,
         PdfResult,
         StartedTasks,
@@ -46,6 +48,12 @@ CHANGED: Final = "Paperless answered with other values than asked for"
 TOO_LATE: Final = "the call took too long to set its metadata"
 DOUBTED: Final = "it cannot be told that it is this part ({doubt})"
 NOT_YET: Final = "there is no document with the file name {name} yet"
+NOT_TURNED: Final = "There is no new version with the file name {name} yet."
+TURNED: Final = (
+    "Paperless lists no task for the rotation of {documents}, because a custom field holds a date: "
+    "{found} of {expected} new {versions} found and told by file name, time and user."
+)
+UNTOLD: Final = "Which new version is the rotation could not be told ({doubt})."
 NO_DATE: Final = "document {number} does not hold the date of the custom field that is copied"
 UNREAD: Final = "document {number} could not be read"
 
@@ -67,10 +75,15 @@ class Part:
 
 @dataclass(frozen=True, slots=True)
 class Found:
-    """The documents found by their file names, as tasks without an id."""
+    """The documents or versions found by their file names, as tasks without an id.
+
+    Attributes:
+        note: What the result says of the search, if it is not the usual sentence.
+    """
 
     tasks: tuple[PdfTask, ...]
     waited: float
+    note: str = ""
 
 
 def part_lines(parts: Sequence[Part], *, single: bool) -> tuple[str, ...]:
@@ -217,17 +230,12 @@ class Parts:
         files = started.files
         if started.ids or started.problem or files is None or not dates or bound <= 0:
             return started, None
-        begun = self._replacing.clock()
-        while True:
-            left = bound - (self._replacing.clock() - begun)
-            try:
-                copies = await self._writer.find_copies(files, final=left <= 0)
-            except PaperlessMcpError:
-                return started, None
-            settled = copies.doubt is None and None not in copies.ids
-            if settled or (copies.doubt is not None and not copies.passing) or left <= 0:
-                break
-            await self._sleep(min(POLL_SECONDS, left))
+        searched = await self._search(
+            lambda final: self._writer.find_copies(files, final=final), bound
+        )
+        if searched is None:
+            return started, None
+        copies, waited = searched
         doubt = copies.doubt or await self._dateless(copies.ids, dates)
         if doubt is not None:
             return started.model_copy(update={"doubt": doubt}), None
@@ -237,8 +245,55 @@ class Parts:
         tasks = tuple(
             _task(number, name) for number, name in zip(copies.ids, files.names, strict=True)
         )
-        waited = min(self._replacing.clock() - begun, bound)
         return started.model_copy(update=known), Found(tasks, waited)
+
+    async def turned(
+        self, started: StartedTasks, before: Mapping[int, int], bound: float
+    ) -> tuple[StartedTasks, Found | None]:
+        """Find the versions of a rotation whose tasks a date hides, for up to ``bound`` seconds.
+
+        ``before`` is the version each such document showed before the request. Returns the request
+        with the documents of what is found, which comes before its listed tasks.
+        """
+        files = started.files
+        if started.problem or files is None or not before or bound <= 0:
+            return started, None
+        searched = await self._search(
+            lambda final: self._writer.find_rotations(files.request, before, final=final), bound
+        )
+        if searched is None:
+            return started, None
+        copies, waited = searched
+        if copies.doubt is not None:
+            return started, Found((), waited, UNTOLD.format(doubt=copies.doubt))
+        tasks = tuple(
+            _task(version, f"{number}_rotated.pdf", NOT_TURNED)
+            for number, version in zip(before, copies.ids, strict=True)
+        )
+        note = TURNED.format(
+            documents=named(list(before)),
+            found=sum(n is not None for n in copies.ids),
+            expected=len(before),
+            versions="version" if len(before) == 1 else "versions",
+        )
+        known = started.model_copy(update={"sources": (*before, *started.sources)})
+        return known, Found(tasks, waited, note)
+
+    async def _search(
+        self, find: Callable[[bool], Awaitable[FoundCopies]], bound: float
+    ) -> tuple[FoundCopies, float] | None:
+        """What is found within ``bound`` seconds and how long that took; None if it broke."""
+        begun = self._replacing.clock()
+        while True:
+            left = bound - (self._replacing.clock() - begun)
+            try:
+                copies = await find(left <= 0)
+            except PaperlessMcpError:
+                return None
+            settled = copies.doubt is None and None not in copies.ids
+            if settled or (copies.doubt is not None and not copies.passing) or left <= 0:
+                return copies, min(self._replacing.clock() - begun, bound)
+            await self._sleep(min(POLL_SECONDS, left))
 
     async def _dateless(self, ids: Sequence[int | None], dates: Mapping[int, object]) -> str | None:
         """Which found document lacks the date that hid its task, so it may be another's."""
@@ -363,10 +418,10 @@ def _untold(started: StartedTasks, search: str) -> dict[str, object]:
     return {"message": message, "next": ", then ".join(steps)}
 
 
-def _task(number: int | None, name: str) -> PdfTask:
-    """A document found by its file name, or not yet, in place of a task."""
+def _task(number: int | None, name: str, not_yet: str = NOT_YET) -> PdfTask:
+    """A document or version found by its file name, or not yet, in place of a task."""
     if number is None:
-        message = NOT_YET.format(name=name)
+        message = not_yet.format(name=name)
         return PdfTask(task_id=None, state="unknown", message=message, document_ids=())
     return PdfTask(task_id=None, state="success", message=None, document_ids=(number,))
 

@@ -276,7 +276,9 @@ date and tags. Where Paperless lists no task because a date custom field is copi
 documents are found by their file names, with a wait only and only if nothing else can be taken for
 them. That needs the permissions `view_uisettings`, `view_paperlesstask` and `view_customfield` (to
 see which custom fields are dates), and no other editing, merging, splitting or unlocking of this
-user in the last hour that is not known to have made something else.
+user in the last hour that is not known to have made something else. A rotation is told by the new
+version in the same way: also `view_logentry` is needed (and the audit log), because only the history
+says who added a version, and earlier rotations of this user in the last hour must be done.
 `reprocess_documents` does the same as the `reprocess` operation of `bulk_edit_documents` but
 returns its tasks.
 

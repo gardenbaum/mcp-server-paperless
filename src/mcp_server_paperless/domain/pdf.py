@@ -75,7 +75,7 @@ type LookupProblem = Literal["forbidden", "failed", "unconfirmed"]
 
 
 class CopiedFiles(BaseModel):
-    """How to find the new documents of a request whose tasks Paperless does not list.
+    """How to find the files of a request whose tasks Paperless does not list.
 
     Attributes:
         request: The queued task of the request.
@@ -91,10 +91,10 @@ class CopiedFiles(BaseModel):
 
 
 class FoundCopies(BaseModel):
-    """The documents with the file names of a request.
+    """The documents, or versions, that are the files of a request.
 
     Attributes:
-        ids: The document of each name, None where there is none yet, or where they are in doubt.
+        ids: The document or version of each, None where there is none yet, or in doubt.
         doubt: Why it cannot be told that they are the request's own: then nothing is done to them.
         passing: Whether the doubt may go away when other files are done.
     """
@@ -125,7 +125,8 @@ class StartedTasks(BaseModel):
         doubt: Why it cannot be told that these tasks are the request's own, if so: good enough to
             report, not to trash anything for.
         detail: For ``unconfirmed``: why the queued task could not be followed.
-        files: For new documents: how to find them where Paperless lists no task for them.
+        files: For new documents and rotated versions: how to find those Paperless lists no task
+            for.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
