@@ -1,11 +1,14 @@
 """Contract of InstanceReader: the same assertions against the fake and a live Paperless."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from e2e.helpers import SEEDED_OBJECTS
+from fastmcp import Client
 from guide_oracle import COMBINATIONS, Seen, check
-from harness import Recorded
+from harness import Recorded, serve
+
+from mcp_server_paperless.domain.instance import MINIMUM
 
 if TYPE_CHECKING:
     from contract.conftest import Backend
@@ -100,3 +103,27 @@ async def test_the_guide_follows_what_the_reader_says_about_ai(backend: Backend,
             combination=combination,
             ceilings=ceilings,
         )
+
+
+@pytest.mark.decision("decision-57")
+@pytest.mark.contract("InstanceReader.get_overview")
+@pytest.mark.parametrize("version", ["3.4.2", "3.5.0", None, "99.0.0", "unknown"])
+async def test_only_an_older_release_is_called_too_old(
+    backend: Backend, version: str | None
+) -> None:
+    """None is the release the backend runs: the minimum, or a newer one in the weekly run."""
+    overview = await backend.admin.instance.get_overview()
+    if version is not None:
+        overview = overview.model_copy(update={"paperless_version": version})
+
+    async with Client(serve(Recorded(overview))) as client:
+        result = await client.call_tool("get_instance_overview")
+
+    assert result.structured_content is not None
+    output = cast("dict[str, str | None]", result.structured_content)
+    assert output["paperless_version"] == (version or backend.expected_version)
+    notice = f"{version} is older than the minimum release {MINIMUM}: Paperless must be updated"
+    if version in {"3.4.2", "3.5.0"}:
+        assert (output["too_old"] or "").startswith(notice)
+    else:
+        assert output["too_old"] is None

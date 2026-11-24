@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from mcp_server_paperless.domain.instance import MINIMUM_RELEASE
+
 ROOT = Path(__file__).parents[2]
 
 
@@ -45,3 +47,23 @@ def test_the_stack_the_helpers_and_the_vendored_docs_are_the_release_of_the_just
 @pytest.mark.parametrize("page", ["README.md", "docs/configuration.md", "plugin/README.md"])
 def test_the_docs_name_the_reference_release_as_the_minimum(page: str) -> None:
     assert re.search(rf"{re.escape(pinned())} or later|{re.escape(pinned())} and later", read(page))
+
+
+@pytest.mark.decision("decision-57")
+def test_the_code_compares_with_the_release_the_docs_name_as_the_minimum() -> None:
+    assert ".".join(map(str, MINIMUM_RELEASE)) == pinned()
+
+
+@pytest.mark.decision("decision-57")
+def test_no_second_value_in_the_code_states_the_minimum() -> None:
+    parts = r",\s*".join(map(str, MINIMUM_RELEASE))
+    stated = re.compile(rf"\(\s*{parts}\s*\)|[\"']{re.escape(pinned())}[\"']")
+    texts = {
+        str(path.relative_to(ROOT / "src")): path.read_text("utf-8")
+        for path in (ROOT / "src").rglob("*.py")
+    }
+
+    counts = {name: len(stated.findall(text)) for name, text in texts.items()}
+    assert {name: count for name, count in counts.items() if count} == {
+        "mcp_server_paperless/domain/instance.py": 1
+    }

@@ -1,8 +1,9 @@
 """InstanceReader on /api/statistics/, /api/status/ and /api/ui_settings/.
 
 Versions come from the ``X-Version`` and ``X-Api-Version`` headers Paperless sends on every
-response, so every user gets them. ``/api/remote_version/`` (an update check) and
-``/api/profile/`` (it returns the user's API token) are deliberately not used.
+response, so every user gets them. A missing ``X-Version`` is an unknown release, no
+error. ``/api/remote_version/`` (an update check) and ``/api/profile/`` (it returns the user's API
+token) are deliberately not used.
 """
 
 from typing import TYPE_CHECKING
@@ -109,7 +110,6 @@ class PaperlessInstanceReader:
         response = await self._client.request("GET", "/api/statistics/")
         statistics = parse(response, _Statistics)
         try:
-            version = response.headers["X-Version"]
             api_version = int(response.headers["X-Api-Version"])
         except (KeyError, ValueError) as error:
             raise unexpected(response) from error
@@ -117,7 +117,7 @@ class PaperlessInstanceReader:
         ui_settings = await self._unless_forbidden("/api/ui_settings/", _UiSettings)
         user = ui_settings.user if ui_settings else None
         return InstanceOverview(
-            paperless_version=version,
+            paperless_version=response.headers.get("X-Version") or "unknown",
             api_version=api_version,
             statistics=InstanceStatistics(
                 documents=statistics.documents_total,
