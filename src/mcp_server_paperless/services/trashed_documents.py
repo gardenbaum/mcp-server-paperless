@@ -30,7 +30,7 @@ from mcp_server_paperless.services.transfer import (
     time_limit,
 )
 from mcp_server_paperless.services.trash import trash_link
-from mcp_server_paperless.services.trash_scan import PAGE, all_too_large, following, limited
+from mcp_server_paperless.services.trash_scan import PAGE, Scan, all_too_large, following, limited
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.documents import FileKind, FileMetadata, FileVersion
@@ -168,6 +168,7 @@ class TrashedDocuments:
             if found.entry is not None:
                 return found.entry, large
             page = 1 if found.next_page is not None else None
+        whole = page is None
         while page is not None:
             small = _Page(page, PAGE)
             try:
@@ -177,7 +178,7 @@ class TrashedDocuments:
             if found.entry is not None:
                 return found.entry, small
             page = following(page, found.next_page)
-        raise await self._scan.unlisted([document_id])
+        raise await self._scan.unlisted([document_id], Scan((), 0 if whole else 1))
 
     async def _look_up(self, document_id: int, where: _Page) -> TrashLookup:
         return await self._trash.look_up_in_trash(

@@ -10,11 +10,11 @@ and its trash entry emptied, also when it fails.
 import base64
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, override
 
 import httpx2
 import pytest
-from contract.conftest import delete_and_empty_trash, live_in_trash
+from contract.conftest import delete_and_empty_trash, live_in_trash, live_ports
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 from mcp.shared.exceptions import MCPError
@@ -23,8 +23,14 @@ from mcp.types import BlobResourceContents, EmbeddedResource
 from e2e.helpers import consume_text, num, parse, results, seq
 from e2e.uploading import Scope as Users
 from e2e.uploading import output, text, unique
+from mcp_server_paperless.domain.errors import AnswerCompressed
+from mcp_server_paperless.domain.trash import TrashFilter
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
 from mcp_server_paperless.server import create_server
-from mcp_server_paperless.services.trash import MAX_ALL
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.trash import MAX_ALL, TrashService
+from mcp_server_paperless.services.trash_scan import TrashScan
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -410,3 +416,41 @@ async def test_a_restricted_user_sees_and_changes_only_owned_and_unowned_entries
 
     restored = output(await users.call("restore_from_trash", token, document_ids=[owned, unowned]))
     assert {e["outcome"] for e in cast("list[Json]", restored["entries"])} == {"restored"}
+
+
+class Compressing(httpx2.AsyncHTTPTransport):
+    """A proxy that compresses every answer, whatever was asked for."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.encodings: list[str | None] = []
+
+    @override
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        request.headers["Accept-Encoding"] = "gzip"
+        response = await super().handle_async_request(request)
+        if request.url.path == "/api/trash/" and request.method == "GET":
+            self.encodings.append(response.headers.get("Content-Encoding"))
+        return response
+
+
+async def test_ids_are_restored_behind_a_proxy_that_compresses(stack: Stack, scope: Scope) -> None:
+    number, _ = scope.document("compressed")
+    _ = stack.admin.delete(f"/api/documents/{number}/").raise_for_status()
+    proxy = Compressing()
+    async with httpx2.AsyncClient(base_url=stack.base_url, transport=proxy, timeout=60) as http:
+        token = StaticTokenProvider(stack.admin_token)
+        ports = live_ports(PaperlessClient(http, token, retry=RetryPolicy(), upload_timeout=60))
+        taxonomy = TaxonomyResolver(ports.taxonomy, token, ttl=60)
+        scan = TrashScan(ports.trash, ports.documents, taxonomy)
+        service = TrashService(
+            ports.trash, ports.trash_writes, ports.documents, scan, taxonomy, web_url="x"
+        )
+
+        with pytest.raises(AnswerCompressed):
+            _ = await service.list(TrashFilter(title="compressed"), page=1, page_size=5)
+        result = await service.restore([number])
+
+    assert [e.outcome for e in result.entries] == ["restored"]
+    assert proxy.encodings[:3] == ["gzip"] * 3  # the filter, the one request, the pages
+    assert not live_in_trash(stack, number)
