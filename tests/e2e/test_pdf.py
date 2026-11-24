@@ -356,3 +356,155 @@ async def test_a_user_who_may_not_view_tasks_keeps_the_original_and_is_told_how_
         assert [document(stack, n)["page_count"] for n in made] == [1]
     finally:
         people.clean_up()
+
+
+LETTER: Json = {"title": "plmcp79 letter", "tags": ["e2e-finance"], "created": "2026-01-02"}
+INVOICE: Json = {"document_type": "e2e-invoice", "correspondent": "e2e-acme"}
+
+
+async def test_a_split_with_metadata_replaces_the_original_once_every_part_has_its_own(
+    stack: Stack, scope: Scope
+) -> None:
+    source = scope.pdf(3)
+    title = str(document(stack, source)["title"])
+    call: Json = {
+        "document_id": source,
+        "parts": ["1", "2-3"],
+        "part_metadata": [LETTER, INVOICE],
+        "output": "replace_original",
+    }
+
+    preview = await run(stack, "split_document", **call, dry_run=True)
+    refusal = await refused(stack, "split_document", **call)
+    unknown = await refused(
+        stack,
+        "split_document",
+        document_id=source,
+        parts=["1", "2"],
+        part_metadata=[{}, {"tags": ["plmcp79-no-such-tag"]}],
+    )
+    assert "part 1 (page 1) gets title 'plmcp79 letter'" in str(preview["plan"])
+    assert "part 2 (pages 2-3) gets document type 'e2e-invoice'" in refusal
+    assert "No tag is named 'plmcp79-no-such-tag'" in unknown
+    assert not live_in_trash(stack, source)
+    split = await run(stack, "split_document", **call, confirm=True)
+
+    _ = scope.made(split)
+    assert (split["state"], split["original"]) == ("success", "trashed"), split
+    assert live_in_trash(stack, source)
+    parts = cast("list[Json]", split["parts"])
+    assert [p["metadata"] for p in parts] == ["set", "set"]
+    letter, invoice = (document(stack, num(p["document_id"])) for p in parts)
+    tags = {row["name"]: row["id"] for row in results(stack.admin.get("/api/tags/"))}
+    assert (letter["title"], letter["tags"]) == ("plmcp79 letter", [tags["e2e-finance"]])
+    assert (letter["created"], letter["page_count"]) == ("2026-01-02", 1)
+    assert (invoice["title"], invoice["page_count"]) == (title, 2)
+    assert invoice["document_type"] is not None
+    assert invoice["correspondent"] is not None
+
+
+async def test_pages_are_extracted_and_then_removed_from_the_document(
+    stack: Stack, scope: Scope
+) -> None:
+    source = scope.pdf(3)
+
+    copied = await run(stack, "extract_pages", document_id=source, pages="3,1", wait_seconds=30)
+    [first] = scope.made(copied)
+    assert (copied["original"], document(stack, first)["page_count"]) == ("kept", 2)
+    assert versions(stack, source) == [source]
+    call: Json = {"document_id": source, "pages": "2", "remove": True, "metadata": LETTER}
+    preview = await run(stack, "extract_pages", **call, dry_run=True)
+    refusal = await refused(stack, "extract_pages", **call)
+    every = await refused(stack, "extract_pages", document_id=source, pages="1-", remove=True)
+    assert "without these pages" in str(preview["plan"])
+    assert f"extract page 2 of document {source}" in refusal
+    assert "Removing every page leaves nothing" in every
+    assert versions(stack, source) == [source]
+    removed = await run(stack, "extract_pages", **call, confirm=True)
+
+    made = scope.made(removed)
+    assert (removed["state"], removed["original"]) == ("success", "shortened"), removed
+    assert len(made) == 2
+    new, shorter = document(stack, made[0]), document(stack, source)
+    assert (new["title"], new["page_count"]) == ("plmcp79 letter", 1)
+    assert (shorter["page_count"], versions(stack, source)) == (2, [made[1], source])
+    assert not live_in_trash(stack, source)
+
+
+async def test_parts_of_a_document_with_a_date_field_are_found_by_their_file_names(
+    stack: Stack, scope: Scope
+) -> None:
+    people = People(stack)
+    source = scope.pdf(2)
+    fields = {row["name"]: row["id"] for row in results(stack.admin.get("/api/custom_fields/"))}
+    value = {"field": fields["e2e-date"], "value": "2026-03-04"}
+    _ = stack.admin.patch(
+        f"/api/documents/{source}/", json={"owner": None, "custom_fields": [value]}
+    ).raise_for_status()
+    try:
+        token = people.user(
+            *("view_document", "change_document", "add_document", "delete_document"),
+            *("view_paperlesstask", "view_uisettings", "view_customfield", "view_tag"),
+            *("view_documenttype", "view_correspondent", "view_storagepath"),
+        )
+        answer = await people.call(
+            "split_document",
+            token,
+            document_id=source,
+            parts=["1", "2"],
+            part_metadata=[LETTER, {"title": "plmcp79 second"}],
+            output="replace_original",
+            confirm=True,
+        )
+        result = cast("Json", answer.structured_content)
+
+        made = scope.made(result)
+        assert (result["state"], result["original"]) == ("success", "trashed"), result
+        assert live_in_trash(stack, source)
+        assert [t["task_id"] for t in cast("list[Json]", result["tasks"])] == [None, None]
+        assert [document(stack, n)["title"] for n in made] == ["plmcp79 letter", "plmcp79 second"]
+        assert [document(stack, n)["custom_fields"] for n in made] == [[value], [value]]
+    finally:
+        people.clean_up()
+
+
+async def test_parts_nobody_can_follow_keep_their_metadata_and_the_original(
+    stack: Stack, scope: Scope
+) -> None:
+    people = People(stack)
+    source = scope.pdf(2)
+    _ = stack.admin.patch(f"/api/documents/{source}/", json={"owner": None}).raise_for_status()
+    title = str(document(stack, source)["title"])
+    try:
+        token = people.user(
+            *("view_document", "change_document", "add_document", "delete_document", "view_tag")
+        )
+        answer = await people.call(
+            "split_document",
+            token,
+            document_id=source,
+            parts=["1", "2"],
+            part_metadata=[{"title": "plmcp79 first"}, {}],
+            output="replace_original",
+            confirm=True,
+        )
+        result = cast("Json", answer.structured_content)
+
+        parts = cast("list[Json]", result["parts"])
+        assert [(p["state"], p["metadata"]) for p in parts] == [
+            ("unknown", "not_set"),
+            ("unknown", "not_requested"),
+        ]
+        assert 'title="plmcp79 first"' in str(parts[0]["next"])
+        assert (result["original"], live_in_trash(stack, source)) == ("kept", False)
+        made: list[int] = []
+        for _ in range(60):
+            found = results(stack.admin.get("/api/documents/", params={"title__iexact": title}))
+            made = [num(row["id"]) for row in found if row["id"] != source]
+            if len(made) == 2:
+                break
+            await asyncio.sleep(1)
+        scope.ids.extend(made)
+        assert len(made) == 2
+    finally:
+        people.clean_up()

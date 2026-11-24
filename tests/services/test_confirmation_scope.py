@@ -33,7 +33,7 @@ from mcp_server_paperless.domain.bulk import (
 from mcp_server_paperless.domain.documents import DocumentEdit
 from mcp_server_paperless.domain.errors import ConfirmationRequired, accepting
 from mcp_server_paperless.domain.mail import MailRuleSettings
-from mcp_server_paperless.domain.pdf import PageSlot
+from mcp_server_paperless.domain.pdf import PageSlot, PartMetadata
 from mcp_server_paperless.domain.permissions import PermissionsRequest
 from mcp_server_paperless.domain.taxonomy import SelectOption
 from mcp_server_paperless.domain.taxonomy_edits import TaxonomyEdit
@@ -493,6 +493,15 @@ SLOT = [PageSlot(page=1)]
 
 NEWER_FILE = {
     "delete_pages": pdf_call(lambda s: s.delete_pages(1, "2")),
+    "split_metadata": pdf_call(
+        lambda s: s.split(
+            1,
+            ["1", "2"],
+            output="replace_original",
+            part_metadata=[PartMetadata(title="One"), PartMetadata(title="Two")],
+        )
+    ),
+    "extract": pdf_call(lambda s: s.extract(1, "2", remove=True)),
     "edit_pdf": pdf_call(lambda s: s.edit(1, SLOT, output="replace_original")),
     "split": pdf_call(lambda s: s.split(1, ["1", "2"], output="replace_original")),
     "remove_password": pdf_call(lambda s: s.remove_password(1, "x", output="replace_original")),

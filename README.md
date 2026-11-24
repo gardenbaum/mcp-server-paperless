@@ -38,7 +38,7 @@ claude mcp add paperless --env PAPERLESS_URL=https://paperless.example.org \
 
 mcp-server-paperless is a [Model Context Protocol](https://modelcontextprotocol.io) server for
 paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai, Cursor, VS
-Code and any other MCP client 94 tools in 13 toolsets that cover most of what the Paperless API
+Code and any other MCP client 95 tools in 13 toolsets that cover most of what the Paperless API
 can do, from a search to saved views, mail rules and workflows. It starts small and careful: 20
 tools by default, names instead of ids, and a confirmation step before anything that cannot be
 undone.
@@ -99,7 +99,7 @@ people who want all of the following in one server:
 - 🛡️ **Nothing final without your yes.** Before a tool deletes, overwrites, publishes or shares
   anything, it reports what would happen and waits for your confirmation. Changes to many
   documents at once can be previewed first.
-- 🪶 **Small to start with.** Only 20 tools by default out of the 94, so the assistant starts
+- 🪶 **Small to start with.** Only 20 tools by default out of the 95, so the assistant starts
   with the essentials and you decide what else it may do. Search results are short lists and long
   documents are read piece by piece, so a conversation does not fill up with text it does not
   need.
@@ -251,7 +251,7 @@ variables: [Connect claude.ai](https://github.com/gardenbaum/mcp-server-paperles
 
 ## Toolsets
 
-The 94 tools are grouped into toolsets, and only two are on by default, so the model is not
+The 95 tools are grouped into toolsets, and only two are on by default, so the model is not
 handed tools you never use. Switch more on with `PAPERLESS_MCP_TOOLSETS=core,ai,pdf,trash` or
 `all`, and restart the server. The assistant is told which toolsets are off, what each adds and how to
 switch them on (never for a session: only you decide, see
