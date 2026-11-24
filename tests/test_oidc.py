@@ -260,6 +260,19 @@ def test_a_proxy_that_cannot_be_built_from_the_document_says_so(issuer: Issuer) 
     assert CLIENT_SECRET not in message
 
 
+def test_a_stub_issuer_on_a_reused_port_is_not_answered_from_fastmcps_cache() -> None:
+    # FastMCP keeps discovery documents by URL for five minutes per process, and the kernel hands
+    # out a closed stub's port again now and then: the next test must not get its document.
+    with stub_issuer() as first:
+        first.left_out = {"token_endpoint"}
+        first.extra = {"strict": False}
+        with pytest.raises(InvalidConfiguration):
+            _ = authenticator(http_settings(), oidc_settings(first.url))
+
+    with stub_issuer(cast("int", urlsplit(first.url).port)) as second:
+        assert isinstance(authenticator(http_settings(), oidc_settings(second.url)), MultiAuth)
+
+
 # --- origin and storage --------------------------------------------------------------------------
 
 
