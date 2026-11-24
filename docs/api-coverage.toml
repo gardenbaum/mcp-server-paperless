@@ -363,11 +363,6 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/documents/{id}/"
-fields = ["body:content", "query:version"]
-task = "PLMCP-75"
-
-[[open_fields]]
-operation = "PATCH /api/documents/{id}/"
 fields = ["body:created_date", "body:remove_inbox_tags"]
 task = "PLMCP-83"
 

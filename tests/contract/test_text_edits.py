@@ -157,7 +157,8 @@ async def test_changing_the_text_needs_the_permission_and_a_grant(backend: Backe
 async def test_search_finds_the_new_text_of_the_newest_version_only(backend: Backend) -> None:
     ports, document = backend.admin, backend.new_document()
     old, new, hidden = (f"plmcp75{uuid.uuid4().hex}" for _ in range(3))
-    version = await add_version(backend, document, old)
+    version = await add_version(backend, document, "plmcp75 search")
+    _ = await ports.document_writes.set_document_text(document, version, old)
     assert await finds(ports, old, [document])
 
     _ = await ports.document_writes.set_document_text(document, document, hidden)

@@ -30,6 +30,7 @@ TOOLS = frozenset(
         "set_document_version_label",
         "delete_document_version",
         "merge_documents_as_versions",
+        "correct_document_text",
     }
 )
 CONFIRM_DESCRIPTION = (
@@ -77,7 +78,7 @@ async def refusal(source: FakePaperless, tool: str, **arguments: object) -> str:
 # --- the toolset -------------------------------------------------------------------------------
 
 
-async def test_the_versions_toolset_is_off_by_default_and_has_five_tools_when_selected() -> None:
+async def test_the_versions_toolset_is_off_by_default_and_has_six_tools_when_selected() -> None:
     async with Client(serve(fake())) as client:
         default = {t.name for t in await client.list_tools()}
     async with Client(server(fake())) as client:
@@ -109,6 +110,7 @@ async def test_the_annotations_tell_which_tool_destroys_and_which_can_repeat() -
         "set_document_version_label": (False, False, True, False),
         "delete_document_version": (False, True, True, False),
         "merge_documents_as_versions": (False, True, False, False),
+        "correct_document_text": (False, True, True, False),
     }
 
 
@@ -116,7 +118,11 @@ async def test_the_destructive_tools_take_a_described_confirm_that_defaults_to_f
     async with Client(server(fake())) as client:
         tools = {t.name: t for t in await client.list_tools()}
 
-    for name in ("delete_document_version", "merge_documents_as_versions"):
+    for name in (
+        "delete_document_version",
+        "merge_documents_as_versions",
+        "correct_document_text",
+    ):
         properties = cast("dict[str, Json]", tools[name].input_schema["properties"])
         assert properties["confirm"]["default"] is False
         assert properties["confirm"]["description"] == CONFIRM_DESCRIPTION
