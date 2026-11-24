@@ -274,7 +274,16 @@ class Wrong(pypdfium2.PdfDocument):
         super().import_pages(pdf, [0] * len(pages), index)
 
 
-@pytest.mark.parametrize("kind", [Unwilling, Silent, Wrong])
+class Twice(pypdfium2.PdfDocument):
+    """Imports every page twice."""
+
+    @override
+    def import_pages(self, pdf: pypdfium2.PdfDocument, pages: list[int], index: int) -> None:
+        super().import_pages(pdf, pages, index)
+        super().import_pages(pdf, pages, index)
+
+
+@pytest.mark.parametrize("kind", [Unwilling, Silent, Wrong, Twice])
 def test_an_import_that_did_not_do_its_work_is_damage(
     kind: type[pypdfium2.PdfDocument],
 ) -> None:

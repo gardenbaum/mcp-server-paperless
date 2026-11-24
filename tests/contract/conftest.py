@@ -45,6 +45,7 @@ from fakes.paperless import (
     FakeState,
     FakeTask,
     FakeUser,
+    counted_pages,
     seeded,
 )
 
@@ -350,7 +351,7 @@ def fake_upload(state: FakeState) -> Upload:
                 file_name=filename,
                 original=content,
                 archive=content + b"\n%archive" if mime_type != "text/plain" else None,
-                page_count=1 if mime_type == "application/pdf" else None,
+                page_count=counted_pages(content) or 1 if mime_type == "application/pdf" else None,
             )
         )
         return number

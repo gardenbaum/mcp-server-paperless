@@ -70,8 +70,8 @@ STRUCTURE: Final = (
 )
 SOURCE_LOST: Final = (
     "bookmarks, attachments, document scripts, properties, layer settings (a hidden layer can "
-    "become visible) and the form of the inserted pages are not in the result: their fields cannot be "
-    "filled in, and a value without a stored appearance is not shown"
+    "become visible) and the form of the inserted pages are not in the result: their fields "
+    "cannot be filled in, and a value without a stored appearance is not shown"
 )
 ACTIONS: Final = "links and annotations of the inserted pages, with their actions"
 UNCHECKED: Final = "accessibility tags and PDF/A conformance of the result are not checked"

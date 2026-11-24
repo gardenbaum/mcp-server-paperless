@@ -201,14 +201,14 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "selection": ("test_bulk", "test_toolset_guide"),
     "page_ranges": ("test_pages", "test_pdf"),
     "pages": ("test_pages_files",),
-    # inspect_pdf.
-    "pdf": ("test_pages",),
+    # inspect_pdf and insert_pages.
+    "pdf": ("test_pages", "test_pdf_insert"),
     # The renderer (rendering/ and domain/rendering.py).
-    "rendering": ("test_pages", "test_pages_files"),
-    "worker": ("test_pages", "test_pages_files"),
-    "runner": ("test_pages", "test_pages_files"),
-    "wire": ("test_pages", "test_pages_files"),
-    "limits": ("test_pages", "test_pages_files"),
+    "rendering": ("test_pages", "test_pages_files", "test_pdf_insert"),
+    "worker": ("test_pages", "test_pages_files", "test_pdf_insert"),
+    "runner": ("test_pages", "test_pages_files", "test_pdf_insert"),
+    "wire": ("test_pages", "test_pages_files", "test_pdf_insert"),
+    "limits": ("test_pages", "test_pages_files", "test_pdf_insert"),
     "task_outcome": ("test_tasks", "test_task_reader"),
     "tasks": ("test_task_reader",),
     "tag_hierarchy": ("test_taxonomy_edits",),

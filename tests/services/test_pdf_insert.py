@@ -62,8 +62,8 @@ LOST = (
     "a signature in the PDF is no longer valid",
     (
         "bookmarks, attachments, document scripts, properties, layer settings (a hidden layer can "
-        "become visible) and the form of the inserted pages are not in the result: their fields cannot be "
-        "filled in, and a value without a stored appearance is not shown"
+        "become visible) and the form of the inserted pages are not in the result: their fields "
+        "cannot be filled in, and a value without a stored appearance is not shown"
     ),
     "accessibility tags and PDF/A conformance of the result are not checked",
 )
@@ -747,8 +747,14 @@ async def test_a_damaged_archive_is_named_as_the_archive() -> None:
         _ = await insert(inserter(Paperless(state_of(source=source)), renderer))
 
 
-async def test_pages_only_the_file_can_tell_are_refused_in_the_words_of_this_server() -> None:
-    source = annex(mime_type=PNG, original=b"PNG", page_count=None)
+@pytest.mark.parametrize(
+    "source",
+    [annex(mime_type=PNG, original=b"PNG", page_count=None), annex(page_count=None)],
+    ids=["archive", "not counted"],
+)
+async def test_pages_only_the_file_can_tell_are_refused_in_the_words_of_this_server(
+    source: FakeDocument,
+) -> None:
     paperless = Paperless(state_of(source=source))
     renderer = Assembler(RenderFailed(reason="pages", page_count=1, of_source=True))
 
