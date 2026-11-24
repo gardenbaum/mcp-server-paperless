@@ -248,7 +248,7 @@ class PaperlessPdfWriter:
             **_source(document_id, version_id),
             "operations": [{"page": p.page, "rotate": p.rotate, "doc": p.document} for p in pages],
             "update_document": output == "new_version",
-            "include_metadata": keep_metadata,
+            "include_metadata": _metadata(output, keep=keep_metadata),
         }
         names = [f"{document_id}_edited.pdf"]
         if output == "new_document":
@@ -279,7 +279,7 @@ class PaperlessPdfWriter:
             **_source(document_id, version_id),
             "password": password,
             "update_document": output == "new_version",
-            "include_metadata": keep_metadata,
+            "include_metadata": _metadata(output, keep=keep_metadata),
         }
         try:
             return await self._run(
@@ -423,6 +423,15 @@ class PaperlessPdfWriter:
 def _mode(*, explicit: bool) -> str:
     """Which file Paperless takes of a document that is sent by its root: the first or newest."""
     return "explicit_selection" if explicit else "latest_version"
+
+
+def _metadata(output: FileOutput, *, keep: bool) -> bool:
+    """Whether Paperless copies the metadata: a version needs none, the document keeps its own.
+
+    Copying it would hide the task: 3.5.1 cannot record one whose metadata holds a date among the
+    custom fields (it logs the error, and the work is done all the same).
+    """
+    return keep and output == "new_document"
 
 
 def _source(document_id: int, version_id: int | None) -> dict[str, JsonValue]:

@@ -1885,6 +1885,17 @@ class FakePaperless:
             )
         return StartedTasks(ids=(), expected=count, problem="forbidden")
 
+    def _hidden_by_date(self, document: FakeDocument | None) -> bool:
+        """Whether Paperless cannot record the task of an operation that copies its metadata.
+
+        3.5.1 fails to store a task whose metadata holds a date among the custom fields; the work
+        is done all the same.
+        """
+        dates = {f.id for f in self.state.custom_fields if f.data_type == "date"}
+        return document is not None and any(
+            n in dates and value is not None for n, value in document.custom_fields.items()
+        )
+
     def _pdf_task(self, task_type: str, produced: tuple[int, ...]) -> str:
         """Record a finished task (the fake works at once) and return its id."""
         now = datetime.now(UTC)
@@ -1965,7 +1976,12 @@ class FakePaperless:
             file = self._first_or_newest(document, first=original_files)
             version = self._new_version(document, file, pages=file.page_count, marker=marker)
             tasks.append(self._pdf_task("consume_file", (version,)))
-        return self._seen_tasks(tuple(tasks), sources=tuple(d.id for d in documents))
+        shown = [n for n, d in enumerate(documents) if not self._hidden_by_date(d)]
+        return self._seen_tasks(
+            tuple(tasks[n] for n in shown),
+            len(documents),
+            sources=tuple(documents[n].id for n in shown),
+        )
 
     @write
     async def merge_documents(
@@ -2009,6 +2025,8 @@ class FakePaperless:
         pages = sum(files[d.id].page_count or 0 for d in taken)
         made = self._new_document(source, title, pages, taken[0].content)
         task = self._pdf_task("consume_file", (made.id,))
+        if self._hidden_by_date(source):
+            return self._seen_tasks((), 1)
         return self._seen_tasks((task,), included=tuple(d.id for d in taken))
 
     @write
@@ -2056,6 +2074,8 @@ class FakePaperless:
             )
             for n in files
         )
+        if keep_metadata and self._hidden_by_date(document):
+            return self._seen_tasks((), len(files))
         return self._seen_tasks(
             tasks, len(files), sources=(document.id,) * len(files), outputs=tuple(files)
         )
@@ -2101,6 +2121,8 @@ class FakePaperless:
             file.content,
         )
         task = self._pdf_task("consume_file", (made.id,))
+        if keep_metadata and self._hidden_by_date(document):
+            return self._seen_tasks((), 1)
         return self._seen_tasks((task,), sources=(document.id,))
 
     @write

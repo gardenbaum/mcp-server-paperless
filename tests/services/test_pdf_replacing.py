@@ -571,3 +571,30 @@ async def test_a_refusal_comes_before_anything_is_started() -> None:
         _ = await split(fake, Options())
 
     assert fake.started == []
+
+
+async def test_a_document_with_a_date_field_keeps_the_original_and_says_why() -> None:
+    fake = paperless()
+    [dated] = [f.id for f in fake.state.custom_fields if f.data_type == "date"]
+    document(fake, DOC).custom_fields = {dated: "2026-01-15"}
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+
+    replaced = await shorten(fake)
+    rotated = await service.rotate([DOC, OTHER], 90)
+    merged = await service.merge([DOC, OTHER], DOC)
+    version = await service.delete_pages(DOC, "1", options=YES)
+    unlocked = await service.remove_password(OTHER, "x")
+
+    why = (
+        "Paperless accepted the request, but no task showed up for it (Paperless 3.5 lists none "
+        "for a document with a date among its custom fields: the work is done all the same)."
+    )
+    assert (replaced.state, replaced.trashed_ids, trash(fake)) == ("unknown", (), [])
+    assert replaced.message is not None
+    assert replaced.message.startswith(f"{why} Nothing was moved to the trash: ")
+    assert replaced.next is not None
+    assert replaced.next.startswith("find the new documents with search_documents")
+    assert (len(rotated.tasks), rotated.state) == (1, "unknown")
+    assert merged.message == why
+    assert version.state == "success"
+    assert "date among" not in (unlocked.message or "")

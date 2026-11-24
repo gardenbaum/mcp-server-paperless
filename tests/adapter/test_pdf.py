@@ -494,6 +494,7 @@ async def test_an_edit_as_a_new_version_finds_the_edited_file(make_client: Clien
     body = server.posts[0][3]
     assert isinstance(body, dict)
     assert (body["update_document"], tasks.outputs) == (True, ())
+    assert body["include_metadata"] is False
 
 
 @pytest.mark.parametrize(
@@ -521,7 +522,7 @@ async def test_removing_a_password_sends_it_with_where_the_copy_goes(
                 "password": "s3cret",
                 "source_mode": "latest_version",
                 "update_document": updates,
-                "include_metadata": True,
+                "include_metadata": not updates,
             },
         )
     ]

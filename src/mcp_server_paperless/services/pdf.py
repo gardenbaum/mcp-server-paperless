@@ -78,6 +78,10 @@ SOME_FOUND: Final = (
     "up: the state covers {those} only."
 )
 UNLOCKED_NONE: Final = " (the file may not be password protected)"
+DATED_NONE: Final = (
+    " (Paperless 3.5 lists none for a document with a date among its custom fields: the work is "
+    "done all the same)"
+)
 REPROCESS_NOTE: Final = (
     "Paperless does not say which document a reprocess task belongs to (its tasks name none): "
     "they are the newest reprocess tasks this request started, so they cannot be tied to the "
@@ -264,6 +268,7 @@ class PdfService:
             plan,
             wait_seconds=wait_seconds,
             version=True,
+            no_task=_dated(documents),
         )
 
     async def merge(  # noqa: PLR0913 -- the documents and the options of the merge
@@ -342,6 +347,7 @@ class PdfService:
             started,
             plan,
             wait_seconds=_bound(wait_seconds, composed=delete_originals),
+            no_task=_dated([d for d in documents if d.id == metadata_document_id]),
         )
         left_out = _left_out(document_ids, started)
         if not delete_originals:
@@ -756,7 +762,7 @@ class PdfService:
             plan,
             wait_seconds=_bound(options.wait_seconds, composed=trashes),
             version=version,
-            no_task=no_task,
+            no_task=no_task or ("" if version else _dated([document])),
         )
         if not trashes:
             return result
@@ -906,6 +912,11 @@ def _bound(wait_seconds: float | None, *, composed: bool) -> float:
     if wait_seconds is None:
         return MAX_WAIT_SECONDS if composed else 0
     return wait_seconds
+
+
+def _dated(documents: Sequence[DocumentRecord]) -> str:
+    """Why the task of an operation that copies the metadata of ``documents`` may not be listed."""
+    return DATED_NONE if any(d.custom_fields for d in documents) else ""
 
 
 def _newer_lost(number: int, parameter: str) -> Validation:

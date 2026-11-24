@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import pytest
 from e2e.helpers import pdf_pages
 
-from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch
+from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch, DocumentQuery
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 from mcp_server_paperless.domain.pdf import PageSlot, StartedTasks
 from mcp_server_paperless.domain.versions import VersionUpload
@@ -534,3 +534,40 @@ async def test_a_merge_leaves_out_what_it_cannot_read_and_names_the_rest(
         record = await backend.admin.documents.get_document(merged)
         assert tasks.included == (first,)
         assert (record.page_count, record.title) == (2, f"{first}_merged")
+
+
+@pytest.mark.contract(EDIT)
+async def test_a_date_among_the_custom_fields_hides_the_task_of_a_new_document_only(
+    backend: Backend,
+) -> None:
+    ports, document = backend.admin, backend.new_pdf(1)
+    kinds = {f.name: f.id for f in await ports.taxonomy.list_taxonomy("custom_field")}
+    dated = CustomFieldValue(field=kinds["e2e-date"], value="2026-01-15")
+    _ = await ports.document_writes.update_document(document, DocumentPatch(custom_fields=(dated,)))
+    title = f"contract-dated-{uuid.uuid4().hex}"
+    _ = await ports.document_writes.update_document(document, DocumentPatch(title=title))
+    page = (PageSlot(page=1),)
+
+    version = await ports.pdf_writes.edit_pdf(document, page, output="new_version")
+    _ = await finished(backend, version)
+    hidden = await ports.pdf_writes.edit_pdf(document, page, output="new_document")
+    bare = await ports.pdf_writes.edit_pdf(
+        document, page, output="new_document", keep_metadata=False
+    )
+
+    assert (len(version.ids), hidden.ids, len(bare.ids)) == (1, (), 1)
+    assert (hidden.expected, hidden.problem) == (1, None)
+    _ = await finished(backend, bare)
+    # The document is made all the same, with the title and the date.
+    deadline = time.monotonic() + SECONDS
+    while True:
+        query = DocumentQuery(title_contains=title)
+        listed = await ports.documents.search_documents(query, page=1, page_size=10)
+        made = [hit.id for hit in listed.hits if hit.id != document]
+        if made:
+            break
+        assert time.monotonic() < deadline, "Paperless did not finish in time"
+        await asyncio.sleep(0.5)
+    for number in made:
+        backend.track_document(number)
+    assert (await ports.documents.get_document(made[0])).custom_fields == (dated,)
