@@ -791,7 +791,7 @@ async def test_the_removal_waits_for_what_is_left_of_the_wait() -> None:
 
     fake.ticked = first_done
 
-    result = await extract(fake)
+    result = await extract(fake, options=Options(confirm=True, wait_seconds=300))
 
     assert (result.waited_seconds, fake.now) == (30.0, 30.0)
     assert (result.original, result.next) == ("unknown", wait(fake, 1))

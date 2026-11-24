@@ -1302,6 +1302,17 @@ async def test_a_document_that_is_not_there_yet_is_waited_for() -> None:
 
 
 @pytest.mark.decision("decision-67")
+async def test_no_call_waits_longer_than_30_seconds_for_a_document() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    fake.copies_after = 99.0
+
+    _ = await split(fake, Options(confirm=True, wait_seconds=300))
+
+    assert fake.now == 30.0
+
+
+@pytest.mark.decision("decision-67")
 async def test_documents_in_doubt_are_not_taken_and_nothing_is_trashed_for_them() -> None:
     fake = paperless()
     dated(fake, DOC)

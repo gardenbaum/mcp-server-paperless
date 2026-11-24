@@ -262,7 +262,7 @@ switch them on (never for a session: only you decide, see
 | `core` | 18 | on | Search, read, see pages as images, download, file and upload documents; run saved views; notes; tags, correspondents, types, storage paths and custom fields; background tasks |
 | `ai` | 2 | on | Ask Paperless AI about your documents and get its filing suggestions (offered only while Paperless AI is enabled) |
 | `bulk` | 4 | | Change many documents or taxonomy items in one step and resolve duplicates, with a dry run first; over stdio with upload directories also upload several files or a directory |
-| `pdf` | 8 | | See all pages at a glance with their sizes, rotate, merge, split, delete pages, edit PDFs, remove passwords, reprocess |
+| `pdf` | 9 | | See all pages at a glance with their sizes, rotate, merge, split with metadata per part, extract and delete pages, edit PDFs, remove passwords, reprocess |
 | `versions` | 6 | | The file versions of a document: list, upload, label, delete, merge documents as versions, correct the text |
 | `trash` | 5 | | List and filter the trash, look into an entry, get its file, restore it, empty the trash |
 | `views` | 5 | | Saved views: list, create, change and delete them (running them is in `core`) |

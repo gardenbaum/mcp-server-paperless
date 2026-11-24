@@ -1236,7 +1236,7 @@ def _bound(wait_seconds: float | None, *, composed: bool) -> float:
     """How long to wait: by default only where something is left to do afterwards."""
     if wait_seconds is None:
         return MAX_WAIT_SECONDS if composed else 0
-    return wait_seconds
+    return min(wait_seconds, MAX_WAIT_SECONDS)
 
 
 def _newer_lost(number: int, parameter: str) -> Validation:

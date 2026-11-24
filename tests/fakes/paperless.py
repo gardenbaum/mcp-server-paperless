@@ -2049,6 +2049,7 @@ class FakePaperless:
         self.state.copying.append(made)
         return CopiedFiles(request=made.request, names=tuple(names), included=included)
 
+    @write  # a read, but of the writer port: there is nothing to find before a write
     async def find_copies(self, files: CopiedFiles) -> FoundCopies:
         """`PdfWriter.find_copies`: the user's documents of these names since the request.
 
