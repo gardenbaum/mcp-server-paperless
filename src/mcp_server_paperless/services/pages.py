@@ -156,6 +156,7 @@ class _File:
     Attributes:
         other: The other file of the version, if it can be shown.
         less: How to ask for less.
+        undrawn: How to ask for what needs no drawing.
         less_memory: Whether that also helps where the memory was not enough.
     """
 
@@ -169,6 +170,7 @@ class _File:
     facts: FileMetadata
     less: str = FEWER_PIXELS
     less_memory: bool = False
+    undrawn: str = ""
 
     @property
     def _named(self) -> str:
@@ -239,8 +241,8 @@ class _File:
                 if failure.page:
                     message = message.removesuffix(".") + f" at page {failure.page}."
                     hint = (
-                        f"Leave page {failure.page} out of pages (ranges skip it, like 1-4,6-), or "
-                        f"ask for it with overview=false for its size. {self._elsewhere}"
+                        f"Ask for page {failure.page} alone or leave it out of pages (ranges skip "
+                        f"it, like 1-4,6-).{self.undrawn} {self._elsewhere}"
                     )
             case "memory":
                 message = (
@@ -393,7 +395,8 @@ class PageService:
         """
         file = await self._file(document_id, source, version_id, PDFS)
         less = FEWER_PAGES if overview else "Ask for fewer pages."
-        file = replace(file, less=less, less_memory=True)
+        undrawn = " overview=false skips the drawing." if overview else ""
+        file = replace(file, less=less, less_memory=True, undrawn=undrawn)
         request = OverviewRequest(pages=pages, sheets=overview)
         filename, found = await self._read(
             file, pages, lambda content: self._renderer.inspect(content, request)

@@ -326,19 +326,21 @@ async def test_a_call_without_overview_is_not_told_to_leave_it_out() -> None:
     assert raised.value.hint == f"Ask for fewer pages. {ELSEWHERE}"
 
 
-async def test_a_page_slower_than_the_limit_is_named_with_the_way_on() -> None:
+@pytest.mark.parametrize("overview", [True, False])
+async def test_a_page_slower_than_the_limit_is_named_with_the_way_on(
+    overview: bool,  # noqa: FBT001 -- a parameter of the test
+) -> None:
     renderer = Inspector(RenderFailed(reason="timeout", page=30))
 
     with pytest.raises(PaperlessMcpError) as raised:
-        _ = await service(fake(document()), renderer).inspect(7, "1-")
+        _ = await service(fake(document()), renderer).inspect(7, "1-", overview=overview)
 
     assert raised.value.message == (
         "Rendering document 7 took longer than 30 seconds and was stopped at page 30."
     )
-    assert raised.value.hint == (
-        "Leave page 30 out of pages (ranges skip it, like 1-4,6-), or ask for it with "
-        f"overview=false for its size. {ELSEWHERE}"
-    )
+    alone = "Ask for page 30 alone or leave it out of pages (ranges skip it, like 1-4,6-)."
+    drawn = f"{alone} overview=false skips the drawing. {ELSEWHERE}"
+    assert raised.value.hint == (drawn if overview else f"{alone} {ELSEWHERE}")
 
 
 @pytest.mark.parametrize("overview", [True, False])

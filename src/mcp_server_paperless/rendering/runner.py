@@ -12,7 +12,7 @@ import os
 import sys
 from typing import TYPE_CHECKING, Final, cast
 
-from mcp_server_paperless.domain.rendering import RenderFailed
+from mcp_server_paperless.domain.rendering import OverviewRequest, RenderFailed
 from mcp_server_paperless.rendering.limits import MEMORY_EXIT, TIME_EXIT
 from mcp_server_paperless.rendering.wire import Job, answer_of, encoded, overview_of, started_page
 
@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 
     from mcp_server_paperless.domain.rendering import (
         Overview,
-        OverviewRequest,
         Reason,
         Rendered,
         RenderRequest,
@@ -67,6 +66,13 @@ async def _collect(stdout: StreamReader, limit: int, output: bytearray) -> None:
         output += chunk
         if len(output) > limit:
             raise RenderFailed(reason="crashed")
+
+
+def _page(output: bytearray, request: RenderRequest | OverviewRequest) -> int:
+    """The page a child was at, if its job is one that says so."""
+    if isinstance(request, OverviewRequest):
+        return started_page(bytes(output), request)
+    return 0
 
 
 class ChildRenderer:
@@ -127,7 +133,7 @@ class ChildRenderer:
                 await _collect(stdout, self._output_bytes, output)
                 code = await process.wait()
         except TimeoutError as error:
-            raise RenderFailed(reason="timeout", page=started_page(bytes(output))) from error
+            raise RenderFailed(reason="timeout", page=_page(output, request)) from error
         finally:
             _ = feed.cancel()
             try:
@@ -142,5 +148,5 @@ class ChildRenderer:
                 transport.close()
         if code:
             reason: Reason = _EXITS.get(code, "crashed")
-            raise RenderFailed(reason=reason, page=started_page(bytes(output)))
+            raise RenderFailed(reason=reason, page=_page(output, request))
         return bytes(output)

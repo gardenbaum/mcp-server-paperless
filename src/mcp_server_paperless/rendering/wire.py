@@ -118,17 +118,28 @@ def answer(found: Rendered | Overview | RenderFailed) -> bytes:
     return encoded(head) + b"".join(image.data for image in found.images)
 
 
-# What the child writes before its answer: a line for each page it begins to draw.
-_ANNOUNCED = re.compile(rb"(?:[0-9]{1,6}\n)*")
-# Nothing but such lines, the last of them perhaps not whole.
-_DRAWING = re.compile(rb"(?:[0-9]{1,6}\n)*([0-9]{1,6})\n[0-9]{0,6}")
+# What the child writes before the answer to an ``OverviewRequest``: how many pages the file has,
+# then a mark when it starts the next of the pages asked for and one when it is at none.
+STARTED = b"."
+DONE = b"-"
+_ANNOUNCED = re.compile(rb"[0-9]{1,6}:[.-]*\n")
+_AT_A_PAGE = re.compile(rb"([0-9]{1,6}):([.-]*\.)")
 
 
-def started_page(output: bytes) -> int:
-    """The page the child was at when its output ended; 0 if it was at none, or unknown."""
-    found = _DRAWING.fullmatch(output)
-    page = int(found[1]) if found else 0
-    return page if page <= MAX_PAGES else 0
+def started_page(output: bytes, request: OverviewRequest) -> int:
+    """The page the child was at when its output ended; 0 if it was at none, or it is unknown.
+
+    The child counts, the server names: it can be at no other page than one it was asked for.
+    """
+    found = _AT_A_PAGE.fullmatch(output)
+    if found is None or not 0 < int(found[1]) <= MAX_PAGES:
+        return 0
+    try:
+        wanted = parse_pages(request.pages, page_count=int(found[1]))
+    except Validation:
+        return 0
+    place = found[2].count(STARTED)
+    return wanted[place - 1] if place <= len(wanted) else 0
 
 
 def _is_webp(data: bytes) -> bool:
