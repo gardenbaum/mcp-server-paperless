@@ -690,8 +690,8 @@ async def test_row_4_a_source_that_changed_meanwhile_is_left_alone() -> None:
         f"What was made stays: document {ONE}."
     )
     assert result.next == (
-        f"get_document(document_id={DOC}), only if document {DOC} still shows these pages: "
-        f"{DELETE}; or {DROP}"
+        f"get_document(document_id={DOC}), only if document {DOC} still shows these pages, either "
+        f"{DELETE}, or {DROP}"
     )
 
 
@@ -708,7 +708,8 @@ async def test_row_4_a_source_that_cannot_be_read_again_is_left_alone() -> None:
     assert (len(fake.edits), result.original) == (1, "kept")
     assert "could not be read again" in (result.message or "")
     assert result.next == (
-        f"get_document(document_id={DOC}) once it can be read, {UNCHANGED}: {DELETE}; or {DROP}"
+        f"get_document(document_id={DOC}) once it can be read, {UNCHANGED}, "
+        f"either {DELETE}, or {DROP}"
     )
 
 
@@ -733,7 +734,7 @@ async def test_row_5_a_refused_removal_leaves_the_source_and_names_the_leftover(
 
     assert (shown(fake), result.state, result.original) == ((4, 1), "success", "kept")
     assert result.message == (f"{REMOVED}: The user may not. What was made stays: document {ONE}.")
-    assert result.next == f"{UNCHANGED}: {DELETE}; or {DROP}"
+    assert result.next == f"{UNCHANGED}, either {DELETE}, or {DROP}"
 
 
 async def test_row_5_a_failed_removal_leaves_the_source_and_names_the_leftover() -> None:
@@ -743,7 +744,7 @@ async def test_row_5_a_failed_removal_leaves_the_source_and_names_the_leftover()
     result = await extract(fake)
 
     assert (result.state, result.original) == ("failure", "kept")
-    assert result.next == f"{UNCHANGED}: {DELETE}; or {DROP}"
+    assert result.next == f"{UNCHANGED}, either {DELETE}, or {DROP}"
     assert f"What was made stays: document {ONE}." in (result.message or "")
 
 
@@ -797,7 +798,7 @@ async def test_row_5_a_removal_stopped_without_a_version_is_kept() -> None:
 
     assert (result.original, result.next) == (
         "kept",
-        f"{UNCHANGED}: {DELETE}; or {DROP}",
+        f"{UNCHANGED}, either {DELETE}, or {DROP}",
     )
 
 
@@ -842,7 +843,10 @@ async def test_an_unexpected_error_of_the_removal_leaves_it_unknown() -> None:
     assert "secret" not in str(result)
 
 
-STOPPED = "An unexpected error stopped the call after Paperless accepted the request."
+STOPPED = (
+    "The call was stopped after Paperless accepted the request (unexpected error). Look before "
+    "repeating the call."
+)
 
 
 async def test_an_unexpected_error_after_the_start_still_returns_what_is_known(
@@ -863,6 +867,11 @@ async def test_an_unexpected_error_after_the_start_still_returns_what_is_known(
     assert (result.state, result.original, trash(fake)) == ("unknown", "kept", [])
     assert result.message == STOPPED
     assert result.produced_ids == (ONE, TWO)
+    one, two = result.parts
+    assert (one.metadata, document(fake, ONE).title) == ("set", "Contract")
+    assert (two.metadata, two.document_id) == ("not_set", TWO)
+    assert two.message == "it could not be checked (unexpected error)"
+    assert two.next == f"get_document(document_id={TWO}), only if it has 3 pages: {SET_TWO}"
     assert result.next == f"{wait(fake, 0)}, then {wait(fake, 1)}"
     assert "RuntimeError" in caplog.text
     assert "secret" not in caplog.text + str(result)
@@ -891,6 +900,53 @@ async def test_an_unexpected_error_while_trashing_leaves_the_original_unknown() 
 
     assert (result.state, result.original, result.trashed_ids) == ("unknown", "unknown", ())
     assert [p.metadata for p in result.parts] == ["set", "set"]
+    assert result.message == f"{STOPPED} It is not known whether document {DOC} went to the trash."
+    assert result.next == f"get_document(document_id={DOC})"
+
+
+@pytest.mark.parametrize("remove", [False, True])
+async def test_a_part_that_cannot_be_checked_does_not_stop_an_extraction(*, remove: bool) -> None:
+    fake = paperless()
+
+    def broken(number: int) -> bool:
+        if number == ONE:
+            raise RuntimeError
+        return False
+
+    fake.unreadable = broken
+
+    result = await extract(
+        fake, remove=remove, metadata=None, options=Options(confirm=True, wait_seconds=5)
+    )
+
+    assert result.parts[0].message == "it could not be checked (unexpected error)"
+    assert result.parts[0].next == f"get_document(document_id={ONE})"
+    assert (result.original, shown(fake)) == ("kept", (4, 1))
+
+
+async def test_a_removal_that_is_stopped_keeps_its_task_and_says_where_to_look() -> None:
+    fake = paperless()
+
+    def broken(number: int) -> bool:
+        if number == DOC and len(fake.edits) == 2:
+            raise RuntimeError
+        return False
+
+    fake.unreadable = broken
+
+    result = await extract(fake)
+
+    assert (result.state, result.original) == ("unknown", "unknown")
+    assert [t.task_id for t in result.tasks] == fake.started
+    assert len(fake.started) == 2
+    assert result.produced_ids == (ONE, document(fake, DOC).versions[0].id)
+    assert result.message == (
+        f"{STOPPED} It is not known whether the pages were removed from document {DOC} "
+        f"(unexpected error): document {ONE} holds them."
+    )
+    look = f'get_document(document_id={DOC}, include=["versions"])'
+    assert result.next == f"{wait(fake, 1)}, then {look}"
+    assert [p.metadata for p in result.parts] == ["set"]
 
 
 async def test_a_cancelled_call_stays_cancelled() -> None:

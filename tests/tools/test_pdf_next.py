@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 from fastmcp import Client
-from harness import admin, serve
+from harness import admin, pdf_service, serve
+from jsonschema import validate
 from services.test_pdf_parts import YES, extract, split
 from services.test_pdf_replacing import NUMBER, dated, merge, paperless, shorten
 
@@ -40,13 +41,6 @@ def calls(text: str) -> list[ast.Call]:
     return found
 
 
-def broken(*waits: int) -> Callable[[Paperless], None]:
-    def change(fake: Paperless) -> None:
-        fake.states = dict.fromkeys(waits, "started")
-
-    return change
-
-
 def part_metadata(number: int, _: int | None) -> bool:
     return number == 52
 
@@ -67,61 +61,128 @@ async def merged(fake: Paperless, _: Options) -> PdfResult:
     return await merge(fake)
 
 
-def changes() -> dict[str, Callable[[Paperless], None]]:
-    def set_to(**values: object) -> Callable[[Paperless], None]:
-        def change(fake: Paperless) -> None:
-            for name, value in values.items():
-                setattr(fake, name, value)
-
-        return change
-
-    def meanwhile(fake: Paperless) -> None:
-        def newer() -> None:
-            _ = fake.add_version(50, 3)
-
-        fake.after_start = newer
-
-    def reread(fake: Paperless) -> None:
-        def unreadable() -> None:
-            fake.unreadable = lambda number: number == 50
-
-        fake.after_start = unreadable
-
-    def late(fake: Paperless) -> None:
-        def wait() -> None:
-            fake.now += 46
-
-        fake.after_start = wait
-
-    return {
-        "first waits": broken(0),
-        "second waits": broken(1),
-        "hidden": set_to(hide_tasks=True),
-        "doubt": set_to(doubt="somebody else"),
-        "metadata": set_to(refuse=part_metadata),
-        "unreadable": set_to(unreadable=first_part),
-        "refused": set_to(refuse_edit={"new_version": PermissionDenied("No.")}),
-        "no answer": set_to(refuse_edit={"new_version": UpstreamTimeout("No.")}),
-        "few": set_to(few_pages=True),
-        "lost": set_to(lose_version=True),
-        "deletion": set_to(time_out={50}),
-        "kept": set_to(refuse_deletes={50}),
-        "dated": lambda fake: dated(fake, 50),
-        "changed": meanwhile,
-        "reread": reread,
-        "late": late,
-    }
+def stop(_: int) -> bool:
+    raise RuntimeError
 
 
-@pytest.mark.parametrize("name", changes())
-async def test_every_next_call_names_a_tool_and_its_arguments(name: str) -> None:
+def first_waits(fake: Paperless) -> None:
+    fake.states = {0: "started"}
+
+
+def second_waits(fake: Paperless) -> None:
+    fake.states = {1: "started"}
+
+
+def hidden(fake: Paperless) -> None:
+    fake.hide_tasks = True
+
+
+def doubted(fake: Paperless) -> None:
+    fake.doubt = "somebody else"
+
+
+def no_metadata(fake: Paperless) -> None:
+    fake.refuse = part_metadata
+
+
+def unreadable(fake: Paperless) -> None:
+    fake.unreadable = first_part
+
+
+def refused(fake: Paperless) -> None:
+    fake.refuse_edit = {"new_version": PermissionDenied("No.")}
+
+
+def unanswered(fake: Paperless) -> None:
+    fake.refuse_edit = {"new_version": UpstreamTimeout("No.")}
+
+
+def few(fake: Paperless) -> None:
+    fake.few_pages = True
+
+
+def lost(fake: Paperless) -> None:
+    fake.lose_version = True
+
+
+def deletion(fake: Paperless) -> None:
+    fake.time_out = {50}
+
+
+def kept(fake: Paperless) -> None:
+    fake.refuse_deletes = {50}
+
+
+def with_date(fake: Paperless) -> None:
+    dated(fake, 50)
+
+
+def changed(fake: Paperless) -> None:
+    def newer() -> None:
+        _ = fake.add_version(50, 3)
+
+    fake.after_start = newer
+
+
+def reread(fake: Paperless) -> None:
+    def gone() -> None:
+        fake.unreadable = original
+
+    fake.after_start = gone
+
+
+def original(number: int) -> bool:
+    return number == 50
+
+
+def late(fake: Paperless) -> None:
+    def wait() -> None:
+        fake.now += 46
+
+    fake.after_start = wait
+
+
+def stopped(fake: Paperless) -> None:
+    def broken() -> None:
+        fake.unreadable = stop
+
+    fake.after_start = broken
+
+
+def stopped_hidden(fake: Paperless) -> None:
+    dated(fake, 50)
+    fake.copies_error = RuntimeError()
+
+
+def stopped_trashing(fake: Paperless) -> None:
+    fake.delete_error = RuntimeError()
+
+
+def stopped_removing(fake: Paperless) -> None:
+    def shows(number: int) -> bool:
+        return number == 50 and len(fake.edits) == 2 and stop(number)
+
+    fake.unreadable = shows
+
+
+CASES = (
+    *(first_waits, second_waits, hidden, doubted, no_metadata, unreadable, refused, unanswered),
+    *(few, lost, deletion, kept, with_date, changed, reread, late),
+    *(stopped, stopped_hidden, stopped_trashing, stopped_removing),
+)
+
+
+@pytest.mark.parametrize("change", CASES)
+async def test_every_next_call_names_a_tool_and_its_arguments(
+    change: Callable[[Paperless], None],
+) -> None:
     async with Client(serve(admin(), toolsets=["all"])) as client:
         tools = {tool.name: tool.input_schema for tool in await client.list_tools()}
     texts: list[str] = []
     for options in (YES, Options(confirm=True, wait_seconds=0)):
         for run in (replaced, removed, shorten, merged):
             fake = paperless(NUMBER)
-            changes()[name](fake)
+            change(fake)
             result = await run(fake, options)
             texts += [t for t in (result.next, *(p.next for p in result.parts)) if t]
 
@@ -132,12 +193,25 @@ async def test_every_next_call_names_a_tool_and_its_arguments(name: str) -> None
         assert isinstance(call.func, ast.Name)
         schema = cast("dict[str, dict[str, object]]", tools[call.func.id])
         assert not call.args
-        given = {keyword.arg for keyword in call.keywords}
-        assert given <= set(schema["properties"])
-        assert set(schema.get("required", ())) <= given
-        for keyword in call.keywords:
-            value = cast("object", ast.literal_eval(keyword.value))
-            assert value is not None
+        given = {k.arg: cast("object", ast.literal_eval(k.value)) for k in call.keywords}
+        assert given.keys() <= set(schema["properties"])
+        validate(given, schema)
+
+
+async def test_the_next_calls_of_a_stopped_rotation_exist() -> None:
+    async with Client(serve(admin(), toolsets=["all"])) as client:
+        tools = {tool.name: tool.input_schema for tool in await client.list_tools()}
+    fake = paperless()
+    dated(fake, 50)
+    fake.break_fields = True
+
+    result = await pdf_service(fake).rotate([50], 90)
+
+    [call] = calls(result.next or "")
+    assert isinstance(call.func, ast.Name)
+    given = {k.arg: cast("object", ast.literal_eval(k.value)) for k in call.keywords}
+    validate(given, tools[call.func.id])
+    assert given == {"document_id": 50, "include": ["versions"]}
 
 
 def test_calls_are_found_with_parentheses_in_their_texts() -> None:

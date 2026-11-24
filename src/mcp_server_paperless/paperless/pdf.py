@@ -22,6 +22,7 @@ looks for the file tasks, with a fresh window.
 """
 
 import asyncio
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -41,6 +42,8 @@ if TYPE_CHECKING:
 
     from mcp_server_paperless.domain.pdf import FileOutput, LookupProblem, PageSlot
     from mcp_server_paperless.paperless.client import PaperlessClient
+
+logger = logging.getLogger(__name__)
 
 BASE = "/api/documents/"
 TASKS = "/api/tasks/"
@@ -432,41 +435,79 @@ class PaperlessPdfWriter:
                 queued = await self._client.call("POST", f"{BASE}{endpoint}/", Queued, json=body)
             except PermissionDenied:
                 raise _refused() from None
-            unconfirmed = await self._waiter.confirmed(queued, failed)
-            if unconfirmed is not None and problem != "forbidden":
-                # Accepted, but not followed to its end: hand the queued task back, do not raise,
-                # even when the mark failed, because the queued task is still the one to follow.
-                # A user who may not view tasks cannot follow it: that stays "forbidden".
-                return StartedTasks(
-                    ids=(unconfirmed.task_id,),
-                    expected=expected,
-                    problem="unconfirmed",
-                    detail=unconfirmed.reason,
-                )
-            if problem is not None:
-                return StartedTasks(ids=(), expected=expected, problem=problem)
             found: list[_Task] = []
-            deadline = self._clock() + self._settle
-            while True:
-                try:
-                    seen = await self._tasks_after(mark, kind, user)
-                except PaperlessMcpError:
-                    # Fewer than expected were found, or the loop would have ended.
-                    return _started(found, expected, merged, "failed")
-                found = _first_of_each(seen, match)
-                left = deadline - self._clock()
-                if len(found) >= expected or left <= 0:
-                    started = _started(found, expected, merged)
-                    if own is None:
-                        return started
-                    if not found:
-                        files = CopiedFiles(
-                            request=queued.task_id, names=own.names, included=own.included
-                        )
-                        return started.model_copy(update={"files": files})
-                    doubt = await self._doubt(queued.task_id, user, seen, expected, own)
-                    return started.model_copy(update={"doubt": doubt})
-                await self._sleep(min(self._poll, left))
+            try:
+                return await self._lookup(
+                    queued,
+                    failed,
+                    found,
+                    mark=mark,
+                    problem=problem,
+                    kind=kind,
+                    user=user,
+                    match=match,
+                    expected=expected,
+                    merged=merged,
+                    own=own,
+                )
+            except Validation:
+                raise
+            except Exception as error:  # noqa: BLE001 -- accepted: say so, whatever goes wrong
+                logger.error(  # noqa: TRY400 -- the type alone: a message could hold data
+                    "%s: its tasks could not be looked up: %s", endpoint, type(error).__name__
+                )
+                return _started(found, expected, merged, "failed")
+
+    async def _lookup(  # noqa: PLR0913 -- what is looked for
+        self,
+        queued: Queued,
+        failed: Callable[[str], Validation],
+        found: list[_Task],
+        *,
+        mark: _Task | None,
+        problem: LookupProblem | None,
+        kind: str,
+        user: int | None,
+        match: Match | None,
+        expected: int,
+        merged: Sequence[int],
+        own: _Copies | None,
+    ) -> StartedTasks:
+        """The tasks of an accepted request; ``found`` holds what is known if it breaks."""
+        unconfirmed = await self._waiter.confirmed(queued, failed)
+        if unconfirmed is not None and problem != "forbidden":
+            # Accepted, but not followed to its end: hand the queued task back, do not raise,
+            # even when the mark failed, because the queued task is still the one to follow.
+            # A user who may not view tasks cannot follow it: that stays "forbidden".
+            return StartedTasks(
+                ids=(unconfirmed.task_id,),
+                expected=expected,
+                problem="unconfirmed",
+                detail=unconfirmed.reason,
+            )
+        if problem is not None:
+            return StartedTasks(ids=(), expected=expected, problem=problem)
+        deadline = self._clock() + self._settle
+        while True:
+            try:
+                seen = await self._tasks_after(mark, kind, user)
+            except PaperlessMcpError:
+                # Fewer than expected were found, or the loop would have ended.
+                return _started(found, expected, merged, "failed")
+            found[:] = _first_of_each(seen, match)
+            left = deadline - self._clock()
+            if len(found) >= expected or left <= 0:
+                started = _started(found, expected, merged)
+                if own is None:
+                    return started
+                if not found:
+                    files = CopiedFiles(
+                        request=queued.task_id, names=own.names, included=own.included
+                    )
+                    return started.model_copy(update={"files": files})
+                doubt = await self._doubt(queued.task_id, user, seen, expected, own)
+                return started.model_copy(update={"doubt": doubt})
+            await self._sleep(min(self._poll, left))
 
     async def _doubt(
         self, queued: str, user: int | None, seen: list[_Task], expected: int, own: _Copies

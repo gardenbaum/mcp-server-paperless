@@ -106,10 +106,14 @@ class Progress:
     Attributes:
         result: What is known so far.
         last: Whether the step that changes the original may have begun.
+        product: The new document whose pages are being removed from the original, if any.
+        trashed: The originals that are in the trash.
     """
 
     result: PdfResult
     last: bool = False
+    product: int | None = None
+    trashed: list[int] = field(default_factory=list[int])
 
 
 class KeptError(Exception):
@@ -152,7 +156,8 @@ class _Done:
     unknown: bool = False
 
 
-def _named(numbers: Sequence[int]) -> str:
+def named(numbers: Sequence[int]) -> str:
+    """``document 3`` or ``documents 3, 5``."""
     noun = "document" if len(numbers) == 1 else "documents"
     return f"{noun} {', '.join(str(n) for n in numbers)}"
 
@@ -197,7 +202,7 @@ def _finish(
 
 def if_unchanged(left: Sequence[DocumentRecord]) -> str:
     """The condition of a next call that these documents did not change."""
-    names = _named([d.id for d in left])
+    names = named([d.id for d in left])
     return f"only if {names} {'is' if len(left) == 1 else 'are'} unchanged"
 
 
@@ -299,7 +304,9 @@ class Replacing:
             return stays(result, wanted, kept.reason, kept.next_call)
         progress.last = True
         # Not to be cut short between taking a serial number from one document and giving it on.
-        done = await asyncio.shield(asyncio.ensure_future(self._trash(wanted, product, began)))
+        done = await asyncio.shield(
+            asyncio.ensure_future(self._trash(wanted, product, began, progress.trashed))
+        )
         result = noted(result, done.notes, next_call=done.next)
         original = "trashed" if done.trashed else "unknown" if done.unknown else "kept"
         return result.model_copy(
@@ -336,7 +343,7 @@ class Replacing:
             KeptError: It is not what it should be.
         """
         if len(task.document_ids) != 1:
-            found = _named(task.document_ids) if task.document_ids else "nothing"
+            found = named(task.document_ids) if task.document_ids else "nothing"
             reason = f"task {task.task_id} made {found} instead of one document"
             raise KeptError(reason)
         [number] = task.document_ids
@@ -387,9 +394,11 @@ class Replacing:
             reason = f"document {original.id} was changed meanwhile; look at it again"
             raise KeptError(reason)
 
-    async def _trash(self, wanted: Replacement, product: DocumentRecord, began: float) -> _Done:
+    async def _trash(
+        self, wanted: Replacement, product: DocumentRecord, began: float, trashed: list[int]
+    ) -> _Done:
         """Move the serial number, then the originals to the trash; failures are told."""
-        done = _Done()
+        done = _Done(trashed)
         moved = await self._hand_over(wanted, product, done)
         if moved is None:
             return done
@@ -403,8 +412,7 @@ class Replacing:
                 break
             done.trashed.append(original.id)
         if done.trashed:
-            each = "It" if len(done.trashed) == 1 else "Each"
-            done.notes.insert(0, f"Now in the trash: {_named(done.trashed)}. {each} {WAY_BACK}")
+            done.notes.insert(0, gone(done.trashed))
         return done
 
     async def _stopped(  # noqa: PLR0913 -- what is to be told
@@ -425,9 +433,9 @@ class Replacing:
             note = f"It is not known whether document {first.id} went to the trash ({why.cause}). "
             note += f"If it did, it {WAY_BACK}"
             if len(left) > 1:
-                note += f" Not moved to the trash: {_named([d.id for d in left[1:]])}."
+                note += f" Not moved to the trash: {named([d.id for d in left[1:]])}."
         else:
-            note = f"Not moved to the trash: {_named([d.id for d in left])} ({why.cause})."
+            note = f"Not moved to the trash: {named([d.id for d in left])} ({why.cause})."
         done.notes.append(note)
         original = wanted.serial
         place = _Place(product.id) if moved or original is None else _Place(original.id)
@@ -549,11 +557,17 @@ def _tell_place(
     )
 
 
+def gone(numbers: Sequence[int]) -> str:
+    """What is in the trash, and the way back."""
+    each = "It" if len(numbers) == 1 else "Each"
+    return f"Now in the trash: {named(numbers)}. {each} {WAY_BACK}"
+
+
 def stays(result: PdfResult, wanted: Replacement, reason: str, next_call: str | None) -> PdfResult:
     """``result``, saying why the last step was not taken."""
     notes = [wanted.kept.format(reason=reason)]
     if result.produced_ids:
-        notes.append(f"What was made stays: {_named(result.produced_ids)}.")
+        notes.append(f"What was made stays: {named(result.produced_ids)}.")
     original = "kept" if len(wanted.originals) == 1 else None
     return noted(result, notes, next_call=next_call).model_copy(update={"original": original})
 

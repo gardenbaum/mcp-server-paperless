@@ -68,6 +68,7 @@ class Paperless(FakePaperless):
         self.problem: LookupProblem | None = None
         self.no_fields: bool = False
         self.break_fields: bool = False
+        self.clock_error: Exception | None = None
         self.swap: bool = False
         self.hide_tasks: bool = False
         self.update_error: BaseException | None = None
@@ -87,12 +88,15 @@ class Paperless(FakePaperless):
         self.copies_first: int = 0  # how many of them are there at once
         self.copies_doubt: str | None = None
         self.copies_fail: bool = False
+        self.doubt_at_the_end: bool = False
         self.undate: bool = False
         self.forget_included: bool = False
         self.ticked: Callable[[], None] = lambda: None
         self.now: float = 0.0
 
     def clock(self) -> float:
+        if self.clock_error is not None:
+            raise self.clock_error
         return self.now
 
     async def sleep(self, delay: float) -> None:
@@ -108,7 +112,7 @@ class Paperless(FakePaperless):
             message = "Paperless did not respond in time."
             raise UpstreamTimeout(message)
         found = await super().find_copies(files, final=final)
-        if self.copies_doubt is not None:
+        if self.copies_doubt is not None and (final or not self.doubt_at_the_end):
             return FoundCopies(
                 ids=(None,) * len(found.ids),
                 doubt=self.copies_doubt,
@@ -1398,14 +1402,16 @@ async def test_files_of_earlier_operations_are_waited_for() -> None:
 
 
 @pytest.mark.decision("decision-67")
-async def test_unlocking_a_readable_file_does_not_wait_long_for_a_file_that_may_not_come() -> None:
+async def test_a_locked_file_with_a_page_count_is_looked_for_up_to_the_bound() -> None:
     fake = paperless()
     dated(fake, DOC)
+    document(fake, DOC).password, document(fake, DOC).page_count = "s3cret", 4
+    fake.copies_after = 6.0
     service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
 
-    result = await service.remove_password(DOC, "x", output="replace_original", options=YES)
+    result = await service.remove_password(DOC, "s3cret", output="replace_original", options=YES)
 
-    assert (fake.now, result.trashed_ids, result.tasks) == (5.0, (), ())
+    assert (fake.now, result.trashed_ids) == (6.0, (DOC,))
 
 
 @pytest.mark.decision("decision-67")
@@ -1507,7 +1513,10 @@ async def test_an_unreadable_field_list_leaves_a_date_possible() -> None:
     assert result.message.startswith(f"{NO_TASK} ({maybe}). Nothing")
 
 
-STOPPED = "An unexpected error stopped the call after Paperless accepted the request."
+STOPPED = (
+    "The call was stopped after Paperless accepted the request (unexpected error). Look before "
+    "repeating the call."
+)
 
 
 @pytest.mark.decision("decision-67")
@@ -1552,9 +1561,10 @@ async def test_an_unexpected_error_while_merged_originals_go_says_that_they_may_
     result = await merge(fake)
 
     assert (result.state, trash(fake)) == ("unknown", [DOC])
-    assert "It is not known which originals went to the trash: look at documents 50, 51." in (
-        result.message or ""
-    )
+    assert result.trashed_ids == (DOC,)
+    assert "Now in the trash: document 50." in (result.message or "")
+    assert "It is not known whether document 51 went to the trash." in (result.message or "")
+    assert result.next == "get_document(document_id=50), then get_document(document_id=51)"
     assert "It is not known where archive serial number 777 is" in (result.message or "")
 
 
@@ -1574,3 +1584,36 @@ async def test_an_unexpected_error_after_rotating_started_is_not_raised() -> Non
     assert some.next == f'get_task(task_id="{fake.started[0]}", wait_seconds=30)'
     assert none.next == f'get_document(document_id={DOC}, include=["versions"])'
     assert version.message != STOPPED  # copies nothing, so it does not read the definitions
+
+
+@pytest.mark.decision("decision-67")
+async def test_a_message_of_paperless_is_told_when_a_call_is_stopped() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+
+    def stop() -> None:
+        fake.clock_error = UpstreamTimeout("Paperless did not respond in time.")
+
+    fake.after_start = stop
+
+    result = await split(fake)
+
+    assert (result.state, result.original) == ("unknown", "kept")
+    assert result.message == STOPPED.replace(
+        "unexpected error", "Paperless did not respond in time"
+    )
+
+
+@pytest.mark.decision("decision-67")
+async def test_files_that_were_seen_early_are_not_taken_if_the_last_look_doubts_them() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    fake.copies_after, fake.copies_first = 99.0, 1
+    fake.copies_doubt, fake.doubt_at_the_end = EARLIER, True
+
+    result = await split(fake)
+
+    assert (result.produced_ids, result.trashed_ids, fake.patches) == ((), (), [])
+    assert [p.document_id for p in result.parts] == [None, None]
+    assert fake.searches[-1] is True
+    assert True not in fake.searches[:-1]

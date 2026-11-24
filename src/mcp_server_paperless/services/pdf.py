@@ -54,7 +54,9 @@ from mcp_server_paperless.services.pdf_replacing import (
     Progress,
     Replacement,
     cause,
+    gone,
     if_unchanged,
+    named,
     noted,
     stays,
 )
@@ -113,14 +115,15 @@ MAYBE_DATED: Final = (
     "its custom fields may hold a date (their definitions cannot be read), for which Paperless 3.5 "
     "lists no task: the work is done all the same"
 )
-STOPPED: Final = "An unexpected error stopped the call after Paperless accepted the request."
-MAYBE_GONE: Final = "It is not known which originals went to the trash: look at documents {ids}."
-# How long to look for an unlocked file where the locked one was readable, so there may be none.
-UNLOCK_SECONDS: Final = 5.0
+STOPPED: Final = (
+    "The call was stopped after Paperless accepted the request ({cause}). Look before repeating "
+    "the call."
+)
 NOT_TAKEN: Final = (
     "The new documents could not be told by their file names either ({doubt}): nothing is done to "
     "them."
 )
+MAYBE_GONE: Final = "It is not known whether {named} went to the trash."
 EVERY_PART: Final = "the calls in next of every part, then "
 NOT_REMOVED: Final = "No page was removed from document {id}: {{reason}}."
 MAYBE_REMOVED: Final = (
@@ -965,10 +968,7 @@ class PdfService:
         composed = trashes or request.sets or bool(request.removed)
         bound = _bound(options.wait_seconds, composed=composed)
         copied = [document] if options.keep_metadata and not version else []
-        look = bound
-        if no_task and source.pages is not None:
-            look = min(bound, UNLOCK_SECONDS)
-        started, found = await self._parts.look(started, await self._dates(copied), look)
+        started, found = await self._parts.look(started, await self._dates(copied), bound)
         result = await self._result(
             request.operation,
             progress.result.summary,
@@ -1053,16 +1053,15 @@ class PdfService:
         drop = ""
         try:
             product = await self._replacing.checked(result, started, wanted, began=began)
-            drop = f"; or delete_document(document_id={product.id}) to drop the new document"
+            drop = f"either {call}, or delete_document(document_id={product.id}) to drop the new "
+            drop += "document"
             await self._replacing.unchanged(document, document.archive_serial_number)
         except KeptError as kept:
             look = f"get_document(document_id={document.id})"
             if kept.unread:
-                look = f"{look} once it can be read, {again}{drop}"
+                look = f"{look} once it can be read, {if_unchanged([document])}, {drop}"
             else:
-                look = (
-                    f"{look}, only if document {document.id} still shows these pages: {call}{drop}"
-                )
+                look = f"{look}, only if document {document.id} still shows these pages, {drop}"
             next_call = look if drop else kept.next_call
             return stays(result, wanted, kept.reason, next_call)
         rest = [
@@ -1072,17 +1071,20 @@ class PdfService:
         ]
         versions = f'get_document(document_id={document.id}, include=["versions"])'
         unknown = f"{versions}, {again}"
-        progress.last = True
+        progress.last, progress.product = True, product.id
         try:
             second = await self._writer.edit_pdf(
                 document.id, rest, output="new_version", version_id=source.version
             )
         except (*REFUSALS, NotFound) as error:
-            return stays(result, wanted, cause(error), f"{again}{drop}")
+            return stays(result, wanted, cause(error), f"{if_unchanged([document])}, {drop}")
         except Exception as error:  # noqa: BLE001 -- the new document exists: say so
             note = MAYBE_REMOVED.format(id=document.id, cause=cause(error), product=product.id)
             known = {"state": "unknown", "original": "unknown"}
             return noted(result, [note], next_call=unknown).model_copy(update=known)
+        progress.result = result.model_copy(
+            update={"tasks": (*result.tasks, *_unknown(second)), "next": _waits(second)}
+        )
         removal = await self._result(
             request.operation,
             result.summary,
@@ -1092,6 +1094,7 @@ class PdfService:
             wait_seconds=max(bound - result.waited_seconds, 0),
             version=True,
         )
+        progress.result = _together(result, removal).model_copy(update={"next": _waits(second)})
         result = _together(result, removal)
         if removal.state == "success" and removal.produced_ids:
             other = await self._shows(document.id, removal.produced_ids[0], len(rest))
@@ -1099,7 +1102,9 @@ class PdfService:
             return noted(
                 result, [] if other is None else [other], next_call=other and versions
             ).model_copy(update=known)
-        return _unremoved(result, removal, wanted, again=f"{again}{drop}", unknown=unknown)
+        return _unremoved(
+            result, removal, wanted, again=f"{if_unchanged([document])}, {drop}", unknown=unknown
+        )
 
     async def _merged_note(
         self, result: PdfResult, left_out: str | None, pages: int | None
@@ -1338,14 +1343,28 @@ def _versions(document_ids: Sequence[int]) -> str:
     )
 
 
+def _unknown(started: StartedTasks) -> tuple[PdfTask, ...]:
+    """The tasks of a request before they are read."""
+    return tuple(
+        PdfTask(task_id=n, state="unknown", message=None, document_ids=()) for n in started.ids
+    )
+
+
+def _waits(started: StartedTasks) -> str:
+    """The calls that wait for the tasks of a request."""
+    return ", then ".join(f'get_task(task_id="{n}", wait_seconds=30)' for n in started.ids)
+
+
 def _accepted(
     preview: PdfResult, started: StartedTasks, *, original: Literal["kept"] | None = None
 ) -> PdfResult:
     """What is known of a request right after Paperless accepted it."""
-    tasks = tuple(
-        PdfTask(task_id=n, state="unknown", message=None, document_ids=()) for n in started.ids
-    )
-    known = {"dry_run": False, "state": "unknown", "tasks": tasks, "original": original}
+    known = {
+        "dry_run": False,
+        "state": "unknown",
+        "tasks": _unknown(started),
+        "original": original,
+    }
     return preview.model_copy(update=known)
 
 
@@ -1365,22 +1384,30 @@ async def _guarded(
         logger.error(  # noqa: TRY400 -- the type alone: a message could hold document data
             "%s: stopped after the start: %s", base.operation, type(error).__name__
         )
-        return _stopped(progress, started, wanted, find)
+        return _stopped(progress, started, wanted, find, cause(error))
 
 
 def _stopped(
-    progress: Progress, started: StartedTasks, wanted: Replacement | None, find: str
+    progress: Progress, started: StartedTasks, wanted: Replacement | None, find: str, why: str
 ) -> PdfResult:
     """What is known of a call an unexpected error stopped after Paperless accepted it."""
     known = progress.result
-    notes = [STOPPED]
+    notes = [STOPPED.format(cause=why)]
     update: dict[str, object] = {"state": "unknown"}
-    if progress.last and wanted is not None:
+    then = _waits(started) or find
+    if progress.product is not None:
+        [source] = known.source_document_ids
+        notes.append(MAYBE_REMOVED.format(id=source, cause=why, product=progress.product))
+        update["original"] = "unknown"
+        then = ", then ".join([*([known.next] if known.next else []), _versions([source])])
+    elif progress.last and wanted is not None:
+        update["trashed_ids"] = tuple(progress.trashed)
+        left = [d.id for d in wanted.originals if d.id not in progress.trashed]
+        if progress.trashed:
+            notes.append(gone(progress.trashed))
+        notes.append(MAYBE_GONE.format(named=named(left)))
         if len(wanted.originals) == 1:
             update["original"] = "unknown"
-        else:
-            ids = ", ".join(str(d.id) for d in wanted.originals)
-            notes.append(MAYBE_GONE.format(ids=ids))
         serial = wanted.serial
         if serial is not None and serial.archive_serial_number is not None and known.produced_ids:
             notes.append(
@@ -1390,8 +1417,8 @@ def _stopped(
                     product=known.produced_ids[-1],
                 )
             )
-    waits = [f'get_task(task_id="{task_id}", wait_seconds=30)' for task_id in started.ids]
-    return noted(known, notes, next_call=", then ".join(waits) or find).model_copy(update=update)
+        then = ", then ".join(f"get_document(document_id={d.id})" for d in wanted.originals)
+    return noted(known, notes, next_call=then).model_copy(update=update)
 
 
 def _together(made: PdfResult, removal: PdfResult) -> PdfResult:

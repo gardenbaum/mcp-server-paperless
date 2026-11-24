@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
 NEW: Final = "<the new document>"
 NOT_SET: Final = "its metadata is not known to be set ({cause})"
+UNCHECKED: Final = "it could not be checked ({cause})"
 CHANGED: Final = "Paperless answered with other values than asked for"
 TOO_LATE: Final = "the call took too long to set its metadata"
 DOUBTED: Final = "it cannot be told that it is this part ({doubt})"
@@ -321,10 +322,12 @@ class Parts:
             document = await self._replacing.verified(task, pages, taken)
         except KeptError as kept:
             then = kept.next_call
-            if then is not None and part.edit is not None and number is not None:
-                size = f"{pages} {'page' if pages == 1 else 'pages'}"
-                then = f"{then}, only if it has {size}: {_update_call(part.edit, number)}"
+            if then is not None and number is not None:
+                then = _checked_by_hand(part, number, pages)
             return {**names, "message": kept.reason, "next": then}
+        except Exception as error:  # noqa: BLE001 -- the documents exist: the other parts go on
+            then = None if number is None else _checked_by_hand(part, number, pages)
+            return {**names, "message": UNCHECKED.format(cause=cause(error)), "next": then}
         if part.edit is None:
             return names
         message: str | None = TOO_LATE
@@ -340,6 +343,15 @@ class Parts:
         if message is None:
             return {**names, "metadata": "set"}
         return {**names, "message": message, "next": _update_call(part.edit, document.id)}
+
+
+def _checked_by_hand(part: Part, number: int, pages: int | None) -> str:
+    """The calls that finish a part whose document could not be read."""
+    look = f"get_document(document_id={number})"
+    if part.edit is None:
+        return look
+    size = f"{pages} {'page' if pages == 1 else 'pages'}"
+    return f"{look}, only if it has {size}: {_update_call(part.edit, number)}"
 
 
 def _untold(started: StartedTasks, search: str) -> dict[str, object]:

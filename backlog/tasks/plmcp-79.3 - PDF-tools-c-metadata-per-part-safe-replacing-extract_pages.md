@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:16Z'
-updated_date: '2026-11-24T13:32:39Z'
+updated_date: '2026-11-24T13:38:40Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -78,4 +78,6 @@ Red first: tests/adapter/test_pdf_copies.py, tests/services/test_pdf_parts.py (c
 Review of 9a3985b (0 Critical, 3 Important, 9 Minor), owner 2026-11-24 "Bitte wie von dir empfohlen.": the one-hour rule is kept, tags is the whole list, rotate stays out of the name search for now. Fixed, tests seen red first: I1 unexpected errors after the start (Parts._finish, the removal, an outer guard in PdfService._run; the log has the type alone; CancelledError passes), I2 tags exactly the wanted ones and their parents, I3 the document must show the produced version with the remaining pages, M1 PENDING is waited for, M2 earlier operations are read once every file is there or at the end, unlocking a readable file looks for at most 5 seconds, M3 the order of pages is in text, fingerprint and parts, M5, M6, M7, M8 (the test of an unreadable field list changed on purpose). M9: tests/tools/test_pdf_next.py (written after the fixes), the adapter archive honours iendswith, the fake knows TASKED and the hour. The harness taxonomy ttl is 3600 again: the change to 0 was not needed. Not done, the owner's: a bound on tags per part (M4), remembering requests, rotate. merge_documents, outside _run, has no outer guard.
 
 The outer guard (_guarded) now covers merge_documents and rotate_documents too, as the same helper as _run; red first (4 tests). remove_document_password, delete_pages, edit_pdf, split and extract go through _run. reprocess_documents has no such hole: after its start it only follows tasks (follow catches everything) and copies nothing. This replaces the earlier note that merge has no guard.
+
+Delta review of b1f34da fixed, tests red first (N1 to N8): N1 the 5 second bound of unlocking is removed (it shortened an owner-ruled result), N2 a stopped call names every original, what is already in the trash and the task of the removal, N3 a part that cannot be checked does not stop the others, N4 lookups that break after the POST are problem failed, N5 and N6 the message of a stopped call, N7 test_pdf_next validates the arguments against the schemas and covers the guard (not red first; nor the last look of the search), N8 the condition covers both calls. test_pdf_next sets the switches of the fake directly: the setattr was banned by hygiene.
 <!-- SECTION:NOTES:END -->
