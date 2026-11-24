@@ -207,6 +207,24 @@ async def test_a_confirmed_version_reports_what_this_server_compared() -> None:
     assert VERSION_AFTER in check.not_checked
 
 
+async def test_a_path_with_an_emoji_name_is_checked_too(tmp_path: Path) -> None:
+    """A path may hold a joined emoji (PLMCP-76), the name to upload under may not."""
+    setup = Setup(writes=True, upload_dirs=(str(tmp_path),))
+    setup.document(12, "Invoice")
+    name = f"family {chr(0x1F468)}{chr(0x200D)}{chr(0x1F469)}.pdf"
+    _ = (tmp_path / name).write_bytes(FILE)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.uploads.from_path(str(tmp_path / name), "x.pdf", UploadMetadata())
+    result = await setup.uploads.from_path(
+        str(tmp_path / name), "x.pdf", UploadMetadata(), confirm=True
+    )
+
+    assert "upload 'x.pdf' although" in raised.value.message
+    assert result.filename == "x.pdf"
+    assert [m.document_id for m in result.duplicates.before] == [12]
+
+
 async def test_an_acceptance_lets_exactly_this_file_pass(tmp_path: Path) -> None:
     """The file under a path may change between the dialog and the second run."""
     setup = Setup(writes=True, upload_dirs=(str(tmp_path),))

@@ -62,6 +62,9 @@ class Failing(FakePaperless):
         # What happens right before the first, second, ... call of this name.
         self.no_checksum: bool = False
         self.count_only: bool = False
+        self.trash_sizes: list[int] = []
+        # The only entry the pages of the trash show, whatever their number.
+        self.only: int | None = None
         self.changes: dict[str, list[Callable[[], None]]] = {}
 
     def note(self, name: str) -> None:
@@ -92,7 +95,12 @@ class Failing(FakePaperless):
     async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
         self.note(f"list_trash {page}")
         self.note("list_trash")
+        self.trash_sizes.append(page_size)
         listed = await super().list_trash(page=page, page_size=page_size)
+        if self.only is not None:
+            found = (await super().list_trash(page=1, page_size=9)).entries
+            kept = tuple(e for e in found if e.id == self.only)
+            return listed.model_copy(update={"entries": kept})
         if self.no_checksum:
             entries = [e.model_copy(update={"checksum": None}) for e in listed.entries]
             return listed.model_copy(update={"entries": tuple(entries)})
@@ -503,11 +511,8 @@ async def test_a_page_that_is_gone_is_no_end_of_the_scan(page: str) -> None:
         await setup.delete(number)
     setup.fake.errors[page] = NotFound("Page 2 is beyond the last page.")
 
-    if page == "list_trash 2":  # the second attempt reads the trash in one page
-        assert len(await found_by(setup)) == 2
-    else:
-        with pytest.raises(CheckMovedError):
-            _ = await found_by(setup)
+    with pytest.raises(CheckMovedError):
+        _ = await found_by(setup)
 
 
 @pytest.mark.parametrize("confirm", [False, True])
@@ -526,20 +531,72 @@ async def test_what_never_adds_up_is_a_failed_check(*, confirm: bool) -> None:
     assert setup.fake.calls.count("list_versions 1") == 2
 
 
-async def test_rows_of_the_trash_that_repeat_are_read_in_one_page_then() -> None:
-    """Paperless orders the trash by date only, so pages may overlap."""
-    setup = moving()
-    for number in (12, 13):
-        _ = setup.document(number)
-        await setup.delete(number)
-    setup.state.trash[0].created = date(2026, 1, 1)  # the order flips when the dates do
+def flipping(setup: Setup) -> Callable[[], None]:
+    """Makes the trash come in the other order from now on, as equal dates may on PostgreSQL."""
 
     def flip() -> None:
-        setup.state.trash[0].created = date(2026, 12, 31)
+        first, second = setup.state.trash
+        first.created, second.created = second.created, first.created
 
-    setup.fake.changes["list_trash 2"] = [flip]
+    return flip
+
+
+def two_trashed() -> Setup:
+    setup = moving()
+    for number, day in ((12, 1), (13, 2)):
+        _ = setup.document(number, created=date(2026, 1, day))
+        setup.state.trash.append(setup.state.documents.pop())
+        setup.state.trash[-1].deleted_at = DELETED
+    return setup
+
+
+async def test_trash_pages_that_overlap_are_read_again_and_merged() -> None:
+    setup = two_trashed()
+    setup.fake.changes["list_trash 2"] = [flipping(setup)]
 
     assert {d for d, _, _ in await found_by(setup)} == {12, 13}
+    assert setup.fake.calls.count("list_trash 2") == 2
+
+
+async def test_no_request_for_the_trash_asks_for_more_than_a_page() -> None:
+    """The rows carry the whole text of the documents, so the size of a page is the bound."""
+    setup = two_trashed()
+    setup.fake.changes["list_trash 2"] = [flipping(setup)] * 8
+
+    _ = await found_by(setup)
+
+    assert setup.fake.trash_sizes
+    assert set(setup.fake.trash_sizes) == {1}
+    wide = Setup()
+    _ = await found_by(wide)
+    assert max(wide.fake.trash_sizes) == Bounds().trash_page
+
+
+@pytest.mark.parametrize("calls_before", [0, 1])
+async def test_a_trash_that_shrinks_between_its_pages_or_passes_is_read_anew(
+    calls_before: int,
+) -> None:
+    setup = two_trashed()
+    if not calls_before:  # so that page 2 still exists afterwards
+        _ = setup.document(14, original=b"third", created=date(2026, 1, 3))
+        await setup.delete(14)
+    page = "list_trash 2" if calls_before == 0 else "list_trash 1"
+    setup.fake.changes[page] = [*([lambda: None] * calls_before), back(setup, 12)]
+    if calls_before:  # overlapping pages ask for the second pass
+        setup.fake.changes["list_trash 2"] = [flipping(setup)]
+
+    found = await found_by(setup)
+
+    assert (12, None, False) in found
+    assert (13, None, True) in found
+
+
+async def test_a_trash_that_never_shows_every_entry_is_a_failed_check() -> None:
+    setup = two_trashed()
+    setup.fake.only = 13
+
+    with pytest.raises(CheckMovedError):
+        _ = await found_by(setup)
 
 
 async def test_a_deleted_version_that_vanished_is_read_again() -> None:

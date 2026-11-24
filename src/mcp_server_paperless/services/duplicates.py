@@ -194,19 +194,18 @@ class DuplicateFinder:
         self._web_url: str = web_url
         self._bounds: Bounds = bounds or Bounds()
 
-    async def snapshot(self, *, one_trash_page: bool = False) -> Snapshot:
+    async def snapshot(self) -> Snapshot:
         """The versions and the trash, read once within the bounds.
 
         The trash comes first and ``before`` counts it again, so a document or version that is
-        deleted or restored in between is noticed. ``one_trash_page`` reads it in one request: it
-        has no order of its own, so its pages may overlap.
+        deleted or restored in between is noticed.
 
         Raises:
             CheckMovedError: What was read does not add up.
             PaperlessMcpError: Paperless could not be read. What the user may not read is a gap.
         """
         scan = _Scan()
-        await self._read_trash(scan, one_page=one_trash_page)
+        await self._read_trash(scan)
         await self._versions(scan)
         matches: dict[str, tuple[DuplicateMatch, ...]] = {}
         for checksum, match in scan.found:
@@ -282,8 +281,7 @@ class DuplicateFinder:
         try:
             return await self.before(sha256, await self.snapshot(), own=own)
         except CheckMovedError:
-            snapshot = await self.snapshot(one_trash_page=True)
-            return await self.before(sha256, snapshot, own=own)
+            return await self.before(sha256, await self.snapshot(), own=own)
 
     async def after(self, consumed: int) -> DuplicateReport:
         """The duplicates of a document or version that was just consumed; never raises."""
@@ -369,10 +367,10 @@ class DuplicateFinder:
                 found.append((version.checksum.lower(), self._live(row.id, row.title, version.id)))
         return found
 
-    async def _read_trash(self, scan: _Scan, *, one_page: bool) -> None:
+    async def _read_trash(self, scan: _Scan) -> None:
         versions: list[TrashedDocument] = []
         try:
-            entries, total = await self._trash_entries(one_page=one_page)
+            entries, total = await self._trash_entries()
         except PermissionDenied:
             scan.gaps.append("Trash: this user may not list it.")
             return
@@ -388,28 +386,43 @@ class DuplicateFinder:
             scan.gaps.append(f"Trash: only {len(entries)} of {total} entries were read.")
         await self._trashed_versions(versions, scan)
 
-    async def _trash_entries(self, *, one_page: bool) -> tuple[list[TrashedDocument], int]:
+    async def _trash_entries(self) -> tuple[list[TrashedDocument], int]:
         """The entries within the bounds, and how many there are.
+
+        Paperless orders the trash by date only, so its pages may overlap. While the number of
+        entries stays the same a second pass fills what the first one missed; the pages stay
+        small, because their rows carry the whole text of the documents.
 
         Raises:
             CheckMovedError: Entries within the bounds are missing, or their number changed.
         """
-        most = self._bounds.trash_pages * self._bounds.trash_page
-        size = most if one_page else self._bounds.trash_page
-        listed = await self._trash.list_trash(page=1, page_size=size)
-        first = listed.count
-        entries = {e.id: e for e in listed.entries}
-        for page in range(2, most // size + 1):
+        bounds = self._bounds
+        entries: dict[int, TrashedDocument] = {}
+        total = await self._trash_pass(entries)
+        wanted = min(total, bounds.trash_pages * bounds.trash_page)
+        if len(entries) < wanted and await self._trash_pass(entries) != total:
+            raise CheckMovedError
+        if len(entries) != total <= wanted:
+            raise CheckMovedError
+        return list(entries.values()), total
+
+    async def _trash_pass(self, entries: dict[int, TrashedDocument]) -> int:
+        """Read the pages of the trash once into ``entries``; how many entries it has."""
+        bounds = self._bounds
+        listed = await self._trash.list_trash(page=1, page_size=bounds.trash_page)
+        total = listed.count
+        entries.update((e.id, e) for e in listed.entries)
+        for page in range(2, bounds.trash_pages + 1):
             if listed.next_page is None:
                 break
             try:
-                listed = await self._trash.list_trash(page=page, page_size=size)
+                listed = await self._trash.list_trash(page=page, page_size=bounds.trash_page)
             except NotFound:
                 raise CheckMovedError from None
-            entries |= {e.id: e for e in listed.entries}
-        if listed.count != first or (first <= most and len(entries) != first):
+            entries.update((e.id, e) for e in listed.entries)
+        if listed.count != total:
             raise CheckMovedError
-        return list(entries.values()), first
+        return total
 
     async def _trashed_versions(self, entries: list[TrashedDocument], scan: _Scan) -> None:
         """Deleted versions: their checksum is in the metadata of the document, one by one."""
@@ -476,7 +489,7 @@ class DuplicateFinder:
     async def _in_trash(self, root: int, version: int | None) -> DuplicateMatch:
         """A document in the trash; its title only if the user's trash lists it."""
         try:
-            entries, _ = await self._trash_entries(one_page=False)
+            entries, _ = await self._trash_entries()
         except CheckMovedError, PermissionDenied:
             entries = []
         entry = next((e for e in entries if e.id == root), None)
