@@ -16,6 +16,8 @@ from mcp_server_paperless.domain.tasks import Wait
 # same document (the older versions stay), or a new document while the original moves to the
 # Paperless trash.
 type Output = Literal["new_document", "new_version", "replace_original"]
+# What Paperless itself is asked for: trashing the original is this server's last step.
+type FileOutput = Literal["new_document", "new_version"]
 
 
 class PageSlot(BaseModel):
@@ -60,6 +62,10 @@ class StartedTasks(BaseModel):
         expected: How many tasks the request starts.
         sources: The document each task belongs to, parallel to ``ids``; None where Paperless
             does not say (reprocessing). Empty when the caller does not know.
+        outputs: The output file of an edit into new documents each task makes (from 0), parallel
+            to ``ids``. Empty for every other operation.
+        included: The documents the file of a merge names, None where that is not known (a long
+            name is cut, so it does not say).
         problem: Why the lookup is incomplete beyond tasks that did not show up: the user may not
             view tasks (forbidden), reading them failed after the request was accepted (failed),
             or the queued task of Paperless could not be followed to its end (unconfirmed):
@@ -72,6 +78,8 @@ class StartedTasks(BaseModel):
     ids: tuple[str, ...]
     expected: int
     sources: tuple[int | None, ...] = ()
+    outputs: tuple[int, ...] = ()
+    included: tuple[int, ...] | None = None
     problem: LookupProblem | None = None
     detail: str | None = None
 

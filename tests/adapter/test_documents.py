@@ -574,6 +574,34 @@ async def test_the_text_of_a_missing_version_is_not_found(make_client: ClientFac
         _ = await PaperlessDocumentReader(make_client(server)).get_document_content(9, version_id=8)
 
 
+PAGES: Json = {"page_count": 4, "versions": TEXT["versions"]}
+
+
+@pytest.mark.parametrize("count", [4, None])
+async def test_the_pages_of_one_version_are_asked_for_by_its_id(
+    make_client: ClientFactory, count: int | None
+) -> None:
+    server = Resource({**PAGES, "page_count": count})
+
+    found = await PaperlessDocumentReader(make_client(server)).get_version_pages(1, 1)
+
+    assert found == count
+    assert server.sent == [("/api/documents/1/", {"fields": "page_count,versions", "version": "1"})]
+
+
+async def test_the_pages_of_an_unlisted_or_missing_version_are_not_found(
+    make_client: ClientFactory,
+) -> None:
+    in_the_trash = Resource(PAGES)
+    missing = Resource({"detail": "No Document matches the given query."}, status=404)
+
+    for server in (in_the_trash, missing):
+        with pytest.raises(NotFound, match="No version 8 exists on document 1"):
+            _ = await PaperlessDocumentReader(make_client(server)).get_version_pages(1, 8)
+    alone = Resource({"page_count": 2, "versions": []})
+    assert await PaperlessDocumentReader(make_client(alone)).get_version_pages(1, 1) == 2
+
+
 async def test_the_content_of_a_missing_document_is_not_found(make_client: ClientFactory) -> None:
     server = Resource({"detail": "No Document matches the given query."}, status=404)
 

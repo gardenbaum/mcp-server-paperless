@@ -9,7 +9,9 @@ milliseconds:
   ``{id}_edit_{n}.pdf`` (new documents) or ``{id}_edited.pdf`` (a new version),
   ``{id}_{id}_merged.pdf``, ``{id}_unprotected.pdf``;
 - ``reprocess_document`` per document;
-- a trailing ``bulk_delete`` when originals are deleted (not reported).
+
+Paperless's own deletion of originals is never asked for: it hangs on the success of those tasks,
+and a task also succeeds when it stops without making a document (decision-60).
 
 So the writer notes the newest task before the request and afterwards looks for newer tasks of
 the operation's kind, for a short bounded time. A user who may not view tasks gets none back.
@@ -20,7 +22,6 @@ looks for the file tasks, with a fresh window.
 """
 
 import asyncio
-import re
 import time
 from typing import TYPE_CHECKING, Final
 
@@ -35,7 +36,7 @@ from mcp_server_paperless.paperless.queued import Queued, TaskWaiter, not_applie
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
 
-    from mcp_server_paperless.domain.pdf import LookupProblem, Output, PageSlot
+    from mcp_server_paperless.domain.pdf import FileOutput, LookupProblem, PageSlot
     from mcp_server_paperless.paperless.client import PaperlessClient
 
 BASE = "/api/documents/"
@@ -76,6 +77,12 @@ class _Task(BaseModel):
         head = self.filename.partition("_")[0]
         return int(head) if head.isascii() and head.isdigit() else None
 
+    @property
+    def output(self) -> int | None:
+        """The output file (from 0) of a ``{id}_edit_{n}.pdf``, whose ``n`` counts from 1."""
+        number = self.filename.partition("_edit_")[2].removesuffix(".pdf")
+        return int(number) - 1 if number.isascii() and number.isdigit() else None
+
 
 class _User(BaseModel):
     id: int
@@ -89,6 +96,7 @@ type Match = Callable[[_Task], bool]
 
 CONSUME = "consume_file"
 REPROCESS = "reprocess_document"
+MERGED: Final = "_merged.pdf"
 # Paperless names the merged file after the documents, joined and cut to this many characters.
 MERGED_NAME_LIMIT: Final = 100
 
@@ -98,21 +106,34 @@ def _named(names: Sequence[str]) -> Match:
     return lambda task: task.filename in wanted
 
 
-def _pattern(pattern: str) -> Match:
-    compiled = re.compile(pattern)
-    return lambda task: compiled.fullmatch(task.filename) is not None
-
-
 def _merged(document_ids: Sequence[int]) -> Match:
-    joined = "_".join(str(n) for n in document_ids)
-    return _named([f"{joined[:MERGED_NAME_LIMIT]}_merged.pdf"])
+    return lambda task: _included(task.filename, document_ids) is not None
+
+
+def _included(filename: str, document_ids: Sequence[int]) -> tuple[int, ...] | None:
+    """The documents a merged file is named after, None if it is not of a merge of these.
+
+    Paperless leaves out what it cannot merge, so the name holds some of the ids, in their order.
+    Empty for a name that was cut: which ids came after the cut is not known.
+    """
+    joined, dot, rest = filename.rpartition(MERGED)
+    if not dot or rest or len(joined) > MERGED_NAME_LIMIT:
+        return None
+    *parts, last = joined.split("_")
+    left = iter([str(n) for n in document_ids])
+    if not all(part in left for part in parts):
+        return None
+    if len(joined) == MERGED_NAME_LIMIT:
+        return () if any(n.startswith(last) for n in left) else None
+    return tuple(int(n) for n in (*parts, last)) if last in left else None
 
 
 def _failure(what: str) -> Callable[[str], Validation]:
     return lambda _: not_applied(what)
 
 
-def _edit_failed(task_id: str) -> Validation:
+def edit_failed(task_id: str) -> Validation:
+    """The error for an edit whose queued task failed."""
     return task_failed(task_id, "a file that is not a PDF or a page that does not exist")
 
 
@@ -168,9 +189,15 @@ class PaperlessPdfWriter:
         )
         self._lock: asyncio.Lock = asyncio.Lock()
 
-    async def rotate_documents(self, document_ids: Sequence[int], degrees: int) -> StartedTasks:
+    async def rotate_documents(
+        self, document_ids: Sequence[int], degrees: int, *, original_files: bool = False
+    ) -> StartedTasks:
         """See ``PdfWriter.rotate_documents``: one ``{id}_rotated.pdf`` task per document."""
-        body: dict[str, JsonValue] = {"documents": list(document_ids), "degrees": degrees}
+        body: dict[str, JsonValue] = {
+            "documents": list(document_ids),
+            "degrees": degrees,
+            "source_mode": _mode(explicit=original_files),
+        }
         match = _named([f"{n}_rotated.pdf" for n in document_ids])
         return await self._run(
             "rotate", body, CONSUME, match, len(document_ids), failed=_failure("rotation")
@@ -181,22 +208,36 @@ class PaperlessPdfWriter:
         document_ids: Sequence[int],
         *,
         metadata_document_id: int | None,
-        delete_originals: bool,
+        archive_fallback: bool = False,
+        original_files: bool = False,
     ) -> StartedTasks:
         """See ``PdfWriter.merge_documents``: one task, the file named after the documents."""
         body: dict[str, JsonValue] = {
             "documents": list(document_ids),
             "metadata_document_id": metadata_document_id,
-            "delete_originals": delete_originals,
+            "archive_fallback": archive_fallback,
+            "source_mode": _mode(explicit=original_files),
         }
         started = await self._run(
-            "merge", body, CONSUME, _merged(document_ids), 1, failed=_failure("merge")
+            "merge",
+            body,
+            CONSUME,
+            _merged(document_ids),
+            1,
+            failed=_failure("merge"),
+            merged=document_ids,
         )
-        # The file name starts with the first document, but the result is a document of its own.
+        # The file name starts with a document, but the result is a document of its own.
         return started.model_copy(update={"sources": ()})
 
     async def edit_pdf(
-        self, document_id: int, pages: Sequence[PageSlot], *, output: Output
+        self,
+        document_id: int,
+        pages: Sequence[PageSlot],
+        *,
+        output: FileOutput,
+        version_id: int | None = None,
+        keep_metadata: bool = True,
     ) -> StartedTasks:
         """See ``PdfWriter.edit_pdf``: a task per output file.
 
@@ -204,23 +245,30 @@ class PaperlessPdfWriter:
         for every output file, which is how many files the pages go to.
         """
         body: dict[str, JsonValue] = {
-            "documents": [document_id],
+            **_source(document_id, version_id),
             "operations": [{"page": p.page, "rotate": p.rotate, "doc": p.document} for p in pages],
             "update_document": output == "new_version",
-            "delete_original": output == "replace_original",
+            "include_metadata": keep_metadata,
         }
-        if output == "new_version":
-            match, expected = _named([f"{document_id}_edited.pdf"]), 1
-        else:
-            match = _pattern(rf"{document_id}_edit_\d+\.pdf")
-            expected = len({p.document for p in pages})
+        names = [f"{document_id}_edited.pdf"]
+        if output == "new_document":
+            count = len({p.document for p in pages})
+            names = [f"{document_id}_edit_{n}.pdf" for n in range(1, count + 1)]
         try:
-            return await self._run("edit_pdf", body, CONSUME, match, expected, failed=_edit_failed)
+            return await self._run(
+                "edit_pdf", body, CONSUME, _named(names), len(names), failed=edit_failed
+            )
         except Validation as error:
             raise _plain(error, not_editable()) from None
 
     async def remove_password(
-        self, document_id: int, password: str, *, output: Output
+        self,
+        document_id: int,
+        password: str,
+        *,
+        output: FileOutput,
+        version_id: int | None = None,
+        keep_metadata: bool = True,
     ) -> StartedTasks:
         """See ``PdfWriter.remove_password``: one ``{id}_unprotected.pdf`` task, if any.
 
@@ -228,10 +276,10 @@ class PaperlessPdfWriter:
         that starts no task.
         """
         body: dict[str, JsonValue] = {
-            "documents": [document_id],
+            **_source(document_id, version_id),
             "password": password,
             "update_document": output == "new_version",
-            "delete_original": output == "replace_original",
+            "include_metadata": keep_metadata,
         }
         try:
             return await self._run(
@@ -268,6 +316,7 @@ class PaperlessPdfWriter:
         expected: int,
         *,
         failed: Callable[[str], Validation],
+        merged: Sequence[int] = (),
     ) -> StartedTasks:
         """Send the request, then collect the new tasks of ``kind`` that ``match``.
 
@@ -307,19 +356,10 @@ class PaperlessPdfWriter:
                     found = await self._tasks_after(mark, kind, user, match)
                 except PaperlessMcpError:
                     # Fewer than expected were found, or the loop would have ended.
-                    return StartedTasks(
-                        ids=tuple(task.task_id for task in found),
-                        expected=expected,
-                        sources=tuple(task.source for task in found),
-                        problem="failed",
-                    )
+                    return _started(found, expected, merged, "failed")
                 left = deadline - self._clock()
                 if len(found) >= expected or left <= 0:
-                    return StartedTasks(
-                        ids=_ids(found, expected),
-                        expected=expected,
-                        sources=_sources(found, expected),
-                    )
+                    return _started(found, expected, merged)
                 await self._sleep(min(self._poll, left))
 
     async def _mark(self, kind: str, user: int | None) -> tuple[_Task | None, LookupProblem | None]:
@@ -367,17 +407,51 @@ class PaperlessPdfWriter:
         page = await self._client.get(TASKS, Page[_Task], params=params)
         newer = (t for t in page.results if mark is None or t.id > mark.id)
         mine = (t for t in newer if kind != CONSUME or user is None or t.owner == user)
-        return sorted(
+        ordered = sorted(
             (t for t in mine if t.task_type == kind and (match is None or match(t))),
             key=lambda t: t.id,
         )
+        if match is None:
+            return ordered
+        # A request makes each file once: a second task for it is another request's.
+        first: dict[str, _Task] = {}
+        for task in ordered:
+            _ = first.setdefault(task.filename, task)
+        return list(first.values())
 
 
-def _ids(found: list[_Task], expected: int) -> tuple[str, ...]:
-    """The ids of the oldest ``expected`` tasks: later ones belong to other requests."""
-    return tuple(task.task_id for task in found[:expected])
+def _mode(*, explicit: bool) -> str:
+    """Which file Paperless takes of a document that is sent by its root: the first or newest."""
+    return "explicit_selection" if explicit else "latest_version"
 
 
-def _sources(found: list[_Task], expected: int) -> tuple[int | None, ...]:
-    """The documents of the oldest ``expected`` tasks, in step with ``_ids``."""
-    return tuple(task.source for task in found[:expected])
+def _source(document_id: int, version_id: int | None) -> dict[str, JsonValue]:
+    """The one document of a request, as the version whose file is to be read."""
+    return {
+        "documents": [document_id if version_id is None else version_id],
+        "source_mode": _mode(explicit=version_id is not None),
+    }
+
+
+def _started(
+    found: list[_Task],
+    expected: int,
+    merged: Sequence[int],
+    problem: LookupProblem | None = None,
+) -> StartedTasks:
+    """The oldest ``expected`` tasks: later ones belong to other requests.
+
+    Of merged files the one of the most documents: one of fewer may be another request's.
+    """
+    if merged:
+        found = sorted(found, key=lambda t: -len(_included(t.filename, merged) or merged))
+    mine = found[:expected]
+    outputs = [task.output for task in mine]
+    return StartedTasks(
+        ids=tuple(task.task_id for task in mine),
+        expected=expected,
+        sources=tuple(task.source for task in mine),
+        outputs=tuple(n for n in outputs if n is not None),
+        included=_included(mine[0].filename, merged) or None if mine and merged else None,
+        problem=problem,
+    )
