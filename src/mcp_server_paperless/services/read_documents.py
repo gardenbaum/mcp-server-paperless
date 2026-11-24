@@ -233,12 +233,12 @@ class ReadDocuments:
 
         What concerns one text leaves the others. What concerns every request ends them: a 429
         (after the client's own retries), a rejected credential, no connection, and two outages
-        in a row (one alone can be of its document, and would end every call at it).
+        in a row: the first stays failed, or a text that always times out would begin every call.
         """
         room = MAX_TEXT
         done = list(rows)
         failed: dict[str, list[int]] = {}
-        outage: str | None = None  # why the document before has no text, if it was an outage
+        outage = False  # whether the document before was one
         end: tuple[str, ...] = ()
         for at, row in enumerate(rows):
             if not room:
@@ -249,18 +249,17 @@ class ReadDocuments:
             try:
                 text = (await self._reader.get_document_content(row.id)).content
             except NotFound:  # deleted meanwhile: missing in the next call
+                outage = False
                 continue
             except PaperlessMcpError as error:
                 again = _outage(error)
-                if again and outage is not None:
-                    _ = failed[outage].pop()
-                if (again and outage is not None) or limited(error) or isinstance(error, ENDING):
+                if (again and outage) or limited(error) or isinstance(error, ENDING):
                     end = (f"Reading text stopped: {error.message}",)
                     break
                 failed.setdefault(error.message, []).append(row.id)
-                outage = error.message if again else None
+                outage = again
                 continue
-            outage = None
+            outage = False
             part = text[: min(chars, room)]
             room -= len(part)
             done[at] = row.model_copy(

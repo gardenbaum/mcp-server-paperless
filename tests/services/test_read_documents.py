@@ -437,7 +437,7 @@ async def test_a_lasting_error_of_one_text_is_named_and_the_others_go_on(
         UpstreamUnavailable("Gateway timeout.", status=504),
     ],
 )
-async def test_two_outages_in_a_row_end_the_texts_and_both_are_left(
+async def test_two_outages_in_a_row_end_the_texts_and_the_second_is_left(
     error: PaperlessMcpError,
 ) -> None:
     setup = Setup()
@@ -449,14 +449,15 @@ async def test_two_outages_in_a_row_end_the_texts_and_both_are_left(
     found = await setup.read(("content",), document_ids=(10, 11, 12, 13, 14))
 
     assert setup.fake.texts == [10, 11, 12, 13]
-    assert (found.left, found.failed) == ((12, 13, 14), (10,))
+    # The first is never left, or a text that always times out would begin every call.
+    assert (found.left, found.failed) == ((13, 14), (10, 12))
     assert found.notices == (
-        f"The text of document 10 could not be read in this call: {error.message}",
+        f"The text of documents 10 and 12 could not be read in this call: {error.message}",
         f"Reading text stopped: {error.message}",
     )
 
 
-async def test_two_different_outages_leave_nothing_that_failed() -> None:
+async def test_two_different_outages_are_outages_in_a_row() -> None:
     setup = Setup()
     for number in (10, 11, 12):
         setup.add(number, content="x")
@@ -467,8 +468,24 @@ async def test_two_different_outages_leave_nothing_that_failed() -> None:
 
     found = await setup.read(("content",), document_ids=(10, 11, 12))
 
-    assert (found.left, found.failed) == ((10, 11, 12), ())
-    assert found.notices == ("Reading text stopped: Busy.",)
+    assert (found.left, found.failed) == ((11, 12), (10,))
+    assert found.notices == (
+        "The text of document 10 could not be read in this call: Too late.",
+        "Reading text stopped: Busy.",
+    )
+
+
+async def test_a_missing_text_between_two_outages_parts_them() -> None:
+    setup = Setup()
+    for number in (10, 11, 12, 13):
+        setup.add(number, content="x")
+    outage = UpstreamUnavailable("Busy.", status=503)
+    setup.fake.errors |= {10: outage, 11: NotFound("gone"), 12: outage}
+
+    found = await setup.read(("content",), document_ids=(10, 11, 12, 13))
+
+    assert setup.fake.texts == [10, 11, 12, 13]
+    assert (found.left, found.failed) == ((11,), (10, 12))
 
 
 async def test_a_lasting_error_after_an_outage_does_not_end_the_texts() -> None:

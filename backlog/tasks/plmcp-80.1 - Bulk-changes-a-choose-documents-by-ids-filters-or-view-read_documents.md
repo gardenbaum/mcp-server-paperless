@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:32Z'
-updated_date: '2026-11-24T14:31:37Z'
+updated_date: '2026-11-24T14:34:43Z'
 labels:
   - bulk
 dependencies:
@@ -63,4 +63,6 @@ Live on f802555 (CI run 45410532339, part 4/4): the six tests of tests/e2e/test_
 Delta review of ab8d5a9 (3 Important, 4 Minor), all fixed, red first: N1 the indexed documents have a title and a date of their own. N2 excluded_absent (listed and absent: deleted, or hidden; noticed conditionally, since a hidden one does exclude) apart from excluded_unchecked (kind may not be listed, no notice). N3 two outages in a row (502, 503, 504, timeout) end the texts and go back into left; one alone stays per document, so that one text cannot block every call. N4 to N6 notices to the last character, own before query, failed without cut rows. N7 decision-69 says what the similarity measurement is.
 
 Live on f802555 (CI 45410532339): all 27 cases of tests/contract/test_selection.py pass on 3.5.1: P1 (each field), P9 (rows hold notes also for a user without view_note, as decision-70 says), P10 (ids with filters, a deleted tag). The four failures of that run are tests of PLMCP-79.3 (test_pdf.py contract and E2E, search by file name).
+
+Last review of ecb8e68, fixed red first: of two outages in a row the first stays in failed and only the second and the rest go to left (corrects N3 above); a 404 between two outages parts them; texts; one rule with an existing and a gone id is tested again.
 <!-- SECTION:NOTES:END -->

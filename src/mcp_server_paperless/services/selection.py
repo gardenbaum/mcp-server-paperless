@@ -142,7 +142,7 @@ class DocumentSelector:
 
         ``ordering`` replaces the order of the ids, of the view or of the search. With ``change``
         what matches more than was meant is refused instead of noticed. It does not
-        refuse ``missing`` or ``excluded_absent``: the caller has to.
+        refuse ``missing`` or ``excluded_absent``: the caller has to decide on them.
 
         Raises:
             Validation: Nothing or too much was chosen, a filter is empty or contradicts another,

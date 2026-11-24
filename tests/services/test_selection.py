@@ -246,6 +246,16 @@ async def test_rules_for_what_exists_name_nothing() -> None:
     assert (found.excluded_absent, found.excluded_unchecked, found.notices) == ((), (), ())
 
 
+async def test_of_one_rule_only_what_is_gone_is_named() -> None:
+    setup = Setup()
+    setup.view(FilterRule(rule_type=17, value="3,77"))
+
+    found = await setup.select(saved_view="mine")
+
+    assert found.excluded_absent == ("tag 77",)
+    assert found.notices[0].endswith("more may match: tag 77.")
+
+
 async def test_a_tag_deleted_after_it_was_listed_is_gone() -> None:
     setup = Setup()
     setup.view(FilterRule(rule_type=17, value="3"))
@@ -289,7 +299,7 @@ async def test_what_the_user_may_not_list_cannot_be_checked_and_is_named_apart()
 
     found = await setup.select(saved_view="mine")
 
-    # A hidden object does exclude, so there is nothing to warn of.
+    # Nothing is known of it, so a warning could be false.
     assert (found.excluded_absent, found.excluded_unchecked) == ((), ("user 2",))
     assert found.notices == ()
 
