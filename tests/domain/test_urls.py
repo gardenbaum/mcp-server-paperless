@@ -198,6 +198,8 @@ def test_an_empty_user_is_taken_off(url: str, written: str) -> None:
                 "user:secret/https://rest@host/x",
                 "//user:secret/https://rest@h",
                 "//secret/https://rest@h",
+                "user:secret://rest@host",
+                "//secret://rest@h",
                 "u:p,https://q@h",
                 "u:p/https://q/https://r@h",
                 'u:p"https://q@h',

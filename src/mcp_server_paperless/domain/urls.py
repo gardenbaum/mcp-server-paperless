@@ -78,7 +78,8 @@ def _url_in(word: str) -> int | None:
     start = found.start()
     while found[0][0] == ":" and start and word[start - 1].isascii() and word[start - 1].isalpha():
         start -= 1
-    if _SECRET_BEFORE.search(word, 0, start) and _AT.search(word, start):
+    # Only http and https are sure to be a scheme: other letters can be the end of a password.
+    if _SECRET_BEFORE.search(word, 0, found.start()) and _AT.search(word, start):
         return 0  # the URL can be a part of credentials without a scheme
     return start
 
