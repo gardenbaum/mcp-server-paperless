@@ -1,18 +1,18 @@
-"""Render pages of one file: the program of the child process, and the function behind it.
+"""Render pages of one file, or put pages of two together: the program of the child process.
 
-The file is untrusted: PDFium and Pillow read it with native code. `runner` starts this module in
-a process of its own for each call and bounds it.
+The functions behind it are here, too. The files are untrusted: PDFium and Pillow read them with
+native code. `runner` starts this module in a process of its own for each call and bounds it.
 """
 
 import ctypes
 import importlib.util
 import io
+import itertools
 import math
 import re
 import struct
 import sys
 import time
-from functools import partial
 from itertools import batched, chain, groupby, islice
 from typing import TYPE_CHECKING, BinaryIO, Final, Protocol, cast, override
 
@@ -27,7 +27,11 @@ from mcp_server_paperless.domain.rendering import (
     MAX_PAGES,
     MAX_RUNS,
     TILES,
+    Assembled,
+    AssembleRequest,
     ContactSheet,
+    Counted,
+    CountRequest,
     Overview,
     OverviewRequest,
     PageImage,
@@ -37,20 +41,32 @@ from mcp_server_paperless.domain.rendering import (
     RenderFailed,
 )
 from mcp_server_paperless.rendering import limits
+from mcp_server_paperless.rendering.fields import (
+    blank_fields,
+    cut_parents,
+    draw_fields,
+    has_fields,
+    marks_in,
+    remove_fields,
+)
 from mcp_server_paperless.rendering.limits import MEMORY_EXIT
 from mcp_server_paperless.rendering.wire import DONE, READING, STARTED, Job, answer
 from mcp_server_paperless.services.page_ranges import parse_pages
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping
+    from collections import Counter
+    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
     from mcp_server_paperless.domain.rendering import Reason, Region, RenderRequest
+    from mcp_server_paperless.rendering.wire import Answered
 
 PDF = "application/pdf"
 WHOLE: Region = (0.0, 0.0, 1.0, 1.0)
 WHITE = (255, 255, 255, 255)
 # FPDF_ERR_PASSWORD and FPDF_ERR_SECURITY (a scheme PDFium does not know).
 PDF_ERRORS: Final[Mapping[int | None, Reason]] = {4: "encrypted", 5: "encrypted"}
+# The longest side of a page that is put together, in points: 3.5 kilometres.
+MAX_SIDE: Final = 10_000_000
 # The only formats Pillow may open, and what its decoders raise for a broken file.
 FORMATS: Final = ("JPEG", "PNG", "TIFF", "WEBP")
 BROKEN: Final = (
@@ -629,6 +645,210 @@ def overview(  # noqa: PLR0913 -- the file, the job, and one keyword per seam
     )
 
 
+def _plain(
+    content: bytes, open_pdf: Callable[[bytes], pypdfium2.PdfDocument], *, of_source: bool
+) -> pypdfium2.PdfDocument:
+    """A PDF to take apart, which must not be encrypted.
+
+    Without its form: that would change it. One that opens without a password but restricts what
+    may be done with it counts as encrypted, too: it would lose that, or pass it on.
+    """
+    try:
+        pdf = open_pdf(content)
+        encrypted = pypdfium2.raw.FPDF_GetSecurityHandlerRevision(pdf) >= 0
+    except pypdfium2.PdfiumError as error:
+        reason: Reason = PDF_ERRORS.get(error.err_code, "damaged")
+        raise RenderFailed(reason=reason, of_source=of_source) from error
+    if encrypted:
+        raise RenderFailed(reason="restricted", of_source=of_source)
+    return pdf
+
+
+def assemble(
+    target: bytes,
+    source: bytes,
+    request: AssembleRequest,
+    open_pdf: Callable[[bytes], pypdfium2.PdfDocument] = pypdfium2.PdfDocument,
+) -> Assembled:
+    """``target`` with the pages ``request`` asks for from ``source``.
+
+    Raises:
+        RenderFailed: A file cannot be read, has no such page, or the result is too large.
+    """
+    into = _plain(target, open_pdf, of_source=False)
+    if len(into) != request.target_pages:
+        raise RenderFailed(reason="differs")
+    origin = _plain(source, open_pdf, of_source=True)
+    source_pages = len(origin)
+    try:
+        pages = _pages(source_pages, request.pages)
+    except RenderFailed as failure:
+        failure.of_source = True
+        raise
+    if len(into) + len(pages) > MAX_PAGES:
+        raise RenderFailed(reason="count")
+    of_source = False
+    try:
+        # Importing next to a page that is not there crashes PDFium.
+        sizes = _sizes(into)
+        _require_sizes(sizes, of_source=False)
+        own_marks = _require_places(target, sizes, request.after_page, len(pages))
+        of_source = True
+        inserted = _sizes(origin, pages)
+        _require_sizes(inserted, of_source=True)
+        sizes[request.after_page : request.after_page] = inserted
+        content = _joined(into, origin, source, pages, request.after_page)
+        marks = marks_in(content)
+        if marks is None or own_marks is None or marks - own_marks:
+            # Nothing proves that no field came along by a reference: again, without any value.
+            into, origin = open_pdf(target), open_pdf(source)
+            content = _joined(into, origin, source, pages, request.after_page, blank=True)
+        if not _alike(content, sizes):
+            raise RenderFailed(reason="damaged", of_source=True)
+    except pypdfium2.PdfiumError as error:
+        raise RenderFailed(reason="damaged", of_source=of_source) from error
+    if len(content) > request.max_bytes:
+        raise RenderFailed(reason="large")
+    return Assembled(content=content, source_pages=source_pages, inserted=tuple(pages))
+
+
+def _joined(  # noqa: PLR0913 -- two opened files, and what goes where
+    into: pypdfium2.PdfDocument,
+    origin: pypdfium2.PdfDocument,
+    source: bytes,
+    pages: list[int],
+    first: int,
+    *,
+    blank: bool = False,
+) -> bytes:
+    """The file of ``into`` with pages of ``origin``, the opened ``source``; both are closed.
+
+    With ``blank`` every field of the source is emptied first.
+    """
+    if blank:
+        blank_fields(origin)
+    rotations, fields = _prepared(origin, pages)
+    into.import_pages(origin, [page - 1 for page in pages], first)
+    draw_fields(source, into, [(pages[n] - 1, first + n) for n in fields], blank=blank)
+    for place, rotation in enumerate(rotations, first):
+        made = into[place]
+        cut_parents(made)
+        # What the page does not say itself it would take from the pages around it.
+        made.set_rotation(rotation)
+        made.set_cropbox(*made.get_cropbox())
+        made.close()
+    # Only then: what was imported can still point into the source.
+    content = _saved(into)
+    origin.close()
+    return content
+
+
+def _prepared(origin: pypdfium2.PdfDocument, pages: list[int]) -> tuple[list[int], list[int]]:
+    """The rotations of pages whose fields are taken off, and the places of those that had some."""
+    rotations, fields = list[int](), list[int]()
+    for place, page in enumerate(pages):
+        original = origin[page - 1]
+        rotations.append(original.get_rotation())
+        if has_fields(original):
+            fields.append(place)
+        original.close()
+    # Afterwards: two pages can be one object.
+    for place in fields:
+        original = origin[pages[place] - 1]
+        remove_fields(original)
+        original.close()
+    return rotations, fields
+
+
+def _saved(pdf: pypdfium2.PdfDocument) -> bytes:
+    """The file of a document, which is closed."""
+    buffer = io.BytesIO()
+    pdf.save(buffer)
+    pdf.close()
+    return buffer.getvalue()
+
+
+def _alike(content: bytes, sizes: Sequence[tuple[float, float]]) -> bool:
+    """Whether a file has pages of just these sizes; numbers are rounded when they are written."""
+    pdf = pypdfium2.PdfDocument(content)
+    found = _sizes(pdf)
+    pdf.close()
+    return len(found) == len(sizes) and all(
+        math.isclose(a, b, rel_tol=1e-6, abs_tol=0.01)
+        for one, other in zip(found, sizes, strict=True)
+        for a, b in zip(one, other, strict=True)
+    )
+
+
+def _require_sizes(sizes: list[tuple[float, float]], *, of_source: bool) -> None:
+    """Refuse pages so large that their size cannot be written down again."""
+    if any(side > MAX_SIDE for size in sizes for side in size):
+        raise RenderFailed(reason="size", of_source=of_source)
+
+
+def _require_places(
+    target: bytes, sizes: list[tuple[float, float]], after_page: int, pages: int
+) -> Counter[str] | None:
+    """Insert marked pages into a copy, and look for each where it has to be in the saved file.
+
+    In a page tree whose counts are wrong PDFium puts a page elsewhere or where no reader finds it,
+    and the sizes of real pages cannot tell them apart. Returns the marks of fields in the target.
+
+    Raises:
+        RenderFailed: A page is not where it has to be.
+    """
+    taken = {side for _, height in sizes for side in (math.floor(height), math.ceil(height))}
+    height = next(side for side in itertools.count(100) if not {side - 1, side, side + 1} & taken)
+    markers = [(100.0 + number, float(height)) for number in range(pages)]
+    probe = pypdfium2.PdfDocument(target)
+    for place, (width, _) in enumerate(markers, after_page):
+        page = probe.new_page(width, height, place)
+        page.set_rotation(0)
+        page.set_cropbox(0, 0, width, height)
+        page.close()
+    saved = _saved(probe)
+    if not _alike(saved, [*sizes[:after_page], *markers, *sizes[after_page:]]):
+        raise RenderFailed(reason="damaged")
+    return marks_in(saved)
+
+
+def count(content: bytes) -> Counted:
+    """The pages of a PDF this worker made.
+
+    Raises:
+        RenderFailed: It cannot be read, or a page of it.
+    """
+    try:
+        return Counted(len(_sizes(pypdfium2.PdfDocument(content))))
+    except pypdfium2.PdfiumError as error:
+        raise RenderFailed(reason="damaged") from error
+
+
+def _sizes(
+    pdf: pypdfium2.PdfDocument, pages: Iterable[int] | None = None
+) -> list[tuple[float, float]]:
+    """The sizes of pages (from 1); None: of all."""
+    wanted = range(1, len(pdf) + 1) if pages is None else pages
+    return [pdf.get_page_size(page - 1) for page in wanted]
+
+
+def _work(
+    job: Job, started: float, announce: Callable[[bytes], None]
+) -> Callable[[bytes, bytes], Answered]:
+    """What makes the answer of a job out of what follows it."""
+    request = job.request
+    if isinstance(request, OverviewRequest):
+        font = label_font()
+        return lambda first, rest: overview(
+            first + rest, request, font, started=started, announce=announce
+        )
+    if isinstance(request, AssembleRequest):
+        return lambda first, rest: assemble(first, rest, request)
+    if isinstance(request, CountRequest):
+        return lambda first, rest: count(first + rest)
+    return lambda first, rest: render(first + rest, request)
+
+
 def main(stdin: BinaryIO, stdout: BinaryIO, guard: Callable[[int, float], None]) -> int:
     """Render the job on ``stdin`` and write the answer to ``stdout``; returns the exit code.
 
@@ -645,19 +865,16 @@ def main(stdin: BinaryIO, stdout: BinaryIO, guard: Callable[[int, float], None])
     _ = Image.init()
     _ = Image.new("LAB", (1, 1)).convert("RGB")
     job = Job.model_validate_json(stdin.readline())
-    request = job.request
-    work: Callable[[bytes], Rendered | Overview] = (
-        partial(overview, request=request, font=label_font(), started=started, announce=announce)
-        if isinstance(request, OverviewRequest)
-        else partial(render, request=request)
-    )
+    work = _work(job, started, announce)
     try:
         guard(job.memory_bytes, job.seconds)
-        content = stdin.read(job.content_bytes)
-        if len(content) < job.content_bytes:
+        # One of the two is empty where there is one file: adding them copies nothing.
+        first = stdin.read(job.first_bytes)
+        rest = stdin.read(job.content_bytes - len(first))
+        if len(first) + len(rest) < job.content_bytes:
             return 1  # the server went away
         try:
-            found: Rendered | Overview | RenderFailed = work(content)
+            found: Answered | RenderFailed = work(first, rest)
         except RenderFailed as failure:
             found = failure
         _ = stdout.write(answer(found))

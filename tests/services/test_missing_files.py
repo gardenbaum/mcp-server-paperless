@@ -32,6 +32,8 @@ if TYPE_CHECKING:
 
     from mcp_server_paperless.domain.documents import DocumentFile, FileMetadata, FileVersion
     from mcp_server_paperless.domain.rendering import (
+        Assembled,
+        AssembleRequest,
         Overview,
         OverviewRequest,
         Rendered,
@@ -52,6 +54,9 @@ class NoRenderer:
 
     async def inspect(self, content: bytes, request: OverviewRequest) -> Overview:
         raise AssertionError((content, request))
+
+    async def assemble(self, target: bytes, source: bytes, request: AssembleRequest) -> Assembled:
+        raise AssertionError((target, source, request))
 
 
 def state_with(*missing: int) -> FakeState:

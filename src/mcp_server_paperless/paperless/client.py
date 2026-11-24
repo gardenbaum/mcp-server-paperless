@@ -25,6 +25,7 @@ from mcp_server_paperless.domain.errors import (
     AnswerCompressed,
     AnswerTooLarge,
     PaperlessMcpError,
+    UnexpectedAnswer,
     UpstreamTimeout,
 )
 from mcp_server_paperless.domain.files import OpenedFile
@@ -108,7 +109,7 @@ def unexpected(response: httpx2.Response, *, reading: bool = False) -> Paperless
     POST that only reads.
     """
     request = response.request
-    return PaperlessMcpError(
+    return UnexpectedAnswer(
         f"Paperless sent an unexpected response for {request.method} {request.url.path}.",
         hint=None if reading or request.method in {"GET", "HEAD"} else MAY_BE_APPLIED,
     )
