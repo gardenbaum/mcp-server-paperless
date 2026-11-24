@@ -22,12 +22,14 @@ Probed on 3.4.2 (PLMCP-31):
   type is a 400. Its answer is the Celery id, not the database id.
 - ``POST /api/documents/bulk_download/`` answers the ZIP at once (200, no file name); a document
   that does not exist is a 400, one the user may not see a 403 (text) for the whole request, and
-  an empty list an empty archive.
+  an empty list an empty archive. A file Paperless cannot find is an uncaught error: a 500.
 """
 
+import asyncio
 import contextlib
 import re
 from datetime import datetime
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Annotated, ClassVar, Final
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, JsonValue, RootModel
@@ -46,9 +48,16 @@ from mcp_server_paperless.domain.admin import (
     UserValues,
     check_secret,
 )
-from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError, PermissionDenied
+from mcp_server_paperless.domain.errors import (
+    NotFound,
+    PaperlessMcpError,
+    PermissionDenied,
+    UpstreamUnavailable,
+)
+from mcp_server_paperless.domain.files import missing_files
 from mcp_server_paperless.domain.tasks import REJECTED, TaskState
 from mcp_server_paperless.paperless.client import opened
+from mcp_server_paperless.paperless.documents import PaperlessDocumentReader
 from mcp_server_paperless.paperless.pagination import Page
 from mcp_server_paperless.paperless.tasks import duplicate_of
 
@@ -63,6 +72,7 @@ if TYPE_CHECKING:
         RunnableTask,
         TaskType,
     )
+    from mcp_server_paperless.domain.documents import FileMetadata, FileVersion
     from mcp_server_paperless.domain.files import OpenedFile
     from mcp_server_paperless.paperless.client import PaperlessClient
 
@@ -75,6 +85,14 @@ TASKS: Final = "/api/tasks/"
 BULK_DOWNLOAD: Final = "/api/documents/bulk_download/"
 # Building and sending a large archive takes a while; the web worker holds the request meanwhile.
 DOWNLOAD_SECONDS: Final = 120.0
+# How long the documents of a failed archive are looked at for missing files.
+LOOKUP_SECONDS: Final = 30.0
+# The files of a document an archive holds (the original where there is no archive version).
+ARCHIVE_FILES: Final[dict[ArchiveContent, tuple[FileVersion, ...]]] = {
+    "originals": ("original",),
+    "archive": ("archive",),
+    "both": ("original", "archive"),
+}
 # The first line of a failed task's message: later lines can be a traceback with server paths.
 MAX_MESSAGE: Final = 300
 # A log name is a plain word: anything else would change the path of the request.
@@ -399,9 +417,10 @@ def _group_body(values: GroupValues, *, create: bool = False) -> dict[str, objec
 class PaperlessAdminReader:
     """``AdminReader`` over the Paperless REST API."""
 
-    def __init__(self, client: PaperlessClient) -> None:
-        """Read through ``client``."""
+    def __init__(self, client: PaperlessClient, *, lookup_seconds: float = LOOKUP_SECONDS) -> None:
+        """Read through ``client``; ``lookup_seconds`` bounds the search for missing files."""
         self._client: PaperlessClient = client
+        self._lookup_seconds: float = lookup_seconds
 
     async def get_user(self, user_id: int) -> UserRecord:
         """See ``AdminReader.get_user``."""
@@ -486,10 +505,13 @@ class PaperlessAdminReader:
     ) -> ArchiveFile:
         """See ``AdminReader.download_documents``."""
         body = _selection(document_ids, content, compression, follow_formatting=follow_formatting)
-        with Refused(DOWNLOAD):
-            found = await self._client.stream_post(
-                BULK_DOWNLOAD, json=body, max_bytes=max_bytes, max_seconds=DOWNLOAD_SECONDS
-            )
+        try:
+            with Refused(DOWNLOAD):
+                found = await self._client.stream_post(
+                    BULK_DOWNLOAD, json=body, max_bytes=max_bytes, max_seconds=DOWNLOAD_SECONDS
+                )
+        except UpstreamUnavailable as error:
+            raise await self._not_built(error, document_ids, content) from None
         # Streamed keeps exactly ``max_bytes`` bytes when the size limit cut it; fewer: the time.
         timed_out = found.truncated and len(found.content) < max_bytes
         return ArchiveFile(
@@ -511,11 +533,31 @@ class PaperlessAdminReader:
         """See ``AdminReader.open_archive``."""
         body = _selection(document_ids, content, compression, follow_formatting=follow_formatting)
         async with contextlib.AsyncExitStack() as stack:
-            with Refused(DOWNLOAD):
-                response = await stack.enter_async_context(
-                    self._client.stream("POST", BULK_DOWNLOAD, json=body, timeout=wait_seconds)
-                )
+            try:
+                with Refused(DOWNLOAD):
+                    response = await stack.enter_async_context(
+                        self._client.stream("POST", BULK_DOWNLOAD, json=body, timeout=wait_seconds)
+                    )
+            except UpstreamUnavailable as error:
+                raise await self._not_built(error, document_ids, content) from None
             yield opened(response)
+
+    async def _not_built(
+        self, error: UpstreamUnavailable, document_ids: Sequence[int], content: ArchiveContent
+    ) -> PaperlessMcpError:
+        """Why there is no archive: the files Paperless cannot find, else ``error`` itself."""
+        if error.status != HTTPStatus.INTERNAL_SERVER_ERROR:
+            return error
+        reader = PaperlessDocumentReader(self._client)
+        facts: dict[int, FileMetadata] = {}
+        # What was found counts, also when others cannot be read or the rest takes too long.
+        with contextlib.suppress(TimeoutError):
+            async with asyncio.timeout(self._lookup_seconds):
+                for number in document_ids:
+                    with contextlib.suppress(PaperlessMcpError):
+                        facts[number] = await reader.get_document_metadata(number)
+        versions, total = ARCHIVE_FILES[content], len(document_ids)
+        return missing_files(facts, versions, total, choice=True) or error
 
 
 def _selection(

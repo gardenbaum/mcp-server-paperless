@@ -201,6 +201,25 @@ async def test_settings_without_the_ai_flag_mean_unknown(make_client: ClientFact
     assert (await reader(make_client, responses).get_overview()).ai_enabled is None
 
 
+@pytest.mark.decision("decision-57")
+@pytest.mark.parametrize("release", [{}, {"X-Version": ""}], ids=["missing", "empty"])
+async def test_without_a_release_in_the_header_the_release_is_unknown(
+    make_client: ClientFactory, release: dict[str, str]
+) -> None:
+    responses = instance()
+    client = make_client(
+        lambda request: httpx2.Response(
+            responses[request.url.path].status_code,
+            content=responses[request.url.path].content,
+            headers={"X-Api-Version": "10", "Content-Type": "application/json", **release},
+        )
+    )
+
+    overview = await PaperlessInstanceReader(client).get_overview()
+
+    assert (overview.paperless_version, overview.api_version) == ("unknown", 10)
+
+
 async def test_a_response_without_version_headers_is_unexpected(make_client: ClientFactory) -> None:
     client = make_client(lambda _: httpx2.Response(200, json=STATISTICS))
 

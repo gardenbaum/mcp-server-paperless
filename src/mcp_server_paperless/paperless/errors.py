@@ -19,6 +19,7 @@ from mcp_server_paperless.domain.errors import (
     UpstreamUnreachable,
     Validation,
 )
+from mcp_server_paperless.domain.instance import MINIMUM
 
 MAX_MESSAGES = 10
 MAX_MESSAGE_LENGTH = 200
@@ -95,7 +96,7 @@ _FIXED: dict[int, tuple[type[PaperlessMcpError], str, str | None]] = {
     HTTPStatus.NOT_ACCEPTABLE: (
         UnsupportedVersion,
         "Paperless does not accept API version 10.",
-        "This server needs paperless-ngx 3.x.",
+        f"This server needs paperless-ngx 3.x, {MINIMUM} or later.",
     ),
 }
 

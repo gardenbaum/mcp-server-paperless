@@ -10,7 +10,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 import httpx2
 import pytest
@@ -552,6 +552,40 @@ def rebuild_search_index(api: httpx2.Client) -> None:
     Wait for the index-writing tasks first: one that ends after the rebuild leaves new entries.
     """
     wait_for_index_writers(api)
+    in_container("python", "manage.py", "document_index", "reindex", "--no-progress-bar")
+    wait_for_index_reload(api)
+
+
+type FilePart = Literal["original", "archive", "thumbnail", "names"]
+
+MEDIA = "/usr/src/paperless/media/documents"
+
+
+def lose_file(api: httpx2.Client, document: int, part: FilePart) -> None:
+    """Take a file of a document with one version away from Paperless, or its file names.
+
+    Without its name the file stays where it is and is found: the stack sets no file name format,
+    so the name Paperless falls back to is the one the file has.
+
+    Paperless has no API for it: files get lost on the disk, names are null in old databases.
+    """
+    if part == "names":
+        update = f"Document.objects.filter(pk={document}).update"
+        code = f"from documents.models import Document; {update}(filename=None"
+        in_container("python", "manage.py", "shell", "-c", f"{code}, original_filename=None)")
+        return
+    reply = api.get(f"/api/documents/{document}/metadata/").raise_for_status()
+    facts = cast("dict[str, object]", reply.json())
+    path = {
+        "original": f"originals/{facts['media_filename']}",
+        "archive": f"archive/{facts['archive_media_filename']}",
+        "thumbnail": f"thumbnails/{document:07}.webp",
+    }[part]
+    in_container("rm", "--", f"{MEDIA}/{path}")
+
+
+def in_container(*command: str) -> None:
+    """Run a command in the Paperless container that publishes `PORT`."""
     container = subprocess.run(  # noqa: S603 -- fixed docker arguments, no user input
         ["docker", "ps", "--quiet", "--filter", f"publish={PORT}"],  # noqa: S607 -- fixed argument list
         capture_output=True,
@@ -562,16 +596,15 @@ def rebuild_search_index(api: httpx2.Client) -> None:
     assert container.returncode == 0, f"docker ps failed (is docker reachable?): {container.stderr}"
     ids = container.stdout.split()
     assert len(ids) == 1, f"Expected one container publishing port {PORT}, got {ids}"
-    rebuilt = subprocess.run(  # noqa: S603 -- fixed argument list
+    ran = subprocess.run(  # noqa: S603 -- arguments of the tests
         [
             *("docker", "exec", "--user", "paperless", "--workdir", "/usr/src/paperless/src"),
             ids[0],
-            *("python", "manage.py", "document_index", "reindex", "--no-progress-bar"),
+            *command,
         ],
         capture_output=True,
         text=True,
         check=False,
         timeout=REINDEX_TIMEOUT,
     )
-    assert rebuilt.returncode == 0, f"document_index reindex failed: {rebuilt.stderr[-500:]}"
-    wait_for_index_reload(api)
+    assert ran.returncode == 0, f"{command} failed: {ran.stderr[-500:]}"

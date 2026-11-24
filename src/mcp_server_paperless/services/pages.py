@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError, Validation
+from mcp_server_paperless.domain.files import NOUNS, STILL_READ, missing_file
 from mcp_server_paperless.domain.rendering import (
     DEFAULT_SIZE,
     MAX_PAGES,
@@ -74,8 +75,9 @@ def check_region(region: Region | None) -> None:
 def _other(chosen: FileVersion, metadata: FileMetadata) -> FileVersion | None:
     """The file of the version that was not chosen, if it can be shown."""
     if chosen == "archive":
-        return "original" if metadata.original_mime_type in RENDERABLE else None
-    return "archive" if metadata.has_archive_version else None
+        shown = metadata.original_mime_type in RENDERABLE and not metadata.lacks("original")
+        return "original" if shown else None
+    return "archive" if metadata.has_archive_version and not metadata.lacks("archive") else None
 
 
 def _size(size: int) -> str:
@@ -110,6 +112,7 @@ class _File:
     mime_type: str
     size: int | None
     link: str
+    facts: FileMetadata
 
     @property
     def _named(self) -> str:
@@ -127,6 +130,15 @@ class _File:
         """The file is over ``limit`` bytes."""
         message = f"{self._named} is over {_size(limit)}, the most that is rendered."
         return PaperlessMcpError(message, hint=self._elsewhere)
+
+    def missing(self) -> PaperlessMcpError:
+        """Paperless cannot find the file."""
+        hint = (
+            STILL_READ
+            if self.other is None
+            else f'Call again with source="{self.other}", the {NOUNS[self.other]}, which is there.'
+        )
+        return missing_file(self.document_id, self.kind, self.facts, self.version_id, hint=hint)
 
     def late(self, seconds: float) -> PaperlessMcpError:
         """Paperless did not send the file."""
@@ -192,7 +204,8 @@ def _choose(document_id: int, metadata: FileMetadata, source: FileVersion | None
     archive, mime_type = metadata.has_archive_version, metadata.original_mime_type
     if source == "archive" and not archive:
         message = f"Document {document_id} has no archive version."
-        raise NotFound(message, hint='Call again with source="original".')
+        hint = STILL_READ if metadata.lacks("original") else 'Call again with source="original".'
+        raise NotFound(message, hint=hint)
     if mime_type in RENDERABLE:
         return source or "original"
     if archive and source != "original":
@@ -200,9 +213,10 @@ def _choose(document_id: int, metadata: FileMetadata, source: FileVersion | None
     message = f"The original of document {document_id} is {mime_type}, which cannot be shown as "
     if archive:
         message += "pages."
+    if archive and not metadata.lacks("archive"):
         hint = 'Call again with source="archive", the PDF that Paperless made of it.'
     else:
-        message += "pages, and the document has no archive version."
+        message += "" if archive else "pages, and the document has no archive version."
         hint = "Read its text with get_document_content."
     raise Validation(message, hint=hint)
 
@@ -267,6 +281,7 @@ class PageService:
             mime_type=PDF if chosen == "archive" else metadata.original_mime_type,
             size=metadata.archive_size if chosen == "archive" else metadata.original_size,
             link=document_link(self._web_url, document_id),
+            facts=metadata,
         )
         if file.size is not None and file.size > self._max_bytes:
             raise file.too_large(self._max_bytes)
@@ -318,6 +333,10 @@ class PageService:
                 )
         except TimeoutError:
             raise file.late(self._download_seconds) from None
+        except NotFound:
+            if file.facts.lacks(file.kind):
+                raise file.missing() from None
+            raise
         if sent.truncated:
             # Larger than its metadata says, or of unknown size.
             raise file.too_large(self._max_bytes)

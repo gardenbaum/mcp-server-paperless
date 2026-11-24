@@ -548,6 +548,30 @@ async def test_unknown_or_hidden_documents_are_refused(backend: Backend) -> None
     assert raised.value.hint
 
 
+@pytest.mark.contract(DOWNLOAD)
+@pytest.mark.contract(OPEN)
+async def test_an_archive_with_a_missing_file_names_the_document(backend: Backend) -> None:
+    whole, lost = backend.new_documents(2)
+    backend.lose_file(lost, "original")
+
+    contents: tuple[ArchiveContent, ...] = ("originals", "both")
+    for content in contents:
+        with pytest.raises(NotFound) as raised:
+            _ = await backend.admin.management.download_documents(
+                [whole, lost],
+                content=content,
+                compression="none",
+                follow_formatting=False,
+                max_bytes=10**7,
+            )
+        with pytest.raises(NotFound) as opened:
+            _ = await opened_archive(backend.admin, [whole, lost], content)
+        assert raised.value.message == (
+            f"Paperless cannot find a file of document {lost} (1 of the 2 chosen)."
+        )
+        assert opened.value.message == raised.value.message
+
+
 async def opened_archive(
     ports: Ports, ids: list[int], content: ArchiveContent, compression: Compression = "none"
 ) -> tuple[str, str | None, bytes]:
