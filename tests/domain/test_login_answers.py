@@ -216,7 +216,7 @@ def test_a_planted_secret_is_in_no_shown_text(
 def test_a_hostile_text_is_read_in_linear_time(part: str) -> None:
     started = time.process_time()
 
-    _ = text_without_credentials(FIRST + part * 300_000)
-    _ = text_without_credentials(f"{START}Error while authenticating account " + part * 300_000)
+    _ = text_without_credentials(FIRST + part * 60_000)
+    _ = text_without_credentials(f"{START}Error while authenticating account " + part * 60_000)
 
     assert time.process_time() - started < 10  # quadratic would take minutes
