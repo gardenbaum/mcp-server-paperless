@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:18:23Z'
-updated_date: '2026-11-24T21:57:40Z'
+updated_date: '2026-11-24T22:09:33Z'
 labels: []
 dependencies: []
 priority: medium
@@ -52,4 +52,6 @@ Deliberate test changes: test_exceptions_are_rendered_into_the_record (asserted 
 Further leaks fixed: FastMCP's resource address, startup 400/409 text on both transports, tracebacks of all libraries, asyncio's reprs, Python warnings, uncaught/thread/unraisable errors, arguments of a record that cannot be rendered. Reported, not changed (documented in PRIVACY.md): path of a failed Paperless request (model-chosen for paperless_api_get), the name of an unknown tool in the call record, sign-in values, HTTP path.
 
 Review round (PR #153): grouped startup errors keep their fixed text; exceptions as message or argument become types; the factory cannot raise and no record is lost (raiseExceptions untouched, the assertion that pinned the silent loss changed); asyncio originals at DEBUG; place in the code for logged errors; failed resources named by CallLogging; unknown tool names cut to 100 characters. Limit, documented: text FastMCP itself formats into sign-in messages.
+
+Second review: naming never raises; innermost frame plus innermost own frame; errno codes only for built-in OSErrors; exceptions in containers; one CallLogging line per failed resource (template name, request id); server_failure is an allowlist; seam run in cli.main. Limits: a record rebuilt by makeLogRecord is cleaned only by JsonFormatter; an address that fails to bind also leaves FastMCP's line without the address.
 <!-- SECTION:NOTES:END -->

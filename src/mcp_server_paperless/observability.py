@@ -16,20 +16,30 @@ import threading
 import time
 import uuid
 import warnings
-from collections.abc import Mapping
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final, cast, override
 
+from fastmcp.exceptions import FastMCPError, NotFoundError
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools import InputRequiredToolResult
 
 from mcp_server_paperless.domain.diagnostics import error_place, error_types, members
-from mcp_server_paperless.domain.errors import Conflict, PaperlessMcpError, Validation
+from mcp_server_paperless.domain.errors import (
+    AuthenticationFailed,
+    FeatureUnavailable,
+    InvalidConfiguration,
+    NotFound,
+    PaperlessMcpError,
+    PermissionDenied,
+    UnexpectedAnswer,
+    UnsupportedVersion,
+    UpstreamUnavailable,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
 
     from fastmcp import Context
     from fastmcp.resources import ResourceResult
@@ -52,6 +62,19 @@ MAX_LOGGED_PATH: Final = 256
 MAX_LOGGED_NAME: Final = 100
 
 logger = logging.getLogger(__name__)
+
+# The errors of a start whose text is this project's own: it quotes nothing Paperless sent. (The
+# base class itself says only an HTTP status or that a redirect was not followed.)
+FIXED_TEXTS: Final = (
+    AuthenticationFailed,
+    FeatureUnavailable,
+    InvalidConfiguration,
+    NotFound,
+    PermissionDenied,
+    UnexpectedAnswer,
+    UnsupportedVersion,
+    UpstreamUnavailable,
+)
 
 # How FastMCP's records of a resource that could not be read start; the address follows.
 _READING_RESOURCE: Final = "Error reading resource"
@@ -90,8 +113,8 @@ class JsonFormatter(logging.Formatter):
 def server_failure(error: BaseException | None) -> str:
     """What may be said of a failed start or stop: no text that can quote Paperless."""
     for member in members(error):  # a task group wraps what a start raises
-        if isinstance(member, PaperlessMcpError) and not isinstance(member, Validation | Conflict):
-            return member.describe()
+        if type(member) is PaperlessMcpError or isinstance(member, FIXED_TEXTS):
+            return cast("PaperlessMcpError", member).describe()
     logger.debug("the server failed", exc_info=error)
     return f"The server failed: {error_types(error)}{error_place(error)}."
 
@@ -101,7 +124,8 @@ def private_record(*args: object, **kwargs: object) -> logging.LogRecord:
 
     It applies to every logger and handler: messages and tracebacks of libraries quote arguments
     and what Paperless answered (pydantic quotes its input). The original follows at DEBUG. The
-    limit: text a library already formatted into its message is not recognised as an error's.
+    limits: text a library already formatted into its message is not recognised as an error's, and
+    a record rebuilt by ``logging.makeLogRecord`` is only cleaned by ``JsonFormatter``.
     """
     record = cast("Callable[..., logging.LogRecord]", logging.LogRecord)(*args, **kwargs)
     _make_private(record)
@@ -114,7 +138,7 @@ def _make_private(record: logging.LogRecord) -> None:
     level = cast("int | None", record.levelno)
     if level is None or level <= logging.DEBUG:
         return
-    error = record.exc_info[1] if record.exc_info else None
+    error = record.exc_info[1] if isinstance(record.exc_info, tuple) else None
     try:
         original = record.getMessage()
         changed = _replace_message(record)
@@ -147,19 +171,31 @@ def _replace_message(record: logging.LogRecord) -> bool:
         record.msg, record.args = _READING_RESOURCE, None
     elif isinstance(message, BaseException):
         record.msg, record.args = error_types(message), None
-    elif isinstance(record.args, Mapping):
-        if not any(isinstance(value, BaseException) for value in record.args.values()):
-            return False
-        record.args = {key: _named(value) for key, value in record.args.items()}
-    elif any(isinstance(value, BaseException) for value in record.args or ()):
-        record.args = tuple(_named(value) for value in record.args or ())
+    elif _holds_error(record.args):
+        record.args = cast("tuple[object, ...] | dict[str, object]", _named(record.args))
     else:
         return False
     return True
 
 
+def _holds_error(value: object) -> bool:
+    """Whether ``value`` is an exception or a container with one, at any depth."""
+    if isinstance(value, dict):
+        return any(map(_holds_error, cast("dict[object, object]", value).values()))
+    if isinstance(value, list | tuple | set | frozenset):
+        return any(map(_holds_error, cast("Iterable[object]", value)))
+    return isinstance(value, BaseException)
+
+
 def _named(value: object) -> object:
-    return error_types(value) if isinstance(value, BaseException) else value
+    """``value`` with the types of exceptions in their place."""
+    if not _holds_error(value):
+        return value
+    if isinstance(value, dict):
+        return {k: _named(v) for k, v in cast("dict[object, object]", value).items()}
+    if isinstance(value, list | tuple | set | frozenset):
+        return tuple(map(_named, cast("Iterable[object]", value)))
+    return error_types(cast("BaseException", value))
 
 
 def _log_warning(
@@ -172,9 +208,10 @@ def _log_warning(
 
 def _log_unhandled(kind: type[BaseException], error: BaseException | None) -> None:
     """Log what Python would print of an error nobody handled."""
-    if issubclass(kind, SystemExit):
+    kinds = [type(member) for member in members(error)] or [kind]
+    if all(issubclass(each, SystemExit) for each in kinds):
         return
-    if issubclass(kind, KeyboardInterrupt):
+    if all(issubclass(each, KeyboardInterrupt | SystemExit) for each in kinds):
         logger.info("stopped by %s", kind.__name__)
     elif error is None:
         logger.critical("unhandled error (%s)", kind.__name__)
@@ -246,22 +283,38 @@ class CallLogging(Middleware):
         context: MiddlewareContext[ReadResourceRequestParams],
         call_next: CallNext[ReadResourceRequestParams, ResourceResult],
     ) -> ResourceResult:
-        """Log a resource that could not be read by its name, without its address."""
+        """Log a resource that could not be read by its name, without its address.
+
+        The boundary raises from None: what it handled is the context, and at fault is the caller
+        or Paperless (INFO) if that is a domain error, else this server (ERROR).
+        """
+        token = request_id.set(_http_request_id() or uuid.uuid4().hex)
         try:
             return await call_next(context)
         except Exception as error:
-            cause = error.__cause__ or error
-            logger.info(
-                "resource failed",
-                extra={"resource": await _resource_name(context), "error": error_types(cause)},
+            cause = error.__cause__ or error.__context__ or error
+            bug = error.__cause__ is None and not isinstance(
+                cause, PaperlessMcpError | FastMCPError | NotFoundError
+            )
+            logger.log(
+                logging.ERROR if bug else logging.INFO,
+                "%s failed: %s",
+                await _resource_name(context) or "unknown resource",
+                type(cause).__name__,
+                extra={"at": error_place(cause).removeprefix(" at ")},
             )
             raise
+        finally:
+            request_id.reset(token)
 
 
 async def _resource_name(context: MiddlewareContext[ReadResourceRequestParams]) -> str | None:
     """The name of the resource template an address belongs to, None if there is none."""
     server = cast("Context", context.fastmcp_context).fastmcp  # set for every request
-    template = await server.get_resource_template(str(context.message.uri))
+    try:
+        template = await server.get_resource_template(str(context.message.uri))
+    except Exception:  # noqa: BLE001 -- it must not replace the error that is logged
+        return None
     return template.name if template else None
 
 

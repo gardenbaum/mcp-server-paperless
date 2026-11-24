@@ -79,24 +79,23 @@ At the default log levels it logs:
 - for each HTTP request, one record with method, path, status, duration and the request id (which
   the caller may choose), and none of its query string, headers, body or IP address;
 - HTTP session ids, also unknown ones a caller sends;
-- startup messages, and failed or retried requests to Paperless with their path, which can
+- startup messages with the version Paperless reports, and failed or retried requests to Paperless with their path, which can
   contain ids and, for `paperless_api_get`, is the path the model asked for;
 - errors outside tool calls: when a resource or prompt fails, its name and the type of the error;
-  when the startup check fails, a fixed text or the type. Neither quotes an argument or Paperless's
-  answer. Errors appear as their types and the place in the code, without traceback, and Python
-  warnings as type and place;
+  when the startup check fails, a text of this project (it can name the request's path) or the type.
+  Neither quotes an argument or Paperless's answer. Other errors appear as their types and the
+  place in the code, without traceback, and Python warnings as type and place;
 - with sign-in through an identity provider, client ids and names, your user id at the provider,
   parts of token ids, authorization codes the server does not recognise, and values from failed
   sign-in requests (error, description, state, requested resource), the issuer or audience of a
   token that is refused, and sign-in errors. FastMCP writes these values into its own messages;
-  where it logs an error as such, only the type appears.
+  where a library logs an error as such, only its type appears.
 
 Apart from the names, addresses and values listed above, its records contain no arguments or
 results, and it does not log your Paperless token or bearer tokens, at these levels.
 
 **Debug logging is different.** With `PAPERLESS_MCP_LOG_LEVEL=DEBUG` or `FASTMCP_LOG_LEVEL=DEBUG`,
-the log can contain tool, resource and prompt arguments and, over stdio and HTTP, the tracebacks of
-errors, whose messages can quote arguments and what Paperless answered, document content included:
+the log can contain tool, resource and prompt arguments and the tracebacks of errors, whose messages can quote arguments and what Paperless answered, document content included:
 without them an error could not be traced. The answers to your MCP client are not logged as a whole,
 at any level. Use it only for troubleshooting.
 

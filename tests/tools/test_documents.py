@@ -348,7 +348,7 @@ async def test_a_resource_bug_is_masked_and_logged_by_type_only(
     assert "Internal error in document_detail; the server log has details." in str(raised.value)
     assert "secret-detail" not in str(raised.value)
     errors = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
-    assert "document_detail failed: RuntimeError" in errors
+    assert "document failed: RuntimeError" in errors
     assert not [line for line in errors if "secret-detail" in line]
 
 
@@ -362,5 +362,5 @@ async def test_a_resource_domain_error_is_logged_at_info_by_type(
             _ = await client.read_resource("paperless://documents/999")
 
     logged = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
-    assert "document_detail failed: NotFound" in logged
+    assert "document failed: NotFound" in logged
     assert "No document 999" not in caplog.text

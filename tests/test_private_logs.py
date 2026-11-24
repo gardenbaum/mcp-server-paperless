@@ -171,7 +171,7 @@ async def test_neither_answers_nor_arguments_of_failing_requests_reach_the_log(
     assert ARGUMENT not in logged
     assert "Traceback" not in logged
     # Diagnosable: what failed, and the type of the error.
-    assert "document_detail failed: Validation" in logged
+    assert "document failed: Validation" in logged
     assert "annual_review" in logged
     assert "PromptError" in logged or "ValidationError" in logged
     assert '"error": "Validation"' in logged
@@ -247,7 +247,7 @@ async def test_failed_resources_and_prompts_are_private_above_debug_also_at_debu
                 _ = await client.get_prompt("annual_review", {"year": ARGUMENT})
 
     above = [line for line in log.read_text().splitlines() if '"level": "DEBUG"' not in line]
-    assert [line for line in above if "document_detail failed" in line]
+    assert [line for line in above if "document failed" in line]
     assert not [line for line in above if ANSWER in line or ARGUMENT in line]
 
 
