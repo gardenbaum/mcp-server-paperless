@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:33Z'
-updated_date: '2026-11-24T15:37:36Z'
+updated_date: '2026-11-24T15:48:27Z'
 labels:
   - bulk
 dependencies:
@@ -58,4 +58,6 @@ Deviations: (1) selected_ids holds the documents this call changes (the next cal
 Probes: P2 is tests/e2e/test_bulk.py::test_paperless_takes_a_filter_it_does_not_understand_as_none (selection_data, only read). P5 (delete and reprocess endpoints: unknown, repeated, hidden, trashed ids, rights) are contract tests; P5's set_permissions part is source reading only (the form is excluded). P3 is not forced live: modify_custom_fields writes one value to all documents, so a value the database refuses fails at the first one; a failure half way is proven on the fake. P6: the time of 100 documents is printed by the E2E test.
 
 Evidence: adapter, service and tool tests red first (missing endpoint, class or argument, then assertions); the dialog tests pass on the existing confirmation mechanism and were checked by mutants instead. 36 mutants of bulk_documents.py, bulk_operations.py and selection.py by hand: 8 survived, 7 got tests, 1 was redundant code and was removed. Every line of the changed production modules covered by targeted runs. ruff, hygiene, basedpyright, import contracts green. Not run locally: full suite, E2E, full mutation (by instruction).
+
+Review of 162205a (0 Critical, 3 Important, 7 Minor), red first. I1 an unconfirmed change never says to go on; remaining counts what was not seen changed. I2 HTTP 429 of the task list ends the bulk edit at once (Unconfirmed.rate_limited, nothing read again, outcomes unknown); a parameter stop_on_limit of the waiter and of BulkWriter.bulk_edit_documents, off for the pdf tools, the version merge and resolve_duplicates, which need the result of the task. Correction: deviation (7) above is gone. The client's own retries of a read (three tries) stay. I3 new custom field values, all tags and fields and the parent tags that come along are in the texts. M1 decision-71 states 24,281 characters measured with hostile titles, with a test. M2 at most 100 mirrored documents are named. M6 the E2E test names Paperless's check. M7 row PLMCP-80.4. M3 to M5 (wording) reached the implementer without their text: the texts and docstrings were gone through (matched, remaining, also_matching, affected_count, the sentence after a lost answer, unknown outcomes, two docstrings that promised nothing half done). 15 more mutants, all killed.
 <!-- SECTION:NOTES:END -->

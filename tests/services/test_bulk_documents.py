@@ -78,7 +78,7 @@ class Recording(FakePaperless):
 
     @override
     async def bulk_edit_documents(
-        self, document_ids: Sequence[int], change: DocumentChange
+        self, document_ids: Sequence[int], change: DocumentChange, *, stop_on_limit: bool = False
     ) -> Unconfirmed | None:
         self.calls.append((tuple(document_ids), change))
         return await super().bulk_edit_documents(document_ids, change)
@@ -89,7 +89,7 @@ class Unconfirming(Recording):
 
     @override
     async def bulk_edit_documents(
-        self, document_ids: Sequence[int], change: DocumentChange
+        self, document_ids: Sequence[int], change: DocumentChange, *, stop_on_limit: bool = False
     ) -> Unconfirmed | None:
         _ = await super().bulk_edit_documents(document_ids, change)
         return Unconfirmed(task_id="task-7", reason="it was still running after 60 seconds")
@@ -503,7 +503,8 @@ async def test_custom_fields_are_set_by_name_and_the_others_stay() -> None:
     assert setup.document(PUBLIC).custom_fields == {**before, string: "changed", integer: 5}
     assert setup.document(SECOND).custom_fields == {string: "changed", integer: 5}
     assert report.summary == (
-        "set the custom fields 'e2e-string', 'e2e-integer' on the selected documents"
+        "set the custom fields 'e2e-string' = 'changed', 'e2e-integer' = 5 "
+        "on the selected documents"
     )
     assert report.sample[0].change == "custom fields e2e-string, e2e-integer"
     assert setup.fake.calls[0][1] == FieldsChange(values={string: "changed", integer: 5})
@@ -578,7 +579,8 @@ async def test_setting_and_removing_in_one_step_is_summarised_once() -> None:
     )
 
     assert report.summary == (
-        "set the custom fields 'e2e-string' and remove 'e2e-integer' on the selected documents"
+        "set the custom fields 'e2e-string' = 'x' and remove 'e2e-integer' "
+        "on the selected documents"
     )
 
 
@@ -733,7 +735,7 @@ class Flaky(Recording):
 
     @override
     async def bulk_edit_documents(
-        self, document_ids: Sequence[int], change: DocumentChange
+        self, document_ids: Sequence[int], change: DocumentChange, *, stop_on_limit: bool = False
     ) -> None:
         _ = await super().bulk_edit_documents(document_ids, change)
         message = "Paperless did not respond in time."
@@ -964,8 +966,9 @@ async def test_a_document_link_names_the_documents_that_are_changed_by_mirroring
     assert report.affected_count == 1
     assert report.message == (
         "Dry run, nothing was changed. Confirming would set the custom fields 'e2e-documentlink' "
-        "on 1 document (5 'Second invoice') and, because document links are mirrored, also "
-        "changes 1 document besides (6 'Third invoice'). To go ahead, call again "
+        "= 1 document (6 'Third invoice') on 1 document (5 'Second invoice') and, because "
+        "document links are mirrored, also changes 1 document besides (6 'Third invoice'). "
+        "To go ahead, call again "
         "without dry_run; "
         "pass confirm=true only if the user already agreed."
     )
@@ -1021,7 +1024,8 @@ async def test_applied_links_report_the_mirrored_documents() -> None:
     )
 
     assert report.message == (
-        "Applied to 1 document: set the custom fields 'e2e-documentlink' on the selected "
+        "Applied to 1 document: set the custom fields 'e2e-documentlink' = "
+        "1 document (6 'Third invoice') on the selected "
         "documents. Mirrored on 1 document besides (6 'Third invoice')."
     )
     assert [row.id for row in report.also_changed] == [THIRD]
@@ -1124,12 +1128,14 @@ async def test_every_mirrored_document_is_named() -> None:
     report = await setup.run([SECOND], link)
 
     assert raised.value.message == (
-        "Nothing was changed. Confirming would set the custom fields 'e2e-documentlink' on 1 "
+        "Nothing was changed. Confirming would set the custom fields 'e2e-documentlink' = "
+        "4 documents (10 'Doc 10', 11 'Doc 11', 12 'Doc 12', 13 'Doc 13') on 1 "
         "document (5 'Second invoice') and, because document links are mirrored, also changes 4 "
         "documents besides (10 'Doc 10', 11 'Doc 11', 12 'Doc 12', 13 'Doc 13')."
     )
     assert report.message == (
-        "Applied to 1 document: set the custom fields 'e2e-documentlink' on the selected "
+        "Applied to 1 document: set the custom fields 'e2e-documentlink' = "
+        "4 documents (10 'Doc 10', 11 'Doc 11', 12 'Doc 12', 13 'Doc 13') on the selected "
         "documents. Mirrored on 4 documents besides (10 'Doc 10', 11 'Doc 11', 12 'Doc 12', "
         "13 'Doc 13')."
     )
@@ -1233,7 +1239,7 @@ async def test_a_change_whose_queued_task_cannot_be_followed_is_reported_as_unco
         "documents. Not confirmed: Paperless "
         "queued task task-7, but it was still running after 60 seconds. Read it with get_task "
         "and read the documents again before repeating the call. Seen after that: as asked 6. "
-        "What may still run can change them after that."
+        "Paperless may still be working on it, and they can change after that."
     )
 
 

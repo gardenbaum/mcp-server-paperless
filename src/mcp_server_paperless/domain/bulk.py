@@ -310,7 +310,9 @@ class DocumentBulkReport(BaseModel):
     ] = None
     matched: Annotated[
         int,
-        Field(description="How many documents the ids, filters or view match, exclude_ids too."),
+        Field(
+            description="How many documents the ids, filters or view match, exclude_ids included."
+        ),
     ]
     requested: Annotated[int, Field(description="How many documents were selected.")]
     selected_ids: Annotated[
@@ -324,19 +326,25 @@ class DocumentBulkReport(BaseModel):
     ]
     remaining: Annotated[
         int,
-        Field(description="Matching documents that also need the change and are not touched."),
+        Field(
+            description=(
+                "Matching documents that still need the change: not touched, or, after an "
+                "unconfirmed change, not seen changed."
+            )
+        ),
     ]
     also_matching: Annotated[
         tuple[int, ...],
         Field(
             description=(
-                "With document_ids and filters or saved_view: the remaining ones, which were not "
-                "named."
+                "With document_ids and filters or saved_view: matching documents that need the "
+                "change, were not named and are not touched."
             )
         ),
     ] = ()
     affected_count: Annotated[
-        int, Field(description="Documents that change (a preview) or changed (applied).")
+        int,
+        Field(description="Documents that change (a preview) or that were sent (applied)."),
     ]
     unchanged_count: Annotated[
         int, Field(description="Selected documents that already are as asked; they are left alone.")

@@ -2638,7 +2638,7 @@ class FakePaperless:
 
     @write
     async def bulk_edit_documents(
-        self, document_ids: Sequence[int], change: DocumentChange
+        self, document_ids: Sequence[int], change: DocumentChange, *, stop_on_limit: bool = False
     ) -> Unconfirmed | None:
         """`BulkWriter.bulk_edit_documents` (BulkEditView).
 
@@ -2648,6 +2648,7 @@ class FakePaperless:
         included; a deletion also needs ownership and `delete_document`), then everything is
         applied. An empty selection is accepted.
         """
+        _ = stop_on_limit  # the fake has no rate limit
         state = self.state
         known = {d.id: d for d in state.documents}
         if len(set(document_ids)) != len(document_ids) or not set(document_ids) <= known.keys():

@@ -17,12 +17,12 @@ The owner approved on 2026-11-24 the design, with numbers 1A, 2a, 3a, 4a and 5 (
 ## Decision
 
 <!-- SECTION:DECISION:BEGIN -->
-- **Every document is named.** The confirmation names each document the call changes (id and quoted title, at most 100), each other document a mirrored link changes (also one that is selected but only changed by the mirroring), and so do the refusals for documents the user may not change. This holds for ids, too.
+- **Every document is named.** The confirmation names each document the call changes (id and quoted title, at most 100), each other document a mirrored link changes (at most 100, the rest counted; also one that is selected but only changed by the mirroring), and so do the refusals for documents the user may not change. It also names the new custom field values (texts quoted and cut like titles, select labels, linked documents), every tag and field, and the parent tags that come along. This holds for ids, too.
 - **Current values are bound.** An accepted dialog covers the documents in their order, the current values of the fields the operation touches, the mirrored documents, the change with its resolved ids, and the newest file versions where files are used. `modified` cannot serve: bulk changes leave it as it is.
 - **A filter or a view alone is never confirmed by `confirm=true`.** A client with dialogs shows the named documents; after the yes the selection is resolved again and only the same set with the same values runs. Any other client gets the refusal, which names the next call: the same filter plus `document_ids` and `confirm=true`. That call is refused if one no longer matches; what matches besides is named (`also_matching`) and not touched. Where dialogs are required (decision-53) there is no second call.
 - **At most 100 documents change per call**, of at most 1,000 matches. Those that already are as asked are skipped, so the same call goes on; `remaining` counts what is left. Reprocessing never becomes "as asked": more than 100 matches of a filter are refused.
 - **Exclusions.** `missing` ids refuse the call (as before). `excluded_absent` (a listable kind whose list lacks the object) refuses every change and its preview, also with ids, and names the way on: ids without the filter. `excluded_unchecked` (a kind the user may not list) does not refuse; the confirmation and the preview say that it could not be checked.
-- **After a failed task, a lost answer or an unconfirmed task** the documents are read again, once, and each is reported as as asked, not changed or unknown, in the error text or in `outcomes`. Nothing is read after HTTP 429 or a refusal (which changed nothing). A read that fails makes them unknown and never hides the first error. What reprocessing did is always unknown.
+- **After a failed task, a lost answer or an unconfirmed task** the documents are read again, once, and each is reported as as asked, not changed or unknown, in the error text or in `outcomes`. HTTP 429 ends the call: also when the task list answers it (after the client's own retries), the task is given up at once as unconfirmed and nothing is read again. Nor is it after a refusal, which changed nothing. While the outcome is open the answer does not say to go on, and `remaining` counts what was not seen changed. Other tools wait a 429 out as before, because they need what the task names. A read that fails makes them unknown and never hides the first error. What reprocessing did is always unknown.
 - Moving to the trash and reprocessing use `documents/delete/` and `documents/reprocess/` (the same checks; the `bulk_edit` forms are deprecated in API version 10).
 - Supplements decisions 6, 12, 15, 44, 53, 60 and 69. Supersedes nothing.
 <!-- SECTION:DECISION:END -->
@@ -31,7 +31,7 @@ The owner approved on 2026-11-24 the design, with numbers 1A, 2a, 3a, 4a and 5 (
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
 - A restricted user whose view excludes a tag that is hidden from them is refused although the set would be right. They can pass the ids that read_documents shows.
-- Texts of up to about 7.5 KB for 100 documents.
+- Texts of about 7.5 KB for 100 documents with ordinary titles; 24,281 characters were measured with hostile titles, where every character is escaped (the length handling of decision-64). A long list of tags, fields or links the caller names adds to that.
 - With ids and a filter (no dialog) the current values are not bound, only that the documents still match: the server keeps nothing between calls.
 - "As asked" after a delete means no longer listed: someone else may have hidden the document at the same moment.
 - Between the last read and the request another user can still change a document (Paperless has no conditional write).

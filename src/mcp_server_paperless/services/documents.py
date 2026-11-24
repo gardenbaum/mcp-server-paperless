@@ -254,7 +254,7 @@ def _check_absent(names: NameFilters, query: DocumentQuery) -> None:
                 raise Validation(message, hint=f"Leave out {flag} or {field}.")
 
 
-def _readable(value: JsonValue, field: TaxonomyItem | None) -> JsonValue:
+def readable(value: JsonValue, field: TaxonomyItem | None) -> JsonValue:
     """Select option ids as labels and "EUR12.50" as "EUR 12.50"; anything else unchanged."""
     if field is None or not isinstance(value, str):
         return value
@@ -676,7 +676,7 @@ def readable_fields(
     def render(value: CustomFieldValue) -> JsonValue:
         if titles is not None and _is_link(known, value):
             return [{"id": n, "name": titles.get(n)} for n in cast("list[int]", value.value)]
-        return _readable(value.value, fields.get(value.field))
+        return readable(value.value, fields.get(value.field))
 
     return tuple(
         FieldValue(

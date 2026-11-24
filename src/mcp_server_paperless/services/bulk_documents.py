@@ -1,4 +1,4 @@
-"""Bulk edits of documents: a preview first, a confirmation, one request, nothing half done.
+"""Bulk edits of documents: a preview first, a confirmation, one request, what became of it.
 
 Documents are chosen by ids, search filters or a saved view (``DocumentSelector``); at most
 ``MAX_DOCUMENTS`` of them change per call. The editor reads their current state, resolves names to
@@ -87,7 +87,7 @@ NEXT_CALL: Final = (
     "filters or saved_view alone, confirm=true is not enough."
 )
 READ_AGAIN: Final = "Read the documents again before repeating the call."
-STILL_RUNNING: Final = " What may still run can change them after that."
+STILL_RUNNING: Final = " Paperless may still be working on it, and they can change after that."
 # What Paperless answers before it starts anything: nothing was changed.
 REFUSALS: Final = (AuthenticationFailed, Conflict, NotFound, PermissionDenied, Validation)
 
@@ -141,12 +141,15 @@ class _Outcome:
         touched = [(hit.id, self.resolved.touched(hit)) for hit in self.changing]
         return touched, self.resolved.change
 
-    def rest(self, *, applied: bool) -> str:
+    def rest(self, *, applied: bool, confirmed: bool) -> str:
         """What also matches and is not touched, as a sentence."""
         count = len(self.left)
         if not count:
             return ""
         noun = "document matches" if count == 1 else "documents match"
+        if not confirmed:
+            them = "it" if count == 1 else "them"
+            return f" {count} more {noun}: do not go on with {them} before the outcome is known."
         if self.alone:
             return f" {count} more {noun}: call again with the same filters or saved_view to go on."
         verb = ("was" if count == 1 else "were") if applied else ("is" if count == 1 else "are")
@@ -208,7 +211,11 @@ class BulkDocumentEditor:
             await self._require(outcome)
         applied = bool(changing) and not dry_run
         unconfirmed = await self._send(resolved, changing) if applied else None
-        seen = None if unconfirmed is None else await self._seen(resolved, changing)
+        seen: BulkOutcomes | None = None
+        if unconfirmed is not None:
+            limited = unconfirmed.rate_limited  # nothing more is asked then
+            unseen = BulkOutcomes(unknown=tuple(hit.id for hit in changing))
+            seen = unseen if limited else await self._seen(resolved, changing)
         return self._report(
             outcome, dry_run=dry_run, applied=applied, unconfirmed=unconfirmed, seen=seen
         )
@@ -277,7 +284,7 @@ class BulkDocumentEditor:
         """Make the change; a failure that may have changed something says what was seen."""
         try:
             return await self._writer.bulk_edit_documents(
-                [hit.id for hit in changing], resolved.change
+                [hit.id for hit in changing], resolved.change, stop_on_limit=True
             )
         except PaperlessMcpError as error:
             failed = isinstance(error, TaskFailed)
@@ -377,7 +384,7 @@ class BulkDocumentEditor:
         if applied and isinstance(resolved.change, TrashDocuments):
             message += f" Each {WAY_BACK}"
         if not outcome.blocked:
-            message += outcome.rest(applied=applied)
+            message += outcome.rest(applied=applied, confirmed=unconfirmed is None)
         left = tuple(hit.id for hit in outcome.left)
         return DocumentBulkReport(
             operation=resolved.name,
@@ -389,7 +396,7 @@ class BulkDocumentEditor:
             matched=outcome.chosen.matched,
             requested=total,
             selected_ids=tuple(hit.id for hit in changing),
-            remaining=len(left),
+            remaining=len(left) + len((*seen.not_changed, *seen.unknown) if seen else ()),
             also_matching=left if outcome.beside else (),
             affected_count=len(changing),
             unchanged_count=outcome.unchanged,
@@ -435,5 +442,8 @@ def _told(seen: BulkOutcomes, *, running: bool) -> str:
         ("not changed", seen.not_changed),
         ("unknown", seen.unknown),
     )
+    if not (seen.changed or seen.not_changed):
+        told = f"What became of {', '.join(map(str, seen.unknown))} is unknown."
+        return f"{told}{STILL_RUNNING if running else ''}"
     parts = [f"{state} {', '.join(map(str, ids))}" for state, ids in states if ids]
     return f"Seen after that: {'; '.join(parts)}.{STILL_RUNNING if running else ''}"

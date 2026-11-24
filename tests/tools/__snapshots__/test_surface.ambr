@@ -1912,7 +1912,7 @@
         'description': 'A bulk edit of documents: the preview of a dry run, or what was done.',
         'properties': dict({
           'affected_count': dict({
-            'description': 'Documents that change (a preview) or changed (applied).',
+            'description': 'Documents that change (a preview) or that were sent (applied).',
             'type': 'integer',
           }),
           'also_changed': dict({
@@ -1947,7 +1947,7 @@
           'also_matching': dict({
             'default': list([
             ]),
-            'description': 'With document_ids and filters or saved_view: the remaining ones, which were not named.',
+            'description': 'With document_ids and filters or saved_view: matching documents that need the change, were not named and are not touched.',
             'items': dict({
               'type': 'integer',
             }),
@@ -1991,7 +1991,7 @@
             'type': 'boolean',
           }),
           'matched': dict({
-            'description': 'How many documents the ids, filters or view match, exclude_ids too.',
+            'description': 'How many documents the ids, filters or view match, exclude_ids included.',
             'type': 'integer',
           }),
           'message': dict({
@@ -2043,7 +2043,7 @@
             'description': 'Set with unconfirmed_task_id: the documents as read again afterwards.',
           }),
           'remaining': dict({
-            'description': 'Matching documents that also need the change and are not touched.',
+            'description': 'Matching documents that still need the change: not touched, or, after an unconfirmed change, not seen changed.',
             'type': 'integer',
           }),
           'requested': dict({

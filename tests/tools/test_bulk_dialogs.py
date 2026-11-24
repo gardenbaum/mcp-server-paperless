@@ -203,3 +203,16 @@ async def test_a_hundred_documents_are_all_in_the_dialog() -> None:
     assert (output["affected_count"], output["remaining"]) == (100, 1)
     assert all(f"{number} 'Scan" in seen[0] for number in cast("list[int]", output["selected_ids"]))
     assert len(seen[0]) < 8000
+
+
+async def test_a_hundred_hostile_titles_stay_within_the_length_of_decision_71() -> None:
+    state = seeded()
+    title = "Scan " + chr(0x201D) * 123  # every one is escaped
+    state.documents += [FakeDocument(id=n, title=title, owner=2) for n in range(1000, 1100)]
+
+    result = await edit(state, "auto", None, {"filters": {"title_contains": "Scan"}}, writes=False)
+    shown = text(result).partition(" Hint: ")[0]
+
+    assert chr(0x201D) not in shown
+    assert all(f"{number} 'Scan" in shown for number in range(1000, 1100))
+    assert 20_000 < len(shown) < 25_000

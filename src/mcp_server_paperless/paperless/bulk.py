@@ -114,7 +114,7 @@ class PaperlessBulkWriter:
         self._waiter: TaskWaiter = TaskWaiter(client, sleep=sleep)
 
     async def bulk_edit_documents(
-        self, document_ids: Sequence[int], change: DocumentChange
+        self, document_ids: Sequence[int], change: DocumentChange, *, stop_on_limit: bool = False
     ) -> Unconfirmed | None:
         """See ``BulkWriter.bulk_edit_documents``.
 
@@ -128,7 +128,9 @@ class PaperlessBulkWriter:
             queued = await self._client.call("POST", f"{DOCUMENTS}{endpoint}", Queued, json=body)
         except PermissionDenied:
             raise documents_refused() from None
-        return await self._waiter.confirmed(queued, lambda _: not_applied(BULK_EDIT))
+        return await self._waiter.confirmed(
+            queued, lambda _: not_applied(BULK_EDIT), stop_on_limit=stop_on_limit
+        )
 
     async def delete_taxonomy_items(self, kind: BulkKind, item_ids: Sequence[int]) -> None:
         """See ``BulkWriter.delete_taxonomy_items``."""

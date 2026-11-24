@@ -225,7 +225,7 @@ TOML file.
 | `GET /api/documents/` | `query:shared_by__id=false`, `query:shared_by__id=true` | PLMCP-83 |
 | `POST /api/documents/bulk_download/` | `body:all`, `body:excluded_documents`, `body:filters` | excluded, "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits." (2026-11-24, backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md) |
 | `POST /api/documents/bulk_edit/` | `body:from_webui` | PLMCP-83 |
-| `POST /api/documents/bulk_edit/` | `body:method=run_workflow` | PLMCP-80 |
+| `POST /api/documents/bulk_edit/` | `body:method=run_workflow` | PLMCP-80.4 |
 | `POST /api/documents/bulk_edit/` | `body:all`, `body:excluded_documents`, `body:filters` | excluded, "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits." (2026-11-24, backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md) |
 | `POST /api/documents/bulk_edit/` | `body:method=add_tag`, `body:method=remove_tag` | excluded, "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits." (2026-11-24, backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md) |
 | `POST /api/documents/bulk_edit/` | `body:method=set_permissions` | excluded, "Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits." (2026-11-24, backlog/decisions/decision-72 - Left-out-of-bulk_edit-single-tag-and-deprecated-methods-set_permissions-and-Paperlesss-own-selections.md) |

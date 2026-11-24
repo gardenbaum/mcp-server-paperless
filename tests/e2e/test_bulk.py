@@ -426,7 +426,9 @@ async def test_a_restricted_user_changes_nothing_by_filter_and_sees_no_hidden_do
     )
 
     assert (preview["matched"], preview["selected_ids"]) == (1, [public])
-    assert "nothing was changed" in denied.lower() or "nothing was sent" in denied
+    # Paperless's own check: the user may change the document, but lacks the global permission.
+    assert preview["blocked"] == []
+    assert "Paperless refused the bulk edit; it checks every selected document first" in denied
     assert "Seen after that" not in denied
     assert tags_of(stack, public) == before
 

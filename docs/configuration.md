@@ -201,9 +201,11 @@ executes. Paperless checks every object
 first: if one may not be changed, none is. Deleting taxonomy is final (it has no trash).
 
 `bulk_edit_documents` chooses documents like `read_documents`: by ids, filters or a saved view. Every
-document a call changes is named before, and a filter or a view alone never acts: you accept the named
+document a call changes is named before (of other documents that mirrored links change at most 100),
+and a filter or a view alone never acts: you accept the named
 documents in a dialog, or, in a client without dialogs, a second call repeats the filter and names
-their ids with `confirm=true` (refused if one no longer matches). At most 100 documents change per
+their ids with `confirm=true` (refused if one no longer matches). Such a second call without a dialog
+does not bind the current values: a tag someone added in between is not noticed. At most 100 documents change per
 call; the same call goes on with the rest. If what a selection excludes is not there (a deleted tag
 excludes nothing), the change is refused; a filter cannot reprocess more than 100 documents at once.
 Paperless runs the change as a task: if that fails half way, or the answer is lost, the

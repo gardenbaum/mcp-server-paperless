@@ -25,6 +25,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.paperless.bulk import PaperlessBulkWriter
+from mcp_server_paperless.paperless.client import RetryPolicy
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory, RecordingSleep
@@ -370,3 +371,31 @@ async def test_a_confirmed_change_returns_nothing(
     )
 
     assert outcome is None
+
+
+@pytest.mark.parametrize("stop", [True, False])
+async def test_a_change_stops_at_a_rate_limit_of_the_task_list_only_where_asked(
+    make_client: ClientFactory, sleep: RecordingSleep, *, stop: bool
+) -> None:
+    reads = 0
+
+    def limited(request: httpx2.Request) -> httpx2.Response:
+        nonlocal reads
+        if request.method == "POST":
+            return httpx2.Response(200, json=QUEUED)
+        reads += 1
+        if reads == 1:
+            return httpx2.Response(429, json={"detail": "Throttled."})
+        row = task_row("success", TASK)
+        return httpx2.Response(
+            200, json={"count": 1, "next": None, "previous": None, "results": [row]}
+        )
+
+    client = make_client(limited, retry=RetryPolicy(attempts=1))
+    outcome = await PaperlessBulkWriter(client, sleep=sleep).bulk_edit_documents(
+        (4,), TrashDocuments(), stop_on_limit=stop
+    )
+
+    assert (outcome is not None and outcome.rate_limited, reads) == (
+        (True, 1) if stop else (False, 2)
+    )

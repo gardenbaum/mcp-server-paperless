@@ -8,6 +8,7 @@ Document links are mirrored by Paperless on the linked documents (and dropped fr
 without checking change permission there; ``Operation.mirrored`` names those documents.
 """
 
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
@@ -37,6 +38,7 @@ from mcp_server_paperless.domain.errors import (
 )
 from mcp_server_paperless.services.custom_values import normalise
 from mcp_server_paperless.services.document_edits import COUNTED, merged_tags, same_value
+from mcp_server_paperless.services.documents import readable
 from mcp_server_paperless.services.tag_hierarchy import (
     ancestors,
     blocked_removals,
@@ -193,7 +195,12 @@ class BulkOperations:
                     "which is also removed."
                 )
                 raise Validation(message, hint="Keep the parent, or do not add the child.")
-        lead, tail = _tag_sentence([names[t] for t in added], [names[t] for t in removed])
+        along = [t for t in close_over_ancestors(added, parents) if t not in added]
+        lead, tail = _tag_sentence(
+            [names[t] for t in added],
+            [names[t] for t in removed],
+            [quoted(names[t]) if t in names else _label(names, t) for t in along],
+        )
         return Operation(
             name=operation.op,
             lead=lead,
@@ -261,6 +268,7 @@ class BulkOperations:
         links: set[int] = set()
         drop_links: set[int] = set()
         names: dict[int, str] = {}
+        items: dict[int, TaxonomyItem] = {}
         for key, value in operation.values.items():
             item = await self._taxonomy.resolve("custom_field", key)
             if item.id in sets:
@@ -268,6 +276,7 @@ class BulkOperations:
                 raise Validation(message, hint="Name each field once, by name or by id.")
             sets[item.id] = normalise(item, value)
             names[item.id] = item.name
+            items[item.id] = item
             if item.data_type == "documentlink":
                 links.add(item.id)
         removed: list[int] = []
@@ -281,8 +290,11 @@ class BulkOperations:
         if sets.keys() & set(removed):
             message = "A custom field is both set and removed."
             raise Validation(message, hint="Set it or remove it, not both.")
-        await self._linkable({n for number in links for n in _document_ids(sets[number])})
-        lead = _field_sentence([names[n] for n in sets], [names[n] for n in removed])
+        linked = await self._linkable({n for k in links for n in _document_ids(sets[k])})
+        lead = _field_sentence(
+            [f"{quoted(names[n])} = {_shown(v, items[n], linked)}" for n, v in sets.items()],
+            [names[n] for n in removed],
+        )
         dropped = [n for n in removed if n in drop_links]
         return Operation(
             name=operation.op,
@@ -297,15 +309,15 @@ class BulkOperations:
             mirrored=lambda hits: _mirrored(hits, sets, links, dropped),
         )
 
-    async def _linkable(self, documents: set[int]) -> None:
-        """Every linked document must be visible and changeable: Paperless mirrors the link there.
+    async def _linkable(self, documents: set[int]) -> dict[int, DocumentHit]:
+        """The linked documents; each must be visible and changeable, since they are mirrored.
 
         Raises:
             NotFound: A linked document does not exist or is hidden from the user.
             PermissionDenied: The user may not change a linked document.
         """
         if not documents:
-            return
+            return {}
         hits = await self._visible(sorted(documents))
         blocked = [hit for hit in hits if hit.user_can_change is False]
         if blocked:
@@ -314,6 +326,7 @@ class BulkOperations:
                 f"{named(titled(blocked))}."
             )
             raise PermissionDenied(message, hint="Link only to documents you may change.")
+        return {hit.id: hit for hit in hits}
 
     async def _visible(self, numbers: list[int]) -> list[DocumentHit]:
         """The given documents, read page by page; every one must exist and be visible."""
@@ -340,10 +353,18 @@ def require_all(missing: Sequence[int]) -> None:
         raise NotFound(message, hint="Take the ids from search_documents rows.")
 
 
-def _tag_sentence(added: list[str], removed: list[str]) -> tuple[str, str]:
-    """The words before and after the documents in a tag operation's sentence."""
-    adding = f"add the tags {listed(added)}"
-    removing = f"remove the tags {listed(removed)}"
+def _every(names: list[str]) -> str:
+    return listed(names, len(names))
+
+
+def _tag_sentence(added: list[str], removed: list[str], along: list[str]) -> tuple[str, str]:
+    """The words before and after the documents in a tag operation's sentence.
+
+    ``along`` are the parent tags that come along, already as they are shown.
+    """
+    parents = f" (with their parent tags {', '.join(along)})" if along else ""
+    adding = f"add the tags {_every(added)}{parents}"
+    removing = f"remove the tags {_every(removed)}"
     if added and removed:
         return f"{adding} and {removing} on ", ""
     return (f"{adding} to ", "") if added else (f"{removing} from ", "")
@@ -378,7 +399,7 @@ def _tag_effects(
     for tag, (children, count) in blocked.items():
         message = (
             f"Removing {quoted(names[tag])} also removes its child tags "
-            f"{listed([names[child] for child in children])} (on {count_documents(count)})."
+            f"{_every([names[child] for child in children])} (on {count_documents(count)})."
         )
         hint = f"List them in the tags to remove too, or keep {quoted(names[tag])}."
         raise Validation(message, hint=hint)
@@ -390,11 +411,24 @@ def _document_ids(value: JsonValue) -> set[int]:
 
 
 def _field_sentence(sets: list[str], removed: list[str]) -> str:
-    """The words before the documents in a custom field operation's sentence."""
-    setting = f"set the custom fields {listed(sets)}"
+    """The words before the documents in a custom field operation's sentence.
+
+    ``sets`` are the fields with their new values, already as they are shown.
+    """
+    setting = f"set the custom fields {', '.join(sets)}"
     if sets and removed:
-        return f"{setting} and remove {listed(removed)} on "
-    return f"{setting} on " if sets else f"remove the custom fields {listed(removed)} from "
+        return f"{setting} and remove {_every(removed)} on "
+    return f"{setting} on " if sets else f"remove the custom fields {_every(removed)} from "
+
+
+def _shown(value: JsonValue, field: TaxonomyItem, linked: dict[int, DocumentHit]) -> str:
+    """A new value as a confirmation shows it: a text quoted and cut, links with their titles."""
+    if isinstance(value, list):
+        hits = [linked[n] for n in _document_ids(value)]
+        hits.sort(key=lambda hit: value.index(hit.id))
+        return named(titled(hits)) if hits else "no document"
+    text = readable(value, field)
+    return quoted(text) if isinstance(text, str) else json.dumps(text)
 
 
 def _field_effects(

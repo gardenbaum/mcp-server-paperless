@@ -9,7 +9,14 @@ from typing import TYPE_CHECKING, final, override
 
 import pytest
 from fakes.accounts import ADMIN, READER
-from fakes.paperless import FakeDocument, FakePaperless, FakeSavedView, FakeState, seeded
+from fakes.paperless import (
+    FakeDocument,
+    FakePaperless,
+    FakeSavedView,
+    FakeState,
+    FakeTag,
+    seeded,
+)
 from harness import bulk_editor
 from hypothesis import given
 from hypothesis import strategies as st
@@ -47,8 +54,10 @@ from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from pydantic import JsonValue
+
     from mcp_server_paperless.domain.bulk import BulkOperation, DocumentBulkReport, DocumentChange
-    from mcp_server_paperless.domain.documents import DocumentPage, DocumentQuery
+    from mcp_server_paperless.domain.documents import DocumentPage, DocumentQuery, NameOrId
     from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
 
 pytestmark = [
@@ -62,7 +71,7 @@ FINANCE, INBOX = 1, 4
 INBOX_TAG = AddTags(op="add_tags", tags=["e2e-inbox"])
 TRASH = DeleteDocuments(op="delete")
 SCANS = {"title_contains": "Scan"}
-STILL_RUNNING = " What may still run can change them after that."
+STILL_RUNNING = " Paperless may still be working on it, and they can change after that."
 
 
 class World(FakePaperless):
@@ -71,6 +80,7 @@ class World(FakePaperless):
     def __init__(self, state: FakeState, *, user: str, writes: bool) -> None:
         super().__init__(state, user=user, allow_writes=writes)
         self.sent: list[tuple[int, ...]] = []
+        self.stops: list[bool] = []
         self.reads: int = 0
         self.read_error: PaperlessMcpError | None = None
         self.hidden_rows: int = 0
@@ -92,9 +102,10 @@ class World(FakePaperless):
 
     @override
     async def bulk_edit_documents(
-        self, document_ids: Sequence[int], change: DocumentChange
+        self, document_ids: Sequence[int], change: DocumentChange, *, stop_on_limit: bool = False
     ) -> Unconfirmed | None:
         self.sent.append(tuple(document_ids))
+        self.stops.append(stop_on_limit)
         self.reads = 0
         if self.partly is not None:
             self.partly()
@@ -340,6 +351,88 @@ async def test_ids_alone_are_bound_to_the_current_values_too() -> None:
     assert again.fingerprint != refusal.fingerprint
 
 
+async def told(operation: BulkOperation, setup: Setup | None = None) -> str:
+    """The sentence of a confirmation up to its documents."""
+    refusal = await (setup or Setup(writes=False)).asked(operation, document_ids=[101])
+    return refusal.message.partition("would ")[2].partition(" 1 document ")[0]
+
+
+async def test_the_new_values_are_in_the_text() -> None:
+    values: dict[str, JsonValue] = {
+        "e2e-string": "it's\nnew",
+        "e2e-integer": 5,
+        "e2e-boolean": False,
+        "e2e-monetary": "EUR12.5",
+        "e2e-select": "beta",
+        "e2e-documentlink": [102, 103],
+    }
+    operation = ModifyCustomFields(op="modify_custom_fields", values=values, remove=["e2e-date"])
+
+    assert await told(operation) == (
+        "set the custom fields 'e2e-string' = \"it's new\", 'e2e-integer' = 5, "
+        "'e2e-boolean' = false, 'e2e-monetary' = 'EUR 12.50', 'e2e-select' = 'beta', "
+        "'e2e-documentlink' = 2 documents (102 'Scan 2', 103 'Scan 3') and remove 'e2e-date' on"
+    )
+
+
+async def test_an_emptied_link_is_told_and_a_long_text_is_cut() -> None:
+    emptied = ModifyCustomFields(op="modify_custom_fields", values={"e2e-documentlink": []})
+    long = ModifyCustomFields(op="modify_custom_fields", values={"e2e-string": "x" * 100})
+
+    assert await told(emptied) == "set the custom fields 'e2e-documentlink' = no document on"
+    assert await told(long) == f"set the custom fields 'e2e-string' = '{'x' * 59}…' on"
+
+
+async def test_a_changed_value_behind_the_cut_asks_again() -> None:
+    setup = Setup(writes=False)
+
+    def long(end: str) -> ModifyCustomFields:
+        return ModifyCustomFields(op="modify_custom_fields", values={"e2e-string": "x" * 100 + end})
+
+    first, second = await setup.asked(long("a")), await setup.asked(long("b"))
+
+    assert first.message == second.message
+    assert first.fingerprint != second.fingerprint
+
+
+async def test_every_tag_and_field_is_named_and_the_parents_that_come_along() -> None:
+    setup = Setup(writes=False)
+    setup.state.tags += [FakeTag(id=50 + n, name=f"t{n}") for n in range(6)]
+    setup.state.tags += [FakeTag(id=60, name="deep", parent=2)]
+    many: list[NameOrId] = [f"t{n}" for n in range(6)]
+    names = ", ".join(f"'t{n}'" for n in range(6))
+
+    assert await told(AddTags(op="add_tags", tags=many), setup) == f"add the tags {names} to"
+    assert await told(AddTags(op="add_tags", tags=["deep"]), setup) == (
+        "add the tags 'deep' (with their parent tags 'e2e-invoices', 'e2e-finance') to"
+    )
+    assert await told(ModifyTags(op="modify_tags", add=["deep"], remove=many), setup) == (
+        "add the tags 'deep' (with their parent tags 'e2e-invoices', 'e2e-finance') and remove "
+        f"the tags {names} on"
+    )
+
+
+async def test_a_parent_the_user_cannot_see_comes_along_by_its_number() -> None:
+    setup = Setup(READER[0], writes=False)
+    setup.document(101).owner = setup.fake.user.id
+    setup.state.tags += [FakeTag(id=70, name="kid", parent=3)]
+
+    assert await told(AddTags(op="add_tags", tags=["kid"]), setup) == (
+        "add the tags 'kid' (with their parent tags #3 (a tag you cannot see)) to"
+    )
+
+
+async def test_of_the_fields_to_remove_every_one_is_named() -> None:
+    setup = Setup(writes=False)
+    fields: list[NameOrId] = [f.name for f in setup.state.custom_fields]
+    assert len(fields) > 5
+    setup.document(101).custom_fields = {f.id: None for f in setup.state.custom_fields}
+
+    assert await told(ModifyCustomFields(op="modify_custom_fields", remove=fields), setup) == (
+        f"remove the custom fields {', '.join(f"'{name}'" for name in fields)} from"
+    )
+
+
 async def test_another_field_of_the_document_may_change_meanwhile() -> None:
     setup = Setup()
     operation = ModifyCustomFields(op="modify_custom_fields", values={"e2e-string": "x"})
@@ -577,6 +670,7 @@ async def test_at_most_a_thousand_may_match(matches: int, error: type[Validation
 # --- what became of a change that failed or was not seen to end
 
 
+UNKNOWN = "What became of 101, 102, 103 is unknown."
 FAILED = "Paperless could not apply the bulk edit: its task failed."
 
 
@@ -667,6 +761,50 @@ async def test_a_change_that_could_not_be_followed_reports_what_was_seen() -> No
     assert report.unconfirmed_task_id == "task-7"
 
 
+async def test_an_unconfirmed_change_of_many_does_not_say_go_on() -> None:
+    setup = Setup(scans=150)
+    setup.fake.partly = lambda: setup.document(101).tags.append(INBOX)
+    setup.fake.ends = Unconfirmed(task_id="task-7", reason="it was still running")
+    refusal = await setup.asked()
+
+    with accepting(refusal.fingerprint):
+        report = await setup.run()
+
+    assert "call again" not in report.message
+    assert report.message.endswith(
+        " 50 more documents match: do not go on with them before the outcome is known."
+    )
+    # 50 that were not sent, and the 99 that were not seen changed.
+    assert (report.remaining, report.also_matching) == (149, ())
+
+
+async def test_an_unconfirmed_change_of_named_ones_does_not_look_done_either() -> None:
+    setup = Setup()
+    setup.fake.partly = lambda: None
+    setup.fake.ends = Unconfirmed(task_id="task-7", reason="it was still running")
+
+    report = await setup.run(confirm=True, filters=SCANS, document_ids=[101, 102])
+
+    assert (report.remaining, report.also_matching) == (3, (103,))
+    assert report.message.endswith(
+        " 1 more document matches: do not go on with it before the outcome is known."
+    )
+
+
+async def test_a_rate_limit_after_the_request_ends_the_call_without_another_read() -> None:
+    setup = Setup(scans=150)
+    setup.fake.ends = Unconfirmed(task_id="task-7", reason="limited", rate_limited=True)
+    refusal = await setup.asked()
+
+    with accepting(refusal.fingerprint):
+        report = await setup.run()
+
+    assert (setup.fake.reads, setup.fake.stops) == (0, [True])
+    assert report.outcomes is not None
+    assert len(report.outcomes.unknown) == 100
+    assert report.remaining == 150
+
+
 @pytest.mark.parametrize(
     "broken", [UpstreamTimeout("Slow."), UpstreamUnavailable("Wait.", status=429)]
 )
@@ -677,7 +815,7 @@ async def test_a_read_that_fails_never_hides_the_first_error(broken: PaperlessMc
 
     raised = await seen(setup)
 
-    assert raised.message == f"{FAILED} Seen after that: unknown 101, 102, 103."
+    assert raised.message == f"{FAILED} {UNKNOWN}"
     assert setup.fake.reads == 1
 
 
@@ -724,7 +862,7 @@ async def test_what_reprocessing_did_is_unknown_and_not_read() -> None:
 
     raised = await seen(setup, ReprocessDocuments(op="reprocess"))
 
-    assert raised.message.endswith("unknown 101, 102, 103.")
+    assert raised.message.endswith(UNKNOWN)
     assert setup.fake.reads == 0
 
 
