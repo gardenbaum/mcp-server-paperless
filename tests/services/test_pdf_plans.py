@@ -185,6 +185,12 @@ UNSIGNED = "a signature in the PDF is no longer valid"
 READ_AGAIN = "the text is read again, so corrections of it are not in the new version"
 
 
+BACK = (
+    "stays there until the trash is emptied (by default after 30 days) and can be restored in the "
+    "Paperless web UI, or with restore_from_trash if the trash toolset is enabled"
+)
+
+
 def trashed(names: str) -> str:
     return (
         f"{names}: moved to the Paperless trash once everything that was made is checked, and each "
@@ -618,7 +624,9 @@ async def test_plan_and_confirmation_of_a_merge_name_the_number_that_moves_and_t
 
     assert MOVING in preview.plan.keeps
     assert BLOCKED in preview.plan.loses
-    assert message.endswith(f"(they can be restored from there); {MOVING}; {BLOCKED}.")
+    assert message.endswith(
+        f"move the originals to the Paperless trash; each {BACK}; {MOVING}; {BLOCKED}."
+    )
     assert kept.plan.keeps[-2:] == (
         "archive serial number 7 stays with document 70",
         "archive serial number 5 stays with document 60",
@@ -640,7 +648,7 @@ async def test_plan_and_confirmation_of_one_document_name_its_number(*, moves: b
 
     number = MOVING.replace("5 of document 60", "7 of document 70") if moves else BLOCKED
     assert number in (plan.keeps if moves else plan.loses)
-    tail = f"move the original to the Paperless trash; page 3: not in the result; {number}."
+    tail = f"Paperless trash; it {BACK}; page 3: not in the result; {number}."
     assert message.endswith(tail)
 
 
@@ -658,7 +666,7 @@ async def test_the_confirmation_of_a_replacement_says_what_the_new_documents_lac
 
     assert parts.endswith(f"; page 3: in no new document; {without}.")
     locked = without.replace("70", "73").replace("Plain", "Locked")
-    assert bare.endswith(f"move the original to the Paperless trash; {locked}.")
+    assert bare.endswith(f"move the original to the Paperless trash; it {BACK}; {locked}.")
 
 
 async def test_plan_and_confirmation_of_a_merge_name_files_that_stay_as_archives_only() -> None:

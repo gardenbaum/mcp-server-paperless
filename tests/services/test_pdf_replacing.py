@@ -51,6 +51,7 @@ class Paperless(FakePaperless):
         self.included: tuple[int, ...] | None = None
         self.refuse: Callable[[int, int | None], bool] = lambda _number, _asn: False
         self.refuse_deletes: set[int] = set()
+        self.time_out: set[int] = set()  # no answer, and nothing happened so far
         self.lose_deletes: set[int] = set()  # done, but the answer is lost
         self.before_delete: Callable[[int], None] = lambda _: None
         self.doubt: str | None = None
@@ -143,6 +144,9 @@ class Paperless(FakePaperless):
     @override
     async def delete_document(self, document_id: int) -> None:
         self.before_delete(document_id)
+        if document_id in self.time_out:
+            message = "Paperless did not respond in time."
+            raise UpstreamTimeout(message)
         if document_id in self.refuse_deletes:
             message = "The Paperless user may not perform this action."
             raise PermissionDenied(message)
@@ -491,26 +495,120 @@ async def test_a_deletion_whose_answer_was_lost_is_looked_at() -> None:
     assert document(fake, 52).archive_serial_number == NUMBER
 
 
-async def test_a_deletion_that_is_not_known_to_have_happened_is_told() -> None:
+@pytest.mark.parametrize("readable", [True, False])
+async def test_a_deletion_without_an_answer_may_still_happen(*, readable: bool) -> None:
     fake = paperless(NUMBER)
+    fake.time_out = {DOC}
 
     def blind(number: int) -> None:
-        fake.refuse_deletes = {number}
-        fake.unreadable = lambda n: n == number
+        if not readable:
+            fake.unreadable = lambda n: n == number
 
     fake.before_delete = blind
 
     result = await shorten(fake)
 
     assert result.trashed_ids == ()
+    assert document(fake, 52).archive_serial_number == NUMBER  # not back on what may still go
     assert result.message == (
-        f"It is not known whether document {DOC} went to the trash (The Paperless user may not "
-        f"perform this action). Archive serial number {NUMBER} is on document 52."
+        f"It is not known whether document {DOC} went to the trash (Paperless did not respond in "
+        f"time). If it did, it {WAY_BACK} Archive serial number {NUMBER} is on document 52."
     )
     assert result.next == (
         f"only if get_document(document_id={DOC}) still finds it unchanged: "
         f"delete_document(document_id={DOC})"
     )
+
+
+async def test_originals_after_one_whose_deletion_is_not_known_stay_and_are_named() -> None:
+    fake = paperless()
+    document(fake, OTHER).archive_serial_number = NUMBER
+    fake.time_out = {DOC}
+
+    result = await merge(fake)
+
+    assert (result.trashed_ids, trash(fake)) == ((), [])
+    assert document(fake, OTHER).archive_serial_number == NUMBER
+    assert result.message is not None
+    assert result.message.endswith(
+        f"If it did, it {WAY_BACK} Not moved to the trash: document {OTHER}."
+    )
+
+
+async def test_a_number_someone_set_on_the_original_is_not_overwritten() -> None:
+    fake = paperless(NUMBER)
+    fake.refuse_deletes = {DOC}
+
+    def someone(number: int) -> None:
+        document(fake, number).archive_serial_number = 900
+
+    fake.before_delete = someone
+
+    result = await shorten(fake)
+
+    assert document(fake, DOC).archive_serial_number == 900
+    assert document(fake, 52).archive_serial_number == NUMBER
+    assert result.message is not None
+    assert result.message.endswith(
+        f" Archive serial number {NUMBER} is on document 52; document {DOC} has another one now."
+    )
+    assert result.next is None
+
+
+async def test_a_number_that_got_lost_while_someone_set_another_is_told() -> None:
+    fake = paperless(NUMBER)
+
+    def refuse(number: int, asn: int | None) -> bool:
+        if number == 52 and asn is not None:
+            document(fake, DOC).archive_serial_number = 900
+            return True
+        return False
+
+    fake.refuse = refuse
+
+    result = await shorten(fake)
+
+    assert document(fake, DOC).archive_serial_number == 900
+    assert result.message is not None
+    text = (
+        f" Archive serial number {NUMBER} is on neither document {DOC}, which has another one "
+        "now, nor document 52."
+    )
+    assert result.message.endswith(text)
+    assert result.next is None
+
+
+@pytest.mark.parametrize("state", ["started", "unknown"])
+async def test_a_document_left_out_is_named_whatever_the_wait_was(state: str) -> None:
+    fake = paperless()
+    fake.included = (DOC,)
+    fake.states = {0: "started"}
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+
+    unwaited = await service.merge(
+        [DOC, OTHER], None, delete_originals=True, confirm=True, wait_seconds=0
+    )
+    fake.started.clear()
+    if state == "unknown":
+        fake.states = {}
+        document(fake, OTHER).mime_type, document(fake, OTHER).page_count = "image/png", None
+        fake.included = ()
+    waited = await service.merge(
+        [DOC, OTHER],
+        None,
+        delete_originals=True,
+        archive_fallback=True,
+        confirm=True,
+        wait_seconds=0 if state == "unknown" else 5,
+    )
+
+    out = f"Nothing was moved to the trash: Paperless left document {OTHER} out."
+    untold = "it cannot be told whether every document is in the merged one"
+    assert unwaited.message is not None
+    assert out in unwaited.message
+    assert waited.message is not None
+    assert (out if state == "started" else untold) in waited.message
+    assert (unwaited.next, waited.next) == (None, None)
 
 
 @pytest.mark.parametrize("operation", ["split", "merge", "unlock"])
@@ -543,11 +641,25 @@ async def test_a_user_who_may_not_delete_is_refused_before_anything_starts(opera
     assert fake.started == []
 
 
-async def test_a_right_that_cannot_be_known_does_not_stop_the_call() -> None:
+async def test_a_right_that_cannot_be_known_does_not_stop_the_call_and_the_plan_says_so() -> None:
     fake = paperless()
     fake.may = None
+    unread = (
+        "the rights of this Paperless user cannot be read (view_uisettings): the originals then "
+        "stay, and the result names what was started and how to go on"
+    )
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
 
-    assert (await split(fake)).trashed_ids == (DOC,)
+    one = await split(fake, Options(dry_run=True))
+    two = await service.merge([DOC, OTHER], None, delete_originals=True, dry_run=True)
+    with pytest.raises(ConfirmationRequired) as asked:
+        _ = await split(fake, Options())
+
+    assert unread in one.plan.keeps
+    assert unread in two.plan.keeps
+    assert unread in asked.value.message
+    assert unread not in (await split(paperless())).plan.keeps
+    assert (await split(fake)).state == "success"
 
 
 async def test_files_that_cannot_be_told_apart_keep_the_original() -> None:

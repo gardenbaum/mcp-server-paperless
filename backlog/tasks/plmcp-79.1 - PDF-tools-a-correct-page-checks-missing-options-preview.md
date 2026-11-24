@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:14Z'
-updated_date: '2026-11-24T10:06:21Z'
+updated_date: '2026-11-24T10:16:42Z'
 labels: []
 dependencies: []
 parent_task_id: PLMCP-79
@@ -98,4 +98,6 @@ Not fixable: an upload of the same user named like a part, in the window, with t
 Correction: the new port method is DocumentReader.may_delete (a read). The case split/other_pages of test_confirmation_scope.py is gone: the pages that get lost are in the text of the confirmation now, so it tells them apart itself.
 
 Second correction: that case is not gone but uses delete_pages as a new version, whose text does not tell the page counts apart.
+
+Delta review of fd3bab2 fixed, tests seen red first: N1 no number of others is overwritten, N2 a left-out document is named first, N3 a deletion without an answer is not known, N4 merge confirmation names the metadata loss, N5 users without view_uisettings (decision-60, plan, confirmation), N6 the way back in confirmations and the not-known note. Exact-word tests changed for that.
 <!-- SECTION:NOTES:END -->

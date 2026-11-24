@@ -37,6 +37,10 @@ REPROCESS_NOTE = (
     "they are the newest reprocess tasks this request started, so they cannot be tied to the "
     "documents."
 )
+BACK = (
+    "stays there until the trash is emptied (by default after 30 days) and can be restored in the "
+    "Paperless web UI, or with restore_from_trash if the trash toolset is enabled"
+)
 EDITING = frozenset({"view_document", "change_document", "add_document", "delete_document"})
 
 
@@ -803,7 +807,10 @@ async def test_the_refusal_to_merge_without_confirm_has_the_exact_words() -> Non
     assert raised.value.message == (
         f"Nothing was changed. Confirming would merge document {first} 'Alpha', document {second} "
         f"'Beta' and document {third} 'Gamma' into one new document, in this order, and move the "
-        "originals to the Paperless trash (they can be restored from there)."
+        f"originals to the Paperless trash; each {BACK}; new documents take nothing of title, "
+        "correspondent, document type, storage path, tags, created date, custom field values and "
+        f"view and change grants of document {first} 'Alpha', document {second} 'Beta' and "
+        f"document {third} 'Gamma'."
     )
 
 
@@ -869,7 +876,8 @@ async def test_the_split_confirmation_and_summary_have_the_exact_words() -> None
 
     assert raised.value.message == (
         f"Nothing was changed. Confirming would split document {document} 'Scan' into 2 new "
-        "documents (pages 1-2 | pages 3-4) and move the original to the Paperless trash."
+        "documents (pages 1-2 | pages 3-4) and move the original to the Paperless trash; "
+        f"it {BACK}."
     )
     writing = Setup()
     result = await writing.service.split(writing.pdf(4), ["1-2", "3-4"])
@@ -907,7 +915,8 @@ async def test_the_confirmations_of_deleting_pages_have_the_exact_words() -> Non
     )
     assert replacing.value.message == (
         f"Nothing was changed. Confirming would delete page 1 of document {document} 'Scan' into "
-        "a new document and move the original to the Paperless trash; page 1: not in the result."
+        "a new document and move the original to the Paperless trash; "
+        f"it {BACK}; page 1: not in the result."
     )
 
 
@@ -1004,8 +1013,8 @@ async def test_the_confirmations_of_an_edit_have_the_exact_words() -> None:
     )
     assert replacing.value.message == (
         f"Nothing was changed. Confirming would edit document {document} 'Scan' into 2 new "
-        "documents (2 pages, 0 turned) and move the original to the Paperless trash; pages 3-4: "
-        "not in the result."
+        "documents (2 pages, 0 turned) and move the original to the Paperless trash; "
+        f"it {BACK}; pages 3-4: not in the result."
     )
 
 
@@ -1036,7 +1045,8 @@ async def test_removing_a_password_has_exact_refusals_and_summaries() -> None:
         _ = await setup.service.remove_password(locked, "s3cret", output="replace_original")
     assert raised.value.message == (
         f"Nothing was changed. Confirming would remove the password of document {locked} "
-        "'Locked' into a new document and move the original to the Paperless trash."
+        "'Locked' into a new document and move the original to the Paperless trash; "
+        f"it {BACK}."
     )
     text = setup.pdf(1, mime_type="text/plain")
     with pytest.raises(Validation, match="is not a PDF"):

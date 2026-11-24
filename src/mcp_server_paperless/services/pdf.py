@@ -43,6 +43,7 @@ from mcp_server_paperless.services.pdf_plans import (
     without,
 )
 from mcp_server_paperless.services.pdf_replacing import Replacement
+from mcp_server_paperless.services.removal import WAY_BACK
 from mcp_server_paperless.services.task_outcome import follow
 from mcp_server_paperless.services.tasks import MAX_WAIT_SECONDS
 from mcp_server_paperless.services.versions import require_change
@@ -86,11 +87,16 @@ DATED: Final = (
     "its custom fields hold a date, for which Paperless 3.5 lists no task: the work is done all "
     "the same"
 )
+BACK: Final = WAY_BACK.rstrip(".")
 ARCHIVE_ONLY: Final = (
     "{name}: only its archive PDF is in the merged document, its own file goes to the trash with it"
 )
 NO_PAGES_HINT: Final = (
     "It may be password protected (remove_document_password unlocks it) or damaged."
+)
+UNREAD_RIGHTS: Final = (
+    "the rights of this Paperless user cannot be read (view_uisettings): the originals then stay, "
+    "and the result names what was started and how to go on"
 )
 MAY_NOT_DELETE: Final = (
     "The Paperless user may not delete {which} original, so nothing was started."
@@ -328,8 +334,7 @@ class PdfService:
         newer = next((d for d in documents if use_original_files and len(d.versions) > 1), None)
         if delete_originals and newer is not None:
             raise _newer_lost(newer.id, "use_original_files")
-        if delete_originals:
-            await self._require_delete(documents)
+        unread = await self._require_delete(documents) if delete_originals else ()
         counts = [
             await self._mergeable(
                 d, facts[d.id], archive_fallback=archive_fallback, first=use_original_files
@@ -347,6 +352,7 @@ class PdfService:
         plan = _merge_plan(
             documents, metadata_document_id, pages, serials, only, trashes=delete_originals
         )
+        plan = plan.model_copy(update={"keeps": (*plan.keeps, *unread)})
         if delete_originals:
             summary += " and move the originals to the Paperless trash"
         if dry_run:
@@ -354,9 +360,10 @@ class PdfService:
         if delete_originals and not confirm:
             effect = (
                 f"merge {_named(documents)} into one new document, in this order, and "
-                "move the originals to the Paperless trash (they can be restored from there)"
+                f"move the originals to the Paperless trash; each {BACK}"
             )
-            effect = "; ".join([effect, *only, *serials.keeps, *serials.loses])
+            lost = () if metadata_document_id is not None else (without(_named(documents)),)
+            effect = "; ".join([effect, *lost, *only, *serials.keeps, *serials.loses, *unread])
             scope = [(d.newest_file, d.archive_serial_number) for d in documents]
             ConfirmationRequired.require(effect, scope=(pages, scope, metadata_document_id))
         began = self._replacing.clock()
@@ -754,14 +761,14 @@ class PdfService:
             raise Validation(message, hint="Leave keep_metadata out, or use new_document.")
         if trashes and source.older:
             raise _newer_lost(document.id, "version_id")
-        if trashes:
-            await self._require_delete([document])
+        unread = await self._require_delete([document]) if trashes else ()
         single = len(files) == 1 and request.operation != "remove_password"
         moves = document if single else None
         serials = numbers([document], moves, trashes=trashes)
         plan = _file_plan(
             source, request, len(files), dropped, serials, output=output, options=options
         )
+        plan = plan.model_copy(update={"keeps": (*plan.keeps, *unread)})
         summary = request.summary
         if trashes and request.operation != "remove_password":
             summary += f" and {TRASH}"
@@ -776,7 +783,7 @@ class PdfService:
                     effect += f" and {TRASH}"
                 lost = () if options.keep_metadata else (without(_named([document])),)
                 lost = (*_dropped(request, dropped), *lost, *serials.keeps, *serials.loses)
-                effect = "; ".join([effect, *lost])
+                effect = "; ".join([effect, f"it {BACK}", *lost, *unread])
             number = document.archive_serial_number
             scope = (source.scope, number if trashes else None, options.keep_metadata)
             ConfirmationRequired.require(effect, scope=scope)
@@ -938,15 +945,19 @@ class PdfService:
                     causes.append(DATED)
         return f" ({', or '.join(causes)})" if causes else ""
 
-    async def _require_delete(self, documents: Sequence[DocumentRecord]) -> None:
+    async def _require_delete(self, documents: Sequence[DocumentRecord]) -> tuple[str, ...]:
         """Refuse early when the user is known not to be allowed to trash the originals.
+
+        Returns what the plan has to say where that cannot be known.
 
         Raises:
             PermissionDenied: The user lacks the permission, or does not own one of them.
         """
-        if await self._reader.may_delete([d.owner for d in documents]) is False:
+        allowed = await self._reader.may_delete([d.owner for d in documents])
+        if allowed is False:
             message = MAY_NOT_DELETE.format(which="the" if len(documents) == 1 else "every")
             raise PermissionDenied(message, hint=MAY_NOT_DELETE_HINT)
+        return () if allowed else (UNREAD_RIGHTS,)
 
     def _produced_links(
         self,
