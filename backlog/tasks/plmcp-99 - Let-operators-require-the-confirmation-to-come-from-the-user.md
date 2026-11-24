@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T18:44:54Z'
-updated_date: '2026-11-24T07:53:28Z'
+updated_date: '2026-11-24T08:03:24Z'
 labels:
   - safety
   - config
@@ -26,17 +26,17 @@ With confirmation dialogs the assistant can still skip the dialog by passing con
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A setting, off by default, makes every confirmation require an accepted dialog; confirm=true alone then changes nothing
-- [ ] #2 With the setting on, a client without form elicitation gets an error that names the reason and the setting, and nothing is changed
-- [ ] #3 The setting covers every tool with a confirm parameter, including bulk and admin, with a registry-wide test
-- [ ] #4 SECURITY.md and the configuration reference state what it protects against and that a client can answer dialogs automatically, so it is no proof of a human
+- [x] #1 A setting, off by default, makes every confirmation require an accepted dialog; confirm=true alone then changes nothing
+- [x] #2 With the setting on, a client without form elicitation gets an error that names the reason and the setting, and nothing is changed
+- [x] #3 The setting covers every tool with a confirm parameter, including bulk and admin, with a registry-wide test
+- [x] #4 SECURITY.md and the configuration reference state what it protects against and that a client can answer dialogs automatically, so it is no proof of a human
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -55,4 +55,6 @@ With confirmation dialogs the assistant can still skip the dialog by passing con
 PAPERLESS_MCP_REQUIRE_DIALOG (decision-53). The boundary drops confirm=true, so every confirmation reaches ConfirmationRequired.require and only an accepted dialog passes; every other outcome is a NotConfirmed with reason and setting. Tests red first (unknown setting). tests/quality/test_registry.py: the new boolean joins the table of formats of server.json. No snapshot, limit, gate or tool text changed. The plugin offers the option while it pins 0.3.2, which ignores it: the option and its docs say so. mode='auto'/'legacy' and HTTP/stdio variants are covered registry-wide; stateless HTTP on the wire. E2E written, run on GitHub only.
 
 Review fixes: the AST check reads every module (keyed by path) and allows only the caller's own confirm; exact reasons on the wire; NO_FORMS true in every case; the refusal names the way out where there was nobody to ask; tool is positional-only in confirmed(); HTTP variants of the upload tools tested (the HTTP download tools have no confirm). CORRECTION of the note above: the plugin does NOT offer the option; it pins 0.3.2, which would silently ignore it. It is added with the first pin that knows the setting, together with the README table (a test keeps them equal). server.json has it: its version is written from the tag, a test forces its list.
+
+Full local check at a13b426: 7886 passed, diff-cover 100 %, the known macOS failure plus test_a_socket_is_not_a_file (AF_UNIX path, see report). E2E runs on GitHub.
 <!-- SECTION:NOTES:END -->
