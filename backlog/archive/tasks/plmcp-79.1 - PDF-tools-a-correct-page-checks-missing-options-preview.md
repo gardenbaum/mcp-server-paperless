@@ -1,11 +1,11 @@
 ---
 id: PLMCP-79.1
 title: 'PDF tools a: correct page checks, missing options, preview'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:14Z'
-updated_date: '2026-11-24T11:33:38Z'
+updated_date: '2026-11-24T11:50:56Z'
 labels: []
 dependencies: []
 parent_task_id: PLMCP-79
@@ -22,19 +22,19 @@ First of four parts of PLMCP-79 (design approved by the owner on 2026-11-24 (all
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A document whose newest version is longer than its first file can be edited on every page, shown on 3.5.1
-- [ ] #2 Every writing pdf tool has dry_run and a plan; confirmations bind what the design lists
-- [ ] #3 The options of the design are sent; the owner-approved exclusions are in the coverage table with their date
-- [ ] #4 No original is trashed before every product was verified, also for merge and password removal
-- [ ] #5 Probes of the design became contract tests; fake, 3.5.1, tool and E2E tests cover it
+- [x] #1 A document whose newest version is longer than its first file can be edited on every page, shown on 3.5.1
+- [x] #2 Every writing pdf tool has dry_run and a plan; confirmations bind what the design lists
+- [x] #3 The options of the design are sent; the owner-approved exclusions are in the coverage table with their date
+- [x] #4 No original is trashed before every product was verified, also for merge and password removal
+- [x] #5 Probes of the design became contract tests; fake, 3.5.1, tool and E2E tests cover it
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -106,4 +106,12 @@ Security finding on N5 fixed, tests seen red first: rights that could not be rea
 Last review of 9d94025 fixed, tests seen red first: next never overwrites a number the new document has; own condition per original after an unknown deletion.
 
 Codex on 1398c4b: the next calls of an unchecked replacement did not require unchanged originals; fixed, tests red first. Codex on fd3bab2 (a number set meanwhile) was fixed in 3c3ea31. Hosted full E2E 45372172051 (fd3bab2) and 45374143306 (1398c4b) green.
+
+Merged with #126 (83c56a8). Four review rounds, the last clean; Codex findings fixed, the last commit and the merges of main not seen by Codex (usage limit; to be reviewed later). DoD 1 stays open (code of the first version mostly before its tests), DoD 2 unchecked (macOS-only failures). Open: documents with a date custom field cannot finish replace_original by themselves (owner decision pending, 79.3).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The seven PDF tools check the pages of the newest file, take the missing options, have dry_run and a plan, and this server trashes originals last, after every product was verified (decisions 60 and 61). Live on 3.5.1: runs 45372172051 and 45374143306.
+<!-- SECTION:FINAL_SUMMARY:END -->
