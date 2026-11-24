@@ -105,7 +105,9 @@ async def upload_document(  # noqa: PLR0913 -- the file plus one parameter per m
     uploads = services(ctx).uploads
     if path is not None:
         check_transport(ctx.transport)
-        return await uploads.from_path(str(path), filename, metadata, wait_seconds=wait_seconds)
+        return await uploads.from_path(
+            str(path), filename, metadata, wait_seconds=wait_seconds, confirm=confirm
+        )
     if filename is None:
         message = "filename is required with content_base64."
         raise Validation(message, hint="Name the file, e.g. 'invoice.pdf'.")

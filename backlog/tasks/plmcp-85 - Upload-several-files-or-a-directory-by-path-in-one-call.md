@@ -4,7 +4,7 @@ title: Upload several files or a directory by path in one call
 status: To Do
 assignee: []
 created_date: '2026-11-23T12:21:58Z'
-updated_date: '2026-11-23T18:30:57Z'
+updated_date: '2026-11-24T01:24:03Z'
 labels: []
 dependencies:
   - PLMCP-77
@@ -36,3 +36,9 @@ Uploads by path take one file per call, so a folder of scans needs one call per 
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+From PLMCP-77: DuplicateFinder.snapshot() and before() alone lack the double lookup of originals (before and after the versions) that cleared() does, so a document merged into another one between them is missed; they also have no time limit and no second attempt. A batch that reuses one snapshot needs its own answer to both.
+<!-- SECTION:NOTES:END -->

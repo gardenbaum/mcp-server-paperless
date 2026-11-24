@@ -33,4 +33,5 @@ e2e-containers.log
 e2e-ai-containers.log
 e2e-office-containers.log
 e2e-duplicates-containers.log
+e2e-postgres-containers.log
 mutants/

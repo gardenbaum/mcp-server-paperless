@@ -16,7 +16,7 @@ from contract.test_document_upload import ended
 from contract.test_document_versions import add_version
 from contract.test_trash import find
 from mcp_server_paperless.domain.documents import DocumentPatch, DocumentQuery, DocumentUpload
-from mcp_server_paperless.domain.errors import NotFound, PermissionDenied
+from mcp_server_paperless.domain.errors import AnswerTooLarge, NotFound, PermissionDenied
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
@@ -29,6 +29,7 @@ ROOT = "DocumentReader.get_root"
 DUPLICATES = "DocumentReader.get_duplicates"
 ROWS = "DocumentReader.list_versions"
 MISSING = 999_999
+MIB = 1024 * 1024
 SEEDED = 1
 
 
@@ -301,3 +302,23 @@ async def test_has_duplicates_is_true_for_a_copy_in_the_trash_and_not_for_hidden
 
     assert await duplicates(backend.admin) == 1
     assert await duplicates(reader) == 0
+
+
+@pytest.mark.contract("TrashReader.read_trash")
+async def test_the_trash_is_read_at_once_within_a_byte_limit(backend: Backend) -> None:
+    content = unique()
+    document = await uploaded(backend, content)
+    await backend.admin.document_writes.delete_document(document)
+    ports = backend.admin
+
+    one = await ports.trash.read_trash(entries=1, max_bytes=MIB)
+    everything = await ports.trash.read_trash(entries=100_000, max_bytes=64 * MIB)
+
+    assert len(one.entries) == 1
+    assert one.count == everything.count == len(everything.entries)
+    [entry] = [e for e in everything.entries if e.id == document]
+    assert (entry.checksum, entry.version_of) == (sha256(content), None)
+    with pytest.raises(AnswerTooLarge):
+        _ = await ports.trash.read_trash(entries=100_000, max_bytes=10)
+    with pytest.raises(PermissionDenied):
+        _ = await backend.blind.trash.read_trash(entries=1, max_bytes=MIB)

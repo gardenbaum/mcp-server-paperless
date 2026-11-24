@@ -271,8 +271,8 @@ class Down(FakePaperless):
     """Does not answer when the trash is read."""
 
     @override
-    async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
-        message = f"Paperless did not answer page {page} of {page_size}."
+    async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
+        message = f"Paperless did not answer {entries} entries in {max_bytes} bytes."
         raise UpstreamTimeout(message)
 
 

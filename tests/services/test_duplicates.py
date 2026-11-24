@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING, override
 
 import pytest
 from fakes.accounts import ADMIN, READER
-from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
+from fakes.paperless import FakeDocument, FakeFile, FakePaperless, FakeState, seeded
 
 from mcp_server_paperless.domain.errors import (
+    AnswerCompressed,
     ConfirmationRequired,
     NotFound,
     PaperlessMcpError,
@@ -20,9 +21,11 @@ from mcp_server_paperless.domain.errors import (
 )
 from mcp_server_paperless.domain.versions import VersionUpload
 from mcp_server_paperless.services.duplicates import (
+    AGAIN,
     ALTERED,
     CAPPED,
     HIDDEN,
+    NO_SKIP,
     OWN_TRASH,
     UNCOMPARED,
     UNREAD_AFTER,
@@ -62,9 +65,8 @@ class Failing(FakePaperless):
         # What happens right before the first, second, ... call of this name.
         self.no_checksum: bool = False
         self.count_only: bool = False
-        self.trash_sizes: list[int] = []
-        # The only entry the pages of the trash show, whatever their number.
-        self.only: int | None = None
+        self.trash_reads: list[int] = []
+        self.short_trash: bool = False
         self.changes: dict[str, list[Callable[[], None]]] = {}
 
     def note(self, name: str) -> None:
@@ -92,18 +94,15 @@ class Failing(FakePaperless):
         return await super().list_versions(page=page, page_size=page_size, recent=recent)
 
     @override
-    async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
-        self.note(f"list_trash {page}")
-        self.note("list_trash")
-        self.trash_sizes.append(page_size)
-        listed = await super().list_trash(page=page, page_size=page_size)
-        if self.only is not None:
-            found = (await super().list_trash(page=1, page_size=9)).entries
-            kept = tuple(e for e in found if e.id == self.only)
-            return listed.model_copy(update={"entries": kept})
+    async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
+        self.note("read_trash")
+        self.trash_reads.append(entries)
+        listed = await super().read_trash(entries=entries, max_bytes=max_bytes)
+        if self.short_trash:
+            return listed.model_copy(update={"entries": listed.entries[1:]})
         if self.no_checksum:
-            entries = [e.model_copy(update={"checksum": None}) for e in listed.entries]
-            return listed.model_copy(update={"entries": tuple(entries)})
+            emptied = [e.model_copy(update={"checksum": None}) for e in listed.entries]
+            return listed.model_copy(update={"entries": tuple(emptied)})
         return listed
 
     @override
@@ -293,8 +292,8 @@ async def test_the_shipped_bounds() -> None:
     shipped = Bounds()
 
     assert shipped.version_pages * shipped.version_page == 5_000
-    assert shipped.trash_pages * shipped.trash_page == 500
-    assert shipped.trash_page == 25  # rows carry the whole text
+    assert shipped.trash_entries == 500
+    assert shipped.trash_bytes == 64 * 1024 * 1024  # rows carry the whole text
     assert shipped.trashed_versions == 20
     assert shipped.seconds == 25
 
@@ -313,7 +312,7 @@ async def test_only_the_most_recently_changed_documents_are_read_and_it_is_said(
 
 
 async def test_a_scan_that_reaches_the_end_exactly_has_no_gap() -> None:
-    setup = Setup(bounds=Bounds(version_pages=2, version_page=1, trash_pages=1, trash_page=1))
+    setup = Setup(bounds=Bounds(version_pages=2, version_page=1))
     _ = setup.document(10)
     setup.state.documents = setup.state.documents[:2]
 
@@ -321,7 +320,7 @@ async def test_a_scan_that_reaches_the_end_exactly_has_no_gap() -> None:
 
 
 async def test_only_so_many_trash_entries_are_read_and_it_is_said() -> None:
-    setup = Setup(bounds=Bounds(trash_pages=1, trash_page=1))
+    setup = Setup(bounds=Bounds(trash_entries=1))
     for number in (10, 11):
         _ = setup.document(number)
         await setup.delete(number)
@@ -342,7 +341,7 @@ async def test_only_so_many_trashed_versions_are_read_and_it_is_said() -> None:
     assert "Trash: only 1 of 2 deleted versions were read." in await setup.gaps()
 
 
-@pytest.mark.parametrize("what", ["list_versions", "list_trash"])
+@pytest.mark.parametrize("what", ["list_versions", "read_trash"])
 async def test_a_first_page_that_is_not_found_is_an_error(what: str) -> None:
     setup = Setup()
     setup.fake.errors[what] = NotFound("no such endpoint")
@@ -359,7 +358,7 @@ async def test_a_first_page_that_is_not_found_is_an_error(what: str) -> None:
     [
         ("search_documents", "Documents: this user may not list them."),
         ("list_versions", "Versions: this user may not list them."),
-        ("list_trash", "Trash: this user may not list it."),
+        ("read_trash", "Trash: this user may not list it."),
         (
             "get_version_checksum",
             "Trash: deleted versions this user could not read: 1.",
@@ -386,7 +385,7 @@ async def test_what_the_user_may_not_read_is_named_and_the_rest_is_checked(
 
 
 @pytest.mark.parametrize(
-    "what", ["search_documents", "list_versions", "list_trash", "get_version_checksum"]
+    "what", ["search_documents", "list_versions", "read_trash", "get_version_checksum"]
 )
 @pytest.mark.parametrize("error", [DOWN, UpstreamUnavailable("HTTP 500", status=500)])
 async def test_an_outage_is_never_no_duplicates(what: str, error: Exception) -> None:
@@ -403,7 +402,7 @@ async def test_an_outage_is_never_no_duplicates(what: str, error: Exception) -> 
 # --- changes during the scan ----------------------------------------------------------------------
 
 
-SMALL = Bounds(version_page=1, trash_page=1)
+SMALL = Bounds(version_page=1)
 
 
 def moving() -> Setup:
@@ -468,20 +467,118 @@ async def test_a_deletion_during_the_scan_is_noticed_and_read_again() -> None:
     assert setup.fake.calls.count("list_versions 1") == 2
 
 
-async def test_an_addition_during_the_scan_is_noticed_and_read_again() -> None:
+async def test_additions_during_the_scan_do_not_fail_it() -> None:
     setup = moving()
     versions = await both_versions(setup)
     setup.fake.changes["list_versions 2"] = [lambda: _none(setup.document(90, original=b"new"))]
 
     assert {v for _, v, _ in await found_by(setup)} == versions
+    # Page 3 exists now; page 1 is read once more to see that only new ids came.
+    assert setup.fake.calls.count("list_versions 3") == 1
     assert setup.fake.calls.count("list_versions 1") == 2
+    assert setup.fake.trash_reads == [500, 1]
+
+
+async def test_a_file_added_with_its_version_during_the_scan_is_found_by_the_closing_read() -> None:
+    setup = moving()
+
+    async def added() -> int:
+        _ = setup.document(90, original=b"new")
+        return await setup.version(90)
+
+    pending: list[int] = []
+
+    def add() -> None:
+        coroutine = added()
+        try:
+            coroutine.send(None)
+        except StopIteration as done:
+            pending.append(done.value)  # pyright: ignore[reportAny] -- StopIteration.value
+
+    setup.fake.changes["list_versions 2"] = [add]
+
+    assert {v for _, v, _ in await found_by(setup)} == set(pending)
+
+
+@pytest.mark.parametrize("number", [5, 10_500])
+async def test_a_document_that_appears_below_the_highest_id_is_noticed(number: int) -> None:
+    """Restored or newly shared: rows shift like for an addition, but an older one may be missed."""
+    setup = Setup(bounds=SMALL)
+    setup.state.documents.clear()
+    for known in (10, 11_000):
+        _ = setup.document(known, original=b"x%d" % known)
+    setup.fake.changes["list_versions 2"] = [
+        lambda: _none(setup.document(number, original=b"old")),
+    ]
+
+    _ = await found_by(setup)
+
+    assert setup.fake.calls.count("list_versions 1") >= 3  # read again from the start
+
+
+async def test_more_additions_than_the_closing_page_shows_are_read_again() -> None:
+    setup = moving()
+
+    def add() -> None:
+        for number in (90, 91):
+            _ = setup.document(number, original=b"x%d" % number)
+
+    setup.fake.changes["list_versions 2"] = [add]
+
+    _ = await found_by(setup)
+
+    assert setup.fake.calls.count("list_versions 1") == 3
+
+
+async def test_a_document_merged_into_another_one_is_named_once() -> None:
+    """As a version it keeps its id."""
+    setup = moving()
+    _ = setup.document(12)
+
+    def merge() -> None:
+        [source] = [d for d in setup.state.documents if d.id == 12]
+        setup.state.documents.remove(source)
+        root = setup.state.documents[0]
+        root.version_files[root.id] = FakeFile(root.original, None, "", root.mime_type)
+        root.version_files[12] = FakeFile(FILE, None, "", root.mime_type)
+        root.versions.insert(0, source.versions[0].model_copy(update={"is_root": False}))
+
+    setup.fake.changes["read_trash"] = [merge]
+
+    assert await found_by(setup) == [(10, 12, False)]
+
+
+async def test_a_compressed_answer_stops_the_upload_and_says_so() -> None:
+    setup = Setup()
+    setup.fake.errors["read_trash"] = AnswerCompressed(
+        "It was compressed.", hint="Check the proxy."
+    )
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await setup.finder.cleared(FILE, "upload", confirm=True)
+
+    assert raised.value.message == "It was compressed. The file was not uploaded."
+    assert raised.value.hint == f"Check the proxy. {NO_SKIP}"
+
+
+async def test_a_document_merged_into_another_one_during_the_check_is_found_first() -> None:
+    """It is neither an original any more nor a version yet when the parts are read after it."""
+    setup = moving()
+    _ = setup.document(12)
+
+    def merge() -> None:
+        setup.state.documents = [d for d in setup.state.documents if d.id != 12]
+
+    setup.fake.changes["read_trash"] = [merge]
+
+    assert await found_by(setup) == [(12, None, False)]
 
 
 def _none(_: object) -> None:
     return None
 
 
-@pytest.mark.parametrize("when", ["list_trash 2", "list_versions 1", "search_documents"])
+@pytest.mark.parametrize("when", ["list_versions 1", "search_documents"])
 async def test_a_restore_during_the_check_is_noticed_and_read_again(when: str) -> None:
     setup = moving()
     _ = setup.document(12)
@@ -491,7 +588,6 @@ async def test_a_restore_during_the_check_is_noticed_and_read_again(when: str) -
     setup.fake.changes[when] = [back(setup, 12)]
 
     assert await found_by(setup) == [(12, None, False)]
-    assert setup.fake.calls.count("list_versions 1") == 2 or when == "list_trash 2"
 
 
 @pytest.mark.parametrize("when", ["list_versions 1", "search_documents"])
@@ -503,100 +599,64 @@ async def test_a_deletion_between_the_parts_of_the_check_is_noticed(when: str) -
     assert await found_by(setup) == [(12, None, True)]
 
 
-@pytest.mark.parametrize("page", ["list_versions 2", "list_trash 2"])
-async def test_a_page_that_is_gone_is_no_end_of_the_scan(page: str) -> None:
+async def test_a_page_that_is_gone_is_no_end_of_the_scan() -> None:
     setup = moving()
-    for number in (12, 13):
-        _ = setup.document(number)
-        await setup.delete(number)
-    setup.fake.errors[page] = NotFound("Page 2 is beyond the last page.")
+    setup.fake.errors["list_versions 2"] = NotFound("Page 2 is beyond the last page.")
 
-    with pytest.raises(CheckMovedError):
+    with pytest.raises(CheckMovedError, match="a page of the listing was gone"):
         _ = await found_by(setup)
 
 
 @pytest.mark.parametrize("confirm", [False, True])
 async def test_what_never_adds_up_is_a_failed_check(*, confirm: bool) -> None:
     setup = moving()
-    number = iter(range(100, 200))
-    setup.fake.changes["list_versions 2"] = [
-        lambda: _none(setup.document(next(number), original=b"new"))
-    ] * 5
+    setup.fake.changes["list_versions 2"] = [removed(setup, 10), removed(setup, 11)]
+    for number in (12, 13):
+        _ = setup.document(number, original=b"x%d" % number)
 
     with pytest.raises(CheckMovedError) as raised:
         _ = await setup.finder.cleared(FILE, "upload", confirm=confirm)
 
     assert "the file was not uploaded" in raised.value.message
-    assert raised.value.hint == "Try again in a moment."
+    assert raised.value.hint == AGAIN
+    assert "while it ran: " in raised.value.message
     assert setup.fake.calls.count("list_versions 1") == 2
 
 
-def flipping(setup: Setup) -> Callable[[], None]:
-    """Makes the trash come in the other order from now on, as equal dates may on PostgreSQL."""
-
-    def flip() -> None:
-        first, second = setup.state.trash
-        first.created, second.created = second.created, first.created
-
-    return flip
-
-
-def two_trashed() -> Setup:
+async def test_the_trash_is_read_in_one_request_and_counted_again_in_a_small_one() -> None:
+    """Paperless orders the trash by date only: on PostgreSQL its pages overlap in every pass."""
     setup = moving()
-    for number, day in ((12, 1), (13, 2)):
-        _ = setup.document(number, created=date(2026, 1, day))
-        setup.state.trash.append(setup.state.documents.pop())
-        setup.state.trash[-1].deleted_at = DELETED
-    return setup
+    for number in range(20, 80):
+        _ = setup.document(number, original=b"x%d" % number)
+        await setup.delete(number)
+    setup.state.trash[-1].original = FILE
+
+    assert len(await found_by(setup)) == 1
+    assert setup.fake.trash_reads == [500, 1]
 
 
-async def test_trash_pages_that_overlap_are_read_again_and_merged() -> None:
-    setup = two_trashed()
-    setup.fake.changes["list_trash 2"] = [flipping(setup)]
+async def test_a_trash_with_fewer_rows_than_its_count_is_a_failed_check() -> None:
+    setup = moving()
+    _ = setup.document(12)
+    await setup.delete(12)
+    setup.fake.short_trash = True
 
-    assert {d for d, _, _ in await found_by(setup)} == {12, 13}
-    assert setup.fake.calls.count("list_trash 2") == 2
-
-
-async def test_no_request_for_the_trash_asks_for_more_than_a_page() -> None:
-    """The rows carry the whole text of the documents, so the size of a page is the bound."""
-    setup = two_trashed()
-    setup.fake.changes["list_trash 2"] = [flipping(setup)] * 8
-
-    _ = await found_by(setup)
-
-    assert setup.fake.trash_sizes
-    assert set(setup.fake.trash_sizes) == {1}
-    wide = Setup()
-    _ = await found_by(wide)
-    assert max(wide.fake.trash_sizes) == Bounds().trash_page
-
-
-@pytest.mark.parametrize("calls_before", [0, 1])
-async def test_a_trash_that_shrinks_between_its_pages_or_passes_is_read_anew(
-    calls_before: int,
-) -> None:
-    setup = two_trashed()
-    if not calls_before:  # so that page 2 still exists afterwards
-        _ = setup.document(14, original=b"third", created=date(2026, 1, 3))
-        await setup.delete(14)
-    page = "list_trash 2" if calls_before == 0 else "list_trash 1"
-    setup.fake.changes[page] = [*([lambda: None] * calls_before), back(setup, 12)]
-    if calls_before:  # overlapping pages ask for the second pass
-        setup.fake.changes["list_trash 2"] = [flipping(setup)]
-
-    found = await found_by(setup)
-
-    assert (12, None, False) in found
-    assert (13, None, True) in found
-
-
-async def test_a_trash_that_never_shows_every_entry_is_a_failed_check() -> None:
-    setup = two_trashed()
-    setup.fake.only = 13
-
-    with pytest.raises(CheckMovedError):
+    with pytest.raises(CheckMovedError, match="fewer entries of the trash than it counts"):
         _ = await found_by(setup)
+
+
+async def test_a_trash_over_the_byte_limit_is_a_failed_check_with_its_cause() -> None:
+    setup = Setup(bounds=Bounds(trash_bytes=2 * 1024 * 1024))
+    _ = setup.document(12, content="x" * (2 * 1024 * 1024 + 1))
+    await setup.delete(12)
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await setup.finder.cleared(FILE, "upload", confirm=True)
+
+    assert "the trash of this user is larger than 2 MiB" in raised.value.message
+    assert "the file was not uploaded" in raised.value.message
+    assert "Neither confirm=true nor a setting skips the check" in (raised.value.hint or "")
+    assert setup.fake.trash_reads == [500]
 
 
 async def test_a_deleted_version_that_vanished_is_read_again() -> None:
@@ -665,9 +725,9 @@ async def test_a_document_of_the_trash_without_a_checksum_is_a_failed_check() ->
 async def test_a_check_that_takes_too_long_is_a_failed_check() -> None:
     class Stuck(Failing):
         @override
-        async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
+        async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
             await asyncio.sleep(60)
-            return await super().list_trash(page=page, page_size=page_size)
+            return await super().read_trash(entries=entries, max_bytes=max_bytes)
 
     stuck = Stuck(seeded())
     finder = DuplicateFinder(stuck, stuck, web_url=WEB, bounds=Bounds(seconds=0.01))
@@ -819,8 +879,17 @@ async def test_a_rejection_names_the_document_the_version_or_the_trash() -> None
             assert found.rejected_for.deleted_at is not None
 
 
+async def test_a_user_who_may_not_list_documents_is_checked_as_far_as_possible() -> None:
+    setup = Setup()
+    setup.fake.errors["search_documents"] = DENIED
+
+    found = await setup.finder.cleared(FILE, "upload", confirm=False)
+
+    assert "Documents: this user may not list them." in found.not_checked
+
+
 async def test_a_trashed_document_whose_entry_is_not_listed_has_no_title() -> None:
-    setup = Setup(bounds=Bounds(trash_pages=1, trash_page=1))
+    setup = Setup(bounds=Bounds(trash_entries=1))
     for number in (11, 12):
         _ = setup.document(number)
         await setup.delete(number)
@@ -832,11 +901,38 @@ async def test_a_trashed_document_whose_entry_is_not_listed_has_no_title() -> No
     assert message.endswith("the same file, document 11 in the trash.")
 
 
+async def test_the_trash_is_read_once_for_a_rejection_and_within_its_bytes() -> None:
+    setup = Setup(bounds=Bounds(trash_bytes=10))
+    _ = setup.document(11, content="x" * 11)
+    await setup.delete(11)
+
+    found, message = await setup.finder.rejected(11)
+
+    assert found.rejected_for is not None
+    assert found.rejected_for.title is None
+    assert message.endswith("document 11 in the trash.")
+    assert setup.fake.trash_reads == [500]
+
+
+async def test_naming_the_duplicate_has_a_time_limit() -> None:
+    class Stuck(Failing):
+        @override
+        async def get_root(self, document_id: int) -> int:
+            await asyncio.sleep(60)
+            return await super().get_root(document_id)
+
+    stuck = Stuck(seeded())
+    finder = DuplicateFinder(stuck, stuck, web_url=WEB, bounds=Bounds(seconds=0.01))
+
+    assert (await finder.rejected(1))[1] == UNREAD_REJECTED
+    assert (await finder.after(1)).not_checked == (UNREAD_AFTER,)
+
+
 async def test_a_trash_the_user_may_not_list_leaves_the_title_out() -> None:
     setup = Setup()
     _ = setup.document(11)
     await setup.delete(11)
-    setup.fake.errors["list_trash"] = DENIED
+    setup.fake.errors["read_trash"] = DENIED
 
     found, _ = await setup.finder.rejected(11)
 

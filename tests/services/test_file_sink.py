@@ -100,9 +100,10 @@ async def save(  # noqa: PLR0913 -- one keyword per thing a test varies
     expected: Expected | None = None,
     through: FileSink | None = None,
     source: object = None,
+    what: str = "this",
 ) -> file_sink.Saved:
     async with (through or sink(tree, at, system)).open(str(directory or tree.sub)) as target:
-        await target.claim(name, confirm=confirm, source=source)
+        await target.claim(name, confirm=confirm, what=what, source=source)
         return await target.write(
             data or chunks(DATA[:10], DATA[10:]), expected or Expected(len(DATA), None)
         )
@@ -171,6 +172,7 @@ async def test_short_writes_are_continued(tree: Tree) -> None:
 # --- replacing
 
 
+@pytest.mark.decision("decision-49")
 async def test_an_existing_file_is_replaced_only_with_confirm(tree: Tree) -> None:
     old = tree.sub / NAME
     _ = old.write_bytes(b"old!")
@@ -180,7 +182,7 @@ async def test_an_existing_file_is_replaced_only_with_confirm(tree: Tree) -> Non
         _ = await save(tree)
     assert raised.value.message == (
         "Nothing was changed. Confirming would replace the file 'a.pdf' (4 bytes, changed "
-        f"2023-11-14) in '{tree.sub}'."
+        f"2023-11-14) in '{tree.sub}' with this."
     )
     assert (old.read_bytes(), tree.names()) == (b"old!", [NAME])
 
@@ -213,6 +215,7 @@ async def test_a_replacement_that_cannot_be_shown_is_refused_also_with_confirm(
     _ = await save(tree, "new.pdf", directory=directory)  # a new file needs no confirmation
 
 
+@pytest.mark.decision("decision-49")
 async def test_a_confirmation_shows_the_whole_name_and_directory_or_is_refused(tree: Tree) -> None:
     directory = tree.allowed / "d"
     while len(str(directory)) < 200:
@@ -224,7 +227,7 @@ async def test_a_confirmation_shows_the_whole_name_and_directory_or_is_refused(t
     with pytest.raises(ConfirmationRequired) as raised:
         _ = await save(tree, name, directory=directory)
     assert f"replace the file '{name}' (3 bytes" in raised.value.message
-    assert raised.value.message.endswith(f" in '{directory}'.")
+    assert raised.value.message.endswith(f" in '{directory}' with this.")
 
     deeper = directory / ("e" * 60)
     deeper.mkdir()
@@ -234,6 +237,17 @@ async def test_a_confirmation_shows_the_whole_name_and_directory_or_is_refused(t
             _ = await save(tree, directory=deeper, confirm=confirm)
 
 
+@pytest.mark.decision("decision-49")
+async def test_a_confirmation_names_the_directory_a_link_leads_to(tree: Tree) -> None:
+    (tree.allowed / "short").symlink_to(tree.sub)
+    _ = (tree.sub / NAME).write_bytes(b"old")
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await save(tree, directory=tree.allowed / "short", what="the original of document 7")
+
+    assert raised.value.message.endswith(f" in '{tree.sub}' with the original of document 7.")
+
+
 async def fingerprint(tree: Tree, source: object = 1) -> str:
     with pytest.raises(ConfirmationRequired) as raised:
         _ = await save(tree, source=source)
@@ -241,6 +255,7 @@ async def fingerprint(tree: Tree, source: object = 1) -> str:
 
 
 @pytest.mark.decision("decision-44")
+@pytest.mark.decision("decision-49")
 async def test_an_acceptance_covers_the_file_the_directory_and_what_is_saved(tree: Tree) -> None:
     """The text is the same each time; what it is about is not."""
     target = tree.sub / NAME
@@ -257,7 +272,13 @@ async def test_an_acceptance_covers_the_file_the_directory_and_what_is_saved(tre
     os.utime(target, ns=(stamp, stamp))
     other = await fingerprint(tree)
     assert other != accepted
-    # The same file, written again in the same size.
+    # The same file, written again in the same size and dated back: only its ctime tells.
+    _ = target.write_bytes(b"new")
+    os.utime(target, ns=(stamp, stamp))
+    written = await fingerprint(tree)
+    assert written != other
+    other = written
+    # The same file, with another date.
     os.utime(target, ns=(stamp, stamp + 1000))
     assert await fingerprint(tree) != other
     # Another directory at the same path, the file moved into it.
@@ -845,6 +866,22 @@ async def test_without_hard_links_a_swapped_reservation_is_left_alone(
     assert (target.read_bytes(), tree.names()) == (theirs, [NAME, "filler"])
 
 
+@pytest.mark.decision("decision-49")
+async def test_without_hard_links_bytes_written_before_the_reservation_is_looked_at_are_kept(
+    tree: Tree,
+) -> None:
+    target = tree.sub / NAME
+
+    with pytest.raises(PaperlessMcpError, match="changed meanwhile"):
+        _ = await save(
+            tree,
+            system=without_links(errno.ENOTSUP),
+            at=when("made", lambda: target.write_bytes(b"theirs")),
+        )
+
+    assert (target.read_bytes(), tree.names()) == (b"theirs", [NAME])
+
+
 async def test_without_hard_links_a_written_reservation_is_left_alone(tree: Tree) -> None:
     target = tree.sub / NAME
 
@@ -983,7 +1020,7 @@ async def data():
     yield b"x" * 5000
 async def main():
     async with FileSink([{str(tree.allowed)!r}]).open({str(tree.sub)!r}) as target:
-        await target.claim("a.pdf", confirm=False, source=None)
+        await target.claim("a.pdf", confirm=False, what="this", source=None)
         try:
             await target.write(data(), Expected(5000, None))
         except PaperlessMcpError as error:
@@ -1418,7 +1455,7 @@ async def data():
     os.kill(os.getpid(), signal.SIGKILL)
 async def main():
     async with FileSink([{str(tree.allowed)!r}]).open({str(tree.sub)!r}) as target:
-        await target.claim("a.pdf", confirm=False, source=None)
+        await target.claim("a.pdf", confirm=False, what="this", source=None)
         await target.write(data(), Expected())
 asyncio.run(main())
 """

@@ -103,6 +103,23 @@ class PaperlessTrashReader:
             entries=tuple(_entry(row) for row in found.results),
         )
 
+    async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
+        """See ``TrashReader.read_trash``; parsing a large answer stops the event loop for a while.
+
+        Of the rows only what ``_Row`` names is kept.
+        """
+        found = await self._client.read_json(
+            PATH,
+            Page[_Row],
+            params={"page": 1, "page_size": entries},
+            max_bytes=max_bytes,
+        )
+        return TrashPage(
+            count=found.count,
+            next_page=found.next_page,
+            entries=tuple(_entry(row) for row in found.results),
+        )
+
 
 class PaperlessTrashWriter:
     """``TrashWriter`` over the Paperless REST API."""
