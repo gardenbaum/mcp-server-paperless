@@ -1,11 +1,11 @@
 ---
 id: PLMCP-80.2
 title: 'Bulk changes b: bulk_edit_documents by filter and view, full scope and texts'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:33Z'
-updated_date: '2026-11-24T16:07:33Z'
+updated_date: '2026-11-24T18:03:55Z'
 labels:
   - bulk
 dependencies:
@@ -27,14 +27,14 @@ Second part of PLMCP-80: bulk_edit_documents takes ids only and its confirmation
 - [x] #1 bulk_edit_documents takes ids, search filters or a saved view and changes only documents that were shown
 - [x] #2 Confirmation texts name all documents, up to 100, and bind the current values
 - [x] #3 The coverage table quotes the owner-approved exclusions with their date
-- [ ] #4 Contract, tool and E2E tests cover partial failures and a changed set
+- [x] #4 Contract, tool and E2E tests cover partial failures and a changed set
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -64,4 +64,12 @@ Review of 162205a (0 Critical, 3 Important, 7 Minor), red first. I1 an unconfirm
 Owner, 2026-11-24 ('bitte alles wie von dir empfohlen', relayed by the main agent): restricted users whose view excludes a hidden tag stay refused; ids plus a filter without a dialog stay as designed (current values not bound). Recorded in decision-71.
 
 Checked: AC 1 and 2 (service, tool and dialog tests on both protocol eras), AC 3 (docs/api-coverage.toml, checked by tests/quality/test_api_coverage.py). Open: AC 4 until the E2E and contract tests have run live (run 45432664652 on 734904f was in progress); DoD 1 because the dialog, contract and E2E tests have no red run of their own (the mechanism existed or no stack was allowed locally); DoD 2 until CI is green (just check was not run locally, by instruction); DoD 3 until the PR text names the later snapshot changes; DoD 4 until merged (after the release 0.4.0 tag).
+
+Live evidence for AC 4: full hosted E2E 45432664652 green on 734904f; repeated on the head with main merged. DoD 1 stays open: the dialog, contract and E2E tests were not seen red (adapter, service and tool tests were). DoD 2 and 4: the required CI checks and the merge of #137; just check was not run locally as a whole.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bulk_edit_documents by ids, filters or saved view: only named documents change, confirmations bind current values, outcomes per document (decisions 71, 72). Reviews in two rounds.
+<!-- SECTION:FINAL_SUMMARY:END -->
