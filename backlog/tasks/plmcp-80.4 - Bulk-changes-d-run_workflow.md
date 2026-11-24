@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:35Z'
-updated_date: '2026-11-24T18:23:40Z'
+updated_date: '2026-11-24T18:51:09Z'
 labels:
   - bulk
 dependencies:
@@ -50,4 +50,9 @@ Fourth part of PLMCP-80: Paperless 3.5.1 can run a workflow with a manual trigge
 
 <!-- SECTION:NOTES:BEGIN -->
 Owner approval (2026-11-24): 'Entwurf 80: Nummern 1 bis 20 wie von dir empfohlen, samt den dort genannten Limits.' Here: 11a (tool run_workflow in the toolset workflows), 14 (guide limit to at most 2943).
+
+Implementation notes (2026-11-24): port WorkflowWriter.run_workflow, adapter on bulk_edit, services/workflow_runs.py, tool run_workflow in workflows, decision-75 (74 belongs to PLMCP-79.5; the CLI proposed 74, so a second decision was created and the first removed again). Red first at adapter, contract (fake), service and tool level; E2E written before its first run on GitHub. 34 hand mutants of services/workflow_runs.py, the new parts of services/workflows.py and paperless/workflows.py: all killed. Coverage of workflow_runs.py and paperless/workflows.py 100 % (branches too).
+Deliberate changes: OVERVIEW_GUIDE_LIMIT 2928 to 2943 (approved); surface snapshot only insertions; selection arguments moved to tools/_shared.py; TaskWaiter.ended returns the task; run_workflow in the test tables of trashing tools, destinations and confirm calls; e2e_ci ALIASES.
+Beyond the design: the confirmation also shows the values assignments and removals write (the design named the fields' kinds only); current values and owners are bound (decision-71); ownership is checked beforehand where the user may be read (may_delete asks for delete_document, which a run does not need, so get_signed_in and the rows' owners are used); a failure on some documents is a result, on all an error.
+Local runs: targeted only; tests/tools, tests/quality and others green except test_backlog_instructions::test_the_menu_driver_reports_a_failing_cli, a pty error of this machine in a file this task does not touch.
 <!-- SECTION:NOTES:END -->
