@@ -290,7 +290,9 @@ them. That needs the permissions `view_uisettings`, `view_paperlesstask` and `vi
 see which custom fields are dates), and no other editing, merging, splitting or unlocking of this
 user in the last hour that is not known to have made something else. A rotation is told by the new
 version in the same way: also `view_logentry` is needed (and the audit log), because only the history
-says who added a version, and earlier rotations of this user in the last hour must be done.
+says who added a version. The versions of all earlier rotations of this user that ended in the last
+hour must exist and be countable: one that failed, or whose version was deleted since, or more than
+100 documents changed, or tasks listed, in that time leave the answer unknown.
 `reprocess_documents` does the same as the `reprocess` operation of `bulk_edit_documents` but
 returns its tasks.
 

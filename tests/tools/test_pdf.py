@@ -174,7 +174,11 @@ async def test_a_rotation_whose_task_a_date_hides_is_told_by_its_version_with_a_
     assert (tasks[0]["task_id"], tasks[0]["document_ids"]) == (None, [version])
     assert tasks[1]["task_id"] is not None
     assert str(done["message"]).startswith("Paperless lists no task for the rotation of document ")
-    assert (sent["state"], unknown["state"]) == ("unknown", "unknown")
+    assert (sent["state"], sent["wait"], sent["waited_seconds"]) == ("unknown", "not_requested", 0)
+    assert len(cast("list[Json]", sent["tasks"])) == 1  # the one that is listed
+    assert "only 1 of the 2 tasks it starts showed up" in str(sent["message"])
+    assert "hold a date" in str(sent["message"])
+    assert (unknown["state"], unknown["wait"]) == ("unknown", "finished")
     assert "Which new version is the rotation could not be told" in str(unknown["message"])
     async with Client(serve(waited, toolsets=["pdf"])) as client:
         [tool] = [t for t in await client.list_tools() if t.name == "rotate_documents"]

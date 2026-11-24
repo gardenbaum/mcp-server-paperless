@@ -351,7 +351,9 @@ class PdfService:
 
         async def follow_up(_: Progress) -> PdfResult:
             before = await self._hidden(started, documents)
-            known, found = await self._parts.turned(started, before, _bound(wait_seconds))
+            known, found = await self._parts.turned(
+                started, before, document_ids, _bound(wait_seconds)
+            )
             return await self._result(
                 "rotate",
                 summary,

@@ -39,7 +39,7 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, StartedTasks
+from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, RotationSearch, StartedTasks
 from mcp_server_paperless.domain.tasks import Unconfirmed
 from mcp_server_paperless.paperless.errors import REJECTED
 from mcp_server_paperless.paperless.pagination import Page
@@ -50,8 +50,8 @@ if TYPE_CHECKING:
         Awaitable,
         Callable,
         Collection,
+        Iterable,
         Iterator,
-        Mapping,
         Sequence,
         Sized,
     )
@@ -112,6 +112,12 @@ class _Task(BaseModel):
         return count if isinstance(count, int) else None
 
     @property
+    def copies_metadata(self) -> bool:
+        """Whether the file takes the metadata of a document along, as a rotation does."""
+        overrides = self.input_data.get("overrides") if isinstance(self.input_data, dict) else None
+        return isinstance(overrides, dict) and "title" in overrides
+
+    @property
     def leaves_number(self) -> bool:
         """Whether the file is told to go without a taken serial number, as copies are."""
         overrides = self.input_data.get("overrides") if isinstance(self.input_data, dict) else None
@@ -150,12 +156,9 @@ class _Version(BaseModel):
     is_root: bool
 
 
-class _Versions(BaseModel):
-    versions: list[_Version]
-
-
-class _Changed(_Versions):
+class _Changed(BaseModel):
     id: int
+    versions: list[_Version]
 
 
 class _FileName(BaseModel):
@@ -206,6 +209,11 @@ BROKE: Final = "its task could not be followed"
 PENDING: Final = "files of earlier operations of this user may still come"
 TASKED: Final = "a task of its own makes a file of one of these names"
 NO_HISTORY: Final = "the history, which names who added a version, may not be read"
+UNFINISHED: Final = (
+    "another rotation of this user started and has no end in the task list (it still runs, or it "
+    "was cut off)"
+)
+UNREADABLE: Final = "document {document} cannot be read any more"
 SEVERAL: Final = "versions {versions} of document {document} could both be the rotation"
 # How long a file may wait for its consumption: operations before that are taken to be done.
 BACKLOG: Final = timedelta(hours=1)
@@ -664,77 +672,85 @@ class PaperlessPdfWriter:
             return _doubtful(files.names, doubt)
         return FoundCopies(ids=tuple(ids.get(name) for name in files.names))
 
-    async def find_rotations(
-        self, request: str, before: Mapping[int, int], *, final: bool = False
-    ) -> FoundCopies:
+    async def find_rotations(self, search: RotationSearch, *, final: bool = False) -> FoundCopies:
         """See ``PdfWriter.find_rotations``: by place, time, file name and the history.
 
         The versions are read first: what could have made one of them then shows up in the lists
-        of operations and tasks that are read afterwards.
+        of operations and tasks that are read afterwards. What a version is does not change, so it
+        is read once per search.
         """
-        newer: dict[int, list[_Version]] = {}
-        for number, newest in before.items():
-            row = await self._client.get(
-                f"{BASE}{number}/", _Versions, params={"fields": "versions"}
-            )
-            newer[number] = list(takewhile(lambda v, last=newest: v.id != last, row.versions))
-        user = await self._user()
+        before = search.before
+        params: dict[str, str | int] = {
+            "id__in": ",".join(map(str, before)),
+            "fields": "id,versions",
+            "page_size": LOOKBACK,
+        }
+        rows = (await self._client.get(BASE, Page[_Changed], params=params)).results
+        listed = {row.id: row.versions for row in rows}
+        search.user = search.user or await self._user()
         operations = await self._operations()
-        own = next((row for row in operations.results if row.task_id == request), None)
-        if user is None or own is None or own.date_started is None:
-            return _doubtful(before, NO_USER if user is None else NO_TIMES)
-        start, ids = own.date_started, dict[int, int | None]()
-        for number, versions in newer.items():
+        own = next((row for row in operations.results if row.task_id == search.request), None)
+        if search.user is None or own is None or own.date_started is None:
+            return _doubtful(before, NO_USER if search.user is None else NO_TIMES)
+        start, named = own.date_started, dict[int, list[int]]()
+        for number, newest in before.items():
+            if number not in listed:
+                return _doubtful(before, UNREADABLE.format(document=number))
+            newer = takewhile(lambda v, last=newest: v.id != last, listed[number])
+            named[number] = await self._named_rotations(number, newer, start, search)
+        ids = dict[int, int | None].fromkeys(before)
+        for number, versions in named.items() if final or all(named.values()) else ():
             try:
-                made = await self._rotations(number, versions, start, user)
+                made = await self._rotations(number, versions, search)
             except PermissionDenied, Validation:  # 400: the audit log is off
                 return _doubtful(before, NO_HISTORY)
             if len(made) > 1:
-                listed = ", ".join(map(str, made))
-                return _doubtful(before, SEVERAL.format(versions=listed, document=number))
+                several = ", ".join(map(str, made))
+                return _doubtful(before, SEVERAL.format(versions=several, document=number))
             ids[number] = made[0] if made else None
-        taken = {n for n in ids.values() if n is not None}
-        whole = final or len(taken) == len(before)
-        doubt = await self._rotated_else(
-            user, start, operations, request=request, before=before, taken=taken, whole=whole
-        )
+        whole = final or None not in ids.values()
+        doubt = await self._rotated_else(search, search.user, start, operations, whole=whole)
         if doubt is not None:
             return _doubtful(before, doubt)
         return FoundCopies(ids=tuple(ids.values()))
 
-    async def _rotations(
-        self, document_id: int, versions: Sequence[_Version], since: datetime, user: int
-    ) -> list[int]:
-        """Those of the versions, added since then, that a rotation of this user made.
-
-        Paperless names the file of a rotation after the document, and its history says who added a
-        version.
-        """
-        named: list[int] = []
-        for version in versions:
-            if version.is_root or version.added < since:
-                continue
-            with contextlib.suppress(NotFound):  # deleted meanwhile
-                file = await self._client.get(
-                    f"{BASE}{document_id}/metadata/", _FileName, params={"version": version.id}
-                )
-                if file.original_filename == _rotated(document_id):
-                    named.append(version.id)
-        if not named:
-            return []
-        entries = (await self._client.get(f"{BASE}{document_id}/history/", _History)).root
-        mine = {str(e.version) for e in entries if e.actor is not None and e.actor.id == user}
-        return [number for number in named if str(number) in mine]
-
-    async def _rotated_else(  # noqa: PLR0913 -- what was found and what it is held against
+    async def _named_rotations(
         self,
+        document_id: int,
+        versions: Iterable[_Version],
+        since: datetime,
+        search: RotationSearch,
+    ) -> list[int]:
+        """Those of the versions, added since then, that have the file name of a rotation."""
+        late = [v.id for v in versions if not v.is_root and v.added >= since]
+        for version in late:
+            if version in search.names:
+                continue
+            name = ""  # deleted meanwhile
+            with contextlib.suppress(NotFound):
+                path = f"{BASE}{document_id}/metadata/"
+                file = await self._client.get(path, _FileName, params={"version": version})
+                name = file.original_filename or ""
+            search.names[version] = name
+        return [version for version in late if search.names[version] == _rotated(document_id)]
+
+    async def _rotations(
+        self, document_id: int, versions: Sequence[int], search: RotationSearch
+    ) -> list[int]:
+        """Those of the versions that the user of the search added, as the history says."""
+        if not {*versions} <= search.actors.keys():
+            entries = (await self._client.get(f"{BASE}{document_id}/history/", _History)).root
+            added = {str(e.version): e.actor.id for e in entries if e.actor is not None}
+            search.actors.update({n: added.get(str(n)) for n in versions})
+        return [number for number in versions if search.actors[number] == search.user]
+
+    async def _rotated_else(
+        self,
+        search: RotationSearch,
         user: int,
         start: datetime,
         operations: Page[_Task],
         *,
-        request: str,
-        before: Mapping[int, int],
-        taken: Collection[int],
         whole: bool,
     ) -> str | None:
         """Why these versions may be another request's of this user, None if they are this one's.
@@ -744,7 +760,7 @@ class PaperlessPdfWriter:
         versions as they have documents. Those are counted only if ``whole``.
         """
         since = start - BACKLOG
-        names = {_rotated(number) for number in before}
+        names = {_rotated(number) for number in search.before}
         params: dict[str, str | int] = {**self._filters(CONSUME, None), "page_size": LOOKBACK}
         tasks = await self._client.get(TASKS, Page[_Task], params=params)
         if any(
@@ -754,34 +770,39 @@ class PaperlessPdfWriter:
             for task in tasks.results
         ):
             return TASKED
-        if any(_ends_after(page, since) for page in (tasks, operations)):
-            return UNCOMPARED
         others = [
             row
             for row in operations.results
-            if row.task_id != request and row.owner == user and row.operation in ROTATING
+            if row.task_id != search.request
+            and row.owner == user
+            and row.operation in ROTATING
+            and row.date_started
         ]
-        if any(
-            row.date_started and (not row.date_done or row.date_done >= start) for row in others
-        ):
+        if any(row.date_done is None for row in others):
+            return UNFINISHED
+        if any(row.date_done and row.date_done >= start for row in others):
             return AT_ONCE
-        earlier = [
-            (row.date_started, row.documents)
-            for row in others
-            if row.date_started and row.date_done and row.date_done >= since
-        ]
+        since, earlier = _since(others, since)
+        if any(_ends_after(page, since) for page in (tasks, operations)):
+            return UNCOMPARED
         if not earlier or not whole:
             return None
-        return await self._unsettled(user, earlier, taken)
+        return await self._unsettled(search, start, earlier, tasks.results)
 
     async def _unsettled(
-        self, user: int, earlier: Sequence[tuple[datetime, int | None]], taken: Collection[int]
+        self,
+        search: RotationSearch,
+        start: datetime,
+        earlier: Sequence[_Task],
+        tasks: Sequence[_Task],
     ) -> str | None:
-        """Why versions of earlier rotations may still come, None if all of them are there."""
-        counts = [count for _, count in earlier if count is not None]
-        if len(counts) < len(earlier):
-            return PENDING
-        since = min(started for started, _ in earlier)
+        """Why versions of earlier rotations may still come, None if all of them are there.
+
+        Not counted is what could be this request's own, on any of its documents, and what has the
+        name of an upload.
+        """
+        counts = [row.documents for row in earlier]
+        since = min(row.date_started for row in earlier if row.date_started)
         params: dict[str, str | int] = {
             "modified__gte": since.isoformat(),
             "fields": "id,versions",
@@ -790,11 +811,16 @@ class PaperlessPdfWriter:
         changed = await self._client.get(BASE, Page[_Changed], params=params)
         if changed.next_page is not None:
             return UNCOMPARED
-        missing = sum(counts)
+        uploads = {task.filename for task in tasks if not task.copies_metadata}
+        missing = sum(count for count in counts if count is not None)
         for row in changed.results:
-            versions = [version for version in row.versions if version.id not in taken]
+            if None in counts or _rotated(row.id) in uploads:
+                continue
+            own = row.id in search.documents
+            versions = [v for v in row.versions if not own or v.added < start]
             with contextlib.suppress(PermissionDenied, Validation, NotFound):
-                missing -= len(await self._rotations(row.id, versions, since, user))
+                named = await self._named_rotations(row.id, versions, since, search)
+                missing -= len(await self._rotations(row.id, named, search))
             if missing <= 0:
                 return None
         return PENDING
@@ -911,6 +937,16 @@ def _doubtful(wanted: Sized, doubt: str) -> FoundCopies:
 def _ends_after(page: Page[_Task], since: datetime) -> bool:
     """Whether a list that has more does not reach back that far."""
     return page.next_page is not None and min(row.created for row in page.results) > since
+
+
+def _since(rows: Sequence[_Task], since: datetime) -> tuple[datetime, list[_Task]]:
+    """The rotations that could have made a version since then, or since the first of them began."""
+    while True:
+        counted = [row for row in rows if row.date_done and row.date_done >= since]
+        first = min((row.date_started for row in counted if row.date_started), default=since)
+        if first >= since:
+            return since, counted
+        since = first
 
 
 def _copying(rows: Sequence[_Task], queued: str, owners: Collection[int | None]) -> Iterator[_Task]:

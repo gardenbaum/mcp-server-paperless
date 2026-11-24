@@ -6,10 +6,11 @@ from typing import TYPE_CHECKING
 import httpx2
 import pytest
 
+from adapter import test_pdf
 from adapter.test_instance import UI_SETTINGS
-from adapter.test_pdf import DONE_TASK, EARLIER, LATER, OLD, QUEUED, Paperless, row, task_id, writer
-from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, UpstreamUnavailable
-from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies
+from adapter.test_pdf import DONE_TASK, EARLIER, LATER, OLD, Paperless, row, task_id, writer
+from mcp_server_paperless.domain.errors import PermissionDenied, UpstreamUnavailable
+from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, RotationSearch
 from mcp_server_paperless.paperless.client import RetryPolicy
 from mcp_server_paperless.paperless.pdf import PaperlessPdfWriter
 
@@ -22,7 +23,13 @@ type Json = dict[str, object]
 
 START = "2026-11-13T17:25:36.540000Z"
 ADMIN = 2
+# The queued task of the request.
+QUEUED = {**test_pdf.QUEUED, "input_data": {"operation": "rotate", "document_count": 1}}
 AT_ONCE = "another operation of this user ran at the same time"
+UNFINISHED = (
+    "another rotation of this user started and has no end in the task list (it still runs, or it "
+    "was cut off)"
+)
 PENDING = "files of earlier operations of this user may still come"
 TASKED = "a task of its own makes a file of one of these names"
 UNCOMPARED = "its tasks could not be compared"
@@ -113,8 +120,13 @@ class Archive:
     def _list(self, kind: str, params: dict[str, str]) -> httpx2.Response:
         rows = self.tasks if kind == "consume_file" else self.bulk
         if kind == "documents":
-            assert set(params) == {"modified__gte", "fields", "page_size"}
-            rows = [{"id": n, "versions": v} for n, v in self.versions.items()]
+            wanted = params.get("id__in", "").split(",")
+            rows = [
+                {"id": n, "versions": v}
+                for n, v in self.versions.items()
+                if "modified__gte" in params or str(n) in wanted
+            ]
+            kind = "documents" if "modified__gte" in params else "wanted"
         more = self.next.get(kind)
         body = {"count": len(rows), "next": more, "previous": None, "results": rows}
         return httpx2.Response(200, json=body)
@@ -147,16 +159,25 @@ class Archive:
         )
 
 
-async def find(
+async def find(  # noqa: PLR0913 -- what is looked for, and how
     make_client: ClientFactory,
     archive: Archive,
     before: dict[int, int] | None = None,
     *,
+    documents: tuple[int, ...] = (),
+    search: RotationSearch | None = None,
     final: bool = False,
 ) -> FoundCopies:
     client = make_client(archive, retry=RetryPolicy(attempts=1))
     pdf = PaperlessPdfWriter(client)
-    return await pdf.find_rotations(DONE_TASK, before or {8: 8}, final=final)
+    return await pdf.find_rotations(search or looking(before, documents), final=final)
+
+
+def looking(
+    before: dict[int, int] | None = None, documents: tuple[int, ...] = ()
+) -> RotationSearch:
+    before = before or {8: 8}
+    return RotationSearch(request=DONE_TASK, before=before, documents=documents or tuple(before))
 
 
 async def test_the_new_version_is_told_by_place_time_file_name_and_who_added_it(
@@ -169,7 +190,8 @@ async def test_the_new_version_is_told_by_place_time_file_name_and_who_added_it(
     archive.add(62, 9)
 
     assert await find(make_client, archive, {8: 8, 9: 50}) == FoundCopies(ids=(61, 62))
-    assert ("/api/documents/8/", {"fields": "versions"}) in archive.requests
+    listed = {"id__in": "8,9", "fields": "id,versions", "page_size": "100"}
+    assert ("/api/documents/", listed) in archive.requests
     assert ("/api/documents/9/metadata/", {"version": "62"}) in archive.requests
 
 
@@ -268,7 +290,8 @@ async def test_another_operation_of_the_user_at_the_same_time_or_later_is_a_doub
 
     found = await find(make_client, archive)
 
-    assert found == FoundCopies(ids=(None,), doubt=AT_ONCE)
+    doubt = AT_ONCE if fields["date_done"] else UNFINISHED
+    assert found == FoundCopies(ids=(None,), doubt=doubt)
     assert (await find(make_client, Archive())).doubt is None
 
 
@@ -315,7 +338,6 @@ async def test_an_earlier_rotation_is_settled_by_the_versions_it_made(
     before = {8: 50 if document == 8 else 8}
 
     assert await find(make_client, archive, before) == FoundCopies(ids=(61,))
-    assert archive.requests[-1][0] == f"/api/documents/{document}/history/"
     listed = {"modified__gte": ago(minutes=2), "fields": "id,versions", "page_size": "100"}
     assert ("/api/documents/", listed) in archive.requests
 
@@ -425,7 +447,9 @@ async def test_an_unknown_user_or_request_is_a_doubt(make_client: ClientFactory)
     assert (await find(make_client, unstarted)).doubt == times
 
 
-@pytest.mark.parametrize("failing", ["8", "metadata", "history", "bulk_update", "consume_file"])
+@pytest.mark.parametrize(
+    "failing", ["documents", "metadata", "history", "bulk_update", "consume_file"]
+)
 async def test_a_failed_read_is_raised(make_client: ClientFactory, failing: str) -> None:
     archive = Archive()
     archive.add(61)
@@ -435,15 +459,128 @@ async def test_a_failed_read_is_raised(make_client: ClientFactory, failing: str)
         _ = await find(make_client, archive)
 
 
-async def test_a_hidden_document_and_hidden_tasks_are_raised(make_client: ClientFactory) -> None:
+async def test_a_hidden_document_is_a_doubt_and_hidden_tasks_are_raised(
+    make_client: ClientFactory,
+) -> None:
     hidden, untold = Archive(), Archive()
     del hidden.versions[8]
     untold.status["bulk_update"] = 403
 
-    with pytest.raises(NotFound):
-        _ = await find(make_client, hidden)
+    assert (await find(make_client, hidden)).doubt == "document 8 cannot be read any more"
     with pytest.raises(PermissionDenied):
         _ = await find(make_client, untold)
+
+
+EARLIER_STAYS = FoundCopies(ids=(None,), doubt=PENDING, passing=True)
+
+
+async def test_the_other_documents_of_the_request_settle_no_earlier_rotation(
+    make_client: ClientFactory,
+) -> None:
+    archive = Archive()
+    archive.document(9)
+    archive.bulk = [QUEUED, rotation()]
+    archive.add(60)  # of the earlier rotation; ours is still to come
+    archive.add(61, 9)  # ours, of a document whose task is listed
+
+    async def mixed(*, final: bool = False) -> FoundCopies:
+        return await find(make_client, archive, {8: 8}, documents=(8, 9), final=final)
+
+    assert await mixed() == EARLIER_STAYS
+    assert await mixed(final=True) == EARLIER_STAYS
+    archive.add(62, 9, added=START)  # in the moment ours started: it may be ours
+    assert await mixed() == EARLIER_STAYS
+    archive.document(10)
+    archive.add(59, 10, added=ago(seconds=30))  # what the earlier one really made
+    assert await mixed() == FoundCopies(ids=(60,))
+    _ = archive.versions.pop(10)
+    archive.add(58, 9, added=ago(seconds=30))  # of 9, but from before ours started
+    assert await mixed() == FoundCopies(ids=(60,))
+
+
+async def test_an_upload_under_the_name_of_a_rotation_settles_nothing(
+    make_client: ClientFactory,
+) -> None:
+    archive = Archive()
+    archive.document(9)
+    archive.bulk = [QUEUED, rotation()]
+    archive.add(60)
+    archive.add(61, 9)
+    upload = {**row(20, "consume_file", "9_rotated.pdf"), "date_created": LATER}
+    data = {"filename": "9_rotated.pdf", "overrides": {"owner_id": 2, "actor_id": 2}}
+
+    for shown in (data, {"filename": "9_rotated.pdf"}):
+        archive.tasks = [{**upload, "input_data": shown}]
+        assert await find(make_client, archive) == EARLIER_STAYS
+    turned = {**data, "overrides": {"title": "Scan", "owner_id": 2, "actor_id": 2}}
+    archive.tasks = [{**upload, "input_data": turned}]
+    assert await find(make_client, archive) == FoundCopies(ids=(60,))
+
+
+async def test_the_window_holds_every_rotation_that_could_have_filled_it(
+    make_client: ClientFactory,
+) -> None:
+    """One that ended over an hour ago, while one that counts ran, could have made what is there."""
+    archive = Archive()
+    archive.document(9)
+    long = {"date_started": ago(minutes=80), "date_done": ago(minutes=50)}
+    ended = {"date_started": ago(minutes=79), "date_done": ago(minutes=78)}
+    before = {"date_started": ago(minutes=85), "date_done": ago(minutes=80)}
+    apart = {"date_started": ago(minutes=99), "date_done": ago(minutes=90)}
+    archive.bulk = [
+        QUEUED,
+        *(rotation(id=n, **t) for n, t in enumerate((long, ended, before, apart))),
+    ]
+    archive.add(50, 9, added=ago(minutes=77))
+    archive.add(51, 9, added=ago(minutes=76))
+    archive.add(52, 9, added=ago(minutes=86))
+    archive.add(61)
+
+    assert (await find(make_client, archive)).doubt == PENDING
+    archive.add(53, 9, added=ago(minutes=84))
+    assert await find(make_client, archive) == FoundCopies(ids=(61,))
+    asked = [p["modified__gte"] for _, p in archive.requests if "modified__gte" in p]
+    assert set(asked) == {ago(minutes=85)}
+
+    last = {"date_created": ago(minutes=84)}
+    for kind in ("bulk_update", "consume_file"):
+        archive.next = {kind: "http://paperless/api/tasks/?page=2"}
+        archive.bulk[1:] = [{**r, "date_created": ago(minutes=84)} for r in archive.bulk[1:]]
+        archive.tasks = [{**row(20, "consume_file", "x.pdf"), **last}]
+        assert (await find(make_client, archive)).doubt == UNCOMPARED
+
+
+async def test_settled_reads_are_kept_and_the_history_waits_for_every_version(
+    make_client: ClientFactory,
+) -> None:
+    archive = Archive()
+    numbers = tuple(range(100, 120))
+    for number in numbers:
+        archive.document(number)
+    search = looking({n: n for n in numbers})
+
+    def asked(*ends: str) -> list[int]:
+        paths = [path.rstrip("/").rsplit("/", 1)[-1] for path, _ in archive.requests]
+        archive.requests.clear()
+        return [paths.count(end) for end in ends]
+
+    kinds = ("ui_settings", "tasks", "documents", "metadata", "history")
+    for number in numbers[:-1]:
+        archive.add(number + 1000, number)
+    # A first file is no rotation, so its name is not asked for.
+    archive.document(99)
+    archive.versions[99][0]["added"] = LATER
+    archive.versions[100][-1]["added"] = LATER
+    search.before = {**search.before, 100: -1}
+    assert (await find(make_client, archive, search=search)).ids == (None,) * 20
+    assert asked(*kinds) == [1, 2, 1, 19, 0]
+    assert (await find(make_client, archive, search=search)).ids == (None,) * 20
+    assert asked(*kinds) == [0, 2, 1, 0, 0]
+    archive.add(numbers[-1] + 1000, numbers[-1])
+    assert None not in (await find(make_client, archive, search=search)).ids
+    assert asked(*kinds) == [0, 2, 1, 1, 20]
+    assert None not in (await find(make_client, archive, search=search)).ids
+    assert asked(*kinds) == [0, 2, 1, 0, 0]
 
 
 async def test_a_rotation_says_which_documents_have_no_task(make_client: ClientFactory) -> None:

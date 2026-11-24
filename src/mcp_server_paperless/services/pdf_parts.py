@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.documents import DocumentEdit
 from mcp_server_paperless.domain.errors import PaperlessMcpError, Validation, quoted
-from mcp_server_paperless.domain.pdf import PartOutcome, PdfTask
+from mcp_server_paperless.domain.pdf import FoundCopies, PartOutcome, PdfTask, RotationSearch
 from mcp_server_paperless.services.document_edits import check_edit
 from mcp_server_paperless.services.documents import document_link
 from mcp_server_paperless.services.page_ranges import describe, specification
@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 
     from mcp_server_paperless.domain.documents import DocumentRecord, DocumentUpdate
     from mcp_server_paperless.domain.pdf import (
-        FoundCopies,
         PartMetadata,
         PdfResult,
         StartedTasks,
@@ -53,6 +52,9 @@ TURNED: Final = (
     "Paperless lists no task for the rotation of {documents}, because a custom field holds a date: "
     "{found} of {expected} new {versions} found and told by file name, time and user."
 )
+# How long the look at the end of the wait may take, which is what the call can be late by.
+LAST_LOOK_SECONDS: Final = 10.0
+TOO_SLOW: Final = "the last look took too long"
 UNTOLD: Final = "Which new version is the rotation could not be told ({doubt})."
 NO_DATE: Final = "document {number} does not hold the date of the custom field that is copied"
 UNREAD: Final = "document {number} could not be read"
@@ -153,8 +155,10 @@ class Parts:
         *,
         web_url: str,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        last_look: float = LAST_LOOK_SECONDS,
     ) -> None:
         """Verify with ``replacing``, whose clock bounds the steps; set through ``editor``."""
+        self._last_look: float = last_look
         self._reader: DocumentReader = reader
         self._writer: PdfWriter = writer
         self._editor: DocumentEditor = editor
@@ -230,12 +234,16 @@ class Parts:
         files = started.files
         if started.ids or started.problem or files is None or not dates or bound <= 0:
             return started, None
-        searched = await self._search(
-            lambda final: self._writer.find_copies(files, final=final), bound
-        )
-        if searched is None:
+
+        async def find(left: float) -> FoundCopies:
+            try:
+                return await self._writer.find_copies(files, final=left <= 0)
+            except PaperlessMcpError as error:
+                return FoundCopies(ids=(), doubt=cause(error))
+
+        copies, waited = await self._search(find, bound)
+        if not copies.ids:  # the search broke
             return started, None
-        copies, waited = searched
         doubt = copies.doubt or await self._dateless(copies.ids, dates)
         if doubt is not None:
             return started.model_copy(update={"doubt": doubt}), None
@@ -245,25 +253,37 @@ class Parts:
         tasks = tuple(
             _task(number, name) for number, name in zip(copies.ids, files.names, strict=True)
         )
-        return started.model_copy(update=known), Found(tasks, waited)
+        return started.model_copy(update=known), Found(tasks, min(waited, bound))
 
     async def turned(
-        self, started: StartedTasks, before: Mapping[int, int], bound: float
+        self,
+        started: StartedTasks,
+        before: Mapping[int, int],
+        documents: Sequence[int],
+        bound: float,
     ) -> tuple[StartedTasks, Found | None]:
         """Find the versions of a rotation whose tasks a date hides, for up to ``bound`` seconds.
 
-        ``before`` is the version each such document showed before the request. Returns the request
-        with the documents of what is found, which comes before its listed tasks.
+        ``before`` is the version each such document showed before the request, which was for
+        ``documents``. Returns the request with the documents of what is found, which comes before
+        its listed tasks. Only the last look can end after ``bound``; the time it took is told.
         """
         files = started.files
         if started.problem or files is None or not before or bound <= 0:
             return started, None
-        searched = await self._search(
-            lambda final: self._writer.find_rotations(files.request, before, final=final), bound
-        )
-        if searched is None:
-            return started, None
-        copies, waited = searched
+        search = RotationSearch(files.request, before, tuple(documents))
+        nothing = (None,) * len(before)
+
+        async def look(left: float) -> FoundCopies:
+            try:
+                async with asyncio.timeout(left if left > 0 else self._last_look):
+                    return await self._writer.find_rotations(search, final=left <= 0)
+            except TimeoutError:
+                return FoundCopies(ids=nothing, doubt=None if left > 0 else TOO_SLOW)
+            except PaperlessMcpError as error:
+                return FoundCopies(ids=nothing, doubt=cause(error))
+
+        copies, waited = await self._search(look, bound)
         if copies.doubt is not None:
             return started, Found((), waited, UNTOLD.format(doubt=copies.doubt))
         tasks = tuple(
@@ -280,20 +300,21 @@ class Parts:
         return known, Found(tasks, waited, note)
 
     async def _search(
-        self, find: Callable[[bool], Awaitable[FoundCopies]], bound: float
-    ) -> tuple[FoundCopies, float] | None:
-        """What is found within ``bound`` seconds and how long that took; None if it broke."""
+        self, find: Callable[[float], Awaitable[FoundCopies]], bound: float
+    ) -> tuple[FoundCopies, float]:
+        """What is found within ``bound`` seconds and how long that took.
+
+        ``find`` is given the seconds that are left: none at the last look.
+        """
         begun = self._replacing.clock()
         while True:
             left = bound - (self._replacing.clock() - begun)
-            try:
-                copies = await find(left <= 0)
-            except PaperlessMcpError:
-                return None
+            copies = await find(left)
+            waited = self._replacing.clock() - begun
             settled = copies.doubt is None and None not in copies.ids
             if settled or (copies.doubt is not None and not copies.passing) or left <= 0:
-                return copies, min(self._replacing.clock() - begun, bound)
-            await self._sleep(min(POLL_SECONDS, left))
+                return copies, waited
+            await self._sleep(max(min(POLL_SECONDS, bound - waited), 0))
 
     async def _dateless(self, ids: Sequence[int | None], dates: Mapping[int, object]) -> str | None:
         """Which found document lacks the date that hid its task, so it may be another's."""

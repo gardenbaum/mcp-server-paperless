@@ -1,11 +1,15 @@
 """rotate_documents where a date field hides the task: the new version tells (decision-74)."""
 
+import asyncio
+import time
+import uuid
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, override
 
 import pytest
 from fakes.accounts import ADMIN, READER
-from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
+from fakes.paperless import FakeCopying, FakeDocument, FakePaperless, FakeState, seeded
 from harness import pdf_service
 
 from mcp_server_paperless.domain.errors import PermissionDenied, UpstreamTimeout
@@ -13,9 +17,9 @@ from mcp_server_paperless.domain.pdf import FoundCopies, StartedTasks
 from mcp_server_paperless.domain.versions import VersionUpload
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
-    from mcp_server_paperless.domain.pdf import PdfResult
+    from mcp_server_paperless.domain.pdf import PdfResult, RotationSearch
     from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-74")]
@@ -55,6 +59,9 @@ class Paperless(FakePaperless):
         self.first: int = 0  # how many of them are there at once
         self.doubt: str | None = None
         self.fails: bool = False
+        self.slow: float = 0.0  # seconds a look takes by the clock
+        self.hang: bool | None = None  # the look (final or not) that never ends
+        self.looked_for: RotationSearch | None = None
         self.lose: bool = False
         self.foreign: FakePaperless | None = None
         self.no_fields: bool = False
@@ -100,14 +107,17 @@ class Paperless(FakePaperless):
         return await super().list_taxonomy(kind)
 
     @override
-    async def find_rotations(
-        self, request: str, before: Mapping[int, int], *, final: bool = False
-    ) -> FoundCopies:
+    async def find_rotations(self, search: RotationSearch, *, final: bool = False) -> FoundCopies:
+        before = search.before
         self.searches.append((dict(before), final))
+        self.looked_for = search
+        self.now += self.slow
+        if self.hang == final:
+            await asyncio.sleep(60)
         if self.fails:
             message = "Paperless did not respond in time."
             raise UpstreamTimeout(message)
-        found = await super().find_rotations(request, before, final=final)
+        found = await super().find_rotations(search, final=final)
         if self.doubt is not None:
             nothing = (None,) * len(before)
             return FoundCopies(ids=nothing, doubt=self.doubt, passing=self.doubt == PASSING)
@@ -250,7 +260,11 @@ async def test_a_search_that_breaks_leaves_the_answer_unknown() -> None:
 
     result = await fake.rotate(ONE)
 
-    assert (result.state, result.message) == ("unknown", NONE_FOUND)
+    why = "Paperless did not respond in time."
+    assert (result.state, result.message) == (
+        "unknown",
+        f"{UNTOLD.format(doubt=why.rstrip('.'))} {NONE_FOUND}",
+    )
 
 
 async def test_nothing_is_looked_for_without_a_wait_a_date_or_a_readable_task_list() -> None:
@@ -278,3 +292,58 @@ async def test_a_document_without_a_date_whose_task_is_missing_stays_unknown() -
         f"{told(f'document {ONE}', 1, 1)} Paperless accepted the request, but only 1 of the 2 "
         "tasks it starts showed up: the state covers that one only."
     )
+
+
+def unsettled(fake: Paperless) -> None:
+    """An earlier rotation of the user whose version is not there."""
+    earlier = FakeCopying(str(uuid.uuid4()), 2, datetime.now(UTC), "_rotated.pdf")
+    fake.state.copying.append(earlier)
+
+
+async def test_the_other_documents_of_a_mixed_request_settle_no_earlier_rotation() -> None:
+    fake, settled = Paperless(), Paperless()
+    unsettled(fake)
+    _ = await settled.rotate(TWO)
+
+    doubted = await fake.rotate(ONE, PLAIN, wait=2)
+    done = await settled.rotate(ONE, PLAIN, wait=2)
+
+    assert fake.looked_for is not None
+    assert (dict(fake.looked_for.before), fake.looked_for.documents) == ({ONE: ONE}, (ONE, PLAIN))
+    assert (doubted.state, doubted.produced_ids) == ("unknown", (fake.newest(PLAIN),))
+    assert UNTOLD.format(doubt=PASSING) in (doubted.message or "")
+    assert done.state == "success"
+    assert done.produced_ids == (settled.newest(ONE), settled.newest(PLAIN))
+
+
+async def test_the_time_a_look_takes_is_reported_also_where_it_is_over_the_bound() -> None:
+    fake = Paperless()
+    fake.slow, fake.after = 3.0, 100.0
+
+    result = await fake.rotate(ONE, wait=2)
+
+    assert (result.state, result.waited_seconds) == ("unknown", 6.0)
+    assert [final for _, final in fake.searches] == [False, True]
+
+
+async def test_a_look_is_cut_at_the_bound_and_the_last_one_still_made() -> None:
+    fake = Paperless()
+    fake.hang = False
+
+    began = time.monotonic()
+    result = await fake.rotate(ONE, wait=0.05)
+    assert time.monotonic() - began < 5
+
+    assert [final for _, final in fake.searches] == [False, True]
+    assert result.state == "success"
+
+
+async def test_a_last_look_that_does_not_end_leaves_the_answer_unknown() -> None:
+    fake = Paperless()
+    fake.hang, fake.after = True, 100.0
+
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock, last_look=0.05)
+    result = await service.rotate([ONE], 90, wait_seconds=1)
+
+    assert result.state == "unknown"
+    assert "the last look took too long" in (result.message or "")

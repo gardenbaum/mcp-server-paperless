@@ -119,7 +119,7 @@ from mcp_server_paperless.domain.instance import (
     InstanceStatistics,
     SystemStatus,
 )
-from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, StartedTasks
+from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, RotationSearch, StartedTasks
 from mcp_server_paperless.domain.permissions import (
     GroupPage,
     GroupRow,
@@ -181,6 +181,7 @@ from mcp_server_paperless.paperless.pdf import (
     PENDING,
     SEVERAL,
     TASKED,
+    UNREADABLE,
     edit_failed,
     not_editable,
     wrong_password,
@@ -192,7 +193,7 @@ from mcp_server_paperless.paperless.trash import refused as trash_refused
 from mcp_server_paperless.paperless.views import unseen_view
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Callable, Collection, Mapping, Sequence
+    from collections.abc import AsyncGenerator, Callable, Collection, Iterable, Mapping, Sequence
     from types import CoroutineType
 
     from _typeshed import SupportsRichComparison
@@ -531,6 +532,7 @@ class FakeCopying:
     owner: int | None
     started: datetime
     family: str
+    count: int = 1
 
     @property
     def operation(self) -> str:
@@ -2171,57 +2173,97 @@ class FakePaperless:
         return FoundCopies(ids=tuple(found.get(name) for name in files.names))
 
     @write  # a read, but of the writer port
-    async def find_rotations(
-        self, request: str, before: Mapping[int, int], *, final: bool = False
-    ) -> FoundCopies:
+    async def find_rotations(self, search: RotationSearch, *, final: bool = False) -> FoundCopies:
         """`PdfWriter.find_rotations`: the versions with the name of a rotation, by this user.
 
-        The fake works at once, so no version of an earlier rotation may still come, and ``final``
-        makes no difference.
+        The fake works at once; an earlier rotation is unsettled where its versions are not there
+        (a test deleted them, or recorded an operation that made none).
         """
-        del final
         if not self.user.has("view_paperlesstask"):
             raise self._denied()
-        nothing = (None,) * len(before)
-        documents = [self._document(number) for number in before]
-        own = next((c for c in self.state.copying if c.request == request), None)
+        nothing = (None,) * len(search.before)
+        own = next((c for c in self.state.copying if c.request == search.request), None)
         if not self.user.has("view_uisettings") or own is None:
-            known = self.user.has("view_uisettings")
-            return FoundCopies(ids=nothing, doubt=NO_TIMES if known else NO_USER)
-        names = {f"{number}_rotated.pdf" for number in before}
+            user_known = self.user.has("view_uisettings")
+            return FoundCopies(ids=nothing, doubt=NO_TIMES if user_known else NO_USER)
         ids: list[int | None] = []
-        for document, newest in zip(documents, before.values(), strict=True):
-            newer = takewhile(lambda v, last=newest: v.id != last, document.versions)
-            named = [
-                v.id
-                for v in newer
-                if v.added >= own.started
-                and self._file_of(document, v.id).file_name == f"{document.id}_rotated.pdf"
-            ]
-            if named and not (self.state.audit_log_enabled and self.user.has("view_logentry")):
-                return FoundCopies(ids=nothing, doubt=NO_HISTORY)
-            by = {
-                str(added[-1]): entry.actor
-                for entry in document.history
-                if isinstance(added := entry.changes.get("Version Added"), list)
-            }
-            mine = [n for n in named if by.get(str(n)) == self.user.username]
-            if len(mine) > 1:
-                listed = ", ".join(map(str, mine))
-                doubt = SEVERAL.format(versions=listed, document=document.id)
-                return FoundCopies(ids=nothing, doubt=doubt)
-            ids.append(mine[0] if mine else None)
-        if any(t.file_name in names and t.created >= own.started for t in self.state.tasks):
-            return FoundCopies(ids=nothing, doubt=TASKED)
-        if any(
-            c is not own
-            and c.owner == self.user.id
-            and c.operation == "rotate"
-            and c.started >= own.started
-            for c in self.state.copying
-        ):
-            return FoundCopies(ids=nothing, doubt=AT_ONCE)
+        doubt: str | None = None
+        for number, newest in search.before.items():
+            found = self._rotation_of(number, newest, own) if doubt is None else None
+            doubt = found if isinstance(found, str) else doubt
+            ids.append(found if isinstance(found, int) else None)
+        doubt = doubt or self._rotated_else(search, own, whole=final or None not in ids)
+        if doubt is not None:
+            return FoundCopies(ids=nothing, doubt=doubt, passing=doubt == PENDING)
         return FoundCopies(ids=tuple(ids))
+
+    def _rotation_of(self, number: int, newest: int, own: FakeCopying) -> int | str | None:
+        """The version a rotation made of the document, None if there is none, or a doubt."""
+        seen = (d for d in self.state.documents if d.id == number and d.visible_to(self.user))
+        document = next(seen, None)
+        if document is None:
+            return UNREADABLE.format(document=number)
+        newer = takewhile(lambda v: v.id != newest, document.versions)
+        named = self._turned_versions(document, newer, own.started)
+        if named and not (self.state.audit_log_enabled and self.user.has("view_logentry")):
+            return NO_HISTORY
+        mine = self._added(document, named)
+        if len(mine) > 1:
+            return SEVERAL.format(versions=", ".join(map(str, mine)), document=number)
+        return mine[0] if mine else None
+
+    def _rotated_else(self, search: RotationSearch, own: FakeCopying, *, whole: bool) -> str | None:
+        """Why the versions may be another request's of this user."""
+        names = {f"{number}_rotated.pdf" for number in search.before}
+        if any(t.file_name in names and t.created >= own.started for t in self.state.tasks):
+            return TASKED
+        others = [
+            c
+            for c in self.state.copying
+            if c is not own and c.owner == self.user.id and c.operation == "rotate"
+        ]
+        if any(c.started >= own.started for c in others):
+            return AT_ONCE
+        earlier = [c for c in others if c.started >= own.started - timedelta(hours=1)]
+        if earlier and whole:
+            since = min(c.started for c in earlier)
+            made = [
+                version
+                for document in self.state.documents
+                if document.visible_to(self.user)
+                for version in self._added(
+                    document,
+                    self._turned_versions(
+                        document,
+                        (
+                            v
+                            for v in document.versions
+                            if document.id not in search.documents or v.added < own.started
+                        ),
+                        since,
+                    ),
+                )
+            ]
+            if len(made) < sum(c.count for c in earlier):
+                return PENDING
+        return None
+
+    def _turned_versions(
+        self, document: FakeDocument, versions: Iterable[DocumentVersion], since: datetime
+    ) -> list[int]:
+        """Those added since then that have the file name of a rotation."""
+        name = f"{document.id}_rotated.pdf"
+        late = [v.id for v in versions if not v.is_root and v.added >= since]
+        return [n for n in late if self._file_of(document, n).file_name == name]
+
+    def _added(self, document: FakeDocument, versions: Sequence[int]) -> list[int]:
+        """Those of the versions that the user added, as the history says."""
+        by = {
+            str(added[-1]): entry.actor
+            for entry in document.history
+            if isinstance(added := entry.changes.get("Version Added"), list)
+        }
+        return [n for n in versions if by.get(str(n)) == self.user.username]
 
     def _new_document(
         self,
@@ -2290,6 +2332,7 @@ class FakePaperless:
         self._pdf_allowed(documents, adds=False, owner_only=True)
         marker = f"\n%rotated {degrees}".encode()
         request = self._copying(("_rotated.pdf",), None).request
+        self.state.copying[-1].count = len(documents)
         tasks: list[str] = []
         for document in documents:
             file = self._first_or_newest(document, first=original_files)
@@ -4076,7 +4119,7 @@ class FakePaperless:
                 "task_id": c.request,
                 "task_type": "bulk_update",
                 "owner": c.owner,
-                "input_data": {"operation": c.operation, "document_count": 1},
+                "input_data": {"operation": c.operation, "document_count": c.count},
             }
             for c in seen
         ]

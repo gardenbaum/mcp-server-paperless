@@ -69,6 +69,7 @@ if TYPE_CHECKING:
         FileOutput,
         FoundCopies,
         PageSlot,
+        RotationSearch,
         StartedTasks,
     )
     from mcp_server_paperless.domain.permissions import (
@@ -995,24 +996,21 @@ class PdfWriter(Protocol):
         """
         ...
 
-    async def find_rotations(
-        self, request: str, before: Mapping[int, int], *, final: bool = False
-    ) -> FoundCopies:
-        """The versions a rotation made of these documents, as far as they exist now.
+    async def find_rotations(self, search: RotationSearch, *, final: bool = False) -> FoundCopies:
+        """The versions a rotation made of the documents of ``search.before``, as they exist now.
 
-        For documents whose tasks Paperless does not list (a date among their custom fields).
-        ``request`` is the queued task of the rotation, ``before`` the version each document showed
-        before it. A version is taken only if it is newer, was added since the queued task started,
-        has the file name of a rotation of this document, and the history says that the current
-        user added it; so what somebody else adds never is. A doubt is whatever lets it be another
-        request of the same user's: two such versions, a listed task for the file name that was not
-        done before, another rotation at the same time or later, or an earlier one of the last hour
-        whose versions are not all there; and a history that may not be read. The earlier ones are
-        looked into once every version is there; ``final`` asks for it anyway, so that those that
-        are there can be used.
+        For documents whose tasks Paperless does not list (a date among their custom fields). A
+        version is taken only if it is newer than the one shown before, was added since the queued
+        task started, has the file name of a rotation of this document, and the history says that
+        the current user added it; so what somebody else adds never is. A doubt is whatever lets it
+        be another request of the same user's: two such versions, a listed task for the file name
+        that was not done before, another rotation at the same time or later, or an earlier one of
+        the last hour whose versions are not all there; and a document or history that may not be
+        read. History and earlier ones are looked into once every version is there; ``final`` asks
+        for it anyway, so that those that are there can be used. ``search`` keeps what does not
+        change, so the same one is passed for every look.
 
         Raises:
-            NotFound: A document does not exist (any more) or the user may not see it.
             PermissionDenied: The user may not view tasks or documents.
         """
         ...

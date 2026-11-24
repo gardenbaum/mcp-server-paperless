@@ -5,13 +5,17 @@ background tasks that produce files: new documents, or new versions of the docum
 result goes is the ``Output`` of the operation.
 """
 
+from dataclasses import dataclass, field
 from datetime import date
-from typing import Annotated, ClassVar, Literal
+from typing import TYPE_CHECKING, Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from mcp_server_paperless.domain.documents import NameOrId, UploadState
 from mcp_server_paperless.domain.tasks import Wait
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 # Where the edited file goes: a new document (the original stays as it is), a new version of the
 # same document (the older versions stay), or a new document while the original moves to the
@@ -104,6 +108,27 @@ class FoundCopies(BaseModel):
     ids: tuple[int | None, ...]
     doubt: str | None = None
     passing: bool = False
+
+
+@dataclass(slots=True)
+class RotationSearch:
+    """What is looked for after a rotation, and what does not change between two looks.
+
+    Attributes:
+        request: The queued task of the rotation.
+        before: The version each document showed before it, of those without a listed task.
+        documents: Every document of the request.
+        user: The current user, once known.
+        names: The file name of each version that was read ("" if it is gone).
+        actors: Who added each version, by the history.
+    """
+
+    request: str
+    before: Mapping[int, int]
+    documents: Sequence[int]
+    user: int | None = None
+    names: dict[int, str] = field(default_factory=dict[int, str])
+    actors: dict[int, int | None] = field(default_factory=dict[int, int | None])
 
 
 class StartedTasks(BaseModel):
