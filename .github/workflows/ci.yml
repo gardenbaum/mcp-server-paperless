@@ -42,6 +42,13 @@ jobs:
           go-version: stable
           cache: false
 
+      # Building gitleaks downloads its modules from the Go servers, whose outages made `just secrets`
+      # fail; the scan itself always runs.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ matrix.python }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
       - name: Install just
         run: uv tool install "rust-just==${RUST_JUST_VERSION}"
 
@@ -98,6 +105,13 @@ jobs:
         with:
           go-version: stable
           cache: false
+
+      # Building gitleaks downloads its modules from the Go servers, whose outages made `just secrets`
+      # fail; the scan itself always runs.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-audit-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Install just
         run: uv tool install "rust-just==${RUST_JUST_VERSION}"
