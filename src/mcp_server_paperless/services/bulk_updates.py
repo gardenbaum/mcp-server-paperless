@@ -969,4 +969,3 @@ def _bounded(report: UpdateReport) -> UpdateReport:
     return report.model_copy(
         update={"documents": tuple(rows), "also_changed": tuple(also), "message": message}
     )
-
