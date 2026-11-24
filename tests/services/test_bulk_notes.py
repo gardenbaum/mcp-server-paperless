@@ -190,7 +190,7 @@ async def test_each_document_gets_its_own_note_also_two_different_ones() -> None
 
 async def test_a_note_whose_text_is_already_there_is_skipped() -> None:
     setup = Setup()
-    setup.document(101).notes = [note(50, "another"), note(51)]
+    setup.document(101).notes = [note(50, "another"), note(51, f" {TEXT}\n")]
 
     report = await setup.one()
 

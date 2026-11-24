@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.bulk_items import UpdateReport
     from mcp_server_paperless.domain.documents import DocumentPatch, DocumentRecord
     from mcp_server_paperless.domain.selection import DocumentRow, ReadField
-    from mcp_server_paperless.domain.taxonomy import TaxonomyItem
+    from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-73")]
 
@@ -58,6 +58,7 @@ class World(FakePaperless):
         self.takes: float = 0.0
         self.lists: int = 0
         self.list_fails: PaperlessMcpError | None = None
+        self.listed: list[str] = []
         self.got: list[int] = []
         self.sent: list[int] = []
         self.patches: list[DocumentPatch] = []
@@ -101,6 +102,11 @@ class World(FakePaperless):
         if error is not None:
             raise error
         return found
+
+    @override
+    async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
+        self.listed.append(kind)
+        return await super().list_taxonomy(kind)
 
     @override
     async def create_tag(self, name: str) -> TaxonomyItem:
@@ -231,6 +237,17 @@ async def test_what_is_not_named_stays_also_what_others_set_meanwhile() -> None:
         setup.field(TEXT): "x",
     }
     assert setup.document(101).correspondent == 1
+
+
+async def test_names_whose_documents_changed_are_read_anew() -> None:
+    setup = Setup()
+    _ = await setup.run(item(101, tags_add=["e2e-inbox"]))
+    before = setup.fake.listed.count("tag")
+
+    _ = await setup.run(item(102, tags_add=["e2e-inbox"]))
+
+    assert before == 1
+    assert setup.fake.listed.count("tag") == 2
 
 
 async def test_clearing_and_removing_work_too() -> None:
@@ -628,6 +645,26 @@ async def test_items_that_contradict_each_other_through_a_link_are_refused(
     assert "document 102: It sets" in refusal.message
 
 
+async def test_an_item_that_is_as_asked_contradicts_one_that_drops_its_link() -> None:
+    setup = Setup(writes=False)
+    setup.link(101, [102])
+    setup.link(102, [101])
+
+    refusal = await setup.refused(
+        item(101, custom_fields={LINK: [102]}), item(102, custom_fields={LINK: []})
+    )
+
+    assert "document 101: It links to document 102" in refusal.message
+
+
+async def test_a_document_of_the_call_that_a_link_changes_besides_is_named_for_it() -> None:
+    setup = Setup(writes=False)
+
+    report = await setup.run(item(101, custom_fields={LINK: [102]}), named(102), dry_run=True)
+
+    assert [r.id for r in report.also_changed] == [102]
+
+
 async def test_a_one_sided_link_that_a_change_would_mirror_again_contradicts_too() -> None:
     setup = Setup(writes=False)
     setup.link(101, [102])  # 102 does not link back; sending 101's fields mirrors it
@@ -741,8 +778,7 @@ def _title(setup: Setup) -> None:
 
 def _hidden_value(setup: Setup) -> None:
     # Beyond the first 20 values are not shown, but bound.
-    setup.document(125).title = "Scan 25"
-    setup.document(125).correspondent = 1
+    setup.document(125).correspondent = 9
 
 
 def _as_asked(setup: Setup) -> None:
@@ -783,6 +819,22 @@ async def test_an_accepted_dialog_does_not_cover_what_changed_while_it_was_open(
         again = await setup.asked(*items, create=True)
 
     assert again.fingerprint != refusal.fingerprint
+
+
+async def test_other_documents_behind_the_same_count_ask_again() -> None:
+    # Of other documents at most 100 are named; which of the rest lack the link back is bound.
+    messages: list[str] = []
+    prints: list[str] = []
+    for linked_back in (240, 241):
+        setup = Setup(writes=False, count=150)
+        setup.link(linked_back, [101])
+        refusal = await setup.asked(item(101, custom_fields={LINK: [*range(102, 251)]}))
+        messages.append(refusal.message)
+        prints.append(refusal.fingerprint)
+
+    assert "and 48 more" in messages[0]
+    assert messages[0] == messages[1]
+    assert prints[0] != prints[1]
 
 
 async def test_other_new_tags_behind_the_same_text_ask_again() -> None:
