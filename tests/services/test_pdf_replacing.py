@@ -189,13 +189,18 @@ async def merge(fake: Paperless, metadata: int | None = None) -> PdfResult:
     return await service.merge([DOC, OTHER], metadata, delete_originals=True, confirm=True)
 
 
-def after(fake: Paperless, *pages: int, then: str | None = None) -> str:
+def after(
+    fake: Paperless,
+    *pages: int,
+    then: str | None = None,
+    unchanged: str = f"only if document {DOC} is unchanged",
+) -> str:
     """The calls that finish a replacement whose tasks were not checked."""
     waits = ", then ".join(f'get_task(task_id="{t}", wait_seconds=30)' for t in fake.started)
     made = ", ".join(f"{n} page{'' if n == 1 else 's'}" for n in pages)
     return (
         f"{waits}; only if every one succeeded and made exactly one document (get_document), with "
-        f"{made}: {then or f'delete_document(document_id={DOC})'}"
+        f"{made}, and {unchanged}: {then or f'delete_document(document_id={DOC})'}"
     )
 
 
@@ -1052,6 +1057,7 @@ async def test_a_kept_merge_names_every_original_it_would_have_trashed() -> None
     assert result.next == after(
         fake,
         6,
+        unchanged=f"only if documents {DOC}, {OTHER} are unchanged",
         then=(
             "only if the new document has no archive serial number "
             f'(update_document(document_id={DOC}, clear=["archive_serial_number"]), then '
