@@ -1579,7 +1579,7 @@ class FakePaperless:
                 "custom_fields": (),
                 "notes_count": 0,
                 "versions": versions,
-                "deleted_at": entry.deleted_at,
+                "deleted_at": entry.deleted_at or datetime.min.replace(tzinfo=UTC),
                 "version_of": entry.root_id,
                 "created_date": entry.created,
                 "archived_file_name": None

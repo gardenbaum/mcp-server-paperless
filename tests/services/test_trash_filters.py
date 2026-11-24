@@ -156,6 +156,25 @@ async def test_matches_are_paged_here() -> None:
     with pytest.raises(NotFound, match="Page 4 of the matching entries"):
         _ = await found(setup, wanted, page=4, size=2)
     assert (await found(setup, TrashFilter(title="none"))).count == 0
+    assert (await found(setup, wanted, page=1, size=5)).next_page is None
+
+
+class Repeating(FakePaperless):
+    @override
+    async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
+        page = await super().read_trash(entries=entries, max_bytes=max_bytes)
+        return page.model_copy(update={"entries": page.entries * 2})
+
+
+async def test_a_row_paperless_repeats_counts_once() -> None:
+    setup = Setup()
+    one = await setup.trashed("doc")
+
+    listed = await capped(setup, 10, Repeating(setup.state, user="admin")).list(
+        TrashFilter(title="doc"), page=1, page_size=10
+    )
+
+    assert ([e.id for e in listed.entries], listed.count, listed.scanned) == ([one], 1, 1)
 
 
 async def test_the_cap_is_told_and_ids_reach_beyond_it() -> None:
@@ -401,6 +420,7 @@ async def test_a_truncated_filter_says_that_more_may_match() -> None:
 async def test_every_id_that_blocks_is_named_with_the_reason_paperless_lets_it_know() -> None:
     setup = Setup(writes=False)
     alive = setup.document("Alive")
+    setup.state.documents[-1].versions = []  # the original upload is always there
     document, version = await setup.version("Report")
     await setup.writer.delete_document(document)
     lone, live_version = await setup.version("Other")
@@ -672,3 +692,14 @@ async def test_a_lookup_that_fails_leaves_the_reason_out() -> None:
         _ = await setup.on(fake).restore([alive])
 
     assert raised.value.hint == NOT_LISTED_HINT
+
+
+async def test_at_most_a_hundred_entries_are_looked_up_one_by_one() -> None:
+    setup = Setup()
+    for number in range(MAX_IDS + 1):
+        _ = await setup.trashed(f"doc {number}")
+
+    result = await setup.on(bounded(setup, fits=0)).empty(None, everything=True, confirm=True)
+
+    outcomes = [e.outcome for e in result.entries]
+    assert (outcomes.count("deleted"), outcomes.count("unverified")) == (MAX_IDS, 1)

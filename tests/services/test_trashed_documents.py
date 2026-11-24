@@ -234,6 +234,8 @@ async def test_a_file_over_the_limit_is_described_and_read_in_parts() -> None:
     )
     assert parts[-1].report.next is None
     assert small.data == bytes(range(4))
+    large = await service.part(one, "original", offset=0, max_bytes=20)
+    assert len(large.data) == 10
     with pytest.raises(Validation, match="The file changed"):
         _ = await service.part(one, "original", offset=10, checksum="other")
     with pytest.raises(Validation, match="needs the checksum"):

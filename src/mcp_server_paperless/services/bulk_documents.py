@@ -59,6 +59,7 @@ from mcp_server_paperless.domain.errors import (
 from mcp_server_paperless.services.custom_values import normalise
 from mcp_server_paperless.services.document_edits import COUNTED, merged_tags, same_value
 from mcp_server_paperless.services.documents import document_link
+from mcp_server_paperless.services.removal import WAY_BACK
 from mcp_server_paperless.services.tag_hierarchy import (
     ancestors,
     blocked_removals,
@@ -333,6 +334,8 @@ class BulkDocumentEditor:
             noun = "document" if len(others) == 1 else "documents"
             titles = listed([title for _, title in others], 3)
             message += f" Mirrored on {len(others)} other {noun} ({titles})."
+        if applied and isinstance(resolved.change, TrashDocuments):
+            message += f" Each {WAY_BACK}"
         rows = [(hit.id, hit.title) for hit in changing]
         return DocumentBulkReport(
             operation=resolved.name,

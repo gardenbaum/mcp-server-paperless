@@ -94,16 +94,16 @@ TOOLSETS: Final = frozenset(
 # toolset that is off (PLMCP-82). A toolset that is cut down is described by its tools instead.
 TOOLSET_SUMMARIES: Final[Mapping[str, str]] = {
     "core": "documents and taxonomy",
-    "ai": "AI questions, suggestions",
-    "bulk": "edit many documents",
-    "versions": "file versions, text fixes",
+    "ai": "Paperless AI questions and suggestions",
+    "bulk": "change many documents",
+    "versions": "document versions, text fixes",
     "views": "saved views",
-    "trash": "restore deleted documents",
+    "trash": "restore and empty deleted documents",
     "pdf": "PDF edits",
     "sharing": "share links, bundles, email",
     "permissions": "permissions, users, groups",
-    "mail": "mail accounts, rules",
-    "raw": "API endpoints, read-only",
+    "mail": "mail accounts and rules",
+    "raw": "other API endpoints, read-only",
     "workflows": "workflows",
     "admin": "users, groups, settings, logs, tasks",
 }

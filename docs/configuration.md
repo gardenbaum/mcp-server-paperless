@@ -200,10 +200,21 @@ and `delete_saved_view`, to read and maintain saved views. Running a view is `ru
 
 ### `trash`
 
-Off by default: `list_trash`, `restore_from_trash`, `empty_trash`. Lists what was deleted,
-restores it (a deleted version is re-attached to its document) and empties the trash.
-`empty_trash` never defaults to everything: it needs `document_ids` or `all=true`, and `confirm`
-in both cases, because it removes documents for good.
+Off by default: `list_trash`, `get_trash_entry`, `get_trashed_file`, `restore_from_trash`,
+`empty_trash`. Lists what was deleted, shows what Paperless tells of it, restores it (a deleted
+version is re-attached to its document) and empties the trash.
+
+`list_trash` filters by title, document type, kind, day of deletion and ids. Paperless cannot filter
+its trash, so the server looks at the first 1,000 entries in one request of at most 64 MiB (then at
+100), and `truncated` says when there are more; `ids` finds any entry. Of a document in the trash
+Paperless shows the text, thumbnail and file of its first version and no notes or custom field
+values: restore it to read the rest.
+
+`restore_from_trash` and `empty_trash` take `document_ids` or a `filter`. A filter never acts by
+itself: it lists its matches, and only ids that were shown are acted on, by a dialog or a second
+call. `empty_trash` never defaults to everything: it needs `document_ids`, a `filter` or `all=true`,
+and a confirmation in every case, because it removes documents for good. Afterwards the trash is
+read again, and the answer says of every entry what became of it.
 
 ### `pdf`
 

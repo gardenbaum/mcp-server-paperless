@@ -361,6 +361,8 @@ class DocumentService:
             if _is_link(known, value)
             for number in cast("list[int]", value.value)
         ]
+        if not linked:
+            return {}
         return await self._reader.get_document_titles(list(dict.fromkeys(linked))[:LINK_LIMIT])
 
     async def _section(
