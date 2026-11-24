@@ -5,6 +5,8 @@ Paperless untouched (`state.tasks` stays empty), and the file's type comes from 
 """
 
 import base64
+import os
+import sys
 from dataclasses import replace
 from typing import TYPE_CHECKING, override
 
@@ -239,6 +241,39 @@ async def test_a_name_that_is_no_name_is_refused_before_anything_is_sent() -> No
         _ = await setup.upload(filename="..")
 
     assert setup.untouched()
+
+
+@pytest.mark.parametrize("name", ["x\udcff.txt", "\ud800"])
+async def test_a_name_that_is_no_text_is_refused_before_anything_is_sent(
+    folder: Path, name: str
+) -> None:
+    setup = Setup(upload_dirs=(str(folder),))
+    _ = (folder / "plain.pdf").write_bytes(pdf("x"))
+
+    for upload in (
+        setup.upload(filename=name),
+        setup.service.from_path(PUBLIC, str(folder / "plain.pdf"), name, None),
+    ):
+        with pytest.raises(Validation) as raised:
+            _ = await upload
+        assert raised.value.message == "The file name is not valid text."
+        assert raised.value.hint == "Rename the file to a plain name."
+
+    assert setup.untouched()
+
+
+@pytest.mark.skipif(sys.platform == "darwin", reason="macOS refuses names that are not UTF-8")
+async def test_a_file_whose_own_name_is_no_text_needs_a_given_one(folder: Path) -> None:
+    path = folder / os.fsdecode(b"x\xff.pdf")
+    _ = path.write_bytes(pdf("x"))
+    setup = Setup(upload_dirs=(str(folder),))
+
+    with pytest.raises(Validation, match="not valid text"):
+        _ = await setup.service.from_path(PUBLIC, str(path), None, None)
+    assert setup.untouched()
+
+    _ = await setup.service.from_path(PUBLIC, str(path), "x.pdf", None)
+    assert setup.sent[1].filename == "x.pdf"
 
 
 async def test_a_file_over_the_limit_or_not_base64_is_refused_before_anything_is_sent() -> None:

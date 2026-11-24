@@ -37,7 +37,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.domain.uploads import BatchFile, UploadBatch
-from mcp_server_paperless.services.allowed_paths import clean_filename
+from mcp_server_paperless.services.allowed_paths import upload_name
 from mcp_server_paperless.services.documents import document_link
 from mcp_server_paperless.services.task_outcome import follow
 from mcp_server_paperless.services.tasks import MAX_WAIT_SECONDS
@@ -190,19 +190,6 @@ class _Call:
 def words(error: PaperlessMcpError) -> str:
     """An error as a reason. The hint of a path that was not found names the directories only."""
     return error.message if isinstance(error, NotFound) else error.describe()
-
-
-def upload_name(found: str) -> str:
-    """The name a file is uploaded under.
-
-    Raises:
-        Validation: It is no usable name, or holds bytes that are no text.
-    """
-    try:
-        return clean_filename(found)
-    except UnicodeEncodeError:
-        message = "The file name is not valid text."
-        raise Validation(message, hint="Rename the file to a plain name.") from None
 
 
 def _given(text: str) -> _File:

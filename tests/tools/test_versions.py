@@ -502,6 +502,38 @@ async def test_exactly_one_source_is_needed_and_content_needs_a_name(
     assert source.state.tasks == []
 
 
+async def test_a_file_name_that_is_no_text_is_refused_with_a_reason(tmp_path: Path) -> None:
+    source = fake()
+    sent = {"content_base64": b64(TEXT), "filename": "x\udcff.txt"}
+
+    by_schema = await refusal(source, "upload_document_version", document_id=1, **sent)
+    async with Client(local(tmp_path, source)) as client:
+        by_service = await client.call_tool(
+            "upload_document_version", {"document_id": 1, **sent}, raise_on_error=False
+        )
+
+    assert "filename" in by_schema
+    assert "unicode" in by_schema
+    assert "The file name is not valid text. Hint: Rename the file" in str(by_service.content)
+    assert source.state.tasks == []
+
+
+async def test_a_label_that_is_no_text_is_refused_with_a_reason(tmp_path: Path) -> None:
+    source = fake()
+    sent = {"document_id": 1, "content_base64": b64(TEXT), "filename": "x.txt", "label": "\ud800"}
+
+    for offered in (server(source), local(tmp_path, source)):
+        async with Client(offered) as client:
+            result = await client.call_tool("upload_document_version", sent, raise_on_error=False)
+        assert "The version label is not valid text. Hint: Give" in str(result.content)
+    text = await refusal(
+        source, "set_document_version_label", document_id=1, version_id=1, label="\ud800"
+    )
+
+    assert "The version label is not valid text." in text
+    assert source.state.tasks == []
+
+
 @pytest.mark.parametrize("target", ["/etc/passwd", "../forbidden.txt", "missing.txt"])
 async def test_a_path_outside_the_allowlist_is_refused(tmp_path: Path, target: str) -> None:
     allowed = tmp_path / "allowed"

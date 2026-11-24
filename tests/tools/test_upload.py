@@ -235,6 +235,29 @@ async def test_exactly_one_source_is_needed_and_content_needs_a_name(
     assert fake.state.tasks == []
 
 
+async def test_a_file_name_that_is_no_text_is_refused_with_a_reason(tmp_path: Path) -> None:
+    fake = writer()
+    sent = {"content_base64": b64(pdf("x")), "filename": "x\udcff.pdf"}
+
+    by_schema = await failure(remote(fake), **sent)
+    by_service = await failure(local(tmp_path, fake), **sent)
+
+    assert "filename" in by_schema
+    assert "unicode" in by_schema
+    assert "The file name is not valid text. Hint: Rename the file" in by_service
+    assert fake.state.tasks == []
+
+
+async def test_a_title_that_is_no_text_is_refused_with_a_reason(tmp_path: Path) -> None:
+    fake = writer()
+    sent = {"content_base64": b64(pdf("x")), "filename": "x.pdf", "title": "x\udcff"}
+
+    for server in (remote(fake), local(tmp_path, fake)):
+        assert "The title is not valid text. Hint: Give" in await failure(server, **sent)
+
+    assert fake.state.tasks == []
+
+
 @pytest.mark.parametrize(
     "target", ["/etc/passwd", "../forbidden.pdf", "relative.pdf", "missing.pdf"]
 )

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentUpload, UploadResult
 from mcp_server_paperless.domain.errors import Validation, quoted
-from mcp_server_paperless.services.allowed_paths import clean_filename
+from mcp_server_paperless.services.allowed_paths import check_text, upload_name
 from mcp_server_paperless.services.custom_values import linked, require_visible, resolve_values
 from mcp_server_paperless.services.document_edits import MAX_TITLE
 from mcp_server_paperless.services.documents import document_link
@@ -99,7 +99,7 @@ class UploadService:
             Ambiguous: A name matches more than one object.
             PermissionDenied: The user may not add documents.
         """
-        name = clean_filename(filename)
+        name = upload_name(filename)
         data = decode_base64(content_base64, max_bytes=self._max_bytes, path_hint=self._path_hint)
         return await self._upload(data, name, metadata, wait_seconds, confirm=confirm)
 
@@ -118,7 +118,7 @@ class UploadService:
         ``NotFound`` when the path is outside the allowlist or not a regular file.
         """
         found, data = read_allowed(path, self._dirs, max_bytes=self._max_bytes)
-        name = clean_filename(found if filename is None else filename)
+        name = upload_name(found if filename is None else filename)
         return await self._upload(data, name, metadata, wait_seconds, confirm=confirm)
 
     async def _upload(
@@ -163,6 +163,7 @@ class UploadService:
         if title is not None and len(title) > MAX_TITLE:
             message = f"The title is longer than {MAX_TITLE} characters."
             raise Validation(message, hint="Shorten the title.")
+        check_text(title or "", "title")
         number = metadata.archive_serial_number
         if number is not None and not 0 <= number <= MAX_ASN:
             message = f"The archive serial number must be between 0 and {MAX_ASN}."
