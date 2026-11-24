@@ -144,7 +144,11 @@ Renovate then raises `version` and the `mcp-server-paperless==` pin in both
 test keeps the four in step and applies the regexes of `renovate.json` to them; it does not run
 Renovate). Only plain versions (`1.2.3`) are proposed. Review and merge the pull request yourself:
 the bot automerges by its own configuration, and `renovate.json` switches that off for this package.
-Until then plugin users stay on the release before. The pin covers the package, not its dependencies. Check with
+Until then plugin users stay on the release before. A test fails for a setting the plugin neither
+offers nor leaves out for a reason. One that the pinned release does not know yet is listed with that
+pin in `TOO_NEW` (`tests/quality/test_plugin.py`): offered too early it would do nothing. Raising the
+pin makes the test fail until the same pull request offers it or leaves it out for good; if the new
+pin lacks it too, raise its entry. The pin covers the package, not its dependencies. Check with
 `claude plugin validate --profile directory plugin` and `claude plugin validate .`. In the
 directory's review expect a hold "Runs a pinned npx or uvx package", which every pinned launcher
 gets, and possibly a brand-name hold ("Name matches a known brand") for Paperless in the name.

@@ -101,6 +101,16 @@ DESCRIPTIONS = {
     ),
 }
 SKILLS = {name: f"paperless-{name.replace('_', '-')}" for name in SPECS}
+# Settings the plugin leaves out for good, each with the reason.
+LEFT_OUT = {
+    "PAPERLESS_MCP_MAX_UPLOAD_BYTES": "a size limit: changes how much, not what the model may do",
+    "PAPERLESS_MCP_MAX_DOWNLOAD_BYTES": "a size limit: changes how much, not what the model may do",
+    "PAPERLESS_MCP_LOG_LEVEL": "for finding faults: changes nothing the model may do",
+    "PAPERLESS_MCP_STARTUP_TIMEOUT": "for finding faults: changes nothing the model may do",
+}
+# Settings newer than the pinned release, each with the pin that ignores it: offering one before
+# the pin knows it would fail open. The entry stops counting as soon as the pin is raised.
+TOO_NEW: dict[str, str] = {}
 FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 
 
@@ -155,6 +165,12 @@ def settings_defaults() -> dict[str, object]:
     return found
 
 
+def unexplained(known: set[str], offered: set[str], too_new: dict[str, str], pin: str) -> set[str]:
+    """Settings that are neither offered, nor left out for a reason, nor newer than this pin."""
+    waiting = {name for name, lacking in too_new.items() if lacking == pin}
+    return known - offered - set(LEFT_OUT) - waiting
+
+
 @pytest.mark.parametrize("client", [CLAUDE, CURSOR])
 def test_the_manifest_describes_the_package(client: str) -> None:
     plugin = manifest(client)
@@ -195,6 +211,35 @@ def test_claude_asks_for_the_settings_of_the_readme_table() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     assert {key.upper() for key in options()} == set(README_VARIABLE.findall(readme))
+
+
+def test_claude_leaves_no_setting_out_without_a_reason() -> None:
+    """Main knows every setting the pinned release knows, so no network or Git tag is needed."""
+    known = set(settings_defaults()) | REQUIRED
+    offered = {key.upper() for key in options()}
+    pin = str(manifest(CLAUDE)["version"])
+
+    assert unexplained(known, offered, TOO_NEW, pin) == set()
+    # No reason for a setting that is gone or offered, and none but the version for a new one.
+    assert set(LEFT_OUT) | set(TOO_NEW) <= known - offered
+    assert not set(LEFT_OUT) & set(TOO_NEW)
+    assert all(LEFT_OUT.values())
+
+
+def test_the_check_notices_a_new_setting_and_a_raised_pin() -> None:
+    known = {"URL", "NEW", *LEFT_OUT}
+
+    assert unexplained(known, {"URL"}, {}, "1.0.0") == {"NEW"}
+    assert unexplained(known, {"URL"}, {"NEW": "1.0.0"}, "1.0.0") == set()
+    assert unexplained(known, {"URL"}, {"NEW": "1.0.0"}, "1.1.0") == {"NEW"}
+    assert unexplained(known, {"URL", "NEW"}, {}, "1.1.0") == set()
+
+
+def test_the_plugin_readme_states_the_number_of_options() -> None:
+    text = one_line((PLUGIN / "README.md").read_text(encoding="utf-8"))
+
+    assert len(options()) == 9
+    assert "Claude Code asks for nine options" in text
 
 
 def test_claude_requires_the_url_and_the_token_and_masks_only_the_token() -> None:
