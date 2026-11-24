@@ -505,7 +505,8 @@ async def test_removing_needs_a_confirm_that_says_what_vanishes() -> None:
         "Nothing was changed. Confirming would extract pages 3,2 (in this order) of document 50 "
         "'Scan' into a new document and remove them from it: the document then shows "
         "a new version without them, and the earlier version with all pages "
-        "stays until that version is deleted; the new document gets title 'Contract' and tags 'e2e-finance'."
+        "stays until that version is deleted; the new document gets title "
+        "'Contract' and tags 'e2e-finance'."
     )
     assert fake.started == []
 
