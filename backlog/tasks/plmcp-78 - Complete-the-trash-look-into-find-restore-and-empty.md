@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:49Z'
-updated_date: '2026-11-24T08:07:11Z'
+updated_date: '2026-11-24T08:39:04Z'
 labels: []
 dependencies: []
 priority: medium
@@ -51,13 +51,18 @@ The toolset trash (off by default) already lists, restores (up to 100 ids, no co
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Owner approvals (2026-11-23, "Alles wie von dir empfohlen"): the trash stays opt-in; filters only show, acting takes shown ids in a second call; newer versions of a trashed document: say "restore first"; criterion 4 is changed: name the blocking id where Paperless lets it be known, otherwise say it is unknown; cap 1,000 entries with truncated; verify after emptying. Pending: OVERVIEW_GUIDE_LIMIT.
+Owner approvals (2026-11-23, "Alles wie von dir empfohlen"): the trash stays opt-in; filters only show, acting takes shown ids in a second call; newer versions of a trashed document: say "restore first"; criterion 4 is changed: name the blocking id where Paperless lets it be known, otherwise say it is unknown; cap 1,000 entries with truncated; verify after emptying. On 2026-11-24 ("wie von dir empfohlen umsetzen"): OVERVIEW_GUIDE_LIMIT 2800 -> 2835 with the full toolset summaries.
 
 Design against today's code: /root/ exists as get_root (PLMCP-77) and is reused; list_trash and read_trash keep their shape with more row fields, the whole row is a port method of its own (look_up_in_trash), because the rows of the upload check stay small; the one request of up to 1,000 entries has the 64 MiB bound of decision-47 and is repeated with 100 entries when larger (truncated); after the write, entries that a partial read cannot decide are looked up one by one instead of by pages, which can skip rows on PostgreSQL; parts of a file use the SHA-256 of the whole stream (PLMCP-76).
 
 Not test-first: the code of the first slice (e6edb36: filters, entry, file, outcomes) was written before its tests, so DoD 1 stays open. Its rules were broken by hand one after another afterwards (see the mutation note). The registry table of criterion 7 and the scenarios were red first; the answer texts of criterion 7 were tested and written together.
 
-Changed on purpose: OVERVIEW_GUIDE_LIMIT 2800 -> 2835 (37 bytes of two tool names, measured 2835; owner's approval pending); surface snapshot (two tools, filters, outcomes, restore texts, note of workflows); MEDIA_TOOLS + get_trashed_file (decision-54); docs/tools.md, docs/api-coverage.md, README counts (93 tools). Breaking output: restored of restore_from_trash -> entries (release notes). No gate or threshold weakened otherwise.
+Changed on purpose: OVERVIEW_GUIDE_LIMIT 2800 -> 2835 (37 bytes of two tool names, measured 2835; approved by the owner on 2026-11-24); surface snapshot (two tools, filters, outcomes, restore texts, note of workflows); MEDIA_TOOLS + get_trashed_file (decision-54); docs/tools.md, docs/api-coverage.md, README counts (93 tools). Breaking output: restored of restore_from_trash -> entries (release notes). No gate or threshold weakened otherwise.
 
 Open: permissions of a trashed document is not read (design); the API would send it with full_perms=true, in place of user_can_change and is_shared_by_requester (seen in the source: PassUserMixin serves TrashView, too). The probes P1 to P7 were not run by hand; the contract and E2E tests cover P1, P2, P4, P5 and the owner change of P7. P3 (1,000 large rows) and P6 (emptying that fails) are on the fake only.
+
+Mutation by hand (74 single changes to the services, adapter, filter model, hint and answer texts, each against the targeted tests in a copy): 6 survivors got a test (a repeated row, a full last page, at most 100 single lookups, max_bytes over the limit, an unknown filter field, the original upload of a document without listed versions). One remains and is equivalent: the scope of an accepted filter, whose text already names every id it acts on.
+
+Paging ends whatever Paperless answers: reading on for an id (and for an entry) followed next without a check, as the old code did; it now stops when the answer does not get on, at an empty page (list) and after 1,000 pages of 100 (tests: the same page again, empty pages, always one more). Found because one hand mutant of a paging condition looped in a test; no further mutant of that kind was run, the hosted mutation run covers them.
+Full local run (375cef2): green but for the two known macOS failures and a wrapped line in the description of delete_document, fixed since; the fix and the paging bound were run with targeted tests only.
 <!-- SECTION:NOTES:END -->

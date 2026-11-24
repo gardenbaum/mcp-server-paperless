@@ -278,8 +278,8 @@ async def test_the_list_is_narrowed_by_every_filter() -> None:
 async def test_a_blank_title_and_unknown_filter_fields_are_refused() -> None:
     source = fake(writes=False)
 
-    for arguments in ({"filter": {"title": "  "}}, {"filter": {"titel": "x"}}):
-        assert await refusal(source, "restore_from_trash", **arguments)
+    for wanted, said in (({"title": "  "}, "at least 1 character"), ({"titel": "x"}, "titel")):
+        assert said in await refusal(source, "restore_from_trash", filter=wanted)
     assert "at least 1 character" in await refusal(source, "list_trash", title="  ")
 
 

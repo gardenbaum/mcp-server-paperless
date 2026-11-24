@@ -21,9 +21,17 @@ from mcp_server_paperless.domain.errors import (
     Validation,
     accepting,
 )
-from mcp_server_paperless.domain.trash import MAX_IDS, TrashFilter
+from mcp_server_paperless.domain.trash import MAX_IDS, TrashFilter, TrashLookup
+from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.trash import CHECKED, NO_FILTER, NO_ID, ONE_OF, TrashService
-from mcp_server_paperless.services.trash_scan import EXPLAINED, NOT_LISTED_HINT, PAGE, TrashScan
+from mcp_server_paperless.services.trash_scan import (
+    EXPLAINED,
+    MAX_PAGES,
+    NOT_LISTED_HINT,
+    PAGE,
+    TrashScan,
+)
+from mcp_server_paperless.services.trashed_documents import TrashedDocuments
 from services.test_trash import DAY, WEB, Setup
 
 if TYPE_CHECKING:
@@ -703,3 +711,59 @@ async def test_at_most_a_hundred_entries_are_looked_up_one_by_one() -> None:
 
     outcomes = [e.outcome for e in result.entries]
     assert (outcomes.count("deleted"), outcomes.count("unverified")) == (MAX_IDS, 1)
+
+
+class Endless(FakePaperless):
+    """Always names a next page: the same one, or the one after, with or without entries."""
+
+    next_is: str = "same"
+    empty: bool = False
+    pages: int = 0
+
+    def _next(self, page: int) -> int:
+        self.pages += 1
+        assert self.pages <= MAX_PAGES + 1, "read on without end"
+        return page if self.next_is == "same" else page + 1
+
+    @override
+    async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
+        found = await super().list_trash(page=1, page_size=page_size)
+        entries = () if self.empty else found.entries
+        return found.model_copy(update={"entries": entries, "next_page": self._next(page)})
+
+    @override
+    async def look_up_in_trash(
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
+    ) -> TrashLookup:
+        return TrashLookup(entry=None, next_page=self._next(page))
+
+
+@pytest.mark.parametrize(
+    ("next_is", "empty", "listed", "looked"),  # the one request before the pages counts, too
+    [
+        ("same", False, 2, 2),
+        ("after", True, 2, MAX_PAGES + 1),
+        ("after", False, MAX_PAGES + 1, MAX_PAGES + 1),
+    ],
+)
+async def test_an_answer_that_always_names_a_next_page_ends(
+    next_is: str,
+    empty: bool,  # noqa: FBT001 -- a parametrised flag, not a switch
+    listed: int,
+    looked: int,
+) -> None:
+    setup = Setup()
+    for number in range(2):
+        _ = await setup.trashed(f"doc {number}")
+    fake = Endless(setup.state, user="admin")
+    fake.next_is, fake.empty = next_is, empty
+    scan = TrashScan(fake, fake, setup.taxonomy, cap=1)
+    documents = DocumentService(fake, fake, setup.taxonomy, web_url=WEB)
+    looking = TrashedDocuments(fake, fake, documents, scan, web_url=WEB, max_bytes=10)
+
+    found, _ = await scan.locate([4242])
+    pages, fake.pages = fake.pages, 0
+    with pytest.raises(NotFound):
+        _ = await looking.entry(4242, max_chars=1)
+
+    assert (found, pages, fake.pages) == ({}, listed, looked)

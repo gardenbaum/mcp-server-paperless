@@ -18,7 +18,7 @@ The toolset `trash` is off by default; it listed, restored and emptied, and show
 
 ## Consequences
 
-- 93 tools. The list of toolsets that are off names two more tools (37 bytes): `OVERVIEW_GUIDE_LIMIT` rises from 2800 to 2835; the owner's approval of this rise is pending.
+- 93 tools. The list of toolsets that are off names two more tools (37 bytes): `OVERVIEW_GUIDE_LIMIT` rises from 2800 to 2835, approved by the owner on 2026-11-24 ("wie von dir empfohlen umsetzen").
 - Text and fields of one entry cost a read of up to 1,000 rows with their texts, because the list has no field selection and no other endpoint answers a trashed document.
 - `get_document_thumbnail` shows the thumbnail of a trashed document to anyone who may view it, as before; whether it should is left to a task of its own.
 

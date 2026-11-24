@@ -23,7 +23,7 @@ from mcp_server_paperless.services.transfer import (
     time_limit,
 )
 from mcp_server_paperless.services.trash import trash_link
-from mcp_server_paperless.services.trash_scan import PAGE
+from mcp_server_paperless.services.trash_scan import PAGE, following
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.documents import FileKind, FileVersion
@@ -132,7 +132,7 @@ class TrashedDocuments:
             )
             if found.entry is not None:
                 return found.entry
-            page = found.next_page
+            page = following(page, found.next_page)
         raise await self._scan.unlisted([document_id])
 
     async def thumbnail(self, document_id: int) -> Thumbnail:

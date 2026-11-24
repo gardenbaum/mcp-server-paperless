@@ -28,6 +28,9 @@ if TYPE_CHECKING:
 MAX_SCAN: Final = 1000
 # Entries per request while the trash is paged through, and when one request is too large.
 PAGE: Final = 100
+# shortcut: the trash is paged through for 100,000 entries, so that an answer that always names a
+# next page ends; raise it once a trash is larger.
+MAX_PAGES: Final = 1000
 # Missing ids whose reason is looked up (two requests each); the rest is only named.
 EXPLAINED: Final = 10
 UNSEEN: Final = "more may match. list_trash without a filter pages through all, and ids finds any."
@@ -35,6 +38,11 @@ NOT_LISTED_HINT: Final = (
     "List the trash with list_trash. Entries of documents the user does not own are not "
     "listed, and a version is listed only while its document is not in the trash."
 )
+
+
+def following(page: int, next_page: int | None) -> int | None:
+    """The page to read after ``page``; None at the end, or if the answer does not get on."""
+    return next_page if next_page is not None and page < next_page <= MAX_PAGES else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,7 +141,7 @@ class TrashScan:
         while page is not None and wanted - found.keys():
             listed = await self._reader.list_trash(page=page, page_size=PAGE)
             found |= {e.id: e for e in listed.entries if e.id in wanted}
-            page = listed.next_page
+            page = following(page, listed.next_page) if listed.entries else None
         return found, scan
 
     async def require(self, ids: Sequence[int]) -> list[TrashedDocument]:

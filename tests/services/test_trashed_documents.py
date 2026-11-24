@@ -213,7 +213,7 @@ async def test_a_file_over_the_limit_is_described_and_read_in_parts() -> None:
 
     whole = await service.download(one, "original")
     parts = [await service.part(one, "original", offset=0)]
-    while (following := parts[-1].report.next_offset) is not None:
+    while len(parts) < 4 and (following := parts[-1].report.next_offset) is not None:
         parts.append(
             await service.part(one, "original", offset=following, checksum=parts[0].report.checksum)
         )
