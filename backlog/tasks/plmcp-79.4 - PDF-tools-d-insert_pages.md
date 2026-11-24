@@ -1,11 +1,11 @@
 ---
 id: PLMCP-79.4
 title: 'PDF tools d: insert_pages'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:17Z'
-updated_date: '2026-11-24T15:12:14Z'
+updated_date: '2026-11-24T15:37:40Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -24,16 +24,16 @@ Fourth part of PLMCP-79 (design approved by the owner on 2026-11-24 (all 14 deci
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 insert_pages builds the file in the renderer's child process and uploads one new version or a new document; sources are untouched when a step fails
-- [ ] #2 Limits, hostile inputs and what is lost are stated and tested
-- [ ] #3 Rendering, service, tool, contract and E2E tests
+- [x] #1 insert_pages builds the file in the renderer's child process and uploads one new version or a new document; sources are untouched when a step fails
+- [x] #2 Limits, hostile inputs and what is lost are stated and tested
+- [x] #3 Rendering, service, tool, contract and E2E tests
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -84,4 +84,12 @@ Closing round on 7ab516e, tests red first (17, and 2 of shared fields, 1 of /Par
 Review of 29b7d8c (H1, H2), tests red first (121 spellings). Cause of the leak with a direct /FT: the mark was found and the second build ran, but FPDFAnnot_GetSubtype is UNKNOWN for a kind that is not a direct name, so the field was neither emptied nor taken off. Now such annotations are fields, and the first build is kept only with a proof from the object bodies of the result (multiset of marks against the target; no table, no proof). Shown fields PDFium cannot draw are refused.
 
 Owner, 2026-11-24 ("alles wie empfohlen"): rights-restricted PDFs stay refused; PAPERLESS_MCP_MAX_UPLOAD_BYTES does not apply to the built file (100 MiB instead); files attached to comments are kept and named in the plan. Recorded in decision-68. J1 (6 tests red first): another annotation kind with /FT is a field.
+
+Merged main 52b6269 (79.3): guide limit 2880 (2849 + 16 + 15), README 96 tools (pdf 10), 9 writing pdf tools with a preview, snapshot and docs regenerated, PdfResult with original and parts. After the upload follow() catches every exception, so the guard of 79.3 is not needed a second time; an unknown outcome says "Look before repeating the call." and test_pdf_next covers the calls in next. DoD 1 open: contract and E2E tests were written after the code. DoD 2 open: just check was not run locally (no local full suite); CI and the full E2E 45420241168 were green on 0995406, the merge head runs on the PR. DoD 4 open until merged.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+insert_pages (opt-in toolset pdf): pages of one document go into another at any place, as a new version or a new document. The file is built in the bounded child process of decision-42 (decision-68), every place is proven in the saved file, a second child reads the result, and one upload is the only write. Form fields become a picture; values do not come along by references. Encrypted, restricted and damaged files are refused with the reason. Rendering, service, tool, contract and E2E tests; CI (3.14, 3.15, Windows) and the full hosted E2E 45420241168 green on 0995406; several independent reviews clean. Risks: PDFium does not reach values of fields on no page or above the fields of pages; second build is slow for many field pages with references.
+<!-- SECTION:FINAL_SUMMARY:END -->

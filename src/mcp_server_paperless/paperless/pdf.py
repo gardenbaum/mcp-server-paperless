@@ -22,25 +22,29 @@ looks for the file tasks, with a fresh window.
 """
 
 import asyncio
+import logging
 import re
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
 from pydantic import AwareDatetime, BaseModel, JsonValue
 
 from mcp_server_paperless.domain.errors import PaperlessMcpError, PermissionDenied, Validation
-from mcp_server_paperless.domain.pdf import StartedTasks
+from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, StartedTasks
+from mcp_server_paperless.domain.tasks import Unconfirmed
 from mcp_server_paperless.paperless.errors import REJECTED
 from mcp_server_paperless.paperless.pagination import Page
 from mcp_server_paperless.paperless.queued import Queued, TaskWaiter, not_applied, task_failed
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Sequence
+    from collections.abc import Awaitable, Callable, Collection, Iterator, Sequence
 
     from mcp_server_paperless.domain.pdf import FileOutput, LookupProblem, PageSlot
     from mcp_server_paperless.paperless.client import PaperlessClient
+
+logger = logging.getLogger(__name__)
 
 BASE = "/api/documents/"
 TASKS = "/api/tasks/"
@@ -105,6 +109,16 @@ class _Task(BaseModel):
         return int(number) - 1 if number.isascii() and number.isdigit() else None
 
 
+class _Copy(BaseModel):
+    id: int
+    original_file_name: str | None
+    added: AwareDatetime
+
+    @property
+    def name(self) -> str:
+        return self.original_file_name or ""
+
+
 class _User(BaseModel):
     id: int
 
@@ -130,6 +144,15 @@ NO_TIMES: Final = "the times of its queued task are not known"
 NOT_OWN: Final = "a file was not handed over by its queued task"
 AT_ONCE: Final = "another operation of this user ran at the same time"
 UNCOMPARED: Final = "its tasks could not be compared"
+BROKE: Final = "its task could not be followed"
+PENDING: Final = "files of earlier operations of this user may still come"
+TASKED: Final = "a task of its own makes a file of one of these names"
+# How long a file may wait for its consumption: operations before that are taken to be done.
+BACKLOG: Final = timedelta(hours=1)
+PART: Final = re.compile(r"(\d+_edit_)\d+\.pdf")
+# The first (or only) file an operation that makes new documents hands over, and a new version.
+FIRST_FILE: Final = re.compile(r"\d+(_\d+)*_(edit_1|unprotected|merged)\.pdf")
+VERSION_FILE: Final = re.compile(r"\d+_edited\.pdf")
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,10 +162,14 @@ class _Copies:
     Attributes:
         match: Every file that could be one of them, also one too many.
         copies: Whether Paperless tells the consumer to leave a taken serial number out.
+        names: The name of each file, if none is left out.
+        included: The documents the name of a merged file stands for, None where it was cut.
     """
 
     match: Match
     copies: bool = True
+    names: tuple[str, ...] = ()
+    included: tuple[int, ...] | None = None
 
 
 def _named(names: Sequence[str]) -> Match:
@@ -170,6 +197,15 @@ def _included(filename: str, document_ids: Sequence[int]) -> tuple[int, ...] | N
     if len(joined) == MERGED_NAME_LIMIT:
         return () if any(n.startswith(last) for n in left) else None
     return tuple(int(n) for n in (*parts, last)) if last in left else None
+
+
+def _like(names: Sequence[str]) -> tuple[str, Callable[[str], bool]]:
+    """How the file names of a request start, and whether a name could be one, also one too many."""
+    part = PART.fullmatch(names[0])
+    if part is None:
+        return names[0], lambda name: name == names[0]
+    start = part[1]
+    return start, lambda name: name.startswith(start) and PART.fullmatch(name) is not None
 
 
 def _failure(what: str) -> Callable[[str], Validation]:
@@ -262,6 +298,7 @@ class PaperlessPdfWriter:
             "archive_fallback": archive_fallback,
             "source_mode": _mode(explicit=original_files),
         }
+        joined = "_".join(str(n) for n in document_ids)
         started = await self._run(
             "merge",
             body,
@@ -270,7 +307,11 @@ class PaperlessPdfWriter:
             1,
             failed=_failure("merge"),
             merged=document_ids,
-            own=_Copies(_merged(document_ids)),
+            own=_Copies(
+                _merged(document_ids),
+                names=(f"{joined[:MERGED_NAME_LIMIT]}{MERGED}",),
+                included=tuple(document_ids) if len(joined) <= MERGED_NAME_LIMIT else None,
+            ),
         )
         # The file name starts with a document, but the result is a document of its own.
         return started.model_copy(update={"sources": ()})
@@ -298,9 +339,11 @@ class PaperlessPdfWriter:
         names, own = [f"{document_id}_edited.pdf"], None
         if output == "new_document":
             parts = re.compile(rf"{document_id}_edit_\d+\.pdf")
-            own = _Copies(lambda task: parts.fullmatch(task.filename) is not None)
             count = len({p.document for p in pages})
             names = [f"{document_id}_edit_{n}.pdf" for n in range(1, count + 1)]
+            own = _Copies(
+                lambda task: parts.fullmatch(task.filename) is not None, names=tuple(names)
+            )
         try:
             return await self._run(
                 "edit_pdf",
@@ -334,7 +377,9 @@ class PaperlessPdfWriter:
             "update_document": output == "new_version",
             "include_metadata": _metadata(output, keep=keep_metadata),
         }
-        match = _named([f"{document_id}_unprotected.pdf"])
+        name = f"{document_id}_unprotected.pdf"
+        match = _named([name])
+        own = _Copies(match, copies=False, names=(name,)) if output == "new_document" else None
         try:
             return await self._run(
                 "remove_password",
@@ -343,7 +388,7 @@ class PaperlessPdfWriter:
                 match,
                 1,
                 failed=_password_failed,
-                own=_Copies(match, copies=False) if output == "new_document" else None,
+                own=own,
             )
         except Validation as error:
             raise _plain(error, wrong_password()) from None
@@ -392,36 +437,85 @@ class PaperlessPdfWriter:
                 queued = await self._client.call("POST", f"{BASE}{endpoint}/", Queued, json=body)
             except PermissionDenied:
                 raise _refused() from None
-            unconfirmed = await self._waiter.confirmed(queued, failed)
-            if unconfirmed is not None and problem != "forbidden":
-                # Accepted, but not followed to its end: hand the queued task back, do not raise,
-                # even when the mark failed, because the queued task is still the one to follow.
-                # A user who may not view tasks cannot follow it: that stays "forbidden".
-                return StartedTasks(
-                    ids=(unconfirmed.task_id,),
-                    expected=expected,
-                    problem="unconfirmed",
-                    detail=unconfirmed.reason,
-                )
-            if problem is not None:
-                return StartedTasks(ids=(), expected=expected, problem=problem)
             found: list[_Task] = []
-            deadline = self._clock() + self._settle
-            while True:
-                try:
-                    seen = await self._tasks_after(mark, kind, user)
-                except PaperlessMcpError:
-                    # Fewer than expected were found, or the loop would have ended.
-                    return _started(found, expected, merged, "failed")
-                found = _first_of_each(seen, match)
-                left = deadline - self._clock()
-                if len(found) >= expected or left <= 0:
-                    started = _started(found, expected, merged)
-                    if own is None or not found:
-                        return started
-                    doubt = await self._doubt(queued.task_id, user, seen, expected, own)
-                    return started.model_copy(update={"doubt": doubt})
-                await self._sleep(min(self._poll, left))
+            try:
+                return await self._lookup(
+                    queued,
+                    failed,
+                    found,
+                    mark=mark,
+                    problem=problem,
+                    kind=kind,
+                    user=user,
+                    match=match,
+                    expected=expected,
+                    merged=merged,
+                    own=own,
+                )
+            except Validation:
+                raise
+            except Exception as error:  # noqa: BLE001 -- accepted: say so, whatever goes wrong
+                logger.error(  # noqa: TRY400 -- the type alone: a message could hold data
+                    "%s: its tasks could not be looked up: %s", endpoint, type(error).__name__
+                )
+                return _started(found, expected, merged, "failed")
+
+    async def _lookup(  # noqa: PLR0913 -- what is looked for
+        self,
+        queued: Queued,
+        failed: Callable[[str], Validation],
+        found: list[_Task],
+        *,
+        mark: _Task | None,
+        problem: LookupProblem | None,
+        kind: str,
+        user: int | None,
+        match: Match | None,
+        expected: int,
+        merged: Sequence[int],
+        own: _Copies | None,
+    ) -> StartedTasks:
+        """The tasks of an accepted request; ``found`` holds what is known if it breaks."""
+        try:
+            unconfirmed = await self._waiter.confirmed(queued, failed)
+        except Validation:
+            raise
+        except Exception as error:  # noqa: BLE001 -- accepted: its queued task can still be followed
+            logger.error("a queued task could not be followed: %s", type(error).__name__)  # noqa: TRY400 -- the type alone
+            unconfirmed = Unconfirmed(task_id=queued.task_id, reason=BROKE)
+        if unconfirmed is not None and problem != "forbidden":
+            # Accepted, but not followed to its end: hand the queued task back, do not raise,
+            # even when the mark failed, because the queued task is still the one to follow.
+            # A user who may not view tasks cannot follow it: that stays "forbidden".
+            return StartedTasks(
+                ids=(unconfirmed.task_id,),
+                expected=expected,
+                problem="unconfirmed",
+                detail=unconfirmed.reason,
+            )
+        if problem is not None:
+            return StartedTasks(ids=(), expected=expected, problem=problem)
+        deadline = self._clock() + self._settle
+        while True:
+            try:
+                seen = await self._tasks_after(mark, kind, user)
+            except PaperlessMcpError:
+                # Fewer than expected were found, or the loop would have ended.
+                return _started(found, expected, merged, "failed")
+            found[:] = _first_of_each(seen, match)
+            left = deadline - self._clock()
+            if len(found) >= expected or left <= 0:
+                started = _started(found, expected, merged)
+                if own is None:
+                    return started
+                if not found:
+                    files = CopiedFiles(
+                        request=queued.task_id, names=own.names, included=own.included
+                    )
+                    return started.model_copy(update={"files": files})
+                doubt = await self._doubt(queued.task_id, user, seen, expected, own)
+                return started.model_copy(update={"doubt": doubt})
+            await self._sleep(min(self._poll, left))
 
     async def _doubt(
         self, queued: str, user: int | None, seen: list[_Task], expected: int, own: _Copies
@@ -440,12 +534,7 @@ class PaperlessPdfWriter:
         try:
             page = await self._client.get(TASKS, Page[_Task], params={"task_id": queued})
             rows = [row for row in page.results if row.task_id == queued]
-            params: dict[str, str | int] = {
-                "task_type": BULK,
-                "ordering": "-date_created",
-                "page_size": LOOKBACK,
-            }
-            bulk = (await self._client.get(TASKS, Page[_Task], params=params)).results
+            bulk = (await self._operations()).results
         except PaperlessMcpError:
             return UNCOMPARED
         ran = [(row.date_started, row.date_done) for row in rows]
@@ -459,15 +548,102 @@ class PaperlessPdfWriter:
             return NOT_OWN
         others = [
             row
-            for row in bulk
-            if row.task_id != queued
-            and row.owner in {None, user}
-            and row.operation in COPYING
-            and row.date_started is not None
+            for row in _copying(bulk, queued, {None, user})
+            if row.date_started is not None
             and row.date_started <= end
             and (row.date_done is None or row.date_done >= start)
         ]
         return AT_ONCE if others else None
+
+    async def _operations(self) -> Page[_Task]:
+        """The newest queued operations, of every user."""
+        params: dict[str, str | int] = {
+            "task_type": BULK,
+            "ordering": "-date_created",
+            "page_size": LOOKBACK,
+        }
+        return await self._client.get(TASKS, Page[_Task], params=params)
+
+    async def find_copies(self, files: CopiedFiles, *, final: bool = False) -> FoundCopies:
+        """See ``PdfWriter.find_copies``: by ``original_file_name``, owner and ``added``."""
+        user = await self._user()
+        operations = await self._operations()
+        own = next((row for row in operations.results if row.task_id == files.request), None)
+        if user is None or own is None or own.date_started is None:
+            return _doubtful(files, NO_USER if user is None else NO_TIMES)
+        start = own.date_started
+        prefix, like = _like(files.names)
+        rows = await self._copies(user, start, original_filename__istartswith=prefix)
+        found = [row for row in rows if like(row.name)]
+        ids = {row.name: row.id for row in found}
+        if len(found) > len(files.names) or len(found) > len(ids) or ids.keys() - {*files.names}:
+            listed = ", ".join(str(n) for n in sorted(row.id for row in found))
+            expected = len(files.names)
+            doubt = f"documents {listed} have names of these files, of which there are {expected}"
+            return _doubtful(files, doubt)
+        whole = final or not {*files.names} - ids.keys()
+        doubt = await self._taken_for(user, start, operations, files, whole=whole)
+        if doubt is not None:
+            return _doubtful(files, doubt)
+        return FoundCopies(ids=tuple(ids.get(name) for name in files.names))
+
+    async def _copies(self, user: int, since: datetime, **filters: str) -> list[_Copy]:
+        """The documents of this user added since then, as many as one page holds."""
+        params: dict[str, str | int] = {
+            "owner__id": user,
+            "added__gte": since.isoformat(),
+            **filters,
+            "fields": "id,original_file_name,added",
+            "page_size": LOOKBACK,
+        }
+        page = await self._client.get(BASE, Page[_Copy], params=params)
+        return [row for row in page.results if row.added >= since]
+
+    async def _taken_for(
+        self,
+        user: int,
+        start: datetime,
+        operations: Page[_Task],
+        files: CopiedFiles,
+        *,
+        whole: bool,
+    ) -> str | None:
+        """Why documents of these names may be another request's, None if they are this one's.
+
+        Nothing names the request, and an operation does not name its documents. So there may be no
+        other operation since the start, and of the earlier ones each must be known to have made
+        something else: one first file of another document, or one new version, for each. The
+        earlier ones are looked into only if ``whole``.
+        """
+        _, like = _like(files.names)
+        params: dict[str, str | int] = {**self._filters(CONSUME, user), "page_size": LOOKBACK}
+        tasks = (await self._client.get(TASKS, Page[_Task], params=params)).results
+        if any(like(task.filename) and task.created >= start for task in tasks):
+            return TASKED
+        oldest = min(row.created for row in operations.results)
+        if operations.next_page is not None and oldest > start - BACKLOG:
+            return UNCOMPARED
+        # 3.5.1 records the caller as owner of every operation. One without an owner is of a user
+        # who was deleted since, whose files are not the caller's, or Paperless's own update.
+        others = list(_copying(operations.results, files.request, {user}))
+        if any(
+            row.date_started and (not row.date_done or row.date_done >= start) for row in others
+        ):
+            return AT_ONCE
+        earlier = [
+            row.date_started
+            for row in others
+            if row.date_started and row.date_done and row.date_done >= start - BACKLOG
+        ]
+        if not earlier or not whole:
+            return None
+        since = min(earlier)
+        made = await self._copies(user, since, original_filename__iendswith=".pdf")
+        elsewhere = [
+            *(row for row in made if FIRST_FILE.fullmatch(row.name) and not like(row.name)),
+            *(t for t in tasks if VERSION_FILE.fullmatch(t.filename) and t.created >= since),
+        ]
+        return PENDING if len(elsewhere) < len(earlier) else None
 
     async def _mark(self, kind: str, user: int | None) -> tuple[_Task | None, LookupProblem | None]:
         """The newest task of this user and kind and, if it cannot be read, why not."""
@@ -513,6 +689,18 @@ class PaperlessPdfWriter:
         newer = (t for t in page.results if mark is None or t.id > mark.id)
         mine = (t for t in newer if kind != CONSUME or user is None or t.owner == user)
         return sorted((t for t in mine if t.task_type == kind), key=lambda t: t.id)
+
+
+def _doubtful(files: CopiedFiles, doubt: str) -> FoundCopies:
+    nothing = (None,) * len(files.names)
+    return FoundCopies(ids=nothing, doubt=doubt, passing=doubt == PENDING)
+
+
+def _copying(rows: Sequence[_Task], queued: str, owners: Collection[int | None]) -> Iterator[_Task]:
+    """The other operations of these owners that hand over files a copy could be taken for."""
+    for row in rows:
+        if row.task_id != queued and row.owner in owners and row.operation in COPYING:
+            yield row
 
 
 def _first_of_each(seen: list[_Task], match: Match | None) -> list[_Task]:

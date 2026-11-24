@@ -5,11 +5,12 @@ background tasks that produce files: new documents, or new versions of the docum
 result goes is the ``Output`` of the operation.
 """
 
+from datetime import date
 from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from mcp_server_paperless.domain.documents import UploadState
+from mcp_server_paperless.domain.documents import NameOrId, UploadState
 from mcp_server_paperless.domain.tasks import Wait
 
 # Where the edited file goes: a new document (the original stays as it is), a new version of the
@@ -50,8 +51,59 @@ class PageSlot(BaseModel):
     ] = 0
 
 
+class PartMetadata(BaseModel):
+    """What a new document of a page operation gets instead of what Paperless copies.
+
+    Attributes:
+        tags: The whole list; None keeps the copied ones.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
+
+    title: Annotated[str | None, Field(description="At most 128 characters.")] = None
+    document_type: Annotated[NameOrId | None, Field(description="Name or id.")] = None
+    correspondent: Annotated[NameOrId | None, Field(description="Name or id.")] = None
+    created: Annotated[date | None, Field(description="YYYY-MM-DD.")] = None
+    tags: Annotated[
+        tuple[NameOrId, ...] | None,
+        Field(description="All its tags (names or ids), also without the inbox tags if not named."),
+    ] = None
+
+
 # Why the tasks of a request are not all known: the user may not view tasks, or reading them failed.
 type LookupProblem = Literal["forbidden", "failed", "unconfirmed"]
+
+
+class CopiedFiles(BaseModel):
+    """How to find the new documents of a request whose tasks Paperless does not list.
+
+    Attributes:
+        request: The queued task of the request.
+        names: The name of each output file, in their order.
+        included: The documents the name of a merged file stands for, None where it was cut.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    request: str
+    names: tuple[str, ...]
+    included: tuple[int, ...] | None = None
+
+
+class FoundCopies(BaseModel):
+    """The documents with the file names of a request.
+
+    Attributes:
+        ids: The document of each name, None where there is none yet, or where they are in doubt.
+        doubt: Why it cannot be told that they are the request's own: then nothing is done to them.
+        passing: Whether the doubt may go away when other files are done.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    ids: tuple[int | None, ...]
+    doubt: str | None = None
+    passing: bool = False
 
 
 class StartedTasks(BaseModel):
@@ -73,6 +125,7 @@ class StartedTasks(BaseModel):
         doubt: Why it cannot be told that these tasks are the request's own, if so: good enough to
             report, not to trash anything for.
         detail: For ``unconfirmed``: why the queued task could not be followed.
+        files: For new documents: how to find them where Paperless lists no task for them.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
@@ -85,6 +138,7 @@ class StartedTasks(BaseModel):
     problem: LookupProblem | None = None
     doubt: str | None = None
     detail: str | None = None
+    files: CopiedFiles | None = None
 
 
 # Output models are tool output schemas: a one-line class docstring each, and field descriptions
@@ -109,7 +163,10 @@ class PdfTask(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
-    task_id: str
+    task_id: Annotated[
+        str | None,
+        Field(description="null: Paperless lists none; the document is known by its file name."),
+    ]
     state: Annotated[
         UploadState,
         Field(
@@ -124,6 +181,25 @@ class PdfTask(BaseModel):
         tuple[int, ...],
         Field(description="The document or version the task produced, once it succeeded."),
     ]
+
+
+class PartOutcome(BaseModel):
+    """One new document of split_document or extract_pages and how far it is."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    part: Annotated[int, Field(description="From 1, in the order of the call.")]
+    pages: str
+    task_id: str | None
+    state: UploadState
+    document_id: Annotated[int | None, Field(description="null while it is not known.")]
+    web_url: str | None
+    metadata: Annotated[
+        Literal["set", "not_set", "not_requested"],
+        Field(description="not_set: not known to be set; see message and next."),
+    ]
+    message: str | None
+    next: Annotated[str | None, Field(description="The calls that finish it, as a suggestion.")]
 
 
 class PdfResult(BaseModel):
@@ -185,6 +261,19 @@ class PdfResult(BaseModel):
             )
         ),
     ]
+    original: Annotated[
+        Literal["kept", "trashed", "shortened", "unknown"] | None,
+        Field(
+            description=(
+                "The one original of split_document, extract_pages or a replacement: shortened "
+                "if the pages were removed, unknown if that is not known. null elsewhere."
+            )
+        ),
+    ] = None
+    parts: Annotated[
+        tuple[PartOutcome, ...],
+        Field(description="The new documents of split_document and extract_pages."),
+    ] = ()
     next: Annotated[
         str | None, Field(description="The calls that finish what was left, as a suggestion.")
     ]

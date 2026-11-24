@@ -65,6 +65,7 @@ from mcp_server_paperless.services.notes import NoteService
 from mcp_server_paperless.services.pages import PageService
 from mcp_server_paperless.services.pdf import PdfService
 from mcp_server_paperless.services.pdf_insert import PageInserter
+from mcp_server_paperless.services.pdf_parts import Parts
 from mcp_server_paperless.services.pdf_replacing import Replacing
 from mcp_server_paperless.services.permissions import PermissionService
 from mcp_server_paperless.services.raw import RawApiService
@@ -468,8 +469,21 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 upload_dirs=settings.upload_dirs if by_path else (),
                 path_hint=path_hint,
             )
-            drawing, turn = renderer or ChildRenderer(), asyncio.Semaphore(1)
-            removal = DocumentRemoval(adapters.documents, adapters.document_writes, taxonomy)
+            removal, drawing, turn = (
+                DocumentRemoval(adapters.documents, adapters.document_writes, taxonomy),
+                renderer or ChildRenderer(),
+                asyncio.Semaphore(1),
+            )
+            edits = DocumentEditor(
+                adapters.documents,
+                adapters.document_writes,
+                adapters.taxonomy_writes,
+                taxonomy,
+                documents=documents,
+            )
+            replacing = Replacing(
+                adapters.documents, adapters.document_writes, removal, clock=clock
+            )
             services = Services(
                 instance=InstanceService(adapters.instance),
                 taxonomy=taxonomy,
@@ -484,13 +498,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     sink=sink,
                 ),
                 pages=PageService(adapters.documents, drawing, web_url=web_url, turn=turn),
-                edits=DocumentEditor(
-                    adapters.documents,
-                    adapters.document_writes,
-                    adapters.taxonomy_writes,
-                    taxonomy,
-                    documents=documents,
-                ),
+                edits=edits,
                 notes=NoteService(adapters.documents, adapters.document_writes, web_url=web_url),
                 removal=removal,
                 tasks=tasks,
@@ -500,8 +508,17 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.documents,
                     adapters.pdf_writes,
                     tasks,
-                    Replacing(adapters.documents, adapters.document_writes, removal, clock=clock),
+                    replacing,
                     taxonomy,
+                    parts=Parts(
+                        adapters.documents,
+                        adapters.pdf_writes,
+                        edits,
+                        taxonomy,
+                        replacing,
+                        web_url=web_url,
+                        sleep=sleep,
+                    ),
                     web_url=web_url,
                 ),
                 insertion=PageInserter(

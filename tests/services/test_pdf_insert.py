@@ -296,6 +296,8 @@ async def test_the_pages_become_a_new_version_of_the_document() -> None:
         "produced_ids": (version,),
         "produced_links": (LINK,),
         "trashed_ids": (),
+        "original": None,
+        "parts": (),
         "next": None,
         "wait": "finished",
         "waited_seconds": found.waited_seconds,
@@ -1002,6 +1004,7 @@ async def test_what_cannot_be_followed_says_where_to_look(
 
     assert (unread.state, unread.next) == ("unknown", following)
     assert "its task could not be read" in (unread.message or "")
+    assert (unread.message or "").endswith("Look before repeating the call.")
     assert (unnamed.state, unnamed.next) == ("success", following)
     assert named in (unnamed.message or "")
     assert (unnamed.produced_ids, unnamed.produced_links) == ((), ())

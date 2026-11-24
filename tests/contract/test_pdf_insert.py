@@ -57,7 +57,9 @@ async def insert(  # noqa: PLR0913 -- the two documents, the place and the targe
         web_url="http://paperless/",
     )
     result = await service.insert(target, source, pages, after_page, output=output)
-    status = await ended(backend, result.tasks[0].task_id)
+    task_id = result.tasks[0].task_id
+    assert task_id is not None
+    status = await ended(backend, task_id)
     assert status.state == "success", status.message
     [made] = status.document_ids
     return made

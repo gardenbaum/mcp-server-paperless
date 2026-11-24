@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from mcp_server_paperless.domain.documents import DocumentRecord
-    from mcp_server_paperless.domain.pdf import PdfResult, StartedTasks
+    from mcp_server_paperless.domain.pdf import PdfResult, PdfTask, StartedTasks
     from mcp_server_paperless.domain.ports import DocumentReader, DocumentWriter
     from mcp_server_paperless.services.removal import DocumentRemoval
 
@@ -61,6 +61,7 @@ UNKNOWN_PLACE: Final = (
     "It is not known where archive serial number {number} is: look at documents {original} and "
     "{product}."
 )
+UNEXPECTED: Final = "unexpected error"
 FIND: Final = "find the new documents with search_documents (newest added first) and check them"
 # Answers that say that nothing was deleted; any other error leaves that open.
 REFUSALS: Final = (AuthenticationFailed, Conflict, PermissionDenied, Validation)
@@ -80,6 +81,10 @@ class Replacement:
         unread: Whether the rights of the user could not be read when the plan was made: the user
             was told that the originals stay, so they do, whatever later reads say.
         perhaps_none: Whether a request without a task may simply have had nothing to do.
+        unset: What metadata the new documents lack, if any.
+        first: What comes before the last step in the next calls.
+        then: The last step in the next calls, if it is not the deletion of the originals.
+        kept: How a result says that the last step was not taken.
     """
 
     originals: Sequence[DocumentRecord]
@@ -88,12 +93,35 @@ class Replacement:
     problem: str | None = None
     unread: bool = False
     perhaps_none: bool = False
+    unset: str | None = None
+    first: str = ""
+    then: str = ""
+    kept: str = KEPT
 
 
-class _KeptError(Exception):
-    """Why the originals are kept, and what to call to go on."""
+@dataclass(slots=True)
+class Progress:
+    """How far a call is that Paperless accepted, for when something unexpected stops it.
 
-    def __init__(self, reason: str, next_call: str | None = None) -> None:
+    Attributes:
+        result: What is known so far.
+        last: Whether the step that changes the original may have begun.
+        product: The new document whose pages are being removed from the original, if any.
+        trashed: The originals that are in the trash.
+    """
+
+    result: PdfResult
+    last: bool = False
+    product: int | None = None
+    trashed: list[int] = field(default_factory=list[int])
+
+
+class KeptError(Exception):
+    """Why the last step is not taken, and what to call to go on."""
+
+    def __init__(self, reason: str, next_call: str | None = None, *, unread: bool = False) -> None:
+        """Create it from a clause for the message; ``unread``: a document could not be read."""
+        self.unread: bool = unread
         super().__init__(reason)
         self.reason: str = reason
         self.next_call: str | None = next_call
@@ -125,9 +153,11 @@ class _Done:
     trashed: list[int] = field(default_factory=list[int])
     notes: list[str] = field(default_factory=list[str])
     next: str | None = None
+    unknown: bool = False
 
 
-def _named(numbers: Sequence[int]) -> str:
+def named(numbers: Sequence[int]) -> str:
+    """``document 3`` or ``documents 3, 5``."""
     noun = "document" if len(numbers) == 1 else "documents"
     return f"{noun} {', '.join(str(n) for n in numbers)}"
 
@@ -144,6 +174,8 @@ def _finish(
     ``serial``: the number that is to move is still on its original. It never goes over one that
     the new document has; ``product`` is None where the new document is not known yet.
     """
+    if wanted.then:
+        return f"{wanted.first}{wanted.then}"
     steps = [f"delete_document(document_id={d.id})" for d in left]
     moves = wanted.serial if serial and wanted.serial in left else None
     if product is not None and product.archive_serial_number is not None:
@@ -165,11 +197,12 @@ def _finish(
         and d is not moves
         and (serial or d is not wanted.serial)
     )
-    return ", then ".join(steps) + staying
+    return wanted.first + ", then ".join(steps) + staying
 
 
-def _if_unchanged(left: Sequence[DocumentRecord]) -> str:
-    names = _named([d.id for d in left])
+def if_unchanged(left: Sequence[DocumentRecord]) -> str:
+    """The condition of a next call that these documents did not change."""
+    names = named([d.id for d in left])
     return f"only if {names} {'is' if len(left) == 1 else 'are'} unchanged"
 
 
@@ -179,25 +212,28 @@ def _if_found(original: DocumentRecord) -> str:
 
 def _unchecked(result: PdfResult, started: StartedTasks, wanted: Replacement) -> str:
     """What to call where tasks were not seen to their end: the conditions, then the rest."""
+    if any(task.task_id is None for task in result.tasks):
+        return FIND
     waits = [f'get_task(task_id="{task.task_id}", wait_seconds=30)' for task in result.tasks]
     made = ", ".join(
         "a known number of pages" if pages is None else f"{pages} page{'' if pages == 1 else 's'}"
-        for pages in (wanted.pages[n] for n in _outputs(result, started))
+        for pages in (wanted.pages[n] for n in outputs(result, started))
     )
     return (
         f"{', then '.join(waits)}; only if every one succeeded and made exactly one document "
-        f"(get_document), with {made}, and {_if_unchanged(wanted.originals)}: "
+        f"(get_document), with {made}, and {if_unchanged(wanted.originals)}: "
         f"{_finish(wanted, wanted.originals, None, serial=True)}"
     )
 
 
-def _outputs(result: PdfResult, started: StartedTasks) -> tuple[int, ...]:
+def outputs(result: PdfResult, started: StartedTasks) -> tuple[int, ...]:
     """The output file of each task."""
     return started.outputs or tuple(range(len(result.tasks)))
 
 
-def _cause(error: PaperlessMcpError) -> str:
-    return error.message.rstrip(".")
+def cause(error: Exception) -> str:
+    """The message of an error as a clause; nothing of one that is not expected."""
+    return error.message.rstrip(".") if isinstance(error, PaperlessMcpError) else UNEXPECTED
 
 
 def _check_tasks(result: PdfResult, started: StartedTasks, wanted: Replacement) -> None:
@@ -209,21 +245,21 @@ def _check_tasks(result: PdfResult, started: StartedTasks, wanted: Replacement) 
         elif wanted.perhaps_none and not result.tasks and started.problem is None:
             next_call = None
         reason = "what Paperless makes could not be followed"
-        raise _KeptError(reason, next_call)
+        raise KeptError(reason, next_call)
     if started.doubt is not None:
         reason = f"it cannot be told which files this call made ({started.doubt})"
-        raise _KeptError(reason, FIND)
+        raise KeptError(reason, FIND)
     if wanted.problem is not None:
-        raise _KeptError(wanted.problem)
+        raise KeptError(wanted.problem)
     if any(task.state in {"failure", "revoked"} for task in result.tasks):
         reason = "a task failed"
-        raise _KeptError(reason)
+        raise KeptError(reason)
     if result.wait == "not_requested":
         reason = "wait_seconds is 0, so nothing was checked"
-        raise _KeptError(reason, _unchecked(result, started, wanted))
+        raise KeptError(reason, _unchecked(result, started, wanted))
     if any(task.state in RUNNING for task in result.tasks):
         reason = "Paperless is not known to be done"
-        raise _KeptError(reason, _unchecked(result, started, wanted))
+        raise KeptError(reason, _unchecked(result, started, wanted))
 
 
 class Replacing:
@@ -247,77 +283,122 @@ class Replacing:
         self.clock: Callable[[], float] = clock
 
     async def finish(
-        self, result: PdfResult, started: StartedTasks, wanted: Replacement, *, began: float
+        self,
+        result: PdfResult,
+        started: StartedTasks,
+        wanted: Replacement,
+        *,
+        began: float,
+        progress: Progress,
     ) -> PdfResult:
-        """``result`` after the last step: originals trashed, or why not and how to go on."""
+        """``result`` after the last step: originals trashed, or why not and how to go on.
+
+        ``progress`` is told when the last step begins.
+        """
+        single = len(wanted.originals) == 1
         try:
-            _check_tasks(result, started, wanted)
-            product = await self._product(result, started, wanted)
-            await self._may_start(wanted, product, began)
+            product = await self.checked(result, started, wanted, began=began)
             for original in wanted.originals:
-                await self._unchanged(original, original.archive_serial_number)
-        except _KeptError as kept:
-            notes = [KEPT.format(reason=kept.reason)]
-            if result.produced_ids:
-                notes.append(f"What was made stays: {_named(result.produced_ids)}.")
-            return _noted(result, notes, next_call=kept.next_call)
+                await self.unchanged(original, original.archive_serial_number)
+        except KeptError as kept:
+            return stays(result, wanted, kept.reason, kept.next_call)
+        progress.last = True
         # Not to be cut short between taking a serial number from one document and giving it on.
-        done = await asyncio.shield(asyncio.ensure_future(self._trash(wanted, product, began)))
-        result = _noted(result, done.notes, next_call=done.next)
-        return result.model_copy(update={"trashed_ids": tuple(done.trashed)})
+        done = await asyncio.shield(
+            asyncio.ensure_future(self._trash(wanted, product, began, progress.trashed))
+        )
+        result = noted(result, done.notes, next_call=done.next)
+        original = "trashed" if done.trashed else "unknown" if done.unknown else "kept"
+        return result.model_copy(
+            update={
+                "trashed_ids": tuple(done.trashed),
+                "original": original if single else None,
+            }
+        )
+
+    async def checked(
+        self, result: PdfResult, started: StartedTasks, wanted: Replacement, *, began: float
+    ) -> DocumentRecord:
+        """The last of the new documents, if everything is verified and there is time left.
+
+        Raises:
+            KeptError: It is not: the last step must not be taken.
+        """
+        _check_tasks(result, started, wanted)
+        product = await self._product(result, started, wanted)
+        if wanted.unset is not None:
+            then = _finish(wanted, wanted.originals, product, serial=True)
+            raise KeptError(wanted.unset, f"{if_unchanged(wanted.originals)}: {then}")
+        await self._may_start(wanted, product, began)
+        return product
+
+    def late(self, began: float) -> bool:
+        """Whether it is too late to start another step of a call that began then."""
+        return self.clock() - began > LATEST_START
+
+    async def verified(self, task: PdfTask, pages: int | None, taken: set[int]) -> DocumentRecord:
+        """The one new document of a successful task, with its pages; adds it to ``taken``.
+
+        Raises:
+            KeptError: It is not what it should be.
+        """
+        if len(task.document_ids) != 1:
+            found = named(task.document_ids) if task.document_ids else "nothing"
+            reason = f"task {task.task_id} made {found} instead of one document"
+            raise KeptError(reason)
+        [number] = task.document_ids
+        if number in taken:
+            reason = f"document {number} is not a new document of its own"
+            raise KeptError(reason)
+        taken.add(number)
+        try:
+            document = await self._reader.get_document(number)
+        except PaperlessMcpError as error:
+            reason = f"document {number} could not be read ({cause(error)})"
+            raise KeptError(reason, f"get_document(document_id={number})", unread=True) from None
+        count = document.page_count
+        if count is None or pages not in {None, count}:
+            has = "an unknown number of" if count is None else str(count)
+            asked = "" if pages is None else f" instead of {pages}"
+            reason = f"document {number} has {has} pages{asked}"
+            raise KeptError(reason)
+        return document
 
     async def _product(
         self, result: PdfResult, started: StartedTasks, wanted: Replacement
     ) -> DocumentRecord:
         """The last of the new documents, all of which must be what they should be."""
-        made: list[DocumentRecord] = []
         taken = {original.id for original in wanted.originals}
-        for task, output in zip(result.tasks, _outputs(result, started), strict=True):
-            if len(task.document_ids) != 1:
-                found = _named(task.document_ids) if task.document_ids else "nothing"
-                reason = f"task {task.task_id} made {found} instead of one document"
-                raise _KeptError(reason)
-            [number] = task.document_ids
-            if number in taken:
-                reason = f"document {number} is not a new document of its own"
-                raise _KeptError(reason)
-            taken.add(number)
-            try:
-                document = await self._reader.get_document(number)
-            except PaperlessMcpError as error:
-                reason = f"document {number} could not be read ({_cause(error)})"
-                raise _KeptError(reason, f"get_document(document_id={number})") from None
-            count, pages = document.page_count, wanted.pages[output]
-            if count is None or pages not in {None, count}:
-                has = "an unknown number of" if count is None else str(count)
-                asked = "" if pages is None else f" instead of {pages}"
-                reason = f"document {number} has {has} pages{asked}"
-                raise _KeptError(reason)
-            made.append(document)
+        made = [
+            await self.verified(task, wanted.pages[output], taken)
+            for task, output in zip(result.tasks, outputs(result, started), strict=True)
+        ]
         return made[-1]
 
     async def _may_start(self, wanted: Replacement, product: DocumentRecord, began: float) -> None:
         """Nothing starts without the rights being known, or later than ``LATEST_START``."""
-        late = self.clock() - began > LATEST_START
+        late = self.late(began)
         if wanted.unread or late:
             then = _finish(wanted, wanted.originals, product, serial=True)
             reason = UNREAD if wanted.unread else LATE
-            raise _KeptError(reason, f"{_if_unchanged(wanted.originals)}: {then}")
+            raise KeptError(reason, f"{if_unchanged(wanted.originals)}: {then}")
 
-    async def _unchanged(self, original: DocumentRecord, number: int | None) -> None:
+    async def unchanged(self, original: DocumentRecord, number: int | None) -> None:
         """The original must still be the one that was accepted, with this serial number."""
         try:
             now = await self._reader.get_document(original.id)
         except PaperlessMcpError as error:
-            reason = f"document {original.id} could not be read again ({_cause(error)})"
-            raise _KeptError(reason) from None
+            reason = f"document {original.id} could not be read again ({cause(error)})"
+            raise KeptError(reason, unread=True) from None
         if (now.newest_file, now.archive_serial_number) != (original.newest_file, number):
             reason = f"document {original.id} was changed meanwhile; look at it again"
-            raise _KeptError(reason)
+            raise KeptError(reason)
 
-    async def _trash(self, wanted: Replacement, product: DocumentRecord, began: float) -> _Done:
+    async def _trash(
+        self, wanted: Replacement, product: DocumentRecord, began: float, trashed: list[int]
+    ) -> _Done:
         """Move the serial number, then the originals to the trash; failures are told."""
-        done = _Done()
+        done = _Done(trashed)
         moved = await self._hand_over(wanted, product, done)
         if moved is None:
             return done
@@ -331,8 +412,7 @@ class Replacing:
                 break
             done.trashed.append(original.id)
         if done.trashed:
-            each = "It" if len(done.trashed) == 1 else "Each"
-            done.notes.insert(0, f"Now in the trash: {_named(done.trashed)}. {each} {WAY_BACK}")
+            done.notes.insert(0, gone(done.trashed))
         return done
 
     async def _stopped(  # noqa: PLR0913 -- what is to be told
@@ -349,12 +429,13 @@ class Replacing:
         left = wanted.originals[index:]
         first = left[0]
         if why.unknown:
+            done.unknown = True
             note = f"It is not known whether document {first.id} went to the trash ({why.cause}). "
             note += f"If it did, it {WAY_BACK}"
             if len(left) > 1:
-                note += f" Not moved to the trash: {_named([d.id for d in left[1:]])}."
+                note += f" Not moved to the trash: {named([d.id for d in left[1:]])}."
         else:
-            note = f"Not moved to the trash: {_named([d.id for d in left])} ({why.cause})."
+            note = f"Not moved to the trash: {named([d.id for d in left])} ({why.cause})."
         done.notes.append(note)
         original = wanted.serial
         place = _Place(product.id) if moved or original is None else _Place(original.id)
@@ -370,22 +451,22 @@ class Replacing:
                 )
             else:
                 then = _finish(wanted, left, product, serial=serial)
-                done.next = f"{_if_unchanged(left)}: {then}"
+                done.next = f"{if_unchanged(left)}: {then}"
 
     async def _move(
         self, original: DocumentRecord, number: int | None, began: float
     ) -> _Stayed | None:
         """Move one original to the trash after a last look; why it is not known to be there."""
         try:
-            if self.clock() - began > LATEST_START:
+            if self.late(began):
                 return _Stayed(LATE)
-            await self._unchanged(original, number)
-        except _KeptError as kept:
+            await self.unchanged(original, number)
+        except KeptError as kept:
             return _Stayed(kept.reason)
         try:
             await self._removal.trash(original.id)
         except REFUSALS as error:
-            return _Stayed(_cause(error))
+            return _Stayed(cause(error))
         except PaperlessMcpError as error:
             try:
                 _ = await self._reader.get_document(original.id)
@@ -394,7 +475,7 @@ class Replacing:
             except PaperlessMcpError:
                 pass
             # Still there says nothing: without an answer Paperless may delete it yet.
-            return _Stayed(_cause(error), unknown=True)
+            return _Stayed(cause(error), unknown=True)
         return None
 
     async def _hand_over(
@@ -415,14 +496,14 @@ class Replacing:
             _ = await self._number(original.id, None)
             _ = await self._number(product.id, number)
         except PaperlessMcpError as error:
-            reason = NOT_MOVED.format(number=number, product=product.id, cause=_cause(error))
+            reason = NOT_MOVED.format(number=number, product=product.id, cause=cause(error))
             done.notes.append(KEPT.format(reason=reason))
             place = await self._put_back(original, product)
             _tell_place(original, product, place, done)
             if place.holder > 0 and not place.taken:
                 serial = place.holder == original.id
                 then = _finish(wanted, wanted.originals, product, serial=serial)
-                done.next = f"{_if_unchanged(wanted.originals)}: {then}"
+                done.next = f"{if_unchanged(wanted.originals)}: {then}"
             return None
         return True
 
@@ -476,6 +557,22 @@ def _tell_place(
     )
 
 
-def _noted(result: PdfResult, notes: Sequence[str], *, next_call: str | None) -> PdfResult:
+def gone(numbers: Sequence[int]) -> str:
+    """What is in the trash, and the way back."""
+    each = "It" if len(numbers) == 1 else "Each"
+    return f"Now in the trash: {named(numbers)}. {each} {WAY_BACK}"
+
+
+def stays(result: PdfResult, wanted: Replacement, reason: str, next_call: str | None) -> PdfResult:
+    """``result``, saying why the last step was not taken."""
+    notes = [wanted.kept.format(reason=reason)]
+    if result.produced_ids:
+        notes.append(f"What was made stays: {named(result.produced_ids)}.")
+    original = "kept" if len(wanted.originals) == 1 else None
+    return noted(result, notes, next_call=next_call).model_copy(update={"original": original})
+
+
+def noted(result: PdfResult, notes: Sequence[str], *, next_call: str | None) -> PdfResult:
+    """``result`` with more to its message, and its next calls."""
     message = " ".join([*([result.message] if result.message else []), *notes]) or None
     return result.model_copy(update={"message": message, "next": next_call})

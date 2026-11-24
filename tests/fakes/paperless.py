@@ -25,7 +25,7 @@ import re
 import sys
 import uuid
 from dataclasses import dataclass, field, replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Concatenate, Literal, cast
 
@@ -118,7 +118,7 @@ from mcp_server_paperless.domain.instance import (
     InstanceStatistics,
     SystemStatus,
 )
-from mcp_server_paperless.domain.pdf import StartedTasks
+from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, StartedTasks
 from mcp_server_paperless.domain.permissions import (
     GroupPage,
     GroupRow,
@@ -171,7 +171,16 @@ from mcp_server_paperless.paperless.documents import (
     unseen_version,
 )
 from mcp_server_paperless.paperless.errors import ai_disabled
-from mcp_server_paperless.paperless.pdf import edit_failed, not_editable, wrong_password
+from mcp_server_paperless.paperless.pdf import (
+    AT_ONCE,
+    NO_TIMES,
+    NO_USER,
+    PENDING,
+    TASKED,
+    edit_failed,
+    not_editable,
+    wrong_password,
+)
 from mcp_server_paperless.paperless.tasks import not_found
 from mcp_server_paperless.paperless.taxonomy import TAG_DELETE_HINT
 from mcp_server_paperless.paperless.trash import beyond_last_page as beyond_trash
@@ -507,6 +516,22 @@ class FakeDocument(Owned):
         return FakeFile(self.original, self.archive, self.content, self.mime_type, self.page_count)
 
 
+@dataclass
+class FakeCopying:
+    """A queued operation that made new documents, and what their file names start with."""
+
+    request: str
+    owner: int | None
+    started: datetime
+    family: str
+
+    @property
+    def operation(self) -> str:
+        """The operation, which its file names tell."""
+        kinds = {"_merged.pdf": "merge", "_unprotected.pdf": "remove_password"}
+        return next((v for k, v in kinds.items() if self.family.endswith(k)), "edit_pdf")
+
+
 @dataclass(kw_only=True)
 class FakeTask:
     """A background task, as `/api/tasks/` reports it.
@@ -529,6 +554,7 @@ class FakeTask:
     finished: datetime | None = None
     message: str | None = None
     document_ids: tuple[int, ...] = ()
+    file_name: str = ""
     duplicate_of: int | None = None
     trigger_source: str = "api_upload"
     acknowledged: bool = False
@@ -578,6 +604,7 @@ class FakeState:
     # The last id given to a workflow's trigger or action (a one-item list, shared by reference).
     workflow_object_id: list[int] = field(default_factory=lambda: [0])
     tasks: list[FakeTask] = field(default_factory=list[FakeTask])
+    copying: list[FakeCopying] = field(default_factory=list[FakeCopying])
     # Deleted documents, newest last; reads no longer see them, the Paperless trash does.
     trash: list[FakeDocument] = field(default_factory=list[FakeDocument])
     # Ids that restoring or emptying silently leaves in the trash (Paperless logs the error of an
@@ -1988,6 +2015,11 @@ class FakePaperless:
             )
         return StartedTasks(ids=(), expected=count, problem="forbidden")
 
+    def _unlisted(self, files: CopiedFiles) -> StartedTasks:
+        """A request for which no task is listed, and how its files are found."""
+        started = self._seen_tasks((), len(files.names))
+        return started if started.problem else started.model_copy(update={"files": files})
+
     def _hidden_by_date(self, document: FakeDocument | None) -> bool:
         """Whether Paperless cannot record the task of an operation that copies its metadata.
 
@@ -2024,8 +2056,60 @@ class FakePaperless:
         self._push(document, version_id, made, None, datetime.now(UTC))
         return version_id
 
+    def _copying(self, names: Sequence[str], included: tuple[int, ...] | None) -> CopiedFiles:
+        """Record an operation that makes new documents, and how its files are found."""
+        family = names[0].partition("_edit_")
+        made = FakeCopying(str(uuid.uuid4()), self.user.id, datetime.now(UTC), "".join(family[:2]))
+        self.state.copying.append(made)
+        return CopiedFiles(request=made.request, names=tuple(names), included=included)
+
+    @write  # a read, but of the writer port: there is nothing to find before a write
+    async def find_copies(self, files: CopiedFiles, *, final: bool = False) -> FoundCopies:
+        """`PdfWriter.find_copies`: the user's documents of these names since the request.
+
+        The fake works at once, so of the earlier operations only one for the same files can be
+        in doubt; what it made itself says nothing, because it may have had more files.
+        """
+        if not self.user.has("view_paperlesstask"):
+            raise self._denied()
+        nothing = (None,) * len(files.names)
+        if not self.user.has("view_uisettings"):
+            return FoundCopies(ids=nothing, doubt=NO_USER)
+        copying = {c.request: c for c in self.state.copying}
+        own = copying.get(files.request)
+        if own is None:
+            return FoundCopies(ids=nothing, doubt=NO_TIMES)
+        found = {
+            d.original_filename: d.id
+            for d in self.state.documents
+            if d.owner == self.user.id
+            and d.added >= own.started
+            and d.original_filename in files.names
+        }
+        mine = [c for c in copying.values() if c.owner == own.owner and c is not own]
+        if any(c.started >= own.started for c in mine):
+            return FoundCopies(ids=nothing, doubt=AT_ONCE)
+        if any(
+            t.task_type == "consume_file"
+            and t.created >= own.started
+            and t.file_name.startswith(own.family)
+            for t in self.state.tasks
+        ):
+            return FoundCopies(ids=nothing, doubt=TASKED)
+        hour = own.started - timedelta(hours=1)
+        whole = final or len(found) == len(files.names)
+        if whole and any(c.family == own.family and c.started >= hour for c in mine):
+            return FoundCopies(ids=nothing, doubt=PENDING, passing=True)
+        return FoundCopies(ids=tuple(found.get(name) for name in files.names))
+
     def _new_document(
-        self, source: FakeDocument | None, title: str, pages: int | None, content: str = ""
+        self,
+        source: FakeDocument | None,
+        title: str,
+        pages: int | None,
+        content: str = "",
+        *,
+        file_name: str,
     ) -> FakeDocument:
         """A new PDF document with the metadata of ``source``, owned by the user.
 
@@ -2037,6 +2121,8 @@ class FakePaperless:
             id=number,
             title=title,
             owner=self.user.id,
+            added=datetime.now(UTC),
+            file_name=file_name,
             page_count=pages,
             original=original,
             archive=original + b"\n%archive",
@@ -2126,7 +2212,7 @@ class FakePaperless:
 
         taken = [d for d in documents if mergeable(d)]
         if not taken:
-            return self._seen_tasks((), 1)
+            return self._unlisted(self._copying(("_merged.pdf",), None))
         source = next((d for d in documents if d.id == metadata_document_id), None)
         title = (
             f"{source.title} (merged)"
@@ -2135,10 +2221,14 @@ class FakePaperless:
         )
         # An image has no page count, its archive PDF one page.
         pages = sum(files[d.id].page_count or 1 for d in taken)
-        made = self._new_document(source, title, pages, taken[0].content)
+        joined = "_".join(str(d.id) for d in taken)
+        name = f"{joined[:100]}_merged.pdf"
+        included = tuple(d.id for d in taken) if len(joined) <= 100 else None
+        copied = self._copying((name,), included)
+        made = self._new_document(source, title, pages, taken[0].content, file_name=name)
         task = self._pdf_task("consume_file", (made.id,))
         if self._hidden_by_date(source):
-            return self._seen_tasks((), 1)
+            return self._unlisted(copied)
         return self._seen_tasks((task,), included=tuple(d.id for d in taken))
 
     @write
@@ -2172,22 +2262,25 @@ class FakePaperless:
             return self._seen_tasks(
                 (self._pdf_task("consume_file", (version,)),), sources=(document.id,)
             )
+        names = [f"{document.id}_edit_{n + 1}.pdf" for n in files]
+        copied = self._copying(names, None)
         tasks = tuple(
             self._pdf_task(
                 "consume_file",
                 (
                     self._new_document(
                         document if keep_metadata else None,
-                        document.title if keep_metadata else f"{document.id}_edit_{n + 1}",
+                        document.title if keep_metadata else name.removesuffix(".pdf"),
                         sum(1 for s in pages if s.document == n),
                         file.content,
+                        file_name=name,
                     ).id,
                 ),
             )
-            for n in files
+            for n, name in zip(files, names, strict=True)
         )
         if keep_metadata and self._hidden_by_date(document):
-            return self._seen_tasks((), len(files))
+            return self._unlisted(copied)
         return self._seen_tasks(
             tasks, len(files), sources=(document.id,) * len(files), outputs=tuple(files)
         )
@@ -2217,7 +2310,9 @@ class FakePaperless:
         # The root's file is the locked one; every version made from it is not.
         wanted = document.versions[0].id if version_id is None else version_id
         if document.password is None or wanted != document.id:
-            return self._seen_tasks((), 1)
+            if output == "new_version":
+                return self._seen_tasks((), 1)
+            return self._unlisted(self._copying((f"{document.id}_unprotected.pdf",), None))
         if document.password != password:
             raise wrong_password()
         pages = document.unlocked_pages
@@ -2226,15 +2321,18 @@ class FakePaperless:
             return self._seen_tasks(
                 (self._pdf_task("consume_file", (version,)),), sources=(document.id,)
             )
+        name = f"{document.id}_unprotected.pdf"
+        files = self._copying((name,), None)
         made = self._new_document(
             document if keep_metadata else None,
-            document.title if keep_metadata else f"{document.id}_unprotected",
+            document.title if keep_metadata else name.removesuffix(".pdf"),
             pages,
             file.content,
+            file_name=name,
         )
         task = self._pdf_task("consume_file", (made.id,))
         if keep_metadata and self._hidden_by_date(document):
-            return self._seen_tasks((), 1)
+            return self._unlisted(files)
         return self._seen_tasks((task,), sources=(document.id,))
 
     @write
@@ -3513,6 +3611,8 @@ class FakePaperless:
         target = self._find_user(user_id)
         self.state.users.remove(target)
         self._forget(user=user_id)
+        for row in self.state.copying:
+            row.owner = None if row.owner == user_id else row.owner
 
     @write
     async def create_group(self, values: GroupValues) -> GroupRecord:
@@ -3836,7 +3936,17 @@ class FakePaperless:
         document = self._sub(int(match[1])) if match else None
         tags = [(t.id, t.name) for t in self.state.tags if t.visible_to(self.user)]
         file = (document.original, document.mime_type) if document else None
-        return raw.answer(path, params, tags, file, max_bytes=max_bytes)
+        seen = [c for c in self.state.copying if c.owner in {None, self.user.id}]
+        rows: list[dict[str, object]] = [
+            {
+                "task_id": c.request,
+                "task_type": "bulk_update",
+                "owner": c.owner,
+                "input_data": {"operation": c.operation, "document_count": 1},
+            }
+            for c in seen
+        ]
+        return raw.answer(path, params, tags, file, rows, max_bytes=max_bytes)
 
     async def get_ai_suggestions(self, document_id: int) -> AiSuggestions:
         """`AiReader.get_ai_suggestions` (the `ai_suggestions` action).

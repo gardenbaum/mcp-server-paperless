@@ -61,6 +61,7 @@ if TYPE_CHECKING:
 
 # The one status of an unavailable Paperless that says the request was not taken.
 TOO_MANY: Final = 429
+LOOK: Final = "Look before repeating the call."
 NOTHING: Final = "Nothing was written."
 FEWER: Final = "Insert fewer pages."
 FORMS: Final = "A source with many form fields is faster printed to a new PDF."
@@ -431,6 +432,7 @@ class PageInserter:
         elif outcome.state == "unknown" or (outcome.state == "success" and not produced):
             found = f'get_document(document_id={target}, include=["versions"])'
             following = found if version else FIND
+            message = f"{message} {LOOK}" if outcome.state == "unknown" else message
         elif outcome.state != "success" and version:
             shows = f"Document {target} shows the file it showed before."
             message = f"{message} {shows}" if message else shows
