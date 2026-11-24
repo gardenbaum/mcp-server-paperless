@@ -26,7 +26,12 @@ do that for others that hold the same token: started with `uvx`, the `uv` proces
 and has `PAPERLESS_TOKEN` in its environment, and an MCP client keeps it in its configuration file.
 On a Linux desktop with system fonts, or on macOS and Windows, a compromised child can read those;
 on macOS and Windows the server's own environment, too. If this matters to you, run the container
-image, or switch the tools off with `PAPERLESS_MCP_DISABLED_TOOLS=get_document_pages,inspect_pdf`.
+image, or switch the tools off with `PAPERLESS_MCP_DISABLED_TOOLS=get_document_pages,inspect_pdf,insert_pages`.
+
+`insert_pages` uses the same child process to put two PDFs together and uploads what it made. A
+compromised child could alter that file. The server checks that it is a PDF of the right number of
+pages and size, not what is on them; the earlier version stays in Paperless. Links, annotations and
+their actions come along with the inserted pages.
 
 Vulnerability scanners do not report PDFium's vulnerabilities for pypdfium2. This repository checks
 weekly whether the newest release is locked; keep the server up to date.

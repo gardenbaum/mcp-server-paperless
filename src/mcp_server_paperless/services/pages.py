@@ -5,6 +5,7 @@ nothing is written to the host (decision-7, decision-42).
 """
 
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Final
 
@@ -30,7 +31,7 @@ from mcp_server_paperless.services.documents import document_link, listed_versio
 from mcp_server_paperless.services.page_ranges import describe, parse_pages, specification
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Collection
+    from collections.abc import AsyncGenerator, Awaitable, Callable, Collection
 
     from mcp_server_paperless.domain.documents import FileMetadata, FileVersion
     from mcp_server_paperless.domain.ports import DocumentReader
@@ -95,7 +96,8 @@ def _other(
     return "archive" if metadata.has_archive_version and not metadata.lacks("archive") else None
 
 
-def _size(size: int) -> str:
+def named_size(size: int) -> str:
+    """A size in words."""
     return f"{size // _MIB} MiB" if size >= _MIB else f"{size} bytes"
 
 
@@ -184,7 +186,7 @@ class _File:
 
     def too_large(self, limit: int) -> PaperlessMcpError:
         """The file is over ``limit`` bytes."""
-        message = f"{self._named} is over {_size(limit)}, the most that is rendered."
+        message = f"{self._named} is over {named_size(limit)}, the most that is rendered."
         return PaperlessMcpError(message, hint=self._elsewhere)
 
     def missing(self) -> PaperlessMcpError:
@@ -294,6 +296,25 @@ def _choose(
     raise Validation(message, hint=hint)
 
 
+@asynccontextmanager
+async def taking(turn: asyncio.Semaphore, seconds: float) -> AsyncGenerator[None]:
+    """Hold the turn of the renderer, waiting at most ``seconds`` for it.
+
+    Raises:
+        PaperlessMcpError: Another document kept it.
+    """
+    try:
+        async with asyncio.timeout(seconds):
+            _ = await turn.acquire()
+    except TimeoutError:
+        message = "Another document is being rendered."
+        raise PaperlessMcpError(message, hint=BUSY_HINT) from None
+    try:
+        yield
+    finally:
+        turn.release()
+
+
 class PageService:
     """Shows pages of the documents the current user may see."""
 
@@ -306,10 +327,12 @@ class PageService:
         max_bytes: int = MAX_SOURCE_BYTES,
         wait_seconds: float = WAIT_SECONDS,
         download_seconds: float = DOWNLOAD_SECONDS,
+        turn: asyncio.Semaphore | None = None,
     ) -> None:
         """Read files through ``reader`` and draw them with ``renderer``.
 
-        ``web_url`` is the base of links to the Paperless UI.
+        ``web_url`` is the base of links to the Paperless UI; ``turn`` is shared with whatever
+        else uses the renderer.
         """
         self._reader: DocumentReader = reader
         self._renderer: PageRenderer = renderer
@@ -318,7 +341,7 @@ class PageService:
         self._wait_seconds: float = wait_seconds
         self._download_seconds: float = download_seconds
         # One at a time, the download included: it bounds the memory of this process.
-        self._turn: asyncio.Semaphore = asyncio.Semaphore(1)
+        self._turn: asyncio.Semaphore = turn or asyncio.Semaphore(1)
 
     async def show(  # noqa: PLR0913 -- the choices of one call
         self,
@@ -461,16 +484,8 @@ class PageService:
         self, file: _File, pages: str, work: Callable[[bytes], Awaitable[T]]
     ) -> tuple[str | None, T]:
         """The name Paperless proposes for the file, and what ``work`` makes of it."""
-        try:
-            async with asyncio.timeout(self._wait_seconds):
-                _ = await self._turn.acquire()
-        except TimeoutError:
-            message = "Another document is being rendered."
-            raise PaperlessMcpError(message, hint=BUSY_HINT) from None
-        try:
+        async with taking(self._turn, self._wait_seconds):
             return await self._worked(file, pages, work)
-        finally:
-            self._turn.release()
 
     async def _worked[T](
         self, file: _File, pages: str, work: Callable[[bytes], Awaitable[T]]

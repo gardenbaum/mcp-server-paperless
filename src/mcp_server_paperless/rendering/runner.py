@@ -14,13 +14,22 @@ from typing import TYPE_CHECKING, Final, cast
 
 from mcp_server_paperless.domain.rendering import OverviewRequest, RenderFailed
 from mcp_server_paperless.rendering.limits import MEMORY_EXIT, TIME_EXIT
-from mcp_server_paperless.rendering.wire import Job, answer_of, encoded, overview_of, started_page
+from mcp_server_paperless.rendering.wire import (
+    Job,
+    answer_of,
+    assembled_of,
+    encoded,
+    overview_of,
+    started_page,
+)
 
 if TYPE_CHECKING:
     from asyncio import StreamReader, StreamWriter
     from collections.abc import Mapping, Sequence
 
     from mcp_server_paperless.domain.rendering import (
+        Assembled,
+        AssembleRequest,
         Overview,
         Reason,
         Rendered,
@@ -50,14 +59,15 @@ def child_environment(platform: str, environment: Mapping[str, str]) -> dict[str
     return {}
 
 
-async def _feed(stdin: StreamWriter, head: bytes, content: bytes) -> None:
+async def _feed(stdin: StreamWriter, head: bytes, contents: Sequence[bytes]) -> None:
     """Send the job; a child that ends early is noticed by its exit code."""
     with contextlib.suppress(ConnectionError):
         stdin.write(head)
-        view = memoryview(content)
-        for start in range(0, len(view), _CHUNK):
-            stdin.write(view[start : start + _CHUNK])
-            await stdin.drain()
+        for content in contents:
+            view = memoryview(content)
+            for start in range(0, len(view), _CHUNK):
+                stdin.write(view[start : start + _CHUNK])
+                await stdin.drain()
         stdin.close()
 
 
@@ -69,7 +79,9 @@ async def _collect(stdout: StreamReader, limit: int, output: bytearray) -> None:
             raise RenderFailed(reason="crashed")
 
 
-def _slow(output: bytearray, request: RenderRequest | OverviewRequest) -> SlowPage | None:
+def _slow(
+    output: bytearray, request: RenderRequest | OverviewRequest | AssembleRequest
+) -> SlowPage | None:
     """The page a child was at, if its job is one that says so."""
     if isinstance(request, OverviewRequest):
         return started_page(bytes(output), request)
@@ -95,17 +107,47 @@ class ChildRenderer:
 
     async def render(self, content: bytes, request: RenderRequest) -> Rendered:
         """See ``PageRenderer.render``."""
-        return answer_of(await self._answered(content, request), request)
+        return answer_of(await self._answered([content], request), request)
 
     async def inspect(self, content: bytes, request: OverviewRequest) -> Overview:
         """See ``PageRenderer.inspect``."""
-        return overview_of(await self._answered(content, request), request)
+        return overview_of(await self._answered([content], request), request)
 
-    async def _answered(self, content: bytes, request: RenderRequest | OverviewRequest) -> bytes:
+    async def assemble(self, target: bytes, source: bytes, request: AssembleRequest) -> Assembled:
+        """See ``PageRenderer.assemble``; both children together have the seconds of a call."""
+        try:
+            async with asyncio.timeout(self._seconds):
+                output = await self._answered(
+                    [target, source], request, self._output_bytes + request.max_bytes
+                )
+                made = assembled_of(output, request)
+                del output
+                await self._require_pages(made, request)
+        except TimeoutError as error:
+            raise RenderFailed(reason="timeout") from error
+        return made
+
+    async def _require_pages(self, made: Assembled, request: AssembleRequest) -> None:
+        """Have the pages counted by a child that knows nothing but the result."""
+        try:
+            found = await self.inspect(made.content, OverviewRequest(pages="1", sheets=False))
+        except RenderFailed as failure:
+            limit = failure.reason in {"timeout", "memory"}
+            raise RenderFailed(reason=failure.reason if limit else "crashed") from failure
+        if found.page_count != request.target_pages + len(made.inserted):
+            raise RenderFailed(reason="crashed")
+
+    async def _answered(
+        self,
+        contents: Sequence[bytes],
+        request: RenderRequest | OverviewRequest | AssembleRequest,
+        output_bytes: int | None = None,
+    ) -> bytes:
         """What the child writes for a job."""
         head = Job(
             request=request,
-            content_bytes=len(content),
+            content_bytes=sum(map(len, contents)),
+            first_bytes=len(contents[0]),
             memory_bytes=self._memory_bytes,
             seconds=self._seconds,
         )
@@ -128,10 +170,10 @@ class ChildRenderer:
         # Both are pipes, as asked for.
         stdin, stdout = cast("StreamWriter", process.stdin), cast("StreamReader", process.stdout)
         output = bytearray()
-        feed = asyncio.create_task(_feed(stdin, encoded(head), content))
+        feed = asyncio.create_task(_feed(stdin, encoded(head), contents))
         try:
             async with asyncio.timeout(self._seconds):
-                await _collect(stdout, self._output_bytes, output)
+                await _collect(stdout, output_bytes or self._output_bytes, output)
                 code = await process.wait()
         except TimeoutError as error:
             raise RenderFailed(reason="timeout", slow=_slow(output, request)) from error

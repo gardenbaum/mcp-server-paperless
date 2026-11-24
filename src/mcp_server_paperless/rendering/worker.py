@@ -1,7 +1,7 @@
-"""Render pages of one file: the program of the child process, and the function behind it.
+"""Render pages of one file, or put pages of two together: the program of the child process.
 
-The file is untrusted: PDFium and Pillow read it with native code. `runner` starts this module in
-a process of its own for each call and bounds it.
+The functions behind it are here, too. The files are untrusted: PDFium and Pillow read them with
+native code. `runner` starts this module in a process of its own for each call and bounds it.
 """
 
 import ctypes
@@ -27,6 +27,8 @@ from mcp_server_paperless.domain.rendering import (
     MAX_PAGES,
     MAX_RUNS,
     TILES,
+    Assembled,
+    AssembleRequest,
     ContactSheet,
     Overview,
     OverviewRequest,
@@ -629,6 +631,90 @@ def overview(  # noqa: PLR0913 -- the file, the job, and one keyword per seam
     )
 
 
+def _plain(
+    content: bytes, open_pdf: Callable[[bytes], pypdfium2.PdfDocument], *, of_source: bool
+) -> pypdfium2.PdfDocument:
+    """A PDF to take apart, which must not be encrypted.
+
+    Without its form: that would change it. One that opens without a password but restricts what
+    may be done with it counts as encrypted, too: it would lose that, or pass it on.
+    """
+    try:
+        pdf = open_pdf(content)
+        encrypted = pypdfium2.raw.FPDF_GetSecurityHandlerRevision(pdf) >= 0
+    except pypdfium2.PdfiumError as error:
+        reason: Reason = PDF_ERRORS.get(error.err_code, "damaged")
+        raise RenderFailed(reason=reason, of_source=of_source) from error
+    if encrypted:
+        raise RenderFailed(reason="restricted", of_source=of_source)
+    return pdf
+
+
+def assemble(
+    target: bytes,
+    source: bytes,
+    request: AssembleRequest,
+    open_pdf: Callable[[bytes], pypdfium2.PdfDocument] = pypdfium2.PdfDocument,
+) -> Assembled:
+    """``target`` with the pages ``request`` asks for from ``source``.
+
+    Raises:
+        RenderFailed: A file cannot be read, has no such page, or the result is too large.
+    """
+    into = _plain(target, open_pdf, of_source=False)
+    if len(into) != request.target_pages:
+        raise RenderFailed(reason="differs")
+    origin = _plain(source, open_pdf, of_source=True)
+    try:
+        pages = _pages(len(origin), request.pages)
+    except RenderFailed as failure:
+        failure.of_source = True
+        raise
+    if len(into) + len(pages) > MAX_PAGES:
+        raise RenderFailed(reason="count")
+    of_source = False
+    try:
+        # Importing next to a page that is not there crashes PDFium.
+        for number in range(len(into)):
+            _ = into.get_page_size(number)
+        of_source = True
+        sizes = [origin.get_page_size(page - 1) for page in pages]
+        into.import_pages(origin, [page - 1 for page in pages], request.after_page)
+        for place, (page, size) in enumerate(zip(pages, sizes, strict=True), request.after_page):
+            made, original = into[place], origin[page - 1]
+            # What the page does not say itself it would take from the pages around it.
+            made.set_rotation(original.get_rotation())
+            made.set_cropbox(*made.get_cropbox())
+            if made.get_size() != size:
+                raise RenderFailed(reason="damaged", of_source=True)
+            made.close()
+            original.close()
+        if len(into) != request.target_pages + len(pages):
+            raise RenderFailed(reason="damaged", of_source=True)
+        buffer = io.BytesIO()
+        into.save(buffer)
+    except pypdfium2.PdfiumError as error:
+        raise RenderFailed(reason="damaged", of_source=of_source) from error
+    if buffer.tell() > request.max_bytes:
+        raise RenderFailed(reason="large")
+    return Assembled(content=buffer.getvalue(), source_pages=len(origin), inserted=tuple(pages))
+
+
+def _work(
+    job: Job, started: float, announce: Callable[[bytes], None]
+) -> Callable[[bytes], Rendered | Overview | Assembled]:
+    """What makes the answer of a job out of what follows it."""
+    request = job.request
+    if isinstance(request, OverviewRequest):
+        return partial(
+            overview, request=request, font=label_font(), started=started, announce=announce
+        )
+    if isinstance(request, AssembleRequest):
+        first = job.first_bytes
+        return lambda content: assemble(content[:first], content[first:], request)
+    return partial(render, request=request)
+
+
 def main(stdin: BinaryIO, stdout: BinaryIO, guard: Callable[[int, float], None]) -> int:
     """Render the job on ``stdin`` and write the answer to ``stdout``; returns the exit code.
 
@@ -645,19 +731,14 @@ def main(stdin: BinaryIO, stdout: BinaryIO, guard: Callable[[int, float], None])
     _ = Image.init()
     _ = Image.new("LAB", (1, 1)).convert("RGB")
     job = Job.model_validate_json(stdin.readline())
-    request = job.request
-    work: Callable[[bytes], Rendered | Overview] = (
-        partial(overview, request=request, font=label_font(), started=started, announce=announce)
-        if isinstance(request, OverviewRequest)
-        else partial(render, request=request)
-    )
+    work = _work(job, started, announce)
     try:
         guard(job.memory_bytes, job.seconds)
         content = stdin.read(job.content_bytes)
         if len(content) < job.content_bytes:
             return 1  # the server went away
         try:
-            found: Rendered | Overview | RenderFailed = work(content)
+            found: Rendered | Overview | Assembled | RenderFailed = work(content)
         except RenderFailed as failure:
             found = failure
         _ = stdout.write(answer(found))

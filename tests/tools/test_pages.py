@@ -17,7 +17,13 @@ from mcp_server_paperless.domain.rendering import Overview, PageImage, Rendered
 if TYPE_CHECKING:
     from mcp.types import ContentBlock
 
-    from mcp_server_paperless.domain.rendering import OverviewRequest, PageRenderer, RenderRequest
+    from mcp_server_paperless.domain.rendering import (
+        Assembled,
+        AssembleRequest,
+        OverviewRequest,
+        PageRenderer,
+        RenderRequest,
+    )
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-42")]
 
@@ -41,6 +47,9 @@ class Renderer:
 
     async def inspect(self, content: bytes, request: OverviewRequest) -> Overview:
         raise AssertionError((content, request))
+
+    async def assemble(self, target: bytes, source: bytes, request: AssembleRequest) -> Assembled:
+        raise AssertionError((target, source, request))
 
 
 def fake(original: bytes, mime_type: str = "application/pdf") -> FakePaperless:

@@ -40,7 +40,17 @@ MAX_SIDE_MM: Final = 10_000_000.0
 # Left, top, right and bottom edge, as fractions of the page as shown.
 type Region = tuple[float, float, float, float]
 type Reason = Literal[
-    "encrypted", "damaged", "pixels", "pages", "count", "timeout", "memory", "crashed"
+    "encrypted",
+    "restricted",
+    "damaged",
+    "differs",
+    "pixels",
+    "pages",
+    "count",
+    "large",
+    "timeout",
+    "memory",
+    "crashed",
 ]
 
 
@@ -164,6 +174,35 @@ class Overview(BaseModel):
     rest: tuple[int, ...] = ()
 
 
+class AssembleRequest(BaseModel):
+    """Which pages of one PDF go where in another.
+
+    Attributes:
+        pages: Page specification of the PDF the pages come from (see ``services.page_ranges``).
+        after_page: The page of the target they follow; 0 puts them in front.
+        target_pages: How many pages the target has; a file read differently is not touched.
+        max_bytes: The largest result.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    kind: Literal["assemble"] = "assemble"
+    pages: str
+    after_page: int
+    target_pages: int
+    max_bytes: int
+
+
+class Assembled(BaseModel):
+    """The target with the pages in it, which pages these are, and how many the source has."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    content: bytes = Field(repr=False)
+    source_pages: int
+    inserted: tuple[int, ...]
+
+
 class SlowPage(NamedTuple):
     """The page a job was at when its time was over.
 
@@ -185,6 +224,7 @@ class RenderFailed(Exception):  # noqa: N818 -- an outcome, as the names of doma
         page_count: How many pages the file has, if the page specification is wrong.
         megapixels: How large the image is, if it is too large.
         slow: The page it was at when the time was over, if it is known.
+        of_source: Of two files, it is about the one the pages come from.
     """
 
     def __init__(
@@ -194,6 +234,7 @@ class RenderFailed(Exception):  # noqa: N818 -- an outcome, as the names of doma
         page_count: int = 0,
         megapixels: float = 0.0,
         slow: SlowPage | None = None,
+        of_source: bool = False,
     ) -> None:
         """Create the failure. No text in it: the file and the child that reads it are untrusted."""
         super().__init__(reason)
@@ -201,6 +242,7 @@ class RenderFailed(Exception):  # noqa: N818 -- an outcome, as the names of doma
         self.page_count: int = page_count
         self.megapixels: float = megapixels
         self.slow: SlowPage | None = slow
+        self.of_source: bool = of_source
 
 
 class PageRenderer(Protocol):
@@ -219,6 +261,14 @@ class PageRenderer(Protocol):
 
         Raises:
             RenderFailed: See ``render``.
+        """
+        ...
+
+    async def assemble(self, target: bytes, source: bytes, request: AssembleRequest) -> Assembled:
+        """``target`` with pages of ``source`` in it, counted again in the result.
+
+        Raises:
+            RenderFailed: See ``render``; or the result does not hold the pages it should.
         """
         ...
 

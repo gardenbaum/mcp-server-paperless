@@ -12080,6 +12080,320 @@
         }),
       }),
       'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': False,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Insert pages',
+      }),
+      'description': '''
+        Insert pages of one document into a PDF, at any place.
+        
+        This server puts the files together and uploads the result once: until then nothing is
+        written, and if either document got another file meanwhile nothing is. All pages stay, so no
+        confirm is needed. As a new version the document keeps its metadata and everybody who may see
+        it can read the inserted pages. A new document takes title, correspondent, type, storage path,
+        tags, date and custom fields of document_id, but no grants, notes or archive serial number, and
+        belongs to you. The file of document_id keeps its bookmarks, attachments and form fields; a
+        signature in it is no longer valid. The inserted pages keep their links and annotations
+        and lose their bookmarks, attachments and working form fields; a hidden layer of theirs can
+        become visible. Of a source
+        that is not a PDF the archive PDF is used. Encrypted and damaged files are refused; both files
+        together may have 100 MiB. Page numbers count from 1. Needs the permission to add documents, for
+        a new version also the permission to change documents and a change grant on (or ownership of)
+        document_id, and a view of the source. If the outcome is not known, look at the document before
+        repeating the call: it would insert the pages again.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'after_page': dict({
+            'description': 'Page of document_id they follow; 0: in front; last: at the end.',
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          'document_id': dict({
+            'description': 'Document id, from search_documents.',
+            'type': 'integer',
+          }),
+          'dry_run': dict({
+            'default': False,
+            'description': 'true checks everything and returns the plan; nothing is started.',
+            'type': 'boolean',
+          }),
+          'output': dict({
+            'default': 'new_version',
+            'description': 'new_version: document_id shows the longer file, the older version stays; new_document: both documents stay and a copy with the pages is made.',
+            'enum': list([
+              'new_document',
+              'new_version',
+            ]),
+            'type': 'string',
+          }),
+          'pages': dict({
+            'default': '1-',
+            'description': 'Pages of the source in the order to insert, like 3, 2-5,8 or 4-.',
+            'maxLength': 200,
+            'type': 'string',
+          }),
+          'source_document_id': dict({
+            'description': 'Document the pages come from; it is never changed.',
+            'type': 'integer',
+          }),
+          'source_version_id': dict({
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Version of the source to read; left out: the newest.',
+          }),
+          'wait_seconds': dict({
+            'default': 0,
+            'description': 'Wait up to this many seconds for the tasks Paperless starts and return their outcome; more than 30 is cut to 30. 0 returns at once with the task ids; follow them with get_task.',
+            'minimum': 0,
+            'type': 'integer',
+          }),
+        }),
+        'required': list([
+          'document_id',
+          'source_document_id',
+          'after_page',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'insert_pages',
+      'outputSchema': dict({
+        'description': 'A PDF operation Paperless accepted, the tasks it started and, if waited for, the outcome.',
+        'properties': dict({
+          'dry_run': dict({
+            'description': 'true: a preview, nothing was started.',
+            'type': 'boolean',
+          }),
+          'message': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Why a task failed, the state is unknown or an original stays.',
+          }),
+          'next': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The calls that finish what was left, as a suggestion.',
+          }),
+          'operation': dict({
+            'description': 'What was asked, e.g. rotate or merge.',
+            'type': 'string',
+          }),
+          'plan': dict({
+            'description': 'What an operation makes, what stays and what is lost; known before it runs.',
+            'properties': dict({
+              'keeps': dict({
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'loses': dict({
+                'description': 'What the result does not have, or no longer shows.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              'needs_confirm': dict({
+                'type': 'boolean',
+              }),
+              'produces': dict({
+                'type': 'string',
+              }),
+            }),
+            'required': list([
+              'produces',
+              'keeps',
+              'loses',
+              'needs_confirm',
+            ]),
+            'type': 'object',
+          }),
+          'produced_ids': dict({
+            'description': 'The documents the finished tasks produced: new documents, or for a new version the id of that version (the document keeps its id). Empty while tasks run; reprocessing produces none.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
+          'produced_links': dict({
+            'description': 'Links to the produced documents; for a new version the link of the document that got it.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'source_document_ids': dict({
+            'description': 'The documents the operation worked on.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
+          'source_links': dict({
+            'description': 'Links to the source documents in the Paperless web UI.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+          'state': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'enum': list([
+                      'pending',
+                      'started',
+                      'success',
+                      'failure',
+                      'revoked',
+                    ]),
+                    'type': 'string',
+                  }),
+                  dict({
+                    'const': 'unknown',
+                    'type': 'string',
+                  }),
+                ]),
+              }),
+              dict({
+                'const': 'not_started',
+                'type': 'string',
+              }),
+            ]),
+            'description': 'not_started: a preview. The tasks together: failure or revoked if one did, else started or pending if one still runs, else success. unknown when not all expected tasks could be found or read: Paperless accepted the request all the same (the user may not view tasks, or the work is not yet visible); see message.',
+          }),
+          'summary': dict({
+            'description': 'What Paperless was asked to do, in words.',
+            'type': 'string',
+          }),
+          'tasks': dict({
+            'items': dict({
+              'description': 'One Paperless task an operation started and how far it is.',
+              'properties': dict({
+                'document_ids': dict({
+                  'description': 'The document or version the task produced, once it succeeded.',
+                  'items': dict({
+                    'type': 'integer',
+                  }),
+                  'type': 'array',
+                }),
+                'message': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Why the task failed; null otherwise.',
+                }),
+                'state': dict({
+                  'anyOf': list([
+                    dict({
+                      'enum': list([
+                        'pending',
+                        'started',
+                        'success',
+                        'failure',
+                        'revoked',
+                      ]),
+                      'type': 'string',
+                    }),
+                    dict({
+                      'const': 'unknown',
+                      'type': 'string',
+                    }),
+                  ]),
+                  'description': 'pending, started, success, failure, revoked, or unknown when the task could not be read.',
+                }),
+                'task_id': dict({
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'task_id',
+                'state',
+                'message',
+                'document_ids',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'trashed_ids': dict({
+            'description': 'The originals this call moved to the Paperless trash, after it checked that everything was made; empty if it kept them.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
+          'wait': dict({
+            'enum': list([
+              'not_requested',
+              'finished',
+              'timed_out',
+            ]),
+            'type': 'string',
+          }),
+          'waited_seconds': dict({
+            'type': 'number',
+          }),
+        }),
+        'required': list([
+          'operation',
+          'summary',
+          'dry_run',
+          'plan',
+          'source_document_ids',
+          'state',
+          'message',
+          'source_links',
+          'tasks',
+          'produced_ids',
+          'produced_links',
+          'trashed_ids',
+          'next',
+          'wait',
+          'waited_seconds',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Insert pages',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'pdf',
+          ]),
+        }),
+      }),
+      'annotations': dict({
         'idempotentHint': True,
         'openWorldHint': False,
         'readOnlyHint': True,

@@ -15,6 +15,8 @@ from mcp_server_paperless.domain.rendering import (
     MAX_PAGES,
     MAX_RUNS,
     TILES,
+    Assembled,
+    AssembleRequest,
     ContactSheet,
     Overview,
     OverviewRequest,
@@ -34,10 +36,13 @@ type Positive = Annotated[int, Field(ge=1)]
 
 
 class Job(BaseModel):
-    """What the child is sent, followed by the file."""
+    """What the child is sent, followed by the file, or the target and the source of a new one."""
 
-    request: Annotated[RenderRequest | OverviewRequest, Field(discriminator="kind")]
+    request: Annotated[
+        RenderRequest | OverviewRequest | AssembleRequest, Field(discriminator="kind")
+    ]
     content_bytes: int
+    first_bytes: int = 0
     memory_bytes: int
     seconds: float
 
@@ -64,9 +69,10 @@ class _Sheet(BaseModel):
 
 
 class _Answer(BaseModel):
-    """What the child answers, followed by the images, or why there are none."""
+    """What the child answers, followed by the images or the file, or why there are none."""
 
     failure: Reason | None = None
+    of_source: bool = False
     megapixels: float = 0.0
     # The server walks the pages of a specification: a claim must not make it walk for ever.
     page_count: Annotated[int, Field(ge=0, le=MAX_PAGES)] = 0
@@ -80,13 +86,18 @@ def encoded(head: BaseModel) -> bytes:
     return head.model_dump_json().encode() + b"\n"
 
 
-def answer(found: Rendered | Overview | RenderFailed) -> bytes:
+def answer(found: Rendered | Overview | Assembled | RenderFailed) -> bytes:
     """What the child writes."""
     if isinstance(found, RenderFailed):
         head = _Answer(
-            failure=found.reason, megapixels=found.megapixels, page_count=found.page_count
+            failure=found.reason,
+            megapixels=found.megapixels,
+            page_count=found.page_count,
+            of_source=found.of_source,
         )
         return encoded(head)
+    if isinstance(found, Assembled):
+        return encoded(_Answer(page_count=found.source_pages)) + found.content
     if isinstance(found, Overview):
         head = _Answer(
             page_count=found.page_count,
@@ -169,11 +180,14 @@ def _read(output: bytes, pages: str) -> tuple[_Answer, list[int], bytes]:
         # Right if the child says so too; without a page count it is another failure.
         reason = head.failure or "crashed"
         raise RenderFailed(
-            reason=reason, page_count=head.page_count, megapixels=head.megapixels
+            reason=reason,
+            page_count=head.page_count,
+            megapixels=head.megapixels,
+            of_source=head.of_source,
         ) from error
     if head.failure:
         reason = "crashed" if head.failure == "pages" else head.failure
-        raise RenderFailed(reason=reason, megapixels=head.megapixels)
+        raise RenderFailed(reason=reason, megapixels=head.megapixels, of_source=head.of_source)
     return head, wanted, data
 
 
@@ -257,3 +271,15 @@ def overview_of(output: bytes, request: OverviewRequest) -> Overview:
         ),
         rest=tuple(wanted[shown[-1] :]) if shown else (),
     )
+
+
+def assembled_of(output: bytes, request: AssembleRequest) -> Assembled:
+    """What the child answered to ``request``; whether it holds its pages is another question.
+
+    Raises:
+        RenderFailed: The failure it answered, or the answer does not fit the request.
+    """
+    head, wanted, data = _read(output, request.pages)
+    if not data.startswith(b"%PDF-") or len(data) > request.max_bytes:
+        raise RenderFailed(reason="crashed")
+    return Assembled(content=data, source_pages=head.page_count, inserted=tuple(wanted))

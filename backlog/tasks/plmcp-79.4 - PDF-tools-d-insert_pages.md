@@ -1,9 +1,11 @@
 ---
 id: PLMCP-79.4
 title: 'PDF tools d: insert_pages'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T08:51:17Z'
+updated_date: '2026-11-24T13:24:27Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -34,3 +36,13 @@ Fourth part of PLMCP-79 (design approved by the owner on 2026-11-24 (all 14 deci
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Rendering: job kind assemble (worker, wire, runner), tests red first.
+2. Service pdf_insert on the turn of PageService: checks, downloads, plan, dry run, re-read, one upload, outcome.
+3. Tool insert_pages, annotations, guide limit, snapshot, docs, coverage tables.
+4. Decision (by CLI) that extends decision-42 and reads decision-47 for this tool.
+5. Contract and E2E tests, read from CI; hosted full E2E; notes.
+<!-- SECTION:PLAN:END -->

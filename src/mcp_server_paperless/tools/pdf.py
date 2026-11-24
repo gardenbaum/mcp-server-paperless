@@ -5,8 +5,9 @@ runs as background tasks: every tool returns them (``wait_seconds`` waits for th
 usual bound). Making new documents, and adding a version that keeps every page, change nothing
 that exists; deleting originals, dropping pages from what a document shows, going back to an older
 file and reprocessing do, so they need ``confirm`` (decision-6, decision-15). Every writing tool has
-``dry_run``, which returns the plan and starts nothing. ``inspect_pdf`` only reads. Page numbers
-count from 1.
+``dry_run``, which returns the plan and starts nothing. ``inspect_pdf`` only reads.
+``insert_pages`` is built by this server, because Paperless cannot (decision-68). Page numbers count
+from 1.
 """
 
 from typing import Annotated, Literal
@@ -17,7 +18,7 @@ from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from mcp_server_paperless.domain.documents import FileVersion
-from mcp_server_paperless.domain.pdf import Output, PageSlot, PdfResult
+from mcp_server_paperless.domain.pdf import FileOutput, Output, PageSlot, PdfResult
 from mcp_server_paperless.services.page_ranges import specification
 from mcp_server_paperless.services.pages import MAX_SPECIFICATION
 from mcp_server_paperless.services.pdf import MAX_DOCUMENTS, MAX_PAGES, MAX_PARTS, Options
@@ -159,6 +160,70 @@ async def inspect_pdf(  # noqa: PLR0913 -- the file, the pages and what is shown
             (f"Contact sheet: pages {specification(sheet.pages)} of {count}", sheet.data)
             for sheet in found.sheets
         ],
+    )
+
+
+@provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["insert_pages"])
+@boundary
+async def insert_pages(  # noqa: PLR0913 -- the two documents, the place and the options
+    ctx: Context,
+    document_id: DocumentId,
+    source_document_id: Annotated[
+        int, Field(description="Document the pages come from; it is never changed.")
+    ],
+    after_page: Annotated[
+        int,
+        Field(ge=0, description="Page of document_id they follow; 0: in front; last: at the end."),
+    ],
+    pages: Annotated[
+        str,
+        Field(
+            max_length=MAX_SPECIFICATION,
+            description="Pages of the source in the order to insert, like 3, 2-5,8 or 4-.",
+        ),
+    ] = "1-",
+    *,
+    source_version_id: Annotated[
+        int | None, Field(description="Version of the source to read; left out: the newest.")
+    ] = None,
+    output: Annotated[
+        FileOutput,
+        Field(
+            description=(
+                "new_version: document_id shows the longer file, the older version stays; "
+                "new_document: both documents stay and a copy with the pages is made."
+            )
+        ),
+    ] = "new_version",
+    dry_run: DryRun = False,
+    wait_seconds: Wait = 0,
+) -> PdfResult:
+    """Insert pages of one document into a PDF, at any place.
+
+    This server puts the files together and uploads the result once: until then nothing is
+    written, and if either document got another file meanwhile nothing is. All pages stay, so no
+    confirm is needed. As a new version the document keeps its metadata and everybody who may see
+    it can read the inserted pages. A new document takes title, correspondent, type, storage path,
+    tags, date and custom fields of document_id, but no grants, notes or archive serial number, and
+    belongs to you. The file of document_id keeps its bookmarks, attachments and form fields; a
+    signature in it is no longer valid. The inserted pages keep their links and annotations
+    and lose their bookmarks, attachments and working form fields; a hidden layer of theirs can
+    become visible. Of a source
+    that is not a PDF the archive PDF is used. Encrypted and damaged files are refused; both files
+    together may have 100 MiB. Page numbers count from 1. Needs the permission to add documents, for
+    a new version also the permission to change documents and a change grant on (or ownership of)
+    document_id, and a view of the source. If the outcome is not known, look at the document before
+    repeating the call: it would insert the pages again.
+    """
+    return await services(ctx).insertion.insert(
+        document_id,
+        source_document_id,
+        pages,
+        after_page,
+        source_version_id=source_version_id,
+        output=output,
+        dry_run=dry_run,
+        wait_seconds=wait_seconds,
     )
 
 

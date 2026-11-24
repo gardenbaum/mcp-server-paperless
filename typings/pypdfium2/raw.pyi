@@ -1,12 +1,14 @@
-# The part of PDFium's C interface the renderer uses.
+# The part of PDFium's C interface the renderer and its tests use.
 
 from typing import Final
 
-from pypdfium2 import PdfBitmap, PdfFormEnv, PdfPage
+from pypdfium2 import PdfBitmap, PdfDocument, PdfFormEnv, PdfPage
 
 FPDFBitmap_BGR: Final[int]
 FPDF_ANNOT: Final[int]
 
+def FPDF_GetSecurityHandlerRevision(document: PdfDocument) -> int: ...
+def FPDFDoc_GetAttachmentCount(document: PdfDocument) -> int: ...
 def FPDF_RenderPageBitmap(
     bitmap: PdfBitmap,
     page: PdfPage,

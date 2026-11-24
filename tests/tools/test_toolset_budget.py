@@ -49,8 +49,9 @@ INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut 
 # upload_documents (PLMCP-85) and 21 of resolve_duplicates (PLMCP-86) over the 2758 of HTTP before,
 # both approved by the owner on 2026-11-23; and 37 of get_trash_entry and get_trashed_file
 # (PLMCP-78), approved by the owner on 2026-11-24; and 14 of inspect_pdf
-# (PLMCP-79.2): the owner approved on 2026-11-24 at most 2880 for the three tools of PLMCP-79.
-OVERVIEW_GUIDE_LIMIT = 2849
+# (PLMCP-79.2) and 15 of insert_pages (PLMCP-79.4): the owner approved on 2026-11-24 at most 2880
+# for the three tools of PLMCP-79.
+OVERVIEW_GUIDE_LIMIT = 2864
 # Measured 879: 747 before, plus 132 of too_old (PLMCP-101); the rise from 750 was approved by the
 # owner on 2026-11-24.
 DEFINITION_ADDED_LIMIT = 879
