@@ -40,6 +40,7 @@ pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-47")]
 
 WEB = "https://paperless.example"
 FILE = pdf("the same file")
+HIDDEN_ID = 4_711_000_000_000  # 13 digits: no task id or timestamp holds them by chance
 
 
 class Setup:
@@ -335,7 +336,7 @@ async def test_a_rejected_version_names_no_version() -> None:
 async def test_a_rejection_for_a_hidden_document_never_names_it() -> None:
     state = seeded()
     state.delete_duplicates = True
-    state.documents.append(FakeDocument(id=4711, title="Secret", owner=2, original=FILE))
+    state.documents.append(FakeDocument(id=HIDDEN_ID, title="Secret", owner=2, original=FILE))
     for user in state.users:
         if user.username == READER[0]:
             extra = {"add_document", "view_paperlesstask"}
@@ -350,7 +351,7 @@ async def test_a_rejection_for_a_hidden_document_never_names_it() -> None:
     report = await setup.tasks.get(result.task_id, duplicates=True)
 
     for text in (result.model_dump_json(), report.model_dump_json()):
-        assert "4711" not in text
+        assert str(HIDDEN_ID) not in text
         assert "Secret" not in text
     assert (result.state, result.message) == ("failure", HIDDEN_REJECTED)
 
