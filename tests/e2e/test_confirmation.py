@@ -39,6 +39,7 @@ CASES: tuple[tuple[Entry, Mode], ...] = (
 )
 every_connection = pytest.mark.parametrize(("entry", "mode"), CASES)
 LONG = 65.0
+REQUIRE_DIALOG = {"PAPERLESS_MCP_REQUIRE_DIALOG": "true"}
 
 
 @pytest.fixture(scope="module")
@@ -47,10 +48,20 @@ def url(stack: Stack) -> Generator[str]:
         yield endpoint
 
 
-def transport(stack: Stack, url: str, entry: Entry) -> ClientTransport:
+@pytest.fixture(scope="module")
+def strict_url(stack: Stack) -> Generator[str]:
+    """Like `url`, of a server that requires dialogs."""
+    with running(stack, **REQUIRE_DIALOG) as endpoint:
+        yield endpoint
+
+
+def transport(
+    stack: Stack, url: str, entry: Entry, settings: dict[str, str] | None = None
+) -> ClientTransport:
     if entry == "http":
         return StreamableHttpTransport(url, headers={"Authorization": f"Bearer {MCP_TOKEN}"})
     env = {"PAPERLESS_URL": stack.base_url, "PAPERLESS_TOKEN": stack.admin_token}
+    env |= settings or {}
     return StdioTransport(console_script(), [], env=env, keep_alive=False)
 
 
@@ -72,11 +83,11 @@ def exists(stack: Stack, number: int) -> bool:
 
 
 async def delete(
-    via: ClientTransport, mode: Mode, handler: Handler | None, number: int
+    via: ClientTransport, mode: Mode, handler: Handler | None, number: int, **more: object
 ) -> CallToolResult:
     async with Client(via, mode=mode, elicitation_handler=handler) as client:
         return await client.call_tool(
-            "delete_taxonomy_item", {"kind": "tag", "item": number}, raise_on_error=False
+            "delete_taxonomy_item", {"kind": "tag", "item": number, **more}, raise_on_error=False
         )
 
 
@@ -117,6 +128,29 @@ async def test_a_client_without_dialogs_gets_the_refusal(
         assert result.is_error
         assert CONFIRM_HINT in str(result.content)
         assert exists(stack, number)
+
+
+@every_connection
+async def test_with_dialogs_required_only_an_accepted_one_deletes(
+    stack: Stack, strict_url: str, entry: Entry, mode: Mode
+) -> None:
+    def via() -> ClientTransport:
+        return transport(stack, strict_url, entry, REQUIRE_DIALOG)
+
+    async with tag(stack) as (number, _):
+        for handler in (None, answering("decline")):
+            refused = await delete(via(), mode, handler, number, confirm=True)
+
+            assert refused.is_error
+            assert "PAPERLESS_MCP_REQUIRE_DIALOG=true" in str(refused.content)
+            assert exists(stack, number)
+
+        seen: list[str] = []
+        done = await delete(via(), mode, answering("accept", YES, seen=seen), number, confirm=True)
+
+        assert not done.is_error, done.content
+        assert len(seen) == 1
+        assert not exists(stack, number)
 
 
 async def test_a_dialog_may_stay_open_longer_than_the_usual_timeouts(

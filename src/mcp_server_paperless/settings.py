@@ -103,6 +103,9 @@ class ServerSettings(BaseSettings):
             root, the home directory itself, /proc, /sys, /dev and /run are refused as
             entries, and files and folders whose name starts with a dot below an entry are never
             read (``.ssh``, ``.env``).
+        require_dialog: Let only an accepted dialog confirm (``PAPERLESS_MCP_REQUIRE_DIALOG``):
+            ``confirm=true`` then confirms nothing, and a client that cannot show dialogs cannot
+            confirm (decision-53).
         download_dirs: Directories ``download_document`` and ``bulk_download`` may save files into
             (``PAPERLESS_MCP_DOWNLOAD_DIRS``), with the rules of ``upload_dirs``. Empty (the
             default): nothing is ever saved. Only the stdio transport offers it, and only without
@@ -117,6 +120,7 @@ class ServerSettings(BaseSettings):
     startup_timeout: float = Field(default=5.0, gt=0)
     toolsets: Annotated[tuple[str, ...], NoDecode] = ("core", "ai")
     read_only: bool = False
+    require_dialog: bool = False
     disabled_tools: Annotated[tuple[str, ...], NoDecode] = ()
     max_download_bytes: int = Field(default=512 * 1024, ge=1, le=32 * 1024 * 1024)
     max_upload_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=MAX_UPLOAD_LIMIT)
