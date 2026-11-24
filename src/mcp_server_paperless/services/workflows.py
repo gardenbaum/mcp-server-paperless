@@ -4,7 +4,8 @@ A workflow runs by itself on every document its triggers match, so what a caller
 narrower than what Paperless stores: only the trigger and action types in
 ``domain.workflows.WRITABLE_*``, and a setting that does not belong to the type it sits under is an
 error instead of a value Paperless would store and ignore. Replacing a list never drops what this
-server cannot write. Secrets (webhook header values, PDF passwords) are never shown.
+server cannot write. Secrets (webhook header values, credentials in
+webhook URLs, PDF passwords) are never shown.
 """
 
 import json
@@ -22,6 +23,12 @@ from mcp_server_paperless.domain.errors import (
     quoted,
 )
 from mcp_server_paperless.domain.taxonomy import TaxonomyItem
+from mcp_server_paperless.domain.urls import (
+    URL_NOT_SHOWN,
+    shown_url,
+    without_credentials,
+    without_empty_user,
+)
 from mcp_server_paperless.domain.workflows import (
     ACTION_FIELDS,
     ACTION_TYPES,
@@ -272,6 +279,7 @@ def _webhook(url: str) -> str:
         parts = urlsplit("")
     usual = USUAL_PORTS.get(parts.scheme)
     unclear = "\\" in re.split("[?#]", url)[0] or parts.netloc.count("@") > 1
+    unclear = unclear or "%40" in (host or "")  # an encoded @: credentials, or a part of the host
     if not host or usual is None or unclear:
         cause = "it is not certain which host it leads to"
         refused = not_shown("URL of the webhook", cause)
@@ -290,6 +298,198 @@ def _origin(url: JsonValue) -> tuple[str, str | None, int | None]:
         return parts.scheme.lower(), parts.hostname, parts.port
     except ValueError:
         return str(url), None, None  # unreadable: the same only as itself
+
+
+_SCHEME_AND_HOST: Final = re.compile(r"\A[^/?#]*//[^/?#]*")
+
+
+def _url(action: WorkflowAction | None) -> str | None:
+    """The stored URL of a webhook action; None for another action, or none."""
+    hook = _object(action.settings.get("webhook")) if action and action.type == WEBHOOK else {}
+    url = hook.get("url")
+    return url if isinstance(url, str) else None
+
+
+def _hides(url: str | None) -> bool:
+    """Whether ``url`` is shown only in part, because of its credentials."""
+    return url is not None and shown_url(url) != url
+
+
+def _has_credentials(url: str | None) -> bool:
+    """Whether ``url`` has, or may have, credentials: an empty user name alone is none."""
+    return url is not None and _hides(url) and without_empty_user(url) != without_credentials(url)
+
+
+def _certain(url: str) -> bool:
+    """Whether it is certain what the credentials in ``url`` are."""
+    return without_credentials(url) is not None
+
+
+def _spelled(url: str) -> str:
+    """``url`` in one spelling: no whitespace around it, scheme and host in small letters."""
+    return _SCHEME_AND_HOST.sub(lambda found: found[0].lower(), url.strip(), count=1)
+
+
+def _shown_as(url: str, stored: str | None) -> bool:
+    """Whether ``url`` is, in any spelling, the shown form of a stored URL with credentials."""
+    return _hides(stored) and _spelled(url) == _spelled(shown_url(stored or ""))
+
+
+def _not_told(message: str) -> Validation:
+    return Validation(
+        message,
+        hint=(
+            "Send the id the action has in get_workflow now to keep the stored credentials, or "
+            "a URL with an empty user name (https://@host/path) to write it without any."
+        ),
+    )
+
+
+def _kept_or_given(url: str, held: str | None, stored: Sequence[str | None], place: int) -> str:
+    """The URL to write: ``held``, the stored one of the same action, if ``url`` is its shown form.
+
+    Raises:
+        Validation: ``url`` is the shown form of a URL that it is not certain which action holds.
+    """
+    plain = without_empty_user(url.strip())
+    if plain != url.strip():
+        return plain
+    if held is not None and (url == held or _shown_as(url, held)):
+        return held
+    if url.strip() == URL_NOT_SHOWN or any(
+        _has_credentials(old) and _shown_as(url, old) for old in stored
+    ):
+        message = (
+            f"The webhook URL of action {place} is a stored one as it is shown, without its "
+            "credentials, but the action has no id that says which stored URL it stands for."
+        )
+        raise _not_told(message)
+    return url
+
+
+def _fate(old: str, new: str | None) -> str:
+    """What becomes of the credentials of the stored URL ``old`` where ``new`` is written."""
+    if not _has_credentials(new):
+        verb = "remove"
+    else:
+        verb = "replace" if _certain(new or "") else "remove or replace"
+    return f"{verb} {'the' if _certain(old) else 'any'} credentials"
+
+
+def _past(fate: str) -> str:
+    """``fate`` as the note of a result says it."""
+    done = fate.replace("remove", "removed", 1).replace("replace", "replaced", 1)
+    return f"{done.capitalize()} of"
+
+
+def _check_ids(specs: Sequence[ActionInput], found: Workflow) -> None:
+    """Refuse a webhook with an id that is not in the workflow."""
+    known = {action.id for action in found.actions}
+    for place, spec in enumerate(specs, start=1):
+        if spec.webhook is not None and spec.id is not None and spec.id not in known:
+            message = (
+                f"Nothing was changed: action {place} is a webhook with the id {spec.id}, which is "
+                "not (or no longer) in the workflow."
+            )
+            hint = (
+                "Send the id the action has in get_workflow now, or leave the id out for a new "
+                "webhook."
+            )
+            raise Validation(message, hint=hint)
+
+
+def _credentials(
+    specs: Sequence[ActionInput], actions: Sequence[WorkflowAction], found: Workflow
+) -> tuple[list[int], dict[int, str], str]:
+    """What becomes of the stored credentials of webhooks.
+
+    The places of the actions that keep hidden ones, what happens to those of others by place, and
+    the ones that no action claims although a webhook could be meant to hold them ("" if none).
+
+    Raises:
+        Validation: Two actions would keep the credentials of one stored action.
+    """
+    stored = {a.id: _url(a) for a in found.actions if a.id is not None}
+    holders: dict[int, int] = {}
+    kept: list[int] = []
+    changed: dict[int, tuple[int, str]] = {}
+    claimed: set[int] = set()
+    loose: list[str | None] = []  # the URLs of webhooks that say no stored one
+    for place, (spec, action) in enumerate(zip(specs, actions, strict=True), start=1):
+        if spec.webhook is None:
+            continue
+        new = _url(action)
+        old = stored[spec.id] if spec.id is not None else None
+        if spec.id is None or old is None:
+            loose.append(new)
+            continue
+        claimed.add(spec.id)
+        if not _has_credentials(old):
+            continue
+        if new != old:
+            changed[place] = spec.id, _fate(old, new)
+            continue
+        if spec.id in holders:
+            message = (
+                f"Nothing was changed: actions {holders[spec.id]}, {place} have the id {spec.id}, "
+                "whose stored webhook credentials belong to one action."
+            )
+            raise Validation(message, hint="Give each action the id it has in get_workflow.")
+        holders[spec.id] = place
+        if spec.webhook.url != old:
+            kept.append(place)
+    gone = [u for n, u in stored.items() if u and n not in claimed and _has_credentials(u)]
+    gone = [u for u in gone if loose and u not in loose]
+    which = "the" if all(_certain(u) for u in gone) else "any"
+    return (
+        kept,
+        {place: fate for place, (held, fate) in changed.items() if held not in holders},
+        f"{which} stored credentials of {plural(len(gone), 'webhook URL')}" if gone else "",
+    )
+
+
+def _copies(
+    specs: Sequence[ActionInput],
+    actions: Sequence[WorkflowAction],
+    workflows: Sequence[Workflow],
+    found: Workflow | None = None,
+) -> list[int]:
+    """The places of new webhook URLs that a workflow of ``workflows`` stores with credentials.
+
+    ``found`` is the workflow that is written, if there is one yet. The credentials themselves are
+    never taken from another workflow.
+    """
+    stored = [_url(action) for workflow in workflows for action in workflow.actions]
+    held = {a.id: _url(a) for a in found.actions if a.id is not None} if found else {}
+    places: list[int] = []
+    for place, (spec, action) in enumerate(zip(specs, actions, strict=True), start=1):
+        url = _url(action)
+        given = spec.webhook.url if spec.webhook else None
+        if url is None or url != given or (spec.id is not None and held.get(spec.id) == url):
+            continue
+        if any(_has_credentials(other) and _shown_as(url, other) for other in stored):
+            places.append(place)
+    return places
+
+
+NOT_COPIED: Final = "without the credentials that another workflow stores for this URL"
+COPY_NOTE: Final = f"Written {NOT_COPIED} (never copied)"
+
+
+def _said(lost: Mapping[int, str], copies: Sequence[int]) -> dict[int, str]:
+    """What a confirmation says of the stored credentials of webhooks, by place."""
+    said = dict.fromkeys(copies, f", {NOT_COPIED}")
+    for place, fate in lost.items():
+        said[place] = f"{said.get(place, '')}, and {fate} of the stored URL (not shown)"
+    return said
+
+
+def _places(done: str, places: Sequence[int]) -> list[str]:
+    """A sentence on the webhook URLs of the actions at ``places``, if there are any."""
+    if not places:
+        return []
+    noun = "action" if len(places) == 1 else "actions"
+    return [f"{done}: the webhook URL of {noun} {', '.join(map(str, places))}."]
 
 
 # Most recipients and webhook hosts of one workflow a confirmation lists; with more, nobody reads
@@ -312,8 +512,30 @@ def _few(count: int) -> int:
     return count
 
 
-def _acts(actions: Sequence[WorkflowAction]) -> list[str]:
+def _post(settings: Mapping[str, JsonValue], said: str) -> str:
+    """What a webhook does, whether it has credentials, and what else is ``said`` of them.
+
+    Raises:
+        Validation: It is not certain where it goes, or it cannot be shown in full.
+    """
+    hook = _object(settings.get("webhook"))
+    url = str(hook.get("url"))
+    text = f"send a POST request to {_webhook(url)}"
+    if hook.get("include_document"):
+        text += " with the document"
+    if _has_credentials(url):
+        told = "with" if _certain(url) else "with, or possibly with,"
+        text += f", {told} credentials (not shown)"
+    return text + said
+
+
+def _acts(
+    actions: Sequence[WorkflowAction], said: Mapping[int, str] | None = None, gone: str = ""
+) -> list[str]:
     """What the actions do that reaches beyond tagging: the reason a workflow needs confirm.
+
+    ``said`` holds by place what becomes of the stored credentials of a webhook, ``gone`` those
+    that no action keeps.
 
     Raises:
         Validation: There are more destinations than ``MAX_DESTINATIONS``, or one that cannot be
@@ -321,7 +543,7 @@ def _acts(actions: Sequence[WorkflowAction]) -> list[str]:
     """
     found: list[str] = []
     reached = 0
-    for action in actions:
+    for place, action in enumerate(actions, start=1):
         settings = action.settings
         if action.type in FIXED_ACTS:
             found.append(FIXED_ACTS[action.type])
@@ -335,11 +557,8 @@ def _acts(actions: Sequence[WorkflowAction]) -> list[str]:
             shown = ", ".join(destination(address, "e-mail address", "email") for address in to)
             found.append(f"send an e-mail to {shown}{attached}")
         elif action.type == WEBHOOK:
-            hook = _object(settings.get("webhook"))
-            attached = " with the document" if hook.get("include_document") else ""
             reached = _few(reached + 1)
-            host = _webhook(str(hook.get("url")))
-            found.append(f"send a POST request to {host}{attached}")
+            found.append(_post(settings, (said or {}).get(place, "")))
         elif action.type == 2:  # noqa: PLR2004 -- removal
             removed = [
                 name.removeprefix("remove_").replace("_", " ")
@@ -349,6 +568,8 @@ def _acts(actions: Sequence[WorkflowAction]) -> list[str]:
                 found.append(f"remove from the matching documents: {', '.join(removed)}")
         elif action.type == 1 and any(not _empty(settings.get(n)) for n in OWNERSHIP):
             found.append("change who owns or may see the matching documents")
+    if gone:
+        found.append(f"remove {gone} that no action keeps (not shown)")
     return found
 
 
@@ -432,12 +653,13 @@ class WorkflowService:
             PermissionDenied: The user may not add workflows.
         """
         name = self._name(spec.name)
-        await self._free(name, except_id=None)
+        workflows = await self._free(name, except_id=None)
         _writable_triggers(spec.triggers)
         triggers = tuple([await self._trigger(t) for t in spec.triggers])
-        actions = tuple([await self._action(a, {}) for a in spec.actions])
+        actions = tuple([await self._action(a, (), n) for n, a in enumerate(spec.actions, start=1)])
         # A disabled workflow reaches nobody; it is checked when it is switched on.
-        acts = _acts(actions) if spec.enabled else []
+        copies = _copies(spec.actions, actions, workflows)
+        acts = _acts(actions, _said({}, copies)) if spec.enabled else []
         if acts and not confirm:
             ConfirmationRequired.require(
                 _effect(f"create the workflow {quoted(name)}", triggers, acts),
@@ -451,7 +673,7 @@ class WorkflowService:
         if spec.order is not None:
             fields["order"] = spec.order
         made = await self._writer.create_workflow(name, WorkflowValues.model_validate(fields))
-        return await self._stored(made)
+        return await self._stored(made, _places(COPY_NOTE, copies))
 
     async def update(
         self, workflow: NameOrId, edit: WorkflowEdit, *, confirm: bool
@@ -469,11 +691,16 @@ class WorkflowService:
             Ambiguous: A name matches several workflows or objects.
             PermissionDenied: The user may not change workflows.
         """
-        found = await self._find(workflow)
+        workflows = await self._reader.list_workflows()
+        found = self._pick(workflows, workflow)
         changes: dict[str, object] = {}
+        kept: list[int] = []
+        lost: dict[int, str] = {}
+        gone = ""
+        copies: list[int] = []
         if edit.name is not None:
             changes["name"] = self._name(edit.name)
-            await self._free(str(changes["name"]), except_id=found.id)
+            _ = await self._free(str(changes["name"]), except_id=found.id)
         if edit.order is not None:
             changes["order"] = edit.order
         if edit.enabled is not None:
@@ -484,8 +711,16 @@ class WorkflowService:
             changes["triggers"] = tuple([await self._trigger(t) for t in edit.triggers])
         if edit.actions is not None:
             self._keeps_unwritable(found)
-            stored = {a.id: a for a in found.actions if a.id is not None}
-            changes["actions"] = tuple([await self._action(a, stored) for a in edit.actions])
+            _check_ids(edit.actions, found)
+            written = tuple(
+                [
+                    await self._action(a, found.actions, n)
+                    for n, a in enumerate(edit.actions, start=1)
+                ]
+            )
+            kept, lost, gone = _credentials(edit.actions, written, found)
+            copies = _copies(edit.actions, written, workflows, found)
+            changes["actions"] = written
         if not changes:
             message = "Nothing to change: no setting was named."
             raise Validation(message, hint="Name a new name, order, enabled, triggers or actions.")
@@ -496,12 +731,22 @@ class WorkflowService:
         switched_on = values.enabled is True and not found.enabled
         reshaped = values.triggers is not None or values.actions is not None
         # Switching off, renaming and reordering must work whatever the actions hold.
-        acts = _acts(actions) if enabled and (reshaped or switched_on) else []
+        acts = (
+            _acts(actions, _said(lost, copies), gone)
+            if enabled and (reshaped or switched_on)
+            else []
+        )
         if acts and not confirm:
             lead = f"change the workflow {quoted(found.name)} (id {found.id})"
             ConfirmationRequired.require(_effect(lead, triggers, acts), scope=(triggers, actions))
         done = await self._writer.update_workflow(found.id, values)
-        return await self._stored(done)
+        notes = _places(COPY_NOTE, copies)
+        for fate in dict.fromkeys(lost.values()):
+            places = [place for place, what in lost.items() if what == fate]
+            notes += _places(_past(fate), places)
+        notes += [f"Removed {gone} that no action kept by its id."] if gone else []
+        notes += _places("Kept as stored, with any credentials", kept)
+        return await self._stored(done, notes)
 
     async def delete(self, workflow: NameOrId, *, confirm: bool) -> WorkflowDeletion:
         """Delete a workflow for good; without ``confirm`` refuse and say what deleting it does.
@@ -529,7 +774,10 @@ class WorkflowService:
         return WorkflowDeletion(id=found.id, name=found.name, message=message)
 
     async def _find(self, workflow: NameOrId) -> Workflow:
-        workflows = await self._reader.list_workflows()
+        return self._pick(await self._reader.list_workflows(), workflow)
+
+    @staticmethod
+    def _pick(workflows: Sequence[Workflow], workflow: NameOrId) -> Workflow:
         rows = [TaxonomyItem(id=w.id, name=w.name, document_count=None) for w in workflows]
         wanted = pick("workflow", rows, workflow, listing="list_workflows").id
         return next(w for w in workflows if w.id == wanted)
@@ -542,12 +790,14 @@ class WorkflowService:
             raise Validation(message, hint="Give the workflow a name.")
         return text
 
-    async def _free(self, name: str, *, except_id: int | None) -> None:
-        """Refuse a name another workflow has (ignoring case): names find workflows."""
-        for workflow in await self._reader.list_workflows():
+    async def _free(self, name: str, *, except_id: int | None) -> Sequence[Workflow]:
+        """The workflows; refuse a name another one has (ignoring case): names find workflows."""
+        workflows = await self._reader.list_workflows()
+        for workflow in workflows:
             if workflow.id != except_id and fold(workflow.name) == fold(name):
                 message = f"A workflow is already named {quoted(workflow.name)} (id {workflow.id})."
                 raise Validation(message, hint="Choose another name, or update that workflow.")
+        return workflows
 
     @staticmethod
     def _keeps_unwritable_triggers(found: Workflow) -> None:
@@ -632,8 +882,9 @@ class WorkflowService:
         return WorkflowTrigger(type=number, settings=settings)
 
     async def _action(
-        self, spec: ActionInput, stored: Mapping[int, WorkflowAction]
+        self, spec: ActionInput, stored: Sequence[WorkflowAction], place: int
     ) -> WorkflowAction:
+        """The action to write at ``place``; ``stored`` are the ones there are now."""
         number = action_type(spec.type)
         settings: dict[str, JsonValue] = {}
         for owner, fields in ACTION_FIELDS.items():
@@ -647,7 +898,9 @@ class WorkflowService:
                         f"{ACTION_TYPES[number]} actions."
                     )
                     raise Validation(message, hint="Leave it out, or change the action type.")
-                settings[field.wire] = await self._action_setting(name, field, value, spec, stored)
+                settings[field.wire] = await self._action_setting(
+                    name, field, value, spec, stored=stored, place=place
+                )
         if number == EMAIL and "email" not in settings:
             message = "An email action needs email settings."
             raise Validation(message, hint="Pass email with subject, body and to.")
@@ -663,22 +916,27 @@ class WorkflowService:
             ]
         return WorkflowAction(type=number, settings=settings)
 
-    async def _action_setting(
+    async def _action_setting(  # noqa: PLR0913 -- the setting and its action
         self,
         name: str,
         field: Field_,
         value: object,
         spec: ActionInput,
-        stored: Mapping[int, WorkflowAction],
+        *,
+        stored: Sequence[WorkflowAction],
+        place: int,
     ) -> JsonValue:
         if name == "email":
             return cast("JsonValue", spec.email.model_dump() if spec.email else None)
         if name == "webhook" and spec.webhook is not None:
             hook = spec.webhook.model_dump()
-            held = stored.get(spec.id) if spec.id is not None else None
+            held = next((a for a in stored if a.id is not None and a.id == spec.id), None)
+            hook["url"] = _kept_or_given(
+                spec.webhook.url, _url(held), [_url(a) for a in stored], place
+            )
             old = _object(held.settings.get("webhook") if held else None)
             kept = _object(old.get("headers"))
-            moved = _origin(old.get("url")) != _origin(spec.webhook.url)
+            moved = _origin(old.get("url")) != _origin(hook["url"])
             hook["headers"] = self._headers(spec.webhook.headers, kept, moved=moved)
             return cast("JsonValue", hook)
         if name == "assign_custom_fields_values":
@@ -735,11 +993,12 @@ class WorkflowService:
                 names[kind] = {}
         return names
 
-    async def _stored(self, workflow: Workflow) -> WorkflowInfo:
-        """The workflow as create and update answer it: with the way back from the trash."""
+    async def _stored(self, workflow: Workflow, notes: Sequence[str] = ()) -> WorkflowInfo:
+        """The workflow as create and update answer it: with notes and the way back from trash."""
         info = self._info(workflow, await self._names([workflow]))
         trashes = any(a.type == TRASH_ACTION for a in workflow.actions)
-        return info.model_copy(update={"note": TRASH_NOTE if trashes else None})
+        note = " ".join([*notes, *([TRASH_NOTE] if trashes else [])])
+        return info.model_copy(update={"note": note or None})
 
     def _info(
         self, workflow: Workflow, names: Mapping[TaxonomyKind, Mapping[int, str]]
@@ -760,7 +1019,13 @@ class WorkflowService:
             settings = {n: shown(n, fields[n], v) for n, v in _set(fields, a.settings).items()}
             settings.update(_read_only(a))
             label = ACTION_TYPES.get(a.type, f"unknown type {a.type}")
-            return ActionInfo(id=a.id, type=a.type, type_name=label, settings=settings)
+            return ActionInfo(
+                id=a.id,
+                type=a.type,
+                type_name=label,
+                settings=settings,
+                shown_in_part=("webhook.url",) if _hides(_url(a)) else (),
+            )
 
         return WorkflowInfo(
             id=workflow.id,
@@ -794,8 +1059,10 @@ def _read_only(action: WorkflowAction) -> dict[str, JsonValue]:
 
 
 def _nested(value: JsonValue) -> dict[str, JsonValue]:
-    """An e-mail or webhook as shown: what is set, and header names without their values."""
+    """An e-mail or webhook as shown: no header values, no credentials in the URL, what is set."""
     shown: dict[str, JsonValue] = {k: v for k, v in _object(value).items() if v is not None}
+    if isinstance(shown.get("url"), str):
+        shown["url"] = shown_url(str(shown["url"]))
     if "headers" in shown:
         shown["headers"] = dict.fromkeys(_object(shown["headers"]), HIDDEN)
     return shown

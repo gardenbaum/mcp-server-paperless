@@ -13,6 +13,11 @@ from urllib.parse import parse_qs, urlsplit
 
 from mcp_server_paperless.domain.errors import PaperlessMcpError, Validation
 from mcp_server_paperless.domain.raw import RawApiResult
+from mcp_server_paperless.domain.urls import (
+    lines_without_credentials,
+    shown_url,
+    text_without_credentials,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -84,6 +89,8 @@ _SECRET_KEY_PARTS: Final = (
 _SECRET_KEYS: Final = frozenset({"headers", "params", "body"})
 # Names that contain a secret word but are flags or dates.
 _NOT_SECRET_KEYS: Final = frozenset({"is_token", "has_usable_password", "token_expires"})
+# Keys of texts that may repeat a URL: errors and what a task left behind.
+_ERROR_KEYS: Final = frozenset({"error", "result_data"})
 _PAGE_LINKS: Final = frozenset({"next", "previous"})
 
 
@@ -199,6 +206,49 @@ def redact(value: JsonValue) -> tuple[JsonValue, int]:
     return value, 0
 
 
+def _is_error(key: str) -> bool:
+    return key in _ERROR_KEYS or key.endswith("_error")
+
+
+def _url_hidden(
+    value: JsonValue, *, has_urls: bool = False, in_error: bool = False
+) -> tuple[JsonValue, int]:
+    """``value`` without the credentials in URLs and error texts, and how many had some.
+
+    URLs are what ``*_url`` and ``webhook`` hold, and ``url`` below a webhook or if it ``has_urls``.
+    """
+    if isinstance(value, dict):
+        cleaned: dict[str, JsonValue] = {}
+        count = 0
+        for key, item in value.items():
+            inside = has_urls or key == "webhook"
+            named = key == "webhook" or key.endswith("_url") or (inside and key == "url")
+            if named and isinstance(item, str):
+                cleaned[key] = shown_url(item)
+                count += cleaned[key] != item
+            else:
+                error = in_error or _is_error(key)
+                cleaned[key], inner = _url_hidden(item, has_urls=inside, in_error=error)
+                count += inner
+        return cleaned, count
+    if isinstance(value, list):
+        rows = [_url_hidden(item, has_urls=has_urls, in_error=in_error) for item in value]
+        return [row for row, _ in rows], sum(count for _, count in rows)
+    if in_error and isinstance(value, str):
+        text = text_without_credentials(value)
+        return text, int(text != value)
+    return value, 0
+
+
+def _lines_hidden(value: JsonValue) -> tuple[JsonValue, int]:
+    """The lines of a log without the credentials of URLs, and how many had some."""
+    lines = value if isinstance(value, list) else [value]
+    shown = iter(lines_without_credentials([line for line in lines if isinstance(line, str)]))
+    cleaned = [next(shown) if isinstance(line, str) else line for line in lines]
+    count = sum(new != old for new, old in zip(cleaned, lines, strict=True))
+    return (cleaned if isinstance(value, list) else cleaned[0]), count
+
+
 def _is_json(content_type: str) -> bool:
     return content_type.partition(";")[0].strip().lower() == "application/json"
 
@@ -249,40 +299,49 @@ def _result(path: str, reply: RawReply) -> RawApiResult:
     except ValueError:
         message = f"Paperless sent an unexpected response for GET {path}."
         raise PaperlessMcpError(message) from None
+    is_log = path.lower().startswith("/api/logs/")
+    if is_log:
+        parsed, urls = _lines_hidden(parsed)
+    else:
+        is_status = path.lower().startswith("/api/status")
+        parsed, urls = _url_hidden(parsed, has_urls=is_status)
     data, redacted = redact(parsed)
     text = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
     if len(text) > MAX_OUTPUT:
-        return _cut(path, reply, text=text[:MAX_OUTPUT], redacted=redacted)
+        return _cut(path, reply, text=text[:MAX_OUTPUT], redacted=redacted, urls=urls)
     return RawApiResult(
         path=path,
         status=reply.status,
         data=data,
         truncated=False,
         text=None,
-        redacted=redacted,
-        note=_redaction_note(redacted),
+        redacted=redacted + urls,
+        note=_redaction_note(redacted, urls),
     )
 
 
-def _redaction_note(redacted: int) -> str | None:
-    if not redacted:
-        return None
-    return f"{redacted} secret value(s) were replaced with {REDACTED}."
+def _redaction_note(redacted: int, urls: int) -> str | None:
+    notes = [f"{redacted} secret value(s) were replaced with {REDACTED}."] if redacted else []
+    if urls:
+        notes.append(f"{urls} URL(s) or log line(s) are shown without credentials.")
+    return " ".join(notes) or None
 
 
-def _cut(path: str, reply: RawReply, *, text: str | None, redacted: int) -> RawApiResult:
+def _cut(
+    path: str, reply: RawReply, *, text: str | None, redacted: int, urls: int = 0
+) -> RawApiResult:
     """The result for an answer that is too long: its first part, or nothing if unreadable."""
     narrowing = (
         "The answer is too long to return whole. Narrow it with params: page_size, page, "
         "fields, ordering or filters of the endpoint."
     )
-    secrets = _redaction_note(redacted)
+    secrets = _redaction_note(redacted, urls)
     return RawApiResult(
         path=path,
         status=reply.status,
         data=None,
         truncated=True,
         text=text,
-        redacted=redacted,
+        redacted=redacted + urls,
         note=f"{narrowing} {secrets}" if secrets else narrowing,
     )

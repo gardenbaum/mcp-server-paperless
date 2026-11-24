@@ -307,3 +307,28 @@ async def test_a_misspelt_setting_is_an_error_and_nothing_is_created(
 
     assert "Extra inputs are not permitted" in text
     assert state.workflows == []
+
+
+@pytest.mark.decision("decision-66")
+async def test_a_read_webhook_written_back_keeps_its_credentials_and_shows_none() -> None:
+    state = seeded()
+    hook = {"url": "https://user:pw@h.example/x"}
+    made = await call(
+        fake(state),
+        "create_workflow",
+        name="Notify",
+        enabled=False,
+        actions=[{"type": "webhook", "webhook": hook}],
+    )
+    read = await call(fake(state), "get_workflow", workflow="Notify")
+    listed = await call(fake(state), "list_workflows")
+    [action] = cast("list[Json]", read["actions"])
+    written = {"type": action["type"], "id": action["id"], **cast("Json", action["settings"])}
+
+    updated = await call(fake(state), "update_workflow", workflow="Notify", actions=[written])
+
+    assert action["shown_in_part"] == ["webhook.url"]
+    assert all("pw" not in str(output) for output in (made, read, listed, updated))
+    assert "Kept as stored, with any credentials" in str(updated["note"])
+    stored = state.workflows[0].actions[0].settings["webhook"]
+    assert cast("Json", stored)["url"] == hook["url"]

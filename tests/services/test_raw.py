@@ -909,3 +909,129 @@ def test_the_format_param_is_refused_with_exact_words() -> None:
         "The param format is refused: Paperless answers it with a misleading error."
     )
     assert refused.value.hint == "Answers are JSON already; leave format out."
+
+
+@pytest.mark.decision("decision-66")
+@pytest.mark.parametrize("nested", [False, True])
+async def test_the_urls_of_webhooks_lose_their_credentials_and_the_result_says_so(
+    *, nested: bool
+) -> None:
+    action = {
+        "type": 4,
+        "webhook": {"id": 3, "url": "https://user:pw@h.example/x", "headers": {"A": "b"}},
+    }
+    plain = {"type": 4, "webhook": {"id": 4, "url": "https://h.example/y"}, "url": "a:b@c"}
+    unclear = {"type": 4, "webhook": {"id": 5, "url": "https://us/er:pw@h.example/x"}}
+    body: object = {"results": [action, plain, unclear]}
+    if nested:
+        body = {"workflows": [{"actions": [action, plain, unclear]}]}
+
+    result = await RawApiService(Recording(json_reply(body))).get("/api/workflow_actions/", {})
+
+    text = json.dumps(result.data)
+    assert "pw" not in text
+    assert '"https://h.example/x"' in text
+    assert '"a URL that is not shown"' in text
+    assert '"a:b@c"' in text
+    assert result.redacted == 3
+    assert result.note == (
+        "1 secret value(s) were replaced with [redacted]. "
+        "2 URL(s) or log line(s) are shown without credentials."
+    )
+
+
+@pytest.mark.decision("decision-66")
+async def test_log_lines_lose_the_credentials_of_the_urls_in_them() -> None:
+    lines = [
+        "[2026-11-24 10:00:00,123] Webhook sent to https://user:pw@h.example/x",
+        "[2026-11-24 10:00:00,124] mail a@b.example",
+        "[2026-11-24 10:00:00,125] to https://user:p",
+        3,
+        "w@h.example/x",
+    ]
+
+    result = await RawApiService(Recording(json_reply(lines))).get("/api/LOGS/paperless/", {})
+
+    assert result.data == [
+        "[2026-11-24 10:00:00,123] Webhook sent to https://h.example/x",
+        "[2026-11-24 10:00:00,124] mail a@b.example",
+        "[2026-11-24 10:00:00,125] to a URL that is not shown",
+        3,
+        "a URL that is not shown",
+    ]
+    assert result.redacted == 3
+
+
+@pytest.mark.decision("decision-66")
+@pytest.mark.parametrize(
+    ("body", "shown"),
+    [
+        ("[2026-11-24 10:00:00,1] to https://user:pw@h", "[2026-11-24 10:00:00,1] to https://h"),
+        ("pw@h", "a URL that is not shown"),
+        ({"redis_url": "redis://user:pw@h:6379/0"}, {"redis_url": "redis://h:6379/0"}),
+        ({"webhook": "https://user:pw@h"}, {"webhook": "https://h"}),
+        (
+            {"webhook": [{"x": {"url": "https://user:pw@h"}}]},
+            {"webhook": [{"x": {"url": "https://h"}}]},
+        ),
+        (
+            {
+                "result_data": {
+                    "error_message": "to https://user:pw@h",
+                    "n": [1, "at https://u:pw@i"],
+                }
+            },
+            {"result_data": {"error_message": "to https://h", "n": [1, "at https://i"]}},
+        ),
+        ({"redis_error": "no https://user:pw@h"}, {"redis_error": "no https://h"}),
+        ({"database": {"error": "https://user:pw@h"}}, {"database": {"error": "https://h"}}),
+        ({"last_error": {"m": "https://user:pw@h"}}, {"last_error": {"m": "https://h"}}),
+        ({"title": "https://user:pw@h", "n": None}, {"title": "https://user:pw@h", "n": None}),
+    ],
+)
+async def test_urls_in_webhooks_and_errors_lose_their_credentials(
+    body: JsonValue, shown: JsonValue
+) -> None:
+    path = "/api/logs/x/" if isinstance(body, str) else "/api/tasks/"
+
+    result = await RawApiService(Recording(json_reply(body))).get(path, {})
+
+    assert result.data == shown
+    assert (result.redacted > 0) == (body != shown)
+
+
+@pytest.mark.decision("decision-66")
+async def test_a_cut_answer_has_no_credentials_either() -> None:
+    url = "https://user:pw@h.example/x"
+    reply = json_reply([{"webhook": {"url": url}, "rest": "x" * MAX_OUTPUT}])
+
+    result = await RawApiService(Recording(reply)).get("/api/workflows/", {})
+
+    assert result.truncated
+    assert "pw" not in str(result.text)
+    assert "shown without credentials" in str(result.note)
+
+
+@pytest.mark.decision("decision-66")
+@pytest.mark.parametrize("params", [{"limit": 3}, {"limit": 2}, {}])
+async def test_the_rest_of_a_record_at_the_top_of_a_log_is_not_shown(
+    params: dict[str, str | int | bool],
+) -> None:
+    reply = json_reply(["me@b.example", "[2026-11-24 10:00:00,1] by a@b"])
+
+    result = await RawApiService(Recording(reply)).get("/api/logs/mail/", params)
+
+    assert result.data == ["a URL that is not shown", "[2026-11-24 10:00:00,1] by a@b"]
+
+
+@pytest.mark.decision("decision-66")
+async def test_the_urls_of_the_status_have_no_credentials() -> None:
+    body = {"database": {"url": "postgres://u:pw@db/x"}, "tasks": {"redis_url": "redis://:pw@h"}}
+
+    result = await RawApiService(Recording(json_reply(body))).get("/api/status/", {})
+
+    assert result.data == {
+        "database": {"url": "postgres://db/x"},
+        "tasks": {"redis_url": "redis://h"},
+    }
+    assert result.redacted == 2

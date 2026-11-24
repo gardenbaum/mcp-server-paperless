@@ -325,7 +325,18 @@ class WebhookSettings(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
-    url: Annotated[str, Field(min_length=1, max_length=256, description="The URL to POST to.")]
+    url: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=256,
+            description=(
+                "The URL to POST to. get_workflow shows it without user name and password; send "
+                "that back with the action's id to keep them, or with an empty user name "
+                "(https://@host/path) to remove them."
+            ),
+        ),
+    ]
     use_params: Annotated[
         bool, Field(description="Send params as key-value pairs instead of the body.")
     ] = True
@@ -494,6 +505,16 @@ class ActionInfo(BaseModel):
         dict[str, JsonValue],
         Field(description="The settings that are not empty, named as create takes them."),
     ]
+    shown_in_part: Annotated[
+        tuple[str, ...],
+        Field(
+            description=(
+                "webhook.url if it has, or may have, credentials, which are not shown (nor the "
+                "URL, if they cannot be told apart from the rest). Writing it back as shown, with "
+                "this id, keeps what is stored."
+            )
+        ),
+    ] = ()
 
 
 class WorkflowInfo(BaseModel):
@@ -509,7 +530,12 @@ class WorkflowInfo(BaseModel):
     actions: tuple[ActionInfo, ...]
     note: Annotated[
         str | None,
-        Field(description="After a change: how to get back what a move to trash deletes."),
+        Field(
+            description=(
+                "After a change: which webhook URLs lost or kept their credentials, and how to get "
+                "back what a move to trash deletes."
+            )
+        ),
     ] = None
 
 

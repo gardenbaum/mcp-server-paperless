@@ -323,6 +323,12 @@ always does. Password removal and applying AI suggestions are not written by the
 are shown when read), webhook header values and passwords are never shown, and a setting that
 does not belong to its trigger or action type is an error.
 
+- Webhook URLs are returned without the user name and password in them (a query string is
+  returned; a URL in which they cannot be told apart is not); `shown_in_part` of the action says
+  so. Written back as returned, on an action with the id it has now, the URL keeps what is stored;
+  with an empty user name (`https://@host/path`) it loses them. Without the id, it is refused.
+  A copy of it in another workflow is written without them, and the result says so.
+
 ### `admin`
 
 Off by default. Administers the instance: users (`get_user`, `create_user`, `update_user`,
@@ -350,6 +356,8 @@ groups.
   superuser status through these tools.
 - Paperless decides who may do what: most tools need the matching Paperless permission, the
   logs are for staff users and `run_task` for superusers.
+- Log lines come without the user name and password of the URLs in them (`note` says
+  so).
 
 ### `raw`
 
@@ -366,7 +374,8 @@ host:
   (use `get_ai_suggestions`) are refused, and so is the param `format`.
 - `next`/`previous` links become page numbers, requests are never retried, only JSON is
   returned, values of keys such as `password`, `*token*`, `*_api_key` and the webhook `headers`,
-  `params` and `body` are replaced with `[redacted]`, and an answer over 20 000 characters is cut
+  `params` and `body` are replaced with `[redacted]`, webhook URLs and log lines come without the
+  user name and password of a URL (`note` says so), and an answer over 20 000 characters is cut
   with `truncated` true (narrow it with `page_size`, `fields` or filters).
 
 The rules are decision-25 (`backlog/decisions/`).
