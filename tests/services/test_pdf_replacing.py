@@ -659,7 +659,60 @@ async def test_a_right_that_cannot_be_known_does_not_stop_the_call_and_the_plan_
     assert unread in two.plan.keeps
     assert unread in asked.value.message
     assert unread not in (await split(paperless())).plan.keeps
-    assert (await split(fake)).state == "success"
+
+
+UNREAD = "the rights of this Paperless user could not be read"
+
+
+@pytest.mark.parametrize("operation", ["split", "merge", "unlock"])
+async def test_originals_stay_when_the_rights_could_not_be_read_whatever_comes_later(
+    operation: str,
+) -> None:
+    fake = paperless(NUMBER)
+    fake.may = None  # one read failed; every later one succeeds
+    if operation == "unlock":
+        document(fake, DOC).password, document(fake, DOC).page_count = "s3cret", None
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+
+    if operation == "split":
+        result = await split(fake)
+    elif operation == "merge":
+        result = await merge(fake)
+    else:
+        result = await service.remove_password(
+            DOC, "s3cret", output="replace_original", options=YES
+        )
+
+    assert (result.state, result.trashed_ids, trash(fake)) == ("success", (), [])
+    assert fake.patches == []  # no number moved either
+    assert result.message is not None
+    assert result.message.startswith(f"Nothing was moved to the trash: {UNREAD}. What was made")
+    assert result.next is not None
+    assert result.next.startswith("only if document")
+
+
+@pytest.mark.parametrize("operation", ["split", "merge"])
+@pytest.mark.parametrize(("shown", "now"), [(None, True), (True, None)])
+async def test_a_confirmation_covers_only_what_was_known_when_it_was_shown(
+    operation: str, *, shown: bool | None, now: bool | None
+) -> None:
+    fake = paperless()
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+
+    async def ask() -> PdfResult:
+        if operation == "split":
+            return await split(fake, Options())
+        return await service.merge([DOC, OTHER], None, delete_originals=True)
+
+    fake.may = shown
+    with pytest.raises(ConfirmationRequired) as first:
+        _ = await ask()
+    fake.may = now
+    with pytest.raises(ConfirmationRequired) as second:
+        _ = await ask()
+
+    assert first.value.fingerprint != second.value.fingerprint
+    assert fake.started == []
 
 
 async def test_files_that_cannot_be_told_apart_keep_the_original() -> None:

@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 # No step of a composed call starts later than this after its beginning.
 LATEST_START: Final = 45.0
 LATE: Final = "the call took too long, though everything was made and checked"
+UNREAD: Final = "the rights of this Paperless user could not be read"
 KEPT: Final = "Nothing was moved to the trash: {reason}."
 HAS_ONE: Final = (
     "Document {product} has the archive serial number {held} already, so document {original} keeps "
@@ -76,6 +77,8 @@ class Replacement:
             number, but Paperless must have counted them.
         serial: The original whose archive serial number moves to the only new document.
         problem: What is already known to be wrong with what was made.
+        unread: Whether the rights of the user could not be read when the plan was made: the user
+            was told that the originals stay, so they do, whatever later reads say.
         perhaps_none: Whether a request without a task may simply have had nothing to do.
     """
 
@@ -83,6 +86,7 @@ class Replacement:
     pages: Mapping[int, int | None]
     serial: DocumentRecord | None = None
     problem: str | None = None
+    unread: bool = False
     perhaps_none: bool = False
 
 
@@ -233,7 +237,7 @@ class Replacing:
         try:
             _check_tasks(result, started, wanted)
             product = await self._product(result, started, wanted)
-            await self._in_time(wanted, product, began)
+            await self._may_start(wanted, product, began)
             for original in wanted.originals:
                 await self._unchanged(original, original.archive_serial_number)
         except _KeptError as kept:
@@ -276,11 +280,13 @@ class Replacing:
             made.append(document)
         return made[-1]
 
-    async def _in_time(self, wanted: Replacement, product: DocumentRecord, began: float) -> None:
-        """Nothing starts later than ``LATEST_START``."""
-        if self.clock() - began > LATEST_START:
+    async def _may_start(self, wanted: Replacement, product: DocumentRecord, began: float) -> None:
+        """Nothing starts without the rights being known, or later than ``LATEST_START``."""
+        late = self.clock() - began > LATEST_START
+        if wanted.unread or late:
             then = _finish(wanted, wanted.originals, product.id, serial=True)
-            raise _KeptError(LATE, f"{_if_unchanged(wanted.originals)}: {then}")
+            reason = UNREAD if wanted.unread else LATE
+            raise _KeptError(reason, f"{_if_unchanged(wanted.originals)}: {then}")
 
     async def _unchanged(self, original: DocumentRecord, number: int | None) -> None:
         """The original must still be the one that was accepted, with this serial number."""

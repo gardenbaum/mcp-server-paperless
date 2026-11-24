@@ -365,7 +365,9 @@ class PdfService:
             lost = () if metadata_document_id is not None else (without(_named(documents)),)
             effect = "; ".join([effect, *lost, *only, *serials.keeps, *serials.loses, *unread])
             scope = [(d.newest_file, d.archive_serial_number) for d in documents]
-            ConfirmationRequired.require(effect, scope=(pages, scope, metadata_document_id))
+            ConfirmationRequired.require(
+                effect, scope=(pages, scope, metadata_document_id, bool(unread))
+            )
         began = self._replacing.clock()
         started = await self._writer.merge_documents(
             document_ids,
@@ -387,7 +389,9 @@ class PdfService:
             return await self._merged_note(result, left_out, pages)
         if started.included is None and pages is None:
             left_out = "it cannot be told whether every document is in the merged one"
-        wanted = Replacement(documents, {0: pages}, serial=serial, problem=left_out)
+        wanted = Replacement(
+            documents, {0: pages}, serial=serial, problem=left_out, unread=bool(unread)
+        )
         return await self._replacing.finish(result, started, wanted, began=began)
 
     async def split(
@@ -785,7 +789,12 @@ class PdfService:
                 lost = (*_dropped(request, dropped), *lost, *serials.keeps, *serials.loses)
                 effect = "; ".join([effect, f"it {BACK}", *lost, *unread])
             number = document.archive_serial_number
-            scope = (source.scope, number if trashes else None, options.keep_metadata)
+            scope = (
+                source.scope,
+                number if trashes else None,
+                options.keep_metadata,
+                bool(unread),
+            )
             ConfirmationRequired.require(effect, scope=scope)
         began = self._replacing.clock()
         started = await start("new_version" if version else "new_document")
@@ -806,6 +815,7 @@ class PdfService:
             [document],
             files,
             serial=moves,
+            unread=bool(unread),
             perhaps_none=bool(no_task) and DATED not in (result.message or ""),
         )
         return await self._replacing.finish(result, started, wanted, began=began)
