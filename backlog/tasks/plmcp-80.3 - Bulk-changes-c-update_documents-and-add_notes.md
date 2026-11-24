@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:34Z'
-updated_date: '2026-11-24T18:35:05Z'
+updated_date: '2026-11-24T18:41:37Z'
 labels:
   - bulk
 dependencies:
@@ -91,6 +91,8 @@ Third review (from 89228bf), production code clean: the fake checks the change r
 Owner, 2026-11-24, on the point left open above: "Alles wie von dir empfohlen." WORST is 5388; no case was cut. Full hosted E2E 45451015858 on 5c33911 green; add_notes 100 of 100 without a lost answer.
 
 Main with PLMCP-80.2 merged (trees equal, merge -s ours). DoD 1 stays open: the E2E tests and some tests for existing behaviour were not seen red. DoD 2 and 4: required CI checks and the merge of #138; just check was not run locally as a whole.
+
+Codex on #138 (P2, valid): also_changed could exceed the 100,000 characters. Fixed: titles of also_changed, then the message, then its last ids are left out; tests for 900 and 4,000 mirrored documents seen red (134,543 and 599,543 characters). Surface snapshot: the description of truncated.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

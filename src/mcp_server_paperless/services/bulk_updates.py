@@ -929,7 +929,8 @@ def _short(value: JsonValue) -> JsonValue:
 def _bounded(report: UpdateReport) -> UpdateReport:
     """``report`` with short values, then without changes from the end, until it fits.
 
-    A message that is too long even then is cut.
+    Too long even then: without the titles of ``also_changed``, with a cut message, without the
+    last ids of ``also_changed``. Every document of the call and its status stay.
     """
     if len(report.model_dump_json()) <= MAX_ANSWER:
         return report
@@ -954,5 +955,18 @@ def _bounded(report: UpdateReport) -> UpdateReport:
         bare = rows[at].model_copy(update={"changes": ()})
         room += len(rows[at].model_dump_json()) - len(bare.model_dump_json())
         rows[at] = bare
+    also: list[Ref] = list(report.also_changed)
+    for at in reversed(range(len(also))):
+        if room >= 0:
+            break
+        bare_ref = Ref(id=also[at].id, name=None)
+        room += len(also[at].model_dump_json()) - len(bare_ref.model_dump_json())
+        also[at] = bare_ref
     message = cut(report.message, max(WHY_CHARS, len(report.message) + min(room, 0)))
-    return report.model_copy(update={"documents": tuple(rows), "message": message})
+    room += len(report.message) - len(message)
+    while room < 0 and also:
+        room += len(also.pop().model_dump_json()) + 1
+    return report.model_copy(
+        update={"documents": tuple(rows), "also_changed": tuple(also), "message": message}
+    )
+

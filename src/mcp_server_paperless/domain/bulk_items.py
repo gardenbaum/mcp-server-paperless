@@ -128,7 +128,7 @@ class UpdateReport(BaseModel):
         Field(description="Not as asked: pass these items again, they are checked anew."),
     ] = ()
     truncated: Annotated[
-        bool, Field(description="Long values or changes were left out: the answer was too large.")
+        bool, Field(description="Values, changes or other documents were left out: the answer was too large.")
     ] = False
     message: str
 
