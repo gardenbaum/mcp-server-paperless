@@ -143,6 +143,8 @@ async def test_hosts_that_differ_only_at_their_end_are_told_apart(host: str) -> 
         ("http://h.example:443/p", "'http://h.example:443'"),
         ("https://user:secret@h.example:8443/p", "'https://h.example:8443'"),
         ("http://[::1]:9000/p", "'http://[::1]:9000'"),
+        ("https://user:secret@h.example/@a/@b?c=@#@", "'h.example'"),
+        ("https://h.example?a@b@c", "'h.example'"),
         ("https://h.example/p?q=a" + chr(92) + "b", "'h.example'"),
         ("https://h.example/p#a" + chr(92) + "b", "'h.example'"),
     ],
@@ -167,6 +169,9 @@ async def test_a_webhook_shows_its_port_unless_it_is_the_usual_one(url: str, sho
         "https://h.example:99999/",
         "ftp://h.example/",
         "https://user:secret@/",
+        "https://user:secret@good.example@evil.example/",
+        "https://user:secret@@evil.example",
+        "https://user:secret@good.example@evil.example?q",
     ],
 )
 async def test_a_webhook_url_that_can_be_read_another_way_is_refused_unseen(url: str) -> None:
@@ -190,6 +195,19 @@ async def test_a_workflow_with_an_unreadable_webhook_can_be_repaired() -> None:
     _ = await setup.workflows.update(1, WorkflowEdit(actions=(hook,)), confirm=False)
 
     assert "good.example" in str(setup.state.workflows[0].actions)
+
+
+@pytest.mark.decision("decision-64")
+async def test_a_workflow_with_several_at_signs_is_switched_off_renamed_and_deleted() -> None:
+    setup = Setup(writes=True)
+    setup.workflow(setup.webhook_action("https://a@b.example@evil.example/"), enabled=True)
+
+    _ = await setup.workflows.update(1, WorkflowEdit(name="Renamed"), confirm=False)
+    off = await setup.workflows.update(1, WorkflowEdit(enabled=False), confirm=False)
+    assert off.enabled is False
+    _ = await setup.workflows.delete(1, confirm=True)
+
+    assert setup.state.workflows == []
 
 
 async def test_a_fetch_shows_the_folder_of_a_moving_rule_to_its_end() -> None:

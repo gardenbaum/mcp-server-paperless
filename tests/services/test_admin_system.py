@@ -71,6 +71,61 @@ async def test_the_configuration_shows_what_is_set_and_which_keys_are_saved() ->
     assert found.externally_configured_variables == ("PAPERLESS_OCR_LANGUAGE",)
 
 
+ENDPOINTS = ("llm_endpoint", "llm_embedding_endpoint", "remote_ocr_endpoint")
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize("name", ENDPOINTS)
+@pytest.mark.parametrize(
+    ("stored", "shown", "in_part"),
+    [
+        ("https://u:s3cret@e.x:8443/v1?a=b", "https://e.x:8443/v1?a=b", True),
+        ("https://s3cret@e.x", "https://e.x", True),
+        ("https://u:s3cret@b@e.x/", "a URL that is not shown", True),
+        ("u:s3cret@e.x", "a URL that is not shown", True),
+        ("https://e.x/v1", "https://e.x/v1", False),
+        ("", "", False),
+    ],
+)
+async def test_a_service_url_is_returned_without_its_credentials(
+    name: str, stored: str, shown: str, *, in_part: bool
+) -> None:
+    setup = Setup()
+    setup.state.config = {name: stored, "app_title": "a:b@c"}
+
+    found = await setup.service.get_config()
+    same = await setup.service.update_config({name: stored})
+    changed = await setup.service.update_config({"pages": 3}, confirm=True)
+
+    for config in (found, same.config, changed.config):
+        assert config.settings[name] == shown
+        assert config.settings["app_title"] == "a:b@c"  # a name, no URL
+        assert config.shown_in_part == ((name,) if in_part else ())
+    assert "s3cret" not in "".join(m.model_dump_json() for m in (found, same, changed))
+    assert setup.state.config[name] == stored
+
+
+@pytest.mark.decision("decision-64")
+async def test_writing_a_url_back_as_it_was_returned_shows_that_its_credentials_go() -> None:
+    setup = Setup(writes=False)
+    setup.state.config = {"llm_endpoint": "https://u:s3cret@e.x/v1"}
+    shown = (await setup.service.get_config()).settings
+
+    message = await refusal(setup.service.update_config(shown))
+
+    assert "remove the credentials of llm_endpoint 'https://e.x/v1'" in message
+
+
+@pytest.mark.decision("decision-64")
+async def test_a_url_that_was_not_shown_is_not_written_back() -> None:
+    setup = Setup(writes=False)
+    setup.state.config = {"llm_endpoint": "https://u:s3cret@b@e.x/"}
+    shown = (await setup.service.get_config()).settings
+
+    with pytest.raises(Validation, match="may not show"):
+        _ = await setup.service.update_config(shown, confirm=True)
+
+
 async def test_every_configuration_change_needs_confirm_and_shows_old_and_new_values() -> None:
     setup = Setup(writes=False)
     setup.state.config = {"app_title": "Archive"}

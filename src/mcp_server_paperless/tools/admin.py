@@ -333,8 +333,9 @@ async def get_app_config(ctx: Context) -> AppConfig:
     """Read the application configuration: the settings that have a value, OCR, barcodes, AI.
 
     Settings without a value follow the server's environment and are left out. API keys are
-    never returned; keys_configured names those that hold one. Any signed-in user may read it.
-    Change it with update_app_config.
+    never returned; keys_configured names those that hold one. URLs come without their
+    credentials; shown_in_part names those that have some, and writing one back as shown drops
+    them. Any signed-in user may read it. Change it with update_app_config.
     """
     return await services(ctx).system.get_config()
 

@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Final, Literal
 from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterator, Sequence
+    from collections.abc import Generator, Iterable, Iterator, Sequence
 
 
 class PaperlessMcpError(Exception):
@@ -162,13 +162,24 @@ def quoted(text: str, limit: int = 60) -> str:
     """``text`` on one line, cut to ``limit`` characters with an ellipsis, in quotes.
 
     For naming a document or a note in a message without sending its whole content, and without
-    characters that hide or reorder what the reader sees. Single
-    quotes, or double quotes when the text holds a single quote; with both, the single ones
-    become typographic apostrophes.
+    characters that hide or reorder what the reader sees. Single quotes, or double quotes when the
+    text holds a single quote; with both, the single ones become typographic apostrophes. What
+    else can be read as a double quote is escaped (decision-64); an escape counts as it is shown
+    and is never cut itself.
     """
-    line = _line(text)
-    shown = line if len(line) <= limit else line[: limit - 1] + "…"
-    return _in_quotes(shown)
+    pieces = _without_look_alikes(_line(text))
+    shown = "".join(pieces)
+    return _in_quotes(shown if len(shown) <= limit else _fitting(pieces, limit - 1) + "…")
+
+
+def _fitting(pieces: Iterable[str], limit: int) -> str:
+    """The first of ``pieces`` that have room in ``limit`` characters."""
+    shown = ""
+    for piece in pieces:
+        if len(shown) + len(piece) > limit:
+            break
+        shown += piece
+    return shown
 
 
 def _in_quotes(shown: str) -> str:
@@ -188,10 +199,14 @@ DESTINATION_LIMIT: Final = 254
 
 def both_ends(text: str, limit: int = 60) -> str:
     """``text`` like ``quoted``, but cut in its middle: what decides about a host is its end."""
-    line = _line(text)
-    if len(line) > limit:
-        line = f"{line[: limit // 3]}…{line[-(limit - limit // 3 - 1) :]}"
-    return quoted(line, limit)
+    pieces = _without_look_alikes(_line(text))
+    shown = "".join(pieces)
+    if len(shown) > limit:
+        head = _fitting(pieces, limit // 3)
+        # Every piece backwards, then the joined tail, so that an escape is read as it is.
+        tail = _fitting((p[::-1] for p in reversed(pieces)), limit - limit // 3 - 1)[::-1]
+        shown = f"{head}…{tail}"
+    return _in_quotes(shown)
 
 
 # Categories no destination holds: control, format, unassigned, private and surrogate characters,
@@ -246,6 +261,32 @@ def _escaped(text: str) -> Iterator[str]:
             )
         yield _escape(character) if hides else character
         before, carries = character, not hides and category[0] in "LMN"
+
+
+# Hebrew writes with two of them: the Yiddish double yod is a letter that two single ones replace
+# anyway, and gershayim stand between the letters of an acronym.
+_DOUBLE_YOD: Final = 0x05F2
+_GERSHAYIM: Final = 0x05F4
+_HEBREW: Final = range(0x05D0, 0x05F3)
+
+
+def _without_look_alikes(text: str) -> list[str]:
+    """The characters of ``text``, what can be read as a double quote escaped.
+
+    The double quote itself, which decides about the quotes around, the backslash, which is none,
+    and what Hebrew words hold stay.
+    """
+    pieces: list[str] = []
+    for before, character, after in zip(f" {text}", text, f"{text[1:]} ", strict=False):
+        code = ord(character)
+        if code in _SINGLE_QUOTES:
+            hides = ord(before) in _SINGLE_QUOTES
+        elif code == _GERSHAYIM:
+            hides = not (ord(before) in _HEBREW and ord(after) in _HEBREW)
+        else:
+            hides = code in _DOUBLE_QUOTES and code not in {0x22, 0x5C, _DOUBLE_YOD}
+        pieces.append(_escape(character) if hides else character)
+    return pieces
 
 
 def excerpt(text: str) -> str:

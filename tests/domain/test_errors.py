@@ -9,6 +9,7 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     Validation,
     accepting,
+    both_ends,
     destination,
     excerpt,
     listed,
@@ -401,6 +402,71 @@ def test_an_excerpt_escapes_what_reads_as_its_closing_quote(code: int) -> None:
     assert shown.isascii()
     assert shown[2:].startswith(r"\u")
     assert json.loads(shown) == f"a{chr(code)}b"
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize("code", sorted({*LOOK_ALIKE_QUOTES} - {0x05F2}))
+def test_quoted_text_escapes_what_reads_as_a_double_quote(code: int) -> None:
+    escape = json.dumps(chr(code))[1:-1]
+
+    assert quoted(f"a{chr(code)}b") == f"'a{escape}b'"
+    # In double quotes it would seem to close them.
+    assert quoted(f"Bob's{chr(code)} b") == f'"Bob\'s{escape} b"'
+
+
+@pytest.mark.decision("decision-64")
+def test_quoted_text_escapes_two_single_quotes_side_by_side() -> None:
+    assert quoted("a''b") == r'''"a'\u0027b"'''
+    assert quoted(f"a{chr(0x2019)}'b") == f"'a{chr(0x2019)}{chr(92)}u0027b'"
+    assert quoted("a' 'b") == '''"a' 'b"'''
+
+
+@pytest.mark.decision("decision-64")
+def test_quoted_text_keeps_plain_quotes_backslashes_and_single_apostrophes() -> None:
+    for text in ('the "best"', r"C:\x\u201d", f"it{chr(0x2019)}s", f"{chr(0xAB)}x{chr(0xBB)}"):
+        assert quoted(text) == f"'{text}'"
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Z\u00fcrich \u00e9t\u00e9",
+        "\u0421\u0447\u0451\u0442",
+        "\u0627\u0644\u0645\u0644\u0641",
+        "\u65e5\u672c\u8a9e\u300c\u66f8\u300d",
+        "\u05e6\u05d4\u05f4\u05dc",  # an acronym, with gershayim between its letters
+        "\u05e6\u05d5\u05f2",  # a Yiddish word that ends in its double yod
+        "\u0928\u092e\u0938\u094d\u0924\u0947",
+        "\u0301x",
+        "\u0645\u200c\u0646",
+    ],
+)
+def test_names_in_other_scripts_stay_readable(name: str) -> None:
+    assert quoted(name) == f"'{name}'"
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize(
+    "text", ["\u05d0\u05f4", "\u05f4\u05d0", "\u05d0\u05f4 \u05d0", "x\u05f4\u05d0"]
+)
+def test_gershayim_that_stand_at_the_edge_of_a_word_are_escaped(text: str) -> None:
+    assert quoted(text) == "'" + text.replace("\u05f4", r"\u05f4") + "'"
+
+
+@pytest.mark.decision("decision-64")
+def test_escapes_count_towards_the_cut_and_are_never_cut_themselves() -> None:
+    mark, escape = chr(0x201D), r"\u201d"
+
+    assert quoted(f"ab{mark}", 8) == f"'ab{escape}'"
+    assert quoted(f"abc{mark}", 8) == "'abc\u2026'"
+    assert quoted(f"a{mark}bcd", 8) == f"'a{escape}\u2026'"
+    assert quoted(mark * 60) == f"'{escape * 9}\u2026'"
+    assert both_ends(f"{mark}abcdefghij{mark}", 24) == f"'{escape}abcdefghij{escape}'"
+    assert both_ends(f"{mark}{'x' * 30}{mark}yz", 24) == f"'{escape}xx\u2026{'x' * 7}{escape}yz'"
+    assert both_ends(f"abcdefg{mark}{'x' * 30}", 24) == f"'abcdefg\u2026{'x' * 15}'"
+    assert both_ends("x" * 8 + mark * 40, 24) == f"'{'x' * 8}\u2026{escape * 2}'"
+    assert both_ends("abcdefghij", 9) == "'abc\u2026fghij'"
 
 
 @pytest.mark.decision("decision-48")

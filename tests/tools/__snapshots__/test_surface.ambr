@@ -7882,8 +7882,9 @@
         Read the application configuration: the settings that have a value, OCR, barcodes, AI.
         
         Settings without a value follow the server's environment and are left out. API keys are
-        never returned; keys_configured names those that hold one. Any signed-in user may read it.
-        Change it with update_app_config.
+        never returned; keys_configured names those that hold one. URLs come without their
+        credentials; shown_in_part names those that have some, and writing one back as shown drops
+        them. Any signed-in user may read it. Change it with update_app_config.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -7915,9 +7916,17 @@
             'description': "Settings with a value; the others follow the server's environment.",
             'type': 'object',
           }),
+          'shown_in_part': dict({
+            'description': 'Settings whose URL has credentials, which are not shown (nor the URL, if they cannot be told apart from the rest). Writing one back as shown drops them.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
         }),
         'required': list([
           'settings',
+          'shown_in_part',
           'keys_configured',
           'externally_configured_variables',
         ]),
@@ -18317,9 +18326,17 @@
                 'description': "Settings with a value; the others follow the server's environment.",
                 'type': 'object',
               }),
+              'shown_in_part': dict({
+                'description': 'Settings whose URL has credentials, which are not shown (nor the URL, if they cannot be told apart from the rest). Writing one back as shown drops them.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
             }),
             'required': list([
               'settings',
+              'shown_in_part',
               'keys_configured',
               'externally_configured_variables',
             ]),
@@ -30582,8 +30599,9 @@
         Read the application configuration: the settings that have a value, OCR, barcodes, AI.
         
         Settings without a value follow the server's environment and are left out. API keys are
-        never returned; keys_configured names those that hold one. Any signed-in user may read it.
-        Change it with update_app_config.
+        never returned; keys_configured names those that hold one. URLs come without their
+        credentials; shown_in_part names those that have some, and writing one back as shown drops
+        them. Any signed-in user may read it. Change it with update_app_config.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -30615,9 +30633,17 @@
             'description': "Settings with a value; the others follow the server's environment.",
             'type': 'object',
           }),
+          'shown_in_part': dict({
+            'description': 'Settings whose URL has credentials, which are not shown (nor the URL, if they cannot be told apart from the rest). Writing one back as shown drops them.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
         }),
         'required': list([
           'settings',
+          'shown_in_part',
           'keys_configured',
           'externally_configured_variables',
         ]),

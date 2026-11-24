@@ -89,6 +89,8 @@ SAVE_WAIT_SECONDS: Final = 600.0
 SHOWN_IDS: Final = 10
 # The settings that are URLs.
 ENDPOINTS: Final = frozenset({"llm_endpoint", "llm_embedding_endpoint", "remote_ocr_endpoint"})
+# What stands for a URL whose credentials are not certain; its spaces keep it from being written.
+NOT_SHOWN: Final = "a URL that is not shown"
 # Settings a confirmation names in full; the rest are counted.
 SHOWN: Final = 5
 TASK_EFFECTS: Final[dict[str, str]] = {
@@ -127,7 +129,7 @@ def _went(name: str, value: JsonValue) -> str:
         return _shown(value)
     text = without_credentials(_text(value)) if name in ENDPOINTS else _text(value)
     if text is None:
-        return "a URL that is not shown"
+        return NOT_SHOWN
     return both_ends(text) + _credentials(name, value) if text else "empty"
 
 
@@ -162,8 +164,15 @@ def _plural(count: int, noun: str) -> str:
 
 
 def _config(record: AppConfigRecord) -> AppConfig:
+    public: dict[str, JsonValue] = {}
+    for name in sorted(ENDPOINTS & record.settings.keys()):
+        text = _text(record.settings[name])
+        shown = without_credentials(text)
+        if shown != text:
+            public[name] = NOT_SHOWN if shown is None else shown
     return AppConfig(
-        settings=record.settings,
+        settings=record.settings | public,
+        shown_in_part=tuple(public),
         keys_configured=record.keys_configured,
         externally_configured_variables=record.externally_configured_variables,
     )

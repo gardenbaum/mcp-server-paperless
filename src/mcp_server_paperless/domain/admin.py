@@ -345,6 +345,15 @@ class AppConfig(BaseModel):
         dict[str, JsonValue],
         Field(description="Settings with a value; the others follow the server's environment."),
     ]
+    shown_in_part: Annotated[
+        tuple[str, ...],
+        Field(
+            description=(
+                "Settings whose URL has credentials, which are not shown (nor the URL, if they "
+                "cannot be told apart from the rest). Writing one back as shown drops them."
+            )
+        ),
+    ]
     keys_configured: Annotated[
         tuple[str, ...],
         Field(description="Which API key settings hold a value; the keys are never returned."),

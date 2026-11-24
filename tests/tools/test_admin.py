@@ -213,6 +213,28 @@ async def test_a_key_that_is_not_text_is_refused_without_echoing_it() -> None:
     assert "987654321" not in text
 
 
+@pytest.mark.decision("decision-64")
+async def test_the_configuration_tools_return_service_urls_without_their_credentials() -> None:
+    state = seeded()
+    state.config = {"llm_endpoint": "https://u:s3cret@old.example/v1"}
+
+    read = await call(fake(state), "get_app_config")
+    done = await call(
+        fake(state),
+        "update_app_config",
+        settings={"llm_endpoint": "https://u:n3wer@new.example/v1"},
+        confirm=True,
+    )
+
+    assert cast("Json", read["settings"])["llm_endpoint"] == "https://old.example/v1"
+    assert read["shown_in_part"] == ["llm_endpoint"]
+    config = cast("Json", done["config"])
+    assert cast("Json", config["settings"])["llm_endpoint"] == "https://new.example/v1"
+    assert config["shown_in_part"] == ["llm_endpoint"]
+    assert "s3cret" not in str(read)
+    assert "n3wer" not in str(done)
+
+
 async def test_the_description_of_the_configuration_tool_lists_the_settings() -> None:
     async with Client(server(fake())) as client:
         tools = {tool.name: tool for tool in await client.list_tools()}
