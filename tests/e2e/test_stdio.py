@@ -102,7 +102,8 @@ async def test_the_environment_selects_the_tools_over_stdio(stack: Stack) -> Non
         "list_processed_mail",
     }
     listings = {
-        *("list_document_versions", "list_trash", "list_share_links", "list_share_bundles"),
+        *("list_document_versions", "list_share_links", "list_share_bundles"),
+        *("list_trash", "get_trash_entry", "get_trashed_file"),
         *("list_users", "list_groups", "list_workflows", "get_workflow"),
     }
     admin = {

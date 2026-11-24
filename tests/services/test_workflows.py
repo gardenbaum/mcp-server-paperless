@@ -28,7 +28,7 @@ from mcp_server_paperless.domain.workflows import (
 )
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
-from mcp_server_paperless.services.workflows import WorkflowService
+from mcp_server_paperless.services.workflows import TRASH_NOTE, WorkflowService
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -1060,6 +1060,7 @@ async def test_a_confirmed_workflow_that_acts_is_created() -> None:
     )
 
     assert [a.type_name for a in made.actions] == ["move to trash"]
+    assert made.note == TRASH_NOTE
     assert setup.fake.writes == ["create"]
 
 
@@ -1215,6 +1216,12 @@ async def test_replacing_the_actions_of_an_enabled_workflow_with_an_acting_one_n
     assert setup.fake.writes == []
     done = await setup.workflows.update("w", WorkflowEdit(actions=(trash,)), confirm=True)
     assert [a.type for a in done.actions] == [6]
+    assert done.note == TRASH_NOTE
+    renamed = await setup.workflows.update("w", WorkflowEdit(name="w2"), confirm=False)
+    assert renamed.note == TRASH_NOTE
+    plain = await setup.workflows.update("w2", WorkflowEdit(actions=(RETITLE,)), confirm=False)
+    assert plain.note is None
+    assert all(w.note is None for w in (await setup.workflows.list()).workflows)
 
 
 @pytest.mark.parametrize(

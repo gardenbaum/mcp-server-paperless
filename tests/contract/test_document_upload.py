@@ -74,6 +74,18 @@ async def read(ports: Ports, task: TaskStatus) -> DocumentRecord:
     return await ports.documents.get_document(document)
 
 
+async def uploaded(backend: Backend, content: bytes) -> int:
+    """A text document of the admin with this file."""
+    name = f"plmcp77-{uuid.uuid4().hex}"
+    upload = DocumentUpload(
+        filename=f"{name}.txt", mime_type="text/plain", content=content, title=name
+    )
+    status = await ended(backend, await backend.admin.document_writes.upload_document(upload))
+    assert status.state == "success"
+    [document] = status.document_ids
+    return document
+
+
 @pytest.mark.contract(CONTRACT)
 async def test_an_upload_returns_the_id_of_a_task_that_creates_the_document(
     backend: Backend,

@@ -111,7 +111,9 @@ class ConfirmationRequired(Validation):
     """
 
     @classmethod
-    def for_effect(cls, effect: str, *, scope: object = None) -> ConfirmationRequired:
+    def for_effect(
+        cls, effect: str, *, scope: object = None, hint: str = CONFIRM_HINT
+    ) -> ConfirmationRequired:
         """The standard refusal: nothing was changed, and confirming would ``effect``.
 
         ``effect`` is a verb phrase such as ``move document 5 to the trash``; it names what is
@@ -119,18 +121,21 @@ class ConfirmationRequired(Validation):
         (decision-48). ``scope`` is what the text does not tell apart, such
         as the ids behind "and 5 more": anything whose ``repr`` is the same for the same targets.
         """
-        return cls(f"Nothing was changed. Confirming would {_line(effect)}.", scope=scope)
+        return cls(
+            f"Nothing was changed. Confirming would {_line(effect)}.", scope=scope, hint=hint
+        )
 
     @classmethod
-    def require(cls, effect: str, *, scope: object) -> None:
+    def require(cls, effect: str, *, scope: object, hint: str = CONFIRM_HINT) -> None:
         """Refuse like ``for_effect``, unless the user accepted exactly this refusal.
 
         ``scope`` has no default: a caller whose text tells everything apart says so with None.
+        ``hint`` is for a call that has to be repeated with other arguments.
 
         Raises:
             ConfirmationRequired: The user has not accepted this effect on this ``scope``.
         """
-        refusal = cls.for_effect(effect, scope=scope)
+        refusal = cls.for_effect(effect, scope=scope, hint=hint)
         if _accepted.get() != refusal.fingerprint:
             raise refusal
 

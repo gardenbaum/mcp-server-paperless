@@ -544,8 +544,8 @@ class DuplicateList(BaseModel):
     not_compared: tuple[str, ...]
 
 
-class DocumentDetail(BaseModel):
-    """A document with names, readable custom fields and what ``include`` asked for."""
+class DocumentOverview(BaseModel):
+    """A document with names and readable custom fields."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
@@ -566,6 +566,11 @@ class DocumentDetail(BaseModel):
     page_count: int | None
     notes_count: int
     web_url: Annotated[str, Field(description="Link to the document in the Paperless web UI.")]
+
+
+class DocumentDetail(DocumentOverview):
+    """A document with names, readable custom fields and what ``include`` asked for."""
+
     notes: Annotated[tuple[Note, ...] | None, Field(description="Only with include notes.")] = None
     history: Annotated[DocumentHistory | None, Field(description="Only with include history.")] = (
         None

@@ -43,6 +43,7 @@ from mcp_server_paperless.domain.workflows import (
     WorkflowTrigger,
     WorkflowValues,
 )
+from mcp_server_paperless.services.removal import WAY_BACK
 from mcp_server_paperless.services.taxonomy import fold, pick
 from mcp_server_paperless.services.views import plural
 
@@ -97,6 +98,8 @@ OWNERSHIP: Final = (
     "assign_change_users",
     "assign_change_groups",
 )
+TRASH_ACTION: Final = 6
+TRASH_NOTE: Final = f"A document this workflow moves to the trash {WAY_BACK}"
 SUGGESTIONS: Final = 5
 # What the actions that need no settings do; password removal and AI suggestions cannot be written
 # here but a workflow made in the web UI can hold them (switching it on needs confirm too).
@@ -447,7 +450,7 @@ class WorkflowService:
         if spec.order is not None:
             fields["order"] = spec.order
         made = await self._writer.create_workflow(name, WorkflowValues.model_validate(fields))
-        return self._info(made, await self._names([made]))
+        return await self._stored(made)
 
     async def update(
         self, workflow: NameOrId, edit: WorkflowEdit, *, confirm: bool
@@ -497,7 +500,7 @@ class WorkflowService:
             lead = f"change the workflow {quoted(found.name)} (id {found.id})"
             ConfirmationRequired.require(_effect(lead, triggers, acts), scope=(triggers, actions))
         done = await self._writer.update_workflow(found.id, values)
-        return self._info(done, await self._names([done]))
+        return await self._stored(done)
 
     async def delete(self, workflow: NameOrId, *, confirm: bool) -> WorkflowDeletion:
         """Delete a workflow for good; without ``confirm`` refuse and say what deleting it does.
@@ -730,6 +733,12 @@ class WorkflowService:
             except PermissionDenied:
                 names[kind] = {}
         return names
+
+    async def _stored(self, workflow: Workflow) -> WorkflowInfo:
+        """The workflow as create and update answer it: with the way back from the trash."""
+        info = self._info(workflow, await self._names([workflow]))
+        trashes = any(a.type == TRASH_ACTION for a in workflow.actions)
+        return info.model_copy(update={"note": TRASH_NOTE if trashes else None})
 
     def _info(
         self, workflow: Workflow, names: Mapping[TaxonomyKind, Mapping[int, str]]

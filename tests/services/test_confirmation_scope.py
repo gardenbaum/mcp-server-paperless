@@ -63,6 +63,7 @@ from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
 from mcp_server_paperless.services.trash import TrashService
+from mcp_server_paperless.services.trash_scan import TrashScan
 from mcp_server_paperless.services.versions import VersionService
 from mcp_server_paperless.services.views import ViewService
 from mcp_server_paperless.services.workflows import WorkflowService
@@ -85,7 +86,7 @@ def fakes(state: FakeState) -> tuple[FakePaperless, TaxonomyResolver]:
 def trash(state: FakeState) -> Callable[[], Awaitable[object]]:
     state.trash = [FakeDocument(id=n, title="Same") for n in MANY]
     fake, taxonomy = fakes(state)
-    service = TrashService(fake, fake, taxonomy, web_url=WEB)
+    service = TrashService(fake, fake, fake, TrashScan(fake, fake, taxonomy), taxonomy, web_url=WEB)
     return lambda: service.empty(None, everything=True)
 
 

@@ -73,11 +73,11 @@ async def bulk_edit_documents(
     merged: only the fields you name change. Document links are mirrored: linking A to B also
     changes B (you need change permission there), so also_changed lists those documents; a shorter
     list does not unlink the old target, removing the field does. delete moves documents to the
-    Paperless trash; reprocess runs OCR again in the background (the pdf toolset's
-    reprocess_documents does the same, also with remote OCR). Paperless checks every document
-    first: if you may not change one of them (blocked lists them), none changes and nothing is
-    sent. Needs change permission on the documents, and ownership and the delete permission for
-    delete.
+    Paperless trash (restore_from_trash of the trash toolset, or the web UI, restores them);
+    reprocess runs OCR again in the background (the pdf toolset's reprocess_documents does the same,
+    also with remote OCR). Paperless checks every document first: if you may not change one of them
+    (blocked lists them), none changes and nothing is sent. Needs change permission on the
+    documents, and ownership and the delete permission for delete.
     """  # noqa: D205 -- the summary is one sentence; FastMCP sends the docstring as is
     return await services(ctx).bulk_documents.edit(
         document_ids, operation, dry_run=dry_run, confirm=confirm
@@ -157,15 +157,15 @@ async def resolve_duplicates(  # noqa: PLR0913 -- one parameter per concept, des
     """Keep one document and move its duplicates to the trash, or merge them into it as versions.
 
     Find documents with duplicates with search_documents(has_duplicates=true) and compare the
-    copies with get_document(include=["duplicates"]) first: notes, tags and dates differ. With
-    trash the duplicates can be restored. Merging is final: they vanish for good, not even into
-    the trash, and lose their metadata and notes; only their files stay. dry_run=true previews;
-    without confirm a dialog, or an error for you to show the user, first describes the effect
-    (see confirm). Every document has to be a duplicate of the kept one now, outside the trash:
-    otherwise nothing changes and each one that is not is named. Documents you cannot see are never
-    compared. Needs the permissions to change and delete documents and ownership of the duplicates,
-    for a merge of the kept document too (or no owner). resolved, not_resolved and kept_seen say
-    what was seen afterwards.
+    copies with get_document(include=["duplicates"]) first: notes, tags and dates differ. With trash
+    the duplicates can be restored (restore_from_trash of the trash toolset, or the web UI). Merging
+    is final: they vanish for good, not even into the trash, and lose their metadata and notes; only
+    their files stay. dry_run=true previews; without confirm a dialog, or an error for you to show
+    the user, first describes the effect (see confirm). Every document has to be a duplicate of the
+    kept one now, outside the trash: otherwise nothing changes and each one that is not is named.
+    Documents you cannot see are never compared. Needs the permissions to change and delete
+    documents and ownership of the duplicates, for a merge of the kept document too (or no owner).
+    resolved, not_resolved and kept_seen say what was seen afterwards.
     """
     return await services(ctx).duplicate_resolver.resolve(
         keep_document_id, duplicate_ids, action, dry_run=dry_run, confirm=confirm

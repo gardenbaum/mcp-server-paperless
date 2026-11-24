@@ -21,6 +21,7 @@ from mcp_server_paperless.tools._shared import (
     Confirm,
     boundary,
     check_transport,
+    report_text,
     services,
 )
 from mcp_server_paperless.tools.downloads import (
@@ -43,7 +44,6 @@ from mcp_server_paperless.tools.downloads import (
     VersionId,
     read_archive,
     read_file,
-    text,
 )
 
 local = LocalProvider()
@@ -133,7 +133,7 @@ async def download_document(  # noqa: PLR0913 -- the file, the part of it and wh
         save_as=save_as,
         confirm=confirm,
     )
-    return ToolResult(content=[text(report)])
+    return ToolResult(content=[report_text(report)])
 
 
 @local.tool(
@@ -172,4 +172,4 @@ async def bulk_download(  # noqa: PLR0913 -- the archive, the part of it and whe
         save_as=save_as,
         confirm=confirm,
     )
-    return ToolResult(content=[text(report)])
+    return ToolResult(content=[report_text(report)])

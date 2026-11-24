@@ -367,3 +367,16 @@ def test_self_test_a_description_of_one_way_only_is_found() -> None:
         "update_document": "Changes it.",
     }
     assert one_sided(descriptions) == ["two steps", "nothing"]
+
+
+@pytest.mark.decision("decision-55")
+@pytest.mark.parametrize("tool", ["empty_trash", "restore_from_trash"])
+async def test_the_titles_a_trash_filter_shows_stand_only_quoted_and_cut(tool: str) -> None:
+    async with Client(serve(source(hostile(), writes=False), toolsets=["all"])) as client:
+        result = await client.call_tool(
+            tool, {"filter": {"kind": "document"}}, raise_on_error=False
+        )
+
+    message = "".join(getattr(block, "text", "") for block in result.content)
+    assert "document 30 '" in message
+    assert leaks(message) == ""

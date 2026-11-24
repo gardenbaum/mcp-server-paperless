@@ -20,6 +20,7 @@ from mcp_server_paperless.domain.errors import ConfirmationRequired, Validation,
 from mcp_server_paperless.domain.pdf import PageSlot, PdfResult, PdfTask
 from mcp_server_paperless.services.documents import document_link, require_files
 from mcp_server_paperless.services.page_ranges import describe, parse_pages
+from mcp_server_paperless.services.removal import RESTORE
 from mcp_server_paperless.services.task_outcome import follow
 from mcp_server_paperless.services.tasks import MAX_WAIT_SECONDS
 from mcp_server_paperless.services.versions import require_change
@@ -61,6 +62,8 @@ REPROCESS_NOTE: Final = (
     "they are the newest reprocess tasks this request started, so they cannot be tied to the "
     "documents."
 )
+TRASHED: Final = f"The original moves to the trash once the work succeeds. {RESTORE}"
+TRASHED_EACH: Final = f"Each original moves to the trash once the work succeeds. {RESTORE}"
 SERIAL: Final = "archive serial number, if it has one, moves to the new document"
 
 
@@ -201,7 +204,12 @@ class PdfService:
             delete_originals=delete_originals,
         )
         return await self._result(
-            "merge", summary, document_ids, started, wait_seconds=wait_seconds
+            "merge",
+            summary,
+            document_ids,
+            started,
+            wait_seconds=wait_seconds,
+            note=TRASHED_EACH if delete_originals else "",
         )
 
     async def split(
@@ -388,6 +396,7 @@ class PdfService:
             wait_seconds=wait_seconds,
             version=output == "new_version",
             no_task=UNLOCKED_NONE,
+            note=TRASHED if output == "replace_original" else "",
         )
 
     async def reprocess(
@@ -502,6 +511,7 @@ class PdfService:
             started,
             wait_seconds=wait_seconds,
             version=output == "new_version",
+            note=TRASHED if trashes else "",
         )
 
     async def _result(  # noqa: PLR0913 -- the pieces of one result
