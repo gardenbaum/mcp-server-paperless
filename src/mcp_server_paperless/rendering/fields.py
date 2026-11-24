@@ -55,7 +55,7 @@ def _is_field(note: pdfium.FPDF_ANNOTATION) -> bool:
     """
     kind = pdfium.FPDFAnnot_GetSubtype(note)
     if kind != pdfium.FPDF_ANNOT_UNKNOWN:
-        return kind == pdfium.FPDF_ANNOT_WIDGET
+        return kind == pdfium.FPDF_ANNOT_WIDGET or bool(pdfium.FPDFAnnot_HasKey(note, b"FT"))
     written = pdfium.FPDFAnnot_GetValueType(note, b"Subtype")
     odd = written not in {pdfium.FPDF_OBJECT_UNKNOWN, pdfium.FPDF_OBJECT_NAME}
     return odd or any(pdfium.FPDFAnnot_HasKey(note, key) for key in FIELD_KEYS)

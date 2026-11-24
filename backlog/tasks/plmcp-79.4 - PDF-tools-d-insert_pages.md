@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:17Z'
-updated_date: '2026-11-24T14:59:13Z'
+updated_date: '2026-11-24T15:12:14Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -82,4 +82,6 @@ Last delta review, 15 tests red first. F1: values, appearances and the way to th
 Closing round on 7ab516e, tests red first (17, and 2 of shared fields, 1 of /Parent). S1/S2/G4: fields are counted in the written result; only if some came along everything is done again with every field of every page emptied, whatever the form type, in the source and in the copies of the pictures; an unreadable page then is fields. Covers /AA, /B, /A chains, /IRT, /Popup, private data, resources. Found on the way: page resources came along with the picture (values leaked), /Parent of annotations stays untranslated by PDFium (cut off), and a source closed before saving can crash PDFium (order kept). G1 to G6 done; measured again: 49 + 50 MiB with a field 0.75 s, 600 MB.
 
 Review of 29b7d8c (H1, H2), tests red first (121 spellings). Cause of the leak with a direct /FT: the mark was found and the second build ran, but FPDFAnnot_GetSubtype is UNKNOWN for a kind that is not a direct name, so the field was neither emptied nor taken off. Now such annotations are fields, and the first build is kept only with a proof from the object bodies of the result (multiset of marks against the target; no table, no proof). Shown fields PDFium cannot draw are refused.
+
+Owner, 2026-11-24 ("alles wie empfohlen"): rights-restricted PDFs stay refused; PAPERLESS_MCP_MAX_UPLOAD_BYTES does not apply to the built file (100 MiB instead); files attached to comments are kept and named in the plan. Recorded in decision-68. J1 (6 tests red first): another annotation kind with /FT is a field.
 <!-- SECTION:NOTES:END -->

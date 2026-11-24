@@ -472,6 +472,17 @@ def test_no_spelling_of_a_field_brings_its_value(subtype: str, kind: str, *, pac
     assert b"VISIBLE" in made
 
 
+@pytest.mark.parametrize("pack", [False, True], ids=["plain", "packed"])
+@pytest.mark.parametrize("subtype", ["/Subtype /Link", "/Subtype /Text", "/Subtype /FreeText"])
+def test_another_kind_with_the_type_of_a_field_is_a_field(subtype: str, *, pack: bool) -> None:
+    source = spelled(referring(HIDE), subtype, "/FT /Tx", 10, 11)
+
+    made = unpacked(assemble(TARGET, packed(source) if pack else source, wanted("1")).content)
+
+    values = [b"HIDDENV", b"OTHERPAGE", b"DEFAULT", b"RICH", b"STOREDAP"]
+    assert [value for value in values if value in made] == []
+
+
 @pytest.mark.parametrize("kind", KINDS)
 @pytest.mark.parametrize("subtype", SUBTYPES[1:6])
 def test_a_shown_field_is_drawn_or_refused_in_any_spelling(subtype: str, kind: str) -> None:
