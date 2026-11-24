@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:35Z'
-updated_date: '2026-11-24T18:51:09Z'
+updated_date: '2026-11-24T19:25:03Z'
 labels:
   - bulk
 dependencies:
@@ -24,13 +24,13 @@ Fourth part of PLMCP-80: Paperless 3.5.1 can run a workflow with a manual trigge
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 run_workflow runs a workflow with a manual trigger on named documents after a confirmation that says what the workflow does
-- [ ] #2 Contract, tool and E2E tests cover a restricted user, an unusable workflow and a partial failure
+- [x] #1 run_workflow runs a workflow with a manual trigger on named documents after a confirmation that says what the workflow does
+- [x] #2 Contract, tool and E2E tests cover a restricted user, an unusable workflow and a partial failure
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
@@ -55,4 +55,6 @@ Implementation notes (2026-11-24): port WorkflowWriter.run_workflow, adapter on 
 Deliberate changes: OVERVIEW_GUIDE_LIMIT 2928 to 2943 (approved); surface snapshot only insertions; selection arguments moved to tools/_shared.py; TaskWaiter.ended returns the task; run_workflow in the test tables of trashing tools, destinations and confirm calls; e2e_ci ALIASES.
 Beyond the design: the confirmation also shows the values assignments and removals write (the design named the fields' kinds only); current values and owners are bound (decision-71); ownership is checked beforehand where the user may be read (may_delete asks for delete_document, which a run does not need, so get_signed_in and the rows' owners are used); a failure on some documents is a result, on all an error.
 Local runs: targeted only; tests/tools, tests/quality and others green except test_backlog_instructions::test_the_menu_driver_reports_a_failing_cli, a pty error of this machine in a file this task does not touch.
+
+Hosted evidence on e6549f1: full E2E run 45464274162 green (four shards, postgres, office, duplicates), so the live contract and E2E tests of run_workflow passed on Paperless 3.5.1 at their first run; PR tier of CI run 45464288047 green, 10672 tests passed on 3.14. Its check jobs were red for other reasons: one uncovered line of PLMCP-80.3 (bulk_updates.py 968, fixed in its branch by fb4b56e, merged here) and a network error of the Go checksum server on 3.15. Then only the base branch and backlog notes were merged; no source file changed since.
 <!-- SECTION:NOTES:END -->
