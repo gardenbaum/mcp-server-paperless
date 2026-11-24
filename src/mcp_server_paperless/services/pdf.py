@@ -348,18 +348,27 @@ class PdfService:
         started = await self._writer.rotate_documents(
             document_ids, turn, original_files=use_original_files
         )
-        base = self._preview("rotate", summary, document_ids, plan)
-        return await _guarded(
-            lambda _: self._result(
+
+        async def follow_up(_: Progress) -> PdfResult:
+            hidden = await self._hidden(started, documents)
+            before = {d.id: listed_version(d, None) for d in documents}
+            bound = _bound(wait_seconds)
+            known, found = await self._parts.turned(started, hidden, before, bound)
+            return await self._result(
                 "rotate",
                 summary,
                 document_ids,
-                started,
+                known,
                 plan,
                 wait_seconds=wait_seconds,
                 version=True,
-                copied=documents,
-            ),
+                copied=() if found is not None and found.tasks else documents,
+                found=found,
+            )
+
+        base = self._preview("rotate", summary, document_ids, plan)
+        return await _guarded(
+            follow_up,
             _accepted(base, started),
             started,
             find=_versions(document_ids),
@@ -1182,8 +1191,10 @@ class PdfService:
         states: list[UploadState] = [task.state for task in tasks]
         complete = started.problem is None and len(tasks) == started.expected
         notes = [task.message for task in tasks if task.message][:1]
+        told = "" if found is None else found.note
+        notes += [told] if told else []
         notes += await self._lookup_notes(
-            started, tasks, copied, no_task, by_name=found is not None
+            started, tasks, copied, no_task, by_name=found is not None and not told
         )
         if note:
             notes.append(note)
@@ -1260,6 +1271,17 @@ class PdfService:
             dates = {field.id for field in fields if field.data_type == "date"}
             return {number: value for number, value in given.items() if number in dates}
         return None
+
+    async def _hidden(
+        self, started: StartedTasks, documents: Sequence[DocumentRecord]
+    ) -> list[int]:
+        """The documents whose own date hides their task."""
+        names = () if started.files is None else started.files.names
+        return [
+            document.id
+            for document in documents
+            if f"{document.id}_rotated.pdf" in names and await self._dates([document])
+        ]
 
     async def _require_delete(self, documents: Sequence[DocumentRecord]) -> tuple[str, ...]:
         """Refuse early when the user is known not to be allowed to trash the originals.
@@ -1438,7 +1460,7 @@ def _together(made: PdfResult, removal: PdfResult) -> PdfResult:
     )
 
 
-def _bound(wait_seconds: float | None, *, composed: bool) -> float:
+def _bound(wait_seconds: float | None, *, composed: bool = False) -> float:
     """How long to wait: by default only where something is left to do afterwards."""
     if wait_seconds is None:
         return MAX_WAIT_SECONDS if composed else 0
