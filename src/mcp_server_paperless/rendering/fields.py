@@ -16,7 +16,7 @@ from mcp_server_paperless.domain.rendering import RenderFailed
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-# Annotation flags: not shown on a screen, and shown on paper.
+# Annotation flags: not shown (the two), and printed.
 HIDDEN: Final = 2
 NO_VIEW: Final = 32
 PRINT: Final = 4
@@ -99,13 +99,17 @@ def require(result: object) -> None:
 def _flattened(forms: pypdfium2.PdfDocument, number: int, box: Box) -> bool:
     """Make the fields of a page its only content; False if none of them is shown.
 
-    Shown is what is neither hidden nor left out on paper.
+    Shown is what a screen shows, also where it would not be printed.
     """
     page = forms[number]
     shown = False
     for place, field, flags in _annotations(page):
-        if field and flags & PRINT and not flags & (HIDDEN | NO_VIEW):
+        if field and not flags & (HIDDEN | NO_VIEW):
             shown = True
+            # Only printed ones are flattened, but a value on the screen must not be lost.
+            note = pdfium.FPDFPage_GetAnnot(page, place)
+            require(pdfium.FPDFAnnot_SetFlags(note, PRINT))
+            pdfium.FPDFPage_CloseAnnot(note)
         else:
             require(pdfium.FPDFPage_RemoveAnnot(page, place))
     if not shown:

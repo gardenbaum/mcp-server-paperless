@@ -449,14 +449,23 @@ def test_content_that_hides_the_fields_is_damage_and_not_a_silent_loss() -> None
     assert (raised.value.reason, raised.value.of_source) == ("damaged", True)
 
 
-@pytest.mark.parametrize("flags", [2, 4 + 2, 4 + 32, 0, 32])
-def test_fields_that_are_hidden_or_not_printed_are_not_there(flags: int) -> None:
+@pytest.mark.parametrize("flags", [2, 4 + 2, 4 + 32, 32])
+def test_fields_that_are_hidden_are_not_there(flags: int) -> None:
     source = field("/FT /Tx /V (SECRET)").replace(b"/F 4", b"/F %d" % flags)
 
     made = assemble(TARGET, source, wanted()).content
 
     assert (subtypes(made, 1), b"SECRET" in made) == ([], False)
     assert black(drawn(made, 1, forms=True)) == 0
+
+
+@pytest.mark.parametrize("flags", [0, 1, 5, 64])
+def test_fields_that_are_shown_but_not_printed_are_drawn(flags: int) -> None:
+    source = field("/FT /Tx /V (23.11.2026)")
+
+    made = assemble(TARGET, source.replace(b"/F 4", b"/F %d" % flags), wanted()).content
+
+    assert differing(drawn(made, 1, forms=False), drawn(source, 0, forms=True)) < 60
 
 
 @pytest.mark.parametrize(

@@ -72,8 +72,8 @@ LOST = (
         "bookmarks, document attachments and scripts, properties, layer settings (a hidden layer "
         "can "
         "become visible) and the form of the inserted pages are not in the result: each page shows "
-        "its fields as a picture, which cannot be filled in; hidden fields and fields that are not "
-        "printed are left out, and characters their font lacks are missing"
+        "its fields as a picture, which cannot be filled in; hidden fields are left "
+        "out, and characters their font lacks are missing"
     ),
     (
         "page labels (like iv) stay at their place in the file: pages behind the inserted ones "

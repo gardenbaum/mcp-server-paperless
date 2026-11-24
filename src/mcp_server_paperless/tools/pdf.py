@@ -200,23 +200,22 @@ async def insert_pages(  # noqa: PLR0913 -- the two documents, the place and the
 ) -> PdfResult:
     """Insert pages of one document into a PDF, at any place.
 
-    This server puts the files together and uploads the result once: until then nothing is
-    written, and if either document got another file meanwhile nothing is. Every page is found again
-    in the result before it is sent, or nothing is sent, so no confirm is needed. As a new version
-    the document keeps its metadata and everybody who may see it can read the inserted pages. A new
+    This server puts the files together and uploads the result once: until then nothing is written,
+    and if either document got another file meanwhile nothing is. Every page is found again in the
+    result before it is sent, or nothing is sent, so no confirm is needed. As a new version the
+    document keeps its metadata and everybody who may see it can read the inserted pages. A new
     document takes title, correspondent, type, storage path, tags, date and custom fields of
     document_id, but no grants, notes or archive serial number, and belongs to you. The file of
     document_id keeps its bookmarks, attachments and form; a signature in it is no longer valid.
     With the inserted pages comes what they refer to, also what is not visible: links, comments and
-    files in them, shared resources. Their bookmarks, document
-    attachments and form are lost (a page shows its fields as a picture; hidden ones and those that
-    are not printed are left out), and a hidden layer of theirs can become visible. Page labels of
-    document_id stay at their place. Of a source that is not a PDF the archive PDF is used.
-    Encrypted and damaged files are refused; both files together may have 100 MiB. Page numbers
-    count from 1. Needs the permission to add documents, for a new version also the permission
-    to change documents and a change grant on (or ownership of) document_id, and a view of the
-    source. If the outcome is not known, look at the document before repeating the call: it
-    would insert the pages again.
+    files in them, shared resources. Their bookmarks, document attachments and form are lost (a
+    page shows its fields as a picture; hidden ones are left out), and a hidden layer of theirs can
+    become visible. Page labels of document_id stay at their place. Of a source that is not a PDF
+    the archive PDF is used. Encrypted and damaged files are refused; both files together may have
+    100 MiB. Page numbers count from 1. Needs the permission to add documents, for a new version
+    also the permission to change documents and a change grant on (or ownership of) document_id,
+    and a view of the source. If the outcome is not known, look at the document before repeating
+    the call: it would insert the pages again.
     """
     return await services(ctx).insertion.insert(
         document_id,

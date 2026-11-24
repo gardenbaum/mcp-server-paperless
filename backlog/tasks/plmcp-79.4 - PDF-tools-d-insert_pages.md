@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:17Z'
-updated_date: '2026-11-24T14:18:45Z'
+updated_date: '2026-11-24T14:21:24Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -74,4 +74,6 @@ N1, N2: fields of inserted pages become one locked stamp annotation per page (re
 Left out: hidden, NoView and not-printed fields (as asked). Fields without the print flag are visible on a screen in the source: owner question.
 n1: page labels in the plan and tool text. n2: reason size (over 10 000 000 points).
 Surface snapshot: description of insert_pages only.
+
+Coordinator: fields without the print flag are drawn, only hidden and NoView ones are left out (5 tests red first). Supersedes the owner question above.
 <!-- SECTION:NOTES:END -->
