@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T11:11:57Z'
-updated_date: '2026-11-24T13:19:08Z'
+updated_date: '2026-11-24T13:26:42Z'
 labels:
   - safety
 dependencies: []
@@ -65,4 +65,6 @@ Delta review of 2650c31, after merging main (bdf8bf9): red first (28 failing row
 Last review of e5f1a5f: from_start removed, the rule for the undated head of a log always applies (a short log too; replaces what the note above says on tests with from_start: record tests now start with a dated line). The id check runs before the URL and the headers are looked at, so one row (id 99) of test_a_hidden_header_without_a_stored_value_to_keep_is_refused now expects the refusal of the id instead of the header. 5 rows red first.
 
 test_workflow_messages asks for its hidden header on an action that exists (id 6, not 9), so its message and the snapshot stay as they were. 1467 targeted tests passed.
+
+Codex (P2 on 4c827d9): a URL inside credentials without a scheme (user:secret/https://rest@host) showed their start; such a word is not shown now. 8 rows red first, 1437 targeted tests passed, linear, changed lines covered.
 <!-- SECTION:NOTES:END -->

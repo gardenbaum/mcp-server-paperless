@@ -27,6 +27,8 @@ _AUTHORITY: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[/\\]*([^/?#]*)")
 # after a colon or two slashes, or before a port or an IPv6 address.
 _BEFORE: Final = re.compile(r":|[/\\]{2}")
 _PORT: Final = re.compile(r":[0-9]|@\[")
+# After a colon or two slashes, more than what opens a value: it can be a part of a password.
+_SECRET_BEFORE: Final = re.compile(r"(?::|[/\\]{2})[\"'`(\[{<=]*[^\"'`(\[{<=]")
 _MAILTO: Final = re.compile(r"\bmailto:", flags=re.IGNORECASE)
 # Where a record of a log starts; its other lines have no time.
 _RECORD: Final = re.compile(r"\[[0-9]{4}-[0-9]{2}-[0-9]{2}[ T]")
@@ -76,6 +78,8 @@ def _url_in(word: str) -> int | None:
     start = found.start()
     while found[0][0] == ":" and start and word[start - 1].isascii() and word[start - 1].isalpha():
         start -= 1
+    if _SECRET_BEFORE.search(word, 0, start) and _AT.search(word, start):
+        return 0  # the URL can be a part of credentials without a scheme
     return start
 
 

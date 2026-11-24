@@ -192,6 +192,32 @@ def test_an_empty_user_is_taken_off(url: str, written: str) -> None:
             "to MAILTO:u:p@h ok",
             f"to {URL_NOT_SHOWN} ok",
         ),
+        *(
+            (f"to {word} failed", f"to {URL_NOT_SHOWN} failed")
+            for word in (
+                "user:secret/https://rest@host/x",
+                "//user:secret/https://rest@h",
+                "//secret/https://rest@h",
+                "u:p,https://q@h",
+                "u:p/https://q/https://r@h",
+                'u:p"https://q@h',
+                "u:p=https://q%40h",
+                'u:"p/https://q@h',
+                "u:p/ftp://q@h",
+                "u:/https://q@h",
+            )
+        ),
+        *(
+            (f"to {before}https://u:p@h{after} ok", f"to {before}https://h{after} ok")
+            for before, after in (
+                ("url:", ""),
+                ('{"url":"', '"}'),
+                ("{'url':['", "']}"),
+                ("<", ">"),
+                ("(see:", ")"),
+                ("url=", ""),
+            )
+        ),
         # Left: what an e-mail address, a path of a file or a name can be.
         ("<mailto:a@b.example> ok", "<mailto:a@b.example> ok"),
         ("from a@b.example: why", "from a@b.example: why"),
@@ -207,7 +233,8 @@ def test_credentials_in_text_go_and_more_only_where_it_cannot_be_told(
 
 
 @pytest.mark.parametrize(
-    "part", ["://", "a", "@", "://@", "a:", "h://u@ ", "https: ", "https://u@h "]
+    "part",
+    ["://", "a", "@", "://@", "a:", "h://u@ ", "https: ", "https://u@h ", "u:p/https://", ':"'],
 )
 def test_a_hostile_text_is_read_in_linear_time(part: str) -> None:
     started = time.process_time()
