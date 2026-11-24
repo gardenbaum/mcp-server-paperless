@@ -20,10 +20,12 @@ from mcp_server_paperless.domain.bulk import (
 from mcp_server_paperless.domain.errors import (
     PaperlessMcpError,
     PermissionDenied,
+    TaskFailed,
     UpstreamUnavailable,
     Validation,
 )
 from mcp_server_paperless.paperless.bulk import PaperlessBulkWriter
+from mcp_server_paperless.paperless.client import RetryPolicy
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory, RecordingSleep
@@ -100,8 +102,6 @@ def body(method: str, parameters: Json, documents: list[int] | None = None) -> J
             FieldsChange(remove=(8,)),
             body("modify_custom_fields", {"add_custom_fields": {}, "remove_custom_fields": [8]}),
         ),
-        (TrashDocuments(), body("delete", {})),
-        (ReprocessChange(), body("reprocess", {})),
     ],
     ids=[
         "tags",
@@ -112,8 +112,6 @@ def body(method: str, parameters: Json, documents: list[int] | None = None) -> J
         "storage-path-cleared",
         "custom-fields",
         "custom-fields-remove-only",
-        "delete",
-        "reprocess",
     ],
 )
 async def test_a_document_change_is_one_bulk_edit_request(
@@ -124,6 +122,20 @@ async def test_a_document_change_is_one_bulk_edit_request(
     _ = await PaperlessBulkWriter(make_client(server)).bulk_edit_documents((4, 7), change)
 
     assert server.sent == [("POST", "/api/documents/bulk_edit/", {}, expected)]
+
+
+@pytest.mark.parametrize(
+    ("change", "endpoint"), [(TrashDocuments(), "delete"), (ReprocessChange(), "reprocess")]
+)
+async def test_trash_and_reprocess_have_endpoints_of_their_own(
+    make_client: ClientFactory, change: DocumentChange, endpoint: str
+) -> None:
+    # API 10 deprecates these forms of bulk_edit (decision-72).
+    server = Recorded(QUEUED)
+
+    _ = await PaperlessBulkWriter(make_client(server)).bulk_edit_documents((4, 7), change)
+
+    assert server.sent == [("POST", f"/api/documents/{endpoint}/", {}, {"documents": [4, 7]})]
 
 
 @pytest.mark.parametrize(
@@ -180,7 +192,7 @@ async def test_a_failing_bulk_edit_is_never_retried() -> None:
     with pytest.raises(UpstreamUnavailable):
         _ = await PaperlessBulkWriter(client).bulk_edit_documents((4,), ReprocessChange())
 
-    assert calls == ["/api/documents/bulk_edit/"]
+    assert calls == ["/api/documents/reprocess/"]
 
 
 @pytest.mark.parametrize(
@@ -304,7 +316,7 @@ async def test_a_queued_document_change_returns_when_its_task_has_succeeded(
 
     _ = await queued_writer(make_client, queue, sleep).bulk_edit_documents((4, 7), TrashDocuments())
 
-    assert queue.sent == [("POST", "/api/documents/bulk_edit/")] + [("GET", "/api/tasks/")] * 3
+    assert queue.sent == [("POST", "/api/documents/delete/")] + [("GET", "/api/tasks/")] * 3
     assert sleep.delays == [0.2, 0.2]
 
 
@@ -314,7 +326,7 @@ async def test_a_queued_document_change_that_fails_is_reported_as_not_applied(
 ) -> None:
     queue = Queue("pending", ends)
 
-    with pytest.raises(Validation) as raised:
+    with pytest.raises(TaskFailed) as raised:
         _ = await queued_writer(make_client, queue, sleep).bulk_edit_documents(
             (4,), ReprocessChange()
         )
@@ -359,3 +371,31 @@ async def test_a_confirmed_change_returns_nothing(
     )
 
     assert outcome is None
+
+
+@pytest.mark.parametrize("stop", [True, False])
+async def test_a_change_stops_at_a_rate_limit_of_the_task_list_only_where_asked(
+    make_client: ClientFactory, sleep: RecordingSleep, *, stop: bool
+) -> None:
+    reads = 0
+
+    def limited(request: httpx2.Request) -> httpx2.Response:
+        nonlocal reads
+        if request.method == "POST":
+            return httpx2.Response(200, json=QUEUED)
+        reads += 1
+        if reads == 1:
+            return httpx2.Response(429, json={"detail": "Throttled."})
+        row = task_row("success", TASK)
+        return httpx2.Response(
+            200, json={"count": 1, "next": None, "previous": None, "results": [row]}
+        )
+
+    client = make_client(limited, retry=RetryPolicy(attempts=1))
+    outcome = await PaperlessBulkWriter(client, sleep=sleep).bulk_edit_documents(
+        (4,), TrashDocuments(), stop_on_limit=stop
+    )
+
+    assert (outcome is not None and outcome.rate_limited, reads) == (
+        (True, 1) if stop else (False, 2)
+    )

@@ -569,19 +569,20 @@ class TaxonomyWriter(Protocol):
 class BulkWriter(Protocol):
     """Changes to many documents or taxonomy objects in one request.
 
-    Paperless checks every selected object first and then changes all of them, or answers an
-    error and changes none. Ids that do not exist, appear twice or are an empty list are
-    rejected as a whole (callers deduplicate and check before they ask).
+    Paperless checks every selected object first: a refusal changes none. Documents are then
+    changed by a queued task, which can fail half way. Ids that do not exist, appear twice or are
+    an empty list are rejected as a whole (callers deduplicate and check before they ask).
     """
 
     async def bulk_edit_documents(
-        self, document_ids: Sequence[int], change: DocumentChange
+        self, document_ids: Sequence[int], change: DocumentChange, *, stop_on_limit: bool = False
     ) -> Unconfirmed | None:
         """Apply ``change`` to every document of ``document_ids``.
 
         Tags are removed (with their child tags) and then added (with their parent tags); custom
         fields are set one by one and the others stay. A deletion moves to the trash;
-        reprocessing is queued and runs in the background.
+        reprocessing is queued and runs in the background. ``stop_on_limit`` gives the queued task
+        up at HTTP 429 instead of waiting that out.
 
         Returns:
             None when the change is made (Paperless queues it as a task and the writer
@@ -591,6 +592,7 @@ class BulkWriter(Protocol):
         Raises:
             PermissionDenied: The user may not change one of the documents (nothing is changed),
                 or may not delete it: that needs ownership.
+            TaskFailed: The queued task failed; part of the change may be made.
             Validation: An id or a referenced object does not exist, or a value is wrong; the
                 message names the reason and nothing is changed.
         """

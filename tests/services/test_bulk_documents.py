@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, final, override
 import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
+from harness import bulk_editor
 
 from mcp_server_paperless.domain.bulk import (
     MAX_DOCUMENTS,
@@ -39,9 +40,9 @@ from mcp_server_paperless.domain.errors import (
     UpstreamTimeout,
     Validation,
 )
+from mcp_server_paperless.domain.selection import Selection
 from mcp_server_paperless.domain.tasks import Unconfirmed
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
-from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
 
     from mcp_server_paperless.domain.bulk import BulkOperation, DocumentBulkReport, DocumentChange
     from mcp_server_paperless.domain.documents import DocumentPage, DocumentQuery
+    from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 
@@ -76,7 +78,7 @@ class Recording(FakePaperless):
 
     @override
     async def bulk_edit_documents(
-        self, document_ids: Sequence[int], change: DocumentChange
+        self, document_ids: Sequence[int], change: DocumentChange, *, stop_on_limit: bool = False
     ) -> Unconfirmed | None:
         self.calls.append((tuple(document_ids), change))
         return await super().bulk_edit_documents(document_ids, change)
@@ -87,7 +89,7 @@ class Unconfirming(Recording):
 
     @override
     async def bulk_edit_documents(
-        self, document_ids: Sequence[int], change: DocumentChange
+        self, document_ids: Sequence[int], change: DocumentChange, *, stop_on_limit: bool = False
     ) -> Unconfirmed | None:
         _ = await super().bulk_edit_documents(document_ids, change)
         return Unconfirmed(task_id="task-7", reason="it was still running after 60 seconds")
@@ -114,9 +116,7 @@ class Setup:
         self.taxonomy: TaxonomyResolver = TaxonomyResolver(
             self.fake, StaticTokenProvider("t"), ttl=3600.0
         )
-        self.editor: BulkDocumentEditor = BulkDocumentEditor(
-            self.fake, self.fake, self.taxonomy, web_url=WEB
-        )
+        self.editor: BulkDocumentEditor = bulk_editor(self.fake, self.taxonomy)
 
     def document(self, number: int) -> FakeDocument:
         [found] = [d for d in self.state.documents if d.id == number]
@@ -134,7 +134,9 @@ class Setup:
         dry_run: bool = False,
         confirm: bool = True,
     ) -> DocumentBulkReport:
-        return await self.editor.edit(ids, operation, dry_run=dry_run, confirm=confirm)
+        return await self.editor.edit(
+            Selection(document_ids=tuple(ids)), operation, dry_run=dry_run, confirm=confirm
+        )
 
 
 # --- dry run, confirmation, selection
@@ -157,7 +159,7 @@ async def test_a_dry_run_reports_what_would_change_and_writes_nothing() -> None:
     assert sample.web_url == f"{WEB}/documents/{SECOND}/details"
     assert report.message == (
         "Dry run, nothing was changed. Confirming would add the tags 'e2e-inbox' to 1 document "
-        "('Second invoice'); 2 documents already are as asked. To go ahead, call again without "
+        "(5 'Second invoice'); 2 documents already are as asked. To go ahead, call again without "
         "dry_run; "
         "pass confirm=true only if the user already agreed."
     )
@@ -174,7 +176,7 @@ async def test_without_confirm_nothing_is_written_and_the_error_says_what_would_
 
     assert raised.value.message == (
         "Nothing was changed. Confirming would add the tags 'e2e-private' to 2 documents "
-        "('e2e-public-invoice', 'Second invoice')."
+        "(1 'e2e-public-invoice', 5 'Second invoice')."
     )
     assert raised.value.hint == CONFIRM_HINT
     assert setup.fake.calls == []
@@ -501,7 +503,8 @@ async def test_custom_fields_are_set_by_name_and_the_others_stay() -> None:
     assert setup.document(PUBLIC).custom_fields == {**before, string: "changed", integer: 5}
     assert setup.document(SECOND).custom_fields == {string: "changed", integer: 5}
     assert report.summary == (
-        "set the custom fields 'e2e-string', 'e2e-integer' on the selected documents"
+        "set the custom fields 'e2e-string' = 'changed', 'e2e-integer' = 5 "
+        "on the selected documents"
     )
     assert report.sample[0].change == "custom fields e2e-string, e2e-integer"
     assert setup.fake.calls[0][1] == FieldsChange(values={string: "changed", integer: 5})
@@ -576,7 +579,8 @@ async def test_setting_and_removing_in_one_step_is_summarised_once() -> None:
     )
 
     assert report.summary == (
-        "set the custom fields 'e2e-string' and remove 'e2e-integer' on the selected documents"
+        "set the custom fields 'e2e-string' = 'x' and remove 'e2e-integer' "
+        "on the selected documents"
     )
 
 
@@ -651,8 +655,8 @@ async def test_delete_moves_every_selected_document_to_the_trash_after_confirmat
     with pytest.raises(ConfirmationRequired) as raised:
         _ = await setup.run([PUBLIC, SECOND], DeleteDocuments(op="delete"), confirm=False)
     assert raised.value.message == (
-        "Nothing was changed. Confirming would move 2 documents ('e2e-public-invoice', "
-        "'Second invoice') to the Paperless trash (they can be restored from there)."
+        "Nothing was changed. Confirming would move 2 documents (1 'e2e-public-invoice', "
+        "5 'Second invoice') to the Paperless trash (they can be restored from there)."
     )
 
     writing = Setup()
@@ -670,7 +674,7 @@ async def test_a_delete_dry_run_previews_the_trash_without_writing() -> None:
     report = await setup.run([PUBLIC], DeleteDocuments(op="delete"), dry_run=True)
 
     assert report.message == (
-        "Dry run, nothing was changed. Confirming would move 1 document ('e2e-public-invoice') "
+        "Dry run, nothing was changed. Confirming would move 1 document (1 'e2e-public-invoice') "
         "to the Paperless trash (they can be restored from there). To go ahead, call again "
         "without dry_run; "
         "pass confirm=true only if the user already agreed."
@@ -731,7 +735,7 @@ class Flaky(Recording):
 
     @override
     async def bulk_edit_documents(
-        self, document_ids: Sequence[int], change: DocumentChange
+        self, document_ids: Sequence[int], change: DocumentChange, *, stop_on_limit: bool = False
     ) -> None:
         _ = await super().bulk_edit_documents(document_ids, change)
         message = "Paperless did not respond in time."
@@ -741,7 +745,7 @@ class Flaky(Recording):
 async def test_a_failed_write_forgets_the_counts_too_because_it_may_have_happened() -> None:
     setup = Setup()
     setup.fake = Flaky(setup.state, user=ADMIN[0], writes=True)
-    setup.editor = BulkDocumentEditor(setup.fake, setup.fake, setup.taxonomy, web_url=WEB)
+    setup.editor = bulk_editor(setup.fake, setup.taxonomy)
     warm = {i.name: i.document_count for i in await setup.taxonomy.items("tag")}
     assert warm["e2e-private"] == 1
 
@@ -787,7 +791,7 @@ async def test_a_single_missing_document_is_named_in_the_singular() -> None:
     assert raised.value.message == "No document 999 exists that this user may see."
 
 
-async def test_a_confirmation_names_three_titles_and_counts_the_rest() -> None:
+async def test_a_confirmation_names_every_document() -> None:
     setup = Setup(writes=False)
     setup.state.documents.extend(FakeDocument(id=n, title=f"Doc {n}") for n in range(10, 14))
 
@@ -798,7 +802,7 @@ async def test_a_confirmation_names_three_titles_and_counts_the_rest() -> None:
 
     assert raised.value.message == (
         "Nothing was changed. Confirming would add the tags 'e2e-inbox' to 5 documents "
-        "('Second invoice', 'Doc 10', 'Doc 11' and 2 more)."
+        "(5 'Second invoice', 10 'Doc 10', 11 'Doc 11', 12 'Doc 12', 13 'Doc 13')."
     )
 
 
@@ -821,7 +825,7 @@ async def test_one_document_that_is_as_asked_is_counted_in_the_singular() -> Non
 
     assert report.message == (
         "Dry run, nothing was changed. Confirming would add the tags 'e2e-inbox' to 1 document "
-        "('Second invoice'); 1 document already is as asked. To go ahead, call again without "
+        "(5 'Second invoice'); 1 document already is as asked. To go ahead, call again without "
         "dry_run; "
         "pass confirm=true only if the user already agreed."
     )
@@ -883,7 +887,7 @@ async def test_a_link_to_a_document_the_user_may_only_view_is_refused_naming_it(
 
     assert raised.value.message == (
         "A link also changes the linked document, and you may not change 1 document "
-        "('Third invoice')."
+        "(6 'Third invoice')."
     )
     assert raised.value.hint == "Link only to documents you may change."
 
@@ -940,7 +944,7 @@ async def test_removing_tags_says_that_child_tags_the_user_cannot_see_go_too() -
 
     assert raised.value.message == (
         "Nothing was changed. Confirming would remove the tags 'e2e-inbox' from 1 document "
-        "('e2e-public-invoice'); child tags you cannot see (other users') come off the "
+        "(1 'e2e-public-invoice'); child tags you cannot see (other users') come off the "
         "document with them."
     )
 
@@ -962,12 +966,13 @@ async def test_a_document_link_names_the_documents_that_are_changed_by_mirroring
     assert report.affected_count == 1
     assert report.message == (
         "Dry run, nothing was changed. Confirming would set the custom fields 'e2e-documentlink' "
-        "on 1 document ('Second invoice') and, because document links are mirrored, also "
-        "changes 1 document that is not selected ('Third invoice'). To go ahead, call again "
+        "= 1 document (6 'Third invoice') on 1 document (5 'Second invoice') and, because "
+        "document links are mirrored, also changes 1 document besides (6 'Third invoice'). "
+        "To go ahead, call again "
         "without dry_run; "
         "pass confirm=true only if the user already agreed."
     )
-    with pytest.raises(ConfirmationRequired, match="also changes 1 document that is not selected"):
+    with pytest.raises(ConfirmationRequired, match="also changes 1 document besides"):
         _ = await setup.run([SECOND], link, confirm=False)
 
 
@@ -991,7 +996,7 @@ async def test_dropped_links_and_a_removed_link_field_change_the_old_targets() -
     assert [row.id for row in dropped.also_changed] == [THIRD]
 
 
-async def test_a_selected_document_is_not_listed_as_also_changed_and_hidden_ones_are_ids() -> None:
+async def test_a_document_that_only_mirroring_changes_is_named_and_hidden_ones_are_ids() -> None:
     setup = Setup(READER[0], writes=False)
     link_state(setup, {SECOND: [PRIVATE]})
     both = await setup.run(
@@ -1005,7 +1010,8 @@ async def test_a_selected_document_is_not_listed_as_also_changed_and_hidden_ones
         dry_run=True,
     )
 
-    assert [row.id for row in both.also_changed] == []
+    # It links itself, which Paperless skips, but the other one's link is mirrored on it.
+    assert [row.id for row in both.also_changed] == [SECOND]
     assert [(row.id, row.title) for row in hidden.also_changed] == [(PRIVATE, "#2")]
 
 
@@ -1018,8 +1024,9 @@ async def test_applied_links_report_the_mirrored_documents() -> None:
     )
 
     assert report.message == (
-        "Applied to 1 document: set the custom fields 'e2e-documentlink' on the selected "
-        "documents. Mirrored on 1 other document ('Third invoice')."
+        "Applied to 1 document: set the custom fields 'e2e-documentlink' = "
+        "1 document (6 'Third invoice') on the selected "
+        "documents. Mirrored on 1 document besides (6 'Third invoice')."
     )
     assert [row.id for row in report.also_changed] == [THIRD]
 
@@ -1042,11 +1049,11 @@ async def test_a_blocking_document_is_named_and_the_execution_is_refused_before_
     assert [(row.id, row.change) for row in preview.blocked] == [(SECOND, "you may not change it")]
     assert preview.message == (
         "Dry run, nothing was changed. Paperless would refuse this batch, so none would "
-        "change: you may not change 1 document ('Second invoice'). Leave it out, or ask its "
+        "change: you may not change 1 document (5 'Second invoice'). Leave it out, or ask its "
         "owner for change permission."
     )
     assert refused.value.message == (
-        "You may not change 1 document ('Second invoice'), so Paperless would refuse the whole "
+        "You may not change 1 document (5 'Second invoice'), so Paperless would refuse the whole "
         "batch; nothing was sent."
     )
     assert (
@@ -1076,7 +1083,7 @@ def extra_documents(setup: Setup, *numbers: int) -> None:
     setup.state.documents.extend(FakeDocument(id=n, title=f"Doc {n}") for n in numbers)
 
 
-async def test_many_blocking_documents_are_listed_by_three_and_counted() -> None:
+async def test_every_blocking_document_is_named() -> None:
     setup = Setup(READER[0], writes=False)
     extra_documents(setup, 10, 11, 12, 13)
     for number in (SECOND, 10, 11, 12, 13):
@@ -1088,8 +1095,9 @@ async def test_many_blocking_documents_are_listed_by_three_and_counted() -> None
 
     assert report.message == (
         "Dry run, nothing was changed. Paperless would refuse this batch, so none would "
-        "change: you may not change 5 documents ('Second invoice', 'Doc 10', 'Doc 11' and 2 "
-        "more). Leave them out, or ask their owner for change permission."
+        "change: you may not change 5 documents (5 'Second invoice', 10 'Doc 10', 11 'Doc 11', "
+        "12 'Doc 12', 13 'Doc 13'). "
+        "Leave them out, or ask their owner for change permission."
     )
     assert [row.web_url for row in report.blocked][:1] == [f"{WEB}/documents/{SECOND}/details"]
     assert len(report.blocked) == 5
@@ -1108,7 +1116,7 @@ async def test_removing_tags_from_several_documents_says_documents() -> None:
     )
 
 
-async def test_many_mirrored_documents_are_counted_and_listed_by_three() -> None:
+async def test_every_mirrored_document_is_named() -> None:
     setup = Setup()
     extra_documents(setup, 10, 11, 12, 13)
     link = ModifyCustomFields(
@@ -1120,13 +1128,16 @@ async def test_many_mirrored_documents_are_counted_and_listed_by_three() -> None
     report = await setup.run([SECOND], link)
 
     assert raised.value.message == (
-        "Nothing was changed. Confirming would set the custom fields 'e2e-documentlink' on 1 "
-        "document ('Second invoice') and, because document links are mirrored, also changes 4 "
-        "documents that are not selected ('Doc 10', 'Doc 11', 'Doc 12' and 1 more)."
+        "Nothing was changed. Confirming would set the custom fields 'e2e-documentlink' = "
+        "4 documents (10 'Doc 10', 11 'Doc 11', 12 'Doc 12', 13 'Doc 13') on 1 "
+        "document (5 'Second invoice') and, because document links are mirrored, also changes 4 "
+        "documents besides (10 'Doc 10', 11 'Doc 11', 12 'Doc 12', 13 'Doc 13')."
     )
     assert report.message == (
-        "Applied to 1 document: set the custom fields 'e2e-documentlink' on the selected "
-        "documents. Mirrored on 4 other documents ('Doc 10', 'Doc 11', 'Doc 12' and 1 more)."
+        "Applied to 1 document: set the custom fields 'e2e-documentlink' = "
+        "4 documents (10 'Doc 10', 11 'Doc 11', 12 'Doc 12', 13 'Doc 13') on the selected "
+        "documents. Mirrored on 4 documents besides (10 'Doc 10', 11 'Doc 11', 12 'Doc 12', "
+        "13 'Doc 13')."
     )
     assert report.also_changed[0].web_url == f"{WEB}/documents/10/details"
     assert len(report.also_changed) == 4
@@ -1217,7 +1228,7 @@ async def test_removing_a_link_field_from_a_document_that_lacks_it_reports_the_o
 async def test_a_change_whose_queued_task_cannot_be_followed_is_reported_as_unconfirmed() -> None:
     setup = Setup()
     setup.fake = Unconfirming(setup.state, user=ADMIN[0], writes=True)
-    setup.editor = BulkDocumentEditor(setup.fake, setup.fake, setup.taxonomy, web_url=WEB)
+    setup.editor = bulk_editor(setup.fake, setup.taxonomy)
 
     report = await setup.run([THIRD], RemoveTags(op="remove_tags", tags=["e2e-inbox"]))
 
@@ -1227,7 +1238,8 @@ async def test_a_change_whose_queued_task_cannot_be_followed_is_reported_as_unco
         "Asked Paperless to apply to 1 document: remove the tags 'e2e-inbox' from the selected "
         "documents. Not confirmed: Paperless "
         "queued task task-7, but it was still running after 60 seconds. Read it with get_task "
-        "and read the documents again before repeating the call."
+        "and read the documents again before repeating the call. Seen after that: as asked 6. "
+        "Paperless may still be working on it, and they can change after that."
     )
 
 
@@ -1251,13 +1263,11 @@ async def test_a_delete_says_how_to_get_the_documents_back_also_when_it_is_not_c
     done = await Setup().run([PUBLIC, SECOND], deleting)
     unconfirmed = Setup()
     unconfirmed.fake = Unconfirming(unconfirmed.state, user=ADMIN[0], writes=True)
-    unconfirmed.editor = BulkDocumentEditor(
-        unconfirmed.fake, unconfirmed.fake, unconfirmed.taxonomy, web_url=WEB
-    )
+    unconfirmed.editor = bulk_editor(unconfirmed.fake, unconfirmed.taxonomy)
     queued = await unconfirmed.run([PUBLIC, SECOND], deleting)
     other = await Setup().run([PUBLIC], ReprocessDocuments(op="reprocess"))
     preview = await Setup(writes=False).run([PUBLIC], deleting, dry_run=True)
 
     assert done.message.endswith(back)
-    assert queued.message.endswith(back)
+    assert queued.message.endswith(back.replace(" Each stays", " Each that is moved stays"))
     assert "restore_from_trash" not in other.message + preview.message

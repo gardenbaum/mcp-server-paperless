@@ -1,9 +1,10 @@
-"""BulkWriter on ``POST /api/documents/bulk_edit/`` and ``POST /api/bulk_edit_objects/``.
+"""BulkWriter on ``POST /api/documents/{bulk_edit,delete,reprocess}/`` and ``bulk_edit_objects``.
 
-The object endpoint answers ``{"result": "OK"}`` once the change is made. The document endpoint
-only queues a ``bulk_update`` task and names it (``task_id``); the writer follows that task, so a
-change is made when the call returns (``queued.py``). Both endpoints validate the whole request
-first, so a refused batch changes nothing. Posts are never retried by the client.
+The object endpoint answers ``{"result": "OK"}`` once the change is made. The document endpoints
+only queue a ``bulk_update`` task and name it (``task_id``); the writer follows that task, so a
+change is made when the call returns (``queued.py``). All of them validate the whole request
+first, so a refused batch changes nothing. Posts are never retried by the client. Paperless's own
+``all``, ``filters`` and ``excluded_documents`` are never sent (decision-69).
 """
 
 import asyncio
@@ -30,7 +31,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.paperless.client import PaperlessClient
 
 BULK_EDIT: Final = "bulk edit"
-DOCUMENTS = "/api/documents/bulk_edit/"
+DOCUMENTS = "/api/documents/"
 OBJECTS = "/api/bulk_edit_objects/"
 OBJECT_TYPES: Final[dict[BulkKind, str]] = {
     "tag": "tags",
@@ -44,27 +45,31 @@ class _Result(BaseModel):
     result: str
 
 
-def _method(change: DocumentChange) -> tuple[str, dict[str, JsonValue]]:
-    """Paperless's ``method`` and ``parameters`` for ``change``."""
+def _request(change: DocumentChange) -> tuple[str, dict[str, JsonValue]]:
+    """The endpoint for ``change``, and what is sent besides the documents."""
     match change:
         case TagsChange():
-            return "modify_tags", {
-                "add_tags": list(change.add),
-                "remove_tags": list(change.remove),
-            }
+            return _edit(
+                "modify_tags",
+                {"add_tags": list(change.add), "remove_tags": list(change.remove)},
+            )
         case ReferenceChange():
-            return f"set_{change.field}", {change.field: change.value}
+            return _edit(f"set_{change.field}", {change.field: change.value})
         case FieldsChange():
             # The dict form keeps the other fields; the list form would empty a field's value.
             added: dict[str, JsonValue] = {str(n): v for n, v in change.values.items()}
-            return "modify_custom_fields", {
-                "add_custom_fields": added,
-                "remove_custom_fields": list(change.remove),
-            }
+            return _edit(
+                "modify_custom_fields",
+                {"add_custom_fields": added, "remove_custom_fields": list(change.remove)},
+            )
         case TrashDocuments():
-            return "delete", {}
+            return "delete/", {}
         case _:
-            return "reprocess", {}
+            return "reprocess/", {}
+
+
+def _edit(method: str, parameters: dict[str, JsonValue]) -> tuple[str, dict[str, JsonValue]]:
+    return "bulk_edit/", {"method": method, "parameters": parameters}
 
 
 DOCUMENTS_MESSAGE = (
@@ -109,7 +114,7 @@ class PaperlessBulkWriter:
         self._waiter: TaskWaiter = TaskWaiter(client, sleep=sleep)
 
     async def bulk_edit_documents(
-        self, document_ids: Sequence[int], change: DocumentChange
+        self, document_ids: Sequence[int], change: DocumentChange, *, stop_on_limit: bool = False
     ) -> Unconfirmed | None:
         """See ``BulkWriter.bulk_edit_documents``.
 
@@ -117,17 +122,15 @@ class PaperlessBulkWriter:
         by the user (also a hidden one: it is not told apart); deleting needs ownership of every
         document and the delete permission.
         """
-        method, parameters = _method(change)
-        body: dict[str, JsonValue] = {
-            "documents": list(document_ids),
-            "method": method,
-            "parameters": parameters,
-        }
+        endpoint, rest = _request(change)
+        body: dict[str, JsonValue] = {"documents": list(document_ids), **rest}
         try:
-            queued = await self._client.call("POST", DOCUMENTS, Queued, json=body)
+            queued = await self._client.call("POST", f"{DOCUMENTS}{endpoint}", Queued, json=body)
         except PermissionDenied:
             raise documents_refused() from None
-        return await self._waiter.confirmed(queued, lambda _: not_applied(BULK_EDIT))
+        return await self._waiter.confirmed(
+            queued, lambda _: not_applied(BULK_EDIT), stop_on_limit=stop_on_limit
+        )
 
     async def delete_taxonomy_items(self, kind: BulkKind, item_ids: Sequence[int]) -> None:
         """See ``BulkWriter.delete_taxonomy_items``."""

@@ -20,6 +20,7 @@ after the task was seen, are waited out.
 
 import asyncio
 import time
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Final
 
 from pydantic import BaseModel
@@ -28,6 +29,8 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
+    TaskFailed,
+    UpstreamUnavailable,
     Validation,
 )
 from mcp_server_paperless.domain.tasks import TaskState, Unconfirmed
@@ -60,20 +63,25 @@ FAILED_HINT: Final = (
 )
 FORBIDDEN_REASON: Final = "the Paperless user may not view tasks, so it cannot be followed"
 INVISIBLE_REASON: Final = "it did not show up in the task list"
+LIMITED_REASON: Final = "Paperless limits the rate of requests (HTTP 429)"
 UNREADABLE_REASON: Final = "the task list could not be read"
 
 
-def not_applied(what: str) -> Validation:
+def not_applied(what: str) -> TaskFailed:
     """The error for a queued ``what`` whose task failed."""
-    return Validation(f"Paperless could not apply the {what}: its task failed.", hint=FAILED_HINT)
+    return TaskFailed(f"Paperless could not apply the {what}: its task failed.", hint=FAILED_HINT)
 
 
-def task_failed(task_id: str, causes: str) -> Validation:
+def task_failed(task_id: str, causes: str) -> TaskFailed:
     """The error for a failed task whose cause Paperless does not name; ``causes`` are likely."""
-    return Validation(
+    return TaskFailed(
         f"Paperless reported task {task_id} as failed; the likely causes are {causes}.",
         hint=FAILED_HINT,
     )
+
+
+def _limited(error: PaperlessMcpError) -> bool:
+    return isinstance(error, UpstreamUnavailable) and error.status == HTTPStatus.TOO_MANY_REQUESTS
 
 
 class TaskWaiter:
@@ -100,25 +108,33 @@ class TaskWaiter:
         self._clock: Callable[[], float] = clock
 
     async def confirmed(
-        self, answer: Queued, failed: Callable[[str], Validation]
+        self,
+        answer: Queued,
+        failed: Callable[[str], Validation],
+        *,
+        stop_on_limit: bool = False,
     ) -> Unconfirmed | None:
         """None when the change is made, ``Unconfirmed`` when that cannot be told.
+
+        ``stop_on_limit`` gives the task up at HTTP 429 (after the client's own retries); else that
+        is waited out like any other error, for callers that need what the task names.
 
         Raises:
             Validation: ``failed(task_id)``, when the task failed or was revoked.
         """
-        outcome = await self._settled(answer.task_id)
+        outcome = await self._settled(answer.task_id, stop_on_limit=stop_on_limit)
         if isinstance(outcome, Unconfirmed):
             return outcome
         if outcome in {"failure", "revoked"}:
             raise failed(answer.task_id)
         return None
 
-    async def _settled(self, task_id: str) -> TaskState | Unconfirmed:
+    async def _settled(self, task_id: str, *, stop_on_limit: bool) -> TaskState | Unconfirmed:
         """The final state of the task, or why it could not be followed to its end.
 
-        Only a 403 and a row that never shows up end the wait early (after the grace); other
-        errors, also after the row was seen, are waited out until the deadline.
+        A 403 and a row that never shows up end the wait early (after the grace), and a 429 with
+        ``stop_on_limit`` at once; other errors, also after the row was seen, are waited
+        out until the deadline.
         """
         started = self._clock()
         while True:
@@ -131,6 +147,8 @@ class TaskWaiter:
             except NotFound:
                 row = None
             except PaperlessMcpError as error:
+                if stop_on_limit and _limited(error):
+                    return Unconfirmed(task_id=task_id, reason=LIMITED_REASON, rate_limited=True)
                 unreadable = error
             elapsed = self._clock() - started
             if row is not None and row.is_final:

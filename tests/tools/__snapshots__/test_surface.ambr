@@ -1240,19 +1240,22 @@
         Change many documents in one step: tags, correspondent, type, storage path, custom fields,
         trash or reprocess.
         
-        Call with dry_run=true to see how many documents change and a sample, then without dry_run:
-        without confirm a dialog, or an error for you to show the user, first describes the effect (see
-        confirm). Documents that already are as asked are counted and left alone. One operation per
-        call, on documents you name by id. Tags are hierarchical: adding a child adds its parent, and
-        removing a parent whose child tags stay is refused (list the children too). Custom fields are
-        merged: only the fields you name change. Document links are mirrored: linking A to B also
-        changes B (you need change permission there), so also_changed lists those documents; a shorter
-        list does not unlink the old target, removing the field does. delete moves documents to the
-        Paperless trash (restore_from_trash of the trash toolset, or the web UI, restores them);
-        reprocess runs OCR again in the background (the pdf toolset's reprocess_documents does the same,
-        also with remote OCR). Paperless checks every document first: if you may not change one of them
-        (blocked lists them), none changes and nothing is sent. Needs change permission on the
-        documents, and ownership and the delete permission for delete.
+        Choose the documents by ids, filters or saved_view (at most 1000 may match; at most 100 change
+        per call, remaining says how many are left). Call with dry_run=true to see how many change and
+        which (selected_ids), then without it: without confirm a dialog, or an error for you to show the
+        user, names every document first (see confirm). filters or saved_view alone never change
+        anything on confirm=true: pass the same again with the shown document_ids; the call is refused
+        if one no longer matches. Documents that already are as asked are left alone. Tags are
+        hierarchical: adding a child adds its parent, and removing a parent whose child tags stay is
+        refused (list the children too). Custom fields are merged: only the fields you name change.
+        Document links are mirrored: linking A to B also changes B (you need change permission there),
+        so also_changed lists those documents; a shorter list does not unlink the old target, removing
+        the field does. delete moves documents to the Paperless trash (restore_from_trash of the trash
+        toolset, or the web UI, restores them); reprocess runs OCR again in the background (the pdf
+        toolset's reprocess_documents does the same, also with remote OCR). Paperless checks every
+        document first: if you may not change one of them (blocked lists them), none changes and nothing
+        is sent. A change can still fail half way: the error then says what was seen of each document.
+        Needs change permission on the documents, and ownership and the delete permission for delete.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -1263,18 +1266,353 @@
             'type': 'boolean',
           }),
           'document_ids': dict({
-            'description': 'Ids of the documents to change, at most 100, from search_documents (page_size 100 fits); repeated ids count once.',
-            'items': dict({
-              'type': 'integer',
-            }),
-            'maxItems': 100,
-            'minItems': 1,
-            'type': 'array',
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'type': 'integer',
+                }),
+                'maxItems': 100,
+                'minItems': 1,
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Ids of the documents, at most 100. With filters or saved_view: exactly these, refused if one of them no longer matches.',
           }),
           'dry_run': dict({
             'default': False,
             'description': 'true returns a preview (how many change, a sample, what changes) and writes nothing; it needs no confirm. Do it first.',
             'type': 'boolean',
+          }),
+          'exclude_ids': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'type': 'integer',
+                }),
+                'maxItems': 100,
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Documents to leave out of what filters or saved_view match.',
+          }),
+          'filters': dict({
+            'anyOf': list([
+              dict({
+                'additionalProperties': False,
+                'description': 'The filters of search_documents, with the same names and meaning; all are ANDed.',
+                'properties': dict({
+                  'added_from': dict({
+                    'anyOf': list([
+                      dict({
+                        'format': 'date',
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'added_to': dict({
+                    'anyOf': list([
+                      dict({
+                        'format': 'date',
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'correspondent': dict({
+                    'anyOf': list([
+                      dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'integer',
+                          }),
+                        ]),
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'created_from': dict({
+                    'anyOf': list([
+                      dict({
+                        'format': 'date',
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'created_to': dict({
+                    'anyOf': list([
+                      dict({
+                        'format': 'date',
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'custom_field_query': dict({
+                    'anyOf': list([
+                      dict({
+                        'items': dict({
+                        }),
+                        'type': 'array',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'document_type': dict({
+                    'anyOf': list([
+                      dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'integer',
+                          }),
+                        ]),
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'has_correspondent': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'boolean',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'has_document_type': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'boolean',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'has_duplicates': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'boolean',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'has_storage_path': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'boolean',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'has_tags': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'boolean',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'inbox': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'boolean',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'more_like_id': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'integer',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'owner': dict({
+                    'anyOf': list([
+                      dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'integer',
+                          }),
+                        ]),
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'query': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'storage_path': dict({
+                    'anyOf': list([
+                      dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'integer',
+                          }),
+                        ]),
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'tags_all': dict({
+                    'anyOf': list([
+                      dict({
+                        'items': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        'type': 'array',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'tags_any': dict({
+                    'anyOf': list([
+                      dict({
+                        'items': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        'type': 'array',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'tags_none': dict({
+                    'anyOf': list([
+                      dict({
+                        'items': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'integer',
+                            }),
+                          ]),
+                        }),
+                        'type': 'array',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                  'title_contains': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'default': None,
+                  }),
+                }),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'The filters of search_documents, with the same names and meaning.',
           }),
           'operation': dict({
             'description': 'What to do to every selected document; op picks the kind of change.',
@@ -1544,9 +1882,27 @@
               }),
             ]),
           }),
+          'saved_view': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Name or id of a saved view, instead of filters; see list_taxonomy.',
+          }),
         }),
         'required': list([
-          'document_ids',
           'operation',
         ]),
         'type': 'object',
@@ -1556,11 +1912,11 @@
         'description': 'A bulk edit of documents: the preview of a dry run, or what was done.',
         'properties': dict({
           'affected_count': dict({
-            'description': 'Documents that change (a preview) or changed (applied).',
+            'description': 'Documents that change (a preview) or that were sent (applied).',
             'type': 'integer',
           }),
           'also_changed': dict({
-            'description': "Documents that are not selected but change because document links are mirrored on them (at most 10); title '#id' if you cannot see it.",
+            'description': "Other documents that change because document links are mirrored on them (at most 10); title '#id' if you cannot see it.",
             'items': dict({
               'description': 'A document the operation changes, with what changes on it.',
               'properties': dict({
@@ -1585,6 +1941,15 @@
                 'web_url',
               ]),
               'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'also_matching': dict({
+            'default': list([
+            ]),
+            'description': 'With document_ids and filters or saved_view: matching documents that need the change, were not named and are not touched.',
+            'items': dict({
+              'type': 'integer',
             }),
             'type': 'array',
           }),
@@ -1625,11 +1990,61 @@
             'description': 'true: a preview, nothing was changed.',
             'type': 'boolean',
           }),
+          'matched': dict({
+            'description': 'How many documents the ids, filters or view match, exclude_ids included.',
+            'type': 'integer',
+          }),
           'message': dict({
             'type': 'string',
           }),
           'operation': dict({
             'type': 'string',
+          }),
+          'outcomes': dict({
+            'anyOf': list([
+              dict({
+                'description': 'What was seen of the documents when they were read again after the change.',
+                'properties': dict({
+                  'changed': dict({
+                    'default': list([
+                    ]),
+                    'description': 'As asked now; after delete: no longer listed.',
+                    'items': dict({
+                      'type': 'integer',
+                    }),
+                    'type': 'array',
+                  }),
+                  'not_changed': dict({
+                    'default': list([
+                    ]),
+                    'description': 'As before, when read; a task that still runs may change them.',
+                    'items': dict({
+                      'type': 'integer',
+                    }),
+                    'type': 'array',
+                  }),
+                  'unknown': dict({
+                    'default': list([
+                    ]),
+                    'description': 'Something else, or it could not be read.',
+                    'items': dict({
+                      'type': 'integer',
+                    }),
+                    'type': 'array',
+                  }),
+                }),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Set with unconfirmed_task_id: the documents as read again afterwards.',
+          }),
+          'remaining': dict({
+            'description': 'Matching documents that still need the change: not touched, or, after an unconfirmed change, not seen changed (reprocess never shows: repeating may run OCR twice).',
+            'type': 'integer',
           }),
           'requested': dict({
             'description': 'How many documents were selected.',
@@ -1664,6 +2079,13 @@
             }),
             'type': 'array',
           }),
+          'selected_ids': dict({
+            'description': 'The documents that change (a preview) or that Paperless was asked to change in this call; with the same filters or saved_view they are the document_ids of the next call.',
+            'items': dict({
+              'type': 'integer',
+            }),
+            'type': 'array',
+          }),
           'summary': dict({
             'description': 'What the operation does, in words.',
             'type': 'string',
@@ -1690,7 +2112,10 @@
           'summary',
           'dry_run',
           'applied',
+          'matched',
           'requested',
+          'selected_ids',
+          'remaining',
           'affected_count',
           'unchanged_count',
           'sample',
@@ -17763,7 +18188,7 @@
           'left': dict({
             'default': list([
             ]),
-            'description': 'Shown without the text asked for, or left out: pass them as document_ids.',
+            'description': 'Shown without the text asked for, or left out: pass them as document_ids. A text dropped for its size is in too_large, not here.',
             'items': dict({
               'type': 'integer',
             }),
@@ -42171,7 +42596,7 @@
           'left': dict({
             'default': list([
             ]),
-            'description': 'Shown without the text asked for, or left out: pass them as document_ids.',
+            'description': 'Shown without the text asked for, or left out: pass them as document_ids. A text dropped for its size is in too_large, not here.',
             'items': dict({
               'type': 'integer',
             }),
