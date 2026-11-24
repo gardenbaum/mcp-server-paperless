@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:50:41Z'
-updated_date: '2026-11-24T10:32:13Z'
+updated_date: '2026-11-24T10:34:06Z'
 labels:
   - safety
 dependencies: []
@@ -55,4 +55,6 @@ Evidence: targeted modules, basedpyright, ruff, import contracts, diff-cover 100
 Review of d4242c4 (0 critical, 2 important, 7 minor). I1: the kept document is read once, the duplicates get what is left of the 30 s (M6: so never above 30 s). I2 (controller's ruling): resolve_duplicates does not merge a duplicate known to lack its original; merge_documents_as_versions warns when the last source lacks a file and no longer promises that its file stays; the E2E test that asserted the merge of a lost copy is corrected and downloads the kept file. M1: texts name the original, the archive version that is there, and archive-only copies. M2: refusals carry the notes. M3: versions with the checksum of the root are read too. M4: files are compared by checksum across documents, also archive versions: a kept document whose matching archive version is lost is refused (it was only named). M5: a later version of the same file counts although the root cannot be read. These replace the statements above on a second check of 60 s and on archive versions. M7: DoD 1 stays unticked: the first service, tool and fake contract tests were written with or after the code. The service tests of these fixes were seen red (19 failed) before the code; the tool and E2E tests were not. Surface snapshot: the description of resolve_duplicates names the refused merge. Nothing else of limits or gates changes.
 
 Delta review (0/0/4 minor). N1: 'until that version is deleted' only if the version below (the previous source, else the newest of the root) has its file. N2: the test of the shared time limit asserts what was cut off (0.6 s reads, 1.0 s limit), no elapsed time. N3 (controller's ruling): a kept document known to lack its original and a duplicate to be trashed that could not be checked: refused with the reason and 'try again'; a copy known to have the file in spite of an unread version is named as before. N4: the counts in decision-63. Service tests seen red (5 failed) first. No snapshot, limit or gate changes.
+
+Final check: the description of resolve_duplicates names the refusal of an unchecked duplicate (surface snapshot changed deliberately, within all limits); its hint adds 'or leave it out'. Both tests seen red first.
 <!-- SECTION:NOTES:END -->

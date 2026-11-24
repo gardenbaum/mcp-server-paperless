@@ -317,6 +317,7 @@ async def test_resolve_duplicates_is_typed_bounded_and_destructive() -> None:
     description = " ".join((tool.description or "").split())
     assert "for good" in description
     assert "can be restored" in description
+    assert "trashing one that could not be checked for a kept document" in description
 
 
 @pytest.mark.decision("decision-51")

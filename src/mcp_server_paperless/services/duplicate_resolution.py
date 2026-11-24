@@ -61,7 +61,7 @@ MAYBE_ONLY: Final = (
     "whether Paperless can find its file could not be checked, and it may be the only one, because "
     "the original of the kept document is missing (the reason: {reason})"
 )
-MAYBE_ONLY_HINT: Final = "Try again in a moment."
+MAYBE_ONLY_HINT: Final = "Try again in a moment, or leave it out."
 UNCHECKED: Final = "whether Paperless can find its file could not be checked (the reason: {reason})"
 NOT_READ: Final = "what became of it could not be read"
 REPORTED: Final = (

@@ -356,7 +356,7 @@ async def test_copies_that_cannot_be_checked_are_not_trashed_for_a_document_with
     assert [(d.id, d.why) for d in preview.not_resolved] == [(11, why)]
     for message in (preview.message, refused.value.message):
         assert f"document 11 'Document 11': {why}. {LOST_WARNING}." in message
-    assert refused.value.hint == "Try again in a moment."
+    assert refused.value.hint == "Try again in a moment, or leave it out."
 
 
 async def test_an_unchecked_copy_may_be_trashed_if_only_the_archive_version_is_lost() -> None:
