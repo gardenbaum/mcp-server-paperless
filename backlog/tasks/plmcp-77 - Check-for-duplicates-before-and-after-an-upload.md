@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:48Z'
-updated_date: '2026-11-24T00:03:58Z'
+updated_date: '2026-11-24T00:39:19Z'
 labels: []
 dependencies: []
 priority: high
@@ -56,4 +56,6 @@ Conditions and trade-offs: (1) versions are read for the 5,000 last changed docu
 Deliberate changes: surface snapshot (confirm, duplicates, checksum, descriptions; no tool added), docs/tools.md, api-coverage, schema guard entry for the HTML 403 of root/, test_http_uploads sends two different files (the second upload of the same file now asks), E2E texts of test_versions are unique. New workflow job e2e-duplicates in e2e-full.yml (own stack).
 
 DoD 1 stays unchecked until the live levels ran: the E2E tests were written after the code and have not run.
+
+Review of c7a71a2 (0 critical, 3 important, 8 minor) and the automated security review are fixed. Correction of note (3) above: it was our parser (original_size must not be null) and not Paperless; only the checksum of a deleted version is read now, so a missing file no longer stops uploads. A scan that does not add up, a missing checksum and 25 seconds are a failed check. Live evidence: full hosted E2E on 2199077 green including e2e-duplicates (run 45292725686, reported by the controller); the review fixes have not run live yet. M8: the module seconds can be read from the logs of that run, aliases unchanged until then. Memory measured again with a stand-in (docs/configuration.md). Known: get_document (file_metadata), download_document and get_document_pages still refuse a document whose file is missing, because FileMetadata wants a size and names that 3.5.1 answers as null; outside this task.
 <!-- SECTION:NOTES:END -->
