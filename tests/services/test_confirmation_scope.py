@@ -362,15 +362,15 @@ def other_layout(state: FakeState) -> None:
 
 
 def other_pages(state: FakeState) -> None:
-    """A newer file has another page, which the split drops too."""
+    """A newer file has other pages, which the same words cover."""
     state.documents[0].page_count = 9
 
 
-def split(state: FakeState) -> Callable[[], Awaitable[object]]:
+def cut(state: FakeState) -> Callable[[], Awaitable[object]]:
     state.documents = [FakeDocument(id=1, title="Scan", page_count=4)]
     fake, _ = fakes(state)
     service = pdf_service(fake)
-    return lambda: service.split(1, ["1", "2"], output="replace_original")
+    return lambda: service.delete_pages(1, "1")
 
 
 def change_owner(state: FakeState) -> Callable[[], Awaitable[object]]:
@@ -539,7 +539,7 @@ NEWER_FILE = {
         (delete_view, other_rules),
         (create_rule, other_tag),
         (update_rule, other_layout),
-        (split, other_pages),
+        (cut, other_pages),
         (change_owner, other_owner),
         (trash, swap_trash),
         (bulk_documents_with_one_done, swap_changing),

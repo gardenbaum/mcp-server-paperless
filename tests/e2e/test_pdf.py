@@ -342,7 +342,7 @@ async def test_a_user_who_may_not_view_tasks_keeps_the_original_and_is_told_how_
 
         assert (result["state"], result["trashed_ids"]) == ("unknown", [])
         assert "search_documents" in str(result["next"])
-        assert f"delete_document(document_id={source})" in str(result["next"])
+        assert "delete_document" not in str(result["next"])
         assert not live_in_trash(stack, source)
         title = str(document(stack, source)["title"])
         made: list[int] = []

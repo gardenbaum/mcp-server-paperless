@@ -118,6 +118,7 @@ def pdf_service(
         fake,
         TaskService(fake, sleep=sleep, clock=clock),
         Replacing(fake, fake, DocumentRemoval(fake, fake, taxonomy), clock=clock),
+        taxonomy,
         web_url="https://paperless.example",
     )
 

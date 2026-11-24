@@ -133,6 +133,7 @@ async def test_merging_makes_one_new_document_titled_after_the_metadata_document
         (first, second), metadata_document_id=second
     )
 
+    assert tasks.doubt is None
     [merged] = await finished(backend, tasks)
     made = await backend.admin.documents.get_document(merged)
     assert (made.title, made.page_count) == (f"{source.title} (merged)", 3)
@@ -206,6 +207,7 @@ async def test_a_password_is_removed_into_a_new_document(backend: Backend) -> No
 
     tasks = await backend.admin.pdf_writes.remove_password(locked, "s3cret", output="new_document")
 
+    assert tasks.doubt is None
     [unlocked] = await finished(backend, tasks)
     assert unlocked != locked
     assert await pages(backend, unlocked) == 1
@@ -446,6 +448,7 @@ async def test_the_parts_of_a_split_are_known_by_their_number(backend: Backend) 
 
     tasks = await backend.admin.pdf_writes.edit_pdf(document, slots, output="new_document")
 
+    assert tasks.doubt is None
     produced = dict(zip(tasks.outputs, await finished(backend, tasks), strict=True))
     assert [await pages(backend, produced[n]) for n in (0, 1)] == [1, 2]
 
@@ -597,3 +600,61 @@ async def test_a_merge_can_take_the_archive_pdf_of_an_image(backend: Backend) ->
     [short], [whole] = await finished(backend, without), await finished(backend, taken)
     assert (await pages(backend, image), await pages(backend, short)) == (None, 2)
     assert await pages(backend, whole) == 3
+
+
+@pytest.mark.contract("DocumentReader.may_delete")
+async def test_who_may_delete_is_known_to_users_who_may_read_their_settings(
+    backend: Backend,
+) -> None:
+    ports, document = backend.admin, backend.new_documents(1)[0]
+    owner = (await ports.documents.get_document(document)).owner
+    settings = frozenset({"view_uisettings", "view_document"})
+    deleting = backend.restricted(settings | {"delete_document"})
+    viewing = backend.restricted(settings)
+    hidden = backend.restricted(frozenset({"view_document", "delete_document"}))
+
+    assert await ports.documents.may_delete([owner, None]) is True
+    assert await deleting.documents.may_delete([None]) is True
+    assert await deleting.documents.may_delete([None, owner]) is False
+    assert await viewing.documents.may_delete([None]) is False
+    assert await hidden.documents.may_delete([None]) is None
+
+
+@pytest.mark.contract(ROTATE)
+@pytest.mark.contract(MERGE)
+@pytest.mark.contract(PASSWORD)
+async def test_a_date_hides_the_tasks_of_rotating_merging_and_unlocking(backend: Backend) -> None:
+    ports = backend.admin
+    document, locked = backend.new_pdf(1), backend.new_encrypted("s3cret")
+    kinds = {f.name: f.id for f in await ports.taxonomy.list_taxonomy("custom_field")}
+    dated = CustomFieldValue(field=kinds["e2e-date"], value="2026-01-15")
+    title = f"contract-dated-{uuid.uuid4().hex}"
+    for number in (document, locked):
+        patch = DocumentPatch(custom_fields=(dated,), title=f"{title} {number}")
+        _ = await ports.document_writes.update_document(number, patch)
+    writes = ports.pdf_writes
+
+    rotated = await writes.rotate_documents((document,), 90)
+    merged = await writes.merge_documents((document,), metadata_document_id=document)
+    unlocked = await writes.remove_password(locked, "s3cret", output="new_document")
+    version = await writes.remove_password(locked, "s3cret", output="new_version")
+    bare = await writes.remove_password(
+        locked, "s3cret", output="new_document", version_id=locked, keep_metadata=False
+    )
+
+    assert (rotated.ids, merged.ids, unlocked.ids) == ((), (), ())
+    assert (len(version.ids), len(bare.ids)) == (1, 1)
+    _ = await finished(backend, version)
+    _ = await finished(backend, bare)
+    await until_versions(backend, document, 2)
+    deadline = time.monotonic() + SECONDS
+    while True:
+        query = DocumentQuery(title_contains=title)
+        listed = await ports.documents.search_documents(query, page=1, page_size=10)
+        made = [hit.id for hit in listed.hits if hit.id not in {document, locked}]
+        if len(made) == 2:
+            break
+        assert time.monotonic() < deadline, "Paperless did not finish in time"
+        await asyncio.sleep(0.5)
+    for number in made:
+        backend.track_document(number)

@@ -21,9 +21,10 @@ The design was put to the owner as 14 decisions with recommendations. On 2026-11
 - **Version.** Edits and unlocking always name the version whose file is read (`documents: [version id]`, `source_mode: explicit_selection`), so pages are checked by both sides against the same file. `version_id` chooses an older one, which the document must list; `use_original_files` (rotate, merge) takes the first file. A merge takes no version id: its metadata would come from the version's row, which has none.
 - **Going back** to an older file as the newest version needs confirm, although nothing is lost: the document then shows other content. rotate_documents takes confirm for that case only and stays marked as not destructive. Supplements decision-6.
 - **Metadata.** `keep_metadata=false` sends `include_metadata: false`; with `new_version` it is refused, because a version has no metadata.
-- **Merge.** What Paperless would leave out without a word is refused before: an encrypted or unreadable PDF, another file without `archive_fallback`, or without an archive PDF.
+- **Merge.** What Paperless would leave out without a word is refused before: a PDF Paperless counted no pages of (it may be encrypted or damaged), another file without `archive_fallback`, or without an archive PDF.
 - **Excluded** fields, owner-approved as quoted above: `all`, `filters`, `excluded_documents` of rotate and reprocess; `delete_original` of edit_pdf and remove_password; `delete_originals` of merge.
-- **Confirmations** bind the page count, the newest version, the version that is read, `keep_metadata`, and, where originals go, their archive serial numbers.
+- **Dates.** 3.5.1 cannot list the task of an operation that copies a date among the custom fields (editing into new documents, rotating, unlocking, a merge with that metadata document). Versions are requested without copying, which changes nothing for the document; elsewhere the result says why a task is missing, and only where a field is a date.
+- **Confirmations** name the pages and the metadata the new documents lack, files that survive only as archive PDF, and the serial numbers, and bind the page count, the newest version, the version that is read, `keep_metadata`, and, where originals go, their archive serial numbers.
 <!-- SECTION:DECISION:END -->
 
 ## Consequences

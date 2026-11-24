@@ -70,6 +70,8 @@ class StartedTasks(BaseModel):
             view tasks (forbidden), reading them failed after the request was accepted (failed),
             or the queued task of Paperless could not be followed to its end (unconfirmed):
             then ``ids`` holds that task alone.
+        doubt: Why it cannot be told that these tasks are the request's own, if so: good enough to
+            report, not to trash anything for.
         detail: For ``unconfirmed``: why the queued task could not be followed.
     """
 
@@ -81,6 +83,7 @@ class StartedTasks(BaseModel):
     outputs: tuple[int, ...] = ()
     included: tuple[int, ...] | None = None
     problem: LookupProblem | None = None
+    doubt: str | None = None
     detail: str | None = None
 
 

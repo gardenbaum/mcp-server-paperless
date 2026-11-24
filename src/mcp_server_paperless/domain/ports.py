@@ -158,6 +158,14 @@ class DocumentReader(Protocol):
         """
         ...
 
+    async def may_delete(self, owners: Sequence[int | None]) -> bool | None:
+        """Whether the user may delete documents of these owners; None where that is not known.
+
+        It needs the global ``delete_document`` permission and ownership (or no owner), or a
+        superuser. The user's permissions can be read only with ``view_uisettings``.
+        """
+        ...
+
     async def list_document_notes(self, document_id: int) -> tuple[Note, ...]:
         """The notes of a document, in Paperless order.
 

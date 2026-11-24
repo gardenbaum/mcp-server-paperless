@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.documents import DocumentPatch
-from mcp_server_paperless.domain.errors import PaperlessMcpError
+from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError
 from mcp_server_paperless.services.removal import WAY_BACK
 
 if TYPE_CHECKING:
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 # No step of a composed call starts later than this after its beginning.
 LATEST_START: Final = 45.0
+LATE: Final = "the call took too long, though everything was made and checked"
 KEPT: Final = "Nothing was moved to the trash: {reason}."
 HAS_ONE: Final = (
     "Document {product} has the archive serial number {held} already, so document {original} keeps "
@@ -34,13 +35,16 @@ HAS_ONE: Final = (
 NOT_MOVED: Final = (
     "archive serial number {number} could not be moved to document {product} ({cause})"
 )
-NOT_BACK: Final = (
-    "Archive serial number {number} could not be put back on document {original} either: look at "
-    "documents {original} and {product}, and set it with update_document."
+ELSEWHERE: Final = "Archive serial number {number} is on document {holder}."
+NOWHERE: Final = (
+    "Archive serial number {number} is neither on document {original} nor on document {product}: "
+    "set it with update_document(document_id={original}, archive_serial_number={number})."
 )
-FIND: Final = (
-    "find the new documents with search_documents (newest added first) and check them, then "
+UNKNOWN_PLACE: Final = (
+    "It is not known where archive serial number {number} is: look at documents {original} and "
+    "{product}."
 )
+FIND: Final = "find the new documents with search_documents (newest added first) and check them"
 RUNNING: Final = frozenset({"pending", "started", "unknown"})
 
 
@@ -54,12 +58,14 @@ class Replacement:
             number, but Paperless must have counted them.
         serial: The original whose archive serial number moves to the only new document.
         problem: What is already known to be wrong with what was made.
+        perhaps_none: Whether a request without a task may simply have had nothing to do.
     """
 
     originals: Sequence[DocumentRecord]
     pages: Mapping[int, int | None]
     serial: DocumentRecord | None = None
     problem: str | None = None
+    perhaps_none: bool = False
 
 
 class _KeptError(Exception):
@@ -69,6 +75,14 @@ class _KeptError(Exception):
         super().__init__(reason)
         self.reason: str = reason
         self.next_call: str | None = next_call
+
+
+@dataclass(frozen=True, slots=True)
+class _Stayed:
+    """Why an original is not known to be in the trash; ``unknown``: it may be all the same."""
+
+    cause: str
+    unknown: bool = False
 
 
 @dataclass(slots=True)
@@ -85,8 +99,52 @@ def _named(numbers: Sequence[int]) -> str:
     return f"{noun} {', '.join(str(n) for n in numbers)}"
 
 
-def _deletions(originals: Sequence[DocumentRecord]) -> str:
-    return ", then ".join(f"delete_document(document_id={d.id})" for d in originals)
+def _finish(
+    wanted: Replacement, left: Sequence[DocumentRecord], product: int | None, *, serial: bool
+) -> str:
+    """The calls that end the replacement of the originals that are ``left``.
+
+    ``serial``: the number that is to move is still on its original.
+    """
+    steps = [f"delete_document(document_id={d.id})" for d in left]
+    moves = wanted.serial if serial and wanted.serial in left else None
+    if moves is not None and moves.archive_serial_number is not None:
+        new = "<the new document>" if product is None else str(product)
+        number = moves.archive_serial_number
+        steps = [
+            f'update_document(document_id={moves.id}, clear=["archive_serial_number"])',
+            f"update_document(document_id={new}, archive_serial_number={number})",
+            *steps,
+        ]
+    staying = "".join(
+        f"; archive serial number {d.archive_serial_number} of document {d.id} does not move"
+        for d in left
+        if d.archive_serial_number is not None and d is not wanted.serial
+    )
+    return ", then ".join(steps) + staying
+
+
+def _if_unchanged(left: Sequence[DocumentRecord]) -> str:
+    names = _named([d.id for d in left])
+    return f"only if {names} {'is' if len(left) == 1 else 'are'} unchanged"
+
+
+def _unchecked(result: PdfResult, started: StartedTasks, wanted: Replacement) -> str:
+    """What to call where tasks were not seen to their end: the conditions, then the rest."""
+    waits = [f'get_task(task_id="{task.task_id}", wait_seconds=30)' for task in result.tasks]
+    made = ", ".join(
+        "a known number of pages" if pages is None else f"{pages} page{'' if pages == 1 else 's'}"
+        for pages in (wanted.pages[n] for n in _outputs(result, started))
+    )
+    return (
+        f"{', then '.join(waits)}; only if every one succeeded and made exactly one document "
+        f"(get_document), with {made}: {_finish(wanted, wanted.originals, None, serial=True)}"
+    )
+
+
+def _outputs(result: PdfResult, started: StartedTasks) -> tuple[int, ...]:
+    """The output file of each task."""
+    return started.outputs or tuple(range(len(result.tasks)))
 
 
 def _cause(error: PaperlessMcpError) -> str:
@@ -94,26 +152,27 @@ def _cause(error: PaperlessMcpError) -> str:
 
 
 def _check_tasks(result: PdfResult, started: StartedTasks, wanted: Replacement) -> None:
-    """Every task must be known, waited for and successful."""
-    deletions = _deletions(wanted.originals)
+    """Every task must be known to be this call's, waited for and successful."""
     if started.problem is not None or len(result.tasks) != len(wanted.pages):
+        next_call: str | None = FIND
+        if started.problem == "unconfirmed":
+            next_call = f'get_task(task_id="{started.ids[0]}", wait_seconds=30)'
+        elif wanted.perhaps_none and not result.tasks and started.problem is None:
+            next_call = None
         reason = "what Paperless makes could not be followed"
-        raise _KeptError(reason, FIND + deletions)
-    waits = [
-        f'get_task(task_id="{task.task_id}", wait_seconds=30)'
-        for task in result.tasks
-        if task.state in RUNNING
-    ]
-    following = ", then ".join([*waits, deletions])
-    if result.wait == "not_requested":
-        reason = "wait_seconds is 0, so nothing was checked"
-        raise _KeptError(reason, following)
-    if waits:
-        reason = "Paperless is not known to be done"
-        raise _KeptError(reason, following)
-    if result.state != "success":
+        raise _KeptError(reason, next_call)
+    if started.doubt is not None:
+        reason = f"it cannot be told which files this call made ({started.doubt})"
+        raise _KeptError(reason, FIND)
+    if any(task.state in {"failure", "revoked"} for task in result.tasks):
         reason = "a task failed"
         raise _KeptError(reason)
+    if result.wait == "not_requested":
+        reason = "wait_seconds is 0, so nothing was checked"
+        raise _KeptError(reason, _unchecked(result, started, wanted))
+    if any(task.state in RUNNING for task in result.tasks):
+        reason = "Paperless is not known to be done"
+        raise _KeptError(reason, _unchecked(result, started, wanted))
     if wanted.problem is not None:
         raise _KeptError(wanted.problem)
 
@@ -145,14 +204,16 @@ class Replacing:
         try:
             _check_tasks(result, started, wanted)
             product = await self._product(result, started, wanted)
-            await self._unchanged(wanted.originals, began)
+            await self._in_time(wanted, product, began)
+            for original in wanted.originals:
+                await self._unchanged(original, original.archive_serial_number)
         except _KeptError as kept:
             notes = [KEPT.format(reason=kept.reason)]
             if result.produced_ids:
                 notes.append(f"What was made stays: {_named(result.produced_ids)}.")
             return _noted(result, notes, next_call=kept.next_call)
         # Not to be cut short between taking a serial number from one document and giving it on.
-        done = await asyncio.shield(asyncio.ensure_future(self._trash(wanted, product)))
+        done = await asyncio.shield(asyncio.ensure_future(self._trash(wanted, product, began)))
         result = _noted(result, done.notes, next_call=done.next)
         return result.model_copy(update={"trashed_ids": tuple(done.trashed)})
 
@@ -160,19 +221,23 @@ class Replacing:
         self, result: PdfResult, started: StartedTasks, wanted: Replacement
     ) -> DocumentRecord:
         """The last of the new documents, all of which must be what they should be."""
-        numbers = started.outputs or tuple(range(len(result.tasks)))
         made: list[DocumentRecord] = []
-        for task, output in zip(result.tasks, numbers, strict=True):
+        taken = {original.id for original in wanted.originals}
+        for task, output in zip(result.tasks, _outputs(result, started), strict=True):
             if len(task.document_ids) != 1:
                 found = _named(task.document_ids) if task.document_ids else "nothing"
                 reason = f"task {task.task_id} made {found} instead of one document"
                 raise _KeptError(reason)
             [number] = task.document_ids
+            if number in taken:
+                reason = f"document {number} is not a new document of its own"
+                raise _KeptError(reason)
+            taken.add(number)
             try:
                 document = await self._reader.get_document(number)
             except PaperlessMcpError as error:
                 reason = f"document {number} could not be read ({_cause(error)})"
-                raise _KeptError(reason, _deletions(wanted.originals)) from None
+                raise _KeptError(reason, f"get_document(document_id={number})") from None
             count, pages = document.page_count, wanted.pages[output]
             if count is None or pages not in {None, count}:
                 has = "an unknown number of" if count is None else str(count)
@@ -182,38 +247,36 @@ class Replacing:
             made.append(document)
         return made[-1]
 
-    async def _unchanged(self, originals: Sequence[DocumentRecord], began: float) -> None:
-        """The originals must still be the ones that were accepted, and there must be time left."""
+    async def _in_time(self, wanted: Replacement, product: DocumentRecord, began: float) -> None:
+        """Nothing starts later than ``LATEST_START``."""
         if self.clock() - began > LATEST_START:
-            reason = "the call took too long, though everything was made and checked"
-            raise _KeptError(reason, _deletions(originals))
-        for original in originals:
-            try:
-                now = await self._reader.get_document(original.id)
-            except PaperlessMcpError as error:
-                reason = f"document {original.id} could not be read again ({_cause(error)})"
-                raise _KeptError(reason) from None
-            if (now.newest_file, now.archive_serial_number) != (
-                original.newest_file,
-                original.archive_serial_number,
-            ):
-                reason = f"document {original.id} was changed meanwhile; look at it again"
-                raise _KeptError(reason)
+            then = _finish(wanted, wanted.originals, product.id, serial=True)
+            raise _KeptError(LATE, f"{_if_unchanged(wanted.originals)}: {then}")
 
-    async def _trash(self, wanted: Replacement, product: DocumentRecord) -> _Done:
+    async def _unchanged(self, original: DocumentRecord, number: int | None) -> None:
+        """The original must still be the one that was accepted, with this serial number."""
+        try:
+            now = await self._reader.get_document(original.id)
+        except PaperlessMcpError as error:
+            reason = f"document {original.id} could not be read again ({_cause(error)})"
+            raise _KeptError(reason) from None
+        if (now.newest_file, now.archive_serial_number) != (original.newest_file, number):
+            reason = f"document {original.id} was changed meanwhile; look at it again"
+            raise _KeptError(reason)
+
+    async def _trash(self, wanted: Replacement, product: DocumentRecord, began: float) -> _Done:
         """Move the serial number, then the originals to the trash; failures are told."""
         done = _Done()
-        if wanted.serial is not None and not await self._hand_over(wanted.serial, product, done):
-            done.next = _deletions(wanted.originals)
+        moved = await self._hand_over(wanted, product, done)
+        if moved is None:
             return done
         for index, original in enumerate(wanted.originals):
-            try:
-                await self._removal.trash(original.id)
-            except PaperlessMcpError as error:
-                left = wanted.originals[index:]
-                names = _named([d.id for d in left])
-                done.notes.append(f"Not moved to the trash: {names} ({_cause(error)}).")
-                done.next = _deletions(left)
+            gave = moved and original is wanted.serial
+            why = await self._move(
+                original, None if gave else original.archive_serial_number, began
+            )
+            if why is not None:
+                await self._stopped(wanted, product, done, why, moved=moved, index=index)
                 break
             done.trashed.append(original.id)
         if done.trashed:
@@ -221,37 +284,127 @@ class Replacing:
             done.notes.insert(0, f"Now in the trash: {_named(done.trashed)}. {each} {WAY_BACK}")
         return done
 
+    async def _stopped(  # noqa: PLR0913 -- what is to be told
+        self,
+        wanted: Replacement,
+        product: DocumentRecord,
+        done: _Done,
+        why: _Stayed,
+        *,
+        moved: bool,
+        index: int,
+    ) -> None:
+        """Tell what stays, give the number back to an original that stays, name the next calls."""
+        left = wanted.originals[index:]
+        first = left[0]
+        if why.unknown:
+            note = f"It is not known whether document {first.id} went to the trash ({why.cause})."
+            condition = f"only if get_document(document_id={first.id}) still finds it unchanged"
+        else:
+            note = f"Not moved to the trash: {_named([d.id for d in left])} ({why.cause})."
+            condition = _if_unchanged(left)
+        done.notes.append(note)
+        place = product.id if moved else None
+        if moved and wanted.serial is not None and wanted.serial in left:
+            if not (why.unknown and first is wanted.serial):
+                place = await self._put_back(wanted.serial, product)
+            self._tell_place(wanted.serial, product, place, done)
+        if place in {None, product.id}:
+            then = _finish(wanted, left, product.id, serial=place is None)
+            done.next = f"{condition}: {then}"
+
+    async def _move(
+        self, original: DocumentRecord, number: int | None, began: float
+    ) -> _Stayed | None:
+        """Move one original to the trash after a last look; why it is not known to be there."""
+        try:
+            if self.clock() - began > LATEST_START:
+                return _Stayed(LATE)
+            await self._unchanged(original, number)
+        except _KeptError as kept:
+            return _Stayed(kept.reason)
+        try:
+            await self._removal.trash(original.id)
+        except PaperlessMcpError as error:
+            try:
+                _ = await self._reader.get_document(original.id)
+            except NotFound:
+                return None
+            except PaperlessMcpError:
+                return _Stayed(_cause(error), unknown=True)
+            return _Stayed(_cause(error))
+        return None
+
     async def _hand_over(
-        self, original: DocumentRecord, product: DocumentRecord, done: _Done
-    ) -> bool:
-        """Give the original's serial number to the new document, or leave it where it was."""
+        self, wanted: Replacement, product: DocumentRecord, done: _Done
+    ) -> bool | None:
+        """Whether the original's serial number moved to the new document; None: it failed to."""
+        original = wanted.serial
+        if original is None or original.archive_serial_number is None:
+            return False
         number = original.archive_serial_number
-        if number is None:
-            return True
         if product.archive_serial_number is not None:
+            held = product.archive_serial_number
             done.notes.append(
-                HAS_ONE.format(
-                    product=product.id,
-                    held=product.archive_serial_number,
-                    original=original.id,
-                    number=number,
-                )
+                HAS_ONE.format(product=product.id, held=held, original=original.id, number=number)
             )
-            return True
+            return False
         try:
             _ = await self._number(original.id, None)
             _ = await self._number(product.id, number)
         except PaperlessMcpError as error:
             reason = NOT_MOVED.format(number=number, product=product.id, cause=_cause(error))
             done.notes.append(KEPT.format(reason=reason))
-            try:
-                _ = await self._number(original.id, number)
-            except PaperlessMcpError:
-                done.notes.append(
-                    NOT_BACK.format(number=number, original=original.id, product=product.id)
-                )
-            return False
+            place = await self._put_back(original, product)
+            self._tell_place(original, product, place, done)
+            if place in {None, product.id}:
+                then = _finish(wanted, wanted.originals, product.id, serial=place is None)
+                done.next = f"{_if_unchanged(wanted.originals)}: {then}"
+            return None
         return True
+
+    async def _put_back(self, original: DocumentRecord, product: DocumentRecord) -> int | None:
+        """None once the number is on its original again, else where it is (see ``_locate``)."""
+        number = original.archive_serial_number
+        try:
+            if await self._holds(original, number):
+                return None
+            if await self._holds(product, number):
+                _ = await self._number(product.id, None)
+            _ = await self._number(original.id, number)
+        except PaperlessMcpError:
+            return await self._locate(original, product)
+        return None
+
+    async def _locate(self, original: DocumentRecord, product: DocumentRecord) -> int | None:
+        """The document that has the number: None the original, 0 neither, -1 not known."""
+        number = original.archive_serial_number
+        try:
+            if await self._holds(original, number):
+                return None
+            return product.id if await self._holds(product, number) else 0
+        except PaperlessMcpError:
+            return -1
+
+    async def _holds(self, document: DocumentRecord, number: int | None) -> bool:
+        return (await self._reader.get_document(document.id)).archive_serial_number == number
+
+    @staticmethod
+    def _tell_place(
+        original: DocumentRecord, product: DocumentRecord, place: int | None, done: _Done
+    ) -> None:
+        """Say where the number is, unless it is on its original."""
+        if place is None:
+            return
+        text = {0: NOWHERE, -1: UNKNOWN_PLACE}.get(place, ELSEWHERE)
+        done.notes.append(
+            text.format(
+                number=original.archive_serial_number,
+                original=original.id,
+                product=product.id,
+                holder=place,
+            )
+        )
 
     async def _number(self, document_id: int, number: int | None) -> DocumentRecord:
         patch = DocumentPatch(archive_serial_number=number)

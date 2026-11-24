@@ -26,6 +26,7 @@ from mcp_server_paperless.domain.documents import UploadState  # noqa: TC001 -- 
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     PaperlessMcpError,
+    PermissionDenied,
     Validation,
     quoted,
 )
@@ -33,12 +34,13 @@ from mcp_server_paperless.domain.pdf import PageSlot, PdfPlan, PdfResult, PdfTas
 from mcp_server_paperless.services.documents import document_link, listed_version, require_files
 from mcp_server_paperless.services.page_ranges import describe, parse_pages
 from mcp_server_paperless.services.pdf_plans import (
-    NUMBER_BLOCKED,
     REBUILT,
     UNSIGNED,
     document_plan,
+    numbers,
     outputs,
     version_plan,
+    without,
 )
 from mcp_server_paperless.services.pdf_replacing import Replacement
 from mcp_server_paperless.services.task_outcome import follow
@@ -52,8 +54,10 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.pdf import FileOutput, Output, StartedTasks
     from mcp_server_paperless.domain.ports import DocumentReader, PdfWriter
     from mcp_server_paperless.domain.tasks import Wait
+    from mcp_server_paperless.services.pdf_plans import Numbers
     from mcp_server_paperless.services.pdf_replacing import Replacing
     from mcp_server_paperless.services.tasks import TaskService
+    from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 # Most documents one call works on: each is read first, so the call stays small.
 MAX_DOCUMENTS: Final = 20
@@ -75,19 +79,31 @@ UNREADABLE: Final = "Paperless accepted the request; its tasks could not be read
 NONE_FOUND: Final = "Paperless accepted the request, but no task showed up for it{reason}."
 SOME_FOUND: Final = (
     "Paperless accepted the request, but only {found} of the {expected} tasks it starts showed "
-    "up: the state covers {those} only."
+    "up: the state covers {those} only{reason}."
 )
-UNLOCKED_NONE: Final = " (the file may not be password protected)"
-DATED_NONE: Final = (
-    " (Paperless 3.5 lists none for a document with a date among its custom fields: the work is "
-    "done all the same)"
+UNLOCKED_NONE: Final = "the file may not be password protected"
+DATED: Final = (
+    "its custom fields hold a date, for which Paperless 3.5 lists no task: the work is done all "
+    "the same"
+)
+ARCHIVE_ONLY: Final = (
+    "{name}: only its archive PDF is in the merged document, its own file goes to the trash with it"
+)
+NO_PAGES_HINT: Final = (
+    "It may be password protected (remove_document_password unlocks it) or damaged."
+)
+MAY_NOT_DELETE: Final = (
+    "The Paperless user may not delete {which} original, so nothing was started."
+)
+MAY_NOT_DELETE_HINT: Final = (
+    "Trashing needs the permission to delete documents and ownership (or no owner). Keep the "
+    "originals, or ask their owner."
 )
 REPROCESS_NOTE: Final = (
     "Paperless does not say which document a reprocess task belongs to (its tasks name none): "
     "they are the newest reprocess tasks this request started, so they cannot be tied to the "
     "documents."
 )
-SERIAL: Final = "archive serial number, if it has one, moves to the new document"
 
 
 def _plural(count: int, noun: str) -> str:
@@ -190,25 +206,27 @@ DEFAULTS: Final = Options()
 class PdfService:
     """Runs PDF operations for the current user and reports their tasks."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 -- one port or service per concern
         self,
         reader: DocumentReader,
         writer: PdfWriter,
         tasks: TaskService,
         replacing: Replacing,
+        taxonomy: TaxonomyResolver,
         *,
         web_url: str,
     ) -> None:
         """Read through ``reader``, write through ``writer``, follow tasks through ``tasks``.
 
-        ``replacing`` verifies and trashes; ``web_url`` is the Paperless web UI, for the links of
-        a result.
+        ``replacing`` verifies and trashes, ``taxonomy`` tells the custom fields; ``web_url`` is the
+        Paperless web UI, for the links of a result.
         """
         self._web_url: str = web_url
         self._reader: DocumentReader = reader
         self._writer: PdfWriter = writer
         self._tasks: TaskService = tasks
         self._replacing: Replacing = replacing
+        self._taxonomy: TaxonomyResolver = taxonomy
 
     async def rotate(  # noqa: PLR0913 -- the documents and the options of the rotation
         self,
@@ -268,7 +286,7 @@ class PdfService:
             plan,
             wait_seconds=wait_seconds,
             version=True,
-            no_task=_dated(documents),
+            copied=documents,
         )
 
     async def merge(  # noqa: PLR0913 -- the documents and the options of the merge
@@ -310,6 +328,8 @@ class PdfService:
         newer = next((d for d in documents if use_original_files and len(d.versions) > 1), None)
         if delete_originals and newer is not None:
             raise _newer_lost(newer.id, "use_original_files")
+        if delete_originals:
+            await self._require_delete(documents)
         counts = [
             await self._mergeable(
                 d, facts[d.id], archive_fallback=archive_fallback, first=use_original_files
@@ -318,21 +338,27 @@ class PdfService:
         ]
         pages = None if None in counts else sum(n or 0 for n in counts)
         summary = f"merge documents {_ids(document_ids)} into one new document"
-        plan = _merge_plan(documents, metadata_document_id, pages, trashes=delete_originals)
+        serial = _merged_serial(documents, metadata_document_id)
+        serials = numbers(documents, serial, trashes=delete_originals)
+        archived = [
+            d for d in documents if delete_originals and facts[d.id].original_mime_type != PDF
+        ]
+        only = tuple(ARCHIVE_ONLY.format(name=_named([d])) for d in archived)
+        plan = _merge_plan(
+            documents, metadata_document_id, pages, serials, only, trashes=delete_originals
+        )
         if delete_originals:
             summary += " and move the originals to the Paperless trash"
         if dry_run:
             return self._preview("merge", summary, document_ids, plan)
-        serial = _merged_serial(documents, metadata_document_id) if delete_originals else None
         if delete_originals and not confirm:
-            number = f"an original's {SERIAL}" if serial is None else _moving(serial)
             effect = (
                 f"merge {_named(documents)} into one new document, in this order, and "
-                "move the originals to the Paperless trash (they can be restored from there); "
-                f"{number}"
+                "move the originals to the Paperless trash (they can be restored from there)"
             )
+            effect = "; ".join([effect, *only, *serials.keeps, *serials.loses])
             scope = [(d.newest_file, d.archive_serial_number) for d in documents]
-            ConfirmationRequired.require(effect, scope=(pages, scope))
+            ConfirmationRequired.require(effect, scope=(pages, scope, metadata_document_id))
         began = self._replacing.clock()
         started = await self._writer.merge_documents(
             document_ids,
@@ -347,7 +373,7 @@ class PdfService:
             started,
             plan,
             wait_seconds=_bound(wait_seconds, composed=delete_originals),
-            no_task=_dated([d for d in documents if d.id == metadata_document_id]),
+            copied=[d for d in documents if d.id == metadata_document_id],
         )
         left_out = _left_out(document_ids, started)
         if not delete_originals:
@@ -523,8 +549,6 @@ class PdfService:
         }[output]
         summary = f"remove the password of document {document_id} {where}"
         what = f"remove the password of {source.named()} {where}"
-        if output == "replace_original":
-            what += f"; {NUMBER_BLOCKED}"
         return await self._run(
             source,
             _Request("remove_password", summary, what),
@@ -636,10 +660,10 @@ class PdfService:
         pages = await self._pages(document, number if first else None)
         if kind == PDF:
             if pages is None:
-                message = f"Document {number} cannot be merged: it is encrypted or unreadable."
-                raise Validation(
-                    message, hint="Remove the password first with remove_document_password."
+                message = (
+                    f"Document {number} cannot be merged: Paperless counted no pages of its file."
                 )
+                raise Validation(message, hint=NO_PAGES_HINT)
             return pages
         if not archive_fallback:
             message = f"Document {number} is not a PDF ({kind})."
@@ -674,10 +698,7 @@ class PdfService:
             message = f"The page count of document {document_id} is unknown."
             raise Validation(
                 message,
-                hint=(
-                    "Encrypted PDFs have none: remove the password first with "
-                    "remove_document_password."
-                ),
+                hint=NO_PAGES_HINT,
             )
         return source, source.pages
 
@@ -733,9 +754,13 @@ class PdfService:
             raise Validation(message, hint="Leave keep_metadata out, or use new_document.")
         if trashes and source.older:
             raise _newer_lost(document.id, "version_id")
+        if trashes:
+            await self._require_delete([document])
         single = len(files) == 1 and request.operation != "remove_password"
+        moves = document if single else None
+        serials = numbers([document], moves, trashes=trashes)
         plan = _file_plan(
-            source, request, len(files), dropped, output=output, options=options, moves=single
+            source, request, len(files), dropped, serials, output=output, options=options
         )
         summary = request.summary
         if trashes and request.operation != "remove_password":
@@ -746,9 +771,12 @@ class PdfService:
             effect = request.what
             if version:
                 effect = _version_effect(source, request, dropped)
-            elif request.operation != "remove_password":
-                effect += f" and {TRASH}; "
-                effect += f"the original's {SERIAL}" if single else NUMBER_BLOCKED
+            else:
+                if request.operation != "remove_password":
+                    effect += f" and {TRASH}"
+                lost = () if options.keep_metadata else (without(_named([document])),)
+                lost = (*_dropped(request, dropped), *lost, *serials.keeps, *serials.loses)
+                effect = "; ".join([effect, *lost])
             number = document.archive_serial_number
             scope = (source.scope, number if trashes else None, options.keep_metadata)
             ConfirmationRequired.require(effect, scope=scope)
@@ -762,11 +790,17 @@ class PdfService:
             plan,
             wait_seconds=_bound(options.wait_seconds, composed=trashes),
             version=version,
-            no_task=no_task or ("" if version else _dated([document])),
+            no_task=no_task,
+            copied=[document] if options.keep_metadata and not version else [],
         )
         if not trashes:
             return result
-        wanted = Replacement([document], files, serial=document if single else None)
+        wanted = Replacement(
+            [document],
+            files,
+            serial=moves,
+            perhaps_none=bool(no_task) and DATED not in (result.message or ""),
+        )
         return await self._replacing.finish(result, started, wanted, began=began)
 
     async def _merged_note(
@@ -815,13 +849,14 @@ class PdfService:
         wait_seconds: float,
         version: bool = False,
         no_task: str = "",
+        copied: Sequence[DocumentRecord] = (),
         note: str = "",
     ) -> PdfResult:
         """Follow the tasks for up to ``wait_seconds`` altogether and report them.
 
         ``version``: the result is a new version of the source (the produced ids are version ids,
         so the links are the sources'). ``no_task`` explains why a request may have no task,
-        ``note`` is added to the message.
+        ``copied`` are the documents whose metadata is copied, ``note`` is added to the message.
         """
         bound = min(max(wait_seconds, 0), MAX_WAIT_SECONDS)
         tasks: list[PdfTask] = []
@@ -849,11 +884,17 @@ class PdfService:
         elif started.problem == "unconfirmed":
             notes.append(UNCONFIRMED.format(detail=started.detail))
         elif not tasks:
-            notes.append(NONE_FOUND.format(reason=no_task))
+            reason = await self._why_hidden(copied, no_task)
+            notes.append(NONE_FOUND.format(reason=reason))
         elif not complete:
+            reason = await self._why_hidden(copied)
             those = "that one" if len(tasks) == 1 else "those"
             found = len(tasks)
-            notes.append(SOME_FOUND.format(found=found, expected=started.expected, those=those))
+            notes.append(
+                SOME_FOUND.format(
+                    found=found, expected=started.expected, those=those, reason=reason
+                )
+            )
         if note:
             notes.append(note)
         wait: Wait = "not_requested"
@@ -878,6 +919,34 @@ class PdfService:
             wait=wait,
             waited_seconds=round(waited, 1),
         )
+
+    async def _why_hidden(self, copied: Sequence[DocumentRecord], other: str = "") -> str:
+        """Why a task may be missing: ``other``, or a date among the custom fields that are copied.
+
+        3.5.1 cannot record a task whose metadata holds such a date.
+        """
+        causes = [other] if other else []
+        if any(value.value is not None for d in copied for value in d.custom_fields):
+            with contextlib.suppress(PaperlessMcpError):
+                fields = await self._taxonomy.items("custom_field")
+                dates = {field.id for field in fields if field.data_type == "date"}
+                if any(
+                    value.field in dates and value.value is not None
+                    for d in copied
+                    for value in d.custom_fields
+                ):
+                    causes.append(DATED)
+        return f" ({', or '.join(causes)})" if causes else ""
+
+    async def _require_delete(self, documents: Sequence[DocumentRecord]) -> None:
+        """Refuse early when the user is known not to be allowed to trash the originals.
+
+        Raises:
+            PermissionDenied: The user lacks the permission, or does not own one of them.
+        """
+        if await self._reader.may_delete([d.owner for d in documents]) is False:
+            message = MAY_NOT_DELETE.format(which="the" if len(documents) == 1 else "every")
+            raise PermissionDenied(message, hint=MAY_NOT_DELETE_HINT)
 
     def _produced_links(
         self,
@@ -914,11 +983,6 @@ def _bound(wait_seconds: float | None, *, composed: bool) -> float:
     return wait_seconds
 
 
-def _dated(documents: Sequence[DocumentRecord]) -> str:
-    """Why the task of an operation that copies the metadata of ``documents`` may not be listed."""
-    return DATED_NONE if any(d.custom_fields for d in documents) else ""
-
-
 def _newer_lost(number: int, parameter: str) -> Validation:
     message = (
         f"Document {number} has newer versions, which the new document would not hold, so it is "
@@ -947,17 +1011,12 @@ def _merged_serial(
     return next(iter((*preferred, *numbered)), None)
 
 
-def _moving(document: DocumentRecord) -> str:
-    return (
-        f"archive serial number {document.archive_serial_number} (of document {document.id}) moves "
-        "to the new document, any other stays with its trashed original and is blocked"
-    )
-
-
-def _merge_plan(
+def _merge_plan(  # noqa: PLR0913 -- what the plan of a merge depends on
     documents: Sequence[DocumentRecord],
     metadata_document_id: int | None,
     pages: int | None,
+    serials: Numbers,
+    only: tuple[str, ...],
     *,
     trashes: bool,
 ) -> PdfPlan:
@@ -965,9 +1024,9 @@ def _merge_plan(
     plan = document_plan(
         f"1 new document{size}",
         _named(documents),
-        loses=(REBUILT,),
+        serials,
+        loses=(*only, REBUILT),
         trashes=trashes,
-        number_moves=trashes,
         keep_metadata=metadata_document_id is not None,
         metadata_of=None if metadata_document_id is None else f"document {metadata_document_id}",
         title=" (its title with ' (merged)')",
@@ -985,16 +1044,15 @@ def _file_plan(  # noqa: PLR0913 -- what the plan of a request for one document 
     request: _Request,
     files: int,
     dropped: Sequence[int],
+    serials: Numbers,
     *,
     output: Output,
     options: Options,
-    moves: bool,
 ) -> PdfPlan:
     """The plan of an operation on one document."""
     name = _named([source.document])
     made = outputs(files, output)
-    where = "in no new document" if request.operation == "split" else "not in the result"
-    loses = (f"{describe(dropped)}: {where}",) if dropped else ()
+    loses = _dropped(request, dropped)
     if request.operation != "remove_password":
         loses = (*loses, REBUILT)
     if output == "new_version":
@@ -1004,11 +1062,17 @@ def _file_plan(  # noqa: PLR0913 -- what the plan of a request for one document 
     return document_plan(
         made,
         name,
+        serials,
         loses=loses,
         keep_metadata=options.keep_metadata,
         trashes=output == "replace_original",
-        number_moves=moves,
     )
+
+
+def _dropped(request: _Request, dropped: Sequence[int]) -> tuple[str, ...]:
+    """The line for the pages that go nowhere."""
+    where = "in no new document" if request.operation == "split" else "not in the result"
+    return (f"{describe(dropped)}: {where}",) if dropped else ()
 
 
 def _version_effect(source: _Source, request: _Request, dropped: Sequence[int]) -> str:

@@ -1115,3 +1115,35 @@ async def test_whether_a_document_exists_is_not_guessed_in_an_outage(
 
     with pytest.raises(UpstreamUnavailable):
         _ = await PaperlessDocumentReader(client).document_exists(7)
+
+
+@pytest.mark.parametrize(
+    ("settings", "owners", "expected"),
+    [
+        ({"permissions": []}, [5], True),  # a superuser
+        ({"superuser": False, "permissions": ["delete_document"]}, [2, None], True),
+        ({"superuser": False, "permissions": ["delete_document"]}, [2, 3], False),
+        ({"superuser": False, "permissions": ["change_document"]}, [2], False),
+        ({"superuser": False}, [2], None),
+        ({"superuser": False}, [3], False),
+    ],
+)
+async def test_whether_originals_may_be_deleted(
+    make_client: ClientFactory, settings: Json, owners: list[int | None], expected: object
+) -> None:
+    body = {
+        "user": {"id": 2, "username": "x", "is_superuser": settings.get("superuser", True)},
+        "settings": {},
+        **({"permissions": settings["permissions"]} if "permissions" in settings else {}),
+    }
+
+    def server(_: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json=body)
+
+    assert await PaperlessDocumentReader(make_client(server)).may_delete(owners) is expected
+
+
+async def test_rights_that_cannot_be_read_are_unknown(make_client: ClientFactory) -> None:
+    server = Resource({"detail": "no"}, status=403)
+
+    assert await PaperlessDocumentReader(make_client(server)).may_delete([2]) is None

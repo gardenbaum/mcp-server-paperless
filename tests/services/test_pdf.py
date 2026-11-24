@@ -803,8 +803,7 @@ async def test_the_refusal_to_merge_without_confirm_has_the_exact_words() -> Non
     assert raised.value.message == (
         f"Nothing was changed. Confirming would merge document {first} 'Alpha', document {second} "
         f"'Beta' and document {third} 'Gamma' into one new document, in this order, and move the "
-        "originals to the Paperless trash (they can be restored from there); an original's "
-        "archive serial number, if it has one, moves to the new document."
+        "originals to the Paperless trash (they can be restored from there)."
     )
 
 
@@ -847,7 +846,7 @@ async def test_the_refusals_of_a_split() -> None:
     )
     assert await refused(service.split(locked, ["1", "2"])) == (
         f"The page count of document {locked} is unknown.",
-        "Encrypted PDFs have none: remove the password first with remove_document_password.",
+        "It may be password protected (remove_document_password unlocks it) or damaged.",
     )
 
 
@@ -870,9 +869,7 @@ async def test_the_split_confirmation_and_summary_have_the_exact_words() -> None
 
     assert raised.value.message == (
         f"Nothing was changed. Confirming would split document {document} 'Scan' into 2 new "
-        "documents (pages 1-2 | pages 3-4) and move the original to the Paperless trash; "
-        "an archive serial number stays with the trashed original: restoring brings it back, and "
-        "it is blocked until the trash is emptied."
+        "documents (pages 1-2 | pages 3-4) and move the original to the Paperless trash."
     )
     writing = Setup()
     result = await writing.service.split(writing.pdf(4), ["1-2", "3-4"])
@@ -910,8 +907,7 @@ async def test_the_confirmations_of_deleting_pages_have_the_exact_words() -> Non
     )
     assert replacing.value.message == (
         f"Nothing was changed. Confirming would delete page 1 of document {document} 'Scan' into "
-        "a new document and move the original to the Paperless trash; the original's archive "
-        "serial number, if it has one, moves to the new document."
+        "a new document and move the original to the Paperless trash; page 1: not in the result."
     )
 
 
@@ -1008,9 +1004,8 @@ async def test_the_confirmations_of_an_edit_have_the_exact_words() -> None:
     )
     assert replacing.value.message == (
         f"Nothing was changed. Confirming would edit document {document} 'Scan' into 2 new "
-        "documents (2 pages, 0 turned) and move the original to the Paperless trash; "
-        "an archive serial number stays with the trashed original: restoring brings it back, and "
-        "it is blocked until the trash is emptied."
+        "documents (2 pages, 0 turned) and move the original to the Paperless trash; pages 3-4: "
+        "not in the result."
     )
 
 
@@ -1041,9 +1036,7 @@ async def test_removing_a_password_has_exact_refusals_and_summaries() -> None:
         _ = await setup.service.remove_password(locked, "s3cret", output="replace_original")
     assert raised.value.message == (
         f"Nothing was changed. Confirming would remove the password of document {locked} "
-        "'Locked' into a new document and move the original to the Paperless trash; "
-        "an archive serial number stays with the trashed original: restoring brings it back, and "
-        "it is blocked until the trash is emptied."
+        "'Locked' into a new document and move the original to the Paperless trash."
     )
     text = setup.pdf(1, mime_type="text/plain")
     with pytest.raises(Validation, match="is not a PDF"):
@@ -1328,33 +1321,6 @@ async def test_nothing_produced_links_nothing() -> None:
     result = await setup.service.rotate([setup.pdf(1)], 90, wait_seconds=1)
 
     assert (result.produced_ids, result.produced_links) == ((), ())
-
-
-async def test_the_confirmations_say_that_the_serial_number_moves() -> None:
-    setup = Setup(writes=False)
-    first, second, doc = setup.pdf(1), setup.pdf(1), setup.pdf(3)
-    locked = setup.pdf(1, password="x")
-    asn = "archive serial number, if it has one, moves to the new document"
-
-    with pytest.raises(ConfirmationRequired) as merge:
-        _ = await setup.service.merge([first, second], None, delete_originals=True)
-    with pytest.raises(ConfirmationRequired) as edit:
-        _ = await setup.service.edit(doc, [PageSlot(page=1)], output="replace_original")
-    with pytest.raises(ConfirmationRequired) as pages:
-        _ = await setup.service.delete_pages(doc, "1", output="replace_original")
-    with pytest.raises(ConfirmationRequired) as password:
-        _ = await setup.service.remove_password(locked, "x", output="replace_original")
-    with pytest.raises(ConfirmationRequired) as split:
-        _ = await setup.service.split(doc, ["1", "2"], output="replace_original")
-    with pytest.raises(ConfirmationRequired) as two_files:
-        _ = await setup.service.edit(
-            doc, [PageSlot(page=1), PageSlot(page=2, document=1)], output="replace_original"
-        )
-
-    for raised in (merge, edit, pages):
-        assert asn in raised.value.message
-    for raised in (password, split, two_files):
-        assert "archive serial number stays with the trashed original" in raised.value.message
 
 
 async def test_removing_a_password_links_what_it_made() -> None:

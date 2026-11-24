@@ -182,12 +182,6 @@ REBUILT = (
     "bookmarks, attachments, working form fields and signatures of the PDF are not in the result"
 )
 UNSIGNED = "a signature in the PDF is no longer valid"
-BLOCKED = (
-    "an archive serial number stays with the trashed original: restoring brings it back, and it "
-    "is blocked until the trash is emptied"
-)
-MOVES = "the archive serial number, if there is one, moves to the new document"
-STAYS = "an archive serial number stays with the original"
 READ_AGAIN = "the text is read again, so corrections of it are not in the new version"
 
 
@@ -213,24 +207,24 @@ async def test_the_plans_of_new_documents() -> None:
     name = "document 70 'Plain'"
     assert await plan_of("split") == (
         "2 new documents",
-        (f"new documents take {METADATA} of {name}", f"{name}: unchanged", STAYS),
+        (f"new documents take {METADATA} of {name}", f"{name}: unchanged"),
         ("page 3: in no new document", REBUILT, NEVER, PIPELINE),
     )
     assert await plan_of("split-replace") == (
         "2 new documents",
         (f"new documents take {METADATA} of {name}",),
-        ("page 3: in no new document", REBUILT, NEVER, PIPELINE, BLOCKED, trashed(name)),
+        ("page 3: in no new document", REBUILT, NEVER, PIPELINE, trashed(name)),
     )
     assert await plan_of("edit-replace") == (
         "1 new document",
-        (f"new documents take {METADATA} of {name}", MOVES),
+        (f"new documents take {METADATA} of {name}",),
         ("pages 2-3: not in the result", REBUILT, NEVER, PIPELINE, trashed(name)),
     )
     locked = "document 73 'Locked'"
     assert await plan_of("unlock-replace") == (
         "1 new document",
         (f"new documents take {METADATA} of {locked}",),
-        (NEVER, PIPELINE, BLOCKED, trashed(locked)),
+        (NEVER, PIPELINE, trashed(locked)),
     )
 
 
@@ -264,7 +258,7 @@ async def test_the_plans_of_a_merge_and_of_reprocessing() -> None:
     names = "document 70 'Plain' and document 60 'Longer'"
     assert await plan_of("merge") == (
         "1 new document with 7 pages",
-        (f"{names}: unchanged", STAYS),
+        (f"{names}: unchanged",),
         (
             REBUILT,
             f"new documents take nothing of {METADATA} of {names}",
@@ -275,7 +269,7 @@ async def test_the_plans_of_a_merge_and_of_reprocessing() -> None:
     )
     assert await plan_of("merge-delete") == (
         "1 new document with 7 pages",
-        (f"new documents take {METADATA} of document 70 (its title with ' (merged)')", MOVES),
+        (f"new documents take {METADATA} of document 70 (its title with ' (merged)')",),
         (REBUILT, NEVER, PIPELINE, trashed(names), VERSION_OF_A_MERGE),
     )
     assert await plan_of("reprocess") == (
@@ -295,7 +289,7 @@ async def test_new_documents_without_the_metadata() -> None:
     )
     result = await pdf_service(fake).edit(PLAIN, PAGE, options=Options(keep_metadata=False))
 
-    assert preview.plan.keeps == ("document 70 'Plain': unchanged", STAYS)
+    assert preview.plan.keeps == ("document 70 'Plain': unchanged",)
     assert preview.plan.loses == (
         "pages 2-3: not in the result",
         REBUILT,
@@ -483,8 +477,8 @@ async def test_what_a_merge_would_leave_out_is_refused_before_it_starts() -> Non
     service = pdf_service(paperless(writes=False))
 
     assert await refused(service.merge([PLAIN, LOCKED], None)) == (
-        "Document 73 cannot be merged: it is encrypted or unreadable.",
-        "Remove the password first with remove_document_password.",
+        "Document 73 cannot be merged: Paperless counted no pages of its file.",
+        "It may be password protected (remove_document_password unlocks it) or damaged.",
     )
     assert await refused(service.merge([PLAIN, SCAN], None)) == (
         "Document 72 is not a PDF (image/png).",
@@ -602,14 +596,83 @@ async def test_a_confirmation_binds_the_file_the_number_and_the_metadata() -> No
     assert [a == b for a, b in zip(numbered, again, strict=True)] == [True, True, False, False]
 
 
-async def test_the_confirmation_of_a_merge_names_the_number_that_moves() -> None:
+MOVING = (
+    "archive serial number 5 of document 60 moves to the new document, unless that has one "
+    "already; workflows for changed documents run for both"
+)
+BLOCKED = (
+    "archive serial number 7 of document 70 stays with the trashed original: restoring brings it "
+    "back, and it is blocked until the trash is emptied"
+)
+
+
+async def test_plan_and_confirmation_of_a_merge_name_the_number_that_moves_and_the_others() -> None:
     fake = paperless(writes=False)
     document(fake, LONGER).archive_serial_number = 5
+    document(fake, PLAIN).archive_serial_number = 7
+    service = pdf_service(fake)
 
-    message = await asked(pdf_service(fake).merge([PLAIN, LONGER], PLAIN, delete_originals=True))
+    preview = await service.merge([PLAIN, LONGER], LONGER, delete_originals=True, dry_run=True)
+    message = await asked(service.merge([PLAIN, LONGER], LONGER, delete_originals=True))
+    kept = await service.merge([PLAIN, LONGER], LONGER, dry_run=True)
 
-    number = (
-        "(they can be restored from there); archive serial number 5 (of document 60) moves to the "
-        "new document, any other stays with its trashed original and is blocked."
+    assert MOVING in preview.plan.keeps
+    assert BLOCKED in preview.plan.loses
+    assert message.endswith(f"(they can be restored from there); {MOVING}; {BLOCKED}.")
+    assert kept.plan.keeps[-2:] == (
+        "archive serial number 7 stays with document 70",
+        "archive serial number 5 stays with document 60",
     )
-    assert message.endswith(number)
+
+
+@pytest.mark.parametrize("moves", [True, False])
+async def test_plan_and_confirmation_of_one_document_name_its_number(*, moves: bool) -> None:
+    fake = paperless(writes=False)
+    document(fake, PLAIN).archive_serial_number = 7
+    service = pdf_service(fake)
+    parts = [PageSlot(page=1), PageSlot(page=2, document=0 if moves else 1)]
+
+    async def edit(options: Options) -> PdfResult:
+        return await service.edit(PLAIN, parts, output="replace_original", options=options)
+
+    plan = (await edit(PREVIEW)).plan
+    message = await asked(edit(Options()))
+
+    number = MOVING.replace("5 of document 60", "7 of document 70") if moves else BLOCKED
+    assert number in (plan.keeps if moves else plan.loses)
+    tail = f"move the original to the Paperless trash; page 3: not in the result; {number}."
+    assert message.endswith(tail)
+
+
+async def test_the_confirmation_of_a_replacement_says_what_the_new_documents_lack() -> None:
+    service = pdf_service(paperless(writes=False))
+    without = f"new documents take nothing of {METADATA} of document 70 'Plain'"
+    options = Options(keep_metadata=False)
+
+    parts = await asked(
+        service.split(PLAIN, ["1", "2"], output="replace_original", options=options)
+    )
+    bare = await asked(
+        service.remove_password(LOCKED, "x", output="replace_original", options=options)
+    )
+
+    assert parts.endswith(f"; page 3: in no new document; {without}.")
+    locked = without.replace("70", "73").replace("Plain", "Locked")
+    assert bare.endswith(f"move the original to the Paperless trash; {locked}.")
+
+
+async def test_plan_and_confirmation_of_a_merge_name_files_that_stay_as_archives_only() -> None:
+    service = pdf_service(paperless(writes=False))
+    only = (
+        "document 72 'Scan': only its archive PDF is in the merged document, its own file goes "
+        "to the trash with it"
+    )
+
+    async def merge(*, dry_run: bool = False, delete: bool = True) -> PdfResult:
+        return await service.merge(
+            [PLAIN, SCAN], None, archive_fallback=True, delete_originals=delete, dry_run=dry_run
+        )
+
+    assert only in (await merge(dry_run=True)).plan.loses
+    assert f"; {only}." in await asked(merge())
+    assert only not in (await merge(dry_run=True, delete=False)).plan.loses

@@ -499,6 +499,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.pdf_writes,
                     tasks,
                     Replacing(adapters.documents, adapters.document_writes, removal, clock=clock),
+                    taxonomy,
                     web_url=web_url,
                 ),
                 sharing=SharingService(

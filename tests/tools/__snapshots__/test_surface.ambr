@@ -14622,7 +14622,7 @@
         'readOnlyHint': False,
         'title': 'Merge documents',
       }),
-      'description': "Merge PDF documents, in the order given, into one new document. The new document takes the metadata (title with ' (merged)', tags, correspondent, ...) of metadata_document_id if given. The originals stay unless delete_originals is true: they then move to the Paperless trash (restore_from_trash of the trash toolset, or the web UI, restores them), which needs confirm. Without it a dialog, or an error for you to show the user, first names the documents and what would happen (see confirm). A document that could not be merged is refused first. A merge is always a new document; to make it a version, merge and then use merge_documents_as_versions (toolset versions), which absorbs the merged document for good. Originals are trashed last, by this server: only once everything was made, has the pages it should have and nothing changed meanwhile. Otherwise they stay (trashed_ids, message) and next names the calls that finish the work: look there before repeating a call. Paperless does the work later, in background tasks: the result lists the ones it could find (state, produced_ids: the new documents, or for a new version its id) and with wait_seconds waits for them. Needs the permission to change and to add documents and a change grant on (or ownership of) every document; delete_originals also needs ownership of them and the permission to delete documents. Only PDF files.",
+      'description': "Merge PDF documents, in the order given, into one new document. The new document takes the metadata (title with ' (merged)', tags, correspondent, ...) of metadata_document_id if given. The originals stay unless delete_originals is true: they then move to the Paperless trash (restore_from_trash of the trash toolset, or the web UI, restores them), which needs confirm. Without it a dialog, or an error for you to show the user, first names the documents and what would happen (see confirm). A document that could not be merged is refused first. A merge is always a new document; to make it a version, merge and then use merge_documents_as_versions (toolset versions), which absorbs the merged document for good. Originals are trashed last, by this server: only once everything was made, has the pages it should have and nothing changed meanwhile. Otherwise they stay (trashed_ids, message) and next names the calls that finish the work: look there before repeating a call. Paperless does the work later, in background tasks: the result lists the ones it could find (state, produced_ids: the new documents, or for a new version its id) and with wait_seconds waits for them. Needs the permission to change and to add documents and a change grant on (or ownership of) every document; delete_originals also needs ownership of them and the permission to delete documents. Takes PDF files; other files need archive_fallback and an archive PDF.",
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
@@ -14642,7 +14642,7 @@
             'type': 'boolean',
           }),
           'document_ids': dict({
-            'description': 'Ids of the PDFs to merge, in order, at most 20, each once.',
+            'description': 'Ids of the documents to merge, in order, at most 20, each once.',
             'items': dict({
               'type': 'integer',
             }),

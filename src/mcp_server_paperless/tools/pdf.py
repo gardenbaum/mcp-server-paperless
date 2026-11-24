@@ -91,7 +91,7 @@ OWNERS = (
 MERGERS = (
     "Needs the permission to change and to add documents and a change grant on (or ownership "
     "of) every document; delete_originals also needs ownership of them and the permission to "
-    "delete documents. Only PDF files."
+    "delete documents. Takes PDF files; other files need archive_fallback and an archive PDF."
 )
 REPLACING = (
     "Originals are trashed last, by this server: only once everything was made, has the pages "
@@ -166,7 +166,9 @@ async def merge_documents(  # noqa: PLR0913 -- the documents and the options of 
         Field(
             min_length=2,
             max_length=MAX_DOCUMENTS,
-            description=f"Ids of the PDFs to merge, in order, at most {MAX_DOCUMENTS}, each once.",
+            description=(
+                f"Ids of the documents to merge, in order, at most {MAX_DOCUMENTS}, each once."
+            ),
         ),
     ],
     *,

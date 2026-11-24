@@ -191,6 +191,16 @@ class _Pages(BaseModel):
     versions: list[_Version]
 
 
+class _SignedIn(BaseModel):
+    id: int
+    is_superuser: bool = False
+
+
+class _Rights(BaseModel):
+    user: _SignedIn
+    permissions: list[str] | None = None
+
+
 class _Content(BaseModel):
     content: str
 
@@ -503,6 +513,18 @@ class PaperlessDocumentReader:
         if version_id not in ([version.id for version in row.versions] or [document_id]):
             raise unseen_version(document_id, version_id)
         return row.page_count
+
+    async def may_delete(self, owners: Sequence[int | None]) -> bool | None:
+        """See ``DocumentReader.may_delete``: the permissions ``/api/ui_settings/`` lists."""
+        try:
+            rights = await self._client.get("/api/ui_settings/", _Rights)
+        except PaperlessMcpError:
+            return None
+        if rights.user.is_superuser:
+            return True
+        if any(owner not in {None, rights.user.id} for owner in owners):
+            return False
+        return None if rights.permissions is None else "delete_document" in rights.permissions
 
     async def list_document_notes(self, document_id: int) -> tuple[Note, ...]:
         """See ``DocumentReader.list_document_notes``."""

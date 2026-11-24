@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:14Z'
-updated_date: '2026-11-24T09:52:01Z'
+updated_date: '2026-11-24T10:06:21Z'
 labels: []
 dependencies: []
 parent_task_id: PLMCP-79
@@ -89,4 +89,13 @@ Contract tests removed (tests/contract/test_pdf.py), because the port no longer 
 Replaced by tests/services/test_pdf_replacing.py (every way a replacement ends, refused deletion included) and tests/e2e/test_pdf.py; delete_document itself keeps its contract tests. Adapter tests removed for the same reason: test_a_delete_of_originals_adds_a_task_that_is_not_reported, test_an_edit_that_replaces_the_original_asks_for_its_deletion, and the replace_original case of test_removing_a_password_sends_it_with_where_the_copy_goes.
 
 Merged plmcp-78-trash (a415807): its TRASHED/TRASHED_EACH notes ("once the work succeeds") give way to the message of pdf_replacing ("Now in the trash: ...", WAY_BACK) after the originals went; the plan of a replacing call says the way back too. Its test test_whatever_trashes_an_original_says_how_to_get_it_back asserts the new words. OVERVIEW_GUIDE_LIMIT 2835 and DEFINITION_ADDED_LIMIT 879 unchanged; snapshot, docs/tools.md and docs/api-coverage.md regenerated.
+
+Review of 5307caa (0 Critical, 5 Important, 9 Minor), all fixed on top of the merge, tests seen red first:
+I1 number goes back when its own original stays, or its place is told; delete right checked beforehand (new port method PdfWriter.may_delete). I2 next carries its conditions and never suggests a deletion for a missing, hidden or doubtful product. I3 StartedTasks.doubt: window of the queued task, exact number of files, copy flag, no other copying operation of the user at the same time. I4 clock and re-read before each deletion; a lost answer is looked up. I5 both causes for unlocking; live contract for the hidden tasks of rotate, merge and unlock.
+M1 to M9 as asked; texts of confirmations and plans changed on purpose (exact-word tests updated): numbers are named only where there are any. The hint of a PDF without page count no longer claims encryption.
+Not fixable: an upload of the same user named like a part, in the window, with the copy flag, in place of a hidden file (decision-60, consequences).
+
+Correction: the new port method is DocumentReader.may_delete (a read). The case split/other_pages of test_confirmation_scope.py is gone: the pages that get lost are in the text of the confirmation now, so it tells them apart itself.
+
+Second correction: that case is not gone but uses delete_pages as a new version, whose text does not tell the page counts apart.
 <!-- SECTION:NOTES:END -->

@@ -7,7 +7,7 @@ are shaped like the ones recorded from Paperless.
 
 import asyncio
 import json
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, cast, override
 
 import httpx2
 import pytest
@@ -58,12 +58,31 @@ def row(
         "date_done": None,
         "duration_seconds": None,
         "wait_time_seconds": None,
-        "input_data": {} if filename is None else {"filename": filename, "mime_type": "x"},
+        "input_data": (
+            {}
+            if filename is None
+            else {
+                "filename": filename,
+                "mime_type": "x",
+                "overrides": {"skip_asn_if_exists": True},
+            }
+        ),
         "result_data": None,
         "related_document_ids": [],
         "acknowledged": False,
         "owner": owner if task_type == "consume_file" else None,
     }
+
+
+# The queued task of every operation: it ran while the files above were handed over.
+QUEUED: Json = {
+    **row(1, "bulk_update"),
+    "task_id": DONE_TASK,
+    "date_started": "2026-11-13T17:25:36.540000Z",
+    "date_done": "2026-11-13T17:25:36.550000Z",
+    "owner": 2,
+    "input_data": {"operation": "edit_pdf", "document_count": 1},
+}
 
 
 def task_id(number: int) -> str:
@@ -93,6 +112,9 @@ class Paperless:
         fail_late: bool = False,
     ) -> None:
         self.fail_late: bool = fail_late
+        self.queued: Json = {}
+        self.others: list[Json] = [QUEUED]
+        self.others_status: int = 200
         self.baseline_status: int = baseline_status
         self.unfiltered: bool = unfiltered
         self.tasks_status: int = tasks_status
@@ -108,7 +130,7 @@ class Paperless:
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
         if request.url.path == "/api/tasks/" and request.url.params.get("task_id") == DONE_TASK:
             # The queued task of the operation has succeeded; looking at it is not logged.
-            done = {**row(1, "bulk_update"), "task_id": DONE_TASK}
+            done = {**QUEUED, **self.queued}
             return httpx2.Response(
                 200, json={"count": 1, "next": None, "previous": None, "results": [done]}
             )
@@ -128,6 +150,9 @@ class Paperless:
 
     def _tasks(self, request: httpx2.Request) -> httpx2.Response:
         """The task list: the rows by phase of the request, filtered like Paperless does."""
+        if request.url.params.get("task_type") == "bulk_update":
+            found = {"count": len(self.others), "next": None, "previous": None}
+            return httpx2.Response(self.others_status, json={**found, "results": self.others})
         if self.tasks_status != 200 and (self._posted or self.tasks_status == 403):
             return httpx2.Response(self.tasks_status, json={"detail": "no"})
         if not self._posted and self.baseline_status != 200:
@@ -781,8 +806,7 @@ async def test_the_refusals_have_the_exact_words(make_client: ClientFactory) -> 
         "Rotating, splitting, deleting pages, editing and removing a password need the "
         "permission to change documents and ownership of every document (or no owner): a "
         "change grant is not enough. Merging and reprocessing accept a change grant. A new "
-        "document needs the permission to add documents, and deleting an original also needs "
-        "ownership and the permission to delete."
+        "document needs the permission to add documents."
     )
     assert (permission.value.message, permission.value.hint) == (
         "The Paperless user may not change these documents.",
@@ -1231,3 +1255,132 @@ async def test_a_failed_mark_does_not_lose_the_queued_task_that_cannot_be_follow
 
     assert (tasks.ids, tasks.problem) == ((BULK_TASK,), "unconfirmed")
     assert len(server.posts) == 1
+
+
+NO_DOUBT = [*OLD, row(12, "consume_file", "8_edit_1.pdf"), row(13, "consume_file", "8_edit_2.pdf")]
+LATER = "2026-11-13T17:25:36.560000Z"
+EARLIER = "2026-11-13T17:25:36.530000Z"
+
+
+def other(**fields: object) -> Json:
+    return {**QUEUED, "id": 2, "task_id": task_id(2), **fields}
+
+
+async def doubt(
+    make_client: ClientFactory, after: list[Json] = NO_DOUBT, **server: object
+) -> str | None:
+    paperless = Paperless(OLD, after, settings_status=cast("int", server.get("settings", 200)))
+    paperless.queued = cast("Json", server.get("queued", {}))
+    paperless.others = [QUEUED, *cast("list[Json]", server.get("others", []))]
+    paperless.others_status = cast("int", server.get("status", 200))
+    tasks = await writer(make_client, paperless).edit_pdf(8, PAGES, output="new_document")
+    return tasks.doubt
+
+
+async def test_files_made_while_the_queued_task_ran_alone_are_its_own(
+    make_client: ClientFactory,
+) -> None:
+    before = other(date_started=EARLIER, date_done=EARLIER)
+    after = other(date_started=LATER, date_done=None)
+    waiting = other(date_started=None, date_done=None)
+    harmless = other(input_data={"operation": "set_correspondent"})
+    someone = other(owner=3)
+
+    found = await doubt(make_client, others=[before, after, waiting, harmless, someone])
+
+    assert found is None
+
+
+SAME = "another operation of this user ran at the same time"
+TIMES = "the times of its queued task are not known"
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {},
+        {"input_data": {"operation": "merge"}},
+        {"input_data": {"operation": "remove_password"}},
+        {"input_data": {}},  # an operation Paperless does not name
+        {"owner": None},
+        {"date_done": None},  # still running
+        {"date_started": EARLIER, "date_done": "2026-11-13T17:25:36.540000Z"},
+        {"date_started": "2026-11-13T17:25:36.550000Z", "date_done": LATER},
+    ],
+)
+async def test_another_operation_at_the_same_time_is_a_doubt(
+    make_client: ClientFactory, fields: Json
+) -> None:
+    assert await doubt(make_client, others=[other(**fields)]) == SAME
+
+
+@pytest.mark.parametrize("queued", [{"date_started": None}, {"date_done": None}])
+async def test_a_queued_task_without_times_is_a_doubt(
+    make_client: ClientFactory, queued: Json
+) -> None:
+    assert await doubt(make_client, queued=queued) == TIMES
+
+
+@pytest.mark.parametrize("created", [EARLIER, LATER])
+async def test_a_file_from_before_or_after_the_queued_task_is_a_doubt(
+    make_client: ClientFactory, created: str
+) -> None:
+    stray = [NO_DOUBT[0], NO_DOUBT[1], NO_DOUBT[2], {**NO_DOUBT[3], "date_created": created}]
+
+    assert await doubt(make_client, stray) == "a file was not handed over by its queued task"
+
+
+@pytest.mark.parametrize("overrides", [{"skip_asn_if_exists": False}, {}, None])
+async def test_a_file_that_was_not_handed_over_like_a_part_is_a_doubt(
+    make_client: ClientFactory, overrides: object
+) -> None:
+    data = {"filename": "8_edit_2.pdf", "overrides": overrides}
+
+    found = await doubt(make_client, [*NO_DOUBT[:3], {**NO_DOUBT[3], "input_data": data}])
+
+    assert found == "a file was not handed over by its queued task"
+
+
+@pytest.mark.parametrize("name", ["8_edit_1.pdf", "8_edit_3.pdf"])
+async def test_more_files_than_asked_for_are_a_doubt(make_client: ClientFactory, name: str) -> None:
+    found = await doubt(make_client, [*NO_DOUBT, row(14, "consume_file", name)])
+
+    assert found == "3 files of these names were handed over instead of 2"
+
+
+async def test_tasks_that_cannot_be_compared_are_a_doubt(make_client: ClientFactory) -> None:
+    unfiltered = await doubt(make_client, settings=403)
+    unread = await doubt(make_client, status=503)
+
+    assert unfiltered == "the current user is not known"
+    assert unread == "its tasks could not be compared"
+
+
+async def test_only_what_can_replace_an_original_is_compared(make_client: ClientFactory) -> None:
+    merged = Paperless(OLD, [*OLD, row(12, "consume_file", "8_9_merged.pdf")])
+    unlocked = Paperless(OLD, [*OLD, row(12, "consume_file", "8_unprotected.pdf")])
+    version = Paperless(OLD, [*OLD, row(12, "consume_file", "8_edited.pdf")])
+    for server in (merged, unlocked, version):
+        server.others = [QUEUED, other()]
+
+    one = await writer(make_client, merged).merge_documents((8, 9), metadata_document_id=None)
+    two = await writer(make_client, unlocked).remove_password(8, "x", output="new_document")
+    three = await writer(make_client, version).edit_pdf(8, PAGES[:1], output="new_version")
+
+    assert (one.doubt, two.doubt, three.doubt) == (SAME, SAME, None)
+
+
+async def test_two_merges_that_could_be_the_same_are_a_doubt(make_client: ClientFactory) -> None:
+    server = Paperless(
+        OLD,
+        [
+            *OLD,
+            row(12, "consume_file", "8_merged.pdf"),
+            row(13, "consume_file", "8_9_merged.pdf"),
+        ],
+    )
+
+    tasks = await writer(make_client, server).merge_documents((8, 9), metadata_document_id=None)
+
+    assert (tasks.ids, tasks.included) == ((task_id(13),), (8, 9))
+    assert tasks.doubt == "2 files of these names were handed over instead of 1"

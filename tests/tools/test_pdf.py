@@ -307,17 +307,27 @@ async def test_the_next_calls_of_an_unfinished_replacement_are_accepted_by_their
     )
 
     assert (result["trashed_ids"], source.state.trash) == ([], [])
-    assert result["next"] == f"delete_document(document_id={FIRST})"
+    [task] = cast("list[Json]", result["tasks"])
+    assert result["next"] == (
+        f'get_task(task_id="{task["task_id"]}", wait_seconds=30); only if every one succeeded and '
+        "made exactly one document (get_document), with 3 pages: "
+        f"delete_document(document_id={FIRST})"
+    )
     async with Client(serve(source, toolsets=["core", "pdf"])) as client:
         _ = await client.call_tool("delete_document", {"document_id": FIRST, "confirm": True})
     assert [d.id for d in source.state.trash] == [FIRST]
-    # The other call `next` can name, with the arguments it names.
-    [task] = cast("list[Json]", result["tasks"])
+    # The other calls `next` can name, with the arguments it names.
     async with Client(serve(source, toolsets=["core"])) as client:
         answer = await client.call_tool(
             "get_task", {"task_id": task["task_id"], "wait_seconds": 30}
         )
-    assert not answer.is_error
+        numbered = await client.call_tool(
+            "update_document", {"document_id": SECOND, "archive_serial_number": 5}
+        )
+        cleared = await client.call_tool(
+            "update_document", {"document_id": SECOND, "clear": ["archive_serial_number"]}
+        )
+    assert not any(a.is_error for a in (answer, numbered, cleared))
 
 
 async def test_the_options_reach_paperless() -> None:
@@ -340,3 +350,13 @@ async def test_the_options_reach_paperless() -> None:
     assert [1 in d.tags for d in source.state.documents if d.id == made] == [False]
     assert cast("Json", merged["plan"])["produces"] == "1 new document with 5 pages"
     assert cast("Json", both["plan"])["produces"] == "1 new document with 6 pages"
+
+
+async def test_the_merge_tool_does_not_claim_to_take_pdfs_only() -> None:
+    async with Client(serve(admin(), toolsets=["pdf"])) as client:
+        [merge] = [t for t in await client.list_tools() if t.name == "merge_documents"]
+
+    ids = cast("dict[str, Json]", merge.input_schema["properties"])["document_ids"]
+    assert "Only PDF files" not in (merge.description or "")
+    assert "other files need archive_fallback" in (merge.description or "")
+    assert str(ids["description"]).startswith("Ids of the documents to merge")

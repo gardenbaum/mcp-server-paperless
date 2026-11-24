@@ -2051,6 +2051,14 @@ class FakePaperless:
         self.state.documents.append(made)
         return made
 
+    async def may_delete(self, owners: Sequence[int | None]) -> bool | None:
+        """`DocumentReader.may_delete` (UiSettingsView: needs `view_uisettings`)."""
+        user = self.user
+        if not user.has("view_uisettings"):
+            return None
+        owns = all(owner in {None, user.id} for owner in owners)
+        return user.is_superuser or (owns and user.has("delete_document"))
+
     @write
     async def rotate_documents(
         self, document_ids: Sequence[int], degrees: int, *, original_files: bool = False
