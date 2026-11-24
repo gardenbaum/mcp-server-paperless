@@ -349,8 +349,9 @@ class AppConfig(BaseModel):
         tuple[str, ...],
         Field(
             description=(
-                "Settings whose URL has credentials, which are not shown (nor the URL, if they "
-                "cannot be told apart from the rest). Writing one back as shown drops them."
+                "Settings whose URL has, or may have, credentials, which are not shown (nor the "
+                "URL, if they cannot be told apart from the rest). Writing one back as shown "
+                "keeps what is stored."
             )
         ),
     ]

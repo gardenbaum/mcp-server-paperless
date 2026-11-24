@@ -338,8 +338,9 @@ groups.
 - `run_task` needs `confirm` to train the classifier or rebuild the AI index; a sanity check
   only reads and needs none.
 - Passwords and API keys are write-only: never returned, quoted or logged.
-- Service URLs are returned without their credentials; `shown_in_part` names those that have some.
-  Writing one back as shown drops them.
+- Service URLs are returned without the user name and password in them (a query string is
+  returned); `shown_in_part` names those that may have some. Writing one back as it was returned
+  keeps what is stored; reset it first to remove them.
 - The account the server signs in with cannot be deleted, deactivated or stripped of its
   superuser status through these tools.
 - Paperless decides who may do what: most tools need the matching Paperless permission, the

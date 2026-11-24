@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T07:06:16Z'
-updated_date: '2026-11-24T11:08:32Z'
+updated_date: '2026-11-24T11:19:25Z'
 labels: []
 dependencies: []
 priority: medium
@@ -56,4 +56,12 @@ Changed on purpose: test_surface.ambr (all, read-only): get_app_config descripti
 Red first: 385 targeted tests with the new ones failing before the code; test_confirmation_text 34 of 54 red on the old errors.py. Targeted: 1268 passed, diff-cover 100 %, basedpyright, ruff, import contracts clean. No full suite, E2E or mutation run.
 services/pdf*.py on origin/plmcp-79-1-pdf names documents through quoted() and needs no change.
 Open, not in the acceptance criteria: look-alike letters before the @ of an address (named in the description only); look-alike single quotes within single quotes; look-alike quotes in a new text destination (folder); get_workflow and list_workflows return a webhook URL with its credentials.
+
+Review of 44e4b57, fixed on top (replaces what the notes above say about the cut, about a URL written back and about the plan):
+- I1: quotes with nothing visible or only marks between them count as side by side; U+030B and U+030F are escaped where no letter or digit carries them. M2, M3: gershayim after niqqud and at the bounds of the Hebrew range. M1: U+02EE, U+02BA, U+02BE, U+02BF, U+144A, U+16CC are named in Consequences of decision-64 with the reason. M4, M6, M7 (PLMCP-112), M8 done.
+- Ruling a: a URL written back as it was returned stays as stored, also with confirm=true, and the result says so. That makes the confirmation 'remove the credentials of' unreachable: code and its test case removed, replaced by tests that the credentials stay. The sentence fits the budget of update_app_config (test_toolset_budget, test_registry unchanged).
+- Ruling b: the cut takes the same 60/80 characters as before; escapes do not count. The server caps no refusal or dialog text, so there is no cap to exceed. Measured worst cases: one name 722 characters (before 62), both ends at 254: 3039, longest refusal of all tools with the fixtures: 8716 (update_user), pinned at 9000. Refusals that name every object (mail rules, e-mailed documents) have no bound, as before.
+- Open by ruling c: look-alike single quotes within single quotes, look-alikes in new text destinations, look-alike letters before the @ of an address.
+Changed on purpose: test_surface.ambr again (both descriptions, field text); CUT in test_confirmation_text.py counts an escape as one character. The tests of the counted cut are replaced.
+Evidence: red first, then 2150 passed, 1 skipped in named modules; diff-cover 100 % against origin/main; ruff, basedpyright, import contracts clean. origin/main (e429b87) merged with -s ours: its tree equals d0f24e9.
 <!-- SECTION:NOTES:END -->

@@ -394,7 +394,6 @@ async def test_a_service_url_with_credentials_is_shown_without_them() -> None:
     [
         ("https://e.x/v1", "https://u:s3cret@e.x/v1", "add credentials to"),
         ("https://u:s3cret@e.x/v1", "https://u:n3wer@e.x/v1", "replace the credentials of"),
-        ("https://u:s3cret@e.x/v1", "https://e.x/v1", "remove the credentials of"),
     ],
 )
 async def test_a_change_of_only_the_credentials_says_so(old: str, new: str, what: str) -> None:

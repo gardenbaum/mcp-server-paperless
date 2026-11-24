@@ -387,6 +387,7 @@ def test_an_excerpt_shows_every_space() -> None:
     assert excerpt("") == '""'
 
 
+ESCAPED = BACKSLASH + "u05f4"
 LOOK_ALIKE_QUOTES = (
     *(0x02BA, 0x02DD, 0x02EE, 0x02F5, 0x02F6, 0x05F2, 0x05F4, 0x201C, 0x201D, 0x201E, 0x201F),
     *(0x2033, 0x2034, 0x2036, 0x2037, 0x2057, 0x275D, 0x275E, 0x2760, 0x2E42, 0x3003, 0x301D),
@@ -455,18 +456,84 @@ def test_gershayim_that_stand_at_the_edge_of_a_word_are_escaped(text: str) -> No
 
 
 @pytest.mark.decision("decision-64")
-def test_escapes_count_towards_the_cut_and_are_never_cut_themselves() -> None:
-    mark, escape = chr(0x201D), r"\u201d"
+@pytest.mark.parametrize(
+    "between",
+    [
+        "\u200c",
+        "\u200d",
+        "\ufe0f",
+        "\u180b",
+        "\u17b4",
+        "\U000e0080",
+        "\u2065",
+        "\u0301",
+        "\u200d\ufe0f",
+    ],
+)
+@pytest.mark.parametrize("single", ["'", "\u2019", "\u02bc"])
+def test_quotes_with_nothing_visible_between_them_are_side_by_side(
+    single: str, between: str
+) -> None:
+    shown = quoted(f"a{single}{between}{single}b")
 
-    assert quoted(f"ab{mark}", 8) == f"'ab{escape}'"
-    assert quoted(f"abc{mark}", 8) == "'abc\u2026'"
-    assert quoted(f"a{mark}bcd", 8) == f"'a{escape}\u2026'"
-    assert quoted(mark * 60) == f"'{escape * 9}\u2026'"
-    assert both_ends(f"{mark}abcdefghij{mark}", 24) == f"'{escape}abcdefghij{escape}'"
-    assert both_ends(f"{mark}{'x' * 30}{mark}yz", 24) == f"'{escape}xx\u2026{'x' * 7}{escape}yz'"
-    assert both_ends(f"abcdefg{mark}{'x' * 30}", 24) == f"'abcdefg\u2026{'x' * 15}'"
-    assert both_ends("x" * 8 + mark * 40, 24) == f"'{'x' * 8}\u2026{escape * 2}'"
+    assert f"\\u{ord(single):04x}b" in shown
+    assert shown[1:-1].startswith(f"a{single}{between}")
+
+
+@pytest.mark.decision("decision-64")
+def test_quotes_with_something_visible_between_them_are_not() -> None:
+    for between in (" ", "x", "\u0600"):
+        assert quoted(f"a\u2019{between}\u2019b") == f"'a\u2019{between}\u2019b'"
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize("mark", ["\u030b", "\u030f"])
+def test_double_accents_that_no_letter_carries_are_escaped(mark: str) -> None:
+    escape = f"\\u{ord(mark):04x}"
+    for before in ("", "a.", "a\u200c", "a\ufe0f", "a\u201d"):
+        assert quoted(f"{before}{mark}b") == quoted(before)[:-1] + f"{escape}b'"
+    assert quoted(f"a\u00a0{mark}b") == f"'a {escape}b'"
+    assert quoted(f"{mark}{mark}") == f"'{escape}{escape}'"
+    for carried in (f"o{mark}", f"o\u0301{mark}", f"\u0443{mark}", f"7{mark}"):
+        assert quoted(carried) == f"'{carried}'"
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize(
+    ("text", "shown"),
+    [
+        ("\u05d0\u05b0\u05f4\u05d0", "\u05d0\u05b0\u05f4\u05d0"),  # after niqqud
+        ("\u05d0\u05f4\u05f4\u05d0", f"\u05d0{ESCAPED}{ESCAPED}\u05d0"),
+        ("\u05d0\u05f3\u05f4\u05d0", f"\u05d0\u05f3{ESCAPED}\u05d0"),
+        ("\u05d0\u05f4\u05f3\u05d0", f"\u05d0{ESCAPED}\u05f3\u05d0"),
+        ("\u05f2\u05f4\u05dc", "\u05f2\u05f4\u05dc"),
+        ("\u05dc\u05f4\u05f2", "\u05dc\u05f4\u05f2"),
+        ("\u05b0\u05f4\u05d0", f"\u05b0{ESCAPED}\u05d0"),  # niqqud on nothing
+    ],
+)
+def test_gershayim_stand_between_letters_only(text: str, shown: str) -> None:
+    assert quoted(text) == f"'{shown}'"
+
+
+@pytest.mark.decision("decision-64")
+def test_the_cut_takes_the_same_characters_of_a_name_whatever_is_escaped() -> None:
+    mark, escape = chr(0x201D), BACKSLASH + "u201d"
+
+    assert quoted(f"ab{mark}", 3) == f"'ab{escape}'"
+    assert quoted(f"a{mark}bcd", 3) == f"'a{escape}\u2026'"
+    assert quoted("\u05d0\u05f4\u05d0\u05d0", 3) == f"'\u05d0{ESCAPED}\u2026'"
+    assert both_ends(f"{mark}abcdefg{mark}", 9) == f"'{escape}abcdefg{escape}'"
+    assert both_ends(f"a{mark}b{'x' * 20}{mark}yz", 9) == f"'a{escape}b\u2026xx{escape}yz'"
     assert both_ends("abcdefghij", 9) == "'abc\u2026fghij'"
+
+
+@pytest.mark.decision("decision-64")
+def test_the_longest_name_has_an_escape_of_twelve_characters_for_each_of_its_own() -> None:
+    widest = chr(0x1F676)
+
+    assert len(quoted(widest * 60)) == 60 * 12 + 2
+    assert len(quoted(widest * 900)) == 59 * 12 + 3
+    assert len(both_ends(widest * 900, 254)) == 253 * 12 + 3
 
 
 @pytest.mark.decision("decision-48")

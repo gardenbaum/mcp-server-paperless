@@ -145,9 +145,9 @@ def _credentials_only(name: str, old: JsonValue, new: JsonValue) -> str | None:
     public = without_credentials(_text(new))
     if name not in ENDPOINTS or public is None or public != without_credentials(_text(old)):
         return None
-    had, has = _credentials(name, old), _credentials(name, new)
-    verb = "replace the credentials of" if had and has else "add credentials to"
-    verb = verb if has else "remove the credentials of"
+    had = _credentials(name, old)
+    # A URL that is the stored one without its credentials leaves it as it is (decision-64).
+    verb = "replace the credentials of" if had else "add credentials to"
     return f"{verb} {name} {destination(public, name, 'url')} (not shown)"
 
 
@@ -163,16 +163,20 @@ def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
+def _returned(name: str, value: JsonValue) -> JsonValue:
+    """The value of a setting as results hold it: a service URL without its credentials."""
+    if name not in ENDPOINTS:
+        return value
+    text = _text(value)
+    shown = without_credentials(text)
+    return value if shown == text else shown or NOT_SHOWN
+
+
 def _config(record: AppConfigRecord) -> AppConfig:
-    public: dict[str, JsonValue] = {}
-    for name in sorted(ENDPOINTS & record.settings.keys()):
-        text = _text(record.settings[name])
-        shown = without_credentials(text)
-        if shown != text:
-            public[name] = NOT_SHOWN if shown is None else shown
+    shown = {name: _returned(name, value) for name, value in record.settings.items()}
     return AppConfig(
-        settings=record.settings | public,
-        shown_in_part=tuple(public),
+        settings=shown,
+        shown_in_part=tuple(sorted(n for n, v in shown.items() if v != record.settings[n])),
         keys_configured=record.keys_configured,
         externally_configured_variables=record.externally_configured_variables,
     )
@@ -274,9 +278,13 @@ class SystemAdmin:
         current = await self._reader.get_config()
         effects: list[str] = []
         changes: dict[str, JsonValue] = {}
+        kept: list[str] = []
         for name, value in wanted.items():
             now = current.settings.get(name)
             if value == now:
+                continue
+            if now is not None and value == _returned(name, now):
+                kept.append(name)
                 continue
             changes[name] = value
             new, old = _goes(name, value), _went(name, now)
@@ -293,11 +301,12 @@ class SystemAdmin:
             else f"replace the saved {name} (its value is never shown)"
             for name in secrets
         )
+        credentials = f" Kept as stored, with the credentials: {', '.join(kept)}." if kept else ""
         if not effects:
             return ConfigOutcome(
                 config=_config(current),
                 changed=(),
-                message="Nothing changed: the configuration already is as asked.",
+                message=f"Nothing changed: the configuration already is as asked.{credentials}",
             )
         if not confirm:
             ConfirmationRequired.require(
@@ -309,7 +318,7 @@ class SystemAdmin:
         return ConfigOutcome(
             config=_config(written),
             changed=done,
-            message=f"Changed {_plural(len(done), 'setting')}: {', '.join(done)}.",
+            message=f"Changed {_plural(len(done), 'setting')}: {', '.join(done)}.{credentials}",
         )
 
     @staticmethod
