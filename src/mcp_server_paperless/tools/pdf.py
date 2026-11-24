@@ -96,9 +96,9 @@ MERGE = (
     "Merge PDF documents, in the order given, into one new document. The new document takes "
     "the metadata (title with ' (merged)', tags, correspondent, ...) of metadata_document_id "
     "if given. The originals stay unless delete_originals is true: they then move to the "
-    "Paperless trash, from where they can be restored, which needs confirm. Two steps for "
-    "that: call without confirm first; nothing is merged and the error names the documents "
-    "and what would happen, with confirm=true to pass. "
+    "Paperless trash, from where they can be restored, which needs confirm. Without it a "
+    "dialog, or an error for you to show the user, first names the documents and what would "
+    "happen (see confirm). "
 )
 
 
@@ -173,11 +173,11 @@ async def split_document(  # noqa: PLR0913 -- the document and the options of th
 
     The new documents take the title and metadata of the original. The original stays unless
     output is replace_original: it then moves to the Paperless trash, from where it can be
-    restored, which needs confirm. Two steps for that: call without confirm first; nothing is
-    split and the error names the document and what would happen, with confirm=true to pass. Page
-    ranges are checked against the page count first. Needs the permission to change and to add
-    documents and ownership of the document (or no owner; a change grant is not enough), and for
-    replace_original the permission to delete documents.
+    restored, which needs confirm. Without it a dialog, or an error for you to show the user, first
+    names the document and what would happen (see confirm). Page ranges are checked against the
+    page count first. Needs the permission to change and to add documents and ownership of the
+    document (or no owner; a change grant is not enough), and for replace_original the permission
+    to delete documents.
     """
     return await services(ctx).pdf.split(
         document_id, parts, output=output, confirm=confirm, wait_seconds=wait_seconds
@@ -209,10 +209,10 @@ async def delete_pages(  # noqa: PLR0913 -- the document and the options of the 
     all pages stays until it is deleted, but pages vanish from what the document shows, so this
     needs confirm; so does replace_original (a new document without the pages, the original
     moves to the Paperless trash). With new_document nothing existing changes and no confirm is
-    needed. Two steps: call without confirm first. Nothing is deleted and the error names the
-    pages and what would happen, with confirm=true to pass. Page ranges are checked against the
-    page count first. Needs the permission to change documents (and to add them for a new
-    document) and ownership of the document (or no owner; a change grant is not enough).
+    needed. Without it a dialog, or an error for you to show the user, first names the pages and
+    what would happen (see confirm). Page ranges are checked against the page count first. Needs
+    the permission to change documents (and to add them for a new document) and ownership of the
+    document (or no owner; a change grant is not enough).
     """
     return await services(ctx).pdf.delete_pages(
         document_id, pages, output=output, confirm=confirm, wait_seconds=wait_seconds
@@ -247,11 +247,11 @@ async def edit_pdf(  # noqa: PLR0913 -- the document and the options of the edit
     output new_document (the default) the original stays and every output file becomes a new
     document with the title and metadata of the original. new_version needs a single output file
     and makes it the file the document shows; if it leaves pages out, that needs confirm, as
-    does replace_original (new documents, and the original moves to the Paperless trash). Two
-    steps for those: call without confirm first. Nothing is changed and the error says what
-    would happen, with confirm=true to pass. Page numbers are checked against the page count
-    first. Needs the permission to change documents (and to add them for new documents) and
-    ownership of the document (or no owner; a change grant is not enough).
+    does replace_original (new documents, and the original moves to the Paperless trash). Without
+    it a dialog, or an error for you to show the user, first says what would happen (see confirm).
+    Page numbers are checked against the page count first. Needs the permission to change documents
+    (and to add them for new documents) and ownership of the document (or no owner; a change grant
+    is not enough).
     """
     return await services(ctx).pdf.edit(
         document_id, pages, output=output, confirm=confirm, wait_seconds=wait_seconds
@@ -281,10 +281,10 @@ async def remove_document_password(  # noqa: PLR0913 -- the document, the passwo
     unlocked copy is consumed again and gets its text. By default it becomes a new document;
     new_version adds it to the same document (the locked file stays as an older version);
     replace_original makes a new document and moves the locked original to the Paperless trash,
-    which needs confirm (call without it first: nothing changes and the error says what would
-    happen). A wrong password is an error; a file without a password starts no task. Needs the
-    permission to change documents and ownership of the document (or no owner; a change grant is
-    not enough), and to add documents unless output is new_version.
+    which needs confirm. Without it a dialog, or an error for you to show the user, first says what
+    would happen (see confirm). A wrong password is an error; a file without a password starts no
+    task. Needs the permission to change documents and ownership of the document (or no owner; a
+    change grant is not enough), and to add documents unless output is new_version.
     """
     return await services(ctx).pdf.remove_password(
         document_id, password, output=output, confirm=confirm, wait_seconds=wait_seconds
@@ -313,13 +313,12 @@ async def reprocess_documents(
     """Run OCR and archiving again for documents, one background task each.
 
     The archived PDF and the extracted text are replaced by the new ones, so manual changes to
-    the text are lost. Two steps: call without confirm first. Nothing is reprocessed and the
-    error names the documents and what would happen, with confirm=true to pass. Use this for
-    plain reprocessing, also with remote_ocr; the reprocess operation of bulk_edit_documents (if
-    that toolset is on) does the same through Paperless's deprecated bulk form and adds a dry_run
-    preview. Paperless names no document for a reprocess task, so the tasks in the result cannot
-    be tied to the documents. Needs the permission to change documents and a change grant on (or
-    ownership of) each.
+    the text are lost. Without confirm a dialog, or an error for you to show the user, first names
+    the documents and what would happen (see confirm). Use this for plain reprocessing, also with
+    remote_ocr; the reprocess operation of bulk_edit_documents (if that toolset is on) does the
+    same through Paperless's deprecated bulk form and adds a dry_run preview. Paperless names no
+    document for a reprocess task, so the tasks in the result cannot be tied to the documents.
+    Needs the permission to change documents and a change grant on (or ownership of) each.
     """
     return await services(ctx).pdf.reprocess(
         document_ids, remote_ocr=remote_ocr, confirm=confirm, wait_seconds=wait_seconds

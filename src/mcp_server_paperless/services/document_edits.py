@@ -16,7 +16,7 @@ other fields, so using it would not make a whole update atomic either.
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch, DocumentUpdate
 from mcp_server_paperless.domain.errors import (
@@ -25,8 +25,10 @@ from mcp_server_paperless.domain.errors import (
     PaperlessMcpError,
     PermissionDenied,
     Validation,
+    quoted,
 )
 from mcp_server_paperless.services.custom_values import linked, require_visible, resolve_values
+from mcp_server_paperless.services.principals import names_of
 from mcp_server_paperless.services.tag_hierarchy import blocked_removals, close_over_ancestors
 from mcp_server_paperless.services.taxonomy import fold
 
@@ -166,16 +168,6 @@ def _check_new_names(values: Iterable[int | str]) -> None:
             raise Validation(message, hint="Use a shorter tag name.")
 
 
-def _confirm_owner(edit: DocumentEdit, current: DocumentRecord, scalars: dict[str, object]) -> None:
-    """An owner change (also to no owner) needs ``confirm``: the caller cannot undo it."""
-    if "owner" in scalars and scalars["owner"] != current.owner and not edit.confirm:
-        message = (
-            "Changing the owner needs confirm=true: the new owner (or, with no owner, every "
-            "user who may view documents) takes over the document and you may lose access to it."
-        )
-        raise ConfirmationRequired(message, hint="Pass confirm=true to change the owner.")
-
-
 def _resolved(values: Iterable[int | str], created: dict[str, tuple[str, int]]) -> list[int]:
     return [created[fold(v)][1] if isinstance(v, str) else v for v in values]
 
@@ -235,7 +227,7 @@ class DocumentEditor:
             message = "The Paperless user may not change this document."
             raise PermissionDenied(message, hint="Ask the document's owner for change permission.")
         scalars = await self._scalars(edit)
-        _confirm_owner(edit, current, scalars)
+        await self._confirm_owner(edit, current, scalars)
         sets, removed = await self._fields(edit, current)
         tags = await self._tags(edit, current)
         created = await self._create(tags)
@@ -282,6 +274,23 @@ class DocumentEditor:
         }
         found.update({name: value for name, value in plain.items() if value is not None})
         return found | dict.fromkeys(edit.clear)
+
+    async def _confirm_owner(
+        self, edit: DocumentEdit, current: DocumentRecord, scalars: dict[str, object]
+    ) -> None:
+        """An owner change (also to no owner) needs ``confirm``: the caller cannot undo it."""
+        if edit.confirm or scalars.get("owner", current.owner) == current.owner:
+            return
+        owner = cast("int | None", scalars["owner"])
+        document = f"document {current.id} {quoted(current.title)}"
+        if owner is None:
+            effect = f"remove the owner of {document}: every user who may view documents"
+        else:
+            name = (await names_of(self._taxonomy, "user", [owner]))[owner]
+            effect = f"change the owner of {document} to {quoted(name)} (id {owner}): the new owner"
+        ConfirmationRequired.require(
+            f"{effect} takes it over and you may lose access to it", scope=(current.owner, owner)
+        )
 
     async def _owner(self, value: NameOrId) -> int:
         """The user id; an id is checked against the users unless the user may not list them."""

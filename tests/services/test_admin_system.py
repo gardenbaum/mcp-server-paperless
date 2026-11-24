@@ -193,7 +193,7 @@ async def test_a_long_value_is_cut_in_the_confirmation() -> None:
     message = await refusal(setup.service.update_config({"app_title": "x" * 40}))
 
     assert "…" not in message
-    other = await refusal(setup.service.update_config({"llm_endpoint": "https://e/" + "y" * 100}))
+    other = await refusal(setup.service.update_config({"app_title": "y" * 100}))
     assert "…" in other
 
 

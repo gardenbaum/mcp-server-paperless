@@ -251,7 +251,7 @@ async def test_pointing_an_account_elsewhere_needs_confirm_as_the_saved_password
 
     assert refusal(raised) == (
         "Nothing was changed. Confirming would point mail account 'Invoices' (id 1) at "
-        f"mail.other.example port {PORT} (SSL) instead of {HOST} port {PORT} (SSL): Paperless "
+        f"'mail.other.example' port {PORT} (SSL) instead of '{HOST}' port {PORT} (SSL): Paperless "
         "keeps the saved password and sends it to the new server from its next fetch on."
     )
     assert PASSWORD not in raised.value.describe()
@@ -291,7 +291,7 @@ async def test_turning_off_encryption_needs_confirm_even_with_a_new_password() -
 
     assert refusal(raised) == (
         "Nothing was changed. Confirming would turn off the encryption of mail account "
-        f"'Invoices' (id 1): the password and the mail then travel as plain text to {HOST} "
+        f"'Invoices' (id 1): the password and the mail then travel as plain text to '{HOST}' "
         f"port {PORT}."
     )
 
@@ -306,7 +306,7 @@ async def test_redirecting_without_encryption_names_both_effects() -> None:
         )
 
     message = refusal(raised)
-    assert "point mail account 'Invoices' (id 1) at x.example port 993 (no encryption)" in message
+    assert "point mail account 'Invoices' (id 1) at 'x.example' port 993 (no encryption)" in message
     assert "; and turn off the encryption" in message
 
 
@@ -455,7 +455,7 @@ async def test_a_fetch_needs_confirm_and_names_what_each_rule_does_to_the_mail()
         _ = await setup.service.process_account(number, confirm=False)
 
     assert refusal(raised) == (
-        f"Nothing was changed. Confirming would fetch the mail of account 'Invoices' ({HOST}) "
+        f"Nothing was changed. Confirming would fetch the mail of account 'Invoices' ('{HOST}') "
         "now: Paperless connects to the mail server and imports documents from the mails that "
         "its 5 enabled rules match, then acts on those mails on the server. Rule 'Bills' "
         "(id 1) deletes the mail; rule 'Receipts' (id 2) moves the mail to 'Archive'; rule "
@@ -1306,7 +1306,7 @@ async def test_a_port_only_change_needs_confirm() -> None:
 
     assert refusal(raised) == (
         "Nothing was changed. Confirming would point mail account 'Invoices' (id 1) at "
-        f"{HOST} port 143 (SSL) instead of {HOST} port {PORT} (SSL): Paperless keeps the saved "
+        f"'{HOST}' port 143 (SSL) instead of '{HOST}' port {PORT} (SSL): Paperless keeps the saved "
         "password and sends it to the new server from its next fetch on."
     )
 
@@ -1318,7 +1318,7 @@ async def test_a_security_change_without_a_password_needs_confirm_and_is_named()
     with pytest.raises(ConfirmationRequired) as raised:
         _ = await setup.service.update_account(number, imap_security="starttls")
 
-    assert f"at {HOST} port {PORT} (STARTTLS) instead of {HOST} port {PORT} (SSL)" in refusal(
+    assert f"at '{HOST}' port {PORT} (STARTTLS) instead of '{HOST}' port {PORT} (SSL)" in refusal(
         raised
     )
 
@@ -1704,7 +1704,7 @@ async def test_the_refusals_about_unreadable_rules_have_their_exact_texts() -> N
         "the mail on the server stays."
     )
     assert refusal(fetching) == (
-        f"Nothing was changed. Confirming would fetch the mail of account 'Invoices' ({HOST}) "
+        f"Nothing was changed. Confirming would fetch the mail of account 'Invoices' ('{HOST}') "
         "now: Paperless connects to the mail server and imports documents; its rules could not "
         "be read, so what they do to the mail is unknown. Rules of other users on this account "
         "that you cannot see run too."
@@ -1733,7 +1733,7 @@ async def test_a_fetch_with_one_enabled_rule_says_matches() -> None:
         _ = await setup.service.process_account(number, confirm=False)
 
     assert refusal(raised) == (
-        f"Nothing was changed. Confirming would fetch the mail of account 'Invoices' ({HOST}) "
+        f"Nothing was changed. Confirming would fetch the mail of account 'Invoices' ('{HOST}') "
         "now: Paperless connects to the mail server and imports documents from the mails that "
         "its 1 enabled rule matches, then acts on those mails on the server. Rule 'Read' "
         "(id 1) marks the mail as read."

@@ -147,13 +147,13 @@ async def delete_document_version(
 ) -> VersionDeleted:
     """Delete one version of a document by moving it to the Paperless trash.
 
-    Two steps: call without confirm first. Nothing is deleted and the error names the version
-    and what the document shows afterwards, with confirm=true to pass. If it is the newest
-    version, the document's file and text revert to the version before it. The root version (the
-    original upload) cannot be deleted this way: delete the whole document with delete_document.
-    The trash keeps the version until it is emptied; restore it in the Paperless web UI or with
-    the trash toolset if enabled. Needs the permission to delete documents, and the user must own
-    the document, be a superuser, or the document must be unowned (a change grant is not enough).
+    Without confirm a dialog, or an error for you to show the user, first names the version and
+    what the document shows afterwards (see confirm). If it is the newest version, the document's
+    file and text revert to the version before it. The root version (the original upload) cannot be
+    deleted this way: delete the whole document with delete_document. The trash keeps the version
+    until it is emptied; restore it in the Paperless web UI or with the trash toolset if enabled.
+    Needs the permission to delete documents, and the user must own the document, be a superuser,
+    or the document must be unowned (a change grant is not enough).
     """
     return await services(ctx).versions.delete(document_id, version_id, confirm=confirm)
 
@@ -190,11 +190,11 @@ async def merge_documents_as_versions(
 
     The merged documents vanish for good (not even into the trash): their titles, tags,
     correspondents, notes and other metadata are lost and only their files stay, as versions of
-    the root document, which keeps its own metadata. Two steps: call without confirm first.
-    Nothing is merged and the error names the documents and what would happen, with confirm=true
-    to pass. Documents that already have versions of their own cannot be merged in. Needs the
-    permissions to change and to delete documents, and the user must own every document (or be a
-    superuser, or the documents must be unowned); a change grant is not enough.
+    the root document, which keeps its own metadata. Without confirm a dialog, or an error for you
+    to show the user, first names the documents and what would happen (see confirm). Documents that
+    already have versions of their own cannot be merged in. Needs the permissions to change and to
+    delete documents, and the user must own every document (or be a superuser, or the documents
+    must be unowned); a change grant is not enough.
     """
     return await services(ctx).versions.merge(
         root_document_id, source_document_ids, label, confirm=confirm

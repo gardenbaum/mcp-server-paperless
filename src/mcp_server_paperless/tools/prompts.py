@@ -232,7 +232,8 @@ template: say so in the proposal. Do not propose to merge storage paths on their
 Paperless web UI. Deleting a tag also deletes its child tags and no taxonomy item has a trash: \
 say so.
 4. Present the proposals as a numbered list the user can approve or strike line by line.
-5. Apply the confirmed ones. `delete_taxonomy_item` refuses first and describes the effect; tell \
-the user that effect and call again with confirm=true only after the user agreed to it.
+5. Apply the confirmed ones. `delete_taxonomy_item` asks the user in a dialog where the client can \
+show one; elsewhere it refuses first and describes the effect: tell the user that effect and call \
+again with confirm=true only after the user agreed to it.
 
 {CONFIRMATION}"""

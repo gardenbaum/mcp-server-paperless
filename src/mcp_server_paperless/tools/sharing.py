@@ -100,11 +100,10 @@ async def create_share_link(
 
     ANYONE WHO HAS THE URL can open the file without logging in, until the link expires or is
     deleted with delete_share_link; it can be passed on and cannot be recalled from people who
-    saved the file. Without confirm it publishes nothing and fails with an error that names the
-    document, the file, the expiry and what is public; show that to the user and call again with
-    confirm=true only once they agree. Needs the add permission for share links and a document
-    the user can see. Creating again makes another link. Use create_share_bundle for several
-    documents at once.
+    saved the file. Without confirm a dialog, or an error for you to show the user, first names the
+    document, the file, the expiry and what is public (see confirm). Needs the add permission for
+    share links and a document the user can see. Creating again makes another link. Use
+    create_share_bundle for several documents at once.
     """
     return await services(ctx).sharing.create_link(
         document_id, expires_in_days=expires_in_days, file_version=file_version, confirm=confirm
@@ -121,8 +120,8 @@ async def delete_share_link(
 ) -> ShareDeletion:
     """Delete a share link: its URL stops working for everyone who has it. The document stays.
 
-    Without confirm it deletes nothing and fails with an error that says which link and document
-    are affected; describe that to the user and call again with confirm=true once they agree.
+    Without confirm a dialog, or an error for you to show the user, first says which link and
+    document are affected (see confirm).
     """
     return await services(ctx).sharing.delete_link(link_id, confirm=confirm)
 
@@ -157,9 +156,9 @@ async def create_share_bundle(
     ANYONE WHO HAS THE URL can download the archive without logging in, until the bundle expires
     or is deleted with delete_share_bundle. Paperless builds the archive after this returns, so
     the status is usually pending: the URL works once list_share_bundles shows ready. Without
-    confirm it publishes nothing and fails with an error that names the documents, the files,
-    the expiry and what is public; show that to the user and call again with confirm=true only
-    once they agree. Needs the add permission for bundles and documents the user can see.
+    confirm a dialog, or an error for you to show the user, first names the documents, the files,
+    the expiry and what is public (see confirm). Needs the add permission for bundles and documents
+    the user can see.
     """
     return await services(ctx).sharing.create_bundle(
         document_ids,
@@ -194,9 +193,8 @@ async def delete_share_bundle(
 ) -> ShareDeletion:
     """Delete a bundle and its archive: its URL stops working for everyone who has it.
 
-    The documents stay. Without confirm it deletes nothing and fails with an error that says
-    which bundle is affected; describe that to the user and call again with confirm=true once
-    they agree.
+    The documents stay. Without confirm a dialog, or an error for you to show the user, first says
+    which bundle is affected (see confirm).
     """
     return await services(ctx).sharing.delete_bundle(bundle_id, confirm=confirm)
 
@@ -228,12 +226,11 @@ async def email_documents(  # noqa: PLR0913 -- the parts of a message
     """Send the files of documents by e-mail through the mail server of Paperless.
 
     This SENDS THE FILES to outside addresses and cannot be recalled. All recipients appear in
-    one To: header, so each sees the others. Without confirm it sends nothing and fails with an
-    error that names the recipients, the documents, the subject and the start of the message;
-    show that to the user and call again with confirm=true only once they agree. Paperless needs
-    a mail server set up by its administrator; without one the call fails before asking. If it
-    fails while sending, whether anyone got the mail is unknown: check with the user and the
-    Paperless log before sending again, because a repeat can send it twice.
+    one To: header, so each sees the others. Without confirm a dialog, or an error for you to show
+    the user, first names the recipients, the documents, the subject and the start of the message
+    (see confirm). Paperless needs a mail server set up by its administrator; without one the call
+    fails before asking. If it fails while sending, whether anyone got the mail is unknown: check
+    with the user and the Paperless log before sending again, because a repeat can send it twice.
     """
     return await services(ctx).sharing.email(
         document_ids,

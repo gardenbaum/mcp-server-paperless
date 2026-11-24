@@ -30,7 +30,14 @@ from mcp_server_paperless.domain.admin import (
     TaskList,
     check_secret,
 )
-from mcp_server_paperless.domain.errors import ConfirmationRequired, Validation, quoted
+from mcp_server_paperless.domain.errors import (
+    ConfirmationRequired,
+    Validation,
+    both_ends,
+    destination,
+    quoted,
+    without_credentials,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -44,6 +51,7 @@ if TYPE_CHECKING:
         RunnableTask,
         TaskType,
     )
+    from mcp_server_paperless.domain.errors import DestinationKind
     from mcp_server_paperless.domain.ports import AdminReader, AdminWriter
     from mcp_server_paperless.domain.tasks import TaskState
 
@@ -54,10 +62,10 @@ MAX_DOCUMENTS: Final = 100
 MAX_TASKS: Final = 100
 ARCHIVE_NAME: Final = "paperless-documents.zip"
 ZIP: Final = "application/zip"
+# The settings that are URLs.
+ENDPOINTS: Final = frozenset({"llm_endpoint", "llm_embedding_endpoint", "remote_ocr_endpoint"})
 # Settings a confirmation names in full; the rest are counted.
 SHOWN: Final = 5
-# The longest value a confirmation shows; `quoted` cuts text at the same 60 characters.
-VALUE_LIMIT: Final = 60
 TASK_EFFECTS: Final[dict[str, str]] = {
     "train_classifier": (
         "train the classifier again: it learns from the documents' current tags and metadata "
@@ -70,12 +78,58 @@ TASK_EFFECTS: Final[dict[str, str]] = {
 }
 
 
+def _text(value: JsonValue) -> str:
+    return value if isinstance(value, str) else json.dumps(value)
+
+
+def _goes(name: str, value: JsonValue) -> str:
+    """A new value for a message; where document text goes is shown in full.
+
+    Raises:
+        Validation: It decides that and cannot be shown in full.
+    """
+    if name not in CONFIG_OUTBOUND or value is None:
+        return _shown(value)
+    kind: DestinationKind = "url" if name in ENDPOINTS else "text"
+    if value == "":
+        return "empty"
+    return destination(_text(value), name, kind) + _credentials(name, value)
+
+
+def _went(name: str, value: JsonValue) -> str:
+    """The value a setting has now, for a message: it may be one that could not be set."""
+    if name not in CONFIG_OUTBOUND or value is None:
+        return _shown(value)
+    text = without_credentials(_text(value)) if name in ENDPOINTS else _text(value)
+    if text is None:
+        return "a URL that is not shown"
+    return both_ends(text) + _credentials(name, value) if text else "empty"
+
+
+def _credentials(name: str, value: JsonValue) -> str:
+    """A note that an endpoint has credentials, which are never shown; "" if it has none."""
+    text = _text(value)
+    hidden = name in ENDPOINTS and without_credentials(text) != text
+    return " with credentials (not shown)" if hidden else ""
+
+
+def _credentials_only(name: str, old: JsonValue, new: JsonValue) -> str | None:
+    """The effect of a change that differs only in the credentials of an endpoint, else None."""
+    public = without_credentials(_text(new))
+    if name not in ENDPOINTS or public is None or public != without_credentials(_text(old)):
+        return None
+    had, has = _credentials(name, old), _credentials(name, new)
+    verb = "replace the credentials of" if had and has else "add credentials to"
+    verb = verb if has else "remove the credentials of"
+    return f"{verb} {name} {destination(public, name, 'url')} (not shown)"
+
+
 def _shown(value: JsonValue) -> str:
-    """A setting's value for a message: text quoted, anything else as JSON, cut short."""
+    """A setting's value for a message: text, lists and objects quoted and cut, the rest as JSON."""
     if isinstance(value, str):
         return quoted(value)
     text = json.dumps(value)
-    return text if len(text) <= VALUE_LIMIT else text[: VALUE_LIMIT - 1] + "…"
+    return quoted(text) if isinstance(value, list | dict) else text
 
 
 def _plural(count: int, noun: str) -> str:
@@ -167,14 +221,14 @@ class SystemAdmin:
             if value == now:
                 continue
             changes[name] = value
+            new, old = _goes(name, value), _went(name, now)
             if value is None:
-                effects.append(f"reset {name} (now {_shown(now)}) to the server's environment")
+                effects.append(f"reset {name} (now {old}) to the server's environment")
             elif now is None:
-                effects.append(
-                    f"set {name} to {_shown(value)} (it follows the server's environment now)"
-                )
+                effects.append(f"set {name} to {new} (it follows the server's environment now)")
             else:
-                effects.append(f"change {name} from {_shown(now)} to {_shown(value)}")
+                only = _credentials_only(name, now, value)
+                effects.append(only or f"change {name} from {old} to {new}")
         effects.extend(
             f"save the {name} you gave (its value is never shown)"
             if name not in current.keys_configured
@@ -188,7 +242,10 @@ class SystemAdmin:
                 message="Nothing changed: the configuration already is as asked.",
             )
         if not confirm:
-            raise ConfirmationRequired.for_effect(self._effect(effects, [*changes, *secrets]))
+            ConfirmationRequired.require(
+                self._effect(effects, [*changes, *secrets]),
+                scope=(changes, [current.settings.get(name) for name in changes]),
+            )
         written = await self._writer.update_config(ConfigValues(settings=changes, secrets=secrets))
         done = (*changes, *secrets)
         return ConfigOutcome(
@@ -199,9 +256,15 @@ class SystemAdmin:
 
     @staticmethod
     def _effect(effects: list[str], names: list[str]) -> str:
-        shown = "; ".join(effects[:SHOWN])
-        if len(effects) > SHOWN:
-            shown += f"; and {len(effects) - SHOWN} more settings"
+        # Where document text goes is always named.
+        kept = [
+            effect
+            for number, (effect, name) in enumerate(zip(effects, names, strict=True))
+            if number < SHOWN or name in CONFIG_OUTBOUND
+        ]
+        shown = "; ".join(kept)
+        if len(effects) > len(kept):
+            shown += f"; and {len(effects) - len(kept)} more settings"
         if CONFIG_OUTBOUND.intersection(names):
             shown += (
                 "; this changes where Paperless sends document text or how it reaches the "
@@ -292,7 +355,8 @@ class SystemAdmin:
             PermissionDenied: Only a superuser may start tasks.
         """
         if task_type in TASK_EFFECTS and not confirm:
-            raise ConfirmationRequired.for_effect(TASK_EFFECTS[task_type])
+            # scope: the task is the argument; it has no other target.
+            ConfirmationRequired.require(TASK_EFFECTS[task_type], scope=None)
         task_id = await self._writer.run_task(task_type)
         return StartedTask(
             task_id=task_id,

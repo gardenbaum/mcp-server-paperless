@@ -166,11 +166,10 @@ async def create_user(  # noqa: PLR0913 -- one parameter per field, described fo
     """Create a Paperless user. The password is write-only and never shown again.
 
     Creating a superuser or a staff user, or a user with a password, groups or permissions, needs
-    confirm: the first call is an error that says what the account would be allowed to do; describe
-    that to the user and call again with confirm=true. A user with only names and an e-mail
-    address needs none. Groups are names or ids; unknown ones are an error
-    before anything is created. Only a superuser may make superusers or staff users; otherwise
-    the add_user permission is enough.
+    confirm: without it a dialog, or an error for you to show the user, first says what the account
+    would be allowed to do (see confirm). A user with only names and an e-mail address needs none.
+    Groups are names or ids; unknown ones are an error before anything is created. Only a superuser
+    may make superusers or staff users; otherwise the add_user permission is enough.
     """
     return await services(ctx).accounts.create_user(
         username=username,
@@ -221,13 +220,13 @@ async def update_user(  # noqa: PLR0913 -- one parameter per field, described fo
     """Change a user; only what you pass changes and the saved password stays.
 
     Anything that gives or takes away access or can take the account over needs confirm: a new
-    e-mail address (it resets the password), a rename, superuser or staff status,
-    deactivating, a new password, groups, permissions. The first call is an error that names who
-    is affected; describe it to the user and call again with confirm=true. Renaming and changing
-    names or the e-mail address need none. Lists replace the user's lists. The account this
-    server signs in with cannot be deactivated or stripped of superuser status. A call that
-    changes nothing says so. Only a superuser may change a superuser or the superuser and staff
-    status of anyone; otherwise the change_user permission is enough.
+    e-mail address (it resets the password), a rename, superuser or staff status, deactivating, a
+    new password, groups, permissions. Without it a dialog, or an error for you to show the user,
+    first names who is affected (see confirm). First and last name need none, nor does clearing the
+    e-mail address. Lists replace the user's lists. The account this server signs in with cannot be
+    deactivated or stripped of superuser status. A call that changes nothing says so. Only a
+    superuser may change a superuser or the superuser and staff status of anyone; otherwise the
+    change_user permission is enough.
     """
     return await services(ctx).accounts.update_user(
         user,
@@ -250,10 +249,10 @@ async def update_user(  # noqa: PLR0913 -- one parameter per field, described fo
 async def delete_user(ctx: Context, user: UserRef, *, confirm: Confirm = False) -> Deletion:
     """Delete a user for good. Objects they own lose their owner, their grants go.
 
-    Deleting cannot be undone, so it needs confirm: the first call is an error that says what
-    follows; describe it to the user and call again with confirm=true. Deactivating with
-    update_user(is_active=false) keeps the account. The account this server signs in with cannot
-    be deleted. Needs the delete_user permission.
+    Deleting cannot be undone, so it needs confirm: without it a dialog, or an error for you to
+    show the user, first says what follows (see confirm). Deactivating with
+    update_user(is_active=false) keeps the account. The account this server signs in with cannot be
+    deleted. Needs the delete_user permission.
     """
     return await services(ctx).accounts.delete_user(user, confirm=confirm)
 
@@ -287,9 +286,9 @@ async def create_group(
     """Create a group, optionally with the permissions it grants to its members.
 
     A group without permissions needs no confirm. One that grants permissions does, because
-    putting users into it gives them those rights: the first call is an error that names the
-    permissions; describe it to the user and call again with confirm=true. Add users with
-    update_user(groups=). Needs the add_group permission.
+    putting users into it gives them those rights: without it a dialog, or an error for you to show
+    the user, first names the permissions (see confirm). Add users with update_user(groups=). Needs
+    the add_group permission.
     """
     return await services(ctx).accounts.create_group(name, permissions, confirm=confirm)
 
@@ -311,9 +310,9 @@ async def update_group(
 ) -> GroupOutcome:
     """Rename a group or replace the permissions it grants to its members.
 
-    Changing the permissions needs confirm: the first call is an error that names what the
-    members gain and lose; describe it to the user and call again with confirm=true. A rename
-    needs none. A call that changes nothing says so. Needs the change_group permission.
+    Changing the permissions needs confirm: without it a dialog, or an error for you to show the
+    user, first names what the members gain and lose (see confirm). A rename needs none. A call
+    that changes nothing says so. Needs the change_group permission.
     """
     return await services(ctx).accounts.update_group(
         group, name=name, permissions=permissions, confirm=confirm
@@ -325,8 +324,8 @@ async def update_group(
 async def delete_group(ctx: Context, group: GroupRef, *, confirm: Confirm = False) -> Deletion:
     """Delete a group for good; its members lose what it granted them.
 
-    Needs confirm: the first call is an error that says what follows; describe it to the user and
-    call again with confirm=true. Needs the delete_group permission.
+    Needs confirm: without it a dialog, or an error for you to show the user, first says what
+    follows (see confirm). Needs the delete_group permission.
     """
     return await services(ctx).accounts.delete_group(group, confirm=confirm)
 
@@ -349,10 +348,10 @@ async def get_app_config(ctx: Context) -> AppConfig:
 UPDATE_CONFIG_DESCRIPTION = f"""Change the application configuration: OCR, barcodes, title, AI.
 
 It applies to every user and to every document consumed from now on, and the AI settings decide
-which service gets the document text, so every change needs confirm: the first call is an error
-that lists each setting with its old and new value (keys are never shown); describe that to the
-user and call again with confirm=true. Settings you leave out stay. A call that changes nothing
-says so. Needs the change_applicationconfiguration permission. Settings:
+which service gets the document text, so every change needs confirm: without it a dialog, or an
+error for you to show the user, first lists each setting with its old and new value, never a key
+(see confirm). Settings you leave out stay. A call that changes nothing says so. Needs the
+change_applicationconfiguration permission. Settings:
 {SETTINGS_HELP}
 """
 
@@ -505,9 +504,8 @@ async def run_task(
 
     A sanity check only reads and needs no confirm. Training the classifier replaces the model
     that tags new documents automatically, and rebuilding the AI index sends the text of every
-    document to the configured AI service at its cost, so both need confirm: the first call is
-    an error that says what happens; describe it to the user and call again with confirm=true.
-    Superusers only.
+    document to the configured AI service at its cost, so both need confirm: without it a dialog,
+    or an error for you to show the user, first says what happens (see confirm). Superusers only.
     """
     return await services(ctx).system.run_task(task_type, confirm=confirm)
 

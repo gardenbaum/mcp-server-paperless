@@ -110,15 +110,15 @@ async def set_permissions(  # noqa: PLR0913 -- one parameter per concept, descri
     anything is sent. mode merge (default) only adds to the grants; mode replace sets each list
     you give to exactly that list (a changer always keeps view, replace change_users to take
     change away). Granting access cannot be taken back, so every call that changes anything
-    needs confirm, in both modes and for owner changes: the first call is an error that
-    names, per object, who gains and who loses access and what the owner change does; describe
-    that to the user and call again with confirm=true. Objects that already are as asked are
-    left alone and need no confirm. Needs to own the objects (or no owner) or be a superuser, plus
-    the permission to change the kind. Other tools touch permissions too: update_document(owner=)
-    only changes a document's owner alongside other edits, and bulk_edit_taxonomy (bulk toolset)
-    sets permissions of taxonomy objects with a dry_run preview, and replaces the lists you
-    leave out; this tool also covers documents and keeps the lists you leave out. Look up users
-    and groups with list_users and list_groups.
+    needs confirm, in both modes and for owner changes: without it a dialog, or an error for you to
+    show the user, first names, per object, who gains and who loses access and what the owner
+    change does (see confirm). Objects that already are as asked are left alone and need no
+    confirm. Needs to own the objects (or no owner) or be a superuser, plus the permission to
+    change the kind. Other tools touch permissions too: update_document(owner=) only changes a
+    document's owner alongside other edits, and bulk_edit_taxonomy (bulk toolset) sets permissions
+    of taxonomy objects with a dry_run preview, and replaces the lists you leave out; this tool
+    also covers documents and keeps the lists you leave out. Look up users and groups with
+    list_users and list_groups.
     """
     request = PermissionsRequest(
         owner=owner,

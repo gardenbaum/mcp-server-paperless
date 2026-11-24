@@ -174,9 +174,9 @@ async def update_mail_account(  # noqa: PLR0913 -- the settings of an account
 
     The password can be replaced but never read. Pointing the account at another server, port or
     security setting WITHOUT a new password would make Paperless send the saved password there,
-    and turning encryption off sends it as plain text, so those need confirm: without it the call
-    fails with an error that says what would happen, changes nothing and quotes no password;
-    show that to the user and call again with confirm=true only once they agree.
+    and turning encryption off sends it as plain text, so those need confirm: without it a dialog,
+    or an error for you to show the user, first says what would happen, without any password (see
+    confirm).
     """
     return await services(ctx).mail.update_account(
         account_id,
@@ -199,8 +199,8 @@ async def delete_mail_account(
     """Delete a mail account together with its rules and their processed-mail records.
 
     Paperless stops fetching from it; the mail on the server and the documents already imported
-    stay. Without confirm it deletes nothing and fails with an error that names the account and
-    its rules; describe that to the user and call again with confirm=true once they agree.
+    stay. Without confirm a dialog, or an error for you to show the user, first names the account
+    and its rules (see confirm).
     """
     return await services(ctx).mail.delete_account(account_id, confirm=confirm)
 
@@ -228,10 +228,9 @@ async def process_mail_account(
     Paperless connects to the mail server in the background, imports documents from the mails
     that the account's enabled rules match, and then runs each rule's action on those mails ON
     THE MAIL SERVER: it can mark, flag or tag them, move them to another folder or DELETE them,
-    and this server cannot undo that. Without confirm it fetches nothing and fails with an error
-    that lists what each enabled rule would do; show that to the user and call again with
-    confirm=true only once they agree. The result only says the fetch was queued: follow the
-    outcome with list_processed_mail and the Paperless task list.
+    and this server cannot undo that. Without confirm a dialog, or an error for you to show the
+    user, first lists what each enabled rule would do (see confirm). The result only says the fetch
+    was queued: follow the outcome with list_processed_mail and the Paperless task list.
     """
     return await services(ctx).mail.process_account(account_id, confirm=confirm)
 
@@ -345,12 +344,10 @@ async def create_mail_rule(  # noqa: PLR0913 -- the settings of a rule
 
     Tags, correspondent, document type and owner are given by name or id. Unset options keep
     Paperless's defaults (INBOX, 30 days, attachments only, mark the mail read). A rule that is
-    enabled and DELETES or MOVES mail on the mail server needs confirm: without it the call fails
-    with an error that says which mails it would reach and what it does to them, creates nothing;
-    show that to the user and call again with confirm=true only once they agree. Mark read,
-    flag and tag need no confirm. An owner other than you needs confirm too. Needs the add
-    permission for rules and the change permission
-    for the account.
+    enabled and DELETES or MOVES mail on the mail server needs confirm: without it a dialog, or an
+    error for you to show the user, first says which mails it would reach and what it does to them
+    (see confirm). Mark read, flag and tag need no confirm. An owner other than you needs confirm
+    too. Needs the add permission for rules and the change permission for the account.
     """
     return await services(ctx).mail.create_rule(
         settings(
@@ -453,9 +450,8 @@ async def update_mail_rule(  # noqa: PLR0913 -- the settings of a rule
     change widens or redirects what it reaches (account, folder, filters, age, action, parameter,
     consumption scope, attachment type, switching it on), (2) changing the order or switching off
     stop_processing of an enabled rule while another enabled rule of the account deletes or moves
-    mail, and (3) handing the rule to another owner or to nobody. Without it the call
-    fails with an error that says what would happen and changes nothing; show that to the user
-    and call again with confirm=true only once they agree.
+    mail, and (3) handing the rule to another owner or to nobody. Without it a dialog, or an error
+    for you to show the user, first says what would happen (see confirm).
     """
     return await services(ctx).mail.update_rule(
         rule_id,
@@ -499,8 +495,8 @@ async def delete_mail_rule(
     """Delete a mail rule and the records of the mail it processed.
 
     Paperless stops importing with it; the mail on the server and the documents already imported
-    stay. Without confirm it deletes nothing and fails with an error that names the rule and its
-    account; describe that to the user and call again with confirm=true once they agree.
+    stay. Without confirm a dialog, or an error for you to show the user, first names the rule and
+    its account (see confirm).
     """
     return await services(ctx).mail.delete_rule(rule_id, confirm=confirm)
 

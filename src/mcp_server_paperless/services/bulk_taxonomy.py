@@ -46,7 +46,9 @@ USES: Final[dict[str, str]] = {
     "storage_path": "the documents that use {them} lose their storage path",
 }
 DRY_RUN: Final = "Dry run, nothing was changed."
-TO_GO_AHEAD: Final = "To go ahead, call again without dry_run and with confirm=true."
+TO_GO_AHEAD: Final = (
+    "To go ahead, call again without dry_run; pass confirm=true only if the user already agreed."
+)
 MERGE_OWNER_HINT = (
     "Paperless then sets it only on objects without an owner and never removes one; "
     "set the owner in a call without merge."
@@ -115,7 +117,9 @@ class BulkTaxonomyEditor:
             what = f"{grants[1]} on {subject}"
             done = f"Applied: {what}."
         if not (dry_run or confirm):
-            raise ConfirmationRequired.for_effect(what)
+            ConfirmationRequired.require(
+                what, scope=([row.id for row in chosen], [row.id for row in below], grants)
+            )
         if not dry_run:
             await self._write(kind, [row.id for row in chosen], grants and grants[0])
         return TaxonomyBulkReport(

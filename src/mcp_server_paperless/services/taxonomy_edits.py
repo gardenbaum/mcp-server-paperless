@@ -314,7 +314,7 @@ class TaxonomyEditor:
                 f"{documents(holding)} you can see that hold a removed option lose their value for "
                 "this field, which Paperless clears shortly after"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=(field.id, sorted(removed)))
         return (
             *(OptionInput(id=number, label=label) for number, label in kept),
             *(OptionInput(label=label) for label in added),
@@ -356,7 +356,7 @@ class TaxonomyEditor:
         subject = f"{LABELS[kind]} {quoted(found.name)} (id {found.id})"
         if not confirm:
             msg = f"delete {subject} for good: {effect}"
-            raise ConfirmationRequired.for_effect(msg)
+            ConfirmationRequired.require(msg, scope=sorted(gone))
         await self._write(kind, lambda: self._writer.delete_taxonomy_item(kind, found.id))
         return TaxonomyDeletion(
             kind=kind,

@@ -60,19 +60,19 @@ async def bulk_edit_documents(
     """Change many documents in one step: tags, correspondent, type, storage path, custom fields,
     trash or reprocess.
 
-    Three steps: call with dry_run=true to see how many documents change and a sample, then
-    without dry_run and without confirm to get an error describing the effect, then with
-    confirm=true to execute. Documents that already are as asked are counted and left alone.
-    One operation per call, on documents you name by id. Tags are hierarchical: adding a child
-    adds its parent, and removing a parent whose child tags stay is refused (list the children
-    too). Custom fields are merged: only the fields you name change. Document links are mirrored:
-    linking A to B also changes B (you need change permission there), so also_changed lists
-    those documents; a shorter list does not unlink the old target, removing
-    the field does. delete moves documents to the Paperless trash; reprocess runs OCR again in
-    the background (the pdf toolset's reprocess_documents does the same, also with remote OCR).
-    Paperless checks every document first: if you may not change one of them
-    (blocked lists them), none changes and nothing is sent. Needs change permission on the
-    documents, and ownership and the delete permission for delete.
+    Call with dry_run=true to see how many documents change and a sample, then without dry_run:
+    without confirm a dialog, or an error for you to show the user, first describes the effect (see
+    confirm). Documents that already are as asked are counted and left alone. One operation per
+    call, on documents you name by id. Tags are hierarchical: adding a child adds its parent, and
+    removing a parent whose child tags stay is refused (list the children too). Custom fields are
+    merged: only the fields you name change. Document links are mirrored: linking A to B also
+    changes B (you need change permission there), so also_changed lists those documents; a shorter
+    list does not unlink the old target, removing the field does. delete moves documents to the
+    Paperless trash; reprocess runs OCR again in the background (the pdf toolset's
+    reprocess_documents does the same, also with remote OCR). Paperless checks every document
+    first: if you may not change one of them (blocked lists them), none changes and nothing is
+    sent. Needs change permission on the documents, and ownership and the delete permission for
+    delete.
     """  # noqa: D205 -- the summary is one sentence; FastMCP sends the docstring as is
     return await services(ctx).bulk_documents.edit(
         document_ids, operation, dry_run=dry_run, confirm=confirm
@@ -103,16 +103,15 @@ async def bulk_edit_taxonomy(  # noqa: PLR0913 -- one parameter per concept, des
     """Delete many tags, correspondents, document types or storage paths, or set who owns them
     and who may view or change them.
 
-    Three steps, like bulk_edit_documents: dry_run=true previews, a call without confirm is an
-    error that describes the effect, confirm=true executes. A delete is final (taxonomy has no
-    trash): documents lose the reference, and deleting a tag deletes its child tags too
-    (Paperless refuses the deletion if it would take child tags of other users).
-    set_permissions without merge replaces all grants with the lists you give (a list left
-    out becomes empty); with merge it adds to them, and merge cannot set an owner. A change
-    grant includes view. Users and groups by name or id. Custom fields are not supported.
-    Paperless checks every object first: if you may not change one, none changes (you need the
-    permission and must own it, or it must have no owner). The permissions toolset's
-    set_permissions also sets permissions and covers documents too; this tool's
+    dry_run=true previews; without confirm a dialog, or an error for you to show the user, first
+    describes the effect (see confirm). A delete is final (taxonomy has no trash): documents lose
+    the reference, and deleting a tag deletes its child tags too (Paperless refuses the deletion if
+    it would take child tags of other users). set_permissions without merge replaces all grants
+    with the lists you give (a list left out becomes empty); with merge it adds to them, and merge
+    cannot set an owner. A change grant includes view. Users and groups by name or id. Custom
+    fields are not supported. Paperless checks every object first: if you may not change one, none
+    changes (you need the permission and must own it, or it must have no owner). The permissions
+    toolset's set_permissions also sets permissions and covers documents too; this tool's
     set_permissions operation empties the lists you leave out, that tool keeps them.
     """  # noqa: D205 -- the summary is one sentence; FastMCP sends the docstring as is
     return await services(ctx).bulk_taxonomy.edit(

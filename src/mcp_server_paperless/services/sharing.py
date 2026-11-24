@@ -17,6 +17,7 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     PermissionDenied,
     Validation,
+    destination,
     quoted,
 )
 from mcp_server_paperless.domain.sharing import (
@@ -199,6 +200,10 @@ class SharingService:
                 raise NotFound(message, hint="Use search_documents to find the document.")
         return titles
 
+    async def _files(self, ids: Sequence[int]) -> list[tuple[int, int]]:
+        """The documents with their newest file versions: what a share or e-mail gives away."""
+        return sorted((await self._documents.get_newest_versions(ids)).items())
+
     async def list_links(
         self, document_id: int | None, *, page: int, page_size: int
     ) -> ShareLinkListing:
@@ -245,7 +250,7 @@ class SharingService:
                 f"{quoted(titles[document_id])} (id {document_id}) under a public share link "
                 f"that {expiry_phrase(days)}; {PUBLIC_WARNING}"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=await self._files([document_id]))
         expiration = None if days is None else self._now() + timedelta(days=days)
         made = await self._writer.create_share_link(
             document_id, expiration=expiration, file_version=file_version
@@ -266,7 +271,8 @@ class SharingService:
             subject += f" for the document {quoted(link.document_title)} (id {link.document_id})"
         if not confirm:
             effect = f"delete {subject}: its URL stops working for everyone who has it"
-            raise ConfirmationRequired.for_effect(effect)
+            # scope: the text names the link and its document, which a link never changes.
+            ConfirmationRequired.require(effect, scope=None)
         await self._writer.delete_share_link(link_id)
         message = f"{subject[0].upper()}{subject[1:]} was deleted; its URL no longer works."
         return ShareDeletion(id=link_id, message=message)
@@ -320,7 +326,7 @@ class SharingService:
                 f"archive under a public share link that {expiry_phrase(days)}; "
                 f"{PUBLIC_WARNING}"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=await self._files(ids))
         made = await self._writer.create_share_bundle(
             ids, expiration_days=days, file_version=file_version
         )
@@ -352,7 +358,7 @@ class SharingService:
             effect = (
                 f"delete {subject} with its archive: its URL stops working for everyone who has it"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=bundle.document_ids)
         await self._writer.delete_share_bundle(bundle_id)
         message = f"{subject[0].upper()}{subject[1:]} was deleted; its URL no longer works."
         return ShareDeletion(id=bundle_id, message=message)
@@ -385,6 +391,7 @@ class SharingService:
             raise mail_disabled()
         titles = await self._titles(ids)
         kind: FileVersionKind = "archive" if use_archive_version else "original"
+        shown = [destination(address, "e-mail address", "email") for address in addresses]
         if not confirm:
             named = joined([f"{quoted(titles[number])} (id {number})" for number in ids])
             together = (
@@ -394,10 +401,10 @@ class SharingService:
             )
             effect = (
                 f"send an e-mail with the {file_phrase(kind, len(ids))} of {named} to "
-                f"{joined(addresses)}{together}, subject {quoted(subject)}, message "
-                f"{quoted(message, EXCERPT)}; it leaves Paperless and cannot be recalled"
+                f"{joined(shown)}{together}, subject {quoted(subject)}, "
+                f"message {quoted(message, EXCERPT)}; it leaves Paperless and cannot be recalled"
             )
-            raise ConfirmationRequired.for_effect(effect)
+            ConfirmationRequired.require(effect, scope=await self._files(ids))
         await self._writer.email_documents(
             ids,
             addresses=addresses,

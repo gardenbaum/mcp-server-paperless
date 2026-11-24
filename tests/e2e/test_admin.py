@@ -140,7 +140,7 @@ async def test_a_superuser_needs_confirm_and_a_password_never_comes_back(
 
 @pytest.mark.usefixtures("cleanup")
 async def test_a_group_is_created_changed_and_deleted(stack: Stack, tag: str) -> None:
-    assert "grants its members the permissions view_tag" in await refused(
+    assert "grants its members the permissions 'view_tag'" in await refused(
         stack, "create_group", name=tag, permissions=["view_tag"]
     )
     _ = await run(stack, "create_group", name=tag, permissions=["view_tag"], confirm=True)
