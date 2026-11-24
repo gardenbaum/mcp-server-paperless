@@ -406,6 +406,27 @@ async def test_changes_are_left_out_from_the_end_when_cutting_is_not_enough() ->
     assert report.documents[-1].changes == ()
 
 
+@pytest.mark.parametrize(("count", "ids"), [(900, 899), (4000, 0)])
+async def test_mirrored_documents_do_not_make_an_answer_too_large(count: int, ids: int) -> None:
+    setup = Setup(writes=False, count=count)
+    for n in range(2, count + 1):
+        setup.document(100 + n).title = "t" * 128
+
+    report = await setup.run(
+        item(101, custom_fields={LINK: [100 + n for n in range(2, count + 1)]}), dry_run=True
+    )
+
+    assert report.truncated
+    assert len(report.model_dump_json()) <= MAX_ANSWER
+    assert [d.id for d in report.documents] == [101]
+    if ids:
+        assert len(report.also_changed) == ids
+        assert report.also_changed[0].name == "t" * 128
+        assert report.also_changed[-1].name is None
+    else:
+        assert 0 < len(report.also_changed) < count
+
+
 # --- phase 1: everything that can be known is checked before the first write
 
 

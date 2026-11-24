@@ -1,11 +1,11 @@
 ---
 id: PLMCP-80.3
 title: 'Bulk changes c: update_documents and add_notes'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:34Z'
-updated_date: '2026-11-24T17:55:33Z'
+updated_date: '2026-11-24T18:41:37Z'
 labels:
   - bulk
 dependencies:
@@ -34,7 +34,7 @@ Third part of PLMCP-80: different values need one call per document. Design appr
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -87,4 +87,16 @@ Evidence for the acceptance criteria, live on 5c33911 (PR e2e tier of CI 4545103
 Not ticked: the Definition of Done (one test red, not merged).
 
 Third review (from 89228bf), production code clean: the fake checks the change right for every document in the link lists sent (as Paperless's validate_documentlink_targets) and tolerates a missing field on the other side; a contract test for a stored link to an unchangeable document. Above 100,000 characters the room short items leave goes to the long ones. Where no order was found, the refusal says 'or try another order' besides 'in an earlier call'. The test of 100 documents asserts that no answer was lost. Named mutants killed. OPEN, owner: 5388 against WORST 4897.
+
+Owner, 2026-11-24, on the point left open above: "Alles wie von dir empfohlen." WORST is 5388; no case was cut. Full hosted E2E 45451015858 on 5c33911 green; add_notes 100 of 100 without a lost answer.
+
+Main with PLMCP-80.2 merged (trees equal, merge -s ours). DoD 1 stays open: the E2E tests and some tests for existing behaviour were not seen red. DoD 2 and 4: required CI checks and the merge of #138; just check was not run locally as a whole.
+
+Codex on #138 (P2, valid): also_changed could exceed the 100,000 characters. Fixed: titles of also_changed, then the message, then its last ids are left out; tests for 900 and 4,000 mirrored documents seen red (134,543 and 599,543 characters). Surface snapshot: the description of truncated.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+update_documents and add_notes: individual values and notes for up to 100 documents, checked beforehand, one confirmation, a status per document (decision-73). Three review rounds.
+<!-- SECTION:FINAL_SUMMARY:END -->

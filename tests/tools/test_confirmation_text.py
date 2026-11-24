@@ -285,10 +285,10 @@ async def test_hostile_text_stands_in_a_refusal_only_quoted_and_cut(tool: str) -
     assert ("(left out: " in EXCERPT.sub("", message)) == excerpts
 
 
-# The server itself caps no refusal. The owner approved 4897 on 2026-11-24 for update_documents
+# The server itself caps no refusal. The owner approved 5388 on 2026-11-24 for update_documents
 # (decision-73; before 3403, update_user, which names the user and their groups and permissions many
 # times).
-WORST: Final = 4897
+WORST: Final = 5388
 
 
 @pytest.mark.decision("decision-64")
