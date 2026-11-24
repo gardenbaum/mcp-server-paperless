@@ -42,11 +42,9 @@ BASE_OVERVIEW_DEFINITION = 4442
 # The limits, in bytes: the instructions as a whole (so the guide adds at most the difference to
 # BASE_INSTRUCTIONS), the guide in a call of the overview, and the growth of the overview's
 # definition in tools/list (its output schema).
-INSTRUCTIONS_LIMIT = 1468  # measured 1465 at most (core alone, AI unknown, cut down); raised by
-# the 18 bytes of ", text corrections" in the summary of versions (decision-48)
-OVERVIEW_GUIDE_LIMIT = 2802  # measured 2800 (core alone, nothing cut); raised by the 14 bytes of
-# the field name offered_after_restart over pending, which the overview shows instead of a text,
-# and by the 42 bytes of correct_document_text and that summary (decision-48)
+INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut down)
+OVERVIEW_GUIDE_LIMIT = 2760  # measured 2758 (core alone, nothing cut); raised by the 14 bytes of
+# the field name offered_after_restart over pending, which the overview shows instead of a text
 DEFINITION_ADDED_LIMIT = 750  # measured 747, 28 more than with the name pending (twice 14 bytes)
 # The limit of every instructions text (test_registry.py TEXT_LIMIT): Claude Code cuts at 4,096.
 TEXT_LIMIT = 2048

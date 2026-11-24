@@ -82,8 +82,8 @@ TOOLSETS: Final = frozenset(
 TOOLSET_SUMMARIES: Final[Mapping[str, str]] = {
     "core": "documents and taxonomy",
     "ai": "Paperless AI questions and suggestions",
-    "bulk": "change many documents at once",
-    "versions": "document versions, text corrections",
+    "bulk": "change many documents",
+    "versions": "document versions, text fixes",
     "views": "saved views",
     "trash": "restore and empty deleted documents",
     "pdf": "PDF edits",

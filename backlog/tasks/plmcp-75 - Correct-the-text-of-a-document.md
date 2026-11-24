@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:46Z'
-updated_date: '2026-11-24T01:18:20Z'
+updated_date: '2026-11-24T01:22:54Z'
 labels: []
 dependencies:
   - PLMCP-74
@@ -65,4 +65,7 @@ Deviations and facts (2026-11-24):
 - Not proven live here (contract and E2E run on GitHub): everything in section 11 of the design; P6 (oversized body), P9 for reading after a restore, P10 (audit log, workflows), P11 and P12 have no test.
 - Mutation testing was not run (Linux only).
 - just check on macOS: 1 failure, the known test_the_menu_driver_reports_a_failing_cli; 7080 passed; diff coverage 100 %.
+
+Correction (2026-11-24): INSTRUCTIONS_LIMIT and OVERVIEW_GUIDE_LIMIT stay at 1450 and 2760 (measured 1423 and 2758). Shortened instead: 'HTTP and image: environment, restart ...' (28 bytes, its three exact-text tests follow or keep matching), summaries of versions ('text fixes') and bulk ('change many documents').
+Hosted E2E on 2bcdbc6: two live contract tests failed because the fixture's grants (PATCH set_permissions) replace those of an earlier user on the same document, while the fake added them. Neither the product code nor fields/version was the cause. The fake now replaces them as well and failed the same two tests; the tests use one user after the other and now also assert that the refused users see the document.
 <!-- SECTION:NOTES:END -->
