@@ -6,26 +6,43 @@ every call; with ids too, the call is refused unless each of them still matches.
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, cast
 
 from mcp_server_paperless.domain.documents import DocumentQuery
 from mcp_server_paperless.domain.errors import AnswerTooLarge, PaperlessMcpError, Validation
-from mcp_server_paperless.domain.selection import MAX_MATCHES
+from mcp_server_paperless.domain.selection import MAX_MATCHES, SelectionFilters
+from mcp_server_paperless.services.documents import known_items
 from mcp_server_paperless.services.search_syntax import query_notices
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from pydantic import BaseModel
 
     from mcp_server_paperless.domain.documents import DocumentHit, Ordering
     from mcp_server_paperless.domain.ports import DocumentReader
-    from mcp_server_paperless.domain.selection import Selection, SelectionFilters
+    from mcp_server_paperless.domain.selection import Selection
+    from mcp_server_paperless.domain.taxonomy import TaxonomyKind
     from mcp_server_paperless.services.documents import DocumentService
+    from mcp_server_paperless.services.taxonomy import TaxonomyResolver
     from mcp_server_paperless.services.views import ViewService
 
 SELECT_BYTES: Final = 64 * 1024 * 1024
+# What a view excludes, and the kind of the objects: one that is gone excludes nothing.
+EXCLUDING: Final[Mapping[str, TaxonomyKind]] = {
+    "tags_none": "tag",
+    "correspondent_none": "correspondent",
+    "document_type_none": "document_type",
+    "storage_path_none": "storage_path",
+    "owner_none": "user",
+    "custom_fields_none": "custom_field",
+}
 NARROW: Final = "Narrow the filters (dates, tags, correspondent) or pass document_ids."
+EXCLUDES_NOTHING: Final = (
+    "The view excludes what does not exist or is hidden, so it may match more: "
+)
+# Most ids an error names that nobody asked for.
+SHOWN: Final = 10
 EVERYTHING: Final = "The saved view filters nothing: it is every document you may see."
 
 
@@ -38,6 +55,9 @@ class Selected:
         matched: How many documents match, the excluded ones too.
         missing: Named ids that do not exist or are hidden from the user.
         also_matching: With ids and filters: what matches now and was not named.
+        excluded_unknown: What a view excludes although it does not exist, or the user may not
+            see or list it: Paperless then leaves out nothing, so more may match than was meant.
+            Noticed, not refused; whoever changes documents decides on it (PLMCP-80.2).
         notices: What the caller should know of the filters.
     """
 
@@ -45,12 +65,17 @@ class Selected:
     matched: int
     missing: tuple[int, ...] = ()
     also_matching: tuple[int, ...] = ()
+    excluded_unknown: tuple[str, ...] = ()
     notices: tuple[str, ...] = ()
 
 
 def _empty(value: object) -> bool:
     """Whether a filter with ``value`` filters nothing; false and 0 are values."""
     return value in (None, (), []) or (isinstance(value, str) and not value.strip())
+
+
+def _named(ids: Sequence[int]) -> str:
+    return ", ".join(map(str, ids))
 
 
 def _values(model: BaseModel) -> dict[str, object]:
@@ -68,6 +93,10 @@ def _check(selection: Selection) -> None:
     if not chosen and not selection.document_ids:
         message = "No document is chosen."
         raise Validation(message, hint="Pass document_ids, filters or saved_view.")
+    both = sorted({*selection.document_ids} & {*selection.exclude_ids})
+    if both:
+        message = f"Documents both named and excluded: {_named(both)}."
+        raise Validation(message, hint="Take them out of document_ids or of exclude_ids.")
     if selection.filters is not None:
         _check_filters(selection.filters)
 
@@ -87,9 +116,14 @@ class DocumentSelector:
     """Resolves selections for the current user."""
 
     def __init__(
-        self, reader: DocumentReader, documents: DocumentService, views: ViewService
+        self,
+        reader: DocumentReader,
+        documents: DocumentService,
+        views: ViewService,
+        taxonomy: TaxonomyResolver,
     ) -> None:
         """Read through ``reader``; names and views mean what they mean in a search."""
+        self._taxonomy: TaxonomyResolver = taxonomy
         self._reader: DocumentReader = reader
         self._documents: DocumentService = documents
         self._views: ViewService = views
@@ -100,7 +134,8 @@ class DocumentSelector:
         """The documents of ``selection``, in one request.
 
         ``ordering`` replaces the order of the ids, of the view or of the search. With ``change``
-        what matches more than was meant is refused instead of noticed.
+        what matches more than was meant is refused instead of noticed. It does not
+        refuse ``missing`` or ``excluded_unknown``: the caller has to.
 
         Raises:
             Validation: Nothing or too much was chosen, a filter is empty or contradicts another,
@@ -126,6 +161,11 @@ class DocumentSelector:
             message = f"The full-text query may match more than was meant: {' '.join(notices)}"
             hint = "Write the query as the notice says, or use structured filters."
             raise Validation(message, hint=hint)
+        unknown = await self._unknown(query)
+        if unknown:
+            notices += (f"{EXCLUDES_NOTHING}{', '.join(unknown)}.",)
+        if everything:
+            notices += (EVERYTHING,)
         matches = await self._read(query)
         excluded = set(selection.exclude_ids)
         hits = tuple(hit for hit in matches if hit.id not in excluded)
@@ -138,15 +178,28 @@ class DocumentSelector:
             hits,
             len(matches),
             also_matching=also,
-            notices=(*notices, EVERYTHING) if everything else notices,
+            excluded_unknown=unknown,
+            notices=notices,
         )
 
     async def _query(self, selection: Selection, ordering: Ordering | None) -> DocumentQuery:
-        if selection.filters is not None:
-            return await self._documents.resolved(*selection.filters.parts(ordering))
-        # _check leaves exactly one of both.
-        query = await self._views.query(selection.saved_view or "")
+        if selection.saved_view is None:
+            filters = selection.filters or SelectionFilters()
+            return await self._documents.resolved(*filters.parts(ordering))
+        query = await self._views.query(selection.saved_view)
         return query if ordering is None else query.model_copy(update={"ordering": ordering})
+
+    async def _unknown(self, query: DocumentQuery) -> tuple[str, ...]:
+        """What ``query`` excludes and the user cannot see; read anew, not from the cache."""
+        unknown: list[str] = []
+        for field, kind in EXCLUDING.items():
+            ids = cast("tuple[int, ...]", getattr(query, field))
+            if ids:
+                self._taxonomy.invalidate(kind)
+                known = await known_items(self._taxonomy, kind)
+                label = kind.replace("_", " ")
+                unknown += [f"{label} {number}" for number in ids if number not in known]
+        return tuple(unknown)
 
     async def _read(self, query: DocumentQuery) -> tuple[DocumentHit, ...]:
         try:
@@ -156,15 +209,21 @@ class DocumentSelector:
         except AnswerTooLarge:
             message = "The rows of the matching documents are larger than 64 MiB."
             raise AnswerTooLarge(message, hint=NARROW) from None
-        if page.count > MAX_MATCHES:
-            message = f"{page.count} documents match; at most {MAX_MATCHES} may."
+        hits = tuple({hit.id: hit for hit in page.hits}.values())
+        count = page.count - (len(page.hits) - len(hits))
+        unasked = [hit.id for hit in hits if hit.id not in query.ids] if query.ids else []
+        if unasked:
+            named = _named(unasked[:SHOWN])
+            message = f"Paperless named documents that were not asked for: {named}."
+            hint = "Nothing was used of its answer; tell the administrator."
+            raise PaperlessMcpError(message, hint=hint)
+        if count > MAX_MATCHES:
+            message = f"{count} documents match; at most {MAX_MATCHES} may."
             raise Validation(message, hint=NARROW)
-        if len(page.hits) < page.count:
-            message = (
-                f"Paperless named only {len(page.hits)} of the {page.count} documents that match."
-            )
+        if len(hits) < count:
+            message = f"Paperless named only {len(hits)} of the {count} documents that match."
             raise PaperlessMcpError(message, hint="Try again in a moment, or narrow the filters.")
-        return page.hits
+        return hits
 
 
 def _arranged(
@@ -179,7 +238,7 @@ def _require_all(ids: tuple[int, ...], hits: Sequence[DocumentHit]) -> None:
     gone = [number for number in ids if number not in matching]
     if gone:
         verb = "matches" if len(gone) == 1 else "match"
-        named = ", ".join(map(str, gone))
+        named = _named(gone)
         message = f"{len(gone)} of the named documents no longer {verb}: {named}."
         hint = "Choose again with the filters or the view alone, and show the new set."
         raise Validation(message, hint=hint)

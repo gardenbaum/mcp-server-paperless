@@ -1,5 +1,6 @@
 """Contract of a whole selection in one request and of rows with chosen fields (decision-69)."""
 
+from datetime import timedelta
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -13,8 +14,13 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.domain.selection import DocumentRow, SelectionFilters
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.documents import DocumentService
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
+    from pydantic import JsonValue
+
     from contract.conftest import Backend, Ports
     from mcp_server_paperless.domain.documents import DocumentPage
     from mcp_server_paperless.domain.selection import ReadField
@@ -50,51 +56,60 @@ async def tag(ports: Ports, name: str) -> int:
 
 
 @pytest.mark.contract(SELECT)
-async def test_a_selection_gives_what_a_search_gives(backend: Backend) -> None:
+async def test_every_filter_selects_what_it_searches_and_leaves_something_out(
+    backend: Backend,
+) -> None:
     ports = backend.admin
-    finance, private = await tag(ports, "e2e-finance"), await tag(ports, "e2e-private")
-    found = await ports.documents.search_documents(
-        DocumentQuery(title_contains=PUBLIC), page=1, page_size=1
-    )
-    day, added = found.hits[0].created, found.hits[0].added.date()
-    mine = DocumentQuery(title_contains="e2e-p")
-    cases: dict[str, dict[str, object]] = {
-        "query": {"title_contains": None, "query": "acme"},
-        "more_like_id": {
-            "title_contains": None,
-            "more_like": await seeded(ports, PRIVATE),
-        },
-        "title_contains": {"title_contains": "e2e-public"},
-        "correspondent": {"correspondent": found.hits[0].correspondent},
-        "document_type": {"document_type": found.hits[0].document_type},
-        "storage_path": {"storage_path": found.hits[0].storage_path},
-        "has_correspondent": {"correspondent_isnull": True},
-        "has_document_type": {"document_type_isnull": True},
-        "has_storage_path": {"storage_path_isnull": False},
-        "has_tags": {"tagged": True},
-        "tags_all": {"tags_all": (finance, await tag(ports, "e2e-invoices"))},
-        "tags_any": {"tags_any": (finance, private)},
-        "tags_none": {"tags_none": (private,)},
-        "created_from": {"created_from": day},
-        "created_to": {"created_to": day},
-        "added_from": {"added_from": added},
-        "added_to": {"added_to": added},
-        "owner": {"owner": (await row(ports, await seeded(ports, PRIVATE), "owner")).owner},
-        "inbox": {"inbox": True},
-        "custom_field_query": {"custom_field_query": ["e2e-string", "exact", "hello"]},
-        "has_duplicates": {"has_duplicates": False},
+    taxonomy = TaxonomyResolver(ports.taxonomy, StaticTokenProvider("t"), ttl=60.0)
+    service = DocumentService(ports.documents, ports.trash, taxonomy, web_url="https://p.example")
+    both = DocumentQuery(title_contains="e2e-p")
+    found = (await ports.documents.search_documents(both, page=1, page_size=3)).hits
+    private = next(hit.id for hit in found if hit.title == PRIVATE)
+    first, last = min(hit.created for hit in found), max(hit.created for hit in found)
+    added = [hit.added.date() for hit in found]
+    day = timedelta(days=1)
+    cases: dict[str, tuple[object, set[str]]] = {
+        "query": ("acme", {PUBLIC}),
+        "more_like_id": (private, {PUBLIC}),
+        "title_contains": ("e2e-public", {PUBLIC}),
+        "correspondent": ("e2e-acme", {PUBLIC}),
+        "document_type": ("e2e-invoice", {PUBLIC}),
+        "storage_path": ("e2e-archive", {PUBLIC}),
+        "has_correspondent": (True, {PUBLIC}),
+        "has_document_type": (False, {PRIVATE}),
+        "has_storage_path": (True, {PUBLIC}),
+        "has_tags": (False, set()),
+        "tags_all": (["e2e-finance", "e2e-invoices"], {PUBLIC}),
+        "tags_any": (["e2e-private"], {PRIVATE}),
+        "tags_none": (["e2e-private"], {PUBLIC}),
+        "created_from": (last + day, set()),
+        "created_to": (first - day, set()),
+        "added_from": (max(added) + day, set()),
+        "added_to": (min(added) - day, set()),
+        "owner": ("admin", {PRIVATE}),
+        "inbox": (True, {PUBLIC}),
+        "custom_field_query": (["e2e-string", "exact", "hello"], {PUBLIC}),
+        "has_duplicates": (True, set()),
     }
+    assert set(cases) == set(SelectionFilters.model_fields)
     backend.rebuild_search_index()
 
-    for name, filters in cases.items():
-        query = mine.model_copy(update=filters)
+    for name, (value, expected) in cases.items():
+        filters = SelectionFilters.model_validate({"title_contains": "e2e-p", name: value})
+        query = await service.resolved(*filters.parts())
         searched = await ports.documents.search_documents(query, page=1, page_size=100)
-        # Not the order: a full-text search ranks, and equal ranks may change places.
-        assert {h.id for h in (await select(ports, query)).hits} == {h.id for h in searched.hits}, (
-            name
-        )
-        assert searched.hits, name
-    assert set(cases) == set(SelectionFilters.model_fields)
+        selected = await select(ports, query)
+        assert {hit.title for hit in selected.hits} == expected, name
+        assert {hit.id for hit in searched.hits} == {hit.id for hit in selected.hits}, name
+
+
+@pytest.mark.parametrize("expression", [["AND", []], ["OR", []]])
+@pytest.mark.contract(SELECT)
+async def test_a_custom_field_query_without_a_condition_is_rejected(
+    backend: Backend, expression: list[JsonValue]
+) -> None:
+    with pytest.raises(Validation, match="nonempty"):
+        _ = await select(backend.admin, DocumentQuery(custom_field_query=expression))
 
 
 @pytest.mark.contract(SELECT)

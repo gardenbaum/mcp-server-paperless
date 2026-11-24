@@ -17,7 +17,7 @@ from mcp_server_paperless.domain.errors import (
     UpstreamUnavailable,
     Validation,
 )
-from mcp_server_paperless.domain.selection import MAX_MATCHES, Selection, SelectionFilters
+from mcp_server_paperless.domain.selection import MAX_MATCHES, Selection
 from mcp_server_paperless.domain.views import FilterRule
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.documents import DocumentService
@@ -43,6 +43,8 @@ class Counting(FakePaperless):
         self.asked: list[tuple[int, int]] = []
         self.short: int = 0
         self.error: PaperlessMcpError | None = None
+        self.ignore_ids: bool = False
+        self.repeat: bool = False
 
     @override
     async def select_documents(
@@ -51,7 +53,11 @@ class Counting(FakePaperless):
         self.asked.append((limit, max_bytes))
         if self.error is not None:
             raise self.error
+        if self.ignore_ids:
+            query = query.model_copy(update={"ids": ()})
         page = await super().select_documents(query, limit=limit, max_bytes=max_bytes)
+        if self.repeat:
+            return page.model_copy(update={"hits": page.hits * 2, "count": page.count * 2})
         return page.model_copy(update={"hits": page.hits[: len(page.hits) - self.short]})
 
 
@@ -63,7 +69,7 @@ class Setup:
         taxonomy = TaxonomyResolver(self.fake, StaticTokenProvider("t"), ttl=3600.0)
         documents = DocumentService(self.fake, self.fake, taxonomy, web_url="https://p.example")
         views = ViewService(self.fake, self.fake, taxonomy, documents)
-        self.selector: DocumentSelector = DocumentSelector(self.fake, documents, views)
+        self.selector: DocumentSelector = DocumentSelector(self.fake, documents, views, taxonomy)
 
     def add(self, number: int, title: str = "scratch", **values: object) -> None:
         self.state.documents.append(replace(FakeDocument(id=number, title=title), **values))
@@ -100,6 +106,31 @@ async def test_ids_are_these_documents_in_the_order_given_and_each_once() -> Non
     assert ids(found) == [PRIVATE, PUBLIC]
     assert (found.matched, found.missing, found.also_matching) == (2, (99,), ())
     assert setup.fake.asked == [(MAX_MATCHES + 1, SELECT_BYTES)]
+
+
+@pytest.mark.parametrize("ordering", [None, "title"])
+async def test_a_document_that_was_not_asked_for_refuses_the_call(
+    ordering: Ordering | None,
+) -> None:
+    setup = Setup()
+    setup.fake.ignore_ids = True
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await setup.select(document_ids=(PUBLIC,), ordering=ordering)
+
+    assert raised.value.message == "Paperless named documents that were not asked for: 2."
+    assert raised.value.hint == "Nothing was used of its answer; tell the administrator."
+
+
+async def test_a_document_paperless_names_twice_is_selected_once() -> None:
+    setup = Setup()
+    setup.fake.repeat = True
+
+    named = await setup.select(document_ids=(PRIVATE, PUBLIC))
+    matching = await setup.select(filters={"title_contains": "e2e-p"})
+
+    assert (ids(named), named.matched) == ([PRIVATE, PUBLIC], 2)
+    assert (ids(matching), matching.matched) == ([PRIVATE, PUBLIC], 2)
 
 
 async def test_ids_can_be_ordered() -> None:
@@ -170,7 +201,59 @@ async def test_the_way_to_choose_is_exactly_one() -> None:
     refusal = await setup.refused(document_ids=(1,), exclude_ids=(2,))
     assert refusal.message == "exclude_ids needs filters or saved_view."
     assert refusal.hint == "Leave the documents out of document_ids instead."
+    refusal = await setup.refused(
+        document_ids=(3, PUBLIC, 2), filters={"inbox": True}, exclude_ids=(2, PUBLIC)
+    )
+    assert refusal.message == "Documents both named and excluded: 1, 2."
+    assert refusal.hint == "Take them out of document_ids or of exclude_ids."
     assert setup.fake.asked == []
+
+
+async def test_a_view_0_is_looked_for_as_one() -> None:
+    with pytest.raises(NotFound, match="0"):
+        _ = await Setup().select(saved_view=0)
+
+
+@pytest.mark.parametrize(
+    ("rule", "gone"),
+    [
+        (17, "tag 77"),
+        (27, "correspondent 77"),
+        (29, "document type 77"),
+        (31, "storage path 77"),
+        (35, "user 77"),
+        (40, "custom field 77"),
+    ],
+)
+async def test_an_excluding_rule_for_something_that_is_gone_is_named(rule: int, gone: str) -> None:
+    setup = Setup()
+    setup.view(FilterRule(rule_type=rule, value="1,77"), FilterRule(rule_type=0, value="e2e"))
+
+    found = await setup.select(saved_view="mine", change=True)
+
+    assert gone in found.excluded_unknown
+    notice = "The view excludes what does not exist or is hidden, so it may match more: "
+    assert any(text.startswith(notice) and gone in text for text in found.notices)
+
+
+async def test_rules_for_what_exists_name_nothing() -> None:
+    setup = Setup()
+    setup.view(FilterRule(rule_type=17, value="3"), FilterRule(rule_type=27, value="1"))
+
+    found = await setup.select(saved_view="mine")
+
+    assert (found.excluded_unknown, found.notices) == ((), ())
+
+
+async def test_what_the_user_may_not_list_cannot_be_checked_and_is_named() -> None:
+    setup = Setup(READER[0])
+    reader = setup.fake.user
+    setup.fake.user = replace(reader, permissions=reader.permissions | {"view_savedview"})
+    setup.state.saved_views.append(
+        FakeSavedView(id=9, name="mine", filter_rules=(FilterRule(rule_type=35, value="2"),))
+    )
+
+    assert (await setup.select(saved_view="mine")).excluded_unknown == ("user 2",)
 
 
 @pytest.mark.parametrize("filters", [{}, {"query": None}])
@@ -322,15 +405,11 @@ async def test_a_document_that_no_longer_matches_refuses_the_call() -> None:
     assert refusal.hint == "Choose again with the filters or the view alone, and show the new set."
 
 
-async def test_a_document_trashed_hidden_or_excluded_meanwhile_no_longer_matches() -> None:
+async def test_a_document_trashed_or_hidden_meanwhile_no_longer_matches() -> None:
     setup = Setup(READER[0])
 
     refusal = await setup.refused(document_ids=(PUBLIC, PRIVATE, 99), filters={"inbox": True})
     assert refusal.message == "2 of the named documents no longer match: 2, 99."
-    refusal = await setup.refused(
-        document_ids=(PUBLIC,), filters={"inbox": True}, exclude_ids=(PUBLIC,)
-    )
-    assert refusal.message == "1 of the named documents no longer matches: 1."
 
 
 async def test_an_edited_view_is_compared_by_what_it_matches_now() -> None:
@@ -368,11 +447,6 @@ async def test_a_restricted_user_selects_only_what_it_sees_and_hidden_ids_are_mi
 async def test_a_user_who_may_not_list_views_is_told_so() -> None:
     with pytest.raises(PermissionDenied):
         _ = await Setup(READER[0]).select(saved_view="e2e-view")
-
-
-def test_every_filter_that_is_set_counts_as_one() -> None:
-    # A filter the check forgets would let an empty value through, or refuse a real one.
-    assert len(SelectionFilters.model_fields) == 21
 
 
 @given(named=st.sets(st.integers(1, 8)), matching=st.sets(st.integers(1, 8)))

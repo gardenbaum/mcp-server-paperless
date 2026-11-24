@@ -4,6 +4,7 @@ A selection of a thousand documents is made of bare database rows without files,
 they sort behind every other document: consuming a thousand files would take half an hour.
 """
 
+import time
 import uuid
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, cast
@@ -13,7 +14,7 @@ from contract.conftest import delete_and_empty_trash, live_backend
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import consume_text, in_container, results
+from e2e.helpers import consume_text, in_container, rebuild_search_index, results
 from mcp_server_paperless.domain.documents import DocumentQuery
 from mcp_server_paperless.server import create_server
 
@@ -83,7 +84,7 @@ def bare_documents(count: int) -> Generator[str]:
     """``count`` documents without a file, removed again without the trash."""
     name = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
     made = (
-        f"Document(title='{name}', content='bare', checksum=f'{name}{{n}}', "
+        f"Document(title='{name}', content='plmcp80bare words of a test', checksum=f'{name}{{n}}', "
         "mime_type='text/plain', created='1990-01-01')"
     )
     shell(f"Document.objects.bulk_create([{made} for n in range({count})])")
@@ -92,6 +93,40 @@ def bare_documents(count: int) -> Generator[str]:
     finally:
         mine = f"Document.global_objects.filter(title='{name}')"
         shell(f"found = {mine}; found._raw_delete(found.db)")
+
+
+@pytest.fixture(scope="module")
+def indexed(stack: Stack) -> Iterator[str]:
+    """A thousand bare documents that are also in the full-text index."""
+    with bare_documents(1000) as name:
+        rebuild_search_index(stack.admin)
+        yield name
+    rebuild_search_index(stack.admin)
+
+
+@pytest.mark.parametrize("search", ["title", "text", "similar"])
+async def test_a_thousand_matches_are_read_well_within_the_timeout(
+    stack: Stack, indexed: str, search: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async with live_backend(stack) as live:
+        documents = live.admin.documents
+        mine = DocumentQuery(title_contains=indexed)
+        [one, *_] = (await documents.search_documents(mine, page=1, page_size=1)).hits
+        query = {
+            "title": mine,
+            "text": DocumentQuery(query="plmcp80bare"),
+            "similar": DocumentQuery(more_like=one.id),
+        }[search]
+        started = time.monotonic()
+        page = await documents.select_documents(query, limit=1001, max_bytes=64 * 1024 * 1024)
+        took = time.monotonic() - started
+
+    with capsys.disabled():
+        print(f"\nselect_documents {search}: {page.count} matches in {took:.2f} s")  # noqa: T201 -- the measurement of decision-69, read from the log
+    assert len(page.hits) == page.count
+    # more-like-this decides itself how many are similar.
+    assert page.count == 1000 if search != "similar" else page.count <= 1000
+    assert took < 30  # the read times out after 60 s
 
 
 async def test_documents_are_read_by_filter_by_view_and_by_ids(stack: Stack) -> None:

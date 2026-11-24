@@ -4,10 +4,11 @@ A selection is named by ids, by the filters of ``search_documents`` or by a save
 resolve it to documents (``DocumentSelector``, decision-69).
 """
 
+import re
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Annotated, ClassVar, Final, Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, JsonValue
 
 from mcp_server_paperless.domain.documents import (
     CustomFieldValue,
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
 MAX_MATCHES: Final = 1000
 MAX_TEXT: Final = 20_000
 MAX_ANSWER: Final = 100_000
+
+DATE: Final = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 type ReadField = Literal[
     "title",
@@ -55,29 +58,49 @@ def _absent(has: bool | None) -> bool | None:  # noqa: FBT001 -- a tri-state fil
     return None if has is None else not has
 
 
+def no_flag(value: object) -> object:
+    """Refuse true and false, which would become the ids 1 and 0."""
+    if isinstance(value, bool):
+        message = "true and false are no ids"
+        raise ValueError(message)  # noqa: TRY004 -- pydantic reports a ValueError as invalid input
+    return value
+
+
+def _calendar(value: object) -> object:
+    """Refuse what pydantic would turn into a date: numbers, times and other spellings."""
+    if type(value) is date or (isinstance(value, str) and DATE.fullmatch(value)):
+        return value
+    message = "a date is YYYY-MM-DD"
+    raise ValueError(message)
+
+
+NO_FLAG: Final = BeforeValidator(no_flag)
+CALENDAR: Final = BeforeValidator(_calendar)
+
+
 class SelectionFilters(BaseModel):
     """The filters of search_documents, with the same names and meaning; all are ANDed."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
     query: str | None = None
-    more_like_id: int | None = None
+    more_like_id: Annotated[int, NO_FLAG] | None = None
     title_contains: str | None = None
-    correspondent: NameOrId | None = None
-    document_type: NameOrId | None = None
-    storage_path: NameOrId | None = None
+    correspondent: Annotated[NameOrId, NO_FLAG] | None = None
+    document_type: Annotated[NameOrId, NO_FLAG] | None = None
+    storage_path: Annotated[NameOrId, NO_FLAG] | None = None
     has_correspondent: bool | None = None
     has_document_type: bool | None = None
     has_storage_path: bool | None = None
     has_tags: bool | None = None
-    tags_all: list[NameOrId] | None = None
-    tags_any: list[NameOrId] | None = None
-    tags_none: list[NameOrId] | None = None
-    created_from: date | None = None
-    created_to: date | None = None
-    added_from: date | None = None
-    added_to: date | None = None
-    owner: NameOrId | None = None
+    tags_all: list[Annotated[NameOrId, NO_FLAG]] | None = None
+    tags_any: list[Annotated[NameOrId, NO_FLAG]] | None = None
+    tags_none: list[Annotated[NameOrId, NO_FLAG]] | None = None
+    created_from: Annotated[date, CALENDAR] | None = None
+    created_to: Annotated[date, CALENDAR] | None = None
+    added_from: Annotated[date, CALENDAR] | None = None
+    added_to: Annotated[date, CALENDAR] | None = None
+    owner: Annotated[NameOrId, NO_FLAG] | None = None
     inbox: bool | None = None
     custom_field_query: list[JsonValue] | None = None
     has_duplicates: bool | None = None
@@ -222,7 +245,12 @@ class DocumentsRead(BaseModel):
     ] = ()
     also_matching: Annotated[
         tuple[int, ...],
-        Field(description="With document_ids and filters: ids that match, too, and are not shown."),
+        Field(
+            description=(
+                "With document_ids and filters: ids that match, too, and are not shown; on page 1 "
+                "only."
+            )
+        ),
     ] = ()
     truncated: Annotated[bool, Field(description="Rows were left out: the answer was full.")] = (
         False
@@ -232,5 +260,9 @@ class DocumentsRead(BaseModel):
         Field(
             description="Shown without the text asked for, or left out: pass them as document_ids."
         ),
+    ] = ()
+    failed: Annotated[
+        tuple[int, ...],
+        Field(description="Shown without text: it could not be read, notices says why."),
     ] = ()
     notices: tuple[str, ...] = ()

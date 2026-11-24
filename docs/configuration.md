@@ -188,7 +188,7 @@ more is refused with the count, and the first page names the id of each match, s
 can take a set that was shown. Ids together with the filters or the view are read only while each of
 them still matches. Text comes only when asked for, at most 20,000 characters a call, one document
 after the other for at most 40 seconds; an answer has at most 100,000 characters, and what does not
-fit is named. Notes are refused to a user who may not view notes. `read_documents` only reads, so
+fit, or whose text cannot be read, is named. Notes are refused to a user who may not view notes. `read_documents` only reads, so
 read-only mode keeps it (decision-69 and decision-70 in `backlog/decisions/`).
 
 Over stdio with upload directories the toolset also has `upload_documents`, see

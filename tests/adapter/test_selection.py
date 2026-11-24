@@ -189,10 +189,22 @@ async def test_rows_over_the_byte_limit_are_refused() -> None:
         _ = await documents.read_rows([7], ("title",), max_bytes=100)
 
 
-async def test_a_429_is_told_as_one() -> None:
-    documents, _ = reader(Listing(status=429))
+async def read_once(documents: PaperlessDocumentReader, what: str) -> object:
+    if what == "selection":
+        return await documents.select_documents(DocumentQuery(), limit=1, max_bytes=1000)
+    if what == "rows":
+        return await documents.read_rows([7], (), max_bytes=1000)
+    return await documents.get_document_content(7)
+
+
+@pytest.mark.parametrize("what", ["selection", "rows", "text"])
+async def test_a_429_is_told_after_the_retries_of_the_client(what: str) -> None:
+    # Every read is tried three times (decision-70): callers stop after that, not at the first 429.
+    server = Listing(status=429)
+    documents, sleep = reader(server)
 
     with pytest.raises(UpstreamUnavailable) as raised:
-        _ = await documents.select_documents(DocumentQuery(), limit=1, max_bytes=1000)
+        _ = await read_once(documents, what)
 
     assert raised.value.status == HTTPStatus.TOO_MANY_REQUESTS
+    assert (len(server.sent), len(sleep.delays)) == (3, 2)

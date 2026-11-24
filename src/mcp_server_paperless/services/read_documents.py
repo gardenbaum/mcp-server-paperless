@@ -9,10 +9,13 @@ from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.errors import (
     AnswerTooLarge,
+    AuthenticationFailed,
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
+    UpstreamUnreachable,
 )
+from mcp_server_paperless.domain.files import joined
 from mcp_server_paperless.domain.selection import (
     MAX_ANSWER,
     MAX_TEXT,
@@ -29,6 +32,7 @@ from mcp_server_paperless.services.documents import (
     ref,
 )
 from mcp_server_paperless.services.selection import SELECT_BYTES
+from mcp_server_paperless.services.trash_scan import limited
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -57,8 +61,10 @@ KINDS: Final[Mapping[ReadField, TaxonomyKind]] = {
     "custom_fields": "custom_field",
     "owner": "user",
 }
+# Characters of notices in an answer.
+NOTICE_CHARS: Final = 5000
 # The fields of a row whose size nothing bounds, and the text (as JSON up to six times as long).
-GROWING: Final[tuple[ReadField, ...]] = ("notes", "custom_fields", "content")
+GROWING: Final[tuple[ReadField, ...]] = ("notes", "custom_fields", "tags", "content")
 
 
 def _size(row: ReadRow) -> int:
@@ -118,10 +124,11 @@ class ReadDocuments:
         rows = await self._rows(ids, wanted)
         notices = chosen.notices
         left: tuple[int, ...] = ()
+        failed: tuple[int, ...] = ()
         if "content" in wanted:
-            rows, notice = await self._with_texts(rows, content_chars, until)
+            rows, failed, notice = await self._with_texts(rows, content_chars, until)
             notices += notice
-            left = tuple(row.id for row in rows if row.content is None)
+            left = tuple(row.id for row in rows if row.content is None and row.id not in failed)
         shown = {row.id for row in rows}
         answer = DocumentsRead(
             matched=chosen.matched,
@@ -130,14 +137,18 @@ class ReadDocuments:
             next_page=page + 1 if start + page_size < len(every) else None,
             documents=(),
             missing=(*chosen.missing, *(number for number in ids if number not in shown)),
-            also_matching=chosen.also_matching,
+            also_matching=chosen.also_matching if page == 1 else (),
             left=left,
-            notices=notices,
+            failed=failed,
+            notices=_short(notices),
         )
         return _bounded(answer, rows)
 
     async def _require_notes(self, ids: Sequence[int]) -> None:
-        """Refuse a user who may not view notes: Paperless sends them in the rows anyway."""
+        """Refuse a user who may not view notes: Paperless sends them in the rows anyway.
+
+        The first document that answers decides; without any answer the notes are refused, too.
+        """
         for number in ids:
             try:
                 _ = await self._reader.list_document_notes(number)
@@ -149,6 +160,12 @@ class ReadDocuments:
                 )
                 raise PermissionDenied(message, hint="Leave notes out of fields.") from None
             return
+        if ids:
+            message = (
+                "It could not be checked whether the user may view notes: the documents are gone."
+            )
+            hint = "Choose the documents again, or leave notes out of fields."
+            raise PaperlessMcpError(message, hint=hint)
 
     async def _rows(self, ids: Sequence[int], fields: Sequence[ReadField]) -> list[ReadRow]:
         asked: list[ReadField] = [name for name in fields if name != "content"]
@@ -193,21 +210,32 @@ class ReadDocuments:
 
     async def _with_texts(
         self, rows: Sequence[ReadRow], chars: int, until: float
-    ) -> tuple[list[ReadRow], tuple[str, ...]]:
-        """The rows with the first ``chars`` characters of their text, as far as the call allows."""
+    ) -> tuple[list[ReadRow], tuple[int, ...], tuple[str, ...]]:
+        """The rows with the start of their text as far as the call allows, what failed, and why.
+
+        What concerns one text leaves the others. What concerns every request ends them: a 429
+        (after the client's own retries), a rejected credential, no connection.
+        """
         room = MAX_TEXT
         done = list(rows)
+        failed: dict[str, list[int]] = {}
+        end: tuple[str, ...] = ()
         for at, row in enumerate(rows):
             if not room:
                 break
             if self._clock() >= until:
-                return done, (f"No more text was read after {TEXT_SECONDS:g} seconds.",)
+                end = (f"No more text was read after {TEXT_SECONDS:g} seconds.",)
+                break
             try:
                 text = (await self._reader.get_document_content(row.id)).content
-            except NotFound:  # deleted meanwhile
+            except NotFound:  # deleted meanwhile: missing in the next call
                 continue
-            except PaperlessMcpError as error:  # also 429: no other request follows
-                return done, (f"Reading text stopped: {error.message}",)
+            except PaperlessMcpError as error:
+                if limited(error) or isinstance(error, AuthenticationFailed | UpstreamUnreachable):
+                    end = (f"Reading text stopped: {error.message}",)
+                    break
+                failed.setdefault(error.message, []).append(row.id)
+                continue
             part = text[: min(chars, room)]
             room -= len(part)
             done[at] = row.model_copy(
@@ -217,7 +245,23 @@ class ReadDocuments:
                     "content_next": len(part) if len(part) < len(text) else None,
                 }
             )
-        return done, ()
+        told = [
+            f"The text of {joined(ids)} could not be read: {why}" for why, ids in failed.items()
+        ]
+        ids = tuple(number for group in failed.values() for number in group)
+        return done, ids, (*told, *end)
+
+
+def _short(notices: Sequence[str]) -> tuple[str, ...]:
+    """As many notices as may be told; the last one is cut. A hostile query has thousands."""
+    room = NOTICE_CHARS
+    told: list[str] = []
+    for notice in notices:
+        if len(notice) > room:
+            return (*told, f"{notice[: room - 1]}…")
+        told.append(notice)
+        room -= len(notice) + 1
+    return tuple(told)
 
 
 def _bounded(answer: DocumentsRead, rows: Sequence[ReadRow]) -> DocumentsRead:
@@ -241,16 +285,15 @@ def _bounded(answer: DocumentsRead, rows: Sequence[ReadRow]) -> DocumentsRead:
 
 def _fitted(row: ReadRow, room: int) -> ReadRow:
     """``row``, without its largest fields if it could not be shown even alone."""
+    sizes: dict[ReadField, int] = {
+        name: len(row.model_dump_json(include={name}))
+        for name in GROWING
+        if getattr(row, name) is not None
+    }
     dropped: tuple[ReadField, ...] = ()
-    while _size(row) > room:
-        sizes: dict[ReadField, int] = {
-            name: len(row.model_dump_json(include={name}))
-            for name in GROWING
-            if getattr(row, name) is not None
-        }
-        if not sizes:
-            break  # not shown at all: the caller names it
-        largest = max(sizes, key=lambda name: sizes[name])
+    for largest in sorted(sizes, key=lambda name: sizes[name], reverse=True):
+        if _size(row) <= room:
+            break
         dropped = (*dropped, largest)
         update: dict[str, object] = {largest: None, "too_large": dropped}
         if largest == "content":

@@ -18,10 +18,10 @@ The design was put to the owner with the alternatives (decisions 1 to 4 of the d
 
 <!-- SECTION:DECISION:BEGIN -->
 - Documents are chosen by ids (1 to 100), by the filters of `search_documents` (the same names, types and meaning, as one strict object: an unknown key is refused) or by a saved view. One service resolves them for every tool that takes a selection. Paperless's `all`, `filters` and `excluded_documents` are not sent.
-- One request with the ordinary row fields, uncompressed, at most 64 MiB (as decision-47 reads the trash). At most **1,000** documents may match; more is refused with the count. An answer with fewer rows than it counts is refused.
-- Every match is named. Refused always: nothing chosen, filters and view together, `exclude_ids` without either, a filter object without a filter, an empty value (it would match everything). Refused for a change, and noticed when reading: a view that filters nothing, and a full-text query with syntax the index misreads.
+- One request with the ordinary row fields, uncompressed, at most 64 MiB (as decision-47 reads the trash). At most **1,000** documents may match; more is refused with the count. An answer with fewer rows than it counts, or with a document that was not asked for by id, is refused; a document named twice counts once.
+- Every match is named. Refused always: nothing chosen, an id both named and excluded, true or false as an id, a date that is not YYYY-MM-DD, filters and view together, `exclude_ids` without either, a filter object without a filter, an empty value (it would match everything). Refused for a change, and noticed when reading: a view that filters nothing, and a full-text query with syntax the index misreads.
 - **It never acts by itself.** A filter or a view is resolved anew in each call and what it matches is shown. Ids together with the filters or the view are exactly these documents, and the call is refused, naming them, if one no longer matches; what matches only now is named and not touched. The dialogs and the second call of the tools that change documents are built on this in PLMCP-80.2 and 80.3.
-- Ids alone stay possible: the caller names the documents, and one that is missing or hidden is named.
+- Ids alone stay possible: the caller names the documents, and one that is missing or hidden is named, not refused: a tool that changes documents decides on `missing`.
 - `rotate_documents`, `reprocess_documents`, `bulk_download`, `set_permissions` and sharing take no filter of their own: `read_documents` shows the ids.
 - Supplements decisions 6, 15, 44 and 53, and follows the same principle as decision-55. Supersedes nothing.
 <!-- SECTION:DECISION:END -->
@@ -30,6 +30,7 @@ The design was put to the owner with the alternatives (decisions 1 to 4 of the d
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
 - A matched set is compared by what it matches, not by the text of the filter or the rules of the view: an edited view with the same matches passes.
+- **A view that excludes a tag (or another object) that was deleted excludes nothing and matches more**; the web UI does the same. The selection names such objects (`excluded_unknown`, looked up anew, also those hidden from the user) and says so in a notice. Reading goes on. Whether a change is refused then is decided with the tools that change documents (PLMCP-80.2); what they need is there.
 - A document another user changes between the check and a write is not protected (Paperless has no conditional write).
 - A full-text match comes from the search index, which can be older than the document.
 - A selection reads up to 1,001 rows in one request.
@@ -37,6 +38,6 @@ The design was put to the owner with the alternatives (decisions 1 to 4 of the d
 
 ## Enforcement
 
-- `tests/services/test_selection.py` (marker decision-69): limits (1,000 and 1,001, 64 MiB), every refusal, a set that changed (also as a property), a restricted user.
+- `tests/services/test_selection.py` (marker decision-69): limits (1,000 and 1,001, 64 MiB), every refusal, a set that changed (also as a property), a deleted object in a view, a restricted user.
 - `tests/contract/test_selection.py`: every filter on the fake and on Paperless 3.5.1 gives what a search gives; `tests/adapter/test_selection.py`: the request.
-- `tests/tools/test_read_documents.py`: the filters equal those of `search_documents`; `tests/e2e/test_read_documents.py`: 1,000 and 1,001 documents, a document that stops matching, a restricted user, on Paperless 3.5.1.
+- `tests/tools/test_read_documents.py`: the filters equal those of `search_documents`; `tests/e2e/test_read_documents.py`: 1,000 and 1,001 documents, the time of 1,000 matches by title, text and similarity (under 30 of the 60 s), a document that stops matching, a restricted user, on Paperless 3.5.1.

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:32Z'
-updated_date: '2026-11-24T14:06:51Z'
+updated_date: '2026-11-24T14:22:36Z'
 labels:
   - bulk
 dependencies:
@@ -55,4 +55,8 @@ Deviations from the design: (1) read_documents also takes ids together with filt
 Probes for 80a, as contract and E2E tests (no scaffolding): P1 fields (tests/contract/test_selection.py, one test per field) and 1,000/1,001 rows live (tests/e2e/test_read_documents.py, bare database rows made with manage.py shell); P9 notes in the rows of a user without view_note; P10 ids with other filters, a deleted tag in a view. P2 to P5, P7, P8 and the writing part of P6 belong to 80b to 80d.
 
 Evidence: domain, adapter, contract (fake), service and tool tests red before the code (missing module or method, then failing assertions), then green. 100 % of the new modules covered by the targeted run. Mutation by hand: 34 mutants of selection.py, read_documents.py and the adapter; 5 survived, tests added for the page boundary, the lookups and the size; left are the comma in the size (covered by the reserve for left) and room < 0 against <= 0 (exact fit). basedpyright, ruff, hygiene, import contracts green. The first E2E and live contract run is the hosted one.
+
+Review of f802555 (0 Critical, 3 Important, 9 Minor), all fixed, tests red first: I1 the domain test sets all 21 filters, contract cases go through parts() and each leaves out a seeded document; the 13 mutants of the review are killed. I2 one failing text is named in failed and the others go on; 429, a rejected credential and no connection end the texts. I3 a document that was not asked for refuses the call, one named twice counts once. M1 stated: 429 is told after the client's own retries (three tries, decision-70), proven for the three reads. M2 the notes check fails closed. M3 tags can be left out of an oversized row. M4 true and false are no ids, dates are YYYY-MM-DD, in the strict filters and the id arguments of read_documents only; search_documents hands over values FastMCP has already parsed, so it is unchanged. M5 view 0. M6 decision-69 and Selected.excluded_unknown. M7 'both named and excluded'. M8 fake refuses AND/OR without a condition. M9 text. Also: notices at most 5,000 characters (a hostile query made the answer 209,434 characters), also_matching on page 1 only, one ViewService.
+
+Live on f802555 (CI run 45410532339, part 4/4): the six tests of tests/e2e/test_read_documents.py pass on 3.5.1, with 1,000 and 1,001 documents (16 s for the whole test), a deleted tag in a view (P10) and the restricted user. New: time of 1,000 matches by title, text and more-like.
 <!-- SECTION:NOTES:END -->

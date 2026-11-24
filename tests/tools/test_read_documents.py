@@ -139,22 +139,32 @@ async def test_the_answer_of_a_call_is_at_most_a_hundred_thousand_characters() -
     assert set(left) | set(ids(result.structured_content)) == set(range(10, 110))
 
 
+REFUSED: list[tuple[Json, str]] = [
+    ({}, "No document is chosen"),
+    ({"document_ids": []}, "at least 1 item"),
+    ({"document_ids": list(range(1, 102))}, "at most 100 items"),
+    ({"filters": {"inbox": True}, "exclude_ids": list(range(101))}, "at most 100 items"),
+    ({"filters": {"tag": "x"}}, "Extra inputs are not permitted"),
+    ({"filters": {}}, "holds no filter"),
+    ({"filters": {"inbox": True}, "saved_view": "e2e-view"}, "cannot be combined"),
+    ({"document_ids": [1], "content_chars": 0}, "greater than or equal to 1"),
+    ({"document_ids": [1], "content_chars": 20_001}, "less than or equal to 20000"),
+    ({"document_ids": [1], "fields": ["text"]}, "Input should be"),
+    ({"document_ids": [True]}, "true and false are no ids"),
+    ({"filters": {"inbox": True}, "exclude_ids": [True]}, "true and false are no ids"),
+    ({"saved_view": True}, "true and false are no ids"),
+    ({"filters": {"correspondent": True}}, "true and false are no ids"),
+    ({"filters": {"created_from": 0}}, "YYYY-MM-DD"),
+    ({"filters": {"custom_field_query": ["AND", []]}}, "nonempty"),
+    ({"document_ids": [1], "filters": {"inbox": True}, "exclude_ids": [1]}, "excluded: 1"),
+    ({"document_ids": [1], "page": 0}, "greater than or equal to 1"),
+    ({"document_ids": [1], "page": 2}, "beyond the last page"),
+]
+
+
 @pytest.mark.parametrize(
     ("arguments", "part"),
-    [
-        ({}, "No document is chosen"),
-        ({"document_ids": []}, "at least 1 item"),
-        ({"document_ids": list(range(1, 102))}, "at most 100 items"),
-        ({"filters": {"inbox": True}, "exclude_ids": list(range(101))}, "at most 100 items"),
-        ({"filters": {"tag": "x"}}, "Extra inputs are not permitted"),
-        ({"filters": {}}, "holds no filter"),
-        ({"filters": {"inbox": True}, "saved_view": "e2e-view"}, "cannot be combined"),
-        ({"document_ids": [1], "content_chars": 0}, "greater than or equal to 1"),
-        ({"document_ids": [1], "content_chars": 20_001}, "less than or equal to 20000"),
-        ({"document_ids": [1], "fields": ["text"]}, "Input should be"),
-        ({"document_ids": [1], "page": 0}, "greater than or equal to 1"),
-        ({"document_ids": [1], "page": 2}, "beyond the last page"),
-    ],
+    REFUSED,
 )
 async def test_a_call_that_means_nothing_or_too_much_is_refused(arguments: Json, part: str) -> None:
     assert part in await refusal(fake(), **arguments)
@@ -185,6 +195,7 @@ async def test_the_description_says_that_text_is_data() -> None:
 
     assert " ".join((tool.description or "").split()).endswith(DOCUMENT_TEXT)
     assert len((tool.description or "").encode()) <= 2048
+    assert "at most 100 per call" in (tool.description or "")
 
 
 async def test_the_filters_are_those_of_search_documents() -> None:

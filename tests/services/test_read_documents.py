@@ -13,10 +13,13 @@ from hypothesis import strategies as st
 from mcp_server_paperless.domain.documents import Note
 from mcp_server_paperless.domain.errors import (
     AnswerTooLarge,
+    AuthenticationFailed,
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
+    UpstreamTimeout,
     UpstreamUnavailable,
+    UpstreamUnreachable,
 )
 from mcp_server_paperless.domain.selection import MAX_ANSWER, MAX_TEXT, Selection
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
@@ -99,7 +102,7 @@ class Setup:
         views = ViewService(self.fake, self.fake, taxonomy, documents)
         self.service: ReadDocuments = ReadDocuments(
             self.fake,
-            DocumentSelector(self.fake, documents, views),
+            DocumentSelector(self.fake, documents, views, taxonomy),
             taxonomy,
             web_url=WEB,
             clock=lambda: self.fake.now,
@@ -166,6 +169,7 @@ async def test_the_default_fields_come_with_names_and_a_link() -> None:
         "also_matching": (),
         "truncated": False,
         "left": (),
+        "failed": (),
         "notices": (),
     }
     assert setup.fake.rows == [([1], list(DEFAULT_FIELDS), SELECT_BYTES)]
@@ -279,11 +283,20 @@ async def test_a_document_that_vanishes_between_both_reads_is_missing() -> None:
 
 
 async def test_notices_and_what_matches_too_are_passed_on() -> None:
-    found = await Setup().read(
-        ("title",), document_ids=(PUBLIC,), filters={"query": "2026 and e2e"}
-    )
+    setup = Setup()
+    setup.add(5, title="e2e extra")
+    found = await setup.read(("title",), document_ids=(PUBLIC,), filters={"query": "2026 and e2e"})
 
     assert found.also_matching == (PRIVATE,)
+    later = await setup.read(
+        ("title",),
+        document_ids=(PUBLIC, 5),
+        filters={"title_contains": "e2e"},
+        page=2,
+        page_size=1,
+    )
+    # Like selected_ids: on the first page only.
+    assert (ids(later), later.also_matching, later.selected_ids) == ([5], (), ())
     assert len(found.notices) == 1
 
 
@@ -362,18 +375,68 @@ async def test_no_text_is_started_after_forty_seconds() -> None:
     assert (await setup.read(("content",), document_ids=(10, 11, 12))).left == ()
 
 
-async def test_a_429_ends_the_texts_and_names_the_rest() -> None:
+@pytest.mark.parametrize(
+    "error",
+    [
+        UpstreamUnavailable("Paperless is busy.", status=429),
+        AuthenticationFailed("Paperless rejected the token."),
+        UpstreamUnreachable("Paperless could not be reached."),
+    ],
+)
+async def test_what_concerns_every_request_ends_the_texts_and_names_the_rest(
+    error: PaperlessMcpError,
+) -> None:
     setup = Setup()
     for number in (10, 11, 12):
         setup.add(number, content="x")
-    setup.fake.errors[11] = UpstreamUnavailable("Paperless is busy.", status=429)
+    setup.fake.errors[11] = error
 
     found = await setup.read(("content",), document_ids=(10, 11, 12))
 
     assert setup.fake.texts == [10, 11]
     assert found.documents[0].content == "x"
-    assert found.left == (11, 12)
-    assert found.notices == ("Reading text stopped: Paperless is busy.",)
+    assert (found.left, found.failed) == ((11, 12), ())
+    assert found.notices == (f"Reading text stopped: {error.message}",)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        UpstreamUnavailable("Paperless answered 500.", status=500),
+        UpstreamTimeout("Paperless did not respond in time."),
+        PermissionDenied("The Paperless user may not perform this action."),
+        PaperlessMcpError("Paperless sent an unexpected response."),
+    ],
+)
+async def test_a_lasting_error_of_one_text_is_named_and_the_others_go_on(
+    error: PaperlessMcpError,
+) -> None:
+    setup = Setup()
+    for number in (10, 11, 12, 13):
+        setup.add(number, content="x")
+    setup.fake.errors |= {10: error, 12: error}
+
+    found = await setup.read(("content",), document_ids=(10, 11, 12, 13))
+
+    assert setup.fake.texts == [10, 11, 12, 13]
+    assert [row.content for row in found.documents] == [None, "x", None, "x"]
+    # Not among what to ask for again: that would fail for ever.
+    assert (found.left, found.failed) == ((), (10, 12))
+    assert found.notices == (f"The text of documents 10 and 12 could not be read: {error.message}",)
+
+
+async def test_different_errors_are_told_apart() -> None:
+    setup = Setup()
+    for number in (10, 11):
+        setup.add(number, content="x")
+    setup.fake.errors |= {10: PaperlessMcpError("One."), 11: PaperlessMcpError("Two.")}
+
+    found = await setup.read(("content",), document_ids=(10, 11))
+
+    assert found.notices == (
+        "The text of document 10 could not be read: One.",
+        "The text of document 11 could not be read: Two.",
+    )
 
 
 async def test_a_text_that_is_gone_meanwhile_does_not_stop_the_others() -> None:
@@ -503,11 +566,39 @@ async def test_every_document_is_shown_or_named_and_the_limits_hold(
         assert (row.content is None) == (row.id in found.left)
 
 
-async def test_a_row_too_large_for_any_answer_is_named_instead() -> None:
+async def test_a_row_too_large_by_its_tags_is_shown_without_them() -> None:
     setup = Setup()
     setup.add(10, tags=list(range(100, 6000)), notes=[note("n")])
     setup.add(11)
 
-    found = await setup.read(("tags", "notes"), document_ids=(10, 11))
+    found = await setup.read(("title", "tags", "notes"), document_ids=(10, 11))
 
-    assert (found.documents, found.left, found.truncated) == ((), (10, 11), True)
+    first, second = found.documents
+    assert (first.tags, first.too_large) == (None, ("tags",))
+    assert [n.note for n in first.notes or ()] == ["n"]
+    assert (second.id, second.too_large) == (11, None)
+    assert (found.left, found.truncated) == ((), False)
+
+
+async def test_endless_notices_do_not_fill_the_answer() -> None:
+    query = " ".join(f"a{number}:x" for number in range(20_000))
+
+    found = await Setup().read((), filters={"query": query})
+
+    assert size(found) <= MAX_ANSWER
+    assert sum(map(len, found.notices)) <= 5000
+    assert found.notices[-1].endswith("…")
+
+
+async def test_notes_nobody_could_check_are_refused() -> None:
+    setup = Setup(READER[0])
+    setup.fake.vanished = {PUBLIC}
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await setup.read(("notes",), document_ids=(PUBLIC,))
+
+    assert raised.value.message == (
+        "It could not be checked whether the user may view notes: the documents are gone."
+    )
+    assert raised.value.hint == "Choose the documents again, or leave notes out of fields."
+    assert setup.fake.rows == []

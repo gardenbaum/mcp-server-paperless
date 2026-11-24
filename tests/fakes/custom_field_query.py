@@ -116,6 +116,9 @@ def compile_query(expression: JsonValue, fields: Sequence[CustomField]) -> Match
         raise _reject(INVALID)
     head = expression[0]
     if head in {"AND", "OR"} and len(expression) == 2:
+        if not isinstance(expression[1], list) or not expression[1]:
+            detail = "1: Invalid expression list. Must be nonempty."
+            raise _reject(detail)
         parts = [compile_query(part, fields) for part in cast("list[JsonValue]", expression[1])]
         combine = all if head == "AND" else any
         return lambda values: combine(part(values) for part in parts)
