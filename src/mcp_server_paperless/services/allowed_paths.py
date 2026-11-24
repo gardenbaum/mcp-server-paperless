@@ -48,6 +48,19 @@ def clean_filename(name: str) -> str:
     return last
 
 
+def upload_name(found: str) -> str:
+    """The name a file is uploaded under.
+
+    Raises:
+        Validation: It is no usable name, or holds bytes that are no text.
+    """
+    try:
+        return clean_filename(found)
+    except UnicodeEncodeError:
+        message = "The file name is not valid text."
+        raise Validation(message, hint="Rename the file to a plain name.") from None
+
+
 def unseen(name: str) -> bool:
     """Whether a name holds characters that are not shown: controls, format characters and breaks.
 
