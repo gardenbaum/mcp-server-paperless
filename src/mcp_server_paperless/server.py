@@ -64,6 +64,7 @@ from mcp_server_paperless.services.mail import MailService
 from mcp_server_paperless.services.notes import NoteService
 from mcp_server_paperless.services.pages import PageService
 from mcp_server_paperless.services.pdf import PdfService
+from mcp_server_paperless.services.pdf_parts import Parts
 from mcp_server_paperless.services.pdf_replacing import Replacing
 from mcp_server_paperless.services.permissions import PermissionService
 from mcp_server_paperless.services.raw import RawApiService
@@ -468,6 +469,16 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 path_hint=path_hint,
             )
             removal = DocumentRemoval(adapters.documents, adapters.document_writes, taxonomy)
+            edits = DocumentEditor(
+                adapters.documents,
+                adapters.document_writes,
+                adapters.taxonomy_writes,
+                taxonomy,
+                documents=documents,
+            )
+            replacing = Replacing(
+                adapters.documents, adapters.document_writes, removal, clock=clock
+            )
             services = Services(
                 instance=InstanceService(adapters.instance),
                 taxonomy=taxonomy,
@@ -482,13 +493,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     sink=sink,
                 ),
                 pages=PageService(adapters.documents, renderer or ChildRenderer(), web_url=web_url),
-                edits=DocumentEditor(
-                    adapters.documents,
-                    adapters.document_writes,
-                    adapters.taxonomy_writes,
-                    taxonomy,
-                    documents=documents,
-                ),
+                edits=edits,
                 notes=NoteService(adapters.documents, adapters.document_writes, web_url=web_url),
                 removal=removal,
                 tasks=tasks,
@@ -498,8 +503,17 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.documents,
                     adapters.pdf_writes,
                     tasks,
-                    Replacing(adapters.documents, adapters.document_writes, removal, clock=clock),
+                    replacing,
                     taxonomy,
+                    parts=Parts(
+                        adapters.documents,
+                        adapters.pdf_writes,
+                        edits,
+                        taxonomy,
+                        replacing,
+                        web_url=web_url,
+                        sleep=sleep,
+                    ),
                     web_url=web_url,
                 ),
                 sharing=SharingService(

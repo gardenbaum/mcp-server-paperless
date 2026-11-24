@@ -118,6 +118,17 @@ def version_plan(
     )
 
 
+def shortening(plan: PdfPlan, source: str) -> PdfPlan:
+    """``plan``, followed by a new version of ``source`` without the pages of the new document."""
+    version = version_plan("a new version of the document", source)
+    return PdfPlan(
+        produces=f"{plan.produces}, then {version.produces} without these pages",
+        keeps=(*(line for line in plan.keeps if line != f"{source}: unchanged"), *version.keeps),
+        loses=(*plan.loses, *version.loses),
+        needs_confirm=True,
+    )
+
+
 def outputs(count: int, output: Output) -> str:
     """What is made: new documents, or a version."""
     if output == "new_version":

@@ -119,6 +119,7 @@ CALLS: Final[dict[str, Json]] = {
     "rotate_documents": {"document_ids": [1], "degrees": 90, "use_original_files": True},
     "merge_documents": {"document_ids": [10, 11], "delete_originals": True},
     "split_document": {"document_id": 10, "parts": ["1", "2"], "output": "replace_original"},
+    "extract_pages": {"document_id": 10, "pages": "1", "remove": True},
     "delete_pages": {"document_id": 10, "pages": "2"},
     "edit_pdf": {"document_id": 10, "pages": [{"page": 1}], "output": "replace_original"},
     "remove_document_password": {

@@ -251,15 +251,21 @@ read again, and the answer says of every entry what became of it.
 ### `pdf`
 
 Off by default: `inspect_pdf`, `rotate_documents`, `merge_documents`, `split_document`,
-`delete_pages`, `edit_pdf`, `remove_document_password`, `reprocess_documents`. `inspect_pdf` only
-reads, so read-only mode keeps it: page count, sizes, rotation and contact sheets of a PDF (limits
+`extract_pages`, `delete_pages`, `edit_pdf`, `remove_document_password`, `reprocess_documents`.
+`inspect_pdf` only reads, so read-only mode keeps it: page count, sizes, rotation and contact sheets of a PDF (limits
 under [Page images](#page-images)). The others run Paperless's server-side PDF operations;
 each returns the background tasks Paperless starts (`wait_seconds` waits for them)
 and page ranges are checked against the page count of the file that is read first. `dry_run`
 returns the plan (what is made, kept and lost) and starts nothing. Deleting originals, dropping
 pages from what a document shows, showing an older file again and reprocessing need `confirm`.
 Originals move to the Paperless trash last, by this server, once everything that was made is
-checked; until then they stay and the result names the next calls.
+checked; until then they stay and the result names the next calls. The same goes for the pages
+`extract_pages` removes, and `split_document` gives each part its own title, type, correspondent,
+date and tags. Where Paperless lists no task because a date custom field is copied, the new
+documents are found by their file names, with a wait only and only if nothing else can be taken for
+them. That needs the permissions `view_uisettings`, `view_paperlesstask` and `view_customfield` (to
+see which custom fields are dates), and no other editing, merging, splitting or unlocking of this
+user in the last hour that is not known to have made something else.
 `reprocess_documents` does the same as the `reprocess` operation of `bulk_edit_documents` but
 returns its tasks.
 

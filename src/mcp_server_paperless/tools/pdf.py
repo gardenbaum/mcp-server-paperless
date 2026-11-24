@@ -17,7 +17,7 @@ from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from mcp_server_paperless.domain.documents import FileVersion
-from mcp_server_paperless.domain.pdf import Output, PageSlot, PdfResult
+from mcp_server_paperless.domain.pdf import Output, PageSlot, PartMetadata, PdfResult
 from mcp_server_paperless.services.page_ranges import specification
 from mcp_server_paperless.services.pages import MAX_SPECIFICATION
 from mcp_server_paperless.services.pdf import MAX_DOCUMENTS, MAX_PAGES, MAX_PARTS, Options
@@ -53,8 +53,8 @@ type ReplacingWait = Annotated[
         description=(
             "Seconds to wait for the tasks Paperless starts; more than "
             f"{MAX_WAIT_SECONDS} is cut to {MAX_WAIT_SECONDS}. Left out: {MAX_WAIT_SECONDS} where "
-            "originals are to be trashed, else 0. With 0 the task ids are returned at once and "
-            "no original is trashed."
+            "originals are to be trashed, pages removed or metadata set afterwards, else 0. With 0 "
+            "the task ids are returned at once and none of that is done."
         ),
     ),
 ]
@@ -289,6 +289,17 @@ async def split_document(  # noqa: PLR0913 -- the document and the options of th
             )
         ),
     ] = "new_document",
+    part_metadata: Annotated[
+        list[PartMetadata] | None,
+        Field(
+            min_length=2,
+            max_length=MAX_PARTS,
+            description=(
+                "One entry per part, in their order, of what the part gets instead of the copied "
+                "metadata. A field left out keeps what is copied; {} changes nothing."
+            ),
+        ),
+    ] = None,
     version_id: VersionId = None,
     keep_metadata: KeepMetadata = True,
     dry_run: DryRun = False,
@@ -297,12 +308,14 @@ async def split_document(  # noqa: PLR0913 -- the document and the options of th
 ) -> PdfResult:
     """Split a PDF into one new document per page range.
 
-    The new documents take the title and metadata of the original. The original stays unless
+    The new documents take the title and metadata of the original; part_metadata sets title, type,
+    correspondent, date and tags of each part once it exists and was checked. parts says of every
+    part how far it is, and in next the calls that finish it. The original stays unless
     output is replace_original: it then moves to the Paperless trash (restore_from_trash of the
     trash toolset, or the web UI, restores it), which needs confirm. Without it a dialog, or an
     error for you to show the user, first names the document and what would happen (see
-    confirm). The original is trashed last, by this server, once every part was checked;
-    otherwise it stays and next names the calls that finish the work: look there before
+    confirm). The original is trashed last, by this server, once every part was checked and has its
+    metadata; otherwise it stays and next names the calls that finish the work: look there before
     repeating the call. Several files cannot be one version of a document. Page ranges are
     checked against the page count of the file that is read. Needs the permission to change and
     to add documents and ownership of the document (or no owner; a change grant is not enough),
@@ -312,6 +325,69 @@ async def split_document(  # noqa: PLR0913 -- the document and the options of th
         document_id,
         parts,
         output=output,
+        part_metadata=part_metadata,
+        options=Options(
+            version_id=version_id,
+            keep_metadata=keep_metadata,
+            confirm=confirm,
+            dry_run=dry_run,
+            wait_seconds=wait_seconds,
+        ),
+    )
+
+
+@provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["extract_pages"])
+@boundary
+async def extract_pages(  # noqa: PLR0913 -- the document and the options of the extraction
+    ctx: Context,
+    document_id: DocumentId,
+    pages: Annotated[
+        str,
+        Field(
+            description=(
+                "The pages of the new document in order, counted from 1: pages and ranges "
+                "separated by commas, e.g. '2' or '5,1-3'."
+            )
+        ),
+    ],
+    *,
+    remove: Annotated[
+        bool,
+        Field(
+            description=(
+                "true also removes the pages from the document, once the new one was checked. "
+                "Needs confirm."
+            )
+        ),
+    ] = False,
+    metadata: Annotated[
+        PartMetadata | None,
+        Field(description="What the new document gets instead of the copied metadata."),
+    ] = None,
+    version_id: VersionId = None,
+    keep_metadata: KeepMetadata = True,
+    dry_run: DryRun = False,
+    confirm: Confirm = False,
+    wait_seconds: ReplacingWait = None,
+) -> PdfResult:
+    """Put pages of a PDF into one new document, and with remove take them out of the document.
+
+    The new document takes the title and metadata of the document, or what metadata says. Without
+    remove the document stays as it is and no confirm is needed. With remove it then shows a new
+    version without the pages, so pages vanish from what it shows (the earlier version with all
+    pages stays until it is deleted): this needs confirm. Without it a dialog, or an error for you
+    to show the user, first says what would happen (see confirm). The pages are removed last, once
+    the new document exists, has these pages and its metadata and nothing changed meanwhile;
+    otherwise they stay (original, message) and next names the calls that finish the work: look
+    there before repeating the call. Not every page, and only from the newest version. Needs the
+    permission to change and to add documents and ownership of the document (or no owner; a change
+    grant is not enough).
+    """
+    return await services(ctx).pdf.extract(
+        document_id,
+        pages,
+        remove=remove,
+        metadata=metadata,
         options=Options(
             version_id=version_id,
             keep_metadata=keep_metadata,

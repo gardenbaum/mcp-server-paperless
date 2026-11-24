@@ -174,6 +174,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "rotate_documents": "pdf",
     "merge_documents": "pdf",
     "split_document": "pdf",
+    "extract_pages": "pdf",
     "delete_pages": "pdf",
     "edit_pdf": "pdf",
     "remove_document_password": "pdf",
@@ -410,6 +411,14 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
     ),
     "split_document": ToolAnnotations(
         title="Split document",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+    # Destructive (decision-6) with remove: pages vanish from what the document shows.
+    "extract_pages": ToolAnnotations(
+        title="Extract pages",
         read_only_hint=False,
         destructive_hint=True,
         idempotent_hint=False,

@@ -11,14 +11,20 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     UpstreamTimeout,
 )
-from mcp_server_paperless.domain.pdf import StartedTasks
+from mcp_server_paperless.domain.pdf import FoundCopies, StartedTasks
 from mcp_server_paperless.services.pdf import Options
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from mcp_server_paperless.domain.documents import DocumentPatch, DocumentRecord
-    from mcp_server_paperless.domain.pdf import LookupProblem, PdfResult
+    from mcp_server_paperless.domain.pdf import (
+        CopiedFiles,
+        FileOutput,
+        LookupProblem,
+        PageSlot,
+        PdfResult,
+    )
     from mcp_server_paperless.domain.tasks import TaskState, TaskStatus
     from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
 
@@ -61,15 +67,96 @@ class Paperless(FakePaperless):
         self.started: list[str] = []
         self.problem: LookupProblem | None = None
         self.no_fields: bool = False
+        self.break_fields: bool = False
+        self.clock_error: Exception | None = None
         self.swap: bool = False
         self.hide_tasks: bool = False
+        self.update_error: BaseException | None = None
+        self.extra_tags: tuple[int, ...] = ()
+        self.few_pages: bool = False
+        self.foreign_version: bool = False
+        self.renames: set[int] = set()  # what a workflow renames when it is patched
+        self.edits: list[tuple[list[int], FileOutput]] = []
+        self.refuse_edit: dict[FileOutput, Exception] = {}
+        self.lose_version: bool = False
+        self.breaks: set[int] = set()  # what update_error is raised for
+        self.delete_error: Exception | None = None
+        self.copies_error: Exception | None = None
+        self.task_error: Exception | None = None
+        self.searches: list[bool] = []
+        self.copies_after: float = 0.0  # when what a date hides is there
+        self.copies_first: int = 0  # how many of them are there at once
+        self.copies_doubt: str | None = None
+        self.copies_fail: bool = False
+        self.doubt_at_the_end: bool = False
+        self.undate: bool = False
+        self.forget_included: bool = False
+        self.ticked: Callable[[], None] = lambda: None
         self.now: float = 0.0
 
     def clock(self) -> float:
+        if self.clock_error is not None:
+            raise self.clock_error
         return self.now
 
     async def sleep(self, delay: float) -> None:
         self.now += delay
+        self.ticked()
+
+    @override
+    async def find_copies(self, files: CopiedFiles, *, final: bool = False) -> FoundCopies:
+        self.searches.append(final)
+        if self.copies_error is not None:
+            raise self.copies_error
+        if self.copies_fail:
+            message = "Paperless did not respond in time."
+            raise UpstreamTimeout(message)
+        found = await super().find_copies(files, final=final)
+        if self.copies_doubt is not None and (final or not self.doubt_at_the_end):
+            return FoundCopies(
+                ids=(None,) * len(found.ids),
+                doubt=self.copies_doubt,
+                passing=self.copies_doubt == EARLIER,
+            )
+        if self.now >= self.copies_after:
+            return found
+        there = found.ids[: self.copies_first]
+        return FoundCopies(ids=there + (None,) * (len(found.ids) - len(there)))
+
+    @override
+    def _copying(self, names: Sequence[str], included: tuple[int, ...] | None) -> CopiedFiles:
+        return super()._copying(names, None if self.forget_included else included)
+
+    def add_version(self, number: int, pages: int) -> int:
+        """A newer version of the document, as somebody else would add it."""
+        found = document(self, number)
+        return self._new_version(found, self._file_of(found, None), pages=pages, marker=b"\n%new")
+
+    @override
+    async def edit_pdf(
+        self,
+        document_id: int,
+        pages: Sequence[PageSlot],
+        *,
+        output: FileOutput,
+        version_id: int | None = None,
+        keep_metadata: bool = True,
+    ) -> StartedTasks:
+        if output in self.refuse_edit:
+            raise self.refuse_edit[output]
+        self.edits.append(([slot.page for slot in pages], output))
+        started = await super().edit_pdf(
+            document_id,
+            pages[:1] if output == "new_version" and self.few_pages else pages,
+            output=output,
+            version_id=version_id,
+            keep_metadata=keep_metadata,
+        )
+        if output == "new_version" and self.foreign_version:
+            _ = self.add_version(document_id, 9)
+        if output == "new_version" and self.lose_version:
+            return started.model_copy(update={"ids": (), "sources": ()})
+        return started
 
     @override
     def _seen_tasks(
@@ -102,6 +189,8 @@ class Paperless(FakePaperless):
 
     @override
     async def get_task(self, task_id: str) -> TaskStatus:
+        if self.task_error is not None:
+            raise self.task_error
         status = await super().get_task(task_id)
         place = self.started.index(task_id)
         if place in self.states:
@@ -116,6 +205,8 @@ class Paperless(FakePaperless):
 
     @override
     async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
+        if self.break_fields:
+            raise RuntimeError
         if self.no_fields:
             message = "The Paperless user may not perform this action."
             raise PermissionDenied(message)
@@ -127,10 +218,12 @@ class Paperless(FakePaperless):
             message = "Paperless did not respond in time."
             raise UpstreamTimeout(message)
         record = await super().get_document(document_id)
-        if self.started and document_id > OTHER:
+        if document_id > OTHER:
             place = document_id - OTHER - 1
             if place in self.wrong_pages:
                 return record.model_copy(update={"page_count": self.wrong_pages[place]})
+            if self.undate:
+                return record.model_copy(update={"custom_fields": ()})
         return record
 
     @override
@@ -138,12 +231,18 @@ class Paperless(FakePaperless):
         if self.refuse(document_id, patch.archive_serial_number):
             message = "Paperless did not respond in time."
             raise UpstreamTimeout(message)
+        if self.update_error is not None and document_id in self.breaks:
+            raise self.update_error
         self.patches.append((document_id, patch.archive_serial_number))
-        return await super().update_document(document_id, patch)
+        record = await super().update_document(document_id, patch)
+        record = record.model_copy(update={"tags": (*record.tags, *self.extra_tags)})
+        return record.model_copy(update={"title": "Renamed"} if document_id in self.renames else {})
 
     @override
     async def delete_document(self, document_id: int) -> None:
         self.before_delete(document_id)
+        if self.delete_error is not None:
+            raise self.delete_error
         if document_id in self.time_out:
             message = "Paperless did not respond in time."
             raise UpstreamTimeout(message)
@@ -1129,6 +1228,7 @@ async def test_a_refusal_comes_before_anything_is_started() -> None:
     assert fake.started == []
 
 
+EARLIER = "files of earlier operations of this user may still come"
 DATED = (
     "its custom fields hold a date, for which Paperless 3.5 lists no task: the work is done all "
     "the same"
@@ -1141,12 +1241,61 @@ def dated(fake: Paperless, number: int) -> None:
     document(fake, number).custom_fields = {field: "2026-01-15"}
 
 
-async def test_a_document_with_a_date_field_keeps_the_original_and_says_why() -> None:
+BY_NAME = (
+    "Paperless lists no task for it, because a custom field holds a date: {} of {} documents were "
+    "found by their file names."
+)
+
+
+@pytest.mark.decision("decision-67")
+async def test_documents_whose_tasks_a_date_hides_are_found_by_name_and_replace_the_original() -> (
+    None
+):
+    parts, shorter, merging, locked = (paperless() for _ in range(4))
+    for fake in (parts, shorter, merging, locked):
+        dated(fake, DOC)
+    document(locked, DOC).password, document(locked, DOC).page_count = "s3cret", None
+    unlocking = pdf_service(locked, sleep=locked.sleep, clock=locked.clock)
+
+    results = [
+        await split(parts),
+        await shorten(shorter),
+        await merge(merging, DOC),
+        await unlocking.remove_password(DOC, "s3cret", output="replace_original", options=YES),
+    ]
+
+    assert [r.state for r in results] == ["success"] * 4
+    assert [r.trashed_ids for r in results] == [(DOC,), (DOC,), (DOC, OTHER), (DOC,)]
+    assert [len(r.produced_ids) for r in results] == [2, 1, 1, 1]
+    for result in results:
+        assert result.message is not None
+        made = len(result.produced_ids)
+        assert result.message.startswith(f"{BY_NAME.format(made, made)} Now in the trash")
+        assert {task.task_id for task in result.tasks} == {None}
+        assert result.wait == "finished"
+
+
+@pytest.mark.decision("decision-67")
+async def test_a_found_document_counts_the_pages_and_carries_the_number() -> None:
+    fake, wrong = paperless(NUMBER), paperless(NUMBER)
+    dated(fake, DOC)
+    dated(wrong, DOC)
+    wrong.wrong_pages = {0: 9}
+
+    moved, kept = await shorten(fake), await shorten(wrong)
+
+    assert document(fake, moved.produced_ids[0]).archive_serial_number == NUMBER
+    assert (kept.trashed_ids, kept.next) == ((), None)
+    assert "document 52 has 9 pages instead of 3" in (kept.message or "")
+
+
+@pytest.mark.decision("decision-67")
+async def test_without_a_wait_nothing_is_looked_for() -> None:
     fake = paperless()
     dated(fake, DOC)
     service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
 
-    replaced = await shorten(fake)
+    replaced = await shorten(fake, Options(confirm=True, wait_seconds=0))
     rotated = await service.rotate([DOC, OTHER], 90)
     merged = await service.merge([DOC, OTHER], DOC)
     version = await service.delete_pages(DOC, "1", options=YES)
@@ -1162,13 +1311,170 @@ async def test_a_document_with_a_date_field_keeps_the_original_and_says_why() ->
     assert version.state == "success"
 
 
+@pytest.mark.decision("decision-67")
+async def test_a_document_that_is_not_there_yet_is_waited_for() -> None:
+    late, never, half = paperless(), paperless(), paperless()
+    for fake in (late, never, half):
+        dated(fake, DOC)
+    late.copies_after = 4.0
+    never.copies_after = half.copies_after = 99.0
+    half.copies_first = 1
+
+    found, missing, partly = await split(late), await split(never), await split(half)
+
+    assert (found.trashed_ids, found.waited_seconds) == ((DOC,), 4.0)
+    assert (missing.trashed_ids, missing.tasks, missing.next) == ((), (), FIND)
+    assert missing.message is not None
+    assert missing.message.startswith(f"{NO_TASK} ({DATED}). Nothing")
+    assert (partly.state, partly.wait, partly.waited_seconds) == ("unknown", "timed_out", 30.0)
+    assert (partly.trashed_ids, partly.next) == ((), FIND)
+    assert partly.produced_ids == (52,)
+    assert BY_NAME.format(1, 2) in (partly.message or "")
+    assert partly.parts[1].message == "there is no document with the file name 50_edit_2.pdf yet"
+    assert partly.parts[1].next is not None
+    assert partly.parts[1].next.startswith("find the new document of pages 2-4 of document 50")
+
+
+@pytest.mark.decision("decision-67")
+async def test_no_call_waits_longer_than_30_seconds_for_a_document() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    fake.copies_after = 99.0
+
+    _ = await split(fake, Options(confirm=True, wait_seconds=300))
+
+    assert fake.now == 30.0
+
+
+@pytest.mark.decision("decision-67")
+async def test_documents_in_doubt_are_not_taken_and_nothing_is_trashed_for_them() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    fake.copies_doubt = "another operation of this user ran at the same time"
+
+    result = await split(fake)
+
+    assert (result.state, result.produced_ids, result.trashed_ids) == ("unknown", (), ())
+    assert (trash(fake), result.next, fake.now) == ([], FIND, 0.0)
+    assert result.message is not None
+    assert (
+        f"The new documents could not be told by their file names either ({fake.copies_doubt}): "
+        "nothing is done to them."
+    ) in result.message
+    assert [p.document_id for p in result.parts] == [None, None]
+
+
+@pytest.mark.decision("decision-67")
+async def test_a_document_without_the_date_or_unreadable_is_in_doubt() -> None:
+    other, unread = paperless(), paperless()
+    dated(other, DOC)
+    dated(unread, DOC)
+    other.undate = True
+    unread.unreadable = lambda number: number == 53
+
+    first, second = await split(other), await split(unread)
+
+    assert (first.trashed_ids, second.trashed_ids) == ((), ())
+    assert "document 52 does not hold the date of the custom field that is copied" in (
+        first.message or ""
+    )
+    assert "document 53 could not be read" in (second.message or "")
+
+
+@pytest.mark.decision("decision-67")
+async def test_files_of_earlier_operations_are_waited_for() -> None:
+    gone, stays = paperless(), paperless()
+    for fake in (gone, stays):
+        dated(fake, DOC)
+        fake.copies_doubt = EARLIER
+
+    def settled() -> None:
+        gone.copies_doubt = None
+
+    gone.ticked = settled
+
+    first, second = await split(gone), await split(stays)
+
+    assert (first.trashed_ids, gone.now) == ((DOC,), 2.0)
+    assert (second.trashed_ids, stays.now, second.next) == ((), 30.0, FIND)
+    assert EARLIER in (second.message or "")
+    assert stays.searches == [False] * 15 + [True]
+
+
+@pytest.mark.decision("decision-67")
+async def test_a_locked_file_with_a_page_count_is_looked_for_up_to_the_bound() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    document(fake, DOC).password, document(fake, DOC).page_count = "s3cret", 4
+    fake.copies_after = 6.0
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+
+    result = await service.remove_password(DOC, "s3cret", output="replace_original", options=YES)
+
+    assert (fake.now, result.trashed_ids) == (6.0, (DOC,))
+
+
+@pytest.mark.decision("decision-67")
+async def test_an_error_while_a_number_moves_leaves_the_original_unknown() -> None:
+    fake = paperless(NUMBER)
+    fake.update_error, fake.breaks = RuntimeError("secret"), {52}
+
+    result = await shorten(fake)
+
+    assert (result.state, result.original, result.trashed_ids) == ("unknown", "unknown", ())
+    assert document(fake, DOC).archive_serial_number is None
+    assert "It is not known where archive serial number 777 is" in (result.message or "")
+    assert "secret" not in str(result)
+
+
+@pytest.mark.decision("decision-67")
+async def test_a_search_that_fails_leaves_everything_as_it_is() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    fake.copies_fail = True
+
+    result = await split(fake)
+
+    assert (result.state, result.trashed_ids, result.next) == ("unknown", (), FIND)
+
+
+@pytest.mark.decision("decision-67")
+async def test_a_second_request_for_the_same_document_replaces_nothing() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+
+    _ = await service.split(DOC, ["1", "2-4"])
+    result = await split(fake)
+
+    assert (result.trashed_ids, trash(fake), result.next) == ((), [], FIND)
+    assert "files of earlier operations of this user may still come" in (result.message or "")
+
+
+@pytest.mark.decision("decision-67")
+async def test_an_image_in_a_long_merge_is_not_known_to_be_in_it() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    document(fake, OTHER).mime_type, document(fake, OTHER).page_count = "image/png", None
+    fake.forget_included = True
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+
+    result = await service.merge(
+        [DOC, OTHER], DOC, delete_originals=True, archive_fallback=True, confirm=True
+    )
+
+    assert result.trashed_ids == ()
+    assert "it cannot be told whether every document is in the merged one" in (result.message or "")
+
+
 async def test_unlocking_a_document_with_a_date_field_names_both_causes() -> None:
     fake = paperless()
     document(fake, DOC).password, document(fake, DOC).page_count = "s3cret", None
     dated(fake, DOC)
     service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+    none = Options(confirm=True, wait_seconds=0)
 
-    unlocked = await service.remove_password(DOC, "s3cret", output="replace_original", options=YES)
+    unlocked = await service.remove_password(DOC, "s3cret", output="replace_original", options=none)
     bare = await service.remove_password(
         DOC, "s3cret", options=Options(keep_metadata=False, wait_seconds=5)
     )
@@ -1195,7 +1501,7 @@ async def test_other_custom_fields_and_empty_dates_are_no_reason() -> None:
     assert "custom fields" not in (result.message or "")
 
 
-async def test_an_unreadable_field_list_is_no_reason() -> None:
+async def test_an_unreadable_field_list_leaves_a_date_possible() -> None:
     fake = paperless()
     dated(fake, DOC)
     fake.no_fields = True
@@ -1203,4 +1509,111 @@ async def test_an_unreadable_field_list_is_no_reason() -> None:
     result = await shorten(fake)
 
     assert result.message is not None
-    assert result.message.startswith(f"{NO_TASK}. Nothing")
+    maybe = DATED.replace("hold a date", "may hold a date (their definitions cannot be read)")
+    assert result.message.startswith(f"{NO_TASK} ({maybe}). Nothing")
+
+
+STOPPED = (
+    "The call was stopped after Paperless accepted the request (unexpected error). Look before "
+    "repeating the call."
+)
+
+
+@pytest.mark.decision("decision-67")
+@pytest.mark.parametrize("trashes", [False, True])
+async def test_an_unexpected_error_after_a_merge_started_is_not_raised(
+    *, trashes: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake = paperless()
+    fake.unreadable = broken
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+
+    result = await service.merge(
+        [DOC, OTHER], None, delete_originals=trashes, confirm=trashes, wait_seconds=5
+    )
+
+    assert (result.operation, result.state, result.trashed_ids) == ("merge", "unknown", ())
+    assert (result.message or "").endswith(STOPPED)
+    assert result.next == f'get_task(task_id="{fake.started[0]}", wait_seconds=30)'
+    assert (trash(fake), result.original) == ([], None)
+    assert "RuntimeError" in caplog.text
+    assert "secret" not in caplog.text + str(result)
+
+
+def broken(number: int) -> bool:
+    """Reads of new documents fail unexpectedly."""
+    if number > OTHER:
+        message = "secret"
+        raise RuntimeError(message)
+    return False
+
+
+@pytest.mark.decision("decision-67")
+async def test_an_unexpected_error_while_merged_originals_go_says_that_they_may_be_gone() -> None:
+    fake = paperless(NUMBER)
+
+    def second(number: int) -> None:
+        if number == OTHER:
+            raise RuntimeError
+
+    fake.before_delete = second
+
+    result = await merge(fake)
+
+    assert (result.state, trash(fake)) == ("unknown", [DOC])
+    assert result.trashed_ids == (DOC,)
+    assert "Now in the trash: document 50." in (result.message or "")
+    assert "It is not known whether document 51 went to the trash." in (result.message or "")
+    assert result.next == "get_document(document_id=50), then get_document(document_id=51)"
+    assert "It is not known where archive serial number 777 is" in (result.message or "")
+
+
+@pytest.mark.decision("decision-67")
+async def test_an_unexpected_error_after_rotating_started_is_not_raised() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    fake.break_fields = True
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+
+    some = await service.rotate([DOC, OTHER], 90)
+    none = await service.rotate([DOC], 90)
+    version = await service.remove_password(DOC, "x", output="new_version")
+
+    assert [r.state for r in (some, none)] == ["unknown", "unknown"]
+    assert (some.message, none.message) == (STOPPED, STOPPED)
+    assert some.next == f'get_task(task_id="{fake.started[0]}", wait_seconds=30)'
+    assert none.next == f'get_document(document_id={DOC}, include=["versions"])'
+    assert version.message != STOPPED  # copies nothing, so it does not read the definitions
+
+
+@pytest.mark.decision("decision-67")
+async def test_a_message_of_paperless_is_told_when_a_call_is_stopped() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+
+    def stop() -> None:
+        fake.clock_error = UpstreamTimeout("Paperless did not respond in time.")
+
+    fake.after_start = stop
+
+    result = await split(fake)
+
+    assert (result.state, result.original) == ("unknown", "kept")
+    assert result.message == STOPPED.replace(
+        "unexpected error", "Paperless did not respond in time"
+    )
+
+
+@pytest.mark.decision("decision-67")
+async def test_files_that_were_seen_early_are_not_taken_if_the_last_look_doubts_them() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    fake.copies_after, fake.copies_first = 99.0, 1
+    fake.copies_doubt, fake.doubt_at_the_end = EARLIER, True
+
+    result = await split(fake)
+
+    assert (result.produced_ids, result.trashed_ids, fake.patches) == ((), (), [])
+    assert [p.document_id for p in result.parts] == [None, None]
+    assert fake.searches[-1] is True
+    assert True not in fake.searches[:-1]

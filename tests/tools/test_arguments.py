@@ -1121,6 +1121,33 @@ async def test_the_pdf_tools_take_every_option() -> None:
         prepare=with_pages,
     )
     await sweep(
+        "split_document",
+        {
+            "document_id": 1,
+            "parts": ["1-2", "3-4"],
+            "part_metadata": [
+                {"title": "Annex", "document_type": 1, "correspondent": 1},
+                {"created": "2026-01-02", "tags": [1]},
+            ],
+            "wait_seconds": 1,
+            "dry_run": False,
+        },
+        (),
+        prepare=with_pages,
+    )
+    await sweep(
+        "extract_pages",
+        {**one, "pages": "1", "remove": True, "keep_metadata": True},
+        ("remove", "keep_metadata"),
+        prepare=with_pages,
+    )
+    await sweep(
+        "extract_pages",
+        {"document_id": 1, "pages": "1", "metadata": {"title": "One"}, "wait_seconds": 1},
+        (),
+        prepare=with_pages,
+    )
+    await sweep(
         "edit_pdf",
         {**one, "pages": [{"page": 1, "rotate": 90}, {"page": 2}]},
         ("output", "keep_metadata"),

@@ -20,6 +20,7 @@ TOOLS = (
     "rotate_documents",
     "merge_documents",
     "split_document",
+    "extract_pages",
     "delete_pages",
     "edit_pdf",
     "remove_document_password",
@@ -106,7 +107,16 @@ async def test_the_input_schemas_bound_the_selections() -> None:
     one = {"document_id", "output", "version_id", "keep_metadata", "dry_run", "confirm"}
     one |= {"wait_seconds"}
     split = properties("split_document")
-    assert set(split) == one | {"parts"}
+    assert set(split) == one | {"parts", "part_metadata"}
+    [entries, _] = cast("list[Json]", split["part_metadata"]["anyOf"])
+    assert (entries["minItems"], entries["maxItems"]) == (2, MAX_PARTS)
+    metadata = cast("Json", entries["items"])["properties"]
+    assert set(cast("Json", metadata)) == {
+        *("title", "document_type", "correspondent", "created", "tags")
+    }
+    extract = properties("extract_pages")
+    assert set(extract) == (one - {"output"}) | {"pages", "remove", "metadata"}
+    assert (extract["remove"]["default"], extract["keep_metadata"]["default"]) == (False, True)
     assert (split["parts"]["minItems"], split["parts"]["maxItems"]) == (2, MAX_PARTS)
     assert split["output"]["enum"] == ["new_document", "replace_original"]
     pages = properties("delete_pages")
@@ -193,6 +203,75 @@ async def test_splitting_makes_a_document_per_part() -> None:
     )
 
 
+async def test_a_split_gives_each_part_its_metadata() -> None:
+    source = fake()
+
+    result = await call(
+        source,
+        "split_document",
+        document_id=FIRST,
+        parts=["1-2", "3-4"],
+        part_metadata=[
+            {"title": "Letter", "tags": ["e2e-finance"], "created": "2026-01-02"},
+            {"document_type": "e2e-invoice", "correspondent": 1},
+        ],
+    )
+
+    parts = cast("list[Json]", result["parts"])
+    assert [p["metadata"] for p in parts] == ["set", "set"]
+    made = {d.id: d for d in source.state.documents}
+    letter, invoice = (made[cast("int", p["document_id"])] for p in parts)
+    assert (letter.title, letter.tags, letter.created.isoformat()) == ("Letter", [1], "2026-01-02")
+    assert (invoice.title, invoice.document_type, invoice.correspondent) == ("Scan one", 1, 1)
+    assert (result["original"], result["wait"]) == ("kept", "finished")
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("split_document", {"parts": ["1", "2"], "part_metadata": [{"tile": "x"}, {}]}),
+        ("split_document", {"parts": ["1", "2"], "part_metadata": [{"title": "x"}]}),
+        ("extract_pages", {"pages": "1", "metadata": {"tile": "x"}}),
+    ],
+)
+async def test_metadata_the_tool_does_not_know_is_refused(tool: str, arguments: Json) -> None:
+    source = fake(writes=False)
+
+    assert await refusal(source, tool, document_id=FIRST, **arguments)
+
+
+async def test_extracting_with_removal_needs_confirm_and_then_shortens_the_document() -> None:
+    arguments: Json = {"document_id": FIRST, "pages": "2", "remove": True}
+    text = await refusal(fake(writes=False), "extract_pages", **arguments)
+    assert "extract page 2 of document 10 'Scan one' into a new document and remove them" in text
+
+    source = fake()
+    result = await call(
+        source, "extract_pages", **arguments, metadata={"title": "Page two"}, confirm=True
+    )
+
+    assert (result["state"], result["original"]) == ("success", "shortened")
+    made = {d.id: d for d in source.state.documents}
+    [part] = cast("list[Json]", result["parts"])
+    new = made[cast("int", part["document_id"])]
+    assert (new.title, new.page_count, made[FIRST].page_count) == ("Page two", 1, 3)
+
+
+async def test_extracting_alone_needs_no_confirm_and_the_options_reach_paperless() -> None:
+    source = fake()
+    made = {d.id: d for d in source.state.documents}
+    made[FIRST].tags = [1]
+
+    result = await call(
+        source, "extract_pages", document_id=FIRST, pages="3,1", keep_metadata=False,
+        version_id=FIRST, wait_seconds=5,
+    )  # fmt: skip
+
+    [new] = cast("list[int]", result["produced_ids"])
+    assert [1 in d.tags for d in source.state.documents if d.id == new] == [False]
+    assert made[FIRST].page_count == 4
+
+
 async def test_replacing_the_original_by_a_split_needs_confirm() -> None:
     text = await refusal(
         fake(writes=False),
@@ -274,12 +353,15 @@ PREVIEWS: dict[str, Json] = {
     "rotate_documents": {"document_ids": [FIRST], "degrees": 90, "dry_run": True},
     "merge_documents": {"document_ids": [FIRST, SECOND], "delete_originals": True, "dry_run": True},
     "split_document": {**ONE, "parts": ["1", "2"], "output": "replace_original"},
+    "extract_pages": {**ONE, "pages": "1", "remove": True, "metadata": {"title": "One"}},
     "delete_pages": {**ONE, "pages": "1"},
     "edit_pdf": {**ONE, "pages": [{"page": 1}], "version_id": FIRST, "keep_metadata": False},
     "remove_document_password": {**ONE, "document_id": LOCKED, "password": "s3cret"},
     "reprocess_documents": {"document_ids": [FIRST], "dry_run": True},
 }
-CONFIRMED = {"merge_documents", "split_document", "delete_pages", "reprocess_documents"}
+CONFIRMED = {
+    *("merge_documents", "split_document", "extract_pages", "delete_pages", "reprocess_documents")
+}
 
 
 @pytest.mark.parametrize("tool", TOOLS)
@@ -329,7 +411,26 @@ async def test_the_next_calls_of_an_unfinished_replacement_are_accepted_by_their
         cleared = await client.call_tool(
             "update_document", {"document_id": SECOND, "clear": ["archive_serial_number"]}
         )
-    assert not any(a.is_error for a in (answer, numbered, cleared))
+        looked = await client.call_tool(
+            "get_document", {"document_id": SECOND, "include": ["versions"]}
+        )
+        named = await client.call_tool(
+            "update_document",
+            {
+                "document_id": SECOND,
+                "title": "Annex",
+                "created": "2026-01-02",
+                "correspondent": 1,
+                "document_type": 1,
+                "tags_set": [],
+            },
+        )
+    async with Client(serve(source, toolsets=["pdf"])) as client:
+        removed = await client.call_tool(
+            "delete_pages",
+            {"document_id": SECOND, "pages": "1", "output": "new_version", "confirm": True},
+        )
+    assert not any(a.is_error for a in (answer, numbered, cleared, looked, named, removed))
 
 
 async def test_the_options_reach_paperless() -> None:

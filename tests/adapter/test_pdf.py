@@ -1384,3 +1384,49 @@ async def test_two_merges_that_could_be_the_same_are_a_doubt(make_client: Client
 
     assert (tasks.ids, tasks.included) == ((task_id(13),), (8, 9))
     assert tasks.doubt == "2 files of these names were handed over instead of 1"
+
+
+class Broken:
+    """A seam that fails unexpectedly, once it was called often enough."""
+
+    def __init__(self, calls: int) -> None:
+        self.left: int = calls
+
+    def _count(self) -> None:
+        self.left -= 1
+        if self.left < 0:
+            message = "secret"
+            raise RuntimeError(message)
+
+    def clock(self) -> float:
+        self._count()
+        return 0.0
+
+    async def sleep(self, _: float) -> None:
+        self._count()
+
+
+async def test_a_lookup_that_breaks_after_the_request_is_reported_not_raised(
+    make_client: ClientFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = Paperless(OLD, [*OLD, row(12, "consume_file", "8_edit_1.pdf")])
+    broken = Broken(0)
+    pdf = PaperlessPdfWriter(make_client(server), sleep=broken.sleep)
+
+    tasks = await pdf.edit_pdf(8, PAGES, output="new_document")
+
+    assert (tasks.ids, tasks.problem, len(server.posts)) == ((task_id(12),), "failed", 1)
+    assert "RuntimeError" in caplog.text
+    assert "secret" not in caplog.text
+
+
+async def test_a_wait_for_the_queued_task_that_breaks_is_reported_not_raised(
+    make_client: ClientFactory,
+) -> None:
+    server = Paperless(OLD, OLD)
+    pdf = PaperlessPdfWriter(make_client(server), clock=Broken(0).clock)
+
+    tasks = await pdf.rotate_documents((7,), 90)
+
+    assert (tasks.ids, tasks.problem, len(server.posts)) == ((DONE_TASK,), "unconfirmed", 1)
+    assert tasks.detail == "its task could not be followed"

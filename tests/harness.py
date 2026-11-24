@@ -20,7 +20,10 @@ from observation import recorded
 
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.server import CATALOGUE, Catalogue, Ports, create_server
+from mcp_server_paperless.services.document_edits import DocumentEditor
+from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.pdf import PdfService
+from mcp_server_paperless.services.pdf_parts import Parts
 from mcp_server_paperless.services.pdf_replacing import Replacing
 from mcp_server_paperless.services.removal import DocumentRemoval
 from mcp_server_paperless.services.tasks import TaskService
@@ -112,14 +115,19 @@ def pdf_service(
     clock: Callable[[], float] = time.monotonic,
 ) -> PdfService:
     """`PdfService` on the fake, with everything it is built from."""
+    web = "https://paperless.example"
     taxonomy = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
+    documents = DocumentService(fake, fake, taxonomy, web_url=web)
+    editor = DocumentEditor(fake, fake, fake, taxonomy, documents=documents)
+    replacing = Replacing(fake, fake, DocumentRemoval(fake, fake, taxonomy), clock=clock)
     return PdfService(
         fake,
         fake,
         TaskService(fake, sleep=sleep, clock=clock),
-        Replacing(fake, fake, DocumentRemoval(fake, fake, taxonomy), clock=clock),
+        replacing,
         taxonomy,
-        web_url="https://paperless.example",
+        parts=Parts(fake, fake, editor, taxonomy, replacing, web_url=web, sleep=sleep),
+        web_url=web,
     )
 
 

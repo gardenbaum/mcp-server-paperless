@@ -88,7 +88,7 @@ def merged_fields(
     ]
 
 
-def _check(edit: DocumentEdit) -> None:
+def check_edit(edit: DocumentEdit) -> None:
     """Reject empty and contradictory edits before anything is read."""
     if edit.tags_set is not None and (edit.tags_add or edit.tags_remove):
         message = "tags_set replaces all tags and cannot be combined with tags_add or tags_remove."
@@ -221,7 +221,7 @@ class DocumentEditor:
             Ambiguous: A name matches more than one object.
             PermissionDenied: The user may not change the document or create tags.
         """
-        _check(edit)
+        check_edit(edit)
         current = await self._reader.get_document(document_id)
         if current.user_can_change is False:
             message = "The Paperless user may not change this document."
