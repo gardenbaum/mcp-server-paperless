@@ -4,6 +4,7 @@ title: Say when a thumbnail belongs to a document in the trash
 status: To Do
 assignee: []
 created_date: '2026-11-23T20:43:13Z'
+updated_date: '2026-11-24T07:06:13Z'
 labels:
   - tools
 dependencies: []
@@ -15,7 +16,7 @@ ordinal: 78000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Paperless 3.5.1 serves the thumbnail of a trashed document (views.py thumb resolves with include_deleted=True, read in the source, not probed live), while every other read answers not found. get_document_thumbnail and the thumbnail resource then show a deleted document without saying so. Permissions still apply. Found while designing PLMCP-78.
+Paperless 3.5.1 serves the thumbnail of a trashed document (views.py thumb resolves with include_deleted=True, read in the source, not probed live); by the source also its preview and its file download. Every other read answers not found. get_document_thumbnail, the thumbnail resource and possibly the downloads, parts, page images and the raw toolset then show a deleted document without saying so. Permissions still apply. Found while designing PLMCP-78.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

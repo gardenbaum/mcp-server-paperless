@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:47Z'
-updated_date: '2026-11-23T23:51:55Z'
+updated_date: '2026-11-24T07:06:12Z'
 labels: []
 dependencies: []
 priority: high
@@ -27,14 +27,14 @@ download_document attaches files up to 512 KiB by default; larger ones are only 
 - [ ] #4 A second decision keeps or changes the default attach limits, from measured client limits
 - [x] #5 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
 - [x] #6 Security tests cover symlinks, traversal, hard links, dot files, races and full disks; docs, the plugin settings and the 'never written to disk' tool texts match
-- [ ] #7 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover every file kind, parts, overwrite with and without confirm and both transports
+- [x] #7 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover every file kind, parts, overwrite with and without confirm and both transports
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -71,4 +71,6 @@ Independent review (2026-11-24, 99b905c), all verified by a failing test first. 
 Follow-up to the review: reading by path is no stricter than needed. A dot name counts as one behind format characters, control and line-break characters are refused, and other format characters (the joiner in an emoji) are read as before; this replaces the consequence named under I2. Saving stays strict. The ZIP that bulk_download attaches whole has the same check of its start and end (its port does not hand over the Content-Type).
 
 Correction of the follow-up note: 'read as before' is about reading. A file whose own name holds a format character is read by path, but uploaded only with a filename of its own, as before this task (clean_filename refuses such upload names); a directory with one needs nothing. Delta review of 6c732f7: N1 (a retry, another process and the directory sync come before the report of a temporary name that stays), N3 (leading dots and spaces of a proposed name are removed together), N4 (configuration.md names a call that is cancelled or fails while the file gets its name).
+
+Merged as 7fde945 (#112) and 5ee3ecf (#115); hosted full E2E 45289948019 and main's green. Open: criterion 4 (real clients, decision-46 proposed).
 <!-- SECTION:NOTES:END -->

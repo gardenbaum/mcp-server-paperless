@@ -1,10 +1,10 @@
 ---
 id: PLMCP-74
 title: Show the pages of a document as readable images
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-23T12:14:45Z'
-updated_date: '2026-11-23T21:44:14Z'
+updated_date: '2026-11-24T07:06:05Z'
 labels: []
 dependencies: []
 priority: high
@@ -35,8 +35,8 @@ get_document_thumbnail shows only a small image of page 1, and download_document
 <!-- DOD:BEGIN -->
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -76,6 +76,8 @@ Delta review of a40d25b: resized() scales in tiles of the image in both directio
 
 CI of fd09240 (PR): Windows job green (373 passed, 38 skipped), PR e2e parts and e2e-office green. check failed on one control: on Ubuntu Yama (ptrace_scope 1) refuses /proc/<ppid>/mem also without protection. The control now follows ptrace_scope; environ stays strict, and both are refused after protection. Run for real with scope 0 (Linux container); scopes 1 and 2 only as injected values, the hosted check proves scope 1.
 Corrections of earlier notes: images are scaled in tiles, not bands; live weights measured on macOS are test_pages 42 s and test_pages_files 218 s (not 47 and 160). Peaks on Linux arm64 at 99.0 to 99.8 megapixels are in decision-42; highest within the file limit: turned RGB TIFF 986 MB, progressive CMYK JPEG 975 MB, of 1074 MB. The wide and tall memory cases run four children at a time (146 s to 106 s on macOS).
+
+Merged as 4a05d7c (#110). Final results: CI, Windows job, PR E2E and hosted full E2E on main green; image smokes on amd64 and arm64 runners green. Correction: the turned RGB TIFF with 986 MB came from a file of 131 MiB, above the 100 MiB file limit; the highest peak within the limit is progressive CMYK JPEG, 975 MB of 1074 MB. decision-42 lists the 986 MB beside the RGBA case without saying so.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
