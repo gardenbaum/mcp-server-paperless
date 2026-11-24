@@ -74,21 +74,45 @@ class Archive:
 
     def _found(self, params: dict[str, str]) -> list[Json]:
         start = params.get("original_filename__istartswith", "").lower()
+        end = params.get("original_filename__iendswith", "").lower()
         since = datetime.fromisoformat(params["added__gte"])
         return [
             d
             for d in self.documents
             if str(d["original_file_name"]).lower().startswith(start)
+            and str(d["original_file_name"]).lower().endswith(end)
             and datetime.fromisoformat(str(d["added"])) >= since
             and str(d["owner"]) == params["owner__id"]
         ]
 
 
 async def find(
-    make_client: ClientFactory, archive: Archive, files: CopiedFiles = PARTS
+    make_client: ClientFactory, archive: Archive, files: CopiedFiles = PARTS, *, final: bool = False
 ) -> FoundCopies:
     client = make_client(archive, retry=RetryPolicy(attempts=1))
-    return await PaperlessPdfWriter(client).find_copies(files)
+    return await PaperlessPdfWriter(client).find_copies(files, final=final)
+
+
+async def test_earlier_operations_are_looked_into_once_every_file_is_there_or_at_the_end(
+    make_client: ClientFactory,
+) -> None:
+    archive = Archive(made(61, NAMES[0]))
+    archive.bulk = [QUEUED, other()]
+
+    early = await find(make_client, archive)
+    late = await find(make_client, archive, final=True)
+
+    assert (early, len(archive.queries)) == (FoundCopies(ids=(61, None)), 3)
+    assert late == FoundCopies(ids=(None, None), doubt=PENDING, passing=True)
+
+
+async def test_a_listed_task_ends_the_wait_early(make_client: ClientFactory) -> None:
+    archive = Archive()
+    archive.tasks = [{**row(20, "consume_file", NAMES[0]), "date_created": LATER}]
+
+    found = await find(make_client, archive)
+
+    assert (found.doubt, found.passing) == (TASKED, False)
 
 
 async def test_the_files_of_a_request_are_found_by_name_owner_and_time(
@@ -198,6 +222,13 @@ async def test_an_earlier_operation_that_made_other_files_is_no_doubt(
     archive.bulk = [QUEUED, other()]
 
     assert await find(make_client, archive) == FoundCopies(ids=(61, 62), doubt=None)
+    assert archive.queries[-1] == {
+        "owner__id": "2",
+        "added__gte": ago(minutes=2),
+        "original_filename__iendswith": ".pdf",
+        "fields": "id,original_file_name,added",
+        "page_size": "100",
+    }
 
     archive.bulk.append(other(id=3, task_id=task_id(3)))  # one file proves one operation only
     assert (await find(make_client, archive)).doubt == PENDING

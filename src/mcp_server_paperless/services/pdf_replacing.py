@@ -61,6 +61,7 @@ UNKNOWN_PLACE: Final = (
     "It is not known where archive serial number {number} is: look at documents {original} and "
     "{product}."
 )
+UNEXPECTED: Final = "unexpected error"
 FIND: Final = "find the new documents with search_documents (newest added first) and check them"
 # Answers that say that nothing was deleted; any other error leaves that open.
 REFUSALS: Final = (AuthenticationFailed, Conflict, PermissionDenied, Validation)
@@ -98,11 +99,25 @@ class Replacement:
     kept: str = KEPT
 
 
+@dataclass(slots=True)
+class Progress:
+    """How far a call is that Paperless accepted, for when something unexpected stops it.
+
+    Attributes:
+        result: What is known so far.
+        last: Whether the step that changes the original may have begun.
+    """
+
+    result: PdfResult
+    last: bool = False
+
+
 class KeptError(Exception):
     """Why the last step is not taken, and what to call to go on."""
 
-    def __init__(self, reason: str, next_call: str | None = None) -> None:
-        """Create it from a clause for the message."""
+    def __init__(self, reason: str, next_call: str | None = None, *, unread: bool = False) -> None:
+        """Create it from a clause for the message; ``unread``: a document could not be read."""
+        self.unread: bool = unread
         super().__init__(reason)
         self.reason: str = reason
         self.next_call: str | None = next_call
@@ -211,9 +226,9 @@ def outputs(result: PdfResult, started: StartedTasks) -> tuple[int, ...]:
     return started.outputs or tuple(range(len(result.tasks)))
 
 
-def cause(error: PaperlessMcpError) -> str:
-    """The message of an error as a clause."""
-    return error.message.rstrip(".")
+def cause(error: Exception) -> str:
+    """The message of an error as a clause; nothing of one that is not expected."""
+    return error.message.rstrip(".") if isinstance(error, PaperlessMcpError) else UNEXPECTED
 
 
 def _check_tasks(result: PdfResult, started: StartedTasks, wanted: Replacement) -> None:
@@ -263,9 +278,18 @@ class Replacing:
         self.clock: Callable[[], float] = clock
 
     async def finish(
-        self, result: PdfResult, started: StartedTasks, wanted: Replacement, *, began: float
+        self,
+        result: PdfResult,
+        started: StartedTasks,
+        wanted: Replacement,
+        *,
+        began: float,
+        progress: Progress | None = None,
     ) -> PdfResult:
-        """``result`` after the last step: originals trashed, or why not and how to go on."""
+        """``result`` after the last step: originals trashed, or why not and how to go on.
+
+        ``progress`` is told when the last step begins.
+        """
         single = len(wanted.originals) == 1
         try:
             product = await self.checked(result, started, wanted, began=began)
@@ -273,6 +297,8 @@ class Replacing:
                 await self.unchanged(original, original.archive_serial_number)
         except KeptError as kept:
             return stays(result, wanted, kept.reason, kept.next_call)
+        if progress is not None:
+            progress.last = True
         # Not to be cut short between taking a serial number from one document and giving it on.
         done = await asyncio.shield(asyncio.ensure_future(self._trash(wanted, product, began)))
         result = noted(result, done.notes, next_call=done.next)
@@ -323,7 +349,7 @@ class Replacing:
             document = await self._reader.get_document(number)
         except PaperlessMcpError as error:
             reason = f"document {number} could not be read ({cause(error)})"
-            raise KeptError(reason, f"get_document(document_id={number})") from None
+            raise KeptError(reason, f"get_document(document_id={number})", unread=True) from None
         count = document.page_count
         if count is None or pages not in {None, count}:
             has = "an unknown number of" if count is None else str(count)
@@ -357,7 +383,7 @@ class Replacing:
             now = await self._reader.get_document(original.id)
         except PaperlessMcpError as error:
             reason = f"document {original.id} could not be read again ({cause(error)})"
-            raise KeptError(reason) from None
+            raise KeptError(reason, unread=True) from None
         if (now.newest_file, now.archive_serial_number) != (original.newest_file, number):
             reason = f"document {original.id} was changed meanwhile; look at it again"
             raise KeptError(reason)

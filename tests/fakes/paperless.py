@@ -25,7 +25,7 @@ import re
 import sys
 import uuid
 from dataclasses import dataclass, field, replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Concatenate, Literal, cast
 
@@ -176,6 +176,7 @@ from mcp_server_paperless.paperless.pdf import (
     NO_TIMES,
     NO_USER,
     PENDING,
+    TASKED,
     edit_failed,
     not_editable,
     wrong_password,
@@ -542,6 +543,7 @@ class FakeTask:
     finished: datetime | None = None
     message: str | None = None
     document_ids: tuple[int, ...] = ()
+    file_name: str = ""
     duplicate_of: int | None = None
     trigger_source: str = "api_upload"
     acknowledged: bool = False
@@ -2050,7 +2052,7 @@ class FakePaperless:
         return CopiedFiles(request=made.request, names=tuple(names), included=included)
 
     @write  # a read, but of the writer port: there is nothing to find before a write
-    async def find_copies(self, files: CopiedFiles) -> FoundCopies:
+    async def find_copies(self, files: CopiedFiles, *, final: bool = False) -> FoundCopies:
         """`PdfWriter.find_copies`: the user's documents of these names since the request.
 
         The fake works at once, so of the earlier operations only one for the same files can be
@@ -2075,8 +2077,17 @@ class FakePaperless:
         mine = [c for c in copying.values() if c.owner == own.owner and c is not own]
         if any(c.started >= own.started for c in mine):
             return FoundCopies(ids=nothing, doubt=AT_ONCE)
-        if any(c.family == own.family for c in mine):
-            return FoundCopies(ids=nothing, doubt=PENDING)
+        if any(
+            t.task_type == "consume_file"
+            and t.created >= own.started
+            and t.file_name.startswith(own.family)
+            for t in self.state.tasks
+        ):
+            return FoundCopies(ids=nothing, doubt=TASKED)
+        hour = own.started - timedelta(hours=1)
+        whole = final or len(found) == len(files.names)
+        if whole and any(c.family == own.family and c.started >= hour for c in mine):
+            return FoundCopies(ids=nothing, doubt=PENDING, passing=True)
         return FoundCopies(ids=tuple(found.get(name) for name in files.names))
 
     def _new_document(

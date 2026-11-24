@@ -96,12 +96,14 @@ class FoundCopies(BaseModel):
     Attributes:
         ids: The document of each name, None where there is none yet, or where they are in doubt.
         doubt: Why it cannot be told that they are the request's own: then nothing is done to them.
+        passing: Whether the doubt may go away when other files are done.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     ids: tuple[int | None, ...]
     doubt: str | None = None
+    passing: bool = False
 
 
 class StartedTasks(BaseModel):

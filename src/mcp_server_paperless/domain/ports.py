@@ -949,14 +949,16 @@ class PdfWriter(Protocol):
         """
         ...
 
-    async def find_copies(self, files: CopiedFiles) -> FoundCopies:
+    async def find_copies(self, files: CopiedFiles, *, final: bool = False) -> FoundCopies:
         """The documents that have the file names of a request, as far as they exist now.
 
         For requests whose tasks Paperless does not list (a date among the custom fields that are
         copied). They are the current user's, added since the queued task of the request started,
         and one of each name. A doubt is whatever lets them be another request's: a file too many,
         a listed task for one of the names, another copying operation of the user at the same time
-        or later, or an earlier one of the last hour whose files may still come.
+        or later, or an earlier one of the last hour whose files may still come. The last is looked
+        into once every file is there; ``final`` asks for it anyway, so that those that are there
+        can be used.
 
         Raises:
             PermissionDenied: The user may not view tasks or documents.

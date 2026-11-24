@@ -263,7 +263,8 @@ checked; until then they stay and the result names the next calls. The same goes
 `extract_pages` removes, and `split_document` gives each part its own title, type, correspondent,
 date and tags. Where Paperless lists no task because a date custom field is copied, the new
 documents are found by their file names, with a wait only and only if nothing else can be taken for
-them. That needs `view_uisettings`, and no other editing, merging, splitting or unlocking of this
+them. That needs the permissions `view_uisettings`, `view_paperlesstask` and `view_customfield` (to
+see which custom fields are dates), and no other editing, merging, splitting or unlocking of this
 user in the last hour that is not known to have made something else.
 `reprocess_documents` does the same as the `reprocess` operation of `bulk_edit_documents` but
 returns its tasks.

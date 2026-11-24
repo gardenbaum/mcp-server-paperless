@@ -4,6 +4,8 @@ Each rule mirrors Paperless 3.4.2 (documents/views.py and documents/permissions.
 the adapter tests check the adapter's side of the same cases on recorded responses.
 """
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from e2e.helpers import SEEDED_OBJECTS
 
@@ -12,6 +14,7 @@ from fakes.paperless import (
     FakePaperless,
     FakeState,
     FakeTag,
+    FakeTask,
     FakeUser,
     WriteNotAllowedError,
     seeded,
@@ -24,6 +27,7 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
 )
+from mcp_server_paperless.domain.pdf import PageSlot
 from mcp_server_paperless.paperless.taxonomy import TAG_DELETE_HINT
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
@@ -392,3 +396,38 @@ async def test_the_text_of_the_root_takes_no_nul_and_no_lone_surrogate(wrong: st
         _ = await fake.set_document_text(1, 1, wrong)
 
     assert state.documents[0].content == before
+
+
+@pytest.mark.decision("decision-67")
+async def test_the_search_by_name_doubts_listed_tasks_and_earlier_requests_of_the_last_hour() -> (
+    None
+):
+    state = seeded()
+    [field] = [f.id for f in state.custom_fields if f.data_type == "date"]
+    state.documents.append(
+        FakeDocument(id=50, title="Dated", owner=2, custom_fields={field: "2026-01-15"})
+    )
+    fake = FakePaperless(state, user="admin", allow_writes=True)
+    page = (PageSlot(page=1),)
+    first = await fake.edit_pdf(50, page, output="new_document")
+    second = await fake.edit_pdf(50, page, output="new_document")
+    assert first.files is not None
+    assert second.files is not None
+
+    pending = await fake.find_copies(second.files)
+    state.copying[0].started -= timedelta(hours=2)
+    found = await fake.find_copies(second.files)
+    state.tasks.append(
+        FakeTask(id=99, task_id="x", created=datetime.now(UTC), file_name="50_edit_1.pdf")
+    )
+    tasked = await fake.find_copies(second.files)
+
+    assert (pending.doubt, pending.passing) == (
+        "files of earlier operations of this user may still come",
+        True,
+    )
+    assert found.doubt is None
+    assert (tasked.doubt, tasked.ids) == (
+        "a task of its own makes a file of one of these names",
+        (None,),
+    )

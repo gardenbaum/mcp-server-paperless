@@ -656,7 +656,7 @@ async def test_a_second_request_for_the_same_document_leaves_both_in_doubt(
 
     assert first.files is not None
     assert second.files is not None
-    later = await user.pdf_writes.find_copies(second.files)
+    later = await user.pdf_writes.find_copies(second.files, final=True)
     earlier = await user.pdf_writes.find_copies(first.files)
     assert (later.doubt, later.ids) == (
         "files of earlier operations of this user may still come",

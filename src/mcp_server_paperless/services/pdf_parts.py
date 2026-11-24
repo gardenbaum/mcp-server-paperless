@@ -20,8 +20,9 @@ from mcp_server_paperless.domain.errors import PaperlessMcpError, Validation, qu
 from mcp_server_paperless.domain.pdf import PartOutcome, PdfTask
 from mcp_server_paperless.services.document_edits import check_edit
 from mcp_server_paperless.services.documents import document_link
-from mcp_server_paperless.services.page_ranges import describe
+from mcp_server_paperless.services.page_ranges import describe, specification
 from mcp_server_paperless.services.pdf_replacing import RUNNING, KeptError, cause, outputs
+from mcp_server_paperless.services.tag_hierarchy import close_over_ancestors
 from mcp_server_paperless.services.tasks import POLL_SECONDS
 
 if TYPE_CHECKING:
@@ -80,6 +81,13 @@ def part_lines(parts: Sequence[Part], *, single: bool) -> tuple[str, ...]:
     )
 
 
+def _label(pages: Sequence[int]) -> str:
+    """The pages in words, and their order where it is not the natural one."""
+    if list(pages) == sorted(pages):
+        return describe(pages)
+    return f"pages {specification(pages)} (in this order)"
+
+
 def unset_reason(outcomes: Sequence[PartOutcome], *, single: bool) -> str | None:
     """What metadata is not set, if any."""
     missing = [str(outcome.part) for outcome in outcomes if outcome.metadata == "not_set"]
@@ -102,15 +110,19 @@ def _update_call(edit: DocumentEdit, target: int | str) -> str:
     return f"update_document({', '.join([f'document_id={target}', *values])})"
 
 
-def _holds(update: DocumentUpdate, edit: DocumentEdit) -> bool:
-    """Whether the answer to an update has what was asked for (and maybe parent tags)."""
+def _holds(update: DocumentUpdate, edit: DocumentEdit, parents: Mapping[int, int | None]) -> bool:
+    """Whether the answer to an update has what was asked for, and the parents of its tags."""
     kind, writer = update.document_type, update.correspondent
     return (
         edit.title in {None, update.title}
         and edit.created in {None, update.created}
         and edit.document_type in {None, kind and kind.id}
         and edit.correspondent in {None, writer and writer.id}
-        and set(edit.tags_set or ()) <= {tag.id for tag in update.tags}
+        and (
+            edit.tags_set is None
+            or {*close_over_ancestors(map(int, edit.tags_set), parents)}
+            == {tag.id for tag in update.tags}
+        )
     )
 
 
@@ -148,7 +160,7 @@ class Parts:
             Ambiguous: A name matches more than one object.
         """
         if metadata is None:
-            return tuple(Part(describe(numbers)) for numbers in pages)
+            return tuple(Part(_label(numbers)) for numbers in pages)
         if len(metadata) != len(pages):
             message = f"There are {len(pages)} parts, but metadata for {len(metadata)}."
             raise Validation(
@@ -156,7 +168,7 @@ class Parts:
             )
         return tuple(
             [
-                await self._part(describe(numbers), wanted)
+                await self._part(_label(numbers), wanted)
                 for numbers, wanted in zip(pages, metadata, strict=True)
             ]
         )
@@ -194,24 +206,25 @@ class Parts:
         )
 
     async def look(
-        self, started: StartedTasks, dates: Mapping[int, object], bound: float
+        self, started: StartedTasks, dates: Mapping[int, object] | None, bound: float
     ) -> tuple[StartedTasks, Found | None]:
         """Find what a request made whose tasks a date hides, waiting for up to ``bound`` seconds.
 
-        ``dates`` are the dates among the custom fields that were copied. Returns the request
-        with what is now known of its files, and the documents, if there is any.
+        ``dates`` are the dates among the custom fields that were copied, None if not known.
+        Returns the request with what is now known of its files, and the documents, if any.
         """
         files = started.files
         if started.ids or started.problem or files is None or not dates or bound <= 0:
             return started, None
         begun = self._replacing.clock()
         while True:
+            left = bound - (self._replacing.clock() - begun)
             try:
-                copies = await self._writer.find_copies(files)
+                copies = await self._writer.find_copies(files, final=left <= 0)
             except PaperlessMcpError:
                 return started, None
-            left = bound - (self._replacing.clock() - begun)
-            if copies.doubt is not None or None not in copies.ids or left <= 0:
+            settled = copies.doubt is None and None not in copies.ids
+            if settled or (copies.doubt is not None and not copies.passing) or left <= 0:
                 break
             await self._sleep(min(POLL_SECONDS, left))
         doubt = copies.doubt or await self._dateless(copies.ids, dates)
@@ -309,7 +322,8 @@ class Parts:
         except KeptError as kept:
             then = kept.next_call
             if then is not None and part.edit is not None and number is not None:
-                then = f"{then}, then {_update_call(part.edit, number)}"
+                size = f"{pages} {'page' if pages == 1 else 'pages'}"
+                then = f"{then}, only if it has {size}: {_update_call(part.edit, number)}"
             return {**names, "message": kept.reason, "next": then}
         if part.edit is None:
             return names
@@ -317,8 +331,11 @@ class Parts:
         if not self._replacing.late(began):
             try:
                 update = await self._editor.update(document.id, part.edit)
-                message = None if _holds(update, part.edit) else CHANGED
-            except PaperlessMcpError as error:
+                tags = part.edit.tags_set
+                items = await self._taxonomy.items("tag") if tags is not None else []
+                parents = {tag.id: tag.parent for tag in items}
+                message = None if _holds(update, part.edit, parents) else CHANGED
+            except Exception as error:  # noqa: BLE001 -- the document exists: say so
                 message = NOT_SET.format(cause=cause(error))
         if message is None:
             return {**names, "metadata": "set"}

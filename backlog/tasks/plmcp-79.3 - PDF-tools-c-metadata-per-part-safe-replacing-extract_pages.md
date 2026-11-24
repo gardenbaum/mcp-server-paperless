@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:16Z'
-updated_date: '2026-11-24T13:19:24Z'
+updated_date: '2026-11-24T13:30:02Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -74,4 +74,6 @@ OVERVIEW_GUIDE_LIMIT 2849 to 2865 (16 bytes of extract_pages; 15 left for insert
 ## Evidence
 
 Red first: tests/adapter/test_pdf_copies.py, tests/services/test_pdf_parts.py (collection error: the names did not exist), the tool tests (6 failed), the 30 second bound (2 failed). Not red first: the contract and E2E tests (written with or after the fake and the code) and the tests of the search by name in test_pdf_replacing.py. Changed lines of src covered 100 % by the targeted modules (diff-cover against the merged 79.2). ruff, basedpyright, import-linter clean. Not run locally: just check, full suite, E2E, mutation. tests/quality/test_backlog_instructions.py::test_the_menu_driver_reports_a_failing_cli fails locally (pty: Errno 5), which this change does not touch.
+
+Review of 9a3985b (0 Critical, 3 Important, 9 Minor), owner 2026-11-24 "Bitte wie von dir empfohlen.": the one-hour rule is kept, tags is the whole list, rotate stays out of the name search for now. Fixed, tests seen red first: I1 unexpected errors after the start (Parts._finish, the removal, an outer guard in PdfService._run; the log has the type alone; CancelledError passes), I2 tags exactly the wanted ones and their parents, I3 the document must show the produced version with the remaining pages, M1 PENDING is waited for, M2 earlier operations are read once every file is there or at the end, unlocking a readable file looks for at most 5 seconds, M3 the order of pages is in text, fingerprint and parts, M5, M6, M7, M8 (the test of an unreadable field list changed on purpose). M9: tests/tools/test_pdf_next.py (written after the fixes), the adapter archive honours iendswith, the fake knows TASKED and the hour. The harness taxonomy ttl is 3600 again: the change to 0 was not needed. Not done, the owner's: a bound on tags per part (M4), remembering requests, rotate. merge_documents, outside _run, has no outer guard.
 <!-- SECTION:NOTES:END -->

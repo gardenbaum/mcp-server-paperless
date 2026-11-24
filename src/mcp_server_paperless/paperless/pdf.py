@@ -515,7 +515,7 @@ class PaperlessPdfWriter:
         }
         return await self._client.get(TASKS, Page[_Task], params=params)
 
-    async def find_copies(self, files: CopiedFiles) -> FoundCopies:
+    async def find_copies(self, files: CopiedFiles, *, final: bool = False) -> FoundCopies:
         """See ``PdfWriter.find_copies``: by ``original_file_name``, owner and ``added``."""
         user = await self._user()
         operations = await self._operations()
@@ -532,7 +532,8 @@ class PaperlessPdfWriter:
             expected = len(files.names)
             doubt = f"documents {listed} have names of these files, of which there are {expected}"
             return _doubtful(files, doubt)
-        doubt = await self._taken_for(user, start, operations, files)
+        whole = final or not {*files.names} - ids.keys()
+        doubt = await self._taken_for(user, start, operations, files, whole=whole)
         if doubt is not None:
             return _doubtful(files, doubt)
         return FoundCopies(ids=tuple(ids.get(name) for name in files.names))
@@ -550,13 +551,20 @@ class PaperlessPdfWriter:
         return [row for row in page.results if row.added >= since]
 
     async def _taken_for(
-        self, user: int, start: datetime, operations: Page[_Task], files: CopiedFiles
+        self,
+        user: int,
+        start: datetime,
+        operations: Page[_Task],
+        files: CopiedFiles,
+        *,
+        whole: bool,
     ) -> str | None:
         """Why documents of these names may be another request's, None if they are this one's.
 
         Nothing names the request, and an operation does not name its documents. So there may be no
         other operation since the start, and of the earlier ones each must be known to have made
-        something else: one first file of another document, or one new version, for each.
+        something else: one first file of another document, or one new version, for each. The
+        earlier ones are looked into only if ``whole``.
         """
         _, like = _like(files.names)
         params: dict[str, str | int] = {**self._filters(CONSUME, user), "page_size": LOOKBACK}
@@ -576,7 +584,7 @@ class PaperlessPdfWriter:
             for row in others
             if row.date_started and row.date_done and row.date_done >= start - BACKLOG
         ]
-        if not earlier:
+        if not earlier or not whole:
             return None
         since = min(earlier)
         made = await self._copies(user, since, original_filename__iendswith=".pdf")
@@ -633,7 +641,8 @@ class PaperlessPdfWriter:
 
 
 def _doubtful(files: CopiedFiles, doubt: str) -> FoundCopies:
-    return FoundCopies(ids=(None,) * len(files.names), doubt=doubt)
+    nothing = (None,) * len(files.names)
+    return FoundCopies(ids=nothing, doubt=doubt, passing=doubt == PENDING)
 
 
 def _copying(rows: Sequence[_Task], queued: str, user: int) -> Iterator[_Task]:

@@ -1,5 +1,6 @@
 """Metadata per part, and extracting with removal: every way they can end (decision-67)."""
 
+import asyncio
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -18,10 +19,19 @@ from mcp_server_paperless.domain.errors import (
 )
 from mcp_server_paperless.domain.pdf import PartMetadata
 from mcp_server_paperless.services.pdf import Options
-from services.test_pdf_replacing import DOC, FIND, OTHER, Paperless, document, paperless, trash
+from services.test_pdf_replacing import (
+    DOC,
+    FIND,
+    OTHER,
+    Paperless,
+    dated,
+    document,
+    paperless,
+    trash,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Awaitable, Sequence
 
     from mcp_server_paperless.domain.pdf import Output, PdfResult
     from mcp_server_paperless.domain.tasks import TaskState
@@ -249,7 +259,9 @@ async def test_a_part_that_is_not_as_expected_is_not_touched() -> None:
     first, second, third = await split(unread), await split(wrong), await split(same)
 
     assert (first.parts[1].metadata, first.parts[1].document_id) == ("not_set", TWO)
-    assert first.parts[1].next == f"get_document(document_id={TWO}), then {SET_TWO}"
+    assert first.parts[1].next == (
+        f"get_document(document_id={TWO}), only if it has 3 pages: {SET_TWO}"
+    )
     assert second.parts[1].message == f"document {TWO} has 2 pages instead of 3"
     assert (second.parts[1].metadata, second.parts[1].next) == ("not_set", None)
     assert third.parts[0].message == f"document {DOC} is not a new document of its own"
@@ -445,7 +457,10 @@ async def test_pages_are_extracted_in_the_order_given_and_the_source_is_unchange
     assert shown(fake) == (4, 1)
     assert fake.edits == [([3, 2], "new_document")]
     assert (result.operation, result.state, result.original) == ("extract_pages", "success", "kept")
-    assert (result.parts[0].pages, result.parts[0].metadata) == ("pages 2-3", "set")
+    assert (result.parts[0].pages, result.parts[0].metadata) == (
+        "pages 3,2 (in this order)",
+        "set",
+    )
     assert (result.produced_ids, result.next) == ((ONE,), None)
 
 
@@ -487,10 +502,10 @@ async def test_removing_needs_a_confirm_that_says_what_vanishes() -> None:
         _ = await extract(fake, options=Options())
 
     assert raised.value.message == (
-        "Nothing was changed. Confirming would extract pages 2-3 of document 50 'Scan' into a new "
-        "document and remove them from it: the document then shows a new version without them, "
-        "and the earlier version with all pages stays until that version is deleted; the new "
-        "document gets title 'Contract' and tags 'e2e-finance'."
+        "Nothing was changed. Confirming would extract pages 3,2 (in this order) of document 50 "
+        "'Scan' into a new document and remove them from it: the document then shows "
+        "a new version without them, and the earlier version with all pages "
+        "stays until that version is deleted; the new document gets title 'Contract' and tags 'e2e-finance'."
     )
     assert fake.started == []
 
@@ -674,7 +689,8 @@ async def test_row_4_a_source_that_changed_meanwhile_is_left_alone() -> None:
         f"What was made stays: document {ONE}."
     )
     assert result.next == (
-        f"get_document(document_id={DOC}), then {DELETE} if the pages are still these; or {DROP}"
+        f"get_document(document_id={DOC}), only if document {DOC} still shows these pages: "
+        f"{DELETE}; or {DROP}"
     )
 
 
@@ -690,6 +706,9 @@ async def test_row_4_a_source_that_cannot_be_read_again_is_left_alone() -> None:
 
     assert (len(fake.edits), result.original) == (1, "kept")
     assert "could not be read again" in (result.message or "")
+    assert result.next == (
+        f"get_document(document_id={DOC}) once it can be read, {UNCHANGED}: {DELETE}; or {DROP}"
+    )
 
 
 async def test_row_4_nothing_is_removed_later_than_45_seconds_after_the_start() -> None:
@@ -795,3 +814,156 @@ async def test_the_removal_waits_for_what_is_left_of_the_wait() -> None:
 
     assert (result.waited_seconds, fake.now) == (30.0, 30.0)
     assert (result.original, result.next) == ("unknown", wait(fake, 1))
+
+
+async def test_an_unexpected_error_while_metadata_is_set_stays_with_its_part() -> None:
+    fake = paperless()
+    fake.update_error, fake.breaks = RuntimeError("secret"), {ONE}
+
+    result = await split(fake)
+
+    one, two = result.parts
+    assert (one.metadata, one.next) == ("not_set", SET_ONE)
+    assert one.message == "its metadata is not known to be set (unexpected error)"
+    assert two.metadata == "set"
+    assert "secret" not in str(result)
+
+
+async def test_an_unexpected_error_of_the_removal_leaves_it_unknown() -> None:
+    fake = paperless()
+    fake.refuse_edit = {"new_version": RuntimeError("secret")}
+
+    result = await extract(fake)
+
+    assert (result.state, result.original) == ("unknown", "unknown")
+    assert "(unexpected error)" in (result.message or "")
+    assert f"document {ONE} holds them" in (result.message or "")
+    assert "secret" not in str(result)
+
+
+STOPPED = "An unexpected error stopped the call after Paperless accepted the request."
+
+
+async def test_an_unexpected_error_after_the_start_still_returns_what_is_known(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    fake = paperless()
+
+    def broken(number: int) -> bool:
+        if number == TWO:
+            message = "secret"
+            raise RuntimeError(message)
+        return False
+
+    fake.unreadable = broken
+
+    result = await split(fake, output="replace_original")
+
+    assert (result.state, result.original, trash(fake)) == ("unknown", "kept", [])
+    assert result.message == STOPPED
+    assert result.produced_ids == (ONE, TWO)
+    assert result.next == f"{wait(fake, 0)}, then {wait(fake, 1)}"
+    assert "RuntimeError" in caplog.text
+    assert "secret" not in caplog.text + str(result)
+
+
+async def test_an_unexpected_error_before_anything_is_read_names_where_to_look() -> None:
+    fake = paperless()
+    dated(fake, DOC)
+    fake.copies_error = RuntimeError("secret")
+
+    result = await split(fake, None, options=Options(wait_seconds=1))
+    listed = paperless()
+    listed.task_error = RuntimeError("secret")
+    known = await extract(listed, remove=False, metadata=None, options=Options())
+
+    assert (result.state, result.original, result.next) == ("unknown", "kept", FIND)
+    assert (result.message, result.produced_ids) == (STOPPED, ())
+    assert (known.state, known.original) == ("unknown", "kept")
+
+
+async def test_an_unexpected_error_while_trashing_leaves_the_original_unknown() -> None:
+    fake = paperless()
+    fake.delete_error = RuntimeError("secret")
+
+    result = await split(fake, output="replace_original")
+
+    assert (result.state, result.original, result.trashed_ids) == ("unknown", "unknown", ())
+    assert [p.metadata for p in result.parts] == ["set", "set"]
+
+
+async def test_a_cancelled_call_stays_cancelled() -> None:
+    fake = paperless()
+    fake.update_error, fake.breaks = asyncio.CancelledError(), {ONE}
+
+    with pytest.raises(asyncio.CancelledError):
+        _ = await split(fake)
+
+
+@pytest.mark.parametrize("wanted", [("e2e-finance",), ()])
+async def test_tags_that_were_not_asked_for_are_not_set(wanted: tuple[str, ...]) -> None:
+    fake = tagged()
+    fake.extra_tags = (3,)
+
+    result = await split(fake, (PartMetadata(tags=wanted), ANNEX), output="replace_original")
+
+    assert [p.metadata for p in result.parts] == ["not_set", "not_set"]
+    assert result.parts[0].message == "Paperless answered with other values than asked for"
+    assert (result.original, trash(fake)) == ("kept", [])
+
+
+async def test_the_parent_of_a_tag_belongs_to_it() -> None:
+    fake = paperless()
+
+    result = await split(fake, (PartMetadata(tags=("e2e-invoices",)), ANNEX))
+
+    assert [p.metadata for p in result.parts] == ["set", "set"]
+    assert set(document(fake, ONE).tags) == {1, 2}
+
+
+async def test_the_order_of_pages_is_part_of_what_is_confirmed() -> None:
+    fake = paperless()
+
+    service = pdf_service(fake)
+
+    async def asked(call: Awaitable[PdfResult]) -> ConfirmationRequired:
+        with pytest.raises(ConfirmationRequired) as raised:
+            _ = await call
+        return raised.value
+
+    down, up = [await asked(extract(fake, p, options=Options())) for p in ("3,2", "2,3")]
+    first, second = [
+        await asked(service.split(DOC, [p, "3-4"], output="replace_original"))
+        for p in ("2,1", "1,2")
+    ]
+
+    assert down.fingerprint != up.fingerprint
+    assert "pages 3,2 (in this order)" in down.message
+    assert first.fingerprint != second.fingerprint
+    assert "pages 2,1 (in this order)" in first.message
+
+
+async def test_a_version_that_is_not_what_was_asked_for_is_not_known_to_be_the_removal() -> None:
+    short, foreign, unread = paperless(), paperless(), paperless()
+    short.few_pages = True
+    foreign.foreign_version = True
+
+    def lost(number: int) -> bool:
+        return number == DOC and len(unread.edits) == 2
+
+    unread.unreadable = lost
+
+    few, other, none = await extract(short), await extract(foreign), await extract(unread)
+
+    look = f'get_document(document_id={DOC}, include=["versions"])'
+    for result in (few, other, none):
+        assert (result.original, result.next) == ("unknown", look)
+    [made, *_] = document(short, DOC).versions
+    newest, version, *_ = document(foreign, DOC).versions
+    assert f"Document {DOC} shows version {made.id} with 1 pages instead of version {made.id} " in (
+        few.message or ""
+    )
+    assert f"shows version {newest.id} with 9 pages instead of version {version.id} with 2" in (
+        other.message or ""
+    )
+    assert f"What document {DOC} shows could not be read" in (none.message or "")

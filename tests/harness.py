@@ -116,7 +116,7 @@ def pdf_service(
 ) -> PdfService:
     """`PdfService` on the fake, with everything it is built from."""
     web = "https://paperless.example"
-    taxonomy = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=0.0)
+    taxonomy = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
     documents = DocumentService(fake, fake, taxonomy, web_url=web)
     editor = DocumentEditor(fake, fake, fake, taxonomy, documents=documents)
     replacing = Replacing(fake, fake, DocumentRemoval(fake, fake, taxonomy), clock=clock)
