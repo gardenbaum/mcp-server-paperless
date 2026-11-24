@@ -59,7 +59,10 @@ VERSION_LIMITS = (
 )
 NO_CHANGE = " Whether the user may change it could not be read just now."
 NO_PERMISSIONS = " Who may view or change it could not be read just now."
-NO_THUMBNAIL = "Restore it first with restore_from_trash; reprocessing then makes it anew."
+NO_THUMBNAIL = (
+    "Restore it first with restore_from_trash; reprocessing may then make it anew, if Paperless "
+    "still has the file."
+)
 RESTORE_FIRST = "Restore it first with restore_from_trash, then use the tools for documents."
 NO_FILE = (
     "Paperless did not send this file of the trash entry and does not say why: it may be missing, "
