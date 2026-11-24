@@ -69,6 +69,8 @@ NOTICE_CHARS: Final = 5000
 # The fields of a row whose size nothing bounds, and the text (as JSON up to six times as long).
 GROWING: Final[tuple[ReadField, ...]] = ("notes", "custom_fields", "tags", "content")
 
+NO_NOTES: Final = "Leave notes out of fields."
+GONE: Final = "Choose the documents again, or leave notes out of fields."
 
 ENDING: Final = (AuthenticationFailed, UpstreamUnreachable)
 OUTAGES: Final = (
@@ -87,6 +89,29 @@ def _outage(error: PaperlessMcpError) -> bool:
 
 def _size(row: ReadRow) -> int:
     return len(row.model_dump_json()) + 1  # its comma
+
+
+async def require_notes(
+    reader: DocumentReader, ids: Sequence[int], *, hint: str, gone: str
+) -> None:
+    """Refuse a user who may not view notes: Paperless sends them in the rows anyway.
+
+    The first document that answers decides; without any answer the notes are refused, too.
+    """
+    for number in ids:
+        try:
+            _ = await reader.list_document_notes(number)
+        except NotFound:  # deleted meanwhile
+            continue
+        except PermissionDenied:
+            message = (
+                "The Paperless user may not view notes (it needs the permission to view notes)."
+            )
+            raise PermissionDenied(message, hint=hint) from None
+        return
+    if ids:
+        message = "It could not be checked whether the user may view notes: the documents are gone."
+        raise PaperlessMcpError(message, hint=gone)
 
 
 class ReadDocuments:
@@ -138,7 +163,7 @@ class ReadDocuments:
             raise NotFound(message, hint=hint)
         ids = every[start : start + page_size]
         if "notes" in wanted:
-            await self._require_notes(ids)
+            await require_notes(self._reader, ids, hint=NO_NOTES, gone=GONE)
         rows = await self._rows(ids, wanted)
         notices = chosen.notices
         left: tuple[int, ...] = ()
@@ -161,29 +186,6 @@ class ReadDocuments:
             notices=_short(notices),
         )
         return _bounded(answer, rows)
-
-    async def _require_notes(self, ids: Sequence[int]) -> None:
-        """Refuse a user who may not view notes: Paperless sends them in the rows anyway.
-
-        The first document that answers decides; without any answer the notes are refused, too.
-        """
-        for number in ids:
-            try:
-                _ = await self._reader.list_document_notes(number)
-            except NotFound:  # deleted meanwhile
-                continue
-            except PermissionDenied:
-                message = (
-                    "The Paperless user may not view notes (it needs the permission to view notes)."
-                )
-                raise PermissionDenied(message, hint="Leave notes out of fields.") from None
-            return
-        if ids:
-            message = (
-                "It could not be checked whether the user may view notes: the documents are gone."
-            )
-            hint = "Choose the documents again, or leave notes out of fields."
-            raise PaperlessMcpError(message, hint=hint)
 
     async def _rows(self, ids: Sequence[int], fields: Sequence[ReadField]) -> list[ReadRow]:
         asked: list[ReadField] = [name for name in fields if name != "content"]

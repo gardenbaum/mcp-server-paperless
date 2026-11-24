@@ -1143,6 +1143,29 @@ async def test_whether_originals_may_be_deleted(
     assert await PaperlessDocumentReader(make_client(server)).may_delete(owners) is expected
 
 
+async def test_the_signed_in_user_is_read_from_the_settings(make_client: ClientFactory) -> None:
+    body = {"user": {"id": 2, "username": "x", "is_superuser": True}, "settings": {}}
+    readable = Resource(body)
+    hidden = Resource({"detail": "no"}, status=403)
+
+    found = await PaperlessDocumentReader(make_client(readable)).get_signed_in()
+    none = await PaperlessDocumentReader(make_client(hidden)).get_signed_in()
+
+    assert found is not None
+    assert (found.id, found.is_superuser) == (2, True)
+    assert none is None
+
+
+@pytest.mark.parametrize("status", [401, 429, 503])
+async def test_a_failure_to_read_the_signed_in_user_is_no_unknown_user(
+    make_client: ClientFactory, status: int
+) -> None:
+    client = make_client(Resource({"detail": "no"}, status=status))
+
+    with pytest.raises(PaperlessMcpError):
+        _ = await PaperlessDocumentReader(client).get_signed_in()
+
+
 async def test_rights_that_cannot_be_read_are_unknown(make_client: ClientFactory) -> None:
     server = Resource({"detail": "no"}, status=403)
 

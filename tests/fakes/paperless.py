@@ -99,6 +99,7 @@ from mcp_server_paperless.domain.documents import (
     FileMetadata,
     HistoryEntry,
     Note,
+    SignedIn,
     Suggestions,
 )
 from mcp_server_paperless.domain.duplicates import DuplicateRecord
@@ -1375,12 +1376,19 @@ class FakePaperless:
             if any(taken):
                 message = "document with this archive serial number already exists."
                 reject("archive_serial_number", message)
+            if any(d.archive_serial_number == number for d in self.state.trash):
+                message = "Document with this Archive Serial Number already exists in the trash."
+                reject("archive_serial_number", message)
 
     def _mirror_links(self, document: FakeDocument, new: dict[int, JsonValue]) -> None:
         """Keep document links symmetrical like Paperless: link and unlink the other side.
 
-        Linking needs change permission on every document linked to (403 otherwise, also for a
-        document the user cannot see); the other side keeps an empty list when unlinked.
+        Every target of the list that is sent gets the link back, also one that already was in the
+        list and lost it (a bulk edit to a shorter list leaves it one-sided).
+
+        Every document in the lists that are sent, stored ones included, needs to be changeable
+        (403 otherwise, also for a document the user cannot see; `validate_documentlink_targets`);
+        the other side keeps an empty list when unlinked.
         """
         link_fields = [f.id for f in self.state.custom_fields if f.data_type == "documentlink"]
 
@@ -1388,20 +1396,22 @@ class FakePaperless:
             return set(cast("list[int]", fields.get(number) or []))
 
         by_id = {d.id: d for d in self.state.documents}
-        added = {n: targets(new, n) - targets(document.custom_fields, n) for n in link_fields}
-        if any(not self.user.may_change(by_id[t]) for ids in added.values() for t in ids):
+        sent = {t for n in link_fields for t in targets(new, n)} - {document.id}
+        if not all(by_id[target].changeable_by(self.user) for target in sent):
             message = "Insufficient permissions."
             raise PermissionDenied(message)
         for number in link_fields:
-            for target in added[number]:
+            for target in targets(new, number) - {document.id}:
                 other = by_id[target].custom_fields
-                other[number] = [*cast("list[int]", other.get(number) or []), document.id]
+                if document.id not in targets(other, number):
+                    other[number] = [*cast("list[int]", other.get(number) or []), document.id]
             for target in targets(document.custom_fields, number) - targets(new, number):
                 if target in by_id:
                     other = by_id[target].custom_fields
-                    other[number] = [
-                        n for n in cast("list[int]", other.get(number)) if n != document.id
-                    ]
+                    if document.id in targets(other, number):
+                        other[number] = [
+                            n for n in cast("list[int]", other[number]) if n != document.id
+                        ]
 
     def _custom_fields(self, patch: DocumentPatch) -> dict[int, JsonValue]:
         """The new custom field values; a field named twice keeps its last value."""
@@ -1449,7 +1459,8 @@ class FakePaperless:
         permissions (403; live: a change grant on the document does not replace the last),
         the document (404), the object view (403 for a hidden document) and the object change
         permission (403: a viewer may not add notes). Empty and blank text is rejected (400
-        "This field may not be blank.", checked first).
+        "This field may not be blank.", checked first); the text is stored without the
+        whitespace around it.
         """
         if not text.strip():
             reject("note", "This field may not be blank.")
@@ -1461,7 +1472,10 @@ class FakePaperless:
         newest = max((n.id for d in state.documents for n in d.notes), default=0)
         state.last_note_id = max(state.last_note_id, newest) + 1
         note = Note(
-            id=state.last_note_id, note=text, created=datetime.now(UTC), user=self.user.username
+            id=state.last_note_id,
+            note=text.strip(),
+            created=datetime.now(UTC),
+            user=self.user.username,
         )
         document.notes.append(note)
         return note
@@ -2184,6 +2198,12 @@ class FakePaperless:
             return None
         owns = all(owner in {None, user.id} for owner in owners)
         return user.is_superuser or (owns and user.has("delete_document"))
+
+    async def get_signed_in(self) -> SignedIn | None:
+        """`DocumentReader.get_signed_in` (UiSettingsView: needs `view_uisettings`)."""
+        if not self.user.has("view_uisettings"):
+            return None
+        return SignedIn(id=self.user.id, is_superuser=self.user.is_superuser)
 
     @write
     async def rotate_documents(
