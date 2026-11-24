@@ -1652,7 +1652,7 @@ async def test_one_action_that_is_too_long_alone_has_its_own_hint() -> None:
 
 async def filled(setup: Setup, number: int) -> None:
     """Give the document's title the characters that make its own confirmation exactly full."""
-    setup.flow(*steps(1115))
+    setup.flow(*steps(1118))
     for _round in range(40):  # each letter more in a title of a step
         room = LIMIT - len((await setup.asked(document_ids=[number])).describe())
         if not room:
