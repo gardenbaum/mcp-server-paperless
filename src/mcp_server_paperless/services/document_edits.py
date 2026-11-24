@@ -18,7 +18,12 @@ other fields, so using it would not make a whole update atomic either.
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch, DocumentUpdate
+from mcp_server_paperless.domain.documents import (
+    CustomFieldValue,
+    DocumentPatch,
+    DocumentState,
+    DocumentUpdate,
+)
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     NotFound,
@@ -129,6 +134,12 @@ def check_edit(edit: DocumentEdit) -> None:
         raise Validation(message, hint="Pass at least one field to change, e.g. title or tags_add.")
 
 
+# What an edit is compared with: a document as it was read.
+type Current = DocumentRecord | DocumentState
+# The tags created for an edit: folded name to name and id.
+type Created = dict[str, tuple[str, int]]
+
+
 def _numeric(value: NameOrId) -> bool:
     return isinstance(value, int) or (value.strip().isascii() and value.strip().isdigit())
 
@@ -142,9 +153,89 @@ class _Tags:
     replace: list[int | str] | None
     parents: dict[int, int | None]
 
+    @property
+    def named(self) -> bool:
+        """Whether the edit names tags at all."""
+        return bool(self.add or self.remove) or self.replace is not None
+
+    @property
+    def new(self) -> list[str]:
+        """The names of the tags to create, as often as they are named."""
+        return [t for t in [*self.add, *(self.replace or [])] if isinstance(t, str)]
+
+    def asked(self, created: Created) -> set[int]:
+        """The tags the caller named to have."""
+        return set(_resolved(self.replace if self.replace is not None else self.add, created))
+
+    def change(self, current: Current, created: Created) -> dict[str, object]:
+        """The new tag list, closed over the ancestors, if it differs from the current one."""
+        requested = _resolved(self.replace if self.replace is not None else self.add, created)
+        merged = (
+            list(dict.fromkeys(requested))
+            if self.replace is not None
+            else merged_tags(current.tags, requested, set(self.remove))
+        )
+        wanted = close_over_ancestors(merged, self.parents)
+        return {} if set(wanted) == set(current.tags) else {"tags": tuple(wanted)}
+
+
+@dataclass(frozen=True, slots=True)
+class EditPlan:
+    """An edit with its names resolved and its values checked: what it asks of any state.
+
+    Attributes:
+        scalars: The plain fields it names, references as ids; ``None`` clears.
+        sets: The custom field values to set, in stored form.
+        removed: The custom fields to take off.
+        tags: The tags it names.
+    """
+
+    scalars: dict[str, object]
+    sets: dict[int, JsonValue]
+    removed: set[int]
+    tags: _Tags
+
+    def patch(self, current: Current, created: Created) -> DocumentPatch:
+        """What has to be sent so that ``current`` becomes as asked; empty if it already is."""
+        changed = {name: v for name, v in self.scalars.items() if getattr(current, name) != v}
+        return DocumentPatch.model_validate(
+            {**changed, **self.tags.change(current, created), **self._field_change(current)}
+        )
+
+    def _field_change(self, current: Current) -> dict[str, object]:
+        """The merged custom field list, if it differs from the current one."""
+        have = {item.field: item.value for item in current.custom_fields}
+        differing = {
+            n: v for n, v in self.sets.items() if n not in have or not same_value(have[n], v)
+        }
+        dropped = self.removed & have.keys()
+        if not differing and not dropped:
+            return {}
+        return {"custom_fields": tuple(merged_fields(current.custom_fields, differing, dropped))}
+
+
+def affected(patch: DocumentPatch) -> list[TaxonomyKind]:
+    """The kinds whose document counts the patch can change."""
+    if "owner" in patch.model_fields_set:
+        return list(COUNTED)
+    by_field: dict[str, TaxonomyKind] = {
+        "tags": "tag",
+        "correspondent": "correspondent",
+        "document_type": "document_type",
+        "storage_path": "storage_path",
+        "custom_fields": "custom_field",
+    }
+    return [kind for name, kind in by_field.items() if name in patch.model_fields_set]
+
+
+def implicit(current: Current, updated: Current, plan: EditPlan, created: Created) -> list[int]:
+    """The tags the document gained that nobody asked for: parents of the added children."""
+    asked = plan.tags.asked(created)
+    return [t for t in updated.tags if t not in current.tags and t not in asked]
+
 
 def _refuse_orphans(
-    current: DocumentRecord, added: list[int], removed: list[int], items: dict[int, TaxonomyItem]
+    current: Current, added: list[int], removed: list[int], items: dict[int, TaxonomyItem]
 ) -> None:
     """Refuse a removal that Paperless would extend to child tags that stay."""
     parents = {n: t.parent for n, t in items.items()}
@@ -168,12 +259,12 @@ def _check_new_names(values: Iterable[int | str]) -> None:
             raise Validation(message, hint="Use a shorter tag name.")
 
 
-def _resolved(values: Iterable[int | str], created: dict[str, tuple[str, int]]) -> list[int]:
+def _resolved(values: Iterable[int | str], created: Created) -> list[int]:
     return [created[fold(v)][1] if isinstance(v, str) else v for v in values]
 
 
 def _after_creation(
-    error: PaperlessMcpError, created: dict[str, tuple[str, int]], *, linked: bool
+    error: PaperlessMcpError, created: Created, *, linked: bool
 ) -> PaperlessMcpError:
     """``error`` for the caller: a refused link says what it needs; created tags are named."""
     hint = error.hint
@@ -228,25 +319,38 @@ class DocumentEditor:
             raise PermissionDenied(message, hint="Ask the document's owner for change permission.")
         scalars = await self._scalars(edit)
         await self._confirm_owner(edit, current, scalars)
-        sets, removed = await self._fields(edit, current)
+        sets, removed, links = await self._fields(edit, current)
+        await require_visible(self._reader, links)
         tags = await self._tags(edit, current)
-        created = await self._create(tags)
+        plan = EditPlan(scalars, sets, removed, tags)
+        created = await self.create_tags(tags.new)
         try:
-            patch = DocumentPatch.model_validate(
-                {
-                    **self._changed(current, scalars),
-                    **self._tag_change(current, tags, created),
-                    **self._field_change(current, sets, removed),
-                }
-            )
+            patch = plan.patch(current, created)
             if not patch.model_fields_set:
                 return await self._result(current, [])
             updated = await self._writer.update_document(document_id, patch)
         except PaperlessMcpError as error:
             raise _after_creation(error, created, linked=bool(sets)) from None
-        for kind in self._affected(patch):
+        for kind in affected(patch):
             self._taxonomy.invalidate(kind)
-        return await self._result(updated, self._implicit(current, updated, tags, created))
+        return await self._result(updated, implicit(current, updated, plan, created))
+
+    async def plan(self, edit: DocumentEdit, current: Current) -> EditPlan:
+        """``edit`` with its names resolved, checked against ``current``; writes nothing.
+
+        Leaves to the caller: whether the user may change the document, the confirmation, and
+        whether linked documents can be seen.
+
+        Raises:
+            Validation: As for ``update``.
+            NotFound: A name matches nothing.
+            Ambiguous: A name matches more than one object.
+            PermissionDenied: The user may not list what a name is looked up in.
+        """
+        check_edit(edit)
+        scalars = await self._scalars(edit)
+        sets, removed, _ = await self._fields(edit, current)
+        return EditPlan(scalars, sets, removed, await self._tags(edit, current))
 
     async def _result(self, record: DocumentRecord, implicit: list[int]) -> DocumentUpdate:
         detail = await self._documents.detail(record)
@@ -302,15 +406,10 @@ class DocumentEditor:
             hint = "Pass the owner's user id instead of the username."
             raise PermissionDenied(error.message, hint=hint) from None
 
-    @staticmethod
-    def _changed(current: DocumentRecord, scalars: dict[str, object]) -> dict[str, object]:
-        """Those of ``scalars`` that differ from the document."""
-        return {name: v for name, v in scalars.items() if getattr(current, name) != v}
-
     async def _fields(
-        self, edit: DocumentEdit, current: DocumentRecord
-    ) -> tuple[dict[int, JsonValue], set[int]]:
-        """The custom field values to set (checked, in stored form) and the fields to remove."""
+        self, edit: DocumentEdit, current: Current
+    ) -> tuple[dict[int, JsonValue], set[int], set[int]]:
+        """The values to set (checked, stored form), the fields to remove, the new link targets."""
         resolved = await resolve_values(self._taxonomy, edit.custom_fields)
         sets = {number: value for number, (_, value) in resolved.items()}
         have = {item.field: item.value for item in current.custom_fields}
@@ -326,22 +425,9 @@ class DocumentEditor:
         if sets.keys() & removed:
             message = "A custom field is both set and removed."
             raise Validation(message, hint="Set it or remove it, not both.")
-        await require_visible(self._reader, links)
-        return sets, removed
+        return sets, removed, links
 
-    @staticmethod
-    def _field_change(
-        current: DocumentRecord, sets: dict[int, JsonValue], removed: set[int]
-    ) -> dict[str, object]:
-        """The merged custom field list, if it differs from the current one."""
-        have = {item.field: item.value for item in current.custom_fields}
-        differing = {n: v for n, v in sets.items() if n not in have or not same_value(have[n], v)}
-        dropped = removed & have.keys()
-        if not differing and not dropped:
-            return {}
-        return {"custom_fields": tuple(merged_fields(current.custom_fields, differing, dropped))}
-
-    async def _tags(self, edit: DocumentEdit, current: DocumentRecord) -> _Tags:
+    async def _tags(self, edit: DocumentEdit, current: Current) -> _Tags:
         async def ids(
             values: Iterable[NameOrId], *, create: bool, adding: bool = True
         ) -> list[int | str]:
@@ -380,57 +466,22 @@ class DocumentEditor:
         _check_new_names(added)
         return _Tags(add=added, remove=removed, replace=None, parents=parents)
 
-    async def _create(self, tags: _Tags) -> dict[str, tuple[str, int]]:
-        """Create the tags that do not exist yet, once per name: folded name to name and id."""
-        names = [t for t in [*tags.add, *(tags.replace or [])] if isinstance(t, str)]
-        created: dict[str, tuple[str, int]] = {}
+    async def create_tags(self, names: Iterable[str]) -> Created:
+        """Create the tags that do not exist yet, once per name.
+
+        Raises:
+            PaperlessMcpError: One could not be created; the message names those that were.
+        """
+        created: Created = {}
+        wanted = list(names)
         try:
-            for name in names:
+            for name in wanted:
                 if fold(name) not in created:
                     try:
                         created[fold(name)] = (name, (await self._tag_writer.create_tag(name)).id)
                     except PaperlessMcpError as error:
                         raise _after_creation(error, created, linked=False) from None
         finally:
-            if created:
+            if wanted:  # also after a failure: a lost answer may have created the tag
                 self._taxonomy.invalidate("tag")
         return created
-
-    @staticmethod
-    def _tag_change(
-        current: DocumentRecord, tags: _Tags, created: dict[str, tuple[str, int]]
-    ) -> dict[str, object]:
-        """The new tag list, closed over the ancestors, if it differs from the current one."""
-        requested = _resolved(tags.replace if tags.replace is not None else tags.add, created)
-        merged = (
-            list(dict.fromkeys(requested))
-            if tags.replace is not None
-            else merged_tags(current.tags, requested, set(tags.remove))
-        )
-        wanted = close_over_ancestors(merged, tags.parents)
-        return {} if set(wanted) == set(current.tags) else {"tags": tuple(wanted)}
-
-    @staticmethod
-    def _implicit(
-        current: DocumentRecord,
-        updated: DocumentRecord,
-        tags: _Tags,
-        created: dict[str, tuple[str, int]],
-    ) -> list[int]:
-        """The tags the document gained that nobody asked for: parents of the added children."""
-        asked = set(_resolved(tags.replace if tags.replace is not None else tags.add, created))
-        return [t for t in updated.tags if t not in current.tags and t not in asked]
-
-    @staticmethod
-    def _affected(patch: DocumentPatch) -> list[TaxonomyKind]:
-        """The kinds whose document counts the patch can change."""
-        if "owner" in patch.model_fields_set:
-            return list(COUNTED)
-        by_field: dict[str, TaxonomyKind] = {
-            "tags": "tag",
-            "correspondent": "correspondent",
-            "document_type": "document_type",
-            "storage_path": "storage_path",
-            "custom_fields": "custom_field",
-        }
-        return [kind for name, kind in by_field.items() if name in patch.model_fields_set]

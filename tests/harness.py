@@ -21,6 +21,8 @@ from observation import recorded
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.server import CATALOGUE, Catalogue, Ports, create_server
 from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
+from mcp_server_paperless.services.bulk_notes import BulkNotes
+from mcp_server_paperless.services.bulk_updates import BulkUpdates
 from mcp_server_paperless.services.document_edits import DocumentEditor
 from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.pdf import PdfService
@@ -141,6 +143,25 @@ def bulk_editor(fake: FakePaperless, taxonomy: TaxonomyResolver) -> BulkDocument
     views = ViewService(fake, fake, taxonomy, documents)
     selector = DocumentSelector(fake, documents, views, taxonomy)
     return BulkDocumentEditor(fake, fake, selector, taxonomy, web_url=web)
+
+
+def bulk_updates(fake: FakePaperless, *, clock: Callable[[], float]) -> BulkUpdates:
+    """`BulkUpdates` on the fake, with everything it is built from (a taxonomy cache of its own)."""
+    web = "https://paperless.example"
+    taxonomy = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
+    documents = DocumentService(fake, fake, taxonomy, web_url=web)
+    editor = DocumentEditor(fake, fake, fake, taxonomy, documents=documents)
+    return BulkUpdates(fake, fake, editor, taxonomy, web_url=web, clock=clock)
+
+
+def bulk_notes(fake: FakePaperless, *, clock: Callable[[], float]) -> BulkNotes:
+    """`BulkNotes` on the fake, with everything it is built from."""
+    web = "https://paperless.example"
+    taxonomy = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
+    documents = DocumentService(fake, fake, taxonomy, web_url=web)
+    views = ViewService(fake, fake, taxonomy, documents)
+    selector = DocumentSelector(fake, documents, views, taxonomy)
+    return BulkNotes(fake, fake, selector, web_url=web, clock=clock)
 
 
 def serve(  # noqa: PLR0913 -- one keyword per seam of the server

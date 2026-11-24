@@ -1443,7 +1443,8 @@ class FakePaperless:
         permissions (403; live: a change grant on the document does not replace the last),
         the document (404), the object view (403 for a hidden document) and the object change
         permission (403: a viewer may not add notes). Empty and blank text is rejected (400
-        "This field may not be blank.", checked first).
+        "This field may not be blank.", checked first); the text is stored without the
+        whitespace around it.
         """
         if not text.strip():
             reject("note", "This field may not be blank.")
@@ -1455,7 +1456,10 @@ class FakePaperless:
         newest = max((n.id for d in state.documents for n in d.notes), default=0)
         state.last_note_id = max(state.last_note_id, newest) + 1
         note = Note(
-            id=state.last_note_id, note=text, created=datetime.now(UTC), user=self.user.username
+            id=state.last_note_id,
+            note=text.strip(),
+            created=datetime.now(UTC),
+            user=self.user.username,
         )
         document.notes.append(note)
         return note

@@ -59,6 +59,7 @@ from mcp_server_paperless.services.bulk_operations import (
 )
 from mcp_server_paperless.services.documents import document_link
 from mcp_server_paperless.services.removal import WAY_BACK
+from mcp_server_paperless.services.selection import require_exclusions, unchecked
 from mcp_server_paperless.services.taxonomy_edits import documents as count_documents
 
 if TYPE_CHECKING:
@@ -129,12 +130,7 @@ class _Outcome:
                 " and, because document links are mirrored, also changes "
                 f"{named(self.others, ' besides')}"
             )
-        if self.chosen.excluded_unchecked:
-            effect += (
-                f"; whether {', '.join(self.chosen.excluded_unchecked)} still exists, which the "
-                "selection excludes, could not be checked: if not, more matches than was meant"
-            )
-        return effect
+        return effect + unchecked(self.chosen)
 
     @property
     def scope(self) -> object:
@@ -235,17 +231,7 @@ class BulkDocumentEditor:
         resolved = await self._operations.resolve(operation)
         chosen = await self._selector.select(selection, change=True)
         require_all(chosen.missing)
-        if chosen.excluded_absent:
-            message = (
-                f"Nothing was changed: the selection excludes {', '.join(chosen.excluded_absent)}, "
-                "which you cannot see. If it was deleted, it excludes nothing and more matches "
-                "than was meant."
-            )
-            hint = (
-                "Use filters or a view without it, or pass the document_ids that read_documents "
-                "shows instead of the filters."
-            )
-            raise Validation(message, hint=hint)
+        require_exclusions(chosen)
         effects = resolved.effects(list(chosen.hits))
         changing = [hit for hit in chosen.hits if hit.id in effects]
         if isinstance(resolved.change, ReprocessChange) and len(changing) > MAX_DOCUMENTS:

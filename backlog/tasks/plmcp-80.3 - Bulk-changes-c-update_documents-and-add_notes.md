@@ -1,9 +1,11 @@
 ---
 id: PLMCP-80.3
 title: 'Bulk changes c: update_documents and add_notes'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T12:54:34Z'
+updated_date: '2026-11-24T16:10:29Z'
 labels:
   - bulk
 dependencies:
@@ -35,3 +37,15 @@ Third part of PLMCP-80: different values need one call per document. Design appr
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Stacked on PR #137 (80.2), which is merged first.
+1. domain/bulk_items.py: DocumentValues (exactly the fields of update_document), DocumentNote, reports.
+2. document_edits: EditPlan (names resolved, patch per state) shared by update_document and update_documents; behaviour of update_document unchanged.
+3. services/document_runner.py: one after the other, 40 s, 429/401 stop, two lost answers in a row stop.
+4. services/bulk_updates.py: phase 1 (two kinds of list request, every wrong item named), confirmation, tags once, re-read, compare, PATCH, re-read after a lost answer.
+5. services/bulk_notes.py: selection or individual notes, notes read first and again before each POST.
+6. tools, server, annotations, docs, coverage, snapshot, guide limit, decision; contract, tool and E2E tests. Each test red first.
+<!-- SECTION:PLAN:END -->
