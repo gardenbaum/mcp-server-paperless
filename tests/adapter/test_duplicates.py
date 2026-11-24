@@ -4,31 +4,52 @@ The adapter sends what 3.5.1 documents (schema guard); a rejected upload is a fa
 an error message whose only related document is the existing one.
 """
 
+import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
+import httpx2
 import pytest
 
 from adapter.conftest import streaming
 from adapter.test_admin import TASK_WIRE
 from adapter.test_tasks import FAILED, UUID, Tasks
-from adapter.test_trash import DOCUMENT, VERSION, Recorded, listing
+from adapter.test_trash import DOCUMENT, VERSION, Chunks, Recorded, listing
 from mcp_server_paperless.domain.documents import DocumentQuery
-from mcp_server_paperless.domain.errors import NotFound, PermissionDenied
+from mcp_server_paperless.domain.errors import (
+    AnswerCompressed,
+    NotFound,
+    PermissionDenied,
+    UpstreamTimeout,
+    UpstreamUnavailable,
+)
 from mcp_server_paperless.domain.tasks import REJECTED
 from mcp_server_paperless.paperless.admin import PaperlessAdminReader
 from mcp_server_paperless.paperless.documents import PaperlessDocumentReader
 from mcp_server_paperless.paperless.tasks import PaperlessTaskReader
 from mcp_server_paperless.paperless.trash import PaperlessTrashReader
+from mcp_server_paperless.services.duplicates import Bounds, DuplicateFinder
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory
+    from adapter.schema_guard import Handler
     from adapter.test_trash import Json
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-47")]
 
 SHA = "b5989a99fade41ed36af961e918ef43da955b8b08a4c8aa78430f2e6b7da43cb"
 REJECTION = {"duplicate_of": 12, "duplicate_in_trash": False}
+
+
+def finder(answer: Handler) -> DuplicateFinder:
+    """The whole check on the adapter, with a limit of 8,000 bytes for the trash."""
+    client, _ = streaming(answer)
+    return DuplicateFinder(
+        PaperlessDocumentReader(client),
+        PaperlessTrashReader(client),
+        web_url="http://p.test",
+        bounds=Bounds(trash_bytes=8_000),
+    )
 
 
 def empty() -> Recorded:
@@ -227,3 +248,50 @@ async def test_a_version_that_is_gone_has_no_checksum(make_client: ClientFactory
 
     with pytest.raises(NotFound, match="No version 5"):
         _ = await reader.get_version_checksum(3, 5)
+
+
+@pytest.mark.decision("decision-52")
+async def test_a_trash_over_the_byte_limit_is_only_counted() -> None:
+    row = {**DOCUMENT, "content": "x" * 5_000}
+    sizes: list[str] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path != "/api/trash/":
+            return httpx2.Response(200, json=listing())
+        sizes.append(dict(request.url.params)["page_size"])
+        rows = [row] if sizes[-1] == "1" else [row, row]
+        body = json.dumps(listing(*rows, count=2)).encode()
+        return httpx2.Response(200, stream=Chunks(body))
+
+    found = await finder(answer).cleared(b"file", "upload", confirm=False)
+
+    assert sizes == ["500", "1", "1"]
+    assert found.matches == ()
+    assert [g for g in found.not_checked if g.startswith("Trash: neither")]
+
+
+@pytest.mark.decision("decision-52")
+@pytest.mark.parametrize(
+    ("failing", "error"),
+    [
+        (httpx2.Response(500), UpstreamUnavailable),
+        (
+            httpx2.Response(200, headers={"Content-Encoding": "gzip"}, stream=Chunks(b"x")),
+            AnswerCompressed,
+        ),
+        (httpx2.ReadTimeout("slow"), UpstreamTimeout),
+        (httpx2.ConnectError("down"), UpstreamUnavailable),
+    ],
+)
+async def test_every_other_failure_of_the_trash_fails_the_check(
+    failing: httpx2.Response | httpx2.TransportError, error: type[Exception]
+) -> None:
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path != "/api/trash/":
+            return httpx2.Response(200, json=listing())
+        if isinstance(failing, httpx2.TransportError):
+            raise failing
+        return failing
+
+    with pytest.raises(error):
+        _ = await finder(answer).cleared(b"file", "upload", confirm=True)

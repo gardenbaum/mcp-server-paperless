@@ -144,3 +144,34 @@ async def test_both_steps_end_in_time() -> None:
     fake.slow = True
     with pytest.raises(UpstreamTimeout, match="duplicate check"):
         _ = await finder.find(SHA, batch)
+
+
+@pytest.mark.decision("decision-52")
+async def test_a_trash_over_the_byte_limit_is_a_gap_of_every_file_and_read_once() -> None:
+    setup = Setup(bounds=Bounds(trash_bytes=10))
+    for number in (11, 12):
+        _ = setup.document(number, content="x" * 6)
+        await setup.delete(number)
+
+    batch = await setup.finder.read_for((SHA, OTHER))
+    for sha256 in (SHA, OTHER):
+        found = await setup.finder.find(sha256, batch)
+        assert found.matches == ()
+        assert any(gap.startswith("Trash: neither") for gap in found.not_checked)
+
+    assert setup.fake.trash_reads == [500, 1, 1, 1]
+
+
+@pytest.mark.decision("decision-52")
+async def test_a_trash_that_outgrows_the_byte_limit_is_a_gap_of_the_files_that_follow() -> None:
+    setup = Setup(bounds=Bounds(trash_bytes=10))
+    _ = setup.document(11, content="x" * 11)
+    batch = await setup.finder.read_for((SHA, OTHER))
+    checked = await setup.finder.find(OTHER, batch)
+    await setup.delete(11)
+
+    found = await setup.finder.find(SHA, batch)
+
+    assert not any(gap.startswith("Trash: neither") for gap in checked.not_checked)
+    assert any(gap.startswith("Trash: neither") for gap in found.not_checked)
+    assert keys(found.matches) == []  # its only copy went into the trash that is not read

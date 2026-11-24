@@ -15,6 +15,7 @@ from fakes.paperless import FakeDocument, FakePaperless, FakeState, FakeUser, se
 
 from mcp_server_paperless.domain.documents import MAX_UPLOAD_LIMIT, UploadMetadata
 from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
@@ -43,6 +44,7 @@ from mcp_server_paperless.services.batch_uploads import (
 from mcp_server_paperless.services.duplicates import (
     HIDDEN_REJECTED,
     REJECTED_FOR,
+    TRASH_UNREAD,
     UNCOMPARED,
     VERSIONS_AFTER,
     CheckMovedError,
@@ -469,6 +471,21 @@ async def test_a_check_that_cannot_run_stops_the_whole_call(root: Path) -> None:
     with pytest.raises(UpstreamTimeout):
         _ = await setup.directory()
     assert setup.fake.sent == []
+
+
+@pytest.mark.decision("decision-52")
+async def test_a_trash_too_large_to_check_is_named_once_for_the_call(root: Path) -> None:
+    setup = Setup(root)
+    _ = setup.file("a.pdf")
+    _ = setup.file("b.pdf")
+    setup.fake.trash_error = AnswerTooLarge("too large")
+
+    batch = await setup.directory()
+
+    assert [f.status for f in batch.files] == ["uploaded", "uploaded"]
+    assert [g for g in batch.not_checked if g.startswith("Trash: neither")] == [
+        TRASH_UNREAD.format(entries=500, mib=64)
+    ]
 
 
 async def test_a_check_that_fails_later_fails_that_file_only(root: Path) -> None:
