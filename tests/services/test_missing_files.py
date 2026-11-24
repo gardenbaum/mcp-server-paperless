@@ -116,6 +116,14 @@ async def test_a_document_without_file_names_is_not_one_without_its_file() -> No
             'Call again with source="original", the original, which is there.',
         ),
         ("application/pdf", None, ["original", "archive"], b"a", "original", STILL_READ),
+        (
+            "application/pdf",
+            "archive",
+            ["original", "archive"],
+            b"a",
+            "archive version",
+            STILL_READ,
+        ),
         ("application/pdf", None, ["original"], None, "original", STILL_READ),
     ],
 )
@@ -381,8 +389,9 @@ async def test_what_cannot_be_checked_does_not_stop_an_operation_but_a_merge() -
     assert len(fake.state.tasks) == before
     assert raised.value.describe() == (
         f"The file of document {LOST} could not be checked, so nothing was merged: Paperless "
-        "leaves a document whose file is missing out of a merge without saying so. Hint: Try again "
-        "in a moment."
+        "leaves a document whose file is missing out of a merge without saying so. The reason: "
+        "Paperless is temporarily unavailable (HTTP 500). Hint: Leave the document out, or try "
+        "again in a moment."
     )
 
 
@@ -410,15 +419,61 @@ async def test_the_check_is_bounded_and_keeps_what_it_saw() -> None:
     fake.stuck = frozenset({WHOLE, ALSO})
 
     await require_files(fake, dict.fromkeys([WHOLE, ALSO]), "original", seconds=0.05)
-    with pytest.raises(PaperlessMcpError, match=f"documents {WHOLE} and {ALSO} could not"):
+    with pytest.raises(PaperlessMcpError) as raised:
         await require_files(
-            fake, dict.fromkeys([WHOLE, ALSO]), "original", certain=True, seconds=0.05
+            fake, dict.fromkeys([ALSO, WHOLE]), "original", certain=True, seconds=0.05
         )
+    assert raised.value.message.startswith(
+        f"The files of documents {ALSO} and {WHOLE} could not be checked"
+    )
+    assert raised.value.message.endswith("The reason: The check took longer than 0.05 seconds.")
+    assert raised.value.hint == "Leave the documents out, or try again in a moment."
     with pytest.raises(NotFound, match=f"document {LOST} "):
         await require_files(fake, dict.fromkeys([WHOLE, LOST]), "original", seconds=0.05)
 
     assert fake.running == 0
     assert CHECK_SECONDS == 30
+
+
+async def test_the_reason_is_the_first_error_also_if_others_took_too_long() -> None:
+    fake = unsure(failing={LOST})
+    fake.stuck = frozenset({WHOLE})
+
+    with pytest.raises(PaperlessMcpError, match="The reason: Paperless is temporarily"):
+        await require_files(
+            fake, dict.fromkeys([WHOLE, LOST]), "original", certain=True, seconds=0.05
+        )
+
+
+async def test_the_other_kind_is_not_promised_for_a_document_that_could_not_be_checked() -> None:
+    with pytest.raises(NotFound) as raised:
+        await require_files(
+            unsure(LOST, failing={WHOLE}),
+            dict.fromkeys([WHOLE, LOST]),
+            "original",
+            choice=True,
+        )
+
+    assert raised.value.hint is not None
+    assert "instead works" not in raised.value.hint
+
+
+class Late(FakePaperless):
+    """A Paperless that answers for the documents in the reverse of their order."""
+
+    @override
+    async def get_document_metadata(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> FileMetadata:
+        await asyncio.sleep({LOST: 0.06, WHOLE: 0.03, ALSO: 0}[document_id])
+        return await super().get_document_metadata(document_id, version_id=version_id)
+
+
+async def test_the_documents_are_named_in_the_order_they_were_chosen() -> None:
+    late = Late(state_with(LOST, WHOLE, ALSO), user=ADMIN[0])
+
+    with pytest.raises(NotFound, match=f"documents {LOST}, {WHOLE} and {ALSO} "):
+        await require_files(late, dict.fromkeys([LOST, WHOLE, ALSO]), "original")
 
 
 async def test_the_documents_are_checked_a_few_at_a_time() -> None:

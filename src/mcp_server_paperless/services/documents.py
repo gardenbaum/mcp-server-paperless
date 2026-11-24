@@ -140,12 +140,15 @@ async def require_files(  # noqa: PLR0913 -- what is checked and how strictly
         PaperlessMcpError: With ``certain``, a document could not be checked.
     """
     facts: dict[int, FileMetadata] = {}
+    reasons: list[str] = []
     turn = asyncio.Semaphore(CHECKS_AT_ONCE)
 
     async def read(number: int, version_id: int | None) -> None:
         async with turn:
-            with contextlib.suppress(PaperlessMcpError):
+            try:
                 facts[number] = await reader.get_document_metadata(number, version_id=version_id)
+            except PaperlessMcpError as error:
+                reasons.append(error.message)
 
     with contextlib.suppress(TimeoutError):
         async with asyncio.timeout(seconds), asyncio.TaskGroup() as group:
@@ -157,12 +160,15 @@ async def require_files(  # noqa: PLR0913 -- what is checked and how strictly
         raise refusal
     unchecked = [number for number in documents if number not in facts]
     if certain and unchecked:
-        noun = "files" if len(unchecked) > 1 else "file"
+        s = "s" if len(unchecked) > 1 else ""
+        reason = reasons[0] if reasons else f"The check took longer than {seconds:g} seconds."
         message = (
-            f"The {noun} of {joined(unchecked)} could not be checked, so nothing was merged: "
-            "Paperless leaves a document whose file is missing out of a merge without saying so."
+            f"The file{s} of {joined(unchecked)} could not be checked, so nothing was merged: "
+            "Paperless leaves a document whose file is missing out of a merge without saying so. "
+            f"The reason: {reason}"
         )
-        raise PaperlessMcpError(message, hint="Try again in a moment.")
+        hint = f"Leave the document{s} out, or try again in a moment."
+        raise PaperlessMcpError(message, hint=hint)
 
 
 def text_state(document_id: int, version_id: int, text: str) -> str:

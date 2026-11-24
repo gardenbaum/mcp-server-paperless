@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T07:06:14Z'
-updated_date: '2026-11-24T08:55:23Z'
+updated_date: '2026-11-24T08:58:29Z'
 labels: []
 dependencies: []
 priority: medium
@@ -53,4 +53,6 @@ Live: tests/e2e/helpers.lose_file removes a file in the container or nulls the n
 Not changed: share links and bundles (creating one needs no file; a failed bundle build is reported by its last_error).
 
 Review of db68e91 (0 critical, 2 important, 8 minor) fixed except M5, which becomes a task of its own. I1: a null name is not a missing file (3.5.1 falls back to {pk:07}{type}, the default name); only a null size is. This corrects the fact above that a nameless document is missing its file. I2 (controller's decision): the check before PDF operations and e-mails reads at most 5 documents at once and takes at most 30 s for all; a document that could not be checked passes (the operation then fails by itself as before), only a seen null size refuses. Merges fail closed with 'could not be checked', because Paperless leaves such a document out silently; so a merge can now be refused when metadata/ fails or is slow. M1: a 404 of a file the metadata lists is a neutral error. M2: refusals count the selection and name the other kind if it works for all. M3: the lookup after a failed bulk download goes on past a document that cannot be read and says the list may be incomplete. M4: the open of a part of unknown size is inside the time limit; no timed test, the 30 minutes are not injectable. The text 'does not know the size and checksum' became 'does not give ...' (test adjusted). M6 to M8 done.
+
+Delta review: a merge that cannot be checked says why (the first error, or that the check took too long) and offers to leave the documents out; tests for the incomplete check, the hidden original in the pages hint and the order of the ids (two hand mutants killed).
 <!-- SECTION:NOTES:END -->
