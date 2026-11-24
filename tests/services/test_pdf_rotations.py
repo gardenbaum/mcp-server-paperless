@@ -108,7 +108,7 @@ class Paperless(FakePaperless):
 
     @override
     async def find_rotations(self, search: RotationSearch, *, final: bool = False) -> FoundCopies:
-        before = search.before
+        before = {n: search.before[n] for n in search.hidden}
         self.searches.append((dict(before), final))
         self.looked_for = search
         self.now += self.slow
@@ -309,7 +309,10 @@ async def test_the_other_documents_of_a_mixed_request_settle_no_earlier_rotation
     done = await settled.rotate(ONE, PLAIN, wait=2)
 
     assert fake.looked_for is not None
-    assert (dict(fake.looked_for.before), fake.looked_for.documents) == ({ONE: ONE}, (ONE, PLAIN))
+    assert (fake.looked_for.hidden, dict(fake.looked_for.before)) == (
+        (ONE,),
+        {ONE: ONE, PLAIN: PLAIN},
+    )
     assert (doubted.state, doubted.produced_ids) == ("unknown", (fake.newest(PLAIN),))
     assert UNTOLD.format(doubt=PASSING) in (doubted.message or "")
     assert done.state == "success"

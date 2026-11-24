@@ -997,7 +997,7 @@ class PdfWriter(Protocol):
         ...
 
     async def find_rotations(self, search: RotationSearch, *, final: bool = False) -> FoundCopies:
-        """The versions a rotation made of the documents of ``search.before``, as they exist now.
+        """The versions a rotation made of the documents of ``search.hidden``, as they exist now.
 
         For documents whose tasks Paperless does not list (a date among their custom fields). A
         version is taken only if it is newer than the one shown before, was added since the queued

@@ -116,16 +116,16 @@ class RotationSearch:
 
     Attributes:
         request: The queued task of the rotation.
-        before: The version each document showed before it, of those without a listed task.
-        documents: Every document of the request.
+        hidden: The documents of the request without a listed task, whose versions are looked for.
+        before: The version every document of the request showed before it.
         user: The current user, once known.
         names: The file name of each version that was read ("" if it is gone).
         actors: Who added each version, by the history.
     """
 
     request: str
+    hidden: Sequence[int]
     before: Mapping[int, int]
-    documents: Sequence[int]
     user: int | None = None
     names: dict[int, str] = field(default_factory=dict[int, str])
     actors: dict[int, int | None] = field(default_factory=dict[int, int | None])

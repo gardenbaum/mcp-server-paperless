@@ -350,10 +350,10 @@ class PdfService:
         )
 
         async def follow_up(_: Progress) -> PdfResult:
-            before = await self._hidden(started, documents)
-            known, found = await self._parts.turned(
-                started, before, document_ids, _bound(wait_seconds)
-            )
+            hidden = await self._hidden(started, documents)
+            before = {d.id: listed_version(d, None) for d in documents}
+            bound = _bound(wait_seconds)
+            known, found = await self._parts.turned(started, hidden, before, bound)
             return await self._result(
                 "rotate",
                 summary,
@@ -1274,14 +1274,14 @@ class PdfService:
 
     async def _hidden(
         self, started: StartedTasks, documents: Sequence[DocumentRecord]
-    ) -> dict[int, int]:
-        """The documents whose own date hides their task, and the version each showed before."""
+    ) -> list[int]:
+        """The documents whose own date hides their task."""
         names = () if started.files is None else started.files.names
-        return {
-            document.id: listed_version(document, None)
+        return [
+            document.id
             for document in documents
             if f"{document.id}_rotated.pdf" in names and await self._dates([document])
-        }
+        ]
 
     async def _require_delete(self, documents: Sequence[DocumentRecord]) -> tuple[str, ...]:
         """Refuse early when the user is known not to be allowed to trash the originals.

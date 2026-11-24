@@ -26,7 +26,7 @@ import sys
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
-from itertools import takewhile
+from itertools import dropwhile, takewhile
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Concatenate, Literal, cast
 
@@ -2181,15 +2181,15 @@ class FakePaperless:
         """
         if not self.user.has("view_paperlesstask"):
             raise self._denied()
-        nothing = (None,) * len(search.before)
+        nothing = (None,) * len(search.hidden)
         own = next((c for c in self.state.copying if c.request == search.request), None)
         if not self.user.has("view_uisettings") or own is None:
             user_known = self.user.has("view_uisettings")
             return FoundCopies(ids=nothing, doubt=NO_TIMES if user_known else NO_USER)
         ids: list[int | None] = []
         doubt: str | None = None
-        for number, newest in search.before.items():
-            found = self._rotation_of(number, newest, own) if doubt is None else None
+        for number in search.hidden:
+            found = self._rotation_of(number, search.before[number], own) if doubt is None else None
             doubt = found if isinstance(found, str) else doubt
             ids.append(found if isinstance(found, int) else None)
         doubt = doubt or self._rotated_else(search, own, whole=final or None not in ids)
@@ -2214,7 +2214,7 @@ class FakePaperless:
 
     def _rotated_else(self, search: RotationSearch, own: FakeCopying, *, whole: bool) -> str | None:
         """Why the versions may be another request's of this user."""
-        names = {f"{number}_rotated.pdf" for number in search.before}
+        names = {f"{number}_rotated.pdf" for number in search.hidden}
         if any(t.file_name in names and t.created >= own.started for t in self.state.tasks):
             return TASKED
         others = [
@@ -2235,11 +2235,7 @@ class FakePaperless:
                     document,
                     self._turned_versions(
                         document,
-                        (
-                            v
-                            for v in document.versions
-                            if document.id not in search.documents or v.added < own.started
-                        ),
+                        self._not_own(document, search, own),
                         since,
                     ),
                 )
@@ -2247,6 +2243,16 @@ class FakePaperless:
             if len(made) < sum(c.count for c in earlier):
                 return PENDING
         return None
+
+    def _not_own(
+        self, document: FakeDocument, search: RotationSearch, own: FakeCopying
+    ) -> list[DocumentVersion]:
+        """The versions that cannot be of the request of the search."""
+        if document.id not in search.before:
+            return document.versions
+        shown = search.before[document.id]
+        rest = dropwhile(lambda v: v.id != shown, document.versions)
+        return [v for v in rest if v.added < own.started]
 
     def _turned_versions(
         self, document: FakeDocument, versions: Iterable[DocumentVersion], since: datetime

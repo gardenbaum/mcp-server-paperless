@@ -258,21 +258,21 @@ class Parts:
     async def turned(
         self,
         started: StartedTasks,
+        hidden: Sequence[int],
         before: Mapping[int, int],
-        documents: Sequence[int],
         bound: float,
     ) -> tuple[StartedTasks, Found | None]:
         """Find the versions of a rotation whose tasks a date hides, for up to ``bound`` seconds.
 
-        ``before`` is the version each such document showed before the request, which was for
-        ``documents``. Returns the request with the documents of what is found, which comes before
-        its listed tasks. Only the last look can end after ``bound``; the time it took is told.
+        ``hidden`` are such documents, ``before`` is the version every document of the request
+        showed before it. Returns the request with the documents of what is found, which comes
+        before its listed tasks. Only the last look can end after ``bound``; the time is told.
         """
         files = started.files
-        if started.problem or files is None or not before or bound <= 0:
+        if started.problem or files is None or not hidden or bound <= 0:
             return started, None
-        search = RotationSearch(files.request, before, tuple(documents))
-        nothing = (None,) * len(before)
+        search = RotationSearch(files.request, tuple(hidden), before)
+        nothing = (None,) * len(hidden)
 
         async def look(left: float) -> FoundCopies:
             try:
@@ -288,15 +288,15 @@ class Parts:
             return started, Found((), waited, UNTOLD.format(doubt=copies.doubt))
         tasks = tuple(
             _task(version, f"{number}_rotated.pdf", NOT_TURNED)
-            for number, version in zip(before, copies.ids, strict=True)
+            for number, version in zip(hidden, copies.ids, strict=True)
         )
         note = TURNED.format(
-            documents=named(list(before)),
+            documents=named(hidden),
             found=sum(n is not None for n in copies.ids),
-            expected=len(before),
-            versions="version" if len(before) == 1 else "versions",
+            expected=len(hidden),
+            versions="version" if len(hidden) == 1 else "versions",
         )
-        known = started.model_copy(update={"sources": (*before, *started.sources)})
+        known = started.model_copy(update={"sources": (*hidden, *started.sources)})
         return known, Found(tasks, waited, note)
 
     async def _search(

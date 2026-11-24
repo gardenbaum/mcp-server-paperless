@@ -24,11 +24,12 @@ looks for the file tasks, with a fresh window.
 import asyncio
 import contextlib
 import logging
+import math
 import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from itertools import takewhile
+from itertools import dropwhile, takewhile
 from typing import TYPE_CHECKING, Final
 
 from pydantic import AwareDatetime, BaseModel, JsonValue, RootModel
@@ -106,10 +107,10 @@ class _Task(BaseModel):
         return named if isinstance(named, str) else None
 
     @property
-    def documents(self) -> int | None:
-        """How many documents a queued operation is for."""
+    def documents(self) -> float:
+        """How many documents a queued operation is for; no number is enough if it is not told."""
         count = self.input_data.get("document_count") if isinstance(self.input_data, dict) else None
-        return count if isinstance(count, int) else None
+        return count if isinstance(count, int) else math.inf
 
     @property
     def copies_metadata(self) -> bool:
@@ -197,8 +198,8 @@ MERGED_NAME_LIMIT: Final = 100
 
 # The queued operations that hand over files a copy could be taken for.
 COPYING: Final = frozenset({"edit_pdf", "merge", "remove_password", "split", "delete_pages", None})
-# The queued operations that hand over files a rotation could be taken for.
-ROTATING: Final = frozenset({"rotate", None})
+# The queued operation that hands over files a rotation could be taken for.
+ROTATE: Final = "rotate"
 BULK = "bulk_update"
 NO_USER: Final = "the current user is not known"
 NO_TIMES: Final = "the times of its queued task are not known"
@@ -679,9 +680,9 @@ class PaperlessPdfWriter:
         of operations and tasks that are read afterwards. What a version is does not change, so it
         is read once per search.
         """
-        before = search.before
+        hidden = search.hidden
         params: dict[str, str | int] = {
-            "id__in": ",".join(map(str, before)),
+            "id__in": ",".join(map(str, hidden)),
             "fields": "id,versions",
             "page_size": LOOKBACK,
         }
@@ -691,27 +692,27 @@ class PaperlessPdfWriter:
         operations = await self._operations()
         own = next((row for row in operations.results if row.task_id == search.request), None)
         if search.user is None or own is None or own.date_started is None:
-            return _doubtful(before, NO_USER if search.user is None else NO_TIMES)
+            return _doubtful(hidden, NO_USER if search.user is None else NO_TIMES)
         start, named = own.date_started, dict[int, list[int]]()
-        for number, newest in before.items():
+        for number in hidden:
             if number not in listed:
-                return _doubtful(before, UNREADABLE.format(document=number))
-            newer = takewhile(lambda v, last=newest: v.id != last, listed[number])
+                return _doubtful(hidden, UNREADABLE.format(document=number))
+            newer = takewhile(lambda v, last=search.before[number]: v.id != last, listed[number])
             named[number] = await self._named_rotations(number, newer, start, search)
-        ids = dict[int, int | None].fromkeys(before)
+        ids = dict[int, int | None].fromkeys(hidden)
         for number, versions in named.items() if final or all(named.values()) else ():
             try:
                 made = await self._rotations(number, versions, search)
             except PermissionDenied, Validation:  # 400: the audit log is off
-                return _doubtful(before, NO_HISTORY)
+                return _doubtful(hidden, NO_HISTORY)
             if len(made) > 1:
                 several = ", ".join(map(str, made))
-                return _doubtful(before, SEVERAL.format(versions=several, document=number))
+                return _doubtful(hidden, SEVERAL.format(versions=several, document=number))
             ids[number] = made[0] if made else None
         whole = final or None not in ids.values()
-        doubt = await self._rotated_else(search, search.user, start, operations, whole=whole)
+        doubt = await self._rotated_else(search, start, operations, whole=whole)
         if doubt is not None:
-            return _doubtful(before, doubt)
+            return _doubtful(hidden, doubt)
         return FoundCopies(ids=tuple(ids.values()))
 
     async def _named_rotations(
@@ -747,7 +748,6 @@ class PaperlessPdfWriter:
     async def _rotated_else(
         self,
         search: RotationSearch,
-        user: int,
         start: datetime,
         operations: Page[_Task],
         *,
@@ -760,9 +760,8 @@ class PaperlessPdfWriter:
         versions as they have documents. Those are counted only if ``whole``.
         """
         since = start - BACKLOG
-        names = {_rotated(number) for number in search.before}
-        params: dict[str, str | int] = {**self._filters(CONSUME, None), "page_size": LOOKBACK}
-        tasks = await self._client.get(TASKS, Page[_Task], params=params)
+        names = {_rotated(number) for number in search.hidden}
+        tasks = await self._files()
         if any(
             task.filename in names
             and task.created >= since
@@ -770,38 +769,40 @@ class PaperlessPdfWriter:
             for task in tasks.results
         ):
             return TASKED
-        others = [
-            row
-            for row in operations.results
-            if row.task_id != search.request
-            and row.owner == user
-            and row.operation in ROTATING
-            and row.date_started
-        ]
-        if any(row.date_done is None for row in others):
-            return UNFINISHED
-        if any(row.date_done and row.date_done >= start for row in others):
-            return AT_ONCE
+        others = _rotating(operations, search)
+        running = [row for row in others if row.date_done is None or row.date_done >= start]
+        if running:
+            return AT_ONCE if all(row.date_done for row in running) else UNFINISHED
         since, earlier = _since(others, since)
         if any(_ends_after(page, since) for page in (tasks, operations)):
             return UNCOMPARED
         if not earlier or not whole:
             return None
-        return await self._unsettled(search, start, earlier, tasks.results)
+        doubt = await self._unsettled(search, start, earlier, tasks)
+        if doubt is not None:
+            return doubt
+        # One that started while the versions were counted may have made one of them.
+        known = {row.task_id for row in others}
+        now = _rotating(await self._operations(), search)
+        return None if {row.task_id for row in now} <= known else AT_ONCE
+
+    async def _files(self) -> Page[_Task]:
+        """The newest tasks for files, of every user."""
+        params: dict[str, str | int] = {**self._filters(CONSUME, None), "page_size": LOOKBACK}
+        return await self._client.get(TASKS, Page[_Task], params=params)
 
     async def _unsettled(
         self,
         search: RotationSearch,
         start: datetime,
         earlier: Sequence[_Task],
-        tasks: Sequence[_Task],
+        tasks: Page[_Task],
     ) -> str | None:
         """Why versions of earlier rotations may still come, None if all of them are there.
 
-        Not counted is what could be this request's own, on any of its documents, and what has the
-        name of an upload.
+        Not counted is what could be this request's own on any of its documents, by its place or its
+        time (the clocks of two hosts differ), and what has the name of an upload.
         """
-        counts = [row.documents for row in earlier]
         since = min(row.date_started for row in earlier if row.date_started)
         params: dict[str, str | int] = {
             "modified__gte": since.isoformat(),
@@ -811,13 +812,16 @@ class PaperlessPdfWriter:
         changed = await self._client.get(BASE, Page[_Changed], params=params)
         if changed.next_page is not None:
             return UNCOMPARED
-        uploads = {task.filename for task in tasks if not task.copies_metadata}
-        missing = sum(count for count in counts if count is not None)
+        listed = (*tasks.results, *(await self._files()).results)
+        uploads = {task.filename for task in listed if not task.copies_metadata}
+        missing = sum(row.documents for row in earlier)
         for row in changed.results:
-            if None in counts or _rotated(row.id) in uploads:
+            if _rotated(row.id) in uploads:
                 continue
-            own = row.id in search.documents
-            versions = [v for v in row.versions if not own or v.added < start]
+            versions = row.versions
+            if row.id in search.before:
+                rest = dropwhile(lambda v, shown=search.before[row.id]: v.id != shown, versions)
+                versions = [v for v in rest if v.added < start]
             with contextlib.suppress(PermissionDenied, Validation, NotFound):
                 named = await self._named_rotations(row.id, versions, since, search)
                 missing -= len(await self._rotations(row.id, named, search))
@@ -937,6 +941,18 @@ def _doubtful(wanted: Sized, doubt: str) -> FoundCopies:
 def _ends_after(page: Page[_Task], since: datetime) -> bool:
     """Whether a list that has more does not reach back that far."""
     return page.next_page is not None and min(row.created for row in page.results) > since
+
+
+def _rotating(operations: Page[_Task], search: RotationSearch) -> list[_Task]:
+    """The other rotations of the user of the search that have started."""
+    return [
+        row
+        for row in operations.results
+        if row.task_id != search.request
+        and row.owner == search.user
+        and row.operation == ROTATE
+        and row.date_started
+    ]
 
 
 def _since(rows: Sequence[_Task], since: datetime) -> tuple[datetime, list[_Task]]:

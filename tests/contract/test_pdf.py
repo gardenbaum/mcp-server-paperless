@@ -774,7 +774,8 @@ TURNING = FINDING | {"view_logentry"}
 def looking(started: StartedTasks, before: dict[int, int], *others: int) -> RotationSearch:
     """What to look for of a request for the documents of `before` and others."""
     assert started.files is not None
-    return RotationSearch(started.files.request, before, (*before, *others))
+    shown = before | {number: number for number in others}
+    return RotationSearch(started.files.request, tuple(before), shown)
 
 
 async def rotations(user: Ports, search: RotationSearch, *, passing: bool = False) -> FoundCopies:
@@ -930,14 +931,14 @@ async def test_a_rotation_is_only_found_with_tasks_user_and_history(backend: Bac
     document = backend.new_pdf(1)
     _ = await dated(backend, document)
     request, before = str(uuid.uuid4()), {document: document}
-    search = RotationSearch(request, before, (document,))
+    search = RotationSearch(request, (document,), before)
     untasked = backend.restricted(TURNING - {"view_paperlesstask"})
     unknown = backend.restricted(TURNING - {"view_uisettings"})
     untold = backend.restricted(FINDING)
 
     with pytest.raises(PermissionDenied):
         _ = await untasked.pdf_writes.find_rotations(search)
-    gone = RotationSearch(request, {MISSING: MISSING}, (MISSING,))
+    gone = RotationSearch(request, (MISSING,), {MISSING: MISSING})
     started = await untold.pdf_writes.rotate_documents((document,), 90)
     await until_versions(backend, document, 2)
 
@@ -948,7 +949,7 @@ async def test_a_rotation_is_only_found_with_tasks_user_and_history(backend: Bac
         await rotations(unknown, looking(started, before))
     ).doubt == "the current user is not known"
     times = "the times of its queued task are not known"
-    for unasked in (RotationSearch(request, before, (document,)), gone):
+    for unasked in (RotationSearch(request, (document,), before), gone):
         assert (await untold.pdf_writes.find_rotations(unasked)).doubt == times
     hidden = looking(started, {MISSING: MISSING})
     assert (await untold.pdf_writes.find_rotations(hidden)).doubt == (

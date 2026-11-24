@@ -1,7 +1,7 @@
 """Finding the versions of a rotation whose tasks Paperless does not list (decision-74)."""
 
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 import httpx2
 import pytest
@@ -176,8 +176,9 @@ async def find(  # noqa: PLR0913 -- what is looked for, and how
 def looking(
     before: dict[int, int] | None = None, documents: tuple[int, ...] = ()
 ) -> RotationSearch:
-    before = before or {8: 8}
-    return RotationSearch(request=DONE_TASK, before=before, documents=documents or tuple(before))
+    hidden = before or {8: 8}
+    shown = {n: n for n in documents} | hidden
+    return RotationSearch(request=DONE_TASK, hidden=tuple(hidden), before=shown)
 
 
 async def test_the_new_version_is_told_by_place_time_file_name_and_who_added_it(
@@ -280,18 +281,19 @@ async def test_without_the_history_nothing_is_taken(
 @pytest.mark.parametrize(
     "fields", [{"date_done": None}, {"date_done": START}, {"date_done": LATER}]
 )
-@pytest.mark.parametrize("operation", ["rotate", None])
 async def test_another_operation_of_the_user_at_the_same_time_or_later_is_a_doubt(
-    make_client: ClientFactory, fields: Json, operation: str | None
+    make_client: ClientFactory, fields: Json
 ) -> None:
     archive = Archive()
     archive.add(61)
-    archive.bulk = [rotation(**fields, input_data={"operation": operation}), QUEUED]
+    archive.bulk = [rotation(**fields), QUEUED]
 
     found = await find(make_client, archive)
 
     doubt = AT_ONCE if fields["date_done"] else UNFINISHED
     assert found == FoundCopies(ids=(None,), doubt=doubt)
+    archive.bulk.append(rotation(id=3, task_id=task_id(3), date_done=None))
+    assert (await find(make_client, archive)).doubt == UNFINISHED  # the one that stays is told
     assert (await find(make_client, Archive())).doubt is None
 
 
@@ -301,6 +303,7 @@ async def test_operations_that_add_no_such_version_are_no_doubt(make_client: Cli
     archive.bulk = [
         QUEUED,
         rotation(input_data={"operation": "edit_pdf"}, date_done=LATER),
+        rotation(input_data={}, date_done=LATER),  # Paperless's own update
         rotation(input_data={"operation": "merge_as_versions"}, date_done=LATER),
         rotation(owner=3, date_done=LATER),
         rotation(owner=None, date_done=LATER),
@@ -347,13 +350,13 @@ async def test_an_earlier_rotation_is_settled_by_the_versions_it_made(
     assert (await find(make_client, archive, before)).doubt == PENDING
 
 
-@pytest.mark.parametrize("data", [{"operation": "rotate"}, {}])
+@pytest.mark.parametrize("data", [{}, {"document_count": "1"}])
 async def test_an_earlier_operation_of_unknown_size_is_not_settled(
     make_client: ClientFactory, data: Json
 ) -> None:
     archive = Archive()
     archive.add(61)
-    archive.bulk = [QUEUED, rotation(input_data=data)]
+    archive.bulk = [QUEUED, rotation(input_data={"operation": "rotate", **data})]
 
     assert (await find(make_client, archive)).doubt == PENDING
 
@@ -483,8 +486,9 @@ async def test_the_other_documents_of_the_request_settle_no_earlier_rotation(
     archive.add(60)  # of the earlier rotation; ours is still to come
     archive.add(61, 9)  # ours, of a document whose task is listed
 
-    async def mixed(*, final: bool = False) -> FoundCopies:
-        return await find(make_client, archive, {8: 8}, documents=(8, 9), final=final)
+    async def mixed(*, final: bool = False, shown: int = 9) -> FoundCopies:
+        search = RotationSearch(DONE_TASK, (8,), {8: 8, 9: shown})
+        return await find(make_client, archive, search=search, final=final)
 
     assert await mixed() == EARLIER_STAYS
     assert await mixed(final=True) == EARLIER_STAYS
@@ -494,8 +498,12 @@ async def test_the_other_documents_of_the_request_settle_no_earlier_rotation(
     archive.add(59, 10, added=ago(seconds=30))  # what the earlier one really made
     assert await mixed() == FoundCopies(ids=(60,))
     _ = archive.versions.pop(10)
-    archive.add(58, 9, added=ago(seconds=30))  # of 9, but from before ours started
-    assert await mixed() == FoundCopies(ids=(60,))
+    # Newer than what 9 showed, so it may be ours, written by a host whose clock is behind.
+    archive.add(58, 9, added=ago(seconds=30))
+    assert await mixed() == EARLIER_STAYS
+    assert await mixed(shown=58) == FoundCopies(ids=(60,))  # 9 showed it before: it is not ours
+    archive.versions[9][0]["added"] = LATER
+    assert await mixed(shown=58) == EARLIER_STAYS
 
 
 async def test_an_upload_under_the_name_of_a_rotation_settles_nothing(
@@ -515,6 +523,53 @@ async def test_an_upload_under_the_name_of_a_rotation_settles_nothing(
     turned = {**data, "overrides": {"title": "Scan", "owner_id": 2, "actor_id": 2}}
     archive.tasks = [{**upload, "input_data": turned}]
     assert await find(make_client, archive) == FoundCopies(ids=(60,))
+
+
+class Racing(Archive):
+    """After the lists of tasks and operations were read, something more happens once."""
+
+    def __init__(self, *, upload: bool, pending: bool = False) -> None:
+        super().__init__()
+        self.upload: bool = upload
+        self.document(10)
+        self.bulk: list[Json] = [QUEUED, rotation()]
+        if pending:  # queued before, started only now
+            self.bulk.append(rotation(id=9, task_id=task_id(9), date_started=None, date_done=None))
+        self.add(60)  # of the earlier rotation
+        self.raced: bool = False
+
+    @override
+    def _list(self, kind: str, params: dict[str, str]) -> httpx2.Response:
+        answer = super()._list(kind, params)
+        if kind == "consume_file" and not self.raced:
+            self.raced = True
+            self.add(70, 10)
+            if self.upload:
+                task = {**row(20, "consume_file", "10_rotated.pdf"), "date_created": LATER}
+                data = {"filename": "10_rotated.pdf", "overrides": {"actor_id": 2}}
+                self.tasks: list[Json] = [{**task, "input_data": data}]
+            else:
+                now = {"date_started": LATER, "date_done": LATER}
+                self.bulk = [*self.bulk[:2], rotation(id=9, task_id=task_id(9), **now)]
+        return answer
+
+
+@pytest.mark.parametrize("pending", [False, True])
+async def test_a_rotation_that_starts_while_versions_are_counted_settles_nothing(
+    make_client: ClientFactory, *, pending: bool
+) -> None:
+    archive = Racing(upload=False, pending=pending)
+
+    found = await find(make_client, archive)
+
+    assert archive.raced
+    assert found == FoundCopies(ids=(None,), doubt=AT_ONCE)
+
+
+async def test_an_upload_that_comes_while_versions_are_counted_settles_nothing(
+    make_client: ClientFactory,
+) -> None:
+    assert await find(make_client, Racing(upload=True)) == EARLIER_STAYS
 
 
 async def test_the_window_holds_every_rotation_that_could_have_filled_it(
