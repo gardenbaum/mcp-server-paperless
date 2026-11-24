@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Final
 from mcp_server_paperless.domain.documents import DocumentUpload
 from mcp_server_paperless.domain.errors import (
     PaperlessMcpError,
+    UnexpectedAnswer,
     UpstreamUnavailable,
     Validation,
     quoted,
@@ -58,22 +59,30 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.task_outcome import Outcome
     from mcp_server_paperless.services.tasks import TaskService
 
+# The one status of an unavailable Paperless that says the request was not taken.
+TOO_MANY: Final = 429
 NOTHING: Final = "Nothing was written."
 FEWER: Final = "Insert fewer pages."
 UNLOCK: Final = "remove_document_password (toolset pdf) makes a version without the password."
 REWRITE: Final = (
     "It opens without a password but restricts what may be done with it. edit_pdf with all its "
-    'pages and output="new_version" makes a version without that.'
+    'pages and output="new_version" makes a version without that: it changes that document and '
+    "needs ownership of it."
 )
 STRUCTURE: Final = (
     "bookmarks, attachments, form fields, annotations and properties of the file of document {id}"
 )
 SOURCE_LOST: Final = (
-    "bookmarks, attachments, document scripts, properties, layer settings (a hidden layer can "
-    "become visible) and the form of the inserted pages are not in the result: their fields "
-    "cannot be filled in, and a value without a stored appearance is not shown"
+    "bookmarks, document attachments and scripts, properties, layer settings (a hidden layer can "
+    "become visible) and the form of the inserted pages are not in the result: their fields show "
+    "their values but cannot be filled in, characters their font lacks are missing, and "
+    "get_document_pages and inspect_pdf draw them only in a file that has a form"
 )
-ACTIONS: Final = "links and annotations of the inserted pages, with their actions"
+ALONG: Final = (
+    "what the inserted pages refer to, also where it is not visible: links, comments with the "
+    "replies to them and the files in them, actions, private and page data, and resources they "
+    "share with other pages of the source"
+)
 UNCHECKED: Final = "accessibility tags and PDF/A conformance of the result are not checked"
 UNGRANTED: Final = "view and change grants are not copied"
 COPIED: Final = (
@@ -224,6 +233,7 @@ class PageInserter:
         if dry_run:
             return result
         task_id = await self._sent(target, source, made.content, version=version)
+        del made  # up to 100 MiB, while other calls may build theirs
         outcome = await follow(
             self._tasks,
             task_id,
@@ -373,7 +383,9 @@ class PageInserter:
                     custom_fields=current.custom_fields,
                 )
             )
-        except UpstreamUnavailable as error:
+        except (UpstreamUnavailable, UnexpectedAnswer) as error:
+            if isinstance(error, UpstreamUnavailable) and error.status == TOO_MANY:
+                raise
             what = "the new version" if version else "the new document"
             message = f"It is not known whether Paperless took {what}: {error.message}"
             where = (
@@ -446,7 +458,7 @@ def _plan(target: _File, source: _File, pages: int, *, version: bool) -> PdfPlan
     if version:
         produces = f"a new version of the document {size}{READABLE}"
         plan = version_plan(produces, target.name, loses=loses)
-        return plan.model_copy(update={"keeps": (*plan.keeps, structure, ACTIONS, untouched)})
+        return plan.model_copy(update={"keeps": (*plan.keeps, structure, ALONG, untouched)})
     serials = numbers([target.document], None, trashes=False)
     return PdfPlan(
         produces=f"1 new document {size}",
@@ -454,7 +466,7 @@ def _plan(target: _File, source: _File, pages: int, *, version: bool) -> PdfPlan
             COPIED.format(name=target.name),
             structure,
             f"{target.name}: unchanged",
-            ACTIONS,
+            ALONG,
             untouched,
             *serials.keeps,
         ),

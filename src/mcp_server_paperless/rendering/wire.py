@@ -18,6 +18,8 @@ from mcp_server_paperless.domain.rendering import (
     Assembled,
     AssembleRequest,
     ContactSheet,
+    Counted,
+    CountRequest,
     Overview,
     OverviewRequest,
     PageImage,
@@ -31,6 +33,7 @@ from mcp_server_paperless.domain.rendering import (
 )
 from mcp_server_paperless.services.page_ranges import parse_pages
 
+type Answered = Rendered | Overview | Assembled | Counted
 type Count = Annotated[int, Field(ge=0)]
 type Positive = Annotated[int, Field(ge=1)]
 
@@ -39,7 +42,8 @@ class Job(BaseModel):
     """What the child is sent, followed by the file, or the target and the source of a new one."""
 
     request: Annotated[
-        RenderRequest | OverviewRequest | AssembleRequest, Field(discriminator="kind")
+        RenderRequest | OverviewRequest | AssembleRequest | CountRequest,
+        Field(discriminator="kind"),
     ]
     content_bytes: int
     first_bytes: int = 0
@@ -86,7 +90,7 @@ def encoded(head: BaseModel) -> bytes:
     return head.model_dump_json().encode() + b"\n"
 
 
-def answer(found: Rendered | Overview | Assembled | RenderFailed) -> bytes:
+def answer(found: Answered | RenderFailed) -> bytes:
     """What the child writes."""
     if isinstance(found, RenderFailed):
         head = _Answer(
@@ -96,6 +100,8 @@ def answer(found: Rendered | Overview | Assembled | RenderFailed) -> bytes:
             of_source=found.of_source,
         )
         return encoded(head)
+    if isinstance(found, Counted):
+        return encoded(_Answer(page_count=found.page_count))
     if isinstance(found, Assembled):
         return encoded(_Answer(page_count=found.source_pages)) + found.content
     if isinstance(found, Overview):
@@ -271,6 +277,22 @@ def overview_of(output: bytes, request: OverviewRequest) -> Overview:
         ),
         rest=tuple(wanted[shown[-1] :]) if shown else (),
     )
+
+
+def counted_of(output: bytes) -> int:
+    """The pages the child counted.
+
+    Raises:
+        RenderFailed: The failure it answered, or the answer is none.
+    """
+    line, _, data = output.partition(b"\n")
+    try:
+        head = _Answer.model_validate_json(line)
+    except ValidationError as error:
+        raise RenderFailed(reason="crashed") from error
+    if head.failure or data:
+        raise RenderFailed(reason=head.failure or "crashed")
+    return head.page_count
 
 
 def assembled_of(output: bytes, request: AssembleRequest) -> Assembled:

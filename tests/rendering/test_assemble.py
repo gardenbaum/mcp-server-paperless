@@ -1,12 +1,13 @@
 """Pages of one PDF inserted into another: the worker, its answer and the child."""
 
+import ctypes
 import io
 import json
 import struct
 import sys
 import zlib
 from hashlib import shake_256
-from typing import override
+from typing import TYPE_CHECKING, override
 
 import pypdfium2
 import pytest
@@ -15,17 +16,21 @@ from e2e.helpers import RESTRICTED_PDF
 from mcp_server_paperless.domain.rendering import (
     Assembled,
     AssembleRequest,
+    CountRequest,
     RenderFailed,
     RenderRequest,
 )
 from mcp_server_paperless.rendering import worker
 from mcp_server_paperless.rendering.runner import ChildRenderer
-from mcp_server_paperless.rendering.wire import Job, assembled_of, encoded
-from mcp_server_paperless.rendering.worker import assemble, main, render
+from mcp_server_paperless.rendering.wire import Job, assembled_of, counted_of, encoded
+from mcp_server_paperless.rendering.worker import assemble, count, main, render
 from rendering.files import ENCRYPTED_PDF, corners, filled_form, opened, pdf_of
 from rendering.test_main import Guard, pdf_with_pages
 from rendering.test_overview import A4, A5, asked, mixed
 from rendering.test_runner import READ, WITHOUT_FONTS
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 pytestmark = [pytest.mark.decision("decision-42"), pytest.mark.decision("decision-68")]
 
@@ -102,6 +107,84 @@ INHERITING = sized(301, 302, 303).replace(
 )
 
 
+def nested(*counts: int) -> bytes:
+    """Four pages in two nodes that claim these counts; the root says four."""
+    objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Count 4 /Kids [3 0 R 4 0 R] >>",
+        f"<< /Type /Pages /Parent 2 0 R /Count {counts[0]} /Kids [5 0 R 6 0 R] >>",
+        f"<< /Type /Pages /Parent 2 0 R /Count {counts[1]} /Kids [7 0 R 8 0 R] >>",
+    ]
+    objects += [
+        f"<< /Type /Page /Parent {3 + n // 2} 0 R /MediaBox [0 0 {301 + n} 800] >>"
+        for n in range(4)
+    ]
+    out, rows = b"%PDF-1.7\n", list[bytes]()
+    for number, body in enumerate(objects, start=1):
+        rows.append(b"%010d 00000 n \n" % len(out))
+        out += f"{number} 0 obj\n{body}\nendobj\n".encode()
+    table = b"xref\n0 9\n0000000000 65535 f \n" + b"".join(rows)
+    end = b"trailer\n<< /Size 9 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % len(out)
+    return out + table + end
+
+
+@pytest.mark.parametrize("after_page", range(5))
+@pytest.mark.parametrize("pages", ["2", "2-4"])
+@pytest.mark.parametrize("counts", [(2, 2), (3, 1), (1, 3), (0, 4), (4, 0), (9, 9), (-1, 5)])
+def test_a_page_is_where_it_should_be_in_the_saved_file_or_nothing_is_made(
+    counts: tuple[int, int], pages: str, after_page: int
+) -> None:
+    target = nested(*counts)
+    assert widths(target) == [301, 302, 303, 304]
+    inserted = [502] if pages == "2" else [502, 503, 504]
+    expected = [301, 302, 303, 304]
+    expected[after_page:after_page] = inserted
+
+    outcome: object
+    try:
+        outcome = widths(assemble(target, SOURCE, wanted(pages, after_page, 4)).content)
+    except RenderFailed as failure:
+        outcome = (failure.reason, failure.of_source)
+
+    allowed: list[object] = [expected]
+    if counts != (2, 2):
+        allowed.append(("damaged", False))
+    assert outcome in allowed
+
+
+@pytest.mark.parametrize(
+    ("counts", "after_page"), [((3, 1), 2), ((1, 3), 1), ((0, 4), 0), ((9, 9), 3), ((-1, 5), 0)]
+)
+def test_a_page_tree_that_would_lose_or_misplace_a_page_is_damage(
+    counts: tuple[int, int], after_page: int
+) -> None:
+    with pytest.raises(RenderFailed) as raised:
+        _ = assemble(nested(*counts), SOURCE, wanted("1", after_page, 4))
+
+    assert (raised.value.reason, raised.value.of_source) == ("damaged", False)
+
+
+def test_sizes_with_many_digits_are_not_taken_for_damage() -> None:
+    boxes = [
+        "/MediaBox [0.123456 0 12345.678912 0.333333]",
+        "/MediaBox [-7.7777777 3 14399.987 901.1]",
+    ]
+    many = mixed(*boxes)
+
+    made = assemble(many, mixed(*boxes), wanted("1-2", 1, 2)).content
+
+    assert len(pypdfium2.PdfDocument(made)) == 4
+
+
+def test_pages_that_look_alike_are_placed_as_well() -> None:
+    same = sized(300, 300).replace(b"/Type /Pages", b"/Type /Pages /Rotate 90 /CropBox [0 0 50 50]")
+
+    made = assemble(same, sized(300, 300), wanted("1-2", 1, 2)).content
+
+    pdf = pypdfium2.PdfDocument(made)
+    assert [pdf[n].get_size() for n in range(4)] == [(50, 50), (300, 800), (300, 800), (50, 50)]
+
+
 def test_an_inserted_page_inherits_nothing_of_the_document_it_goes_into() -> None:
     made = assemble(INHERITING, SOURCE, wanted("1", 1)).content
 
@@ -175,6 +258,119 @@ def test_links_and_annotations_come_with_their_page() -> None:
     source = pdf_of([""], page=f"/MediaBox [0 0 600 800] {link}")
 
     assert b"app.beep" in assemble(TARGET, source, wanted()).content
+
+
+def attached() -> bytes:
+    """A page with a comment that holds a file."""
+    return pdf_of(
+        [""],
+        page="/MediaBox [0 0 600 800] /Annots [5 0 R]",
+        extra=[
+            "<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 9 9] /FS 6 0 R >>",
+            "<< /Type /Filespec /F (x) /EF << /F 7 0 R >> >>",
+            "<< /Type /EmbeddedFile /Length 8 >>\nstream\n/ATTACH \nendstream",
+        ],
+    )
+
+
+def test_a_file_in_a_comment_comes_with_its_page() -> None:
+    pdf = pypdfium2.PdfDocument(assemble(TARGET, attached(), wanted()).content)
+    page = pdf[1]
+    note = pypdfium2.raw.FPDFPage_GetAnnot(page, 0)
+
+    assert pypdfium2.raw.FPDFPage_GetAnnotCount(page) == 1
+    assert pypdfium2.raw.FPDFAnnot_GetSubtype(note) == pypdfium2.raw.FPDF_ANNOT_FILEATTACHMENT
+    assert pypdfium2.raw.FPDFAnnot_HasKey(note, b"FS")
+    pypdfium2.raw.FPDFPage_CloseAnnot(note)
+
+
+FONT = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"
+
+
+def field(kind: str, *, need: bool = True, catalog: str = "", extra: Sequence[str] = ()) -> bytes:
+    """A page with one form field."""
+    need_appearances = "true" if need else "false"
+    return pdf_of(
+        [""],
+        page="/MediaBox [0 0 600 800] /Annots [5 0 R]",
+        catalog=(
+            f"/AcroForm << /Fields [5 0 R] /NeedAppearances {need_appearances} "
+            f"/DA (/Helv 24 Tf 0 g) /DR << /Font << /Helv 6 0 R >> >> >> {catalog}"
+        ),
+        extra=[
+            (
+                f"<< /Type /Annot /Subtype /Widget /T (f) /F 4 /DA (/Helv 24 Tf 0 g) {kind} "
+                "/Rect [100 600 400 650] /P 3 0 R >>"
+            ),
+            FONT,
+            *extra,
+        ],
+    )
+
+
+def appearance(content: bytes, page: int = 1) -> str:
+    """How the first field of a page is drawn by any reader (empty: not stored)."""
+    pdf = pypdfium2.PdfDocument(content)
+    found = pdf[page]
+    note = pypdfium2.raw.FPDFPage_GetAnnot(found, 0)
+    size = pypdfium2.raw.FPDFAnnot_GetAP(note, 0, None, 0)
+    buffer = ctypes.create_string_buffer(size)
+    read = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ushort))
+    _ = pypdfium2.raw.FPDFAnnot_GetAP(note, 0, read, size)
+    pypdfium2.raw.FPDFPage_CloseAnnot(note)
+    return buffer.raw.decode("utf-16-le").rstrip("\0")
+
+
+@pytest.mark.parametrize("need", [True, False])
+@pytest.mark.parametrize(
+    ("kind", "drawn"),
+    [
+        ("/FT /Tx /V (23.11.2026)", "(23.11.2026) Tj"),
+        ("/FT /Tx /Ff 4096 /V (one\rtwo)", "(two) Tj"),
+        ("/FT /Btn /V /Yes /AS /Yes /MK << /CA (4) >>", "\nf\n"),
+        ("/FT /Btn /Ff 32768 /V /Yes /AS /Yes", "\nf\n"),
+        ("/FT /Ch /Ff 131072 /Opt [(a) (bbbbb)] /V (bbbbb)", "(bbbbb) Tj"),
+        ("/FT /Ch /Opt [(aaaa) (bbbbb)] /V (bbbbb) /I [1]", "(bbbbb) Tj"),
+    ],
+    ids=["text", "lines", "check box", "radio", "combo box", "list"],
+)
+def test_the_value_of_a_field_is_stored_as_it_is_shown(
+    kind: str, drawn: str, *, need: bool
+) -> None:
+    source = field(kind, need=need)
+    assert appearance(source, 0) == ""
+
+    made = assemble(TARGET, source, wanted()).content
+
+    assert drawn in appearance(made)
+
+
+OLD = (
+    "<< /Type /XObject /Subtype /Form /BBox [0 0 300 50] /Length 8 >>\nstream\n%STORED \nendstream"
+)
+
+
+@pytest.mark.parametrize("need", [True, False])
+def test_a_stored_appearance_stays_unless_the_file_asks_for_a_new_one(*, need: bool) -> None:
+    source = field("/FT /Tx /V (value) /AP << /N 7 0 R >>", need=need, extra=[OLD])
+
+    shown = appearance(assemble(TARGET, source, wanted()).content)
+
+    assert ("STORED" in shown, "(value) Tj" in shown) == (not need, need)
+
+
+def test_scripts_of_a_form_do_not_run() -> None:
+    script = "<< /S /JavaScript /JS (this.getField('f').value = event.value = 'HACK';) >>"
+    source = field(
+        f"/FT /Tx /V (value) /AA << /F {script} /C {script} /V {script} >>",
+        catalog=f"/OpenAction {script} /AA << /WS {script} >>",
+    )
+
+    shown = appearance(assemble(TARGET, source, wanted()).content)
+
+    assert "(value) Tj" in shown
+    assert "HACK" not in shown
+    assert not {"V8", "XFA"} & set(pypdfium2.PDFIUM_INFO.flags)
 
 
 def test_other_pages_of_the_source_are_not_taken_along() -> None:
@@ -283,12 +479,13 @@ class Twice(pypdfium2.PdfDocument):
         super().import_pages(pdf, pages, index)
 
 
+@pytest.mark.parametrize("after_page", [1, 3])
 @pytest.mark.parametrize("kind", [Unwilling, Silent, Wrong, Twice])
-def test_an_import_that_did_not_do_its_work_is_damage(
-    kind: type[pypdfium2.PdfDocument],
+def test_an_import_that_did_not_do_its_work_shows_in_the_saved_file(
+    kind: type[pypdfium2.PdfDocument], after_page: int
 ) -> None:
     with pytest.raises(RenderFailed) as raised:
-        _ = assemble(TARGET, SOURCE, wanted("2-3"), open_pdf=kind)
+        _ = assemble(TARGET, SOURCE, wanted("2-3", after_page), open_pdf=kind)
 
     assert (raised.value.reason, raised.value.of_source) == ("damaged", True)
 
@@ -458,15 +655,12 @@ def counted(answer: str, seconds: float = 20.0) -> ChildRenderer:
     return ChildRenderer(command=(sys.executable, "-I", "-c", code), seconds=seconds)
 
 
-OVERVIEW = (
-    """sys.stdout.buffer.write(json.dumps({"page_count": %d, "runs": [{"count": 1, "shape": """
-    """None}]}).encode() + b"\\n")"""
-)
+COUNTED = """sys.stdout.buffer.write(b'{"page_count": %d}\\n')"""
 
 
 @pytest.mark.anyio
 async def test_the_pages_of_the_file_are_counted_by_a_second_child() -> None:
-    found = await counted(OVERVIEW % 4).assemble(b"x", b"y", wanted("2"))
+    found = await counted(COUNTED % 4).assemble(b"x", b"y", wanted("2"))
 
     assert found.content == b"%PDF-made"
 
@@ -475,8 +669,11 @@ async def test_the_pages_of_the_file_are_counted_by_a_second_child() -> None:
 @pytest.mark.parametrize(
     ("answer", "reason"),
     [
-        (OVERVIEW % 3, "crashed"),
-        (OVERVIEW % 5, "crashed"),
+        (COUNTED % 3, "crashed"),
+        (COUNTED % 5, "crashed"),
+        ("""sys.stdout.buffer.write(b'{"page_count": 4}\\nx')""", "crashed"),
+        ("""sys.stdout.buffer.write(b'{"page_count": 200001}\\n')""", "crashed"),
+        ("""sys.stdout.buffer.write(b'nothing')""", "crashed"),
         ("""sys.stdout.buffer.write(b'{"failure": "damaged"}\\n')""", "crashed"),
         ("""sys.stdout.buffer.write(b'{"failure": "encrypted"}\\n')""", "crashed"),
         ("raise SystemExit(73)", "memory"),
@@ -493,10 +690,26 @@ async def test_a_file_that_does_not_hold_its_pages_is_not_given_out(
     assert (raised.value.reason, raised.value.of_source, raised.value.slow) == (reason, False, None)
 
 
+def test_the_count_reads_the_size_of_every_page() -> None:
+    assert count(TARGET).page_count == 3
+    for broken in (MISSING, CYCLE, b"nothing", nested(5, 5).replace(b"/Count 4", b"/Count 5")):
+        with pytest.raises(RenderFailed) as raised:
+            _ = count(broken)
+        assert raised.value.reason == "damaged"
+
+
+def test_the_count_is_an_answer() -> None:
+    head = Job(request=CountRequest(), content_bytes=len(TARGET), memory_bytes=1000, seconds=5.0)
+    out = io.BytesIO()
+
+    assert main(io.BytesIO(encoded(head) + TARGET), out, Guard()) == 0
+    assert counted_of(out.getvalue()) == 3
+
+
 @pytest.mark.anyio
 async def test_both_children_share_the_seconds_of_a_call() -> None:
     slow = "import time; time.sleep(1.2)\n"
-    code = READ + slow + TWICE + "    " + OVERVIEW % 4
+    code = READ + slow + TWICE + "    " + COUNTED % 4
     renderer = ChildRenderer(command=(sys.executable, "-I", "-c", code), seconds=2.0)
 
     with pytest.raises(RenderFailed) as raised:

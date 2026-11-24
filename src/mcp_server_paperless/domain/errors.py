@@ -476,6 +476,10 @@ class UpstreamUnreachable(UpstreamUnavailable):
     """No connection to Paperless could be made."""
 
 
+class UnexpectedAnswer(PaperlessMcpError):
+    """Paperless answered a request with success, but with something that cannot be read."""
+
+
 class AnswerCompressed(PaperlessMcpError):
     """An answer was compressed although that was not asked for."""
 

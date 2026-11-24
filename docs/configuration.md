@@ -519,7 +519,8 @@ millimetres as PDFium shows the page, without a `UserUnit` of the file.
 together, and the result, may have 100 MiB; downloading both has the 120 seconds, and building the
 file and counting its pages the 30 seconds. A setting for uploads (`PAPERLESS_MCP_MAX_UPLOAD_BYTES`)
 does not apply: the file comes from Paperless and goes back to it. Encrypted and damaged files are
-refused, also PDFs that open without a password but restrict what may be done with them.
+refused, also PDFs that open without a password but restrict what may be done with them. Each
+inserted page is looked for at its place in the saved file before anything is sent.
 
 A page that does not fit alone is shown at a lower quality or smaller, and the report says so. Every
 call downloads the file again. Text whose font is not embedded can look different where the system

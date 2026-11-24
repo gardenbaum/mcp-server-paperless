@@ -203,6 +203,20 @@ class Assembled(BaseModel):
     inserted: tuple[int, ...]
 
 
+class CountRequest(BaseModel):
+    """Counts the pages of a PDF, each of which must have a size."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    kind: Literal["count"] = "count"
+
+
+class Counted(NamedTuple):
+    """How many pages a PDF has."""
+
+    page_count: int
+
+
 class SlowPage(NamedTuple):
     """The page a job was at when its time was over.
 
@@ -265,7 +279,7 @@ class PageRenderer(Protocol):
         ...
 
     async def assemble(self, target: bytes, source: bytes, request: AssembleRequest) -> Assembled:
-        """``target`` with pages of ``source`` in it, counted again in the result.
+        """``target`` with pages of ``source`` in it, read and counted again in the result.
 
         Raises:
             RenderFailed: See ``render``; or the result does not hold the pages it should.

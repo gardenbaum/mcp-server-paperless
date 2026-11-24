@@ -7,12 +7,12 @@ native code. `runner` starts this module in a process of its own for each call a
 import ctypes
 import importlib.util
 import io
+import itertools
 import math
 import re
 import struct
 import sys
 import time
-from functools import partial
 from itertools import batched, chain, groupby, islice
 from typing import TYPE_CHECKING, BinaryIO, Final, Protocol, cast, override
 
@@ -30,6 +30,8 @@ from mcp_server_paperless.domain.rendering import (
     Assembled,
     AssembleRequest,
     ContactSheet,
+    Counted,
+    CountRequest,
     Overview,
     OverviewRequest,
     PageImage,
@@ -44,9 +46,10 @@ from mcp_server_paperless.rendering.wire import DONE, READING, STARTED, Job, ans
 from mcp_server_paperless.services.page_ranges import parse_pages
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping
+    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
     from mcp_server_paperless.domain.rendering import Reason, Region, RenderRequest
+    from mcp_server_paperless.rendering.wire import Answered
 
 PDF = "application/pdf"
 WHOLE: Region = (0.0, 0.0, 1.0, 1.0)
@@ -665,8 +668,9 @@ def assemble(
     if len(into) != request.target_pages:
         raise RenderFailed(reason="differs")
     origin = _plain(source, open_pdf, of_source=True)
+    source_pages = len(origin)
     try:
-        pages = _pages(len(origin), request.pages)
+        pages = _pages(source_pages, request.pages)
     except RenderFailed as failure:
         failure.of_source = True
         raise
@@ -675,44 +679,113 @@ def assemble(
     of_source = False
     try:
         # Importing next to a page that is not there crashes PDFium.
-        for number in range(len(into)):
-            _ = into.get_page_size(number)
+        sizes = _sizes(into)
+        _require_places(target, sizes, request.after_page, len(pages))
         of_source = True
-        sizes = [origin.get_page_size(page - 1) for page in pages]
-        into.import_pages(origin, [page - 1 for page in pages], request.after_page)
-        for place, (page, size) in enumerate(zip(pages, sizes, strict=True), request.after_page):
-            made, original = into[place], origin[page - 1]
-            # What the page does not say itself it would take from the pages around it.
-            made.set_rotation(original.get_rotation())
-            made.set_cropbox(*made.get_cropbox())
-            if made.get_size() != size:
-                raise RenderFailed(reason="damaged", of_source=True)
-            made.close()
+        inserted = [origin.get_page_size(page - 1) for page in pages]
+        # With its form loaded PDFium stores how the fields of a page look; without V8 in the build
+        # no script runs.
+        _ = origin.init_forms()
+        rotations: list[int] = []
+        for page in pages:
+            original = origin[page - 1]
+            rotations.append(original.get_rotation())
             original.close()
-        if len(into) != request.target_pages + len(pages):
+        into.import_pages(origin, [page - 1 for page in pages], request.after_page)
+        for place, rotation in enumerate(rotations, request.after_page):
+            made = into[place]
+            # What the page does not say itself it would take from the pages around it.
+            made.set_rotation(rotation)
+            made.set_cropbox(*made.get_cropbox())
+            made.close()
+        content = _saved(into)
+        origin.close()
+        sizes[request.after_page : request.after_page] = inserted
+        if not _alike(content, sizes):
             raise RenderFailed(reason="damaged", of_source=True)
-        buffer = io.BytesIO()
-        into.save(buffer)
     except pypdfium2.PdfiumError as error:
         raise RenderFailed(reason="damaged", of_source=of_source) from error
-    if buffer.tell() > request.max_bytes:
+    if len(content) > request.max_bytes:
         raise RenderFailed(reason="large")
-    return Assembled(content=buffer.getvalue(), source_pages=len(origin), inserted=tuple(pages))
+    return Assembled(content=content, source_pages=source_pages, inserted=tuple(pages))
+
+
+def _saved(pdf: pypdfium2.PdfDocument) -> bytes:
+    """The file of a document, which is closed."""
+    buffer = io.BytesIO()
+    pdf.save(buffer)
+    pdf.close()
+    return buffer.getvalue()
+
+
+def _alike(content: bytes, sizes: Sequence[tuple[float, float]]) -> bool:
+    """Whether a file has pages of just these sizes; numbers are rounded when they are written."""
+    pdf = pypdfium2.PdfDocument(content)
+    found = _sizes(pdf)
+    pdf.close()
+    return len(found) == len(sizes) and all(
+        math.isclose(a, b, rel_tol=1e-6, abs_tol=0.01)
+        for one, other in zip(found, sizes, strict=True)
+        for a, b in zip(one, other, strict=True)
+    )
+
+
+def _require_places(
+    target: bytes, sizes: list[tuple[float, float]], after_page: int, pages: int
+) -> None:
+    """Insert marked pages into a copy, and look for each where it has to be in the saved file.
+
+    In a page tree whose counts are wrong PDFium puts a page elsewhere or where no reader finds it,
+    and the sizes of real pages cannot tell them apart.
+
+    Raises:
+        RenderFailed: A page is not where it has to be.
+    """
+    taken = {side for _, height in sizes for side in (math.floor(height), math.ceil(height))}
+    height = next(side for side in itertools.count(100) if not {side - 1, side, side + 1} & taken)
+    markers = [(100.0 + number, float(height)) for number in range(pages)]
+    probe = pypdfium2.PdfDocument(target)
+    for place, (width, _) in enumerate(markers, after_page):
+        page = probe.new_page(width, height, place)
+        page.set_rotation(0)
+        page.set_cropbox(0, 0, width, height)
+        page.close()
+    if not _alike(_saved(probe), [*sizes[:after_page], *markers, *sizes[after_page:]]):
+        raise RenderFailed(reason="damaged")
+
+
+def count(content: bytes) -> Counted:
+    """The pages of a PDF this worker made.
+
+    Raises:
+        RenderFailed: It cannot be read, or a page of it.
+    """
+    try:
+        return Counted(len(_sizes(pypdfium2.PdfDocument(content))))
+    except pypdfium2.PdfiumError as error:
+        raise RenderFailed(reason="damaged") from error
+
+
+def _sizes(pdf: pypdfium2.PdfDocument) -> list[tuple[float, float]]:
+    """The sizes of all pages."""
+    return [pdf.get_page_size(number) for number in range(len(pdf))]
 
 
 def _work(
     job: Job, started: float, announce: Callable[[bytes], None]
-) -> Callable[[bytes], Rendered | Overview | Assembled]:
+) -> Callable[[bytes, bytes], Answered]:
     """What makes the answer of a job out of what follows it."""
     request = job.request
     if isinstance(request, OverviewRequest):
-        return partial(
-            overview, request=request, font=label_font(), started=started, announce=announce
+        font = label_font()
+        return lambda first, rest: overview(
+            first + rest, request, font, started=started, announce=announce
         )
     if isinstance(request, AssembleRequest):
-        first = job.first_bytes
-        return lambda content: assemble(content[:first], content[first:], request)
-    return partial(render, request=request)
+        return lambda first, rest: assemble(first, rest, request)
+    if isinstance(request, CountRequest):
+        return lambda first, rest: count(first + rest)
+    return lambda first, rest: render(first + rest, request)
 
 
 def main(stdin: BinaryIO, stdout: BinaryIO, guard: Callable[[int, float], None]) -> int:
@@ -734,11 +807,13 @@ def main(stdin: BinaryIO, stdout: BinaryIO, guard: Callable[[int, float], None])
     work = _work(job, started, announce)
     try:
         guard(job.memory_bytes, job.seconds)
-        content = stdin.read(job.content_bytes)
-        if len(content) < job.content_bytes:
+        # One of the two is empty where there is one file: adding them copies nothing.
+        first = stdin.read(job.first_bytes)
+        rest = stdin.read(job.content_bytes - len(first))
+        if len(first) + len(rest) < job.content_bytes:
             return 1  # the server went away
         try:
-            found: Rendered | Overview | Assembled | RenderFailed = work(content)
+            found: Answered | RenderFailed = work(first, rest)
         except RenderFailed as failure:
             found = failure
         _ = stdout.write(answer(found))

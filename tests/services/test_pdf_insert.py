@@ -1,6 +1,8 @@
 """PageInserter: what is checked, what is written, and every way an insertion can end."""
 
 import asyncio
+import gc
+import weakref
 from dataclasses import replace
 from typing import TYPE_CHECKING, override
 
@@ -13,7 +15,9 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
+    UnexpectedAnswer,
     UpstreamTimeout,
+    UpstreamUnavailable,
     Validation,
 )
 from mcp_server_paperless.domain.rendering import Assembled, AssembleRequest, RenderFailed
@@ -55,15 +59,20 @@ KEPT = (
         f"bookmarks, attachments, form fields, annotations and properties of the file of document "
         f"{MINE}"
     ),
-    "links and annotations of the inserted pages, with their actions",
+    (
+        "what the inserted pages refer to, also where it is not visible: links, comments with the "
+        "replies to them and the files in them, actions, private and page data, and resources "
+        "they share with other pages of the source"
+    ),
     f"document {OTHER} 'Annex': unchanged",
 )
 LOST = (
     "a signature in the PDF is no longer valid",
     (
-        "bookmarks, attachments, document scripts, properties, layer settings (a hidden layer can "
-        "become visible) and the form of the inserted pages are not in the result: their fields "
-        "cannot be filled in, and a value without a stored appearance is not shown"
+        "bookmarks, document attachments and scripts, properties, layer settings (a hidden layer "
+        "can become visible) and the form of the inserted pages are not in the result: their "
+        "fields show their values but cannot be filled in, characters their font lacks are "
+        "missing, and get_document_pages and inspect_pdf draw them only in a file that has a form"
     ),
     "accessibility tags and PDF/A conformance of the result are not checked",
 )
@@ -97,7 +106,7 @@ class Paperless(FakePaperless):
         self.versions: list[tuple[int, VersionUpload]] = []
         self.uploads: list[DocumentUpload] = []
         self.served: list[tuple[int, str, int, int | None]] = []
-        self.lose: UpstreamTimeout | None = None
+        self.lose: PaperlessMcpError | None = None
         self.fail: str | None = None
         self.running: bool = False
         self.empty: bool = False
@@ -671,7 +680,8 @@ async def test_the_turn_is_shared_with_the_tools_that_show_pages() -> None:
 UNLOCK = "remove_document_password (toolset pdf) makes a version without the password."
 REWRITE = (
     "It opens without a password but restricts what may be done with it. edit_pdf with all its "
-    'pages and output="new_version" makes a version without that.'
+    'pages and output="new_version" makes a version without that: it changes that document and '
+    "needs ownership of it."
 )
 
 
@@ -834,11 +844,19 @@ async def test_a_document_that_went_away_meanwhile_gets_nothing() -> None:
         ),
     ],
 )
+@pytest.mark.parametrize(
+    "lost",
+    [
+        UpstreamTimeout("Paperless did not respond in time.", hint="Try again."),
+        UpstreamUnavailable("Paperless did not respond in time.", status=503),
+        UnexpectedAnswer("Paperless did not respond in time.", hint="It may have been applied."),
+    ],
+)
 async def test_a_lost_answer_says_that_the_outcome_is_not_known(
-    output: FileOutput, what: str, hint: str
+    output: FileOutput, what: str, hint: str, lost: PaperlessMcpError
 ) -> None:
     paperless = Paperless(state_of())
-    paperless.lose = UpstreamTimeout("Paperless did not respond in time.", hint="Try again.")
+    paperless.lose = lost
 
     with pytest.raises(PaperlessMcpError) as raised:
         _ = await insert(inserter(paperless), output=output)
@@ -847,6 +865,41 @@ async def test_a_lost_answer_says_that_the_outcome_is_not_known(
         f"It is not known whether Paperless took {what}: Paperless did not respond in time."
     )
     assert raised.value.hint == hint
+
+
+async def test_too_many_requests_are_a_refusal() -> None:
+    paperless = Paperless(state_of())
+    paperless.lose = UpstreamUnavailable("Paperless is busy.", hint="Try again.", status=429)
+
+    with pytest.raises(UpstreamUnavailable) as raised:
+        _ = await insert(inserter(paperless))
+
+    assert (raised.value.message, raised.value.hint) == ("Paperless is busy.", "Try again.")
+
+
+async def test_the_built_file_is_not_kept_while_the_task_is_followed() -> None:
+    class Watched(Assembler):
+        @override
+        async def assemble(
+            self, target: bytes, source: bytes, request: AssembleRequest
+        ) -> Assembled:
+            made = await super().assemble(target, source, request)
+            built.append(weakref.ref(made))
+            return made
+
+    class Following(Paperless):
+        @override
+        async def get_task(self, task_id: str) -> TaskStatus:
+            _ = gc.collect()
+            alive.append(built[0]() is not None)
+            return await super().get_task(task_id)
+
+    built: list[weakref.ref[Assembled]] = []
+    alive: list[bool] = []
+    _ = await insert(inserter(Following(state_of()), Watched()))
+
+    assert alive
+    assert not any(alive)
 
 
 async def test_what_paperless_refuses_is_said_in_its_words() -> None:

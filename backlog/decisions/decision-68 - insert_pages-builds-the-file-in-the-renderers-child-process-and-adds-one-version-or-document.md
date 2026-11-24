@@ -19,26 +19,28 @@ The design was put to the owner with recommendations: this server builds the fil
 <!-- SECTION:DECISION:BEGIN -->
 - **Supplements decision-42.** The child process of decision-42 gets a third job kind, `assemble`: two PDFs in, one PDF out. Every limit of that decision holds unchanged: 1 GiB, 30 s, one at a time (the turn is shared with `get_document_pages` and `inspect_pdf`, the download included), 100 MiB of input, here for both files together, and 120 s to download both. Its answer is bound by 100 MiB for the result beside the 1 MiB of a call. Import contracts and rights of the child are unchanged.
 - **One write.** Both records and file facts are read and checked; both files are downloaded; the child puts them together; both documents are read again and must still have the file that was read; then one `update_version` or `post_document`, followed like an upload. A step that fails before it writes nothing and leaves nothing. No answer to that one request is reported as not known, with the place to look before repeating. No Paperless operation is used, nothing is trashed, no temporary document is made.
-- **What is checked of the answer.** It is untrusted: `%PDF-` header, at most 100 MiB, and a second child that gets the result alone counts its pages: those of the document plus those inserted. Both children share the 30 s. A compromised child could still alter what is on the pages; the earlier version stays.
-- **Broken files.** Every page of the target and every wanted page of the source must have a size before PDFium is asked to import: importing next to a missing page crashes it (found while testing; it would be contained, but not explained). A target with another number of pages than Paperless counted is refused. After the import each inserted page is given its rotation and crop box as entries of its own, because it would otherwise inherit those of the target's page tree (found while testing), and must have the size it had.
+- **What is checked of the answer.** It is untrusted: `%PDF-` header, at most 100 MiB, and a second child that gets the result alone reads the size of every page and counts them: those of the document plus those inserted. Both children share the 30 s. A compromised child could still alter what is on the pages; the earlier version stays.
+- **Broken files.** Every page of the target and every wanted page of the source must have a size before PDFium is asked to import: importing next to a missing page crashes it (found while testing; it would be contained, but not explained). A target with another number of pages than Paperless counted is refused. A page tree whose inner counts are wrong makes PDFium insert a page at another place, or where no reader finds it (found in review): so marker pages of sizes the target does not have are first inserted at the same places of a throwaway copy, which is saved and opened again; if one is not where it must be, the target is `damaged`. The result is opened again, too, and must have every page of the target and of the source at its place with its size. After the import each inserted page is given its rotation and crop box as entries of its own, because it would otherwise inherit those of the target's page tree (found while testing).
 - **Encrypted files are refused**, target and source, also those that open without a password but restrict what may be done: PDFium would keep the encryption of a target and silently drop that of a source.
 - **Sources.** PDFs, and the archive PDF of any other type, which the plan names. The target must be a PDF whose pages Paperless counted.
 - **Rights.** A new version needs a change grant on the target, checked before anything is downloaded; a view of the source is enough. A new document needs a view of both. Global permissions are left to Paperless.
-- **No confirm** (decision-6): every page stays, the older version stays, no document is trashed. The tool is marked non-destructive. The plan says that everybody who may see the document can read the inserted pages. `dry_run` does everything but the second reading and the upload, so it also finds what only opening the files shows.
+- **No confirm** (decision-6): every page of the saved file was found at its place, the older version stays, no document is trashed. The tool is marked non-destructive. The plan says that everybody who may see the document can read the inserted pages. `dry_run` does everything but the second reading and the upload, so it also finds what only opening the files shows.
 - **decision-47 is not applied**: the bytes of the result differ every time, so a duplicate check could never match.
 - `PAPERLESS_MCP_MAX_UPLOAD_BYTES` bounds what a caller brings. This file comes from Paperless and goes back to it, so the limits above hold instead.
-- **What is lost** is in the plan: a signature in the target; bookmarks, attachments, document scripts, properties, layer settings and the form of the inserted pages. Links and annotations come along with their actions. The target keeps its bookmarks, attachments and form. Accessibility tags and PDF/A conformance are not checked.
+- **What comes along and what is lost** is in the plan. Along with a page comes what it refers to, also where it is not visible: links, comments with the replies to them and the files in them (a file-attachment annotation brings its file), actions, private and page data, and resources shared with other pages of the source. Other pages themselves do not come. Lost: a signature in the target; bookmarks, document attachments and scripts, properties, layer settings and the form of the inserted pages. The target keeps its bookmarks, attachments and form. Accessibility tags and PDF/A conformance are not checked.
 <!-- SECTION:DECISION:END -->
 
 ## Consequences
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
-- Up to 100 MiB of traffic each way. Measured with 49 and 50 MiB on macOS: 0.8 s, 650 MB in the child, 203 MiB in the server besides the inputs.
+- Up to 100 MiB of traffic each way. Measured with 49 and 50 MiB on macOS: 0.8 s, 600 MB in the child, 203 MiB in the server besides the inputs.
 - The overview of the server names one more tool (15 bytes of the guide: 2864).
 - A layer that the source hides by default can become visible, because the settings of layers belong to the file and not to the page.
-- A form field of an inserted page without a stored appearance is not shown.
+- **Form values.** The form of the source is loaded before the import, in memory only: PDFium then stores how a field looks where nothing is stored, or where the file asks for new appearances, as a reader of that file would. Checked with text (one and more lines), check boxes, radio buttons, combo boxes and lists in PDFium, MuPDF, Poppler and Ghostscript. The builds have neither V8 nor XFA, and no document or page action is triggered, so no script runs. Characters that the font of the field lacks are missing. Widgets of a file without a form are not drawn by this server's own page tools.
 - Between the second reading and the upload (milliseconds) another user can still add a version; the document then shows the inserted file and theirs is an earlier version.
 - A PDF restricted without a password has to be rewritten first (`edit_pdf` with all pages as a new version).
+- Inserting takes longer than linearly with the number of pages: 5000 into 5000 took 5 s, 50 000 pages end at the 30 s.
+- The built file is dropped before the task is followed; uploads at the same time hold up to 100 MiB each.
 - Repeating a call after a lost answer inserts the pages again.
 <!-- SECTION:CONSEQUENCES:END -->
 
@@ -48,6 +50,7 @@ The design was put to the owner with recommendations: this server builds the fil
 - Merge, `edit_pdf` and `merge_as_versions` in Paperless: two temporary documents that run workflows, matching and OCR, ownership and delete permission, leftovers on failure (owner decision 1).
 - Counting the pages in the same child: says nothing if that child is compromised or its PDFium state is broken.
 - Flattening the forms of inserted pages: would also flatten links and comments.
+- Removing file-attachment annotations from inserted pages: about 15 lines (PDFium removes them from the source in memory, and the file does not come along), but a comment the reader of the source saw would be missing. Left to the owner.
 <!-- SECTION:ALTERNATIVES:END -->
 
 ## Enforcement

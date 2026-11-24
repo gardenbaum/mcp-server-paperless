@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:17Z'
-updated_date: '2026-11-24T13:44:15Z'
+updated_date: '2026-11-24T14:03:57Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -60,4 +60,12 @@ Deliberate changes: OVERVIEW_GUIDE_LIMIT 2849 -> 2864 (15 bytes of the name; own
 
 Deviation: rendering, service and tool tests were seen red by import or missing tool, some edge tests (annotations kept, imported twice, uncounted source) were added after the code; contract and E2E tests were written after the code.
 Not run locally: full suite, E2E, live, mutation (owner rules).
+
+Review of 9721107 (0 Critical, 3 Important, 5 Minor), tests red first (53 rendering, 11 service):
+I1: marker pages in a saved and reopened throwaway copy prove every place; the result is reopened and every size compared; the second child (new job kind count) reads every size. All results accepted for wrong inner counts were also read alike by MuPDF and qpdf (36 cases, locally). 49 + 50 MiB: 0.76 s, 600 MB in the child (two parts are read apart now), 203 MiB in the server; 5000 into 5000 pages 5 s, 50 000 inserted pages end at 30 s.
+I2, M1: the plan, tool text, decision-68 and SECURITY.md name what comes along, also invisible. Removing file-attachment annotations: about 15 lines, tried, works (the file does not come along); owner decides.
+I3: the built file is dropped before the task is followed (weakref test); docs/container.md.
+M2: UnexpectedAnswer (domain) for an unreadable success answer. M3: 429 is a refusal. M4: the import stubs are detected in the saved file. M5: rendering-windows runs tests/rendering with test_assemble (two files of 99 MiB together, memory, time) and was green on 9721107; nothing added, no limit.
+Form values: the form of the source is loaded in memory, PDFium stores appearances; text, lines, check box, radio, combo, list with NeedAppearances true and false, shown by MuPDF, Poppler and Ghostscript; stored ones stay unless the file asks for new ones; no V8 or XFA in the build, scripts do not run (tested). Left as loss: not fillable, missing glyphs, this server draws widgets only in files with a form.
+The restricted hint says that edit_pdf changes that document and needs its ownership. Surface snapshot: description of insert_pages only.
 <!-- SECTION:NOTES:END -->

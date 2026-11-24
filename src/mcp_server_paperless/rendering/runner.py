@@ -12,12 +12,13 @@ import os
 import sys
 from typing import TYPE_CHECKING, Final, cast
 
-from mcp_server_paperless.domain.rendering import OverviewRequest, RenderFailed
+from mcp_server_paperless.domain.rendering import CountRequest, OverviewRequest, RenderFailed
 from mcp_server_paperless.rendering.limits import MEMORY_EXIT, TIME_EXIT
 from mcp_server_paperless.rendering.wire import (
     Job,
     answer_of,
     assembled_of,
+    counted_of,
     encoded,
     overview_of,
     started_page,
@@ -36,6 +37,8 @@ if TYPE_CHECKING:
         RenderRequest,
         SlowPage,
     )
+
+type Request = RenderRequest | OverviewRequest | AssembleRequest | CountRequest
 
 COMMAND: Final = (sys.executable, "-I", "-m", "mcp_server_paperless.rendering.worker")
 # The worst ordinary file measured took 2.4 s.
@@ -79,9 +82,7 @@ async def _collect(stdout: StreamReader, limit: int, output: bytearray) -> None:
             raise RenderFailed(reason="crashed")
 
 
-def _slow(
-    output: bytearray, request: RenderRequest | OverviewRequest | AssembleRequest
-) -> SlowPage | None:
+def _slow(output: bytearray, request: Request) -> SlowPage | None:
     """The page a child was at, if its job is one that says so."""
     if isinstance(request, OverviewRequest):
         return started_page(bytes(output), request)
@@ -128,19 +129,19 @@ class ChildRenderer:
         return made
 
     async def _require_pages(self, made: Assembled, request: AssembleRequest) -> None:
-        """Have the pages counted by a child that knows nothing but the result."""
+        """Have every page read by a child that knows nothing but the result."""
         try:
-            found = await self.inspect(made.content, OverviewRequest(pages="1", sheets=False))
+            found = counted_of(await self._answered([made.content], CountRequest()))
         except RenderFailed as failure:
             limit = failure.reason in {"timeout", "memory"}
             raise RenderFailed(reason=failure.reason if limit else "crashed") from failure
-        if found.page_count != request.target_pages + len(made.inserted):
+        if found != request.target_pages + len(made.inserted):
             raise RenderFailed(reason="crashed")
 
     async def _answered(
         self,
         contents: Sequence[bytes],
-        request: RenderRequest | OverviewRequest | AssembleRequest,
+        request: Request,
         output_bytes: int | None = None,
     ) -> bytes:
         """What the child writes for a job."""

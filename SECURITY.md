@@ -30,8 +30,10 @@ image, or switch the tools off with `PAPERLESS_MCP_DISABLED_TOOLS=get_document_p
 
 `insert_pages` uses the same child process to put two PDFs together and uploads what it made. A
 compromised child could alter that file. The server checks that it is a PDF of the right number of
-pages and size, not what is on them; the earlier version stays in Paperless. Links, annotations and
-their actions come along with the inserted pages.
+pages and size, not what is on them; the earlier version stays in Paperless. With
+the inserted pages comes what they refer to, also where it is not visible: links, comments with the
+files in them, actions, private and page data, and resources shared with other pages of the source.
+Everybody who may see the document can read all of that. No script of a PDF is run.
 
 Vulnerability scanners do not report PDFium's vulnerabilities for pypdfium2. This repository checks
 weekly whether the newest release is locked; keep the server up to date.
