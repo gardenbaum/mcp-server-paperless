@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Final, Literal
 from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterator, Sequence
+    from collections.abc import Callable, Generator, Iterator, Sequence
 
 
 class PaperlessMcpError(Exception):
@@ -162,13 +162,27 @@ def quoted(text: str, limit: int = 60) -> str:
     """``text`` on one line, cut to ``limit`` characters with an ellipsis, in quotes.
 
     For naming a document or a note in a message without sending its whole content, and without
-    characters that hide or reorder what the reader sees. Single
-    quotes, or double quotes when the text holds a single quote; with both, the single ones
-    become typographic apostrophes.
+    characters that hide or reorder what the reader sees. Single quotes, or double quotes when the
+    text holds a single quote; with both, the single ones become typographic apostrophes. What
+    else can be read as a double quote is escaped after the cut (decision-64): an escape does not
+    count and is never cut itself, but a text that gets too long by them is cut earlier.
+    """
+    return _in_quotes(_cut(text, limit, lambda line, most: f"{line[: most - 1]}…"))
+
+
+def _cut(text: str, limit: int, shorten: Callable[[str, int], str]) -> str:
+    """``text`` on one line, escaped, with at most ``limit`` characters before the escapes.
+
+    With them and its quotes it takes at most 240 characters, more only where ``limit`` is for a
+    destination (600 for the longest).
     """
     line = _line(text)
-    shown = line if len(line) <= limit else line[: limit - 1] + "…"
-    return _in_quotes(shown)
+    room = max(240, limit * 600 // DESTINATION_LIMIT) - 2
+    while True:
+        shown = _without_look_alikes(line if len(line) <= limit else shorten(line, limit))
+        if len(shown) <= room:
+            return shown
+        limit -= 1
 
 
 def _in_quotes(shown: str) -> str:
@@ -181,17 +195,17 @@ def _in_quotes(shown: str) -> str:
 
 # What a destination that is no address (a folder, a name) may hold besides: plain spaces, and the
 # joiners some scripts need.
-_IN_TEXT: Final = frozenset({" ", chr(0x200C), chr(0x200D)})
+_JOINERS: Final = frozenset({chr(0x200C), chr(0x200D)})
+_IN_TEXT: Final = _JOINERS | {" "}
 # The longest host name has 253 characters, the longest e-mail address 254.
 DESTINATION_LIMIT: Final = 254
 
 
 def both_ends(text: str, limit: int = 60) -> str:
     """``text`` like ``quoted``, but cut in its middle: what decides about a host is its end."""
-    line = _line(text)
-    if len(line) > limit:
-        line = f"{line[: limit // 3]}…{line[-(limit - limit // 3 - 1) :]}"
-    return quoted(line, limit)
+    return _in_quotes(
+        _cut(text, limit, lambda line, m: f"{line[: m // 3]}…{line[-(m - m // 3 - 1) :]}")
+    )
 
 
 # Categories no destination holds: control, format, unassigned, private and surrogate characters,
@@ -208,7 +222,7 @@ _IGNORABLE: Final = frozenset(
 # the backslash. Guillemets stay: nothing this server writes looks like one.
 _DOUBLE_QUOTES: Final = frozenset(
     {0x22, 0x5C, 0x02BA, 0x02DD, 0x02EE, 0x02F5, 0x02F6, 0x05F2, 0x05F4, 0x2033, 0x2034, 0x2036}
-    | {0x2037, 0x2057, 0x275D, 0x275E, 0x2760, 0x2E42, 0x3003, 0xFF02, 0x030E, 0x1CD3}
+    | {0x2037, 0x2057, 0x275D, 0x275E, 0x2760, 0x2E42, 0x3003, 0xFF02, 0x030E, 0x1CD3, 0x1425}
     | {*range(0x201C, 0x2020), *range(0x301D, 0x3020), *range(0x1F676, 0x1F679)}
 )
 # Two of these side by side can be, too.
@@ -246,6 +260,53 @@ def _escaped(text: str) -> Iterator[str]:
             )
         yield _escape(character) if hides else character
         before, carries = character, not hides and category[0] in "LMN"
+
+
+# Hebrew writes with two of them: the Yiddish double yod is a letter that two single ones replace
+# anyway, and gershayim stand between the letters of an acronym.
+_DOUBLE_YOD: Final = 0x05F2
+_GERSHAYIM: Final = 0x05F4
+_HEBREW: Final = range(0x05D0, 0x05F3)
+# Double accents, which look like a double quote where no letter carries them.
+_DOUBLE_ACCENTS: Final = frozenset({0x030B, 0x030F})
+
+
+def _invisible(character: str) -> bool:
+    """Whether ``character``, one that ``_line`` keeps, shows as nothing."""
+    code, category = ord(character), unicodedata.category(character)
+    if category == "Cf":
+        return character in _JOINERS
+    return code in _IGNORABLE or code in _BLANK or (category in _NOT_SHOWN and character != " ")
+
+
+def _without_look_alikes(text: str) -> str:
+    """``text`` with what can be read as a double quote escaped.
+
+    The double quote itself, which decides about the quotes around, the backslash, which is none,
+    and what Hebrew words hold stay.
+    """
+    shown = ""
+    base = " "  # the last character that is neither invisible nor a mark
+    carries = False  # whether a letter is right before, perhaps with marks on it
+    for character, after in zip(text, f"{text[1:]} ", strict=False):
+        code, category = ord(character), unicodedata.category(character)
+        invisible = _invisible(character)
+        if code in _SINGLE_QUOTES:
+            hides = ord(base) in _SINGLE_QUOTES
+        elif code in _DOUBLE_ACCENTS:
+            hides = not carries
+        elif code == _GERSHAYIM:
+            hides = not (ord(base) in _HEBREW and ord(after) in _HEBREW)
+        else:
+            hides = code in _DOUBLE_QUOTES and code not in {0x22, 0x5C, _DOUBLE_YOD}
+        shown += _escape(character) if hides else character
+        if invisible or hides:
+            carries = False
+        elif category[0] != "M":
+            carries = category[0] in "LN"
+        if not invisible and category[0] != "M":
+            base = character
+    return shown
 
 
 def excerpt(text: str) -> str:

@@ -9,6 +9,7 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     Validation,
     accepting,
+    both_ends,
     destination,
     excerpt,
     listed,
@@ -386,10 +387,11 @@ def test_an_excerpt_shows_every_space() -> None:
     assert excerpt("") == '""'
 
 
+ESCAPED = BACKSLASH + "u05f4"
 LOOK_ALIKE_QUOTES = (
     *(0x02BA, 0x02DD, 0x02EE, 0x02F5, 0x02F6, 0x05F2, 0x05F4, 0x201C, 0x201D, 0x201E, 0x201F),
     *(0x2033, 0x2034, 0x2036, 0x2037, 0x2057, 0x275D, 0x275E, 0x2760, 0x2E42, 0x3003, 0x301D),
-    *(0x301E, 0x301F, 0xFF02, 0x1F676, 0x1F677, 0x1F678, 0x030E, 0x1CD3),
+    *(0x301E, 0x301F, 0xFF02, 0x1F676, 0x1F677, 0x1F678, 0x030E, 0x1CD3, 0x1425),
 )
 
 
@@ -401,6 +403,193 @@ def test_an_excerpt_escapes_what_reads_as_its_closing_quote(code: int) -> None:
     assert shown.isascii()
     assert shown[2:].startswith(r"\u")
     assert json.loads(shown) == f"a{chr(code)}b"
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize("code", sorted({*LOOK_ALIKE_QUOTES} - {0x05F2}))
+def test_quoted_text_escapes_what_reads_as_a_double_quote(code: int) -> None:
+    escape = json.dumps(chr(code))[1:-1]
+
+    assert quoted(f"a{chr(code)}b") == f"'a{escape}b'"
+    # In double quotes it would seem to close them.
+    assert quoted(f"Bob's{chr(code)} b") == f'"Bob\'s{escape} b"'
+
+
+@pytest.mark.decision("decision-64")
+def test_quoted_text_escapes_two_single_quotes_side_by_side() -> None:
+    assert quoted("a''b") == r'''"a'\u0027b"'''
+    assert quoted(f"a{chr(0x2019)}'b") == f"'a{chr(0x2019)}{chr(92)}u0027b'"
+    assert quoted("a' 'b") == '''"a' 'b"'''
+
+
+@pytest.mark.decision("decision-64")
+def test_quoted_text_keeps_plain_quotes_backslashes_and_single_apostrophes() -> None:
+    for text in ('the "best"', r"C:\x\u201d", f"it{chr(0x2019)}s", f"{chr(0xAB)}x{chr(0xBB)}"):
+        assert quoted(text) == f"'{text}'"
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Z\u00fcrich \u00e9t\u00e9",
+        "\u0421\u0447\u0451\u0442",
+        "\u0627\u0644\u0645\u0644\u0641",
+        "\u65e5\u672c\u8a9e\u300c\u66f8\u300d",
+        "\u05e6\u05d4\u05f4\u05dc",  # an acronym, with gershayim between its letters
+        "\u05e6\u05d5\u05f2",  # a Yiddish word that ends in its double yod
+        "\u0928\u092e\u0938\u094d\u0924\u0947",
+        "\u0301x",
+        "\u0645\u200c\u0646",
+    ],
+)
+def test_names_in_other_scripts_stay_readable(name: str) -> None:
+    assert quoted(name) == f"'{name}'"
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize(
+    "text", ["\u05d0\u05f4", "\u05f4\u05d0", "\u05d0\u05f4 \u05d0", "x\u05f4\u05d0"]
+)
+def test_gershayim_that_stand_at_the_edge_of_a_word_are_escaped(text: str) -> None:
+    assert quoted(text) == "'" + text.replace("\u05f4", r"\u05f4") + "'"
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize(
+    "between",
+    [
+        "\u200c",
+        "\u200d",
+        "\ufe0f",
+        "\u180b",
+        "\u17b4",
+        "\U000e0080",
+        "\u2065",
+        "\ue000",
+        "\U0001d159",
+        "\u0301",
+        "\u200d\ufe0f",
+    ],
+)
+@pytest.mark.parametrize("single", ["'", "\u2019", "\u02bc"])
+def test_quotes_with_nothing_visible_between_them_are_side_by_side(
+    single: str, between: str
+) -> None:
+    shown = quoted(f"a{single}{between}{single}b")
+
+    assert f"\\u{ord(single):04x}b" in shown
+    assert shown[1:-1].startswith(f"a{single}{between}")
+
+
+@pytest.mark.decision("decision-64")
+def test_quotes_with_something_visible_between_them_are_not() -> None:
+    for between in (" ", "x", "\u0600"):
+        assert quoted(f"a\u2019{between}\u2019b") == f"'a\u2019{between}\u2019b'"
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize("mark", ["\u030b", "\u030f"])
+def test_double_accents_that_no_letter_carries_are_escaped(mark: str) -> None:
+    escape = f"\\u{ord(mark):04x}"
+    for before in ("", "a.", "a\u200c", "a\ufe0f", "a\u201d"):
+        assert quoted(f"{before}{mark}b") == quoted(before)[:-1] + f"{escape}b'"
+    assert quoted(f"a\u00a0{mark}b") == f"'a {escape}b'"
+    assert quoted(f"{mark}{mark}") == f"'{escape}{escape}'"
+    for carried in (f"o{mark}", f"o\u0301{mark}", f"\u0443{mark}", f"7{mark}"):
+        assert quoted(carried) == f"'{carried}'"
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize(
+    ("text", "shown"),
+    [
+        ("\u05d0\u05b0\u05f4\u05d0", "\u05d0\u05b0\u05f4\u05d0"),  # after niqqud
+        ("\u05d0\u05f4\u05f4\u05d0", f"\u05d0{ESCAPED}{ESCAPED}\u05d0"),
+        ("\u05d0\u05f3\u05f4\u05d0", f"\u05d0\u05f3{ESCAPED}\u05d0"),
+        ("\u05d0\u05f4\u05f3\u05d0", f"\u05d0{ESCAPED}\u05f3\u05d0"),
+        ("\u05f2\u05f4\u05dc", "\u05f2\u05f4\u05dc"),
+        ("\u05dc\u05f4\u05f2", "\u05dc\u05f4\u05f2"),
+        ("\u05b0\u05f4\u05d0", f"\u05b0{ESCAPED}\u05d0"),  # niqqud on nothing
+    ],
+)
+def test_gershayim_stand_between_letters_only(text: str, shown: str) -> None:
+    assert quoted(text) == f"'{shown}'"
+
+
+@pytest.mark.decision("decision-64")
+def test_the_cut_takes_the_same_characters_of_a_name_whatever_is_escaped() -> None:
+    mark, escape = chr(0x201D), BACKSLASH + "u201d"
+
+    assert quoted(f"ab{mark}", 3) == f"'ab{escape}'"
+    assert quoted(f"a{mark}bcd", 3) == f"'a{escape}\u2026'"
+    assert quoted("\u05d0\u05f4\u05d0\u05d0", 3) == f"'\u05d0{ESCAPED}\u2026'"
+    assert both_ends(f"{mark}abcdefg{mark}", 9) == f"'{escape}abcdefg{escape}'"
+    assert both_ends(f"a{mark}b{'x' * 20}{mark}yz", 9) == f"'a{escape}b\u2026xx{escape}yz'"
+    assert both_ends("abcdefghij", 9) == "'abc\u2026fghij'"
+
+
+@pytest.mark.decision("decision-64")
+@pytest.mark.parametrize(
+    ("character", "escaped"),
+    [(chr(0x1F676), 12), (chr(0x201D), 6)],
+)
+def test_a_name_made_of_escapes_takes_at_most_240_characters(character: str, escaped: int) -> None:
+    fit = (240 - 2 - 1) // escaped  # without the quotes and the cut mark
+    escape = json.dumps(character)[1:-1]
+    for text in (character * 60, character * 900):
+        for limit in (60, 80):
+            assert quoted(text, limit) == f"'{escape * fit}…'"
+    exact = "x" * (238 % escaped) + character * (238 // escaped)
+    assert len(quoted(exact)) == 240
+    assert len(exact) < 60
+    assert quoted(exact)[-2:] != "…'"
+    assert quoted("x" + exact)[-2:] == "…'"
+    assert len(quoted("x" + exact)) <= 240
+
+
+@pytest.mark.decision("decision-64")
+def test_a_text_shown_with_both_ends_takes_at_most_240_or_600_characters() -> None:
+    widest = chr(0x1F676)
+    for limit, most in ((60, 240), (254, 600)):
+        for text in (widest * limit, widest * 900, "a" + widest * 300 + ".end", "'" + widest * 900):
+            shown = both_ends(text, limit)
+            assert most - 24 < len(shown) <= most
+            head, tail = shown[1:-1].split("…")
+            assert head
+            assert head.count("\\") % 2 == tail.count("\\") % 2 == 0  # no half escape
+            assert tail.endswith(".end" if text[0] == "a" else "ude76")
+            assert len(tail) > len(head)
+
+
+@pytest.mark.decision("decision-64")
+def test_no_accent_is_carried_by_a_letter_that_is_escaped_or_invisible() -> None:
+    accent = chr(0x30B)
+    escapes = [f"{BACKSLASH}u{code:04x}" for code in (0x2BA, 0x30B)]
+
+    assert quoted(chr(0x2BA) + accent) == f"'{''.join(escapes)}'"
+    blank = chr(0x13441)
+    assert quoted(f"o{blank}{accent}") == f"'o{blank}{escapes[1]}'"
+
+
+@pytest.mark.decision("decision-64")
+def test_a_normal_name_with_a_few_quotes_is_cut_where_it_always_was() -> None:
+    low, high = chr(0x201E), chr(0x201C)
+    name = f"{low}{'x' * 20}{high}, {low}{'y' * 20}{high} {'z' * 40}"
+    expected = name[:59].replace(low, BACKSLASH + "u201e").replace(high, BACKSLASH + "u201c")
+
+    assert quoted(name) == f"'{expected}{chr(0x2026)}'"
+    shown = both_ends(high * 5 + "x" * 300, 254)
+    assert shown == f"'{(BACKSLASH + 'u201c') * 5}{'x' * 79}{chr(0x2026)}{'x' * 169}'"
+
+
+@pytest.mark.decision("decision-64")
+def test_what_a_cut_leaves_at_its_edges_is_judged_by_what_stands_there() -> None:
+    letter = "o" + chr(0x30B)
+
+    shown = both_ends(letter * 100, 9)
+
+    assert shown == f"'{letter}o{chr(0x2026)}{BACKSLASH}u030b{letter * 2}'"
 
 
 @pytest.mark.decision("decision-48")

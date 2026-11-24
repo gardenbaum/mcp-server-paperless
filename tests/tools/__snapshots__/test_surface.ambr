@@ -8075,8 +8075,9 @@
         Read the application configuration: the settings that have a value, OCR, barcodes, AI.
         
         Settings without a value follow the server's environment and are left out. API keys are
-        never returned; keys_configured names those that hold one. Any signed-in user may read it.
-        Change it with update_app_config.
+        never returned; keys_configured names those that hold one. URLs come without their
+        credentials; shown_in_part names those that may have some, and writing one back as shown
+        keeps them. Any signed-in user may read it. Change it with update_app_config.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -8108,9 +8109,17 @@
             'description': "Settings with a value; the others follow the server's environment.",
             'type': 'object',
           }),
+          'shown_in_part': dict({
+            'description': 'Settings whose URL has, or may have, credentials, which are not shown (nor the URL, if they cannot be told apart from the rest). Writing one back as shown keeps what is stored.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
         }),
         'required': list([
           'settings',
+          'shown_in_part',
           'keys_configured',
           'externally_configured_variables',
         ]),
@@ -18793,8 +18802,9 @@
         It applies to every user and to every document consumed from now on, and the AI settings decide
         which service gets the document text, so every change needs confirm: without it a dialog, or an
         error for you to show the user, first lists each setting with its old and new value, never a key
-        (see confirm). Settings you leave out stay. A call that changes nothing says so. Needs the
-        change_applicationconfiguration permission. Settings:
+        (see confirm). Settings you leave out stay. A service URL written back as it was returned keeps
+        its stored credentials; with an empty user name (https://@host/path) it loses them. A call that
+        changes nothing says so. Needs the change_applicationconfiguration permission. Settings:
         - output_type: Output PDF type: pdf, pdfa, pdfa-1, pdfa-2 or pdfa-3.
         - pages: OCR only pages 1 to this number (at least 1).
         - language: OCR languages, e.g. 'eng+deu'.
@@ -18942,9 +18952,17 @@
                 'description': "Settings with a value; the others follow the server's environment.",
                 'type': 'object',
               }),
+              'shown_in_part': dict({
+                'description': 'Settings whose URL has, or may have, credentials, which are not shown (nor the URL, if they cannot be told apart from the rest). Writing one back as shown keeps what is stored.',
+                'items': dict({
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
             }),
             'required': list([
               'settings',
+              'shown_in_part',
               'keys_configured',
               'externally_configured_variables',
             ]),
@@ -31207,8 +31225,9 @@
         Read the application configuration: the settings that have a value, OCR, barcodes, AI.
         
         Settings without a value follow the server's environment and are left out. API keys are
-        never returned; keys_configured names those that hold one. Any signed-in user may read it.
-        Change it with update_app_config.
+        never returned; keys_configured names those that hold one. URLs come without their
+        credentials; shown_in_part names those that may have some, and writing one back as shown
+        keeps them. Any signed-in user may read it. Change it with update_app_config.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -31240,9 +31259,17 @@
             'description': "Settings with a value; the others follow the server's environment.",
             'type': 'object',
           }),
+          'shown_in_part': dict({
+            'description': 'Settings whose URL has, or may have, credentials, which are not shown (nor the URL, if they cannot be told apart from the rest). Writing one back as shown keeps what is stored.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
         }),
         'required': list([
           'settings',
+          'shown_in_part',
           'keys_configured',
           'externally_configured_variables',
         ]),
