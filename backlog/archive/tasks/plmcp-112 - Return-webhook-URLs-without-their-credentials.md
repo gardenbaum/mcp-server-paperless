@@ -1,39 +1,6 @@
 ---
 id: PLMCP-112
 title: Return webhook URLs without their credentials
-<<<<<<< HEAD
-status: To Do
-assignee: []
-created_date: '2026-11-24T11:11:57Z'
-labels:
-  - safety
-dependencies: []
-priority: medium
-type: bug
-ordinal: 91000
----
-
-## Description
-
-<!-- SECTION:DESCRIPTION:BEGIN -->
-get_workflow, list_workflows, the results of create_workflow and update_workflow and raw_api_get of /api/workflows/ return webhook URLs with user name and password. Found by PLMCP-107 and its review, outside its criteria. A read workflow written back must not lose them.
-<!-- SECTION:DESCRIPTION:END -->
-
-## Acceptance Criteria
-<!-- AC:BEGIN -->
-- [ ] #1 Every path that returns a webhook URL leaves out user name and password and says so; writing the shown form back keeps the stored ones
-- [ ] #2 Adapter, service, tool and contract tests; decision changes are superseding decisions
-<!-- AC:END -->
-
-## Definition of Done
-<!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
-- [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
-<!-- DOD:END -->
-||||||| 8593726
-=======
 status: Done
 assignee:
   - '@claude'
@@ -107,4 +74,3 @@ Codex (P2 on 4c827d9): a URL inside credentials without a scheme (user:secret/ht
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Webhook URLs, log lines, errors and status URLs are returned without credentials (decision-66); written back as shown they keep what is stored. Three independent review rounds and Codex, all findings fixed; copies are announced (owner, 2026-11-24). Hosted full E2E and CI on the PR.
 <!-- SECTION:FINAL_SUMMARY:END -->
->>>>>>> origin/main
