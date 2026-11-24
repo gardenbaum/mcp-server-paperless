@@ -39,7 +39,7 @@ from services.test_trash import DAY, WEB, Setup
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
 
-    from mcp_server_paperless.domain.documents import DocumentPage, DocumentQuery
+    from mcp_server_paperless.domain.documents import DocumentPage, DocumentQuery, DocumentRecord
     from mcp_server_paperless.domain.trash import TrashList, TrashPage
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-55")]
@@ -748,7 +748,7 @@ class Endless(FakePaperless):
 
     @override
     async def look_up_in_trash(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
     ) -> TrashLookup:
         return TrashLookup(entry=None, next_page=self._next(page))
 
@@ -961,3 +961,18 @@ async def test_a_version_covered_by_its_document_in_the_trash_is_still_there() -
     result = await setup.on(raced).empty([version], everything=False, confirm=True)
 
     assert [e.outcome for e in result.entries] == ["still_in_trash"]
+
+
+async def test_a_document_that_cannot_be_read_leaves_the_reason_out() -> None:
+    setup = Setup()
+    alive = setup.document("Alive")
+
+    class NoDocument(FakePaperless):
+        @override
+        async def get_document(self, document_id: int) -> DocumentRecord:
+            raise OUTAGE
+
+    with pytest.raises(NotFound) as raised:
+        _ = await setup.on(NoDocument(setup.state, user="admin")).restore([alive])
+
+    assert raised.value.hint == NOT_LISTED_HINT

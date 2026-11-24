@@ -9,12 +9,18 @@ from fakes.accounts import READER
 from fakes.paperless import FakePaperless, seeded
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-from harness import FailsAfterProbe, admin, serve
+from harness import FailsAfterProbe, Recorded, admin, serve
 
 from mcp_server_paperless.domain.errors import ConfirmationRequired, UpstreamUnreachable
+from mcp_server_paperless.domain.instance import MINIMUM
 from mcp_server_paperless.tools._shared import boundary
 
 pytestmark = pytest.mark.anyio
+
+TOO_OLD = (
+    f"3.4.2 is older than the minimum release {MINIMUM}: Paperless must be updated; until then "
+    "some tools fail or answer differently"
+)
 
 
 async def test_the_overview_is_the_structured_output_of_the_instance() -> None:
@@ -26,6 +32,7 @@ async def test_the_overview_is_the_structured_output_of_the_instance() -> None:
     output = result.structured_content
     assert output is not None
     guide = cast("dict[str, object]", output.pop("toolsets"))
+    assert output.pop("too_old") is None
     assert output == (await fake.get_overview()).model_dump(mode="json")
     assert guide["on"] == ["core"]
     assert output["current_user"] == {
@@ -124,3 +131,19 @@ async def test_more_like_id_warns_that_an_empty_result_can_be_an_index_problem()
     properties = cast("dict[str, dict[str, str]]", schema["properties"])
     description = properties["more_like_id"]["description"]
     assert "document_index reindex" in description
+
+
+@pytest.mark.decision("decision-57")
+@pytest.mark.parametrize("version", ["3.4.2", MINIMUM, "99.0.0", "unknown", ""])
+async def test_the_overview_says_so_when_paperless_is_too_old(version: str) -> None:
+    overview = (await admin().get_overview()).model_copy(update={"paperless_version": version})
+
+    async with Client(serve(Recorded(overview))) as client:
+        result = await client.call_tool("get_instance_overview")
+
+    output = result.structured_content
+    assert output is not None
+    assert (output["paperless_version"], output["too_old"]) == (
+        version,
+        TOO_OLD if version == "3.4.2" else None,
+    )

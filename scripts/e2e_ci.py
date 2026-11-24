@@ -212,7 +212,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "tag_hierarchy": ("test_taxonomy_edits",),
     "taxonomy": ("test_taxonomy_edits", "test_taxonomy_reader", "test_taxonomy_writer"),
     "taxonomy_edits": ("test_taxonomy_edits",),
-    "instance": ("test_instance_reader", "test_toolset_guide"),
+    "instance": ("test_instance_reader", "test_minimum_release", "test_toolset_guide"),
     "ai": ("test_ai_reader",),
     "principals": ("test_admin", "test_permissions"),
     "admin_accounts": ("test_admin", "test_permissions"),

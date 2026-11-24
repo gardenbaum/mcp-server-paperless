@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 from mcp_server_paperless.domain.documents import FileDelivery, FileReport, Thumbnail
 from mcp_server_paperless.domain.errors import (
-    AnswerCompressed,
     AnswerTooLarge,
     NotFound,
     PaperlessMcpError,
@@ -58,11 +57,10 @@ NO_FILE = "Paperless does not serve this file while the document is in the trash
 
 @dataclass(frozen=True, slots=True)
 class _Page:
-    """A page of the trash as it was asked for; without ``max_bytes`` not bounded."""
+    """A page of the trash as it was asked for."""
 
     number: int
     size: int
-    max_bytes: int | None
 
 
 class TrashedDocuments:
@@ -98,6 +96,7 @@ class TrashedDocuments:
         Raises:
             NotFound: It is not in the trash, or not visible to the user.
             AnswerTooLarge: The trash around it is too large to read.
+            AnswerCompressed: A proxy compresses answers: their size is not known, and not read.
             PermissionDenied: The user may not view documents.
         """
         found, where = await self._find(document_id)
@@ -137,11 +136,8 @@ class TrashedDocuments:
     async def _find(self, document_id: int) -> tuple[TrashedDetail, _Page]:
         """The entry and where it was: in one request if it is among the first, else in pages."""
         page: int | None = 1
-        bound: int | None = TRASH_BYTES
         try:
-            found = await self._look_up(document_id, large := _Page(1, self._scan.cap, bound))
-        except AnswerCompressed:
-            bound = None  # a compressed answer cannot be bounded; pages are small
+            found = await self._look_up(document_id, large := _Page(1, self._scan.cap))
         except AnswerTooLarge, UpstreamUnavailable:
             pass
         else:
@@ -149,7 +145,7 @@ class TrashedDocuments:
                 return found.entry, large
             page = 1 if found.next_page is not None else None
         while page is not None:
-            small = _Page(page, PAGE, bound)
+            small = _Page(page, PAGE)
             try:
                 found = await self._look_up(document_id, small)
             except AnswerTooLarge:
@@ -161,14 +157,14 @@ class TrashedDocuments:
 
     async def _look_up(self, document_id: int, where: _Page) -> TrashLookup:
         return await self._trash.look_up_in_trash(
-            document_id, page=where.number, page_size=where.size, max_bytes=where.max_bytes
+            document_id, page=where.number, page_size=where.size, max_bytes=TRASH_BYTES
         )
 
     async def _permissions(self, document_id: int, where: _Page) -> TrashGrants | None:
         """Who may view and change an entry, with names; None if that could not be read."""
         try:
             found = await self._trash.get_trash_permissions(
-                document_id, page=where.number, page_size=where.size, max_bytes=where.max_bytes
+                document_id, page=where.number, page_size=where.size, max_bytes=TRASH_BYTES
             )
         except PaperlessMcpError:
             return None

@@ -151,19 +151,19 @@ class Pages(FakePaperless):
 
     @override
     async def get_trash_permissions(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
     ) -> ObjectPermissions | None:
         return None
 
     @override
     async def look_up_in_trash(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
     ) -> TrashLookup:
         self.asked.append((page, page_size))
         if self.too_large and len(self.asked) == 1:
             message = "too large"
             raise AnswerTooLarge(message)
-        if self.error and max_bytes is not None and page_size > self.fits:
+        if self.error and page_size > self.fits:
             raise self.error
         return await super().look_up_in_trash(
             document_id, page=page, page_size=page_size, max_bytes=max_bytes
@@ -331,7 +331,6 @@ async def test_a_user_who_may_not_view_documents_sees_nothing() -> None:
         (UpstreamTimeout("slow"), [(1, 1000), (1, 100)]),
         (UpstreamUnavailable("502"), [(1, 1000), (1, 100)]),
         (UpstreamUnreachable("gone"), [(1, 1000), (1, 100)]),
-        (AnswerCompressed("gzip"), [(1, 1000), (1, 100)]),
     ],
 )
 async def test_an_entry_is_found_in_small_requests_where_a_large_one_does_not_work(
@@ -340,8 +339,7 @@ async def test_an_entry_is_found_in_small_requests_where_a_large_one_does_not_wo
     setup = Setup()
     one = await setup.trashed("Doc")
     fake = Pages(setup.state, user="admin")
-    # A compressed answer is never bounded, so it has no size that fits.
-    fake.error, fake.fits = error, 0 if isinstance(error, AnswerCompressed) else 100
+    fake.error, fake.fits = error, 100
 
     found = await looking(setup, fake).entry(one, max_chars=1)
 
@@ -351,14 +349,16 @@ async def test_an_entry_is_found_in_small_requests_where_a_large_one_does_not_wo
 async def test_a_lookup_that_fails_for_good_says_why() -> None:
     setup = Setup()
     one = await setup.trashed("Doc")
-    for error in (AnswerTooLarge("large"), PermissionDenied("no"), UpstreamTimeout("slow")):
+    at_once = (PermissionDenied("no"), AnswerCompressed("gzip", hint="Check the proxy."))
+    for error in (AnswerTooLarge("large"), UpstreamTimeout("slow"), *at_once):
         fake = Pages(setup.state, user="admin")
         fake.error = error
         with pytest.raises(type(error)) as raised:
             _ = await looking(setup, fake).entry(one, max_chars=1)
         if isinstance(error, AnswerTooLarge):
             assert raised.value.hint == "List them page by page with list_trash, without a filter."
-        assert len(fake.asked) == (1 if isinstance(error, PermissionDenied) else 2)
+        assert error not in at_once or raised.value.hint == error.hint
+        assert len(fake.asked) == (1 if error in at_once else 2)
 
 
 async def test_a_version_says_that_its_fields_are_those_of_its_upload() -> None:
@@ -392,7 +392,7 @@ class NoGrants(FakePaperless):
 
     @override
     async def get_trash_permissions(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
     ) -> ObjectPermissions | None:
         if self.failure:
             raise self.failure

@@ -50,7 +50,9 @@ INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut 
 # both approved by the owner on 2026-11-23; and 37 of get_trash_entry and get_trashed_file
 # (PLMCP-78), approved by the owner on 2026-11-24.
 OVERVIEW_GUIDE_LIMIT = 2835
-DEFINITION_ADDED_LIMIT = 750  # measured 747, 28 more than with the name pending (twice 14 bytes)
+# Measured 879: 747 before, plus 132 of too_old (PLMCP-101); the rise from 750 was approved by the
+# owner on 2026-11-24.
+DEFINITION_ADDED_LIMIT = 879
 # The limit of every instructions text (test_registry.py TEXT_LIMIT): Claude Code cuts at 4,096.
 TEXT_LIMIT = 2048
 # Anything near a limit is a reason to look; a limit this far above the worst case is not tight.

@@ -11,7 +11,8 @@ token to use. The rest decides what the model may do and how much it may move.
 - [Startup and logs](#startup-and-logs)
 
 The [Claude Code plugin](../plugin/README.md) asks for the Paperless settings and the server settings
-that narrow or widen what the model can do, and leaves the rest at their defaults.
+that narrow or widen what the model can do, and leaves the rest at their defaults. It does not ask for
+`PAPERLESS_MCP_REQUIRE_DIALOG` yet, because the release it runs does not know that setting.
 
 The HTTP transport has its own variables in [Run over HTTP](http.md), the OIDC layer in
 [Connect claude.ai](claude-ai-connector.md).
@@ -27,8 +28,11 @@ The HTTP transport has its own variables in [Run over HTTP](http.md), the OIDC l
 Requires paperless-ngx 3.5.1 or later (API version 10). 3.5.1 is the oldest supported release and
 the one the tests run against (a fast tier on every pull request, the whole suite after every
 merge and nightly); the latest 3.x release is tested weekly. paperless-ngx
-3.4.x, 3.5.0 and 2.x are not supported: the server does not check the version, so against an older
-release some tools fail or answer differently.
+3.4.x, 3.5.0 and 2.x are not supported. Against an older release with API version 10 the server still
+starts, but some tools fail or answer differently: it logs one warning, and `get_instance_overview`
+says in `too_old` that Paperless must be updated. A version it cannot read as a release
+(such as `unknown` when a proxy removes the `X-Version` header) gives no warning; if a proxy
+removes `X-Api-Version` too, the server does not start against it.
 
 ## Server
 
@@ -36,6 +40,7 @@ release some tools fail or answer differently.
 |---|---|
 | `PAPERLESS_MCP_TOOLSETS` | Toolsets to offer, comma-separated, or `all` (default `core,ai`). See [Toolsets](#toolsets) |
 | `PAPERLESS_MCP_READ_ONLY` | `true` to offer only tools that change nothing (default `false`). See [What the model can do](#what-the-model-can-do) |
+| `PAPERLESS_MCP_REQUIRE_DIALOG` | `true` to let only an accepted dialog confirm; `confirm=true` then confirms nothing (default `false`). See [Only dialogs confirm](#only-dialogs-confirm) |
 | `PAPERLESS_MCP_DISABLED_TOOLS` | Tools never offered, whatever the toolsets say, e.g. `ask_paperless_ai,get_ai_suggestions` |
 | `PAPERLESS_MCP_UPLOAD_DIRS` | Directories the upload tools may read files from by path (default empty: uploading by path is off). See [Uploads and downloads](#uploads-and-downloads) |
 | `PAPERLESS_MCP_DOWNLOAD_DIRS` | Directories `download_document` and `bulk_download` may save files into (stdio only; default empty: nothing is ever saved). See [Uploads and downloads](#uploads-and-downloads) |
@@ -96,6 +101,29 @@ process: with several behind one address, an answer that reaches another process
 Which clients were seen to show the dialog: none yet. According to their documentation
 [Claude Code](https://code.claude.com/docs/en/mcp) and
 [VS Code](https://code.visualstudio.com/api/extension-guides/ai/mcp) show such dialogs.
+
+### Only dialogs confirm
+
+By default the assistant can pass `confirm=true` without asking you, also when text in a document
+talked it into it (prompt injection). With `PAPERLESS_MCP_REQUIRE_DIALOG=true` that flag confirms
+nothing: every tool with a `confirm` parameter asks in a dialog, and only an accepted one lets it go
+on. It is for clients that show dialogs, and fails closed: nothing is changed, and the error names
+the reason and this setting, if
+
+- the client does not declare form elicitation, or the server cannot ask it on this connection,
+- the dialog cannot be shown, is declined or closed, gets an answer that is not understood, or
+  nobody answers within 10 minutes,
+- the connection drops before the answer, or the target keeps changing while you are asked.
+
+What needs no confirmation runs as before. The descriptions of the tools, the hints in their results
+and the prompts are the same with and without the setting, so an assistant may still pass
+`confirm=true`; you are asked then, too.
+
+It is no proof of a human. The server sees only the client's answer: a client, a hook or a script can
+accept dialogs automatically, and what the assistant itself can make the client do counts, too. Nor
+does it stop changes that need no confirmation, such as a new title. Use
+[read-only mode](#what-the-model-can-do) where nothing may be changed. Releases up to 0.3.3 ignore
+the setting.
 
 ### Switching a toolset on
 

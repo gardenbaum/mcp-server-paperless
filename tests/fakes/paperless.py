@@ -1550,7 +1550,7 @@ class FakePaperless:
         return entry.version_files.get(entry.id, shown)
 
     async def look_up_in_trash(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
     ) -> TrashLookup:
         """`TrashReader.look_up_in_trash`: a page of `list_trash`, one row of it whole.
 
@@ -1560,8 +1560,7 @@ class FakePaperless:
         listed = await self.list_trash(page=page, page_size=page_size)
         shown = {e.id for e in listed.entries}
         rows = [d for d in self.state.trash if d.id in shown]
-        size = sum(len(d.content.encode()) for d in rows)
-        if max_bytes is not None and size > max_bytes:
+        if sum(len(d.content.encode()) for d in rows) > max_bytes:
             message = f"Paperless sent more than {max_bytes} bytes for GET /api/trash/."
             raise AnswerTooLarge(message)
         entry = next((d for d in rows if d.id == document_id), None)
@@ -1570,7 +1569,7 @@ class FakePaperless:
         )
 
     async def get_trash_permissions(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
     ) -> ObjectPermissions | None:
         """`TrashReader.get_trash_permissions`: the same row with `full_perms`."""
         found = await self.look_up_in_trash(

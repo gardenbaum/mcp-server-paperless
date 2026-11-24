@@ -269,9 +269,10 @@ async def empty_trash(
     Without it a dialog, or an error for you to show the user, first lists the entries that would
     go: the first ten, then a count (see confirm). A filter lists every match (up to 100, newest
     deletion first) and needs the dialog: confirm=true does not count with it, so without a dialog
-    pass the document_ids the error names. With confirm=true, all=true empties whatever the trash
-    holds then, which can differ from what was listed: when the trash holds at most 100 entries,
-    list it and pass their ids as document_ids instead, so exactly the reviewed entries go.
+    pass the document_ids the error names, if it names any. With confirm=true, all=true empties
+    whatever the trash holds then, which can differ from what was listed: when the trash holds at
+    most 100 entries, list it and pass their ids as document_ids instead, so exactly the reviewed
+    entries go.
     Only name what the user asked to delete; to get documents back, use restore_from_trash. All or
     none: Paperless checks all ids before it changes any; an id that is not in the trash is an
     error that names it. entries lists each one with what the trash showed afterwards, since

@@ -1,5 +1,6 @@
 """PaperlessTrashReader and PaperlessTrashWriter on responses recorded from Paperless 3.4.2."""
 
+import gzip
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -514,17 +515,24 @@ async def test_other_rows_than_the_wanted_one_are_not_kept_and_not_even_complete
     assert found.entry.id == 3301
 
 
-async def test_a_lookup_without_a_bound_takes_a_compressed_answer(
-    make_client: ClientFactory,
-) -> None:
-    server = Recorded(listing(FULL))
+@pytest.mark.parametrize("encoding", ["gzip", "deflate", "br", "zstd"])
+async def test_a_compressed_row_is_refused_unread_also_for_the_grants(encoding: str) -> None:
+    """A small body could unpack to any size, and the rows carry whole texts."""
+    streams: list[Chunks] = []
 
-    found = await PaperlessTrashReader(make_client(server)).look_up_in_trash(
-        3301, page=1, page_size=100, max_bytes=None
-    )
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        assert request.headers["Accept-Encoding"] == "identity"
+        streams.append(Chunks(gzip.compress(b"x" * 1_000_000)))
+        headers = {"Content-Encoding": encoding}
+        return httpx2.Response(200, headers=headers, stream=streams[-1])
 
-    assert found.entry
-    assert server.sent[0][2] == {"page": "1", "page_size": "100"}
+    client, _ = streaming(answer)
+    reader = PaperlessTrashReader(client)
+    for read_one in (reader.look_up_in_trash, reader.get_trash_permissions):
+        with pytest.raises(AnswerCompressed) as raised:
+            _ = await read_one(3301, page=1, page_size=100, max_bytes=100_000)
+        assert "proxy between this server and Paperless" in (raised.value.hint or "")
+    assert [stream.sent for stream in streams] == [0, 0]
 
 
 async def test_a_wanted_row_that_is_not_what_it_should_be_is_an_error() -> None:

@@ -40,9 +40,10 @@ FORMS: Final[Json] = {"elicitation": {"form": {}}}
 META: Final = "io.modelcontextprotocol/"
 
 
-def app(fake: FakePaperless) -> Starlette:
+def app(fake: FakePaperless, *, require_dialog: bool = False) -> Starlette:
     http = HttpSettings.model_validate({"auth_tokens": f"{ANNA},{BERT}"})
-    return build_app(serve(fake, auth=authenticator(http)), http, max_upload_bytes=1024 * 1024)
+    server = serve(fake, auth=authenticator(http), require_dialog=require_dialog)
+    return build_app(server, http, max_upload_bytes=1024 * 1024)
 
 
 @contextlib.contextmanager
@@ -161,11 +162,12 @@ async def sessionless(  # noqa: PLR0913 -- one keyword per part of the wire form
     token: str = ANNA,
     state: object = None,
     answer: Json | None = None,
+    arguments: Json = NOTE,
 ) -> Json:
     """The response message of one 2026-07-28 round."""
     params: Json = {
         "name": "delete_note",
-        "arguments": NOTE,
+        "arguments": arguments,
         "_meta": {
             f"{META}protocolVersion": SESSIONLESS,
             f"{META}clientInfo": {"name": "t", "version": "1"},
@@ -305,6 +307,122 @@ async def test_a_malformed_2026_07_28_answer_changes_nothing(
 
     refused = "Nothing was changed: the answer to the dialog was not understood" in said(message)
     assert refused or "error" in message
+
+
+# --- dialogs required (decision-53) ---------------------------------------------------------------
+
+CONFIRMED: Final[Json] = {**NOTE, "confirm": True}
+SETTING: Final = "PAPERLESS_MCP_REQUIRE_DIALOG=true"
+
+
+NO_FORMS: Final = "the user cannot be asked on this connection, or the client does not declare "
+NOT_SHOWN: Final = "the dialog could not be shown; "
+NOT_UNDERSTOOD: Final = "the answer to the dialog was not understood; "
+WAY_OUT: Final = "a client that shows dialogs can confirm, or the operator can switch that off."
+
+
+def fails_closed(text: str, reason: str) -> bool:
+    return (
+        text.startswith(f"Nothing was changed: {reason}")
+        and SETTING in text
+        and (WAY_OUT in text) is (reason in {NO_FORMS, NOT_SHOWN})
+        and text.endswith(NOT_AGAIN)
+    )
+
+
+@pytest.mark.decision("decision-53")
+@CAPABILITIES
+async def test_required_a_handshake_client_is_asked_or_refused(
+    http: httpx2.AsyncClient, capabilities: Json, *, asked: bool
+) -> None:
+    with running(app(source(world(), writes=False), require_dialog=True)) as url:
+        session = await Handshake.open(http, url, capabilities)
+        shown, text = await session.finish(DECLINE, arguments=CONFIRMED)
+
+    assert shown is asked
+    assert fails_closed(text, "the user declined; " if asked else NO_FORMS)
+
+
+@pytest.mark.decision("decision-53")
+@CAPABILITIES
+async def test_required_a_2026_07_28_client_is_asked_or_refused(
+    http: httpx2.AsyncClient, capabilities: Json, *, asked: bool
+) -> None:
+    with running(app(source(world(), writes=False), require_dialog=True)) as url:
+        message = await sessionless(http, url, capabilities=capabilities, arguments=CONFIRMED)
+
+    assert (cast("Json", message["result"])["resultType"] == "input_required") is asked
+    assert asked or fails_closed(said(message), NO_FORMS)
+
+
+@pytest.mark.decision("decision-53")
+@pytest.mark.parametrize(
+    ("reply", "reason"),
+    [
+        ({"error": {"code": -32601, "message": "no"}}, NOT_SHOWN),
+        ({"error": {"code": -32603, "message": "no"}}, NOT_SHOWN),
+        ({"result": {"action": "accept"}}, NOT_UNDERSTOOD),
+        ({"result": {"action": "accept", "content": {"confirm": "true"}}}, NOT_UNDERSTOOD),
+    ],
+)
+async def test_required_a_dialog_that_fails_changes_nothing(
+    http: httpx2.AsyncClient, reply: Json, reason: str
+) -> None:
+    with running(app(source(world(), writes=False), require_dialog=True)) as url:
+        session = await Handshake.open(http, url)
+        shown, text = await session.finish(reply, arguments=CONFIRMED)
+
+    assert shown
+    assert fails_closed(text, reason)
+
+
+@pytest.mark.decision("decision-53")
+async def test_required_an_accepted_dialog_still_works_on_both_eras(
+    http: httpx2.AsyncClient,
+) -> None:
+    first, second = world(), world()
+    with running(app(source(first), require_dialog=True)) as url:
+        session = await Handshake.open(http, url)
+        shown, _ = await session.finish({"result": ACCEPT}, arguments=CONFIRMED)
+    with running(app(source(second), require_dialog=True)) as url:
+        token = question(await sessionless(http, url, arguments=CONFIRMED))["requestState"]
+        assert not note_gone(second)
+        _ = await sessionless(http, url, state=token, answer=ACCEPT, arguments=CONFIRMED)
+
+    assert shown
+    assert note_gone(first)
+    assert note_gone(second)
+
+
+@pytest.mark.decision("decision-53")
+async def test_required_an_answer_without_declared_forms_is_not_read(
+    http: httpx2.AsyncClient,
+) -> None:
+    with running(app(source(world(), writes=False), require_dialog=True)) as url:
+        token = question(await sessionless(http, url, arguments=CONFIRMED))["requestState"]
+        message = await sessionless(
+            http, url, capabilities={}, state=token, answer=ACCEPT, arguments=CONFIRMED
+        )
+
+    assert fails_closed(said(message), NO_FORMS)
+
+
+@pytest.mark.decision("decision-53")
+async def test_required_a_stateless_server_that_cannot_ask_refuses(
+    http: httpx2.AsyncClient,
+) -> None:
+    """The app never runs like this; a server that does must not let confirm=true through."""
+    server = serve(source(world(), writes=False), require_dialog=True)
+    with running(server.http_app(stateless_http=True)) as url:
+        params = {"name": "delete_note", "arguments": CONFIRMED}
+        body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params}
+        headers = Handshake.headers(ANNA)
+        async with http.stream("POST", url, headers=headers, json=body) as response:
+            replies = [m async for m in messages(response)]
+        message = await sessionless(http, url, arguments=CONFIRMED)
+
+    assert fails_closed(said(replies[-1]), NO_FORMS)
+    assert question(message)["requestState"]
 
 
 # --- other callers --------------------------------------------------------------------------------

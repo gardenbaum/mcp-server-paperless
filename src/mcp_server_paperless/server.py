@@ -405,7 +405,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
             the settings alone leave no tool.
     """
     # Outlives the lifespan: a state stays used up when the server's last connection closes.
-    dialogs = dialogs or Dialogs()
+    dialogs = replace(dialogs or Dialogs(), required=settings.require_dialog)
     credentials = StaticTokenProvider(paperless.token.get_secret_value())
     web_url = str(paperless.public_url or paperless.url)
     by_path = stdio and bool(settings.upload_dirs)

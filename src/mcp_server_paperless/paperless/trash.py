@@ -233,7 +233,7 @@ class PaperlessTrashReader:
         }
 
     async def look_up_in_trash(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
     ) -> TrashLookup:
         """See ``TrashReader.look_up_in_trash``."""
         params: Params = {"page": page, "page_size": page_size}
@@ -241,7 +241,7 @@ class PaperlessTrashReader:
         return TrashLookup(entry=None if row is None else _detail(row), next_page=following)
 
     async def get_trash_permissions(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
     ) -> ObjectPermissions | None:
         """See ``TrashReader.get_trash_permissions``.
 
@@ -261,7 +261,7 @@ class PaperlessTrashReader:
         )
 
     async def _one[M: BaseModel](
-        self, model: type[M], document_id: int, params: Params, max_bytes: int | None
+        self, model: type[M], document_id: int, params: Params, max_bytes: int
     ) -> tuple[M | None, int | None]:
         """The row of one entry if it is on the page, and the next page."""
 
@@ -272,12 +272,8 @@ class PaperlessTrashReader:
 
         rows = Page[Annotated[SkipValidation[M | None], BeforeValidator(wanted)]]
         try:
-            found = await (
-                self._client.get(PATH, rows, params=params)
-                if max_bytes is None
-                else self._client.read_json(
-                    PATH, rows, params=params, max_bytes=max_bytes, timeout=SCAN_TIMEOUT
-                )
+            found = await self._client.read_json(
+                PATH, rows, params=params, max_bytes=max_bytes, timeout=SCAN_TIMEOUT
             )
         except NotFound:
             raise beyond_last_page(int(params["page"])) from None

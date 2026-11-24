@@ -689,13 +689,12 @@ class TrashReader(Protocol):
         ...
 
     async def look_up_in_trash(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
     ) -> TrashLookup:
         """Everything of one entry, a version too, if it is on this page of the trash.
 
         The text is the entry's own: of a document the first version's, of a version its own. One
-        request, bounded like ``read_trash``, with the same errors; with None neither bounded nor
-        refused when it is compressed.
+        request, bounded like ``read_trash``, with the same errors.
 
         Raises:
             NotFound: ``page`` is beyond the last page.
@@ -703,7 +702,7 @@ class TrashReader(Protocol):
         ...
 
     async def get_trash_permissions(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
     ) -> ObjectPermissions | None:
         """Who may view and change an entry, if it is on this page; read like ``look_up_in_trash``.
 

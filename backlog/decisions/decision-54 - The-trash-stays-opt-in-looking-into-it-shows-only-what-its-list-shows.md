@@ -14,12 +14,13 @@ The toolset `trash` is off by default; it listed, restored and emptied, and show
 - Two read-only tools join the toolset: `get_trash_entry` (every field the API tells, the text in slices) and `get_trashed_file` (thumbnail, original or archive). `get_trashed_file` joins `MEDIA_TOOLS` (decision-11), because its payload is an image or a file. Files over the download limit are read in parts as decision-45 says; Paperless tells no checksum of a file in the trash, so each part hashes the whole stream.
 - Paperless serves the file of a trashed document to anyone with a view grant, but lists the entry only to its owner, or to all if it has none, and to superusers. Both tools require that the entry is in the list of the user, so they widen nothing.
 - Of a trashed document Paperless shows the text, thumbnail and file of its first version, and no notes, custom field values, later versions, history or file metadata. The tools say so and name `restore_from_trash` as the way; newer versions are "restore first" (approved).
-- `permissions` is not read: the API sends it only with `full_perms`, in place of `user_can_change` and `is_shared_by_requester`.
+- `permissions` is read by a second bounded request with `full_perms`, which sends it in place of `user_can_change` and `is_shared_by_requester` (those stay from the first). The owner decided on 2026-11-24 to read it ("Bitte alles wie von dir empfohlen umsetzen"). If that request fails, the entry is shown without it and `limits` names the gap.
+- Every read of whole rows is bounded to 64 MiB, asks for an uncompressed answer and refuses a compressed one unread, with the proxy as the likely cause: behind such a proxy `get_trash_entry` and filters do not work.
 
 ## Consequences
 
 - 93 tools. The list of toolsets that are off names two more tools (37 bytes): `OVERVIEW_GUIDE_LIMIT` rises from 2800 to 2835, approved by the owner on 2026-11-24 ("wie von dir empfohlen umsetzen").
-- Text and fields of one entry cost a read of up to 1,000 rows with their texts, because the list has no field selection and no other endpoint answers a trashed document.
+- Text and fields of one entry cost two reads (the second for `permissions`) of up to 1,000 rows with their texts; only the wanted row is kept. `get_trashed_file` reads the rows once for every call, so for every part up to 64 MiB, to check that the entry is in the user's list: no other endpoint tells that (`/root/` and the files answer view grants, too). This is because the list has no field selection and no other endpoint answers a trashed document.
 - `get_document_thumbnail` shows the thumbnail of a trashed document to anyone who may view it, as before; whether it should is left to a task of its own.
 
 ## Alternatives

@@ -28,6 +28,7 @@ from mcp_server_paperless.domain.errors import (
     UpstreamTimeout,
 )
 from mcp_server_paperless.domain.files import OpenedFile
+from mcp_server_paperless.domain.instance import update_notice
 from mcp_server_paperless.paperless.disposition import filename
 from mcp_server_paperless.paperless.errors import (
     RETRY_LATER,
@@ -218,6 +219,7 @@ class PaperlessClient:
         self._sleep: Sleep = sleep
         self._now: Clock = now
         self._jitter: Jitter = jitter
+        self._told_to_update: bool = False
 
     async def request(  # noqa: PLR0913 -- mirrors httpx2's request(); the parts are keyword-only
         self,
@@ -560,12 +562,19 @@ class PaperlessClient:
 
     async def _send(self, request: httpx2.Request, *, stream: bool) -> httpx2.Response:
         try:
-            return await self._http.send(request, stream=stream)
+            response = await self._http.send(request, stream=stream)
         except httpx2.TransportError as error:
             logger.warning(
                 "%s %s failed: %s", request.method, request.url.path, type(error).__name__
             )
             raise error_for_transport(error) from error
+        # Paperless sends both headers together; a gateway or login page may send X-Version alone.
+        genuine = "X-Api-Version" in response.headers
+        notice = update_notice(response.headers.get("X-Version", ""))
+        if genuine and notice and not self._told_to_update:
+            self._told_to_update = True
+            logger.warning("Paperless %s", notice)
+        return response
 
 
 @contextlib.asynccontextmanager

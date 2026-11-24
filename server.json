@@ -46,6 +46,12 @@
           "default": "false"
         },
         {
+          "name": "PAPERLESS_MCP_REQUIRE_DIALOG",
+          "description": "Confirm only by an accepted dialog (the client must support form elicitation), never by confirm=true",
+          "format": "boolean",
+          "default": "false"
+        },
+        {
           "name": "PAPERLESS_MCP_DISABLED_TOOLS",
           "description": "Tools never offered, comma-separated"
         },

@@ -1081,7 +1081,7 @@ def boundary[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R
     @functools.wraps(tool)
     async def guarded(*args: P.args, **kwargs: P.kwargs) -> R:
         try:
-            return await confirmed(lambda: tool(*args, **kwargs))
+            return await confirmed(tool, *args, **kwargs)
         except ToolError:
             raise
         except (ConfirmationRequired, NotConfirmed) as refusal:

@@ -285,7 +285,8 @@ takes more than a misunderstanding:
 - **Confirmation before anything final.** Tools that delete, overwrite, publish or grant access
   first say what would happen (which documents, who gains access, what cannot be undone). Where
   your client can show a dialog you are asked in it, and nothing happens unless you accept; with
-  any other client nothing changes until the call is repeated with `confirm=true`
+  any other client nothing changes until the call is repeated with `confirm=true`,
+  unless you allow only dialogs with `PAPERLESS_MCP_REQUIRE_DIALOG=true`
   ([details](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md#confirmation)).
 - **Dry runs for bulk edits.** `bulk_edit_documents`, `bulk_edit_taxonomy` and
   `resolve_duplicates` preview what would change before they ask for confirmation.
@@ -322,7 +323,7 @@ them.
 
 | | |
 |---|---|
-| **paperless-ngx** | 3.5.1 or later (API version 10). Pull requests run a fast E2E tier against 3.5.1, the whole suite runs after every merge and nightly, and the latest 3.x release weekly. 3.4.x, 3.5.0 and 2.x are not supported |
+| **paperless-ngx** | 3.5.1 or later (API version 10). Pull requests run a fast E2E tier against 3.5.1, the whole suite runs after every merge and nightly, and the latest 3.x release weekly. 3.4.x, 3.5.0 and 2.x are not supported: the server warns about an older release in its log and in `get_instance_overview` |
 | **Clients** | Claude Code and Claude Desktop over stdio, claude.ai custom connectors and other MCP clients over Streamable HTTP |
 | **Runtime** | Python 3.14 or later (`uvx` fetches it for you), or the container image |
 

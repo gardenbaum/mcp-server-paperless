@@ -76,6 +76,7 @@ def server_settings(  # noqa: PLR0913 -- one keyword per setting a test varies
     max_upload_bytes: int | None = None,
     upload_dirs: Sequence[str] = (),
     download_dirs: Sequence[str] = (),
+    require_dialog: bool = False,
 ) -> ServerSettings:
     """Server settings; `toolsets=None` leaves the setting at its shipped default."""
     given: dict[str, object] = {
@@ -93,6 +94,8 @@ def server_settings(  # noqa: PLR0913 -- one keyword per setting a test varies
         given["upload_dirs"] = ",".join(upload_dirs)
     if download_dirs:
         given["download_dirs"] = ",".join(download_dirs)
+    if require_dialog:
+        given["require_dialog"] = True
     return ServerSettings.model_validate(given)
 
 
@@ -134,6 +137,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     max_upload_bytes: int | None = None,
     upload_dirs: Sequence[str] = (),
     download_dirs: Sequence[str] = (),
+    require_dialog: bool = False,
     stdio: bool = False,
     auth: AuthProvider | None = None,
     dialogs: Dialogs | None = None,
@@ -150,7 +154,8 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     limit. `max_upload_bytes` and `upload_dirs` are the upload settings; `stdio` says the server
     runs over stdio (the only mode that offers uploads by path, and then only with `upload_dirs`,
     and saving downloads, and then only with `download_dirs` and without read-only mode).
-    `dialogs` replaces the confirmation dialogs' times and clock.
+    `require_dialog` is the setting of that name. `dialogs` replaces the confirmation dialogs'
+    times and clock.
     """
     fake = reader if isinstance(reader, FakePaperless) else admin()
     server = create_server(
@@ -164,6 +169,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
             max_upload_bytes=max_upload_bytes,
             upload_dirs=upload_dirs,
             download_dirs=download_dirs,
+            require_dialog=require_dialog,
         ),
         catalogue=catalogue,
         stdio=stdio,

@@ -155,6 +155,7 @@ class NotConfirmed(PaperlessMcpError):
             f"Nothing was changed: {reason}.",
             hint="Do not call the tool again on your own; ask the user what they want.",
         )
+        self.reason: str = reason
 
 
 def quoted(text: str, limit: int = 60) -> str:

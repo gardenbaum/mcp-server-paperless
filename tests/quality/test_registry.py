@@ -180,6 +180,7 @@ def test_no_variable_is_listed_with_a_fixed_value_or_an_unknown_key() -> None:
     known = {"name", "description", "isRequired", "isSecret", "placeholder", "default"}
     formats = {
         "PAPERLESS_MCP_READ_ONLY": "boolean",
+        "PAPERLESS_MCP_REQUIRE_DIALOG": "boolean",
         "PAPERLESS_MCP_MAX_UPLOAD_BYTES": "number",
         "PAPERLESS_MCP_MAX_DOWNLOAD_BYTES": "number",
         "PAPERLESS_MCP_STARTUP_TIMEOUT": "number",
