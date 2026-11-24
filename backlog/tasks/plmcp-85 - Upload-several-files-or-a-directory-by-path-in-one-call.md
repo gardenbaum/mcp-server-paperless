@@ -1,10 +1,11 @@
 ---
 id: PLMCP-85
 title: Upload several files or a directory by path in one call
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T12:21:58Z'
-updated_date: '2026-11-24T01:24:03Z'
+updated_date: '2026-11-24T01:40:06Z'
 labels: []
 dependencies:
   - PLMCP-77
@@ -37,8 +38,16 @@ Uploads by path take one file per call, so a folder of scans needs one call per 
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. domain/uploads: UploadBatch model. 2. services/upload_source: list_allowed (walk on descriptors), tests first. 3. services/duplicates: open(checksums) -> Batch with find(): originals of every file looked up before the one snapshot and again per file, 25 s limits, a moved trash re-reads everything once. 4. services/batch_uploads: two passes (read+hash, then check+send), limits 25 files / 100 MiB / 40 s, follow bounded. 5. tools/bulk_stdio: upload_documents, only over stdio with upload directories; local tables beside TOOL_TOOLSETS/ANNOTATIONS, so nothing names it over HTTP. 6. decision-50 supersedes decision-7. 7. contract, tool, E2E tests, docs, snapshots. ENABLE wording shortened to stay inside OVERVIEW_GUIDE_LIMIT.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 From PLMCP-77: DuplicateFinder.snapshot() and before() alone lack the double lookup of originals (before and after the versions) that cleared() does, so a document merged into another one between them is missed; they also have no time limit and no second attempt. A batch that reuses one snapshot needs its own answer to both.
+
+Owner approvals 2026-11-23 (design-plmcp-77-85-86): file names of allowed upload directories may become visible to the model over stdio, never HTTP (new decision supersedes decision-7); 25 files, 100 MiB, 40 s per call; recursive off by default; duplicates are confirmed one by one; tool in toolset bulk, its budget rises; default profile stays 20 of 20.
 <!-- SECTION:NOTES:END -->
