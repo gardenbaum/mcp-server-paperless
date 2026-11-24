@@ -93,9 +93,9 @@ async def test_the_environment_selects_the_tools_over_stdio(stack: Stack) -> Non
         "update_taxonomy_item",
         "delete_taxonomy_item",
     }
-    # `all` adds the toolsets that are off by default: of versions, trash, sharing, permissions and
-    # mail, workflows and admin only the listings and reads are read-only, of views the listing
-    # and the read (running a view is in core, decision-34).
+    # `all` adds the toolsets that are off by default: of versions, trash, sharing, permissions,
+    # mail, workflows, bulk and admin only the listings and reads are read-only, of views the
+    # listing and the read (running a view is in core, decision-34).
     views = {"list_saved_views", "get_saved_view"}
     mail = {
         *("list_mail_accounts", "get_mail_account", "list_mail_rules", "get_mail_rule"),
@@ -108,7 +108,7 @@ async def test_the_environment_selects_the_tools_over_stdio(stack: Stack) -> Non
     }
     admin = {
         *("get_user", "get_group", "get_app_config", "list_tasks", "list_logs", "get_log"),
-        *("bulk_download", "inspect_pdf"),
+        *("bulk_download", "inspect_pdf", "read_documents"),
     }
     listings |= mail | admin | {"paperless_api_get"}
     assert read_only == (default - writing) | listings | views

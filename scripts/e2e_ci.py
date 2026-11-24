@@ -198,7 +198,11 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "filter_rules": ("test_search", "test_view_filters", "test_views"),
     "bulk_documents": ("test_bulk",),
     "bulk_taxonomy": ("test_bulk",),
-    "selection": ("test_bulk", "test_toolset_guide"),
+    # tools/selection.py selects toolsets; domain/ and services/selection.py choose documents.
+    "selection": ("test_bulk", "test_read_documents", "test_toolset_guide"),
+    "read_documents": ("test_selection",),
+    # tools/bulk.py also reads many documents.
+    "bulk": ("test_read_documents", "test_selection"),
     "page_ranges": ("test_pages", "test_pdf"),
     "pages": ("test_pages_files",),
     # inspect_pdf.

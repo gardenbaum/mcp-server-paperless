@@ -126,6 +126,7 @@ from mcp_server_paperless.domain.permissions import (
     UserPage,
     UserRow,
 )
+from mcp_server_paperless.domain.selection import DocumentRow
 from mcp_server_paperless.domain.tasks import REJECTED, TaskState, TaskStatus, Unconfirmed
 from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyDetail, TaxonomyItem
 from mcp_server_paperless.domain.trash import (
@@ -220,6 +221,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.pdf import FileOutput, PageSlot
     from mcp_server_paperless.domain.permissions import AccessChange, PermissionKind
     from mcp_server_paperless.domain.raw import RawReply
+    from mcp_server_paperless.domain.selection import ReadField
     from mcp_server_paperless.domain.sharing import FileVersionKind, ShareBundle, ShareLink
     from mcp_server_paperless.domain.taxonomy import (
         MatchingAlgorithm,
@@ -987,6 +989,38 @@ class FakePaperless:
             next_page=page + 1 if start + page_size < len(found) else None,
             hits=hits,
         )
+
+    async def select_documents(
+        self, query: DocumentQuery, *, limit: int, max_bytes: int
+    ) -> DocumentPage:
+        """`DocumentReader.select_documents`: one large page of a search, of a limited size."""
+        page = await self.search_documents(query, page=1, page_size=limit)
+        _bounded(page.model_dump_json(), max_bytes)
+        return page
+
+    async def read_rows(
+        self, document_ids: Sequence[int], fields: Sequence[ReadField], *, max_bytes: int
+    ) -> tuple[DocumentRow, ...]:
+        """`DocumentReader.read_rows` (the list view filtered by `id__in`, `fields` named)."""
+        seen = await self.get_document_titles(document_ids)
+        rows = tuple(
+            DocumentRow.model_validate(
+                {"id": d.id}
+                | {name: value for name, value in self._row_values(d).items() if name in fields}
+            )
+            for d in self.state.documents
+            if d.id in seen
+        )
+        _bounded("".join(row.model_dump_json() for row in rows), max_bytes)
+        return rows
+
+    def _row_values(self, document: FakeDocument) -> dict[str, object]:
+        record = _record(document, self.user)
+        return {
+            **record.model_dump(exclude={"notes_count", "versions"}),
+            "notes": tuple(document.notes),
+            "version_count": len(document.versions),
+        }
 
     async def get_task(self, task_id: str) -> TaskStatus:
         """`TaskReader.get_task` (TaskViewSet filtered by `task_id`).
@@ -3982,6 +4016,12 @@ def _check_edit(file: FakeFile, count: int | None, pages: Sequence[PageSlot]) ->
                 f"Page {slot.page} is out of bounds for document with {count} pages.",
             )
     return files
+
+
+def _bounded(answer: str, max_bytes: int) -> None:
+    if len(answer.encode()) > max_bytes:
+        message = f"Paperless sent more than {max_bytes} bytes for GET /api/documents/."
+        raise AnswerTooLarge(message)
 
 
 def _filters(query: DocumentQuery, state: FakeState) -> list[_Match]:

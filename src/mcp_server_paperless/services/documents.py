@@ -311,16 +311,7 @@ class DocumentService:
             NotFound: A name matches nothing, or ``page`` is beyond the last page.
             Ambiguous: A name matches more than one object.
         """
-        if query.query is not None and query.more_like is not None:
-            message = "Pass either query or more_like_id, not both."
-            hint = "Search similar documents first, then filter by title or tags."
-            raise Validation(message, hint=hint)
-        _check_range("created", query.created_from, query.created_to)
-        _check_range("added", query.added_from, query.added_to)
-        _check_absent(names, query)
-        # Names are optional: the ids a query already holds (a saved view's) stay unless named.
-        given = {k: v for k, v in (await self._ids(names)).items() if v not in {None, ()}}
-        resolved = query.model_copy(update=given)
+        resolved = await self.resolved(names, query)
         found = await self._reader.search_documents(resolved, page=page, page_size=page_size)
         known: dict[TaxonomyKind, dict[int, TaxonomyItem]] = {
             kind: await self._known(kind) for kind in REFERRED
@@ -332,6 +323,25 @@ class DocumentService:
             documents=tuple(self._summary(hit, known) for hit in found.hits),
             notices=query_notices(query.query or ""),
         )
+
+    async def resolved(self, names: NameFilters, query: DocumentQuery) -> DocumentQuery:
+        """``query`` with the ids of ``names``; nothing is searched.
+
+        Raises:
+            Validation: The filters contradict each other.
+            NotFound: A name matches nothing.
+            Ambiguous: A name matches more than one object.
+        """
+        if query.query is not None and query.more_like is not None:
+            message = "Pass either query or more_like_id, not both."
+            hint = "Search similar documents first, then filter by title or tags."
+            raise Validation(message, hint=hint)
+        _check_range("created", query.created_from, query.created_to)
+        _check_range("added", query.added_from, query.added_to)
+        _check_absent(names, query)
+        # Names are optional: the ids a query already holds (a saved view's) stay unless named.
+        given = {k: v for k, v in (await self._ids(names)).items() if v not in {None, ()}}
+        return query.model_copy(update=given)
 
     async def _ids(self, names: NameFilters) -> dict[str, object]:
         async def one(kind: TaxonomyKind, value: NameOrId | None) -> int | None:
@@ -373,8 +383,8 @@ class DocumentService:
             correspondent=maybe_ref(known, "correspondent", hit.correspondent),
             document_type=maybe_ref(known, "document_type", hit.document_type),
             storage_path=maybe_ref(known, "storage_path", hit.storage_path),
-            tags=tuple(_ref(known, "tag", tag) for tag in hit.tags),
-            custom_fields=_fields(known, hit.custom_fields),
+            tags=tuple(ref(known, "tag", tag) for tag in hit.tags),
+            custom_fields=readable_fields(known, hit.custom_fields),
             highlights=hit.highlights,
             web_url=self._link(hit.id),
         )
@@ -422,8 +432,8 @@ class DocumentService:
             correspondent=maybe_ref(known, "correspondent", record.correspondent),
             document_type=maybe_ref(known, "document_type", record.document_type),
             storage_path=maybe_ref(known, "storage_path", record.storage_path),
-            tags=tuple(_ref(known, "tag", tag) for tag in record.tags),
-            custom_fields=_fields(known, record.custom_fields, titles),
+            tags=tuple(ref(known, "tag", tag) for tag in record.tags),
+            custom_fields=readable_fields(known, record.custom_fields, titles),
             original_file_name=record.original_file_name,
             mime_type=record.mime_type,
             page_count=record.page_count,
@@ -438,10 +448,10 @@ class DocumentService:
             "group": await self._known("group"),
         }
         return TrashGrants(
-            view_users=tuple(_ref(known, "user", n) for n in given.view_users),
-            view_groups=tuple(_ref(known, "group", n) for n in given.view_groups),
-            change_users=tuple(_ref(known, "user", n) for n in given.change_users),
-            change_groups=tuple(_ref(known, "group", n) for n in given.change_groups),
+            view_users=tuple(ref(known, "user", n) for n in given.view_users),
+            view_groups=tuple(ref(known, "group", n) for n in given.view_groups),
+            change_users=tuple(ref(known, "user", n) for n in given.change_users),
+            change_groups=tuple(ref(known, "group", n) for n in given.change_groups),
         )
 
     async def _linked_titles(
@@ -486,14 +496,14 @@ class DocumentService:
                 return {
                     "suggestions": SuggestionNames(
                         correspondents=tuple(
-                            _ref(known, "correspondent", n) for n in found.correspondents
+                            ref(known, "correspondent", n) for n in found.correspondents
                         ),
-                        tags=tuple(_ref(known, "tag", n) for n in found.tags),
+                        tags=tuple(ref(known, "tag", n) for n in found.tags),
                         document_types=tuple(
-                            _ref(known, "document_type", n) for n in found.document_types
+                            ref(known, "document_type", n) for n in found.document_types
                         ),
                         storage_paths=tuple(
-                            _ref(known, "storage_path", n) for n in found.storage_paths
+                            ref(known, "storage_path", n) for n in found.storage_paths
                         ),
                         dates=found.dates,
                     )
@@ -566,7 +576,7 @@ class DocumentService:
             "correspondent": maybe_ref(known, "correspondent", read.correspondent),
             "document_type": maybe_ref(known, "document_type", read.document_type),
             "storage_path": maybe_ref(known, "storage_path", read.storage_path),
-            "tags": tuple(_ref(known, "tag", tag) for tag in read.tags),
+            "tags": tuple(ref(known, "tag", tag) for tag in read.tags),
             "archive_serial_number": read.archive_serial_number,
             "original_file_name": read.original_file_name,
             "mime_type": read.mime_type,
@@ -576,7 +586,7 @@ class DocumentService:
                 "match": match_of(record, root_checksum(read)),
                 "page_count": read.page_count,
                 "notes_count": read.notes_count,
-                "custom_fields": _fields(known, read.custom_fields),
+                "custom_fields": readable_fields(known, read.custom_fields),
                 "version_count": len(read.versions),
                 "user_can_change": read.user_can_change,
             }
@@ -636,9 +646,8 @@ def _comparable(document: DocumentFacts) -> dict[str, object]:
     return values
 
 
-def _ref(
-    known: dict[TaxonomyKind, dict[int, TaxonomyItem]], kind: TaxonomyKind, number: int
-) -> Ref:
+def ref(known: dict[TaxonomyKind, dict[int, TaxonomyItem]], kind: TaxonomyKind, number: int) -> Ref:
+    """The object of ``kind`` with its name if known."""
     item = known[kind].get(number)
     return Ref(id=number, name=item.name if item else None)
 
@@ -647,7 +656,7 @@ def maybe_ref(
     known: dict[TaxonomyKind, dict[int, TaxonomyItem]], kind: TaxonomyKind, number: int | None
 ) -> Ref | None:
     """The object of ``kind`` with its name if known; None for no id."""
-    return None if number is None else _ref(known, kind, number)
+    return None if number is None else ref(known, kind, number)
 
 
 def _is_link(known: dict[TaxonomyKind, dict[int, TaxonomyItem]], value: CustomFieldValue) -> bool:
@@ -656,7 +665,7 @@ def _is_link(known: dict[TaxonomyKind, dict[int, TaxonomyItem]], value: CustomFi
     return bool(item and item.data_type == "documentlink" and isinstance(value.value, list))
 
 
-def _fields(
+def readable_fields(
     known: dict[TaxonomyKind, dict[int, TaxonomyItem]],
     values: tuple[CustomFieldValue, ...],
     titles: dict[int, str] | None = None,

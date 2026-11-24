@@ -36,6 +36,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.domain.files import missing_file, not_sent
+from mcp_server_paperless.domain.selection import DocumentRow
 from mcp_server_paperless.domain.versions import VersionPage, VersionRow
 from mcp_server_paperless.paperless.client import MAY_BE_APPLIED, opened
 from mcp_server_paperless.paperless.disposition import filename
@@ -47,6 +48,7 @@ if TYPE_CHECKING:
 
     from mcp_server_paperless.domain.documents import DocumentQuery, FileVersion
     from mcp_server_paperless.domain.files import OpenedFile
+    from mcp_server_paperless.domain.selection import ReadField
     from mcp_server_paperless.domain.tasks import Unconfirmed
     from mcp_server_paperless.domain.versions import VersionUpload
     from mcp_server_paperless.paperless.client import PaperlessClient, Params
@@ -70,6 +72,10 @@ DETAIL_FIELDS = (
     "storage_path,tags,custom_fields,original_file_name,mime_type,page_count,"
     "notes,versions,user_can_change"
 )
+# Where a field of a row has another name in Paperless.
+SENT_AS: Final[dict[ReadField, str]] = {"version_count": "versions"}
+# Seconds for an answer with many documents.
+MANY_TIMEOUT: Final = 60.0
 # The text of one version, and what identifies it.
 TEXT_FIELDS = "content,title,versions,user_can_change"
 
@@ -121,6 +127,29 @@ class _Note(BaseModel):
     note: str
     created: datetime | None = None
     user: _User | None = None
+
+
+class _Chosen(BaseModel):
+    """A row with the fields that were asked for."""
+
+    id: int
+    title: str | None = None
+    created: date | None = None
+    added: datetime | None = None
+    modified: datetime | None = None
+    correspondent: int | None = None
+    document_type: int | None = None
+    storage_path: int | None = None
+    tags: list[int] | None = None
+    custom_fields: list[CustomFieldValue] | None = None
+    archive_serial_number: int | None = None
+    owner: int | None = None
+    original_file_name: str | None = None
+    mime_type: str | None = None
+    page_count: int | None = None
+    notes: list[_Note] | None = None
+    versions: list[_Version] | None = None
+    user_can_change: bool | None = None
 
 
 class _Detail(BaseModel):
@@ -405,6 +434,26 @@ def _hit(row: _Row) -> DocumentHit:
     )
 
 
+def _page(found: Page[_Row]) -> DocumentPage:
+    return DocumentPage(
+        count=found.count,
+        next_page=found.next_page,
+        hits=tuple(_hit(row) for row in found.results),
+    )
+
+
+def _chosen(row: _Chosen) -> DocumentRow:
+    """A row as it was asked for: versions are only counted."""
+    values = row.model_dump(exclude={"notes", "versions"})
+    return DocumentRow.model_validate(
+        {
+            **values,
+            "notes": None if row.notes is None else tuple(_note(note) for note in row.notes),
+            "version_count": None if row.versions is None else len(row.versions),
+        }
+    )
+
+
 def _version(row: _Version) -> DocumentVersion:
     return DocumentVersion(
         id=row.id,
@@ -464,10 +513,39 @@ class PaperlessDocumentReader:
             raise unseen_document(query.more_like) from None
         except NotFound:
             raise beyond_last_page(page) from None
-        return DocumentPage(
-            count=found.count,
-            next_page=found.next_page,
-            hits=tuple(_hit(row) for row in found.results),
+        return _page(found)
+
+    async def select_documents(
+        self, query: DocumentQuery, *, limit: int, max_bytes: int
+    ) -> DocumentPage:
+        """See ``DocumentReader.select_documents``."""
+        sent: Params = {**params(query), "fields": FIELDS, "page": 1, "page_size": limit}
+        try:
+            found = await self._bounded(Page[_Row], sent, max_bytes)
+        except PermissionDenied:
+            if query.more_like is None:
+                raise
+            raise unseen_document(query.more_like) from None
+        return _page(found)
+
+    async def read_rows(
+        self, document_ids: Sequence[int], fields: Sequence[ReadField], *, max_bytes: int
+    ) -> tuple[DocumentRow, ...]:
+        """See ``DocumentReader.read_rows``."""
+        if not document_ids:
+            return ()
+        sent: Params = {
+            "id__in": ",".join(map(str, document_ids)),
+            "fields": ",".join(["id", *(SENT_AS.get(f, f) for f in fields)]),
+            "page": 1,
+            "page_size": len(document_ids),
+        }
+        found = await self._bounded(Page[_Chosen], sent, max_bytes)
+        return tuple(_chosen(row) for row in found.results)
+
+    async def _bounded[M: BaseModel](self, model: type[M], sent: Params, max_bytes: int) -> M:
+        return await self._client.read_json(
+            PATH, model, params=sent, max_bytes=max_bytes, timeout=MANY_TIMEOUT
         )
 
     async def get_document(self, document_id: int) -> DocumentRecord:

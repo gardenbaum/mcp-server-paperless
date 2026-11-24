@@ -1069,6 +1069,42 @@ async def test_documents_are_read_with_every_section_and_slice() -> None:
     assert not FAILED, "\n".join(FAILED)
 
 
+async def test_many_documents_are_read_by_ids_filters_and_view() -> None:
+    every: Json = {
+        "query": "acme",
+        "title_contains": "e2e",
+        "correspondent": 1,
+        "document_type": 1,
+        "storage_path": 1,
+        "has_correspondent": True,
+        "has_document_type": True,
+        "has_storage_path": True,
+        "has_tags": True,
+        "tags_all": [1],
+        "tags_any": [1],
+        "tags_none": [3],
+        "created_from": "2020-01-01",
+        "created_to": "2030-01-01",
+        "added_from": "2020-01-01",
+        "added_to": "2030-01-01",
+        "owner": 2,
+        "inbox": True,
+        "custom_field_query": ["e2e-string", "exact", "hello"],
+        "has_duplicates": False,
+    }
+    paging: Json = {"page": 1, "page_size": 10}
+    await sweep("read_documents", {"document_ids": [1, 2], **paging}, ("fields", "ordering"))
+    await sweep("read_documents", {"filters": every, **paging}, (), prepare=owned)
+    await sweep("read_documents", {"filters": {"more_like_id": 1}, **paging}, ())
+    await sweep(
+        "read_documents",
+        {"document_ids": [1], "saved_view": "e2e-view", "content_chars": 5, "fields": ["content"]},
+        (),
+    )
+    await sweep("read_documents", {"saved_view": "e2e-view", "exclude_ids": [2], **paging}, ())
+    assert not FAILED, "\n".join(FAILED)
+
+
 async def test_the_pdf_tools_take_every_option() -> None:
     # A preview sends nothing, so every case runs for real.
     one = {"document_id": 1, "version_id": 1, "wait_seconds": 0, "dry_run": False}
