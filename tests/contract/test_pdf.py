@@ -22,7 +22,13 @@ from PIL import Image
 from mcp_server_paperless.domain.bulk import TagsChange
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch, DocumentQuery
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
-from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, PageSlot, StartedTasks
+from mcp_server_paperless.domain.pdf import (
+    CopiedFiles,
+    FoundCopies,
+    PageSlot,
+    RotationSearch,
+    StartedTasks,
+)
 from mcp_server_paperless.domain.versions import VersionUpload
 
 if TYPE_CHECKING:
@@ -38,6 +44,7 @@ EDIT = "PdfWriter.edit_pdf"
 PASSWORD = "PdfWriter.remove_password"
 REPROCESS = "PdfWriter.reprocess_documents"
 COPIES = "PdfWriter.find_copies"
+ROTATIONS = "PdfWriter.find_rotations"
 PDF = "application/pdf"
 MISSING = 999_999
 SECONDS = 180.0
@@ -757,6 +764,196 @@ async def test_only_who_may_view_tasks_and_is_known_finds_the_files(backend: Bac
     assert (await unknown.pdf_writes.find_copies(files)).doubt == "the current user is not known"
     assert (await known.pdf_writes.find_copies(files)).doubt == (
         "the times of its queued task are not known"
+    )
+
+
+# The history names who added a version.
+TURNING = FINDING | {"view_logentry"}
+
+
+def looking(started: StartedTasks, before: dict[int, int], *others: int) -> RotationSearch:
+    """What to look for of a request for the documents of `before` and others."""
+    assert started.files is not None
+    shown = before | {number: number for number in others}
+    return RotationSearch(started.files.request, tuple(before), shown)
+
+
+async def rotations(user: Ports, search: RotationSearch, *, passing: bool = False) -> FoundCopies:
+    """Wait until the version of every document is found, or a doubt (that stays)."""
+    deadline = time.monotonic() + SECONDS
+    while True:
+        found = await user.pdf_writes.find_rotations(search)
+        if found.doubt is not None and (passing or not found.passing):
+            return found
+        if found.doubt is None and None not in found.ids:
+            return found
+        assert time.monotonic() < deadline, f"Paperless did not finish in time: {found}"
+        await asyncio.sleep(0.5)
+
+
+async def added_by(backend: Backend, document: int) -> dict[int, str | None]:
+    """Who added each version, by the history as the admin reads it."""
+    entries = await backend.admin.documents.list_document_history(document)
+    return {
+        int(str(added[-1])): entry.actor
+        for entry in entries
+        if isinstance(added := entry.changes.get("Version Added"), list)
+    }
+
+
+@pytest.mark.contract(ROTATIONS)
+@pytest.mark.contract(ROTATE)
+@pytest.mark.decision("decision-74")
+async def test_rotations_whose_tasks_a_date_hides_are_found_by_their_versions(
+    backend: Backend,
+) -> None:
+    document, other = backend.new_pdf(2), backend.new_pdf(1)
+    for number in (document, other):
+        _ = await dated(backend, number)
+    name = f"contract-turning-{uuid.uuid4().hex[:12]}"
+    user = backend.restricted(TURNING, name=name)
+    before = {document: document, other: other}
+
+    first = await user.pdf_writes.rotate_documents((document, other), 90)
+    found = await rotations(user, looking(first, before))
+    [one, two] = found.ids
+    assert one is not None
+    assert two is not None
+    # An earlier rotation is settled by the versions that are there.
+    second = await user.pdf_writes.rotate_documents((document,), 90)
+    again = await rotations(user, looking(second, {document: one}))
+
+    assert (first.ids, first.problem, found.doubt, again.doubt) == ((), None, None, None)
+    assert first.files is not None
+    assert first.files.names == (f"{document}_rotated.pdf", f"{other}_rotated.pdf")
+    assert await version_ids(backend, document) == [again.ids[0], one, document]
+    assert await version_ids(backend, other) == [two, other]
+    assert await added_by(backend, document) == {one: name, again.ids[0]: name}
+    read = await user.documents.get_document_metadata(document, version_id=one)
+    assert read.original_filename == f"{document}_rotated.pdf"
+    assert await pages(backend, document) == 2
+
+
+@pytest.mark.contract(ROTATIONS)
+@pytest.mark.decision("decision-74")
+async def test_a_version_of_somebody_else_is_not_taken_for_the_rotation(backend: Backend) -> None:
+    document = backend.new_pdf(1)
+    _ = await dated(backend, document)
+    name = f"contract-turning-{uuid.uuid4().hex[:12]}"
+    user, admin = backend.restricted(TURNING, name=name), backend.admin
+
+    # Somebody else rotates it at the same time, with a task that is hidden like ours.
+    _ = await admin.pdf_writes.rotate_documents((document,), 90)
+    ours = await user.pdf_writes.rotate_documents((document,), 90)
+    _ = await admin.pdf_writes.rotate_documents((document,), 90)
+    upload = VersionUpload(
+        filename=f"{document}_rotated.pdf",
+        mime_type=PDF,
+        content=pdf_pages([f"contract {uuid.uuid4().hex}"]),
+    )
+    task = await admin.document_writes.upload_document_version(document, upload)
+    _ = await finished(backend, StartedTasks(ids=(task,), expected=1))
+    await until_versions(backend, document, 5)
+    found = await rotations(user, looking(ours, {document: document}))
+
+    by = await added_by(backend, document)
+    [mine] = [number for number, actor in by.items() if actor == name]
+    assert len(by) == 4
+    assert found == FoundCopies(ids=(mine,))
+
+
+@pytest.mark.contract(ROTATIONS)
+@pytest.mark.decision("decision-74")
+async def test_a_rotation_followed_by_others_of_the_same_user_is_in_doubt(
+    backend: Backend,
+) -> None:
+    document, other = backend.new_pdf(1), backend.new_pdf(1)
+    for number in (document, other):
+        _ = await dated(backend, number)
+    user = backend.restricted(TURNING)
+
+    first = await user.pdf_writes.rotate_documents((document,), 90)
+    [one] = (await rotations(user, looking(first, {document: document}))).ids
+    assert one is not None
+    _ = await user.pdf_writes.rotate_documents((other,), 90)
+    at_once = await rotations(user, looking(first, {document: document}))
+    await until_versions(backend, other, 2)
+    last = await user.pdf_writes.rotate_documents((document,), 90)
+    found = await rotations(user, looking(last, {document: one}))
+    two = await user.pdf_writes.find_rotations(looking(first, {document: document}), final=True)
+
+    [newest, *older] = await version_ids(backend, document)
+    assert at_once == FoundCopies(
+        ids=(None,), doubt="another operation of this user ran at the same time"
+    )
+    assert (found, older) == (FoundCopies(ids=(newest,)), [one, document])
+    assert two == FoundCopies(
+        ids=(None,),
+        doubt=f"versions {newest}, {one} of document {document} could both be the rotation",
+    )
+
+
+@pytest.mark.contract(ROTATIONS)
+@pytest.mark.decision("decision-74")
+async def test_an_earlier_rotation_without_its_version_leaves_a_later_one_in_doubt(
+    backend: Backend,
+) -> None:
+    """Also where the later request is for documents whose tasks are listed, too."""
+    first, second, plain = backend.new_pdf(1), backend.new_pdf(1), backend.new_pdf(1)
+    for number in (first, second):
+        _ = await dated(backend, number)
+    patch = DocumentPatch(owner=None)
+    _ = await backend.admin.document_writes.update_document(plain, patch)
+    user = backend.restricted(TURNING)
+
+    earlier = await user.pdf_writes.rotate_documents((first,), 90)
+    [made] = (await rotations(user, looking(earlier, {first: first}))).ids
+    assert made is not None
+    _ = await backend.admin.document_writes.delete_version(first, made)
+    mixed = await user.pdf_writes.rotate_documents((second, plain), 90)
+    await until_versions(backend, second, 2)
+    await until_versions(backend, plain, 2)
+    search = looking(mixed, {second: second}, plain)
+    found = await rotations(user, search, passing=True)
+    last = await user.pdf_writes.find_rotations(search, final=True)
+
+    assert found == last
+    assert found == FoundCopies(
+        ids=(None,),
+        doubt="files of earlier operations of this user may still come",
+        passing=True,
+    )
+
+
+@pytest.mark.contract(ROTATIONS)
+@pytest.mark.decision("decision-74")
+async def test_a_rotation_is_only_found_with_tasks_user_and_history(backend: Backend) -> None:
+    document = backend.new_pdf(1)
+    _ = await dated(backend, document)
+    request, before = str(uuid.uuid4()), {document: document}
+    search = RotationSearch(request, (document,), before)
+    untasked = backend.restricted(TURNING - {"view_paperlesstask"})
+    unknown = backend.restricted(TURNING - {"view_uisettings"})
+    untold = backend.restricted(FINDING)
+
+    with pytest.raises(PermissionDenied):
+        _ = await untasked.pdf_writes.find_rotations(search)
+    gone = RotationSearch(request, (MISSING,), {MISSING: MISSING})
+    started = await untold.pdf_writes.rotate_documents((document,), 90)
+    await until_versions(backend, document, 2)
+
+    assert (await rotations(untold, looking(started, before))).doubt == (
+        "the history, which names who added a version, may not be read"
+    )
+    assert (
+        await rotations(unknown, looking(started, before))
+    ).doubt == "the current user is not known"
+    times = "the times of its queued task are not known"
+    for unasked in (RotationSearch(request, (document,), before), gone):
+        assert (await untold.pdf_writes.find_rotations(unasked)).doubt == times
+    hidden = looking(started, {MISSING: MISSING})
+    assert (await untold.pdf_writes.find_rotations(hidden)).doubt == (
+        f"document {MISSING} cannot be read any more"
     )
 
 

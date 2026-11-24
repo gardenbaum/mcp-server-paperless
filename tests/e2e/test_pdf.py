@@ -468,6 +468,42 @@ async def test_parts_of_a_document_with_a_date_field_are_found_by_their_file_nam
         people.clean_up()
 
 
+async def test_a_rotation_with_a_date_field_is_told_by_its_version(
+    stack: Stack, scope: Scope
+) -> None:
+    people = People(stack)
+    source = scope.pdf(2)
+    fields = {row["name"]: row["id"] for row in results(stack.admin.get("/api/custom_fields/"))}
+    value = {"field": fields["e2e-date"], "value": "2026-03-04"}
+    _ = stack.admin.patch(
+        f"/api/documents/{source}/", json={"owner": None, "custom_fields": [value]}
+    ).raise_for_status()
+    rights = (
+        *("view_document", "change_document", "add_document", "view_paperlesstask"),
+        *("view_uisettings", "view_customfield"),
+    )
+    try:
+        arguments: Json = {"document_ids": [source], "degrees": 90, "wait_seconds": 30}
+        told = await people.call(
+            "rotate_documents", people.user(*rights, "view_logentry"), **arguments
+        )
+        result = cast("Json", told.structured_content)
+        [made] = cast("list[int]", result["produced_ids"])
+        # Without the history nobody can say whose version it is.
+        untold = await people.call("rotate_documents", people.user(*rights), **arguments)
+        unknown = cast("Json", untold.structured_content)
+
+        assert (result["state"], result["wait"]) == ("success", "finished"), result["message"]
+        assert [t["task_id"] for t in cast("list[Json]", result["tasks"])] == [None]
+        assert (unknown["state"], unknown["produced_ids"]) == ("unknown", []), unknown["message"]
+        assert "may not be read" in str(unknown["message"])
+        after = versions(stack, source)
+        assert (len(after), after[1:]) == (3, [made, source])
+        assert document(stack, source)["custom_fields"] == [value]
+    finally:
+        people.clean_up()
+
+
 async def test_parts_nobody_can_follow_keep_their_metadata_and_the_original(
     stack: Stack, scope: Scope
 ) -> None:
