@@ -1928,10 +1928,11 @@ class FakePaperless:
             archive=original + b"\n%archive",
             versions=[_root_version(number, original)],
             content=content,
+            tags=[tag.id for tag in self.state.tags if tag.is_inbox],
         )
         if source is not None:
             made.created = source.created
-            made.tags = list(source.tags)
+            made.tags = list(dict.fromkeys([*source.tags, *made.tags]))
             made.correspondent = source.correspondent
             made.document_type = source.document_type
             made.storage_path = source.storage_path

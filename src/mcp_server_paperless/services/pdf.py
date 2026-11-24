@@ -34,6 +34,8 @@ from mcp_server_paperless.services.documents import document_link, listed_versio
 from mcp_server_paperless.services.page_ranges import describe, parse_pages
 from mcp_server_paperless.services.pdf_plans import (
     NUMBER_BLOCKED,
+    REBUILT,
+    UNSIGNED,
     document_plan,
     outputs,
     version_plan,
@@ -237,7 +239,10 @@ class PdfService:
         plan = version_plan(
             f"a new version of {_plural(len(documents), 'document')}",
             "the document" if len(documents) == 1 else "each document",
-            loses=(f"{_named(back)} no longer shows its newest file",) if back else (),
+            loses=(
+                *((f"{_named(back)} no longer shows its newest file",) if back else ()),
+                UNSIGNED,
+            ),
             needs_confirm=bool(back),
         )
         if dry_run:
@@ -949,6 +954,7 @@ def _merge_plan(
     plan = document_plan(
         f"1 new document{size}",
         _named(documents),
+        loses=(REBUILT,),
         trashes=trashes,
         number_moves=trashes,
         keep_metadata=metadata_document_id is not None,
@@ -976,10 +982,10 @@ def _file_plan(  # noqa: PLR0913 -- what the plan of a request for one document 
     """The plan of an operation on one document."""
     name = _named([source.document])
     made = outputs(files, output)
-    if request.operation == "split":
-        loses = (f"{describe(dropped)}: in no new document",) if dropped else ()
-    else:
-        loses = (f"{describe(dropped)}: not in the result",) if dropped else ()
+    where = "in no new document" if request.operation == "split" else "not in the result"
+    loses = (f"{describe(dropped)}: {where}",) if dropped else ()
+    if request.operation != "remove_password":
+        loses = (*loses, REBUILT)
     if output == "new_version":
         if source.older:
             loses = (*loses, f"{name} no longer shows its newest file")

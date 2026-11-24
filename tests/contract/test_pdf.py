@@ -10,12 +10,13 @@ Every test works on documents of its own, never on a seeded one.
 import asyncio
 import time
 import uuid
+from datetime import date
 from typing import TYPE_CHECKING
 
 import pytest
 from e2e.helpers import pdf_pages
 
-from mcp_server_paperless.domain.documents import DocumentPatch
+from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 from mcp_server_paperless.domain.pdf import PageSlot, StartedTasks
 from mcp_server_paperless.domain.versions import VersionUpload
@@ -445,3 +446,91 @@ async def test_the_parts_of_a_split_are_known_by_their_number(backend: Backend) 
 
     produced = dict(zip(tasks.outputs, await finished(backend, tasks), strict=True))
     assert [await pages(backend, produced[n]) for n in (0, 1)] == [1, 2]
+
+
+@pytest.mark.contract(EDIT)
+@pytest.mark.parametrize("keep", [True, False])
+async def test_what_a_new_document_takes_over_and_what_it_never_does(
+    backend: Backend, *, keep: bool
+) -> None:
+    ports, document = backend.admin, backend.new_pdf(2)
+    number = uuid.uuid4().int % 1_000_000 + 9_000_000
+    tags = {tag.name: tag.id for tag in await ports.taxonomy.list_taxonomy("tag")}
+    kinds = {f.name: f.id for f in await ports.taxonomy.list_taxonomy("custom_field")}
+    value = CustomFieldValue(field=kinds["e2e-string"], value="kept")
+    patch = DocumentPatch(
+        tags=(tags["e2e-finance"],),
+        created=date(2020, 2, 3),
+        archive_serial_number=number,
+        custom_fields=(value,),
+    )
+    source = await ports.document_writes.update_document(document, patch)
+    _ = await ports.document_writes.add_note(document, "stays here")
+
+    tasks = await ports.pdf_writes.edit_pdf(
+        document, (PageSlot(page=2),), output="new_document", keep_metadata=keep
+    )
+
+    [made] = await finished(backend, tasks)
+    record = await ports.documents.get_document(made)
+    assert record.title == (source.title if keep else f"{document}_edit_1")
+    assert (tags["e2e-finance"] in record.tags) is keep
+    assert tags["e2e-inbox"] in record.tags  # like every document that is consumed
+    assert record.custom_fields == ((value,) if keep else ())
+    assert (record.created == date(2020, 2, 3)) is keep
+    assert (record.archive_serial_number, record.notes_count) == (None, 0)
+    assert len(record.versions) == 1
+
+
+@pytest.mark.contract(EDIT)
+async def test_a_new_version_keeps_what_the_document_has(backend: Backend) -> None:
+    ports, document = backend.admin, backend.new_pdf(2)
+    number = uuid.uuid4().int % 1_000_000 + 9_000_000
+    before = await ports.document_writes.update_document(
+        document, DocumentPatch(archive_serial_number=number)
+    )
+    _ = await ports.document_writes.add_note(document, "stays here")
+
+    tasks = await ports.pdf_writes.edit_pdf(
+        document, (PageSlot(page=2),), output="new_version", keep_metadata=False
+    )
+
+    _ = await finished(backend, tasks)
+    after = await ports.documents.get_document(document)
+    assert (after.title, after.tags, after.created) == (before.title, before.tags, before.created)
+    assert (after.archive_serial_number, after.notes_count) == (number, 1)
+
+
+@pytest.mark.contract(PASSWORD)
+async def test_an_unlocked_copy_takes_no_serial_number(backend: Backend) -> None:
+    ports, locked = backend.admin, backend.new_encrypted("s3cret")
+    number = uuid.uuid4().int % 1_000_000 + 9_000_000
+    _ = await ports.document_writes.update_document(
+        locked, DocumentPatch(archive_serial_number=number)
+    )
+
+    tasks = await ports.pdf_writes.remove_password(
+        locked, "s3cret", output="new_document", version_id=locked, keep_metadata=False
+    )
+
+    [made] = await finished(backend, tasks)
+    record = await ports.documents.get_document(made)
+    assert (record.title, record.archive_serial_number) == (f"{locked}_unprotected", None)
+
+
+@pytest.mark.contract(MERGE)
+async def test_a_merge_leaves_out_what_it_cannot_read_and_names_the_rest(
+    backend: Backend,
+) -> None:
+    first, locked = backend.new_pdf(2), backend.new_encrypted("s3cret")
+    text = backend.upload(f"contract-text-{first}", "plain.txt", b"plain text", "text/plain")
+    writes = backend.admin.pdf_writes
+
+    for fallback in (False, True):  # a text file has no archive PDF
+        tasks = await writes.merge_documents(
+            (first, locked, text), metadata_document_id=None, archive_fallback=fallback
+        )
+        [merged] = await finished(backend, tasks)
+        record = await backend.admin.documents.get_document(merged)
+        assert tasks.included == (first,)
+        assert (record.page_count, record.title) == (2, f"{first}_merged")

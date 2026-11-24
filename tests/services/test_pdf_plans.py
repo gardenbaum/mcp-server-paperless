@@ -172,9 +172,13 @@ METADATA = (
 )
 NEVER = "notes, history, earlier versions, share links and corrections of the text are not copied"
 PIPELINE = (
-    "a new document belongs to the calling user and is processed like an upload: workflows, "
-    "matching and barcodes can change it, split it again or stop it"
+    "a new document belongs to the calling user, gets the inbox tags and is processed like an "
+    "upload: workflows, matching and barcodes can change it, split it again or stop it"
 )
+REBUILT = (
+    "bookmarks, attachments, working form fields and signatures of the PDF are not in the result"
+)
+UNSIGNED = "a signature in the PDF is no longer valid"
 BLOCKED = (
     "an archive serial number stays with the trashed original: restoring brings it back, and it "
     "is blocked until the trash is emptied"
@@ -206,17 +210,17 @@ async def test_the_plans_of_new_documents() -> None:
     assert await plan_of("split") == (
         "2 new documents",
         (f"new documents take {METADATA} of {name}", f"{name}: unchanged", STAYS),
-        ("page 3: in no new document", NEVER, PIPELINE),
+        ("page 3: in no new document", REBUILT, NEVER, PIPELINE),
     )
     assert await plan_of("split-replace") == (
         "2 new documents",
         (f"new documents take {METADATA} of {name}",),
-        ("page 3: in no new document", NEVER, PIPELINE, BLOCKED, trashed(name)),
+        ("page 3: in no new document", REBUILT, NEVER, PIPELINE, BLOCKED, trashed(name)),
     )
     assert await plan_of("edit-replace") == (
         "1 new document",
         (f"new documents take {METADATA} of {name}", MOVES),
-        ("pages 2-3: not in the result", NEVER, PIPELINE, trashed(name)),
+        ("pages 2-3: not in the result", REBUILT, NEVER, PIPELINE, trashed(name)),
     )
     locked = "document 73 'Locked'"
     assert await plan_of("unlock-replace") == (
@@ -231,17 +235,17 @@ async def test_the_plans_of_versions() -> None:
     assert await plan_of("delete") == (
         "a new version of the document",
         version_keeps(name),
-        ("page 1: not in the result", READ_AGAIN),
+        ("page 1: not in the result", REBUILT, READ_AGAIN),
     )
     assert await plan_of("rotate") == (
         "a new version of 1 document",
         version_keeps("the document"),
-        (READ_AGAIN,),
+        (UNSIGNED, READ_AGAIN),
     )
     assert await plan_of("rotate-first") == (
         "a new version of 2 documents",
         version_keeps("each document"),
-        ("document 60 'Longer' no longer shows its newest file", READ_AGAIN),
+        ("document 60 'Longer' no longer shows its newest file", UNSIGNED, READ_AGAIN),
     )
 
 
@@ -258,6 +262,7 @@ async def test_the_plans_of_a_merge_and_of_reprocessing() -> None:
         "1 new document with 7 pages",
         (f"{names}: unchanged", STAYS),
         (
+            REBUILT,
             f"new documents take nothing of {METADATA} of {names}",
             NEVER,
             PIPELINE,
@@ -267,7 +272,7 @@ async def test_the_plans_of_a_merge_and_of_reprocessing() -> None:
     assert await plan_of("merge-delete") == (
         "1 new document with 7 pages",
         (f"new documents take {METADATA} of document 70 (its title with ' (merged)')", MOVES),
-        (NEVER, PIPELINE, trashed(names), VERSION_OF_A_MERGE),
+        (REBUILT, NEVER, PIPELINE, trashed(names), VERSION_OF_A_MERGE),
     )
     assert await plan_of("reprocess") == (
         "nothing new: the archived PDF and the text of the newest version again",
@@ -279,6 +284,7 @@ async def test_the_plans_of_a_merge_and_of_reprocessing() -> None:
 async def test_new_documents_without_the_metadata() -> None:
     fake = paperless()
     document(fake, PLAIN).tags = [1]
+    inbox = [tag.id for tag in fake.state.tags if tag.is_inbox]
 
     preview = await pdf_service(fake).edit(
         PLAIN, PAGE, options=Options(keep_metadata=False, dry_run=True)
@@ -288,11 +294,12 @@ async def test_new_documents_without_the_metadata() -> None:
     assert preview.plan.keeps == ("document 70 'Plain': unchanged", STAYS)
     assert preview.plan.loses == (
         "pages 2-3: not in the result",
+        REBUILT,
         f"new documents take nothing of {METADATA} of document 70 'Plain'",
         NEVER,
         PIPELINE,
     )
-    assert document(fake, result.produced_ids[0]).tags == []
+    assert document(fake, result.produced_ids[0]).tags == inbox
 
 
 async def test_a_version_cannot_leave_the_metadata_out() -> None:

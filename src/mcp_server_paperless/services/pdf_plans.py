@@ -15,9 +15,13 @@ NEVER_COPIED: Final = (
     "notes, history, earlier versions, share links and corrections of the text are not copied"
 )
 NEW_DOCUMENT: Final = (
-    "a new document belongs to the calling user and is processed like an upload: workflows, "
-    "matching and barcodes can change it, split it again or stop it"
+    "a new document belongs to the calling user, gets the inbox tags and is processed like an "
+    "upload: workflows, matching and barcodes can change it, split it again or stop it"
 )
+REBUILT: Final = (
+    "bookmarks, attachments, working form fields and signatures of the PDF are not in the result"
+)
+UNSIGNED: Final = "a signature in the PDF is no longer valid"
 READ_AGAIN: Final = "the text is read again, so corrections of it are not in the new version"
 NUMBER_BLOCKED: Final = (
     "an archive serial number stays with the trashed original: restoring brings it back, and it "

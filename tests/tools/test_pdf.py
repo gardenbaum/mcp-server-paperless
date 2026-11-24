@@ -337,6 +337,6 @@ async def test_the_options_reach_paperless() -> None:
     )
 
     [made] = cast("list[int]", bare["produced_ids"])
-    assert [d.tags for d in source.state.documents if d.id == made] == [[]]
+    assert [1 in d.tags for d in source.state.documents if d.id == made] == [False]
     assert cast("Json", merged["plan"])["produces"] == "1 new document with 5 pages"
     assert cast("Json", both["plan"])["produces"] == "1 new document with 6 pages"
