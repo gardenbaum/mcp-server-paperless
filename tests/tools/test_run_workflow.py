@@ -392,5 +392,5 @@ async def test_a_run_too_long_to_confirm_is_refused_without_a_dialog(mode: Mode)
     )
 
     assert result.is_error
-    assert "at most 100000 can be shown" in text(result)
+    assert "(at most 100000)" in text(result)
     assert seen == []

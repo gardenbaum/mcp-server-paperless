@@ -152,6 +152,11 @@ class ConfirmationRequired(Validation):
         self.fingerprint: str = hashlib.sha256(about).hexdigest()
 
 
+def confirmation_length(effect: str, hint: str) -> int:
+    """How long the refusal of ``effect`` is where it is shown with its ``hint``."""
+    return len(ConfirmationRequired.for_effect(effect, hint=hint).describe())
+
+
 class NotConfirmed(PaperlessMcpError):
     """The user was asked and did not accept; nothing was changed."""
 

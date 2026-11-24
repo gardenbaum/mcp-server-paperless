@@ -1456,9 +1456,8 @@ def steps(count: int) -> list[WorkflowAction]:
 
 
 async def confirmed_length(setup: Setup) -> int:
-    """How long a confirmation within the limit is, without the words around the effect."""
-    message = (await setup.asked(document_ids=MANY)).message
-    return len(message) - len("Nothing was changed. Confirming would .")
+    """How long a confirmation within the limit is, as a client without dialogs shows it."""
+    return len((await setup.asked(document_ids=MANY)).describe())
 
 
 async def long_run(length: int) -> Setup:
@@ -1494,13 +1493,11 @@ async def test_one_character_more_is_refused_also_with_confirm(*, confirm: bool)
     assert type(raised.value) is Validation  # no dialog
     message = raised.value.message
     assert message.startswith(
-        "Nothing was run: the confirmation would have 100001 characters, and at most 100000 can "
+        "Nothing was run: the confirmation would be longer than what can be shown: 100001 "
     )
-    assert message.endswith(" of them are the documents.")
+    assert message.endswith(" for the documents.")
     assert "'" not in message.replace("'Paid'", "")
-    assert raised.value.hint == (
-        "Choose fewer documents per call; the actions alone fit into one confirmation."
-    )
+    assert raised.value.hint == "Choose fewer documents per call."
 
 
 async def test_an_accepted_dialog_does_not_cover_a_run_that_became_too_long() -> None:
@@ -1511,13 +1508,13 @@ async def test_an_accepted_dialog_does_not_cover_a_run_that_became_too_long() ->
     with accepting(refusal.fingerprint), pytest.raises(Validation) as raised:
         _ = await setup.run(confirm=True, document_ids=MANY)
 
-    assert "100001 characters" in raised.value.message
+    assert ": 100001 characters (at most 100000), " in raised.value.message
 
 
 async def test_a_filter_alone_gets_the_same_refusal() -> None:
     setup = await long_run(LIMIT + 1)
 
-    with pytest.raises(Validation, match="100001 characters"):
+    with pytest.raises(Validation, match=r"characters \(at most 100000\), "):
         _ = await setup.run(confirm=True, filters={"title_contains": "x"}, exclude_ids=[])
 
 
@@ -1529,9 +1526,9 @@ async def test_the_sizes_of_actions_and_documents_are_told() -> None:
     with pytest.raises(Validation) as raised:
         _ = await setup.run(document_ids=MANY)
 
-    assert f"{actions} of them are the actions, " in raised.value.message
+    assert f"), {actions} of them for the actions and " in raised.value.message
     rows = [(number, setup.document(number).title) for number in MANY]
-    assert f"{len(named(rows))} of them are the documents" in raised.value.message
+    assert f"{len(named(rows))} for the documents." in raised.value.message
 
 
 async def test_where_fewer_documents_do_not_help_the_hint_says_so() -> None:
@@ -1559,9 +1556,10 @@ async def test_the_preview_of_a_run_that_is_too_long_shows_the_first_actions() -
     assert LIMIT - 120 < shown <= LIMIT
     assert report.actions[0].startswith("step 1 of 1200: ")
     assert report.message.startswith(
-        "Dry run, nothing was run. The run would be refused: the confirmation would have "
+        "Dry run, nothing was run. The run would be refused: the confirmation would be longer "
     )
-    assert "actions shows only the first " in report.message
+    missing = 1200 - len(report.actions)
+    assert f" {missing} of 1200 steps do not fit and are left out of actions." in report.message
     assert report.message.endswith("or run it in the Paperless web UI.")
     assert len(report.message) < 2000
 
@@ -1573,10 +1571,9 @@ async def test_actions_that_fit_stay_whole_where_the_documents_are_too_many() ->
 
     assert not report.incomplete
     assert len(report.actions) == 1050
-    assert "actions shows only" not in report.message
+    assert "left out" not in report.message
     assert report.selected_ids == MANY
-    fewer = "Choose fewer documents per call; the actions alone fit into one confirmation."
-    assert report.message.endswith(fewer)
+    assert report.message.endswith(" Choose fewer documents per call.")
 
 
 async def test_missing_rights_are_told_before_the_length() -> None:
@@ -1590,3 +1587,142 @@ async def test_missing_rights_are_told_before_the_length() -> None:
 
     with pytest.raises(PermissionDenied, match="You may not change or do not own"):
         _ = await setup.run(confirm=True, document_ids=[1000])
+
+
+async def test_the_hint_counts_too() -> None:
+    setup = await long_run(LIMIT)
+    # By filter the hint of the next call names every document, so it is longer.
+    with pytest.raises(Validation) as raised:
+        _ = await setup.run(filters={"title_contains": "x"}, confirm=True)
+
+    assert type(raised.value) is Validation
+
+
+def big(count: int) -> WorkflowAction:
+    """An assignment with a long text of its own."""
+    fields: list[JsonValue] = [*range(3000, 3000 + count)]
+    values: dict[str, JsonValue] = {str(n): "y" * 55 for n in range(3000, 3000 + count)}
+    return action(1, assign_custom_fields=fields, assign_custom_fields_values=values)
+
+
+async def test_a_clause_that_does_not_fit_is_skipped_and_the_others_are_shown() -> None:
+    setup = Setup(writes=False)
+    setup.flow(
+        action(1, assign_owner=READER_ID, **dict(big(1700).settings)),
+        mail("a@example.org"),
+        action(6),
+        TAGGING,
+    )
+
+    report = await setup.run(dry_run=True)
+
+    assert report.incomplete
+    assert report.actions == (
+        "step 1 of 4: change who owns or may see the matching documents",
+        "step 2 of 4: send an e-mail to 'a@example.org'",
+        "step 3 of 4: move each of them to the trash, after everything else",
+        "step 4 of 4: assign tags 'e2e-inbox'",
+    )
+    # A step with one of its two clauses left out counts once.
+    assert " 1 of 4 steps do not fit and are left out of actions." in report.message
+
+
+async def test_steps_whose_clauses_are_both_left_out_count_once() -> None:
+    setup = Setup(writes=False)
+    setup.flow(big(1700), big(1700), TAGGING)
+
+    report = await setup.run(dry_run=True)
+
+    assert report.actions == ("step 3 of 3: assign tags 'e2e-inbox'",)
+    assert " 2 of 3 steps do not fit" in report.message
+
+
+async def test_one_action_that_is_too_long_alone_has_its_own_hint() -> None:
+    setup = Setup(writes=False)
+    setup.flow(big(1700), TAGGING)
+
+    with pytest.raises(Validation) as raised:
+        _ = await setup.run(confirm=True)
+
+    assert raised.value.hint == (
+        "Step 1 of 2 alone is too long: split that action over several workflows, or run the "
+        "workflow in the Paperless web UI."
+    )
+
+
+async def filled(setup: Setup, number: int) -> None:
+    """Give the document's title the characters that make its own confirmation exactly full."""
+    setup.flow(*steps(1115))
+    for _round in range(40):  # each letter more in a title of a step
+        room = LIMIT - len((await setup.asked(document_ids=[number])).describe())
+        if not room:
+            return
+        stored = setup.state.workflows[0].actions
+        at = next(n for n, a in enumerate(stored) if len(str(a.settings["assign_title"])) < 60)
+        more = min(room, 60 - len(str(stored[at].settings["assign_title"])))
+        title = f"{stored[at].settings['assign_title']}{'z' * more}"
+        changed = stored[at].model_copy(update={"settings": {"assign_title": title}})
+        setup.flow(*stored[:at], changed, *stored[at + 1 :])
+    pytest.fail("not filled")
+
+
+@pytest.mark.parametrize("numbers", [(101, 102), (102, 101)])
+async def test_the_shortest_document_decides_whether_fewer_help(numbers: tuple[int, int]) -> None:
+    setup = Setup(writes=False)
+    setup.document(102).title = "x" * 50
+    await filled(setup, 101)
+
+    with pytest.raises(Validation) as raised:
+        _ = await setup.run(confirm=True, document_ids=numbers)
+    setup.document(101).title += "x"
+    with pytest.raises(Validation) as longer:
+        _ = await setup.run(confirm=True, document_ids=numbers)
+
+    assert raised.value.hint == "Choose fewer documents per call."
+    # Without any document it would fit, but a run needs one.
+    assert (longer.value.hint or "").startswith("Fewer documents do not help")
+
+
+async def test_every_preview_says_when_actions_are_left_out() -> None:
+    setup = restricted(owner=ADMIN_ID)
+    setup.flow(big(1700), TAGGING)
+
+    blocked = await setup.run(dry_run=True)
+    nothing = await setup.run(dry_run=True, filters={"title_contains": "no such title"})
+
+    for report in (blocked, nothing):
+        assert report.incomplete
+        assert " 1 of 2 steps do not fit and are left out of actions." in report.message
+    assert "do not own 1 document" in blocked.message
+
+
+async def test_unowned_documents_need_the_permission_to_change_documents_too() -> None:
+    setup = restricted(owner=None)
+    setup.document(101).owner = None
+    setup.without(READER[0], "change_document")
+
+    with pytest.raises(PermissionDenied, match="You lack the permission to change documents"):
+        _ = await setup.run(confirm=True)
+
+
+@pytest.mark.parametrize(
+    ("actions", "told"),
+    [
+        ((mail("a@b@example.org"),), "cannot be shown to the user in full"),
+        (tuple(mail(f"a{n}@example.org") for n in range(21)), "has 21 destinations or more"),
+    ],
+)
+async def test_a_stored_destination_that_cannot_be_shown_names_what_to_do_about_the_run(
+    actions: tuple[WorkflowAction, ...], told: str
+) -> None:
+    setup = Setup(writes=False)
+    setup.flow(*actions)
+
+    with pytest.raises(Validation, match=told) as raised:
+        _ = await setup.run(confirm=True)
+
+    assert raised.value.message.startswith("Nothing was run: the ")
+    assert raised.value.hint == (
+        "It is stored in the workflow: change that with update_workflow, or run the workflow in "
+        "the Paperless web UI."
+    )

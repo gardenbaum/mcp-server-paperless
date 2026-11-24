@@ -227,7 +227,9 @@ async def run_workflow(  # noqa: PLR0913 -- one parameter per concept, described
     The workflow has to be enabled; what it does is in list_workflows. Choose the documents by ids,
     filters or saved_view. dry_run=true shows what it would do; without confirm a dialog, or an
     error for you to show the user, names every action and every document first, with all e-mail
-    recipients and webhook hosts (see confirm). filters or saved_view alone never run anything on
+    recipients and webhook hosts (see confirm). A run whose confirmation would be longer than 100000
+    characters is refused, confirm=true included; the preview shows the actions that fit into that
+    (incomplete). filters or saved_view alone never run anything on
     confirm=true: pass the same again with the shown document_ids; the call is refused if one no
     longer matches. Paperless runs it on one document after the other: failed names those it
     failed on, where a part of the actions may have run, and the others go on. Whether e-mails,

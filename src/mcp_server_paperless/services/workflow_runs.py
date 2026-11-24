@@ -21,6 +21,7 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     TaskFailed,
     Validation,
+    confirmation_length,
     quoted,
 )
 from mcp_server_paperless.domain.workflows import WorkflowRunReport
@@ -67,10 +68,14 @@ BLOCKED_HINT: Final = (
 )
 # Characters of a confirmation; above that a run is refused, never cut (owner, 2026-11-24).
 MAX_CONFIRMATION: Final = 100_000
-FEWER: Final = "Choose fewer documents per call; the actions alone fit into one confirmation."
+FEWER: Final = "Choose fewer documents per call."
 SPLIT: Final = (
     "Fewer documents do not help: split the workflow into several, or run it in the Paperless web "
     "UI."
+)
+SPLIT_STEP: Final = (
+    "{step} alone is too long: split that action over several workflows, or run the workflow in "
+    "the Paperless web UI."
 )
 NOT_AGAIN: Final = (
     "What it does may be done already, e-mails and webhooks included: do not run it again on your "
@@ -139,32 +144,63 @@ class _Call:
         )
 
     @property
+    def hint(self) -> str:
+        """The hint of the confirmation: what to call next."""
+        if not self.alone:
+            return CONFIRM_HINT
+        return NEXT_CALL.format(ids=", ".join(str(hit.id) for hit in self.hits))
+
+    @property
+    def length(self) -> int:
+        """How long the confirmation is, as a client without dialogs shows it."""
+        return confirmation_length(self.effect, self.hint)
+
+    @property
     def too_long(self) -> str:
         """Why the run cannot be confirmed, with the sizes; or nothing."""
-        length = len(self.effect)
+        length = self.length
         if length <= MAX_CONFIRMATION:
             return ""
         actions, documents = len("; ".join(self.actions)), len(named(titled(self.hits)))
         return (
-            f"the confirmation would have {length} characters, and at most {MAX_CONFIRMATION} can "
-            f"be shown: {actions} of them are the actions, {documents} of them are the documents"
+            "the confirmation would be longer than what can be shown: "
+            f"{length} characters (at most {MAX_CONFIRMATION}), {actions} of them for the actions "
+            f"and {documents} for the documents"
         )
 
     @property
     def shorter(self) -> str:
         """What helps where the run cannot be confirmed."""
-        one = replace(self, chosen=replace(self.chosen, hits=self.hits[:1]))
-        return FEWER if len(one.effect) <= MAX_CONFIRMATION else SPLIT
+        least = min(self.hits, key=lambda hit: len(named(titled([hit]))))
+
+        def fits(actions: tuple[str, ...]) -> bool:
+            chosen = replace(self.chosen, hits=(least,))
+            return replace(self, chosen=chosen, actions=actions).length <= MAX_CONFIRMATION
+
+        if fits(self.actions):
+            return FEWER
+        alone = next((told for told in self.actions if not fits((told,))), None)
+        return SPLIT if alone is None else SPLIT_STEP.format(step=_step(alone))
 
     @property
     def shown(self) -> tuple[str, ...]:
-        """The first actions, as many as fit into the limit."""
+        """The actions that fit into the limit; one that does not is skipped."""
         left = MAX_CONFIRMATION
-        for at, told in enumerate(self.actions):
-            left -= len(told) + (2 if at else 0)
-            if left < 0:
-                return self.actions[:at]
-        return self.actions
+        found: list[str] = []
+        for told in self.actions:
+            if len(told) + 2 <= left:
+                found.append(told)
+                left -= len(told) + 2
+        return tuple(found)
+
+    @property
+    def left_out(self) -> str:
+        """How many steps are not, or not whole, in ``shown``, as a sentence; or nothing."""
+        out = {_step(told) for told in self.actions if told not in self.shown}
+        if not out:
+            return ""
+        total = len(self.workflow.actions)
+        return f" {len(out)} of {total} steps do not fit and are left out of actions."
 
     @property
     def refusal(self) -> str:
@@ -237,7 +273,8 @@ class WorkflowRuns:
         """
         call = await self._call(workflow, selection, apply_filters=apply_filters)
         if not call.hits:
-            return _report(call, "Nothing was run: no document matches.", dry_run=dry_run)
+            message = f"Nothing was run: no document matches.{call.left_out}"
+            return _report(call, message, dry_run=dry_run)
         if dry_run:
             return _preview(call)
         if call.refusal:
@@ -311,12 +348,10 @@ class WorkflowRuns:
         """
         ids = [hit.id for hit in call.hits]
         files = await self._reader.get_newest_versions(ids)
-        listed = ", ".join(map(str, ids))
-        hint = NEXT_CALL.format(ids=listed)
         ConfirmationRequired.require(
             call.effect,
             scope=(call.scope, sorted(files.items())),
-            hint=hint if call.alone else CONFIRM_HINT,
+            hint=call.hint,
         )
 
     async def _send(self, call: _Call) -> WorkflowRun:
@@ -339,6 +374,11 @@ class WorkflowRuns:
         finally:
             for kind in COUNTED:
                 self._taxonomy.invalidate(kind)
+
+
+def _step(told: str) -> str:
+    """The number of an action: Step 2 of 5."""
+    return told.partition(":")[0].capitalize()
 
 
 def _lacks(user: SignedIn | None) -> bool:
@@ -375,18 +415,16 @@ def _preview(call: _Call) -> WorkflowRunReport:
     if call.refusal:
         message = f"{NOT_RUN} The run would be refused as a whole: {call.refusal}."
     elif call.too_long:
-        part = (
-            f" actions shows only the first {len(call.shown)} of {len(call.actions)}."
-            if call.shown != call.actions
-            else ""
-        )
-        message = f"{NOT_RUN} The run would be refused: {call.too_long}.{part} {call.shorter}"
+        message = f"{NOT_RUN} The run would be refused: {call.too_long}."
     else:
         ahead = TO_GO_AHEAD_BY_IDS if call.alone else TO_GO_AHEAD
         message = (
             f"{NOT_RUN} Confirming would run {call.subject} and do what actions says on "
             f"{call.target}. {ahead}{call.more('is')}"
         )
+    message += call.left_out
+    if call.too_long and not call.refusal:
+        message += f" {call.shorter}"
     return _report(call, message, dry_run=True)
 
 

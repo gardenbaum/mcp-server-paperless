@@ -115,6 +115,10 @@ ASSIGNMENT, REMOVAL, REMOTE_OCR, SUGGEST = 1, 2, 7, 8
 AI_FIELDS: Final = frozenset(
     {"title", "tags", "correspondent", "document_type", "storage_path", "created"}
 )
+STORED: Final = (
+    "It is stored in the workflow: change that with update_workflow, or run the workflow in the "
+    "Paperless web UI."
+)
 # Paperless does it last, wherever it stands.
 TRASHES: Final = "move each of them to the trash, after everything else"
 # What Paperless 3.5.1 reads of a manual trigger: not where a document came from, nor a schedule,
@@ -683,7 +687,11 @@ class WorkflowService:
         Raises:
             Validation: It has a destination that cannot be shown, or too many of them.
         """
-        _ = _acts(workflow.actions)  # counts the destinations of all actions together
+        try:
+            _ = _acts(workflow.actions)  # counts the destinations of all actions together
+        except Validation as error:
+            message = error.message.replace("Nothing was changed", "Nothing was run", 1)
+            raise Validation(message, hint=STORED) from None
         if any("tag" in _kinds(_action_fields(a), a.settings) for a in workflow.actions):
             self._taxonomy.invalidate("tag")  # a new child tag would come off unnamed
         texts = _Texts(
