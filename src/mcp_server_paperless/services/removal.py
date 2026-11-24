@@ -12,10 +12,11 @@ if TYPE_CHECKING:
 
 # Where a deleted document can be got back. restore_from_trash belongs to the trash toolset
 # (PLMCP-27); 30 days is Paperless's default PAPERLESS_EMPTY_TRASH_DELAY.
-RESTORE = (
-    "It stays there until the trash is emptied (by default after 30 days) and can be restored "
+WAY_BACK = (
+    "stays there until the trash is emptied (by default after 30 days) and can be restored "
     "in the Paperless web UI, or with restore_from_trash if the trash toolset is enabled."
 )
+RESTORE = f"It {WAY_BACK}"
 
 
 class DocumentRemoval:

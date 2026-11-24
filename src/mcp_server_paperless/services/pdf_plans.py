@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.pdf import PdfPlan
+from mcp_server_paperless.services.removal import WAY_BACK
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.pdf import Output
@@ -54,8 +55,8 @@ def document_plan(  # noqa: PLR0913 -- what the words depend on
     lost = [*loses, *without, NEVER_COPIED, NEW_DOCUMENT]
     if trashes:
         trashed = (
-            f"{source}: moved to the Paperless trash once everything that was made is checked; "
-            "can be restored from there"
+            f"{source}: moved to the Paperless trash once everything that was made is checked, "
+            f"and each {WAY_BACK.rstrip('.')}"
         )
         (kept if number_moves else lost).append(NUMBER_MOVES if number_moves else NUMBER_BLOCKED)
         lost.append(trashed)

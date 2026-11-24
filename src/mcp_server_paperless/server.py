@@ -74,6 +74,8 @@ from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
 from mcp_server_paperless.services.text_edits import TextEditor
 from mcp_server_paperless.services.trash import TrashService
+from mcp_server_paperless.services.trash_scan import TrashScan
+from mcp_server_paperless.services.trashed_documents import TrashedDocuments
 from mcp_server_paperless.services.uploads import UploadService
 from mcp_server_paperless.services.version_uploads import VersionUploadService
 from mcp_server_paperless.services.versions import VersionService
@@ -451,6 +453,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
             documents = DocumentService(
                 adapters.documents, adapters.trash, taxonomy, web_url=web_url
             )
+            trash_scan = TrashScan(adapters.trash, adapters.documents, taxonomy)
             duplicates = DuplicateFinder(adapters.documents, adapters.trash, web_url=web_url)
             tasks = TaskService(adapters.tasks, sleep=sleep, clock=clock, duplicates=duplicates)
             uploading = UploadService(
@@ -550,7 +553,21 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     web_url=web_url,
                 ),
                 trash=TrashService(
-                    adapters.trash, adapters.trash_writes, taxonomy, web_url=web_url
+                    adapters.trash,
+                    adapters.trash_writes,
+                    adapters.documents,
+                    trash_scan,
+                    taxonomy,
+                    web_url=web_url,
+                ),
+                trashed=TrashedDocuments(
+                    adapters.trash,
+                    adapters.documents,
+                    adapters.permissions,
+                    documents,
+                    trash_scan,
+                    web_url=web_url,
+                    max_bytes=settings.max_download_bytes,
                 ),
                 permissions=PermissionService(
                     adapters.permissions,

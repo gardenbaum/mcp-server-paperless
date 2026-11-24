@@ -53,10 +53,11 @@ Actions run in order on the matching document: 'assignment' (assign_title as a t
 '{{ correspondent }} {{ created_year }}', tags, correspondent, document type, storage path, owner,
 view and change permissions, custom fields with values), 'removal' (remove_all_* flags and
 remove_* lists), 'email' (email: subject, body, to, include_document), 'webhook' (a POST request:
-webhook: url, headers, params or body, include_document), 'move to trash' and 'remote OCR'
-(consumption triggers only). Settings of another action type than the one given are an error.
-Password removal and applying AI suggestions cannot be written here; use the Paperless web UI.
-A 'manual' trigger (run by hand) is listed but cannot be written here either.
+webhook: url, headers, params or body, include_document), 'move to trash' (undo with
+restore_from_trash, trash toolset, or in the web UI) and 'remote OCR' (consumption triggers only).
+Settings of another action type than the one given are an error. Password removal and applying AI
+suggestions cannot be written here; use the Paperless web UI. A 'manual' trigger (run by hand) is
+listed but cannot be written here either.
 
 A workflow runs by itself on every matching document once it is enabled (one with only manual
 triggers runs when a user runs it by hand). Without confirm, an

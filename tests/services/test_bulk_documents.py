@@ -1238,3 +1238,26 @@ async def test_a_confirmed_change_names_no_task() -> None:
 
     assert report.unconfirmed_task_id is None
     assert (report.message or "").startswith("Applied to 1 document")
+
+
+async def test_a_delete_says_how_to_get_the_documents_back_also_when_it_is_not_confirmed() -> None:
+    back = (
+        " Each stays there until the trash is emptied (by default after 30 days) and can be "
+        "restored in the Paperless web UI, or with restore_from_trash if the trash toolset is "
+        "enabled."
+    )
+    deleting = DeleteDocuments(op="delete")
+
+    done = await Setup().run([PUBLIC, SECOND], deleting)
+    unconfirmed = Setup()
+    unconfirmed.fake = Unconfirming(unconfirmed.state, user=ADMIN[0], writes=True)
+    unconfirmed.editor = BulkDocumentEditor(
+        unconfirmed.fake, unconfirmed.fake, unconfirmed.taxonomy, web_url=WEB
+    )
+    queued = await unconfirmed.run([PUBLIC, SECOND], deleting)
+    other = await Setup().run([PUBLIC], ReprocessDocuments(op="reprocess"))
+    preview = await Setup(writes=False).run([PUBLIC], deleting, dry_run=True)
+
+    assert done.message.endswith(back)
+    assert queued.message.endswith(back)
+    assert "restore_from_trash" not in other.message + preview.message

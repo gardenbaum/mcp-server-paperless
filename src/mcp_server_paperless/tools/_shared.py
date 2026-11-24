@@ -7,6 +7,7 @@ calls on ``Services``. The registry tests
 (tests/tools/test_registry.py) fail until all five are in place.
 """
 
+import base64
 import functools
 import logging
 from dataclasses import dataclass
@@ -14,8 +15,15 @@ from datetime import date
 from typing import TYPE_CHECKING, Annotated, Final, Protocol, cast
 
 from fastmcp.exceptions import ResourceError, ToolError
-from mcp.types import ToolAnnotations
-from pydantic import Field, JsonValue
+from fastmcp.tools import ToolResult
+from mcp.types import (
+    BlobResourceContents,
+    ContentBlock,
+    EmbeddedResource,
+    TextContent,
+    ToolAnnotations,
+)
+from pydantic import BaseModel, Field, JsonValue
 
 from mcp_server_paperless.domain.documents import NameOrId
 from mcp_server_paperless.domain.errors import (
@@ -56,6 +64,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
     from mcp_server_paperless.services.text_edits import TextEditor
     from mcp_server_paperless.services.trash import TrashService
+    from mcp_server_paperless.services.trashed_documents import TrashedDocuments
     from mcp_server_paperless.services.uploads import UploadService
     from mcp_server_paperless.services.version_uploads import VersionUploadService
     from mcp_server_paperless.services.versions import VersionService
@@ -109,8 +118,13 @@ DOCUMENT_TEXT: Final = (
 # Tools whose result is an image or a file as MCP content blocks, with no output schema and no
 # structured content (decision-11); every other tool has a typed return model (decision-4).
 MEDIA_TOOLS: Final = frozenset(
-    {"get_document_thumbnail", "get_document_pages", "download_document", "bulk_download"}
+    {
+        *("get_document_thumbnail", "get_document_pages", "download_document", "bulk_download"),
+        "get_trashed_file",  # decision-54
+    }
 )
+
+OCTETS: Final = "application/octet-stream"
 
 # The toolset of every tool, keyed by tool name. It must equal each tool's tag (registry test); the
 # server uses it to refuse a configuration that leaves no tool before it contacts Paperless.
@@ -150,6 +164,8 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "delete_saved_view": "views",
     "run_saved_view": "core",  # decision-34: the default profile runs saved views
     "list_trash": "trash",
+    "get_trash_entry": "trash",
+    "get_trashed_file": "trash",
     "restore_from_trash": "trash",
     "empty_trash": "trash",
     "rotate_documents": "pdf",
@@ -706,6 +722,18 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    "get_trash_entry": ToolAnnotations(
+        title="Get trash entry",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_trashed_file": ToolAnnotations(
+        title="Get file from trash",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     # Not destructive (decision-6): it only undoes a deletion and drops nothing. Restoring again
     # leaves the state as it is (idempotent), though the second call fails.
     "restore_from_trash": ToolAnnotations(
@@ -1012,6 +1040,7 @@ class Services:
     duplicate_resolver: DuplicateResolver
     views: ViewService
     trash: TrashService
+    trashed: TrashedDocuments
     permissions: PermissionService
     pdf: PdfService
     sharing: SharingService
@@ -1095,3 +1124,24 @@ def resource_boundary[**P, R](resource: Callable[P, Awaitable[R]]) -> Callable[P
             raise ResourceError(message) from None
 
     return guarded
+
+
+def report_text(report: BaseModel) -> TextContent:
+    """The JSON report, the first block of every file result."""
+    return TextContent(type="text", text=report.model_dump_json())
+
+
+def file_result(
+    report: BaseModel, data: bytes | None, uri: str, mime_type: str, filename: str | None
+) -> ToolResult:
+    """A report and, unless there is no data, the file it describes as an embedded resource."""
+    content: list[ContentBlock] = [report_text(report)]
+    if data is not None:
+        blob = BlobResourceContents(
+            uri=uri,
+            mime_type=mime_type,
+            blob=base64.b64encode(data).decode(),
+            _meta=None if filename is None else {"filename": filename},
+        )
+        content.append(EmbeddedResource(type="resource", resource=blob))
+    return ToolResult(content=content)

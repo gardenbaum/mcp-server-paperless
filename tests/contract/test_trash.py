@@ -21,13 +21,21 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from contract.test_document_upload import uploaded
 from contract.test_document_versions import add_version
 from mcp_server_paperless.domain.documents import DocumentPatch
-from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
+    NotFound,
+    PermissionDenied,
+    Validation,
+)
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
-    from mcp_server_paperless.domain.trash import TrashedDocument
+    from mcp_server_paperless.domain.bulk import ObjectPermissions
+    from mcp_server_paperless.domain.documents import DocumentFile, FileVersion
+    from mcp_server_paperless.domain.trash import TrashedDetail, TrashedDocument
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 
@@ -36,6 +44,7 @@ RESTORE = "TrashWriter.restore_from_trash"
 EMPTY = "TrashWriter.empty_trash"
 MISSING = 999_999
 SCAN_SIZE = 100
+SCAN = 1000
 
 
 async def find(ports: Ports, wanted: set[int]) -> dict[int, TrashedDocument]:
@@ -229,3 +238,247 @@ async def test_a_deleted_version_is_an_entry_of_its_document_and_restored_onto_i
         await ports.trash_writes.restore_from_trash([earlier])
     with pytest.raises(NotFound):
         _ = await ports.documents.get_document(document)
+
+
+LOOK = "TrashReader.look_up_in_trash"
+THUMB = "DocumentReader.get_document_thumbnail"
+FILE = "DocumentReader.get_document_file"
+OPEN = "DocumentReader.open_document_file"
+MIB = 1024 * 1024
+
+
+async def look_up(ports: Ports, document: int) -> TrashedDetail | None:
+    """The entry, page by page: the trash is shared with every other test."""
+    page: int | None = 1
+    while page is not None:
+        found = await ports.trash.look_up_in_trash(
+            document, page=page, page_size=SCAN, max_bytes=64 * MIB
+        )
+        if found.entry is not None:
+            return found.entry
+        page = found.next_page
+    return None
+
+
+@pytest.mark.contract(LOOK)
+@pytest.mark.contract(LIST)
+async def test_an_entry_has_the_fields_and_the_text_of_its_first_version(backend: Backend) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp78 first text")
+    second = await add_version(backend, document, "plmcp78 second text")
+    _ = await ports.document_writes.add_note(document, "plmcp78 note")
+    types = await ports.taxonomy.list_taxonomy("document_type")
+    patch = DocumentPatch(document_type=types[0].id)
+    live = await ports.document_writes.update_document(document, patch)
+    await ports.document_writes.delete_document(document)
+
+    entry = await look_up(ports, document)
+
+    assert entry
+    assert (entry.id, entry.title, entry.version_of) == (document, live.title, None)
+    assert (entry.content, entry.mime_type) == ("plmcp78 first text", "text/plain")
+    assert (entry.document_type, entry.owner) == (types[0].id, live.owner)
+    assert (entry.created_date, entry.created) == (live.created, live.created)
+    assert (entry.added, entry.original_file_name) == (live.added, live.original_file_name)
+    assert entry.archived_file_name is None
+    assert (entry.user_can_change, entry.is_shared_by_requester) == (True, False)
+    # Notes and later versions went to the trash with it; duplicates are never told there.
+    assert (entry.notes, entry.duplicate_documents) == ((), ())
+    assert [v.id for v in entry.versions] == [document]
+    row = (await find(ports, {document}))[document]
+    assert (row.document_type, row.owner, row.created) == (
+        entry.document_type,
+        entry.owner,
+        entry.created,
+    )
+    assert (row.mime_type, row.has_archive) == ("text/plain", False)
+    # The version is covered by the entry of its document, and others' entries are not shown.
+    assert await look_up(ports, second) is None
+    assert await look_up(backend.reader, document) is None
+    with pytest.raises(PermissionDenied):
+        _ = await look_up(backend.blind, document)
+    with pytest.raises(NotFound):
+        _ = await ports.trash.look_up_in_trash(document, page=MISSING, page_size=1, max_bytes=MIB)
+    with pytest.raises(AnswerTooLarge):
+        _ = await ports.trash.look_up_in_trash(document, page=1, page_size=SCAN, max_bytes=10)
+
+
+@pytest.mark.contract(LOOK)
+@pytest.mark.contract(FILE)
+@pytest.mark.contract(OPEN)
+async def test_a_deleted_version_has_its_own_text_and_file(backend: Backend) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp78 root text")
+    version = await add_version(backend, document, "plmcp78 deleted text")
+    _ = await ports.document_writes.delete_version(document, version)
+
+    entry = await look_up(ports, version)
+    file = await ports.documents.get_document_file(version, "original", max_bytes=MIB)
+    async with ports.documents.open_document_file(version, "original") as opened:
+        streamed = b"".join([chunk async for chunk in opened.chunks])
+
+    assert entry
+    assert (entry.version_of, entry.content) == (document, "plmcp78 deleted text")
+    assert [v.id for v in entry.versions] == [document]
+    assert file.content == streamed == b"plmcp78 deleted text"
+
+
+@pytest.mark.contract(THUMB)
+@pytest.mark.contract(FILE)
+@pytest.mark.contract(OPEN)
+async def test_the_files_of_a_document_in_the_trash_are_those_of_its_first_version(
+    backend: Backend,
+) -> None:
+    ports = backend.admin
+    document = backend.new_pdf(1)
+    before = await ports.documents.get_document_metadata(document)
+    original = await ports.documents.get_document_file(document, "original", max_bytes=MIB)
+    archive = await ports.documents.get_document_file(document, "archive", max_bytes=MIB)
+    plain = await uploaded(backend, b"plmcp78 plain file")
+    for number in (document, plain):
+        _ = await add_version(backend, number, f"plmcp78 newest {number}")
+        await ports.document_writes.delete_document(number)
+
+    files: dict[FileVersion, DocumentFile] = {"original": original, "archive": archive}
+    for kind, expected in files.items():
+        found = await ports.documents.get_document_file(document, kind, max_bytes=MIB)
+        assert found.content == expected.content
+        async with ports.documents.open_document_file(document, kind) as opened:
+            assert b"".join([chunk async for chunk in opened.chunks]) == expected.content
+    thumbnail = await ports.documents.get_document_thumbnail(document)
+    assert (thumbnail.content != b"", thumbnail.mime_type) == (True, "image/webp")
+    over = await ports.documents.get_document_file(document, "original", max_bytes=5)
+    assert (over.truncated, over.content) == (True, b"")
+    row = (await find(ports, {document, plain}))[document]
+    assert (row.has_archive, row.mime_type) == (before.has_archive_version, "application/pdf")
+    # Without an archive version Paperless sends the original for it.
+    sent = await ports.documents.get_document_file(plain, "archive", max_bytes=MIB)
+    assert sent.content == b"plmcp78 plain file"
+    with pytest.raises(NotFound):
+        _ = await ports.documents.get_document_metadata(document)
+    with pytest.raises(NotFound):
+        _ = await ports.documents.get_document(document)
+
+
+@pytest.mark.contract(LIST)
+@pytest.mark.contract(LOOK)
+@pytest.mark.contract(FILE)
+async def test_a_view_grant_reaches_the_file_but_not_the_list(backend: Backend) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp78 shared file")
+    granted = backend.restricted(frozenset({"view_document"}), view=[document])
+    hidden = await uploaded(backend, b"plmcp78 hidden file")
+    for number in (document, hidden):
+        await ports.document_writes.delete_document(number)
+
+    file = await granted.documents.get_document_file(document, "original", max_bytes=MIB)
+
+    assert file.content == b"plmcp78 shared file"
+    assert await look_up(granted, document) is None
+    assert await granted.documents.get_root(document) == document
+    with pytest.raises(PermissionDenied):
+        _ = await granted.documents.get_document_file(hidden, "original", max_bytes=MIB)
+    with pytest.raises(PermissionDenied):
+        _ = await granted.documents.get_document_thumbnail(hidden)
+    with pytest.raises(NotFound):
+        _ = await granted.documents.get_root(hidden)
+
+
+@pytest.mark.contract(LIST)
+async def test_a_deleted_version_is_listed_to_the_owner_of_its_document(backend: Backend) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp78 owner file")
+    version = await add_version(backend, document, "plmcp78 owner version")
+    _ = await ports.document_writes.delete_version(document, version)
+    assert await look_up(backend.reader, version) is None
+
+    _ = await ports.document_writes.update_document(document, DocumentPatch(owner=None))
+
+    assert await look_up(backend.reader, version)
+
+
+@pytest.mark.contract("TrashReader.get_trash_permissions")
+async def test_the_grants_of_an_entry_are_told_to_those_who_see_it(backend: Backend) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp78 granted file")
+    granted = backend.restricted(frozenset({"view_document"}), change=[document])
+    await ports.document_writes.delete_document(document)
+
+    async def grants(seen: Ports) -> ObjectPermissions | None:
+        page: int | None = 1
+        while page is not None:
+            found = await seen.trash.get_trash_permissions(
+                document, page=page, page_size=SCAN, max_bytes=64 * MIB
+            )
+            if found is not None:
+                return found
+            there = await seen.trash.look_up_in_trash(
+                document, page=page, page_size=SCAN, max_bytes=64 * MIB
+            )
+            page = there.next_page
+        return None
+
+    found = await grants(ports)
+
+    assert found
+    assert len(found.view_users) == len(found.change_users) == 1
+    assert (found.view_groups, found.change_groups) == ((), ())
+    assert await grants(granted) is None
+
+
+@pytest.mark.contract("TrashReader.get_trash_permissions")
+@pytest.mark.contract("PermissionReader.get_permissions")
+async def test_the_grants_of_a_deleted_version_are_those_of_its_document(backend: Backend) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp78 granted root")
+    version = await add_version(backend, document, "plmcp78 granted version")
+    _ = backend.restricted(frozenset({"view_document"}), change=[document])
+    _ = await ports.document_writes.delete_version(document, version)
+
+    [access] = await ports.permissions.get_permissions("document", [document])
+    hidden = await backend.reader.permissions.get_permissions("document", [document])
+
+    assert len(access.permissions.view_users) == len(access.permissions.change_users) == 1
+    assert hidden == []
+    # A deleted version is no document of the list, so its root has to be asked for.
+    assert await ports.permissions.get_permissions("document", [version]) == []
+
+
+@pytest.mark.contract("DocumentReader.document_exists")
+async def test_hidden_documents_exist_and_emptied_ones_do_not(backend: Backend) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp78 existing")
+    version = await add_version(backend, document, "plmcp78 existing version")
+    seers = (ports, backend.restricted(frozenset({"view_document"})), backend.blind)
+
+    async def seen(number: int) -> list[bool]:
+        return [await seer.documents.document_exists(number) for seer in seers[:2]]
+
+    assert await seen(document) == await seen(version) == [True, True]
+    assert await seers[2].documents.document_exists(document) is True
+    await ports.document_writes.delete_document(document)
+    assert await seen(document) == await seen(version) == [True, True]
+    with pytest.raises(NotFound):  # hidden and missing look alike here
+        _ = await seers[1].documents.get_root(document)
+    await ports.trash_writes.empty_trash([document])
+    assert await seen(document) == await seen(version) == [False, False]
+
+
+@pytest.mark.contract("DocumentReader.get_document_metadata")
+async def test_the_file_facts_of_a_deleted_version_are_told_at_its_document(
+    backend: Backend,
+) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp78 facts root")
+    version = await add_version(backend, document, "plmcp78 facts version")
+    _ = await ports.document_writes.delete_version(document, version)
+
+    facts = await ports.documents.get_document_metadata(document, version_id=version)
+
+    assert facts.original_size == len(b"plmcp78 facts version")
+    assert not facts.lacks("original")
+    with pytest.raises(NotFound):  # not under its own id
+        _ = await ports.documents.get_document_metadata(version)
+    await ports.document_writes.delete_document(document)
+    with pytest.raises(NotFound):  # nor of a document in the trash
+        _ = await ports.documents.get_document_metadata(document)

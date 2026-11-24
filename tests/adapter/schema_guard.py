@@ -59,6 +59,8 @@ UNDECLARED_QUERY_PARAMETERS: Mapping[tuple[str, str], Mapping[str, str]] = {
         "version": VERSION_REASON,
         "full_perms": FULL_PERMS_REASON,
     },
+    # The view serves it like the others (PassUserMixin); its schema has no body (PLMCP-78).
+    ("GET", "/api/trash/"): {"full_perms": FULL_PERMS_REASON},
     ("PATCH", "/api/tags/{id}/"): {"full_perms": FULL_PERMS_REASON},
     ("PATCH", "/api/correspondents/{id}/"): {"full_perms": FULL_PERMS_REASON},
     ("PATCH", "/api/document_types/{id}/"): {"full_perms": FULL_PERMS_REASON},

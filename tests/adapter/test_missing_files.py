@@ -249,16 +249,19 @@ async def test_a_document_that_cannot_be_checked_does_not_hide_the_others() -> N
 
 
 @pytest.mark.parametrize(
-    ("server", "asked"),
+    ("metadata", "status", "asked"),
     [
-        (Server({1: KEPT}, status=500), 2),
+        ({1: KEPT}, 500, 2),
         # Cannot be told: the failure stays what it was.
-        (Server({}, status=500), 2),
+        ({}, 500, 2),
         # Not the failure of Paperless itself.
-        (Server({1: LOST}, status=502), 1),
+        ({1: LOST}, 502, 1),
     ],
 )
-async def test_another_failure_of_an_archive_stays_what_it_is(server: Server, asked: int) -> None:
+async def test_another_failure_of_an_archive_stays_what_it_is(
+    metadata: dict[int, Json], status: int, asked: int
+) -> None:
+    server = Server(metadata, status)
     client, _ = streaming(server)
 
     with pytest.raises(UpstreamUnavailable, match=f"HTTP {server.status}"):

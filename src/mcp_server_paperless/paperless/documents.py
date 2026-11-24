@@ -640,6 +640,16 @@ class PaperlessDocumentReader:
         except PermissionDenied:
             raise unseen_document(document_id) from None
 
+    async def document_exists(self, document_id: int) -> bool:
+        """See ``DocumentReader.document_exists``; 403 is a hidden one, only 404 none."""
+        try:
+            _ = await self._one(document_id, "root/", _Root)
+        except PermissionDenied:
+            return True
+        except NotFound:
+            return False
+        return True
+
     async def get_duplicates(self, document_id: int) -> tuple[DuplicateRecord, ...]:
         """See ``DocumentReader.get_duplicates``; filled on a single read only, not in lists."""
         row = await self._one(document_id, "", _Duplicates, {"fields": "duplicate_documents"})

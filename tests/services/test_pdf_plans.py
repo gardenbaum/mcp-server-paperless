@@ -193,8 +193,9 @@ READ_AGAIN = "the text is read again, so corrections of it are not in the new ve
 
 def trashed(names: str) -> str:
     return (
-        f"{names}: moved to the Paperless trash once everything that was made is checked; can be "
-        "restored from there"
+        f"{names}: moved to the Paperless trash once everything that was made is checked, and each "
+        "stays there until the trash is emptied (by default after 30 days) and can be restored in "
+        "the Paperless web UI, or with restore_from_trash if the trash toolset is enabled"
     )
 
 

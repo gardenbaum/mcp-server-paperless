@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:14Z'
-updated_date: '2026-11-24T09:49:10Z'
+updated_date: '2026-11-24T09:52:01Z'
 labels: []
 dependencies: []
 parent_task_id: PLMCP-79
@@ -80,4 +80,13 @@ Deviation: code and tests of the adapter, service and tool steps were written to
 Not covered as designed: the failed part on the duplicates stack in E2E, because own products never are duplicates (P4); it is covered on the fake.
 Snapshots and limits: surface snapshot, docs/tools.md, docs/api-coverage.md regenerated (new parameters, plan, texts); no limit or budget raised. Contract tests of delete_original(s) removed with the port option. test_arguments.py names the options its pdf sweeps vary, because dry_run sends nothing.
 Local: ruff and basedpyright clean, targeted tests of the touched modules green, diff-cover 100 %; no full suite, E2E or live run.
+
+Contract tests removed (tests/contract/test_pdf.py), because the port no longer offers Paperless's own deletion (owner decision 3a and 6a, decision-60), so there is nothing left to contract:
+- test_merging_can_send_the_originals_to_the_trash
+- test_an_edit_can_replace_the_original_by_trashing_it
+- test_a_password_can_be_removed_while_trashing_the_locked_original
+- test_deleting_originals_needs_the_right_to_delete_them
+Replaced by tests/services/test_pdf_replacing.py (every way a replacement ends, refused deletion included) and tests/e2e/test_pdf.py; delete_document itself keeps its contract tests. Adapter tests removed for the same reason: test_a_delete_of_originals_adds_a_task_that_is_not_reported, test_an_edit_that_replaces_the_original_asks_for_its_deletion, and the replace_original case of test_removing_a_password_sends_it_with_where_the_copy_goes.
+
+Merged plmcp-78-trash (a415807): its TRASHED/TRASHED_EACH notes ("once the work succeeds") give way to the message of pdf_replacing ("Now in the trash: ...", WAY_BACK) after the originals went; the plan of a replacing call says the way back too. Its test test_whatever_trashes_an_original_says_how_to_get_it_back asserts the new words. OVERVIEW_GUIDE_LIMIT 2835 and DEFINITION_ADDED_LIMIT 879 unchanged; snapshot, docs/tools.md and docs/api-coverage.md regenerated.
 <!-- SECTION:NOTES:END -->

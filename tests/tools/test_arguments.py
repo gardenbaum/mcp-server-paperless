@@ -167,6 +167,18 @@ async def sweep(
     await sweep_cases(tool, cases)
 
 
+async def shown_first(tool: str, arguments: Json, prepare: Prepare) -> None:
+    """Call a tool with an argument that only shows: the refusal names the ids (decision-55)."""
+    session = SESSIONS[-1]
+    fresh = admin()
+    prepare(fresh.state)
+    session.fake.state, session.fake.user = fresh.state, fresh.user
+    observation.GIVEN.setdefault(tool, set()).update(arguments)
+    result = await session.client.call_tool(tool, arguments, raise_on_error=False)
+    if not (result.is_error and "document_ids=[2]" in str(result.content)):
+        FAILED.append(f"{tool} {arguments}: {result.content}")
+
+
 def admin() -> FakePaperless:
     state = seeded()
     state.ai_enabled = True  # the ai toolset is offered
@@ -903,6 +915,9 @@ def with_pages(state: FakeState) -> None:
     state.tasks.append(FakeTask(id=1, task_id=TASK, status="success"))
 
 
+TRASHED_SHA = hashlib.sha256(b"%PDF-1.4 fake original 2").hexdigest()
+
+
 def with_trash(state: FakeState) -> None:
     with_pages(state)
     state.trash.append(state.documents.pop())  # document 2 is in the trash
@@ -1024,6 +1039,30 @@ async def test_documents_are_read_with_every_section_and_slice() -> None:
     )
     await sweep("delete_document", {"document_id": 2}, ())
     await sweep("list_trash", {"page": 1, "page_size": 10}, ())
+    await sweep(
+        "list_trash",
+        {
+            "title": "e2e",
+            "document_type": 1,
+            "kind": "document",
+            "deleted_from": "2020-01-01",
+            "deleted_to": "2030-01-01",
+            "ids": [2],
+        },
+        ("kind",),
+        prepare=with_trash,
+    )
+    await sweep(
+        "get_trash_entry",
+        {"document_id": 2, "text": True, "offset": 1, "max_chars": 5},
+        ("text",),
+        prepare=with_trash,
+    )
+    await sweep(
+        "get_trashed_file", {"document_id": 2, "file": "original"}, ("file",), prepare=with_trash
+    )
+    part: Json = {"offset": 1, "max_bytes": 5, "checksum": TRASHED_SHA}
+    await sweep("get_trashed_file", {"document_id": 2, **part}, (), prepare=with_trash)
     await sweep("get_task", {"task_id": TASK, "wait_seconds": 0}, (), prepare=with_pages)
     await sweep("ask_paperless_ai", {"question": "q"}, ())
     await sweep("get_ai_suggestions", {"document_id": 1}, ())
@@ -1119,6 +1158,8 @@ async def test_the_pdf_tools_take_every_option() -> None:
     await sweep("restore_from_trash", {"document_ids": [2]}, (), prepare=with_trash)
     await sweep("empty_trash", {"all": True}, (), prepare=with_trash)
     await sweep("empty_trash", {"document_ids": [2]}, (), prepare=with_trash)
+    for tool in ("restore_from_trash", "empty_trash"):
+        await shown_first(tool, {"filter": {"kind": "document"}}, prepare=with_trash)
     assert not FAILED, "\n".join(FAILED)
 
 

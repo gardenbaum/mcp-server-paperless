@@ -314,6 +314,28 @@ def data_sentence_problems(
     ]
 
 
+# Every tool that can move something to the trash (PLMCP-78): its description says how to get it
+# back and which toolset that needs.
+TRASHING_TOOLS = frozenset(
+    {
+        *("delete_document", "delete_document_version", "bulk_edit_documents"),
+        *("resolve_duplicates", "merge_documents", "split_document", "delete_pages", "edit_pdf"),
+        *("remove_document_password", "create_workflow", "update_workflow"),
+    }
+)
+
+
+def without_way_back(tools: list[Tool], trashing: frozenset[str]) -> list[str]:
+    """Trashing tools whose description does not name the restore and its toolset."""
+    said = {t.name: " ".join((t.description or "").split()) for t in tools}
+    return [
+        name
+        for name in sorted(trashing)
+        if "restore_from_trash" not in said.get(name, "")
+        or "trash toolset" not in said.get(name, "")
+    ]
+
+
 def overlong(tools: list[Tool]) -> list[str]:
     return [t.name for t in tools if len((t.description or "").encode()) > TEXT_LIMIT]
 
@@ -1082,3 +1104,41 @@ def test_self_test_every_way_to_change_visibility_outside_the_composition_root_i
         "a/dynamic.py: disable_components",
         "a/server_wide.py: enable",
     ]
+
+
+async def test_every_tool_that_trashes_says_how_to_restore_and_with_which_toolset() -> None:
+    assert without_way_back(await server_tools(), TRASHING_TOOLS) == []
+
+
+async def test_every_tool_that_speaks_of_moving_to_the_trash_is_in_the_table() -> None:
+    found = {
+        t.name
+        for t in await server_tools()
+        if "trash" in (t.description or "").lower()
+        and t.annotations
+        and not t.annotations.read_only_hint
+    }
+
+    # They name the trash only to say that it has nothing to do with it, or read it.
+    others = {
+        *("restore_from_trash", "empty_trash", "delete_note", "delete_taxonomy_item"),
+        *("delete_saved_view", "delete_workflow", "bulk_edit_taxonomy", "rotate_documents"),
+        *("merge_documents_as_versions", "upload_document", "upload_document_version"),
+        *("upload_documents", "reprocess_documents"),
+    }
+    assert found - others == TRASHING_TOOLS
+
+
+async def test_self_test_a_trashing_tool_without_the_way_back_is_found() -> None:
+    talk = LocalProvider()
+    for name, text in (
+        ("silent", "Trash it."),
+        ("tool_only", "Trash it; restore_from_trash."),
+        ("toolset_only", "Trash it; trash toolset."),
+        ("both", "Undo with restore_from_trash\n    (trash toolset)."),
+    ):
+        _ = talk.tool(_no_op, name=name, description=text)
+    tools = list(await FastMCP(providers=[talk]).list_tools())
+
+    names = frozenset({"silent", "tool_only", "toolset_only", "both", "missing"})
+    assert without_way_back(tools, names) == ["missing", "silent", "tool_only", "toolset_only"]

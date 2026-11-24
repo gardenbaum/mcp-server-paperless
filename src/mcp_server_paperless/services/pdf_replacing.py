@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.documents import DocumentPatch
 from mcp_server_paperless.domain.errors import PaperlessMcpError
-from mcp_server_paperless.services.removal import RESTORE
+from mcp_server_paperless.services.removal import WAY_BACK
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -41,7 +41,6 @@ NOT_BACK: Final = (
 FIND: Final = (
     "find the new documents with search_documents (newest added first) and check them, then "
 )
-WAY_BACK: Final = RESTORE.removeprefix("It ")
 RUNNING: Final = frozenset({"pending", "started", "unknown"})
 
 

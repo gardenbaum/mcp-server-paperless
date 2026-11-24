@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from contract.test_document_upload import CONTRACT
+from contract.test_document_upload import CONTRACT, uploaded
 from contract.test_document_versions import add_version
-from contract.test_duplicates import unique, uploaded
+from contract.test_duplicates import unique
 from mcp_server_paperless.domain.documents import UploadMetadata
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.batch_uploads import BatchUploadService, Limits

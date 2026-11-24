@@ -1445,3 +1445,43 @@ async def test_with_one_source_a_task_that_does_not_name_it_still_gets_its_link(
     result = await setup.service.rotate([document], 90, wait_seconds=1)
 
     assert result.produced_links == (f"{WEB}/documents/{document}/details",)
+
+
+def way_back(names: str, subject: str) -> str:
+    return (
+        f"Now in the trash: {names}. {subject} stays there until the trash is emptied (by "
+        "default after 30 days) and can be restored in the Paperless web UI, or with "
+        "restore_from_trash if the trash toolset is enabled."
+    )
+
+
+async def test_whatever_trashes_an_original_says_how_to_get_it_back() -> None:
+    setup = Setup()
+    service = setup.service
+    first, second, split, cut, edited = [setup.pdf(4) for _ in range(5)]
+    locked = setup.pdf(1, password="s3cret")
+    slots = [PageSlot(page=1)]
+    results = [
+        await service.split(
+            split, ["1-2", "3-4"], output="replace_original", options=Options(confirm=True)
+        ),
+        await service.delete_pages(
+            cut, "2", output="replace_original", options=Options(confirm=True)
+        ),
+        await service.edit(edited, slots, output="replace_original", options=Options(confirm=True)),
+        await service.remove_password(
+            locked, "s3cret", output="replace_original", options=Options(confirm=True)
+        ),
+        await service.merge([first, second], None, delete_originals=True, confirm=True),
+    ]
+    kept = [setup.pdf(4) for _ in range(3)]
+    quiet = [
+        await service.split(kept[0], ["1-2", "3-4"]),
+        await service.delete_pages(kept[1], "2", options=Options(confirm=True)),
+        await service.merge(kept[:2], None),
+    ]
+
+    one = [way_back(f"document {n}", "It") for n in (split, cut, edited, locked)]
+    each = way_back(f"documents {first}, {second}", "Each")
+    assert [r.message for r in results] == [*one, each]
+    assert all("trash" not in (r.message or "") for r in quiet)
