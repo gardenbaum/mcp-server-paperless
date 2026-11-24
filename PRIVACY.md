@@ -90,8 +90,8 @@ At the default log levels it logs:
 - with sign-in through an identity provider, client ids and names, your user id at the provider,
   parts of token ids, authorization codes the server does not recognise, and values from failed
   sign-in requests (error, description, state, requested resource), the issuer, audience or
-  scopes of a token that is refused, and sign-in errors. FastMCP writes these values into its own messages;
-  where a library logs an error as such, only its type appears.
+  scopes of a token that is refused, and sign-in errors. FastMCP writes these values into its own
+  messages; where a library logs an error as such, only its type appears.
 
 Apart from the names, addresses and values listed above, its records contain no arguments or
 results, and it does not log your Paperless token or bearer tokens, at these levels.
