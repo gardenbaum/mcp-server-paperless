@@ -1269,5 +1269,5 @@ async def test_a_delete_says_how_to_get_the_documents_back_also_when_it_is_not_c
     preview = await Setup(writes=False).run([PUBLIC], deleting, dry_run=True)
 
     assert done.message.endswith(back)
-    assert queued.message.endswith(back)
+    assert queued.message.endswith(back.replace(" Each stays", " Each that is moved stays"))
     assert "restore_from_trash" not in other.message + preview.message

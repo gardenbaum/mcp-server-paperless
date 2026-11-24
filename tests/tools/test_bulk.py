@@ -90,6 +90,12 @@ async def test_the_input_schema_types_the_operation_and_bounds_the_selection() -
         "reprocess",
     ]
 
+    answer = cast(
+        "dict[str, Json]", (tools["bulk_edit_documents"].output_schema or {})["properties"]
+    )
+    assert "asked to change in this call" in str(answer["selected_ids"]["description"])
+    assert "OCR twice" in str(answer["remaining"]["description"])
+
     taxonomy = tools["bulk_edit_taxonomy"].input_schema
     taxonomy_properties = cast("dict[str, Json]", taxonomy["properties"])
     assert set(taxonomy_properties) == {"kind", "items", "operation", "dry_run", "confirm"}

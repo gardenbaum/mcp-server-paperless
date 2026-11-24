@@ -866,6 +866,34 @@ async def test_what_reprocessing_did_is_unknown_and_not_read() -> None:
     assert setup.fake.reads == 0
 
 
+OCR_TWICE = "Reading the documents does not show it; repeating may run OCR twice."
+
+
+@pytest.mark.parametrize("error", [TaskFailed(FAILED, hint="Read."), UpstreamTimeout("Lost.")])
+async def test_a_failed_reprocessing_does_not_send_to_the_documents(
+    error: PaperlessMcpError,
+) -> None:
+    setup = Setup()
+    setup.fake.ends = error
+
+    raised = await seen(setup, ReprocessDocuments(op="reprocess"))
+
+    assert raised.hint == OCR_TWICE
+
+
+async def test_an_unconfirmed_reprocessing_does_not_either() -> None:
+    setup = Setup()
+    setup.fake.ends = Unconfirmed(task_id="task-7", reason="it was still running")
+
+    report = await setup.run(
+        ReprocessDocuments(op="reprocess"), confirm=True, document_ids=[101, 102, 103]
+    )
+
+    assert f"Read it with get_task. {OCR_TWICE} {UNKNOWN}" in report.message
+    assert "documents again" not in report.message
+    assert report.remaining == 3
+
+
 async def test_a_document_that_got_a_child_tag_meanwhile_is_unknown_and_hides_no_other() -> None:
     setup = Setup()
     for number in (101, 102, 103):

@@ -2043,7 +2043,7 @@
             'description': 'Set with unconfirmed_task_id: the documents as read again afterwards.',
           }),
           'remaining': dict({
-            'description': 'Matching documents that still need the change: not touched, or, after an unconfirmed change, not seen changed.',
+            'description': 'Matching documents that still need the change: not touched, or, after an unconfirmed change, not seen changed (reprocess never shows: repeating may run OCR twice).',
             'type': 'integer',
           }),
           'requested': dict({
@@ -2080,7 +2080,7 @@
             'type': 'array',
           }),
           'selected_ids': dict({
-            'description': 'The documents that change (a preview) or changed in this call; with the same filters or saved_view they are the document_ids of the next call.',
+            'description': 'The documents that change (a preview) or that Paperless was asked to change in this call; with the same filters or saved_view they are the document_ids of the next call.',
             'items': dict({
               'type': 'integer',
             }),
@@ -17737,7 +17737,7 @@
           'left': dict({
             'default': list([
             ]),
-            'description': 'Shown without the text asked for, or left out: pass them as document_ids.',
+            'description': 'Shown without the text asked for, or left out: pass them as document_ids. A text dropped for its size is in too_large, not here.',
             'items': dict({
               'type': 'integer',
             }),
@@ -42143,7 +42143,7 @@
           'left': dict({
             'default': list([
             ]),
-            'description': 'Shown without the text asked for, or left out: pass them as document_ids.',
+            'description': 'Shown without the text asked for, or left out: pass them as document_ids. A text dropped for its size is in too_large, not here.',
             'items': dict({
               'type': 'integer',
             }),

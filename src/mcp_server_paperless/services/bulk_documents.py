@@ -86,6 +86,7 @@ NEXT_CALL: Final = (
     "confirm=true: exactly these are changed, and none if one of them no longer matches. With "
     "filters or saved_view alone, confirm=true is not enough."
 )
+OCR_TWICE: Final = "Reading the documents does not show it; repeating may run OCR twice."
 READ_AGAIN: Final = "Read the documents again before repeating the call."
 STILL_RUNNING: Final = " Paperless may still be working on it, and they can change after that."
 # What Paperless answers before it starts anything: nothing was changed.
@@ -292,7 +293,10 @@ class BulkDocumentEditor:
                 raise
             seen = await self._seen(resolved, changing)
             error.message = f"{error.message} {_told(seen, running=not failed)}"
-            error.hint = error.hint if failed else READ_AGAIN
+            if isinstance(resolved.change, ReprocessChange):
+                error.hint = OCR_TWICE
+            elif not failed:
+                error.hint = READ_AGAIN
             raise
         finally:
             for kind in resolved.dirty:
@@ -371,18 +375,21 @@ class BulkDocumentEditor:
             ahead = TO_GO_AHEAD_BY_IDS if outcome.alone else TO_GO_AHEAD
             message = f"{DRY_RUN} Confirming would {outcome.effect}{rest}. {ahead}"
         elif unconfirmed is not None and seen is not None:
+            then = "Read it with get_task and read the documents again before repeating the call."
+            if isinstance(resolved.change, ReprocessChange):
+                then = f"Read it with get_task. {OCR_TWICE}"
             message = (
                 f"Asked Paperless to apply to {count_documents(len(changing))}: "
                 f"{resolved.summary}. Not confirmed: Paperless queued task {unconfirmed.task_id}, "
-                f"but {unconfirmed.reason}. Read it with get_task and read the documents again "
-                f"before repeating the call. {_told(seen, running=True)}"
+                f"but {unconfirmed.reason}. {then} {_told(seen, running=True)}"
             )
         else:
             message = f"Applied to {count_documents(len(changing))}: {resolved.summary}."
         if applied and others and unconfirmed is None:
             message += f" Mirrored on {named(others, ' besides')}."
         if applied and isinstance(resolved.change, TrashDocuments):
-            message += f" Each {WAY_BACK}"
+            each = "Each" if unconfirmed is None else "Each that is moved"
+            message += f" {each} {WAY_BACK}"
         if not outcome.blocked:
             message += outcome.rest(applied=applied, confirmed=unconfirmed is None)
         left = tuple(hit.id for hit in outcome.left)

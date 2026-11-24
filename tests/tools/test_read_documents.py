@@ -6,7 +6,7 @@ import pytest
 from fakes.accounts import PUBLIC_NOTE
 from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
 from fastmcp import Client
-from harness import serve
+from harness import admin, serve
 from mcp.types import TextContent
 
 from mcp_server_paperless.domain.selection import MAX_ANSWER, SelectionFilters
@@ -215,3 +215,11 @@ async def test_the_filters_are_those_of_search_documents() -> None:
     assert ours["additionalProperties"] is False
     assert bare(ours) == {name: prop for name, prop in offered.items() if name not in PAGING}
     assert set(bare(ours)) == set(SelectionFilters.model_fields)
+
+
+async def test_a_text_dropped_for_its_size_is_told_apart_from_left() -> None:
+    async with Client(serve(admin(), toolsets=["bulk"])) as client:
+        [tool] = [t for t in await client.list_tools() if t.name == "read_documents"]
+
+    described = str(cast("Json", (tool.output_schema or {})["properties"])["left"])
+    assert "dropped for its size is in too_large, not here" in described

@@ -319,8 +319,9 @@ class DocumentBulkReport(BaseModel):
         tuple[int, ...],
         Field(
             description=(
-                "The documents that change (a preview) or changed in this call; with the same "
-                "filters or saved_view they are the document_ids of the next call."
+                "The documents that change (a preview) or that Paperless was asked to change in "
+                "this call; with the same filters or saved_view they are the document_ids of the "
+                "next call."
             )
         ),
     ]
@@ -329,7 +330,8 @@ class DocumentBulkReport(BaseModel):
         Field(
             description=(
                 "Matching documents that still need the change: not touched, or, after an "
-                "unconfirmed change, not seen changed."
+                "unconfirmed change, not seen changed (reprocess never shows: repeating may run "
+                "OCR twice)."
             )
         ),
     ]

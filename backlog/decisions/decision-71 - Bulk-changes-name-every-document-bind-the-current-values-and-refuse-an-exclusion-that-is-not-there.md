@@ -31,7 +31,8 @@ The owner approved on 2026-11-24 the design, with numbers 1A, 2a, 3a, 4a and 5 (
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
 - A restricted user whose view excludes a tag that is hidden from them is refused although the set would be right. They can pass the ids that read_documents shows.
-- Texts of about 7.5 KB for 100 documents with ordinary titles; 24,281 characters were measured with hostile titles, where every character is escaped (the length handling of decision-64). A long list of tags, fields or links the caller names adds to that.
+- Texts of about 7.5 KB for 100 documents with ordinary titles; 24,281 characters were measured for one list with hostile titles, where every character is escaped (the length handling of decision-64). That is not the maximum: with a link change there are three lists of up to 100 documents (the linked, the changed and the mirrored ones), about 70 KB estimated, and a long list of tags or fields the caller names adds to it.
+- A parent tag the user cannot see is named by its number; its own parents cannot be named, although they come along.
 - With ids and a filter (no dialog) the current values are not bound, only that the documents still match: the server keeps nothing between calls.
 - "As asked" after a delete means no longer listed: someone else may have hidden the document at the same moment.
 - Between the last read and the request another user can still change a document (Paperless has no conditional write).
