@@ -5,6 +5,7 @@ and its trash entry emptied, so nothing is left on the shared stack, also when a
 PDFs have a text layer per page, so OCR has little to do.
 """
 
+import asyncio
 import uuid
 from typing import TYPE_CHECKING, cast
 
@@ -13,7 +14,16 @@ from contract.conftest import delete_and_empty_trash, live_in_trash
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import ENCRYPTED_PASSWORD, ENCRYPTED_PDF, consume, consume_text, num, pdf_pages
+from e2e.helpers import (
+    ENCRYPTED_PASSWORD,
+    ENCRYPTED_PDF,
+    consume,
+    consume_text,
+    num,
+    pdf_pages,
+    results,
+)
+from e2e.uploading import Scope as People
 from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
@@ -310,3 +320,39 @@ async def test_reprocessing_needs_confirm_and_starts_a_task(stack: Stack, scope:
     assert result["state"] == "success"
     [task] = cast("list[Json]", result["tasks"])
     assert task["document_ids"] == []
+
+
+async def test_a_user_who_may_not_view_tasks_keeps_the_original_and_is_told_how_to_go_on(
+    stack: Stack, scope: Scope
+) -> None:
+    people = People(stack)
+    source = scope.pdf(2)
+    try:
+        token = people.user("view_document", "change_document", "add_document", "delete_document")
+        _ = stack.admin.patch(f"/api/documents/{source}/", json={"owner": None}).raise_for_status()
+        answer = await people.call(
+            "delete_pages",
+            token,
+            document_id=source,
+            pages="1",
+            output="replace_original",
+            confirm=True,
+        )
+        result = cast("Json", answer.structured_content)
+
+        assert (result["state"], result["trashed_ids"]) == ("unknown", [])
+        assert "search_documents" in str(result["next"])
+        assert f"delete_document(document_id={source})" in str(result["next"])
+        assert not live_in_trash(stack, source)
+        title = str(document(stack, source)["title"])
+        made: list[int] = []
+        for _ in range(60):
+            found = results(stack.admin.get("/api/documents/", params={"title__iexact": title}))
+            made = [num(row["id"]) for row in found if row["id"] != source]
+            if made:
+                break
+            await asyncio.sleep(1)
+        scope.ids.extend(made)
+        assert [document(stack, n)["page_count"] for n in made] == [1]
+    finally:
+        people.clean_up()
