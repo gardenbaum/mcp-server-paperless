@@ -1,11 +1,11 @@
 ---
 id: PLMCP-80.4
 title: 'Bulk changes d: run_workflow'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:35Z'
-updated_date: '2026-11-24T21:13:44Z'
+updated_date: '2026-11-24T22:10:21Z'
 labels:
   - bulk
 dependencies:
@@ -65,4 +65,12 @@ Review round 2: each clause has its step, the list of tags is read anew once per
 Owner decisions of 2026-11-24 ('Alles wie von dir empfohlen.'): failing e-mails and webhooks do not fail the run; a partial failure is a result; contents of e-mails and webhooks are bound, not shown; tags that come along are named, not refused; a confirmation above 100,000 characters is refused, also with confirm=true, never cut (built, tests first). Hosted on 1b19291: CI 45478434614 green; full E2E 45478418857: shard 1/4 was cancelled by the 25-minute guard at 96 % without a failed test (main had the same, PLMCP-115), the others green. A full E2E on the final head follows once main has six shards.
 
 Review round 3 (L1 to L7, N4 rest, N7), tests first: the 100,000 count the whole text with its hint, the tool text names the limit, the preview skips a clause that does not fit and counts steps, hints for a single long step and the shortest document, stored destinations name what to do. New domain function confirmation_length. Surface snapshot: two descriptions of run_workflow. Merged main with PLMCP-79.5.
+
+Full hosted E2E 45491147738 on 941a7bb green with six shards; three review rounds, Codex clean. DoD 2 and 4: CI and merge of #145; just check was not run locally as a whole.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+run_workflow on named documents with a confirmation that names every document and action, refused above 100,000 characters (decision-75).
+<!-- SECTION:FINAL_SUMMARY:END -->
