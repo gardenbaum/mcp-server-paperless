@@ -462,3 +462,23 @@ async def test_hidden_documents_exist_and_emptied_ones_do_not(backend: Backend) 
         _ = await seers[1].documents.get_root(document)
     await ports.trash_writes.empty_trash([document])
     assert await seen(document) == await seen(version) == [False, False]
+
+
+@pytest.mark.contract("DocumentReader.get_document_metadata")
+async def test_the_file_facts_of_a_deleted_version_are_told_at_its_document(
+    backend: Backend,
+) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp78 facts root")
+    version = await add_version(backend, document, "plmcp78 facts version")
+    _ = await ports.document_writes.delete_version(document, version)
+
+    facts = await ports.documents.get_document_metadata(document, version_id=version)
+
+    assert facts.original_size == len(b"plmcp78 facts version")
+    assert not facts.lacks("original")
+    with pytest.raises(NotFound):  # not under its own id
+        _ = await ports.documents.get_document_metadata(version)
+    await ports.document_writes.delete_document(document)
+    with pytest.raises(NotFound):  # nor of a document in the trash
+        _ = await ports.documents.get_document_metadata(document)

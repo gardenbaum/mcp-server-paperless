@@ -379,15 +379,29 @@ class FileMetadata(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
-    original_filename: str
+    original_filename: str | None
     original_mime_type: str
-    original_size: Annotated[int, Field(description="Bytes.")]
+    original_size: Annotated[
+        int | None, Field(description="Bytes; null: Paperless cannot find the file.")
+    ]
     original_checksum: str
-    media_filename: str
+    media_filename: str | None
     has_archive_version: bool
-    archive_size: Annotated[int | None, Field(description="Bytes; null without archive version.")]
+    archive_size: Annotated[
+        int | None,
+        Field(description="Bytes; null without archive version or if its file is missing."),
+    ]
     archive_checksum: str | None
     archive_media_filename: str | None
+
+    def sent_for(self, version: FileVersion) -> FileVersion:
+        """The file Paperless sends for ``version``: the original when there is no archive."""
+        return version if self.has_archive_version else "original"
+
+    def lacks(self, version: FileVersion) -> bool:
+        """Whether Paperless cannot find the file it would send for ``version``."""
+        archive = self.sent_for(version) == "archive"
+        return (self.archive_size if archive else self.original_size) is None
 
 
 class Suggestions(BaseModel):

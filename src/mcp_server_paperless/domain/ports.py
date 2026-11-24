@@ -174,6 +174,8 @@ class DocumentReader(Protocol):
     ) -> FileMetadata:
         """The file facts of a document, or of one of its versions (default: the newest).
 
+        A size is None when Paperless cannot find the file (``FileMetadata.lacks``).
+
         Paperless answers a deleted version, too, while it is in the trash: callers that must not
         show one check the versions ``get_document`` lists.
 
@@ -196,7 +198,7 @@ class DocumentReader(Protocol):
         """The thumbnail image of a document (WebP), also in the trash (of its first version).
 
         Raises:
-            NotFound: No such document.
+            NotFound: No such document, or Paperless cannot find the thumbnail.
             PermissionDenied: The user may not see the document.
         """
         ...
@@ -219,7 +221,7 @@ class DocumentReader(Protocol):
         document has no archive version, so callers check ``has_archive_version`` first.
 
         Raises:
-            NotFound: No such document, or no such version of it.
+            NotFound: No such document, no such version of it, or Paperless cannot find the file.
             PermissionDenied: The user may not see the document.
         """
         ...
@@ -230,7 +232,7 @@ class DocumentReader(Protocol):
         """The same file as ``get_document_file``, handed over chunk by chunk and of any size.
 
         Raises:
-            NotFound: No such document, or no such version of it.
+            NotFound: No such document, no such version of it, or Paperless cannot find the file.
             PermissionDenied: The user may not see the document.
         """
         ...
@@ -1341,6 +1343,7 @@ class AdminReader(Protocol):
         Over the limit the archive is ``truncated`` and has no content. Changes nothing.
 
         Raises:
+            NotFound: Paperless cannot find a file of some documents; it names them.
             PermissionDenied: A document is hidden from the user (the whole request is refused).
             Validation: A document does not exist; no archive is made.
         """
@@ -1361,6 +1364,7 @@ class AdminReader(Protocol):
         wait for that byte, and for each later one.
 
         Raises:
+            NotFound: Paperless cannot find a file of some documents; it names them.
             PermissionDenied: A document is hidden from the user (the whole request is refused).
             Validation: A document does not exist; no archive is made.
         """

@@ -32,6 +32,7 @@ from e2e.helpers import (
     EXPECTED_VERSION,
     consume,
     consume_text,
+    lose_file,
     pdf_pages,
     rebuild_search_index,
     results,
@@ -104,7 +105,7 @@ from mcp_server_paperless.paperless.workflows import (
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
 
-    from e2e.helpers import Stack
+    from e2e.helpers import FilePart, Stack
 
     from mcp_server_paperless.domain.bulk import BulkKind
 
@@ -315,6 +316,8 @@ class Backend:
     # index-writing tasks, then rebuilds it; the fake has no stale entries). Call it right before
     # a more-like-this search: see `rebuild_search_index` for why the result can be empty without.
     rebuild_search_index: Callable[[], None]
+    # Takes a file of a document with one version away from Paperless, or its file names.
+    lose_file: Callable[[int, FilePart], None]
 
 
 def fake_consume(state: FakeState) -> Consume:
@@ -471,6 +474,16 @@ def fake_new_documents(new_document: Callable[[], int]) -> Callable[[int], list[
     return lambda count: [new_document() for _ in range(count)]
 
 
+def fake_lose_file(state: FakeState) -> Callable[[int, FilePart], None]:
+    def lose(document_id: int, part: FilePart) -> None:
+        if part == "names":
+            state.nameless.add(document_id)
+        else:
+            state.missing.add((document_id, part))
+
+    return lose
+
+
 def fake_backend(*, ai_enabled: bool = False) -> Backend:
     """The fake's backend; the E2E stack of `just e2e` has AI off, so that is the default."""
     state = seeded()
@@ -492,6 +505,7 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
         track_document=lambda _document: None,
         expected_version=VERSION,
         rebuild_search_index=lambda: None,
+        lose_file=fake_lose_file(state),
     )
 
 
@@ -748,6 +762,7 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
                 track_document=created.append,
                 expected_version=EXPECTED_VERSION,
                 rebuild_search_index=lambda: rebuild_search_index(stack.admin),
+                lose_file=lambda document, part: lose_file(stack.admin, document, part),
             )
     finally:
         cleanup(stack, created, users)

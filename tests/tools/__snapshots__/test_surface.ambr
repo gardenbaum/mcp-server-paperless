@@ -8533,26 +8533,47 @@
                         'type': 'null',
                       }),
                     ]),
-                    'description': 'Bytes; null without archive version.',
+                    'description': 'Bytes; null without archive version or if its file is missing.',
                   }),
                   'has_archive_version': dict({
                     'type': 'boolean',
                   }),
                   'media_filename': dict({
-                    'type': 'string',
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
                   }),
                   'original_checksum': dict({
                     'type': 'string',
                   }),
                   'original_filename': dict({
-                    'type': 'string',
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
                   }),
                   'original_mime_type': dict({
                     'type': 'string',
                   }),
                   'original_size': dict({
-                    'description': 'Bytes.',
-                    'type': 'integer',
+                    'anyOf': list([
+                      dict({
+                        'type': 'integer',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Bytes; null: Paperless cannot find the file.',
                   }),
                 }),
                 'required': list([
@@ -18750,26 +18771,47 @@
                         'type': 'null',
                       }),
                     ]),
-                    'description': 'Bytes; null without archive version.',
+                    'description': 'Bytes; null without archive version or if its file is missing.',
                   }),
                   'has_archive_version': dict({
                     'type': 'boolean',
                   }),
                   'media_filename': dict({
-                    'type': 'string',
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
                   }),
                   'original_checksum': dict({
                     'type': 'string',
                   }),
                   'original_filename': dict({
-                    'type': 'string',
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
                   }),
                   'original_mime_type': dict({
                     'type': 'string',
                   }),
                   'original_size': dict({
-                    'description': 'Bytes.',
-                    'type': 'integer',
+                    'anyOf': list([
+                      dict({
+                        'type': 'integer',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Bytes; null: Paperless cannot find the file.',
                   }),
                 }),
                 'required': list([
@@ -25462,26 +25504,47 @@
                         'type': 'null',
                       }),
                     ]),
-                    'description': 'Bytes; null without archive version.',
+                    'description': 'Bytes; null without archive version or if its file is missing.',
                   }),
                   'has_archive_version': dict({
                     'type': 'boolean',
                   }),
                   'media_filename': dict({
-                    'type': 'string',
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
                   }),
                   'original_checksum': dict({
                     'type': 'string',
                   }),
                   'original_filename': dict({
-                    'type': 'string',
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
                   }),
                   'original_mime_type': dict({
                     'type': 'string',
                   }),
                   'original_size': dict({
-                    'description': 'Bytes.',
-                    'type': 'integer',
+                    'anyOf': list([
+                      dict({
+                        'type': 'integer',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Bytes; null: Paperless cannot find the file.',
                   }),
                 }),
                 'required': list([
@@ -28508,26 +28571,47 @@
                         'type': 'null',
                       }),
                     ]),
-                    'description': 'Bytes; null without archive version.',
+                    'description': 'Bytes; null without archive version or if its file is missing.',
                   }),
                   'has_archive_version': dict({
                     'type': 'boolean',
                   }),
                   'media_filename': dict({
-                    'type': 'string',
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
                   }),
                   'original_checksum': dict({
                     'type': 'string',
                   }),
                   'original_filename': dict({
-                    'type': 'string',
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
                   }),
                   'original_mime_type': dict({
                     'type': 'string',
                   }),
                   'original_size': dict({
-                    'description': 'Bytes.',
-                    'type': 'integer',
+                    'anyOf': list([
+                      dict({
+                        'type': 'integer',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Bytes; null: Paperless cannot find the file.',
                   }),
                 }),
                 'required': list([
@@ -31146,26 +31230,47 @@
                         'type': 'null',
                       }),
                     ]),
-                    'description': 'Bytes; null without archive version.',
+                    'description': 'Bytes; null without archive version or if its file is missing.',
                   }),
                   'has_archive_version': dict({
                     'type': 'boolean',
                   }),
                   'media_filename': dict({
-                    'type': 'string',
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
                   }),
                   'original_checksum': dict({
                     'type': 'string',
                   }),
                   'original_filename': dict({
-                    'type': 'string',
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
                   }),
                   'original_mime_type': dict({
                     'type': 'string',
                   }),
                   'original_size': dict({
-                    'description': 'Bytes.',
-                    'type': 'integer',
+                    'anyOf': list([
+                      dict({
+                        'type': 'integer',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Bytes; null: Paperless cannot find the file.',
                   }),
                 }),
                 'required': list([

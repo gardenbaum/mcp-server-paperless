@@ -18,7 +18,7 @@ from mcp_server_paperless.domain.errors import (
     PaperlessMcpError,
     UpstreamUnavailable,
 )
-from mcp_server_paperless.domain.files import FilePart, FilePartReport
+from mcp_server_paperless.domain.files import FilePart, FilePartReport, missing_file
 from mcp_server_paperless.domain.trash import TrashEntryDetail, TrashText
 from mcp_server_paperless.services.documents import TRASH_BYTES
 from mcp_server_paperless.services.transfer import (
@@ -33,9 +33,14 @@ from mcp_server_paperless.services.trash import trash_link
 from mcp_server_paperless.services.trash_scan import PAGE, all_too_large, following, limited
 
 if TYPE_CHECKING:
-    from mcp_server_paperless.domain.documents import FileKind, FileVersion
+    from mcp_server_paperless.domain.documents import FileKind, FileMetadata, FileVersion
     from mcp_server_paperless.domain.ports import DocumentReader, PermissionReader, TrashReader
-    from mcp_server_paperless.domain.trash import TrashedDetail, TrashGrants, TrashLookup
+    from mcp_server_paperless.domain.trash import (
+        TrashedDetail,
+        TrashedDocument,
+        TrashGrants,
+        TrashLookup,
+    )
     from mcp_server_paperless.services.documents import DocumentService
     from mcp_server_paperless.services.trash_scan import TrashScan
 
@@ -54,8 +59,12 @@ VERSION_LIMITS = (
 )
 NO_CHANGE = " Whether the user may change it could not be read just now."
 NO_PERMISSIONS = " Who may view or change it could not be read just now."
+NO_THUMBNAIL = "Restore it first with restore_from_trash; reprocessing then makes it anew."
 RESTORE_FIRST = "Restore it first with restore_from_trash, then use the tools for documents."
-NO_FILE = "Paperless does not serve this file while the document is in the trash."
+NO_FILE = (
+    "Paperless did not send this file of the trash entry and does not say why: it may be missing, "
+    "or the entry is not in the trash any more."
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,11 +211,11 @@ class TrashedDocuments:
             NotFound: It is not in the trash, or Paperless has no thumbnail of it.
             PermissionDenied: The user may not view documents.
         """
-        _ = await self._scan.require([document_id])
+        [entry], _ = await self._scan.require([document_id])
         try:
             found = await self._reader.get_document_thumbnail(document_id)
         except NotFound:
-            raise NotFound(NO_FILE, hint=RESTORE_FIRST) from None
+            raise await self._no_thumbnail(entry) from None
         if not found.content:
             message = f"Paperless sent an empty thumbnail for trash entry {document_id}."
             raise PaperlessMcpError(message, hint=RESTORE_FIRST)
@@ -221,13 +230,13 @@ class TrashedDocuments:
             NotFound: It is not in the trash, has no archive file, or its file is not served.
             PermissionDenied: The user may not view documents.
         """
-        await self._check_file(document_id, file)
+        entry = await self._entry_with(document_id, file)
         try:
             found = await self._reader.get_document_file(
                 document_id, file, max_bytes=self._max_bytes
             )
         except NotFound:
-            raise NotFound(NO_FILE, hint=RESTORE_FIRST) from None
+            raise await self._no_file(entry, file) from None
         report = self._report(document_id, file, found.filename, found.mime_type)
         if found.truncated:
             note = (
@@ -260,7 +269,7 @@ class TrashedDocuments:
             PaperlessMcpError: The file is too large.
         """
         check_part(offset, max_bytes, checksum)
-        await self._check_file(document_id, file)
+        entry = await self._entry_with(document_id, file)
         limit = min(max_bytes or self._max_bytes, self._max_bytes)
         try:
             async with (
@@ -269,7 +278,7 @@ class TrashedDocuments:
             ):
                 found = await read_all(opened.chunks, offset, limit)
         except NotFound:
-            raise NotFound(NO_FILE, hint=RESTORE_FIRST) from None
+            raise await self._no_file(entry, file) from None
         data, size, known = found.window, found.size, found.sha256
         if checksum not in {None, known}:
             raise changed()
@@ -296,12 +305,39 @@ class TrashedDocuments:
         )
         return FilePart(report=report, data=data)
 
-    async def _check_file(self, document_id: int, file: FileVersion) -> None:
+    async def _entry_with(self, document_id: int, file: FileVersion) -> TrashedDocument:
         """Refuse what is no entry, or has no such file: Paperless would send the original."""
         [entry], _ = await self._scan.require([document_id])
         if file == "archive" and not entry.has_archive:
             message = f"Trash entry {document_id} has no archive version."
             raise NotFound(message, hint='Ask for file="original"; it is the only file it has.')
+        return entry
+
+    async def _metadata(self, entry: TrashedDocument) -> FileMetadata | None:
+        """What Paperless tells of the files of an entry: only of a version, at its document."""
+        if entry.version_of is None:
+            return None
+        try:
+            return await self._reader.get_document_metadata(entry.version_of, version_id=entry.id)
+        except PaperlessMcpError:
+            return None
+
+    async def _no_file(self, entry: TrashedDocument, file: FileVersion) -> NotFound:
+        """The error for a file that was not sent; it is missing only if the metadata says so."""
+        facts = await self._metadata(entry)
+        if facts is None or entry.version_of is None or not facts.lacks(file):
+            return NotFound(NO_FILE, hint=RESTORE_FIRST)
+        return missing_file(entry.version_of, file, facts, entry.id)
+
+    async def _no_thumbnail(self, entry: TrashedDocument) -> NotFound:
+        """The error for a thumbnail that was not sent; the same holds for it."""
+        if await self._metadata(entry) is None:
+            return NotFound(NO_FILE, hint=RESTORE_FIRST)
+        message = (
+            f"Paperless cannot find the thumbnail of document {entry.version_of} "
+            f"(version {entry.id})."
+        )
+        return NotFound(message, hint=NO_THUMBNAIL)
 
     def _report(
         self, document_id: int, file: FileKind, filename: str | None, mime_type: str

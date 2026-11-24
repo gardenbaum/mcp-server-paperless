@@ -19,6 +19,7 @@ from mcp_server_paperless.domain.errors import (
     UpstreamUnreachable,
     Validation,
 )
+from mcp_server_paperless.domain.files import STILL_READ
 from mcp_server_paperless.domain.versions import VersionUpload
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.documents import DocumentService
@@ -29,6 +30,7 @@ from mcp_server_paperless.services.trashed_documents import (
     NO_CHANGE,
     NO_FILE,
     NO_PERMISSIONS,
+    NO_THUMBNAIL,
     RESTORE_FIRST,
     VERSION_LIMITS,
     TrashedDocuments,
@@ -36,10 +38,10 @@ from mcp_server_paperless.services.trashed_documents import (
 from services.test_trash import WEB, Setup
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Awaitable, Sequence
 
     from mcp_server_paperless.domain.bulk import ObjectPermissions
-    from mcp_server_paperless.domain.documents import DocumentRecord
+    from mcp_server_paperless.domain.documents import DocumentRecord, FileMetadata
     from mcp_server_paperless.domain.permissions import ObjectAccess, PermissionKind
     from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
     from mcp_server_paperless.domain.trash import TrashLookup
@@ -517,3 +519,104 @@ async def test_grants_without_names_for_want_of_the_groups_are_a_gap(
 
     assert (found.id, found.permissions) == (one, None)
     assert found.limits == (VERSION_LIMITS if version else DOCUMENT_LIMITS) + NO_PERMISSIONS
+
+
+async def failing(call: Awaitable[object]) -> NotFound:
+    with pytest.raises(NotFound) as raised:
+        _ = await call
+    return raised.value
+
+
+async def test_a_missing_file_of_a_document_in_the_trash_is_not_claimed_to_be_missing() -> None:
+    """Paperless tells no metadata of it, so 404 has more than one cause."""
+    setup = Setup()
+    one = await setup.trashed("Doc")
+    setup.state.missing = {(one, "original"), (one, "archive"), (one, "thumbnail")}
+    service = looking(setup)
+
+    errors = [
+        await failing(service.download(one, "original")),
+        await failing(service.download(one, "archive")),
+        await failing(service.part(one, "original", offset=0)),
+        await failing(service.thumbnail(one)),
+    ]
+
+    assert {(e.message, e.hint) for e in errors} == {(NO_FILE, RESTORE_FIRST)}
+    assert "does not say why" in NO_FILE
+    # What is in the list is still readable.
+    assert (await service.entry(one, text=True, max_chars=5)).id == one
+
+
+async def test_a_missing_file_of_a_deleted_version_is_named_as_for_live_documents() -> None:
+    setup = Setup()
+    document, version = await setup.version("Report")
+    [entry] = [d for d in setup.state.trash if d.id == version]
+    entry.archive = b"archive"
+    setup.state.missing = {(version, "original"), (version, "thumbnail")}
+    service = looking(setup)
+
+    original = await failing(service.download(version, "original"))
+    part = await failing(service.part(version, "original", offset=0))
+    thumbnail = await failing(service.thumbnail(version))
+    archive = await service.download(version, "archive")
+    setup.state.missing.add((version, "archive"))
+    both = await failing(service.download(version, "original"))
+
+    said = f"Paperless cannot find the original of document {document} (version {version})."
+    assert (original.message, original.hint) == (
+        said,
+        "Ask for the archive version, which is there.",
+    )
+    assert (part.message, part.hint) == (original.message, original.hint)
+    assert archive.data == b"archive"
+    assert both.hint == STILL_READ
+    assert thumbnail.message == (
+        f"Paperless cannot find the thumbnail of document {document} (version {version})."
+    )
+    assert thumbnail.hint == NO_THUMBNAIL
+
+
+async def test_nothing_is_claimed_of_a_version_whose_metadata_cannot_be_read() -> None:
+    setup = Setup()
+    _, version = await setup.version("Report")
+    setup.state.missing = {(version, "original"), (version, "thumbnail")}
+
+    class NoMetadata(FakePaperless):
+        @override
+        async def get_document_metadata(
+            self, document_id: int, *, version_id: int | None = None
+        ) -> FileMetadata:
+            message = "Paperless could not be reached."
+            raise UpstreamUnreachable(message)
+
+    service = looking(setup, NoMetadata(setup.state, user="admin"))
+
+    for call in (service.download(version, "original"), service.thumbnail(version)):
+        error = await failing(call)
+        assert (error.message, error.hint) == (NO_FILE, RESTORE_FIRST)
+
+
+async def test_a_listed_file_of_a_version_that_is_not_sent_is_not_called_missing() -> None:
+    setup = Setup()
+    _, version = await setup.version("Report")
+
+    error = await failing(
+        looking(setup, NoFile(setup.state, user="admin")).download(version, "original")
+    )
+
+    assert (error.message, error.hint) == (NO_FILE, RESTORE_FIRST)
+
+
+async def test_entries_without_names_are_read() -> None:
+    setup = Setup()
+    one = await setup.trashed("Doc")
+    _, version = await setup.version("Report")
+    setup.state.nameless = {one, version}
+    for entry in setup.state.trash:
+        entry.archive = None
+    service = looking(setup)
+
+    for number in (one, version):
+        found = await service.entry(number, max_chars=1)
+        assert (found.id, found.archived_file_name) == (number, None)
+        assert (await service.download(number, "original")).data

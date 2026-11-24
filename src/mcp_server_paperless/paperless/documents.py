@@ -35,6 +35,7 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
 )
+from mcp_server_paperless.domain.files import missing_file, not_sent
 from mcp_server_paperless.domain.versions import VersionPage, VersionRow
 from mcp_server_paperless.paperless.client import MAY_BE_APPLIED, opened
 from mcp_server_paperless.paperless.disposition import filename
@@ -56,6 +57,9 @@ MERGE: Final = "merge"
 MERGE_AS_VERSIONS_PATH = "/api/documents/merge_as_versions/"
 # Most bytes of a thumbnail read; real ones are 2 KB to 30 KB WebP, so this is generous.
 THUMBNAIL_LIMIT = 4 * 1024 * 1024
+NO_THUMBNAIL_HINT: Final = (
+    "Paperless makes it anew when the document is reprocessed, if it still has the file."
+)
 FIELDS = (
     "id,title,created,added,correspondent,document_type,storage_path,tags,custom_fields,"
     "user_can_change"
@@ -195,11 +199,11 @@ class _HistoryRow(BaseModel):
 
 
 class _Metadata(BaseModel):
-    original_filename: str
+    original_filename: str | None
     original_mime_type: str
-    original_size: int
+    original_size: int | None
     original_checksum: str
-    media_filename: str
+    media_filename: str | None
     has_archive_version: bool
     archive_size: int | None = None
     archive_checksum: str | None = None
@@ -530,7 +534,13 @@ class PaperlessDocumentReader:
         Paperless sends WebP. A document the user may not see is answered 403 (text/html),
         a missing one 404, as for the other sub-resources.
         """
-        found = await self._file(document_id, "thumb/", THUMBNAIL_LIMIT)
+        try:
+            found = await self._file(document_id, "thumb/", THUMBNAIL_LIMIT)
+        except NotFound:
+            # Says so itself if the document does not exist.
+            _ = await self.get_document_metadata(document_id)
+            message = f"Paperless cannot find the thumbnail of document {document_id}."
+            raise NotFound(message, hint=NO_THUMBNAIL_HINT) from None
         if found.truncated:
             message = f"Paperless sent an unexpected response for the thumbnail of {document_id}."
             raise PaperlessMcpError(message)
@@ -557,7 +567,7 @@ class PaperlessDocumentReader:
         try:
             return await self._file(document_id, "download/", max_bytes, params)
         except NotFound:
-            raise _unseen(document_id, version_id) from None
+            raise await self._not_sent(document_id, version, version_id) from None
 
     @contextlib.asynccontextmanager
     async def open_document_file(
@@ -578,7 +588,7 @@ class PaperlessDocumentReader:
                     self._client.stream("GET", f"{PATH}{document_id}/download/", params=params)
                 )
             except NotFound:
-                raise _unseen(document_id, version_id) from None
+                raise await self._not_sent(document_id, version, version_id) from None
             yield opened(response)
 
     async def get_document_titles(self, document_ids: Collection[int]) -> dict[int, str]:
@@ -668,15 +678,24 @@ class PaperlessDocumentReader:
             ),
         )
 
+    async def _not_sent(
+        self, document_id: int, version: FileVersion, version_id: int | None
+    ) -> PaperlessMcpError:
+        """Why a file is a 404: no such document or version, or Paperless cannot find the file."""
+        try:
+            facts = await self.get_document_metadata(document_id, version_id=version_id)
+        except NotFound as unseen:
+            return unseen
+        if not facts.lacks(version):
+            return not_sent(document_id)
+        return missing_file(document_id, version, facts, version_id)
+
     async def _file(
         self, document_id: int, tail: str, max_bytes: int, params: Params | None = None
     ) -> DocumentFile:
-        try:
-            found = await self._client.download(
-                f"{PATH}{document_id}/{tail}", params=params, max_bytes=max_bytes
-            )
-        except NotFound:
-            raise unseen_document(document_id) from None
+        found = await self._client.download(
+            f"{PATH}{document_id}/{tail}", params=params, max_bytes=max_bytes
+        )
         return DocumentFile(
             content=found.content,
             mime_type=found.headers.get("Content-Type", "application/octet-stream"),
