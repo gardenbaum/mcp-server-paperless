@@ -626,6 +626,9 @@ class WorkflowRunReport(BaseModel):
         tuple[int, ...],
         Field(description="Documents it failed on; some of its actions may have run there."),
     ] = ()
+    incomplete: Annotated[
+        bool, Field(description="true: only the first actions are shown; the run is refused.")
+    ] = False
     blocked: Annotated[
         tuple[int, ...],
         Field(

@@ -9,7 +9,7 @@ Residual race: between the last read and the task someone may change the workflo
 Paperless then runs what is stored at that moment.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import batched
 from typing import TYPE_CHECKING, Final
 
@@ -64,6 +64,13 @@ NO_RIGHT_HINT: Final = "Ask an administrator for the permission change_document.
 BLOCKED_HINT: Final = (
     "Leave those documents out: a workflow runs by hand only on documents you own, or that have no "
     "owner."
+)
+# Characters of a confirmation; above that a run is refused, never cut (owner, 2026-11-24).
+MAX_CONFIRMATION: Final = 100_000
+FEWER: Final = "Choose fewer documents per call; the actions alone fit into one confirmation."
+SPLIT: Final = (
+    "Fewer documents do not help: split the workflow into several, or run it in the Paperless web "
+    "UI."
 )
 NOT_AGAIN: Final = (
     "What it does may be done already, e-mails and webhooks included: do not run it again on your "
@@ -132,6 +139,34 @@ class _Call:
         )
 
     @property
+    def too_long(self) -> str:
+        """Why the run cannot be confirmed, with the sizes; or nothing."""
+        length = len(self.effect)
+        if length <= MAX_CONFIRMATION:
+            return ""
+        actions, documents = len("; ".join(self.actions)), len(named(titled(self.hits)))
+        return (
+            f"the confirmation would have {length} characters, and at most {MAX_CONFIRMATION} can "
+            f"be shown: {actions} of them are the actions, {documents} of them are the documents"
+        )
+
+    @property
+    def shorter(self) -> str:
+        """What helps where the run cannot be confirmed."""
+        one = replace(self, chosen=replace(self.chosen, hits=self.hits[:1]))
+        return FEWER if len(one.effect) <= MAX_CONFIRMATION else SPLIT
+
+    @property
+    def shown(self) -> tuple[str, ...]:
+        """The first actions, as many as fit into the limit."""
+        left = MAX_CONFIRMATION
+        for at, told in enumerate(self.actions):
+            left -= len(told) + (2 if at else 0)
+            if left < 0:
+                return self.actions[:at]
+        return self.actions
+
+    @property
     def refusal(self) -> str:
         """Why Paperless would refuse the whole run, as far as that is known; or nothing."""
         if self.no_right:
@@ -190,7 +225,8 @@ class WorkflowRuns:
 
         Raises:
             Validation: The workflow is not enabled, has no manual trigger or a destination that
-                cannot be shown, or the selection is refused (see ``DocumentSelector.select``) or
+                cannot be shown, its confirmation would be longer than ``MAX_CONFIRMATION``, or the
+                selection is refused (see ``DocumentSelector.select``) or
                 holds more than ``MAX_DOCUMENTS``.
             NotFound: The workflow, a document, a view or a name is unknown or hidden.
             Ambiguous: A name matches more than one object.
@@ -209,6 +245,9 @@ class WorkflowRuns:
             message = f"{why}, so Paperless would refuse the whole run; nothing was run."
             hint = NO_RIGHT_HINT if call.no_right else BLOCKED_HINT
             raise PermissionDenied(message, hint=hint)
+        if call.too_long:
+            message = f"Nothing was run: {call.too_long}."
+            raise Validation(message, hint=call.shorter)
         if call.alone or not confirm:
             await self._require(call)
         return _done(call, await self._send(call))
@@ -335,6 +374,13 @@ def _require_usable(workflow: Workflow) -> None:
 def _preview(call: _Call) -> WorkflowRunReport:
     if call.refusal:
         message = f"{NOT_RUN} The run would be refused as a whole: {call.refusal}."
+    elif call.too_long:
+        part = (
+            f" actions shows only the first {len(call.shown)} of {len(call.actions)}."
+            if call.shown != call.actions
+            else ""
+        )
+        message = f"{NOT_RUN} The run would be refused: {call.too_long}.{part} {call.shorter}"
     else:
         ahead = TO_GO_AHEAD_BY_IDS if call.alone else TO_GO_AHEAD
         message = (
@@ -389,7 +435,8 @@ def _report(  # noqa: PLR0913 -- one keyword per way a call ends
     return WorkflowRunReport(
         workflow_id=call.workflow.id,
         workflow=call.workflow.name,
-        actions=call.actions,
+        actions=call.shown,
+        incomplete=call.shown != call.actions,
         apply_filters=call.apply_filters,
         dry_run=dry_run,
         started=started,

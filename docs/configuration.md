@@ -378,7 +378,8 @@ filter or a view alone never runs anything. With `apply_filters=false` the filte
 left out; with them Paperless does not tell which documents it skips. If it fails on some documents the
 answer names them, and a part of the actions may have run there. Whether e-mails, webhooks, password
 removals and AI suggestions worked is not told by Paperless, and a call whose answer was lost is never
-sent again (decision-75). It needs the permissions to view workflows and to change documents, and
+sent again. A run whose confirmation would be longer than 100,000 characters is refused, also with
+`confirm` (decision-75). It needs the permissions to view workflows and to change documents, and
 you have to own every document, or it has no owner.
 
 ### `admin`

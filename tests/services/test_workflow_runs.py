@@ -40,6 +40,7 @@ from mcp_server_paperless.domain.workflows import (
     WorkflowTrigger,
 )
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.bulk_operations import named
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.workflows import MAX_DESTINATIONS, TRASH_NOTE
 
@@ -1442,3 +1443,150 @@ async def test_linked_documents_are_read_a_hundred_at_a_time() -> None:
 
     assert [len(ids) for ids in setup.fake.titled[:3]] == [100, 100, 2]
     assert "#5200, 101 'Scan 1'" in message
+
+
+# --- a confirmation of at most 100,000 characters (owner, 2026-11-24)
+
+LIMIT = 100_000
+MANY = tuple(range(1000, 1100))
+
+
+def steps(count: int) -> list[WorkflowAction]:
+    return [action(1, assign_title=f"{n:04}" + "y" * 50) for n in range(count)]
+
+
+async def confirmed_length(setup: Setup) -> int:
+    """How long a confirmation within the limit is, without the words around the effect."""
+    message = (await setup.asked(document_ids=MANY)).message
+    return len(message) - len("Nothing was changed. Confirming would .")
+
+
+async def long_run(length: int) -> Setup:
+    """A run on a hundred documents whose confirmation has `length` characters."""
+    setup = Setup(writes=False, scans=0)
+    setup.state.documents += [FakeDocument(id=n, title="x", owner=ADMIN_ID) for n in MANY]
+    setup.flow(*steps(1050))  # a bit less than the limit
+    left = length - await confirmed_length(setup)
+    for number in MANY:
+        more = min(left, 59)
+        setup.document(number).title += "x" * more
+        left -= more
+    assert left == 0
+    return setup
+
+
+async def test_a_confirmation_of_exactly_the_limit_is_asked() -> None:
+    setup = await long_run(LIMIT)
+
+    assert await confirmed_length(setup) == LIMIT
+    preview = await setup.run(dry_run=True, document_ids=MANY)
+    assert not preview.incomplete
+    assert len(preview.actions) == 1050
+
+
+@pytest.mark.parametrize("confirm", [False, True])
+async def test_one_character_more_is_refused_also_with_confirm(*, confirm: bool) -> None:
+    setup = await long_run(LIMIT + 1)
+
+    with pytest.raises(Validation) as raised:
+        _ = await setup.run(confirm=confirm, document_ids=MANY)
+
+    assert type(raised.value) is Validation  # no dialog
+    message = raised.value.message
+    assert message.startswith(
+        "Nothing was run: the confirmation would have 100001 characters, and at most 100000 can "
+    )
+    assert message.endswith(" of them are the documents.")
+    assert "'" not in message.replace("'Paid'", "")
+    assert raised.value.hint == (
+        "Choose fewer documents per call; the actions alone fit into one confirmation."
+    )
+
+
+async def test_an_accepted_dialog_does_not_cover_a_run_that_became_too_long() -> None:
+    setup = await long_run(LIMIT)
+    refusal = await setup.asked(document_ids=MANY)
+    next(d for d in reversed(setup.state.documents) if len(d.title) < 59).title += "z"
+
+    with accepting(refusal.fingerprint), pytest.raises(Validation) as raised:
+        _ = await setup.run(confirm=True, document_ids=MANY)
+
+    assert "100001 characters" in raised.value.message
+
+
+async def test_a_filter_alone_gets_the_same_refusal() -> None:
+    setup = await long_run(LIMIT + 1)
+
+    with pytest.raises(Validation, match="100001 characters"):
+        _ = await setup.run(confirm=True, filters={"title_contains": "x"}, exclude_ids=[])
+
+
+async def test_the_sizes_of_actions_and_documents_are_told() -> None:
+    setup = await long_run(LIMIT + 1)
+    preview = await setup.run(dry_run=True, document_ids=MANY)
+    actions = len("; ".join(preview.actions))
+
+    with pytest.raises(Validation) as raised:
+        _ = await setup.run(document_ids=MANY)
+
+    assert f"{actions} of them are the actions, " in raised.value.message
+    rows = [(number, setup.document(number).title) for number in MANY]
+    assert f"{len(named(rows))} of them are the documents" in raised.value.message
+
+
+async def test_where_fewer_documents_do_not_help_the_hint_says_so() -> None:
+    setup = Setup(writes=False)
+    setup.flow(*steps(1200))
+
+    with pytest.raises(Validation) as raised:
+        _ = await setup.run(confirm=True)
+
+    assert raised.value.hint == (
+        "Fewer documents do not help: split the workflow into several, or run it in the Paperless "
+        "web UI."
+    )
+
+
+async def test_the_preview_of_a_run_that_is_too_long_shows_the_first_actions() -> None:
+    setup = Setup(writes=False)
+    setup.flow(*steps(1200))
+
+    report = await setup.run(dry_run=True)
+
+    shown = len("; ".join(report.actions))
+    assert report.incomplete
+    assert report.selected_ids == (101, 102)
+    assert LIMIT - 120 < shown <= LIMIT
+    assert report.actions[0].startswith("step 1 of 1200: ")
+    assert report.message.startswith(
+        "Dry run, nothing was run. The run would be refused: the confirmation would have "
+    )
+    assert "actions shows only the first " in report.message
+    assert report.message.endswith("or run it in the Paperless web UI.")
+    assert len(report.message) < 2000
+
+
+async def test_actions_that_fit_stay_whole_where_the_documents_are_too_many() -> None:
+    setup = await long_run(LIMIT + 1)
+
+    report = await setup.run(dry_run=True, document_ids=MANY)
+
+    assert not report.incomplete
+    assert len(report.actions) == 1050
+    assert "actions shows only" not in report.message
+    assert report.selected_ids == MANY
+    fewer = "Choose fewer documents per call; the actions alone fit into one confirmation."
+    assert report.message.endswith(fewer)
+
+
+async def test_missing_rights_are_told_before_the_length() -> None:
+    setup = await long_run(LIMIT + 1)
+    for number in MANY:
+        setup.document(number).owner = ADMIN_ID
+    setup.document(1000).viewers = {READER_ID}
+    setup.document(1000).editors = set()
+    setup.may(READER[0], "view_workflow", "change_document", "view_uisettings")
+    setup.flow(*steps(1200))
+
+    with pytest.raises(PermissionDenied, match="You may not change or do not own"):
+        _ = await setup.run(confirm=True, document_ids=[1000])

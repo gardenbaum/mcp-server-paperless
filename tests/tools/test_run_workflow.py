@@ -353,7 +353,7 @@ async def sized(title: str, name: str) -> tuple[str, str]:
     return shown, str(output(preview)["message"])
 
 
-# As measured. Nothing is capped or cut, and no bound is approved: that is the owner's to decide.
+# As measured, far below the limit (decision-75).
 @pytest.mark.parametrize(
     ("title", "name", "most"),
     [
@@ -372,3 +372,25 @@ async def test_the_size_of_a_run_on_a_hundred_documents_with_several_actions(
     shown, preview = await sized(title, name)
 
     assert (len(shown), len(preview)) == most
+
+
+@both_eras
+async def test_a_run_too_long_to_confirm_is_refused_without_a_dialog(mode: Mode) -> None:
+    state, seen = world(), list[str]()
+    actions = tuple(
+        WorkflowAction(id=n, type=1, settings={"assign_title": f"{n:04}" + "y" * 50})
+        for n in range(1200)
+    )
+    state.workflows = [flow().model_copy(update={"actions": actions})]
+
+    result = await run(
+        state,
+        {"document_ids": [10], "confirm": True},
+        mode,
+        answering("accept", YES, seen=seen),
+        writes=False,
+    )
+
+    assert result.is_error
+    assert "at most 100000 can be shown" in text(result)
+    assert seen == []

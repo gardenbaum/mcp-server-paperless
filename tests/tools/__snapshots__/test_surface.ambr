@@ -21715,6 +21715,11 @@
             }),
             'type': 'array',
           }),
+          'incomplete': dict({
+            'default': False,
+            'description': 'true: only the first actions are shown; the run is refused.',
+            'type': 'boolean',
+          }),
           'matched': dict({
             'description': 'How many documents the ids, filters or view match, exclude_ids included.',
             'type': 'integer',

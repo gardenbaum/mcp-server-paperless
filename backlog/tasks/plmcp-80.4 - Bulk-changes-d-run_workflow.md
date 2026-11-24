@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:35Z'
-updated_date: '2026-11-24T20:12:20Z'
+updated_date: '2026-11-24T21:04:14Z'
 labels:
   - bulk
 dependencies:
@@ -32,7 +32,7 @@ Fourth part of PLMCP-80: Paperless 3.5.1 can run a workflow with a manual trigge
 <!-- DOD:BEGIN -->
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -61,4 +61,6 @@ Hosted evidence on e6549f1: full E2E run 45464274162 green (four shards, postgre
 Review round 1 (F1 to F11), tests first: manual triggers count only the filters Paperless reads; tags that come along named, not refused (Paperless takes them whatever the caller asks); actions before documents, far-reaching first; AI settings, select labels, linked titles in words; only the custom fields Paperless writes; dry_run stays true without a match; texts of a run; missing change_document told beforehand (SignedIn.permissions); the plain-text 400 is 'not known'. tests/adapter/schema_guard.py: one documented deviation more (bulk_edit 400, text/html). Surface snapshot: two changed lines of run_workflow. Sizes measured (100 documents, six actions): 11,917 ordinary, 42,821 hostile; previews 7,164 and 24,564. 29 further hand mutants, all killed after four tests more. F12 left.
 
 Review round 2: each clause has its step, the list of tags is read anew once per call where tags are assigned or removed, linked ids in hundreds, texts of the write tools say run_workflow, tests for N4. Sizes now 12,020 and 42,924 (previews unchanged). Correction of round 1: 25 hand mutants (4 survived and were killed by new tests), not 29. The refusal above 100,000 characters is with the owner and not built.
+
+Owner decisions of 2026-11-24 ('Alles wie von dir empfohlen.'): failing e-mails and webhooks do not fail the run; a partial failure is a result; contents of e-mails and webhooks are bound, not shown; tags that come along are named, not refused; a confirmation above 100,000 characters is refused, also with confirm=true, never cut (built, tests first). Hosted on 1b19291: CI 45478434614 green; full E2E 45478418857: shard 1/4 was cancelled by the 25-minute guard at 96 % without a failed test (main had the same, PLMCP-115), the others green. A full E2E on the final head follows once main has six shards.
 <!-- SECTION:NOTES:END -->
