@@ -133,8 +133,9 @@ async def test_bulk_is_whole_in_every_mode(tmp_path: Path) -> None:
         entries += [entry for entry in off if entry["toolset"] == "bulk"]
 
     assert entries[0]["what"] == entries[1]["what"] != "some of its tools"
-    assert entries[0]["tools"] == ["bulk_edit_documents", "bulk_edit_taxonomy"]
-    assert entries[1]["tools"] == ["bulk_edit_documents", "bulk_edit_taxonomy", TOOL]
+    shared = ["bulk_edit_documents", "bulk_edit_taxonomy", "resolve_duplicates"]
+    assert entries[0]["tools"] == shared
+    assert entries[1]["tools"] == [*shared, TOOL]
 
 
 async def test_the_default_profile_does_not_have_it(tmp_path: Path) -> None:

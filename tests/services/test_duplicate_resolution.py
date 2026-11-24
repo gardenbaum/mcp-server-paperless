@@ -23,6 +23,7 @@ from mcp_server_paperless.domain.errors import (
 from mcp_server_paperless.domain.tasks import Unconfirmed
 from mcp_server_paperless.domain.versions import VersionUpload
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.documents import match_of
 from mcp_server_paperless.services.duplicate_resolution import (
     CHOOSE,
     HAS_VERSIONS_HINT,
@@ -61,6 +62,8 @@ class Acting(FakePaperless):
     # What happens after the write.
     then: Callable[[], None] | None = None
     unreadable: bool = False
+    titles_unreadable: bool = False
+    title_reads: int = 0
     gone: frozenset[int] = frozenset()
     written: bool = False
 
@@ -97,6 +100,9 @@ class Acting(FakePaperless):
         if document_id in self.gone:
             message = "gone"
             raise NotFound(message)
+        if self.written and self.unreadable:
+            message = "Paperless did not respond in time."
+            raise UpstreamTimeout(message)
         return await super().get_document(document_id)
 
     @override
@@ -108,7 +114,9 @@ class Acting(FakePaperless):
 
     @override
     async def get_document_titles(self, document_ids: Collection[int]) -> dict[int, str]:
-        if self.written and self.unreadable:
+        if self.written:
+            self.title_reads += 1
+        if self.written and (self.unreadable or self.titles_unreadable):
             message = "Paperless did not respond in time."
             raise UpstreamTimeout(message)
         return await super().get_document_titles(document_ids)
@@ -585,6 +593,11 @@ async def test_a_success_that_cannot_be_read_back_says_so() -> None:
 
     assert (done.resolved, done.unconfirmed_task_id) == ((), None)
     assert [d.why for d in done.not_resolved] == ["what became of it could not be read"]
+    assert done.message == (
+        "Not known to be resolved: document 11 'Document 11': what became of it could not be "
+        "read. Paperless reported the change as done; read the documents again before repeating "
+        "the call."
+    )
 
 
 async def test_a_confirmed_trash_says_where_the_documents_are() -> None:
@@ -620,8 +633,8 @@ async def test_a_kept_document_that_is_gone_afterwards_is_said_loudly(
     assert [d.why for d in done.not_resolved] == ["what became of it could not be seen"]
     expected = (
         "WARNING: the kept document 10 'Document 10' was gone when read again (deleted, merged or "
-        "hidden meanwhile). Look for both in the trash with list_trash, and restore one if none "
-        "is left. Not known to be resolved: document 11 'Document 11'"
+        "hidden meanwhile). Look for it and the duplicates in the trash with list_trash, and "
+        "restore one if none is left. Not known to be resolved: document 11 'Document 11'"
     )
     assert done.message.startswith(expected)
 
@@ -768,3 +781,70 @@ async def test_the_texts_are_singular_for_one_and_plural_for_two() -> None:
     assert "They can be restored" in two.message
     assert "With action trash they could be restored instead" in merged.message
     assert "Other duplicates of document 10 stay: " in both.message
+
+
+@pytest.mark.parametrize("action", ACTIONS)
+async def test_what_was_proven_stays_when_the_second_read_fails(action: ResolveAction) -> None:
+    setup = Setup()
+    setup.fake.titles_unreadable = True
+
+    def partly() -> None:
+        document = setup.get(11)
+        setup.state.documents.remove(document)
+        if action == "trash":
+            document.deleted_at = datetime.now(UTC)
+            setup.state.trash.append(document)
+        else:
+            newest = document.versions[0].model_copy(update={"is_root": False})
+            setup.get(10).versions.insert(0, newest)
+
+    setup.fake.instead = partly
+    done = await setup.service.resolve(10, [11, 12], action, confirm=True)
+
+    assert done.kept_seen is True
+    assert [d.id for d in done.resolved] == [11]
+    assert [(d.id, d.why) for d in done.not_resolved] == [
+        (12, "what became of it could not be read")
+    ]
+
+
+@pytest.mark.parametrize("action", ACTIONS)
+async def test_the_warning_about_the_kept_one_stays_when_the_second_read_fails(
+    action: ResolveAction,
+) -> None:
+    setup = Setup()
+    setup.fake.titles_unreadable = True
+    setup.fake.then = lambda: setup.state.documents.remove(setup.get(10))
+
+    done = await setup.service.resolve(10, [11], action, confirm=True)
+
+    assert done.kept_seen is False
+    assert "WARNING: the kept document 10" in done.message
+    assert [d.why for d in done.not_resolved] == ["what became of it could not be read"]
+
+
+@pytest.mark.parametrize("action", ACTIONS)
+async def test_the_titles_are_not_read_when_everything_is_proven(action: ResolveAction) -> None:
+    setup = Setup()
+
+    done = await setup.service.resolve(10, [11, 12], action, confirm=True)
+
+    assert [d.id for d in done.resolved] == [11, 12]
+    assert setup.fake.title_reads == 0
+
+
+async def test_an_upper_case_root_checksum_matches_a_lower_case_newest_version() -> None:
+    setup = Setup(writes=False)
+    _ = await setup.version(10, FILE)
+    kept = setup.get(10)
+    kept.versions = [
+        v.model_copy(update={"checksum": (v.checksum or "").upper()}) if v.is_root else v
+        for v in kept.versions
+    ]
+
+    message = (await setup.ask("trash")).message
+    record = await setup.fake.get_document(10)
+
+    assert "newest file" not in message
+    assert "byte-identical" not in message
+    assert match_of(record, (setup.get(11).versions[0].checksum or "").upper()) == "same_file"

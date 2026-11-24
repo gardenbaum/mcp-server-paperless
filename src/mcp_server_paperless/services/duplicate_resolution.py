@@ -50,11 +50,14 @@ MAY_NOT: Final = "this user may not change it"
 HAS_VERSIONS: Final = "it has {count} versions, so it cannot be merged"
 STILL_THERE: Final = "it was still there when read again"
 NOT_READ: Final = "what became of it could not be read"
+REPORTED: Final = (
+    "Paperless reported the change as done; read the documents again before repeating the call."
+)
 NOT_SEEN: Final = "what became of it could not be seen"
 NEITHER: Final = "it was neither a document of its own nor a version when read again"
 KEEP_GONE: Final = (
     "WARNING: the kept {keep} was gone when read again (deleted, merged or hidden meanwhile). "
-    "Look for both in the trash with list_trash, and restore one if none is left."
+    "Look for it and the duplicates in the trash with list_trash, and restore one if none is left."
 )
 CHOOSE: Final = (
     "Read the duplicates with get_document(include=['duplicates']) and pass only those outside "
@@ -232,25 +235,30 @@ class DuplicateResolver:
         Only what was seen counts: a document that is not found may be hidden, not in the trash.
         """
         documents, keep = group.duplicates, group.keep.id
-        kept, versions = True, None
+        kept: bool | None = True
+        versions = None
         proven: set[int] = set()
         try:
-            try:
-                if action == "trash":
-                    found = await self._reader.get_duplicates(keep)
-                    proven = {d.id for d in found if d.deleted_at is not None}
-                else:
-                    versions = (await self._reader.get_document(keep)).versions
-                    proven = {v.id for v in versions}
-            except NotFound:
-                kept = False
-            there = await self._reader.get_document_titles([d.id for d in documents])
+            if action == "trash":
+                found = await self._reader.get_duplicates(keep)
+                proven = {d.id for d in found if d.deleted_at is not None}
+            else:
+                versions = (await self._reader.get_document(keep)).versions
+                proven = {v.id for v in versions}
+        except NotFound:
+            kept = False
         except PaperlessMcpError:
-            unknown = tuple(
-                UnresolvedDuplicate(id=d.id, title=d.title, why=NOT_READ) for d in documents
-            )
-            return _After(kept=None, resolved=(), not_resolved=unknown)
+            kept = None
         unseen = NEITHER if kept and action == "merge_as_versions" else NOT_SEEN
+        if kept is None:
+            unseen = NOT_READ
+        left = [d.id for d in documents if d.id not in proven]
+        there: dict[int, str] = {}
+        if left:
+            try:
+                there = await self._reader.get_document_titles(left)
+            except PaperlessMcpError:
+                unseen = NOT_READ
         return _After(
             kept=kept,
             resolved=tuple(_named(d) for d in documents if d.id in proven),
@@ -310,7 +318,9 @@ class DuplicateResolver:
                 f"{unconfirmed.reason}. {message} Read the task with get_task and the documents "
                 "again before repeating the call."
             )
-        elif action == "trash" and after.resolved:
+        elif after.not_resolved:
+            message = f"{message} {REPORTED}"
+        if action == "trash" and after.resolved:
             message += f" {RESTORABLE.format(it=_it(after.resolved).capitalize())}."
         return self._resolution(
             group,
