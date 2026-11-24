@@ -3,8 +3,9 @@
 Paperless 3.x rotates, merges, splits and edits PDFs itself and removes their passwords. The work
 runs as background tasks: every tool returns them (``wait_seconds`` waits for them, up to the
 usual bound). Making new documents, and adding a version that keeps every page, change nothing
-that exists; deleting originals, dropping pages from what a document shows and reprocessing do,
-so they need ``confirm`` (decision-6, decision-15). Page numbers count from 1.
+that exists; deleting originals, dropping pages from what a document shows, going back to an older
+file and reprocessing do, so they need ``confirm`` (decision-6, decision-15). Every tool has
+``dry_run``, which returns the plan and starts nothing. Page numbers count from 1.
 """
 
 from typing import Annotated, Literal
@@ -14,7 +15,7 @@ from fastmcp.server.providers import LocalProvider
 from pydantic import Field
 
 from mcp_server_paperless.domain.pdf import Output, PageSlot, PdfResult
-from mcp_server_paperless.services.pdf import MAX_DOCUMENTS, MAX_PAGES, MAX_PARTS
+from mcp_server_paperless.services.pdf import MAX_DOCUMENTS, MAX_PAGES, MAX_PARTS, Options
 from mcp_server_paperless.services.tasks import MAX_WAIT_SECONDS
 from mcp_server_paperless.tools._shared import ANNOTATIONS, Confirm, boundary, services
 
@@ -34,13 +35,45 @@ type Wait = Annotated[
         ),
     ),
 ]
+type ReplacingWait = Annotated[
+    int | None,
+    Field(
+        ge=0,
+        description=(
+            "Seconds to wait for the tasks Paperless starts; more than "
+            f"{MAX_WAIT_SECONDS} is cut to {MAX_WAIT_SECONDS}. Left out: {MAX_WAIT_SECONDS} where "
+            "originals are to be trashed, else 0. With 0 the task ids are returned at once and "
+            "no original is trashed."
+        ),
+    ),
+]
+type DryRun = Annotated[
+    bool,
+    Field(description="true checks everything and returns the plan; nothing is started."),
+]
+type VersionId = Annotated[
+    int | None,
+    Field(
+        description=(
+            "Version whose file is read (get_document with include versions); left out: the newest."
+        )
+    ),
+]
+type KeepMetadata = Annotated[
+    bool,
+    Field(description="false: new documents take no title, tags or other metadata over."),
+]
+type OriginalFiles = Annotated[
+    bool, Field(description="true takes the first file of each document, not the newest.")
+]
 type Where = Annotated[
     Output,
     Field(
         description=(
             "Where the result goes: new_document (the original stays untouched), new_version "
             "(the same document shows the new file; the older version stays) or "
-            "replace_original (a new document, and the original moves to the Paperless trash)."
+            "replace_original (a new document, and the original moves to the Paperless trash once "
+            "the new one was checked)."
         )
     ),
 ]
@@ -60,13 +93,17 @@ MERGERS = (
     "of) every document; delete_originals also needs ownership of them and the permission to "
     "delete documents. Only PDF files."
 )
-COMMON = TASKS + OWNERS
-MERGE_NEEDS = TASKS + MERGERS
+REPLACING = (
+    "Originals are trashed last, by this server: only once everything was made, has the pages "
+    "it should have and nothing changed meanwhile. Otherwise they stay (trashed_ids, message) and "
+    "next names the calls that finish the work: look there before repeating a call. "
+)
+MERGE_NEEDS = REPLACING + TASKS + MERGERS
 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["rotate_documents"])
 @boundary
-async def rotate_documents(
+async def rotate_documents(  # noqa: PLR0913 -- the documents and the options of the rotation
     ctx: Context,
     document_ids: Annotated[
         list[int],
@@ -80,16 +117,27 @@ async def rotate_documents(
         Literal[90, 180, 270], Field(description="Degrees to turn every page clockwise.")
     ],
     *,
+    use_original_files: OriginalFiles = False,
+    dry_run: DryRun = False,
+    confirm: Confirm = False,
     wait_seconds: Wait = 0,
 ) -> PdfResult:
     """Rotate every page of PDF documents clockwise.
 
-    Each document gets the rotated file as a new version and the older version stays, so
-    nothing is lost and no confirm is needed. The document keeps its id, title and metadata.
-    Needs the permission to change documents and ownership of every document (or no owner): a
-    change grant is not enough.
+    Each document gets the rotated file as a new version and the older version stays, so nothing
+    is lost and no confirm is needed. Only if use_original_files makes a document show older content
+    again it is: then a dialog, or an error for you to show the user, first says so (see confirm).
+    The document keeps its id, title and metadata. Needs the permission to change documents and
+    ownership of every document (or no owner): a change grant is not enough.
     """
-    return await services(ctx).pdf.rotate(document_ids, degrees, wait_seconds=wait_seconds)
+    return await services(ctx).pdf.rotate(
+        document_ids,
+        degrees,
+        use_original_files=use_original_files,
+        confirm=confirm,
+        dry_run=dry_run,
+        wait_seconds=wait_seconds,
+    )
 
 
 MERGE = (
@@ -98,7 +146,9 @@ MERGE = (
     "if given. The originals stay unless delete_originals is true: they then move to the "
     "Paperless trash, from where they can be restored, which needs confirm. Without it a "
     "dialog, or an error for you to show the user, first names the documents and what would "
-    "happen (see confirm). "
+    "happen (see confirm). A document that could not be merged is refused first. A merge is "
+    "always a new document; to make it a version, merge and then use "
+    "merge_documents_as_versions (toolset versions), which absorbs the merged document for good. "
 )
 
 
@@ -126,15 +176,24 @@ async def merge_documents(  # noqa: PLR0913 -- the documents and the options of 
     delete_originals: Annotated[
         bool, Field(description="true moves the merged documents to the Paperless trash.")
     ] = False,
+    archive_fallback: Annotated[
+        bool,
+        Field(description="true merges the archive PDF of documents whose file is not a PDF."),
+    ] = False,
+    use_original_files: OriginalFiles = False,
+    dry_run: DryRun = False,
     confirm: Confirm = False,
-    wait_seconds: Wait = 0,
+    wait_seconds: ReplacingWait = None,
 ) -> PdfResult:
     """Merge PDF documents into one new document; the tool description is on the decorator."""
     return await services(ctx).pdf.merge(
         document_ids,
         metadata_document_id,
         delete_originals=delete_originals,
+        archive_fallback=archive_fallback,
+        use_original_files=use_original_files,
         confirm=confirm,
+        dry_run=dry_run,
         wait_seconds=wait_seconds,
     )
 
@@ -162,25 +221,40 @@ async def split_document(  # noqa: PLR0913 -- the document and the options of th
         Field(
             description=(
                 "new_document leaves the original; replace_original moves it to the Paperless "
-                "trash afterwards and needs confirm."
+                "trash once every part was checked, and needs confirm."
             )
         ),
     ] = "new_document",
+    version_id: VersionId = None,
+    keep_metadata: KeepMetadata = True,
+    dry_run: DryRun = False,
     confirm: Confirm = False,
-    wait_seconds: Wait = 0,
+    wait_seconds: ReplacingWait = None,
 ) -> PdfResult:
     """Split a PDF into one new document per page range.
 
     The new documents take the title and metadata of the original. The original stays unless
     output is replace_original: it then moves to the Paperless trash, from where it can be
     restored, which needs confirm. Without it a dialog, or an error for you to show the user, first
-    names the document and what would happen (see confirm). Page ranges are checked against the
-    page count first. Needs the permission to change and to add documents and ownership of the
+    names the document and what would happen (see confirm). The original is trashed last, by this
+    server, once every part was checked; otherwise it stays and next names the calls that finish the
+    work: look there before repeating the call. Several files cannot be one version of a document.
+    Page ranges are checked against the page count of the file that is read. Needs the permission to
+    change and to add documents and ownership of the
     document (or no owner; a change grant is not enough), and for replace_original the permission
     to delete documents.
     """
     return await services(ctx).pdf.split(
-        document_id, parts, output=output, confirm=confirm, wait_seconds=wait_seconds
+        document_id,
+        parts,
+        output=output,
+        options=Options(
+            version_id=version_id,
+            keep_metadata=keep_metadata,
+            confirm=confirm,
+            dry_run=dry_run,
+            wait_seconds=wait_seconds,
+        ),
     )
 
 
@@ -200,8 +274,11 @@ async def delete_pages(  # noqa: PLR0913 -- the document and the options of the 
     ],
     *,
     output: Where = "new_version",
+    version_id: VersionId = None,
+    keep_metadata: KeepMetadata = True,
+    dry_run: DryRun = False,
     confirm: Confirm = False,
-    wait_seconds: Wait = 0,
+    wait_seconds: ReplacingWait = None,
 ) -> PdfResult:
     """Delete pages from a PDF by making a file without them.
 
@@ -210,12 +287,23 @@ async def delete_pages(  # noqa: PLR0913 -- the document and the options of the 
     needs confirm; so does replace_original (a new document without the pages, the original
     moves to the Paperless trash). With new_document nothing existing changes and no confirm is
     needed. Without it a dialog, or an error for you to show the user, first names the pages and
-    what would happen (see confirm). Page ranges are checked against the page count first. Needs
-    the permission to change documents (and to add them for a new document) and ownership of the
-    document (or no owner; a change grant is not enough).
+    what would happen (see confirm). An original is trashed last, by this server, once the new
+    document was checked; otherwise it stays and next names the calls that finish the work: look
+    there before repeating the call. Page ranges are checked against the page count of the file
+    that is read. Needs the permission to change documents (and to add them for a new document)
+    and ownership of the document (or no owner; a change grant is not enough).
     """
     return await services(ctx).pdf.delete_pages(
-        document_id, pages, output=output, confirm=confirm, wait_seconds=wait_seconds
+        document_id,
+        pages,
+        output=output,
+        options=Options(
+            version_id=version_id,
+            keep_metadata=keep_metadata,
+            confirm=confirm,
+            dry_run=dry_run,
+            wait_seconds=wait_seconds,
+        ),
     )
 
 
@@ -238,23 +326,37 @@ async def edit_pdf(  # noqa: PLR0913 -- the document and the options of the edit
     ],
     *,
     output: Where = "new_document",
+    version_id: VersionId = None,
+    keep_metadata: KeepMetadata = True,
+    dry_run: DryRun = False,
     confirm: Confirm = False,
-    wait_seconds: Wait = 0,
+    wait_seconds: ReplacingWait = None,
 ) -> PdfResult:
     """Build PDF files from the pages of one document: pick, reorder, rotate and group pages.
 
-    The general form of split_document, delete_pages and rotate_documents. With
-    output new_document (the default) the original stays and every output file becomes a new
-    document with the title and metadata of the original. new_version needs a single output file
-    and makes it the file the document shows; if it leaves pages out, that needs confirm, as
-    does replace_original (new documents, and the original moves to the Paperless trash). Without
-    it a dialog, or an error for you to show the user, first says what would happen (see confirm).
-    Page numbers are checked against the page count first. Needs the permission to change documents
-    (and to add them for new documents) and ownership of the document (or no owner; a change grant
-    is not enough).
+    The general form of split_document, delete_pages and rotate_documents. With output
+    new_document (the default) the original stays and every output file becomes a new document
+    with the title and metadata of the original. new_version needs a single output file and
+    makes it the file the document shows; if it leaves pages out, that needs confirm, as does
+    replace_original (new documents, and the original moves to the Paperless trash). Without it
+    a dialog, or an error for you to show the user, first says what would happen (see confirm).
+    The original is trashed last, by this server, once everything was checked; otherwise it
+    stays and next names the calls that finish the work: look there before repeating the call.
+    Page numbers are checked against the page count of the file that is read. Needs the
+    permission to change documents (and to add them for new documents) and ownership of the
+    document (or no owner; a change grant is not enough).
     """
     return await services(ctx).pdf.edit(
-        document_id, pages, output=output, confirm=confirm, wait_seconds=wait_seconds
+        document_id,
+        pages,
+        output=output,
+        options=Options(
+            version_id=version_id,
+            keep_metadata=keep_metadata,
+            confirm=confirm,
+            dry_run=dry_run,
+            wait_seconds=wait_seconds,
+        ),
     )
 
 
@@ -272,8 +374,11 @@ async def remove_document_password(  # noqa: PLR0913 -- the document, the passwo
     ],
     *,
     output: Where = "new_document",
+    version_id: VersionId = None,
+    keep_metadata: KeepMetadata = True,
+    dry_run: DryRun = False,
     confirm: Confirm = False,
-    wait_seconds: Wait = 0,
+    wait_seconds: ReplacingWait = None,
 ) -> PdfResult:
     """Remove the password from an encrypted PDF.
 
@@ -281,19 +386,31 @@ async def remove_document_password(  # noqa: PLR0913 -- the document, the passwo
     unlocked copy is consumed again and gets its text. By default it becomes a new document;
     new_version adds it to the same document (the locked file stays as an older version);
     replace_original makes a new document and moves the locked original to the Paperless trash,
-    which needs confirm. Without it a dialog, or an error for you to show the user, first says what
-    would happen (see confirm). A wrong password is an error; a file without a password starts no
-    task. Needs the permission to change documents and ownership of the document (or no owner; a
-    change grant is not enough), and to add documents unless output is new_version.
+    which needs confirm. Without it a dialog, or an error for you to show the user, first says
+    what would happen (see confirm). The original is trashed last, by this server, once the
+    unlocked copy was checked; otherwise it stays and next names the calls that finish the work.
+    An archive serial number is not handed over: it stays with the original. A wrong password is
+    an error; a file without a password starts no task. Needs the permission to change documents
+    and ownership of the document (or no owner; a change grant is not enough), and to add
+    documents unless output is new_version.
     """
     return await services(ctx).pdf.remove_password(
-        document_id, password, output=output, confirm=confirm, wait_seconds=wait_seconds
+        document_id,
+        password,
+        output=output,
+        options=Options(
+            version_id=version_id,
+            keep_metadata=keep_metadata,
+            confirm=confirm,
+            dry_run=dry_run,
+            wait_seconds=wait_seconds,
+        ),
     )
 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["reprocess_documents"])
 @boundary
-async def reprocess_documents(
+async def reprocess_documents(  # noqa: PLR0913 -- the documents and the options of the run
     ctx: Context,
     document_ids: Annotated[
         list[int],
@@ -307,6 +424,7 @@ async def reprocess_documents(
     remote_ocr: Annotated[
         bool, Field(description="true uses the remote OCR engine if Paperless has one set up.")
     ] = False,
+    dry_run: DryRun = False,
     confirm: Confirm = False,
     wait_seconds: Wait = 0,
 ) -> PdfResult:
@@ -321,5 +439,9 @@ async def reprocess_documents(
     Needs the permission to change documents and a change grant on (or ownership of) each.
     """
     return await services(ctx).pdf.reprocess(
-        document_ids, remote_ocr=remote_ocr, confirm=confirm, wait_seconds=wait_seconds
+        document_ids,
+        remote_ocr=remote_ocr,
+        confirm=confirm,
+        dry_run=dry_run,
+        wait_seconds=wait_seconds,
     )

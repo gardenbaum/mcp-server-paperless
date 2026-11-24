@@ -88,6 +88,19 @@ class StartedTasks(BaseModel):
 # only where the name does not say enough.
 
 
+class PdfPlan(BaseModel):
+    """What an operation makes, what stays and what is lost; known before it runs."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    produces: str
+    keeps: tuple[str, ...]
+    loses: Annotated[
+        tuple[str, ...], Field(description="What the result does not have, or no longer shows.")
+    ]
+    needs_confirm: bool
+
+
 class PdfTask(BaseModel):
     """One Paperless task an operation started and how far it is."""
 
@@ -117,22 +130,25 @@ class PdfResult(BaseModel):
 
     operation: Annotated[str, Field(description="What was asked, e.g. rotate or merge.")]
     summary: Annotated[str, Field(description="What Paperless was asked to do, in words.")]
+    dry_run: Annotated[bool, Field(description="true: a preview, nothing was started.")]
+    plan: PdfPlan
     source_document_ids: Annotated[
         tuple[int, ...], Field(description="The documents the operation worked on.")
     ]
     state: Annotated[
-        UploadState,
+        UploadState | Literal["not_started"],
         Field(
             description=(
-                "The tasks together: failure or revoked if one did, else started or pending if "
-                "one still runs, else success. unknown when not all expected tasks could be "
-                "found or read: Paperless accepted the request all the same (the user may not "
-                "view tasks, or the work is not yet visible); see message."
+                "not_started: a preview. The tasks together: failure or revoked if one did, else "
+                "started or pending if one still runs, else success. unknown when not all "
+                "expected tasks could be found or read: Paperless accepted the request all the "
+                "same (the user may not view tasks, or the work is not yet visible); see message."
             )
         ),
     ]
     message: Annotated[
-        str | None, Field(description="Why a task failed, or why the state is unknown.")
+        str | None,
+        Field(description="Why a task failed, the state is unknown or an original stays."),
     ]
     source_links: Annotated[
         tuple[str, ...], Field(description="Links to the source documents in the Paperless web UI.")
@@ -156,6 +172,18 @@ class PdfResult(BaseModel):
                 "that got it."
             )
         ),
+    ]
+    trashed_ids: Annotated[
+        tuple[int, ...],
+        Field(
+            description=(
+                "The originals this call moved to the Paperless trash, after it checked that "
+                "everything was made; empty if it kept them."
+            )
+        ),
+    ]
+    next: Annotated[
+        str | None, Field(description="The calls that finish what was left, as a suggestion.")
     ]
     wait: Wait
     waited_seconds: float

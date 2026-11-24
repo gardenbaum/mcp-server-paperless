@@ -18,7 +18,13 @@ from fakes.accounts import ADMIN
 from fakes.paperless import FakePaperless, seeded
 from observation import recorded
 
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.server import CATALOGUE, Catalogue, Ports, create_server
+from mcp_server_paperless.services.pdf import PdfService
+from mcp_server_paperless.services.pdf_replacing import Replacing
+from mcp_server_paperless.services.removal import DocumentRemoval
+from mcp_server_paperless.services.tasks import TaskService
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.settings import PaperlessSettings, ServerSettings
 
 if TYPE_CHECKING:
@@ -97,6 +103,23 @@ def server_settings(  # noqa: PLR0913 -- one keyword per setting a test varies
     if require_dialog:
         given["require_dialog"] = True
     return ServerSettings.model_validate(given)
+
+
+def pdf_service(
+    fake: FakePaperless,
+    *,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> PdfService:
+    """`PdfService` on the fake, with everything it is built from."""
+    taxonomy = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
+    return PdfService(
+        fake,
+        fake,
+        TaskService(fake, sleep=sleep, clock=clock),
+        Replacing(fake, fake, DocumentRemoval(fake, fake, taxonomy), clock=clock),
+        web_url="https://paperless.example",
+    )
 
 
 def serve(  # noqa: PLR0913 -- one keyword per seam of the server

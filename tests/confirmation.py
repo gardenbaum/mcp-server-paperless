@@ -116,6 +116,7 @@ CALLS: Final[dict[str, Json]] = {
     },
     "delete_saved_view": {"view": "e2e-view"},
     "empty_trash": {"all": True},
+    "rotate_documents": {"document_ids": [1], "degrees": 90, "use_original_files": True},
     "merge_documents": {"document_ids": [10, 11], "delete_originals": True},
     "split_document": {"document_id": 10, "parts": ["1", "2"], "output": "replace_original"},
     "delete_pages": {"document_id": 10, "pages": "2"},

@@ -127,8 +127,10 @@ async def require_files(  # noqa: PLR0913 -- what is checked and how strictly
     choice: bool = False,
     certain: bool = False,
     seconds: float = CHECK_SECONDS,
-) -> None:
+) -> dict[int, FileMetadata]:
     """Refuse documents whose file Paperless cannot find; the values name the versions.
+
+    Returns the file facts of every document that could be checked.
 
     ``choice``: the caller can ask for the other file kind, which the refusal then may name.
     A document that could not be checked within ``seconds`` (for all of them together) passes:
@@ -163,6 +165,7 @@ async def require_files(  # noqa: PLR0913 -- what is checked and how strictly
             "Paperless leaves a document whose file is missing out of a merge without saying so."
         )
         raise PaperlessMcpError(message, hint="Try again in a moment.")
+    return checked
 
 
 def text_state(document_id: int, version_id: int, text: str) -> str:

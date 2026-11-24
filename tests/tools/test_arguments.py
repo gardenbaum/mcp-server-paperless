@@ -1034,6 +1034,7 @@ async def test_the_pdf_tools_take_every_option() -> None:
     await sweep(
         "rotate_documents",
         {"document_ids": [1], "degrees": 90, "wait_seconds": 0},
+        ("degrees", "use_original_files"),
         prepare=with_pages,
     )
     await sweep(
@@ -1044,7 +1045,7 @@ async def test_the_pdf_tools_take_every_option() -> None:
             "delete_originals": True,
             "wait_seconds": 0,
         },
-        ("delete_originals",),
+        ("delete_originals", "archive_fallback", "use_original_files"),
         prepare=with_pages,
     )
     await sweep(
@@ -1067,14 +1068,19 @@ async def test_the_pdf_tools_take_every_option() -> None:
     await sweep(
         "edit_pdf",
         {"document_id": 1, "pages": [{"page": 1, "rotate": 90}, {"page": 2}], "wait_seconds": 0},
+        ("output", "keep_metadata"),
         prepare=with_pages,
     )
     await sweep(
-        "delete_pages", {"document_id": 1, "pages": "1", "wait_seconds": 0}, prepare=with_pages
+        "delete_pages",
+        {"document_id": 1, "pages": "1", "wait_seconds": 0},
+        ("output",),
+        prepare=with_pages,
     )
     await sweep(
         "remove_document_password",
         {"document_id": 1, "password": "pw", "wait_seconds": 0},
+        ("output", "keep_metadata"),
         prepare=with_pages,
     )
     await sweep(

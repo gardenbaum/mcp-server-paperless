@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, override
 import pytest
 from fakes.accounts import ADMIN
 from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
+from harness import pdf_service
 
 from mcp_server_paperless.domain.errors import (
     NotFound,
@@ -24,15 +25,14 @@ from mcp_server_paperless.services.documents import (
 )
 from mcp_server_paperless.services.files import FileService
 from mcp_server_paperless.services.pages import PageService
-from mcp_server_paperless.services.pdf import PdfService
 from mcp_server_paperless.services.sharing import SharingService
-from mcp_server_paperless.services.tasks import TaskService
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from mcp_server_paperless.domain.documents import DocumentFile, FileMetadata, FileVersion
     from mcp_server_paperless.domain.rendering import Rendered, RenderRequest
+    from mcp_server_paperless.services.pdf import PdfService
 
 pytestmark = pytest.mark.anyio
 
@@ -63,7 +63,7 @@ def files(fake: FakePaperless) -> FileService:
 
 
 def pdf(fake: FakePaperless) -> PdfService:
-    return PdfService(fake, fake, TaskService(fake), web_url=WEB)
+    return pdf_service(fake)
 
 
 def sharing(fake: FakePaperless) -> SharingService:
@@ -391,7 +391,7 @@ async def test_a_missing_file_is_refused_also_if_others_could_not_be_checked(
     *, certain: bool
 ) -> None:
     with pytest.raises(NotFound) as raised:
-        await require_files(
+        _ = await require_files(
             unsure(LOST, failing={WHOLE}),
             dict.fromkeys([WHOLE, LOST]),
             "original",
@@ -409,13 +409,13 @@ async def test_the_check_is_bounded_and_keeps_what_it_saw() -> None:
     fake = unsure(LOST)
     fake.stuck = frozenset({WHOLE, ALSO})
 
-    await require_files(fake, dict.fromkeys([WHOLE, ALSO]), "original", seconds=0.05)
+    _ = await require_files(fake, dict.fromkeys([WHOLE, ALSO]), "original", seconds=0.05)
     with pytest.raises(PaperlessMcpError, match=f"documents {WHOLE} and {ALSO} could not"):
-        await require_files(
+        _ = await require_files(
             fake, dict.fromkeys([WHOLE, ALSO]), "original", certain=True, seconds=0.05
         )
     with pytest.raises(NotFound, match=f"document {LOST} "):
-        await require_files(fake, dict.fromkeys([WHOLE, LOST]), "original", seconds=0.05)
+        _ = await require_files(fake, dict.fromkeys([WHOLE, LOST]), "original", seconds=0.05)
 
     assert fake.running == 0
     assert CHECK_SECONDS == 30
@@ -425,6 +425,6 @@ async def test_the_documents_are_checked_a_few_at_a_time() -> None:
     fake = unsure()
     fake.state.documents += [FakeDocument(id=n, title=f"doc {n}") for n in range(80, 100)]
 
-    await require_files(fake, dict.fromkeys(range(80, 100)), "original")
+    _ = await require_files(fake, dict.fromkeys(range(80, 100)), "original")
 
     assert fake.most == CHECKS_AT_ONCE

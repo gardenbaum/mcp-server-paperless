@@ -22,6 +22,7 @@ from fakes.paperless import (
     seeded,
 )
 from fakes.sharing import FakeShareBundle
+from harness import pdf_service
 
 from mcp_server_paperless.domain.bulk import (
     AddTags,
@@ -55,11 +56,9 @@ from mcp_server_paperless.services.document_edits import DocumentEditor
 from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.mail import MailService
 from mcp_server_paperless.services.notes import NoteService
-from mcp_server_paperless.services.pdf import PdfService
 from mcp_server_paperless.services.permissions import PermissionService
 from mcp_server_paperless.services.removal import DocumentRemoval
 from mcp_server_paperless.services.sharing import SharingService
-from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
 from mcp_server_paperless.services.trash import TrashService
@@ -69,6 +68,8 @@ from mcp_server_paperless.services.workflows import WorkflowService
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+
+    from mcp_server_paperless.services.pdf import PdfService
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-44")]
 
@@ -367,7 +368,7 @@ def other_pages(state: FakeState) -> None:
 def split(state: FakeState) -> Callable[[], Awaitable[object]]:
     state.documents = [FakeDocument(id=1, title="Scan", page_count=4)]
     fake, _ = fakes(state)
-    service = PdfService(fake, fake, TaskService(fake), web_url=WEB)
+    service = pdf_service(fake)
     return lambda: service.split(1, ["1", "2"], output="replace_original")
 
 
@@ -401,7 +402,7 @@ def pdf_call(
 ) -> Callable[[FakeState], Callable[[], Awaitable[object]]]:
     def make(state: FakeState) -> Callable[[], Awaitable[object]]:
         fake = scans(state)
-        service = PdfService(fake, fake, TaskService(fake), web_url=WEB)
+        service = pdf_service(fake)
         return lambda: start(service)
 
     return make

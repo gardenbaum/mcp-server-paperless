@@ -182,6 +182,8 @@ MAIL_CONFIRMING = frozenset({"update_mail_account", "create_mail_rule", "update_
 ADMIN_CONFIRMING = frozenset({"create_user", "create_group", "run_task"})
 # Upload tools, which are not destructive: they need confirm for a file Paperless already holds.
 UPLOAD_CONFIRMING = frozenset({"upload_document", "upload_document_version"})
+# A pdf tool that is not destructive but needs confirm for showing an older file again (PLMCP-79).
+PDF_CONFIRMING = frozenset({"rotate_documents"})
 # Names that hold a secret. Nothing of the sort may be in a tool's output (decision-18), and an
 # input that takes one must be write-only.
 CREDENTIAL_WORDS = (
@@ -403,6 +405,26 @@ async def test_the_upload_tools_take_confirm_and_are_not_destructive() -> None:
     assert {t.name for t in tools} >= UPLOAD_CONFIRMING
     assert unconfirmed(tools, UPLOAD_CONFIRMING) == []
     assert {t.name for t in tools if destructive(t)}.isdisjoint(UPLOAD_CONFIRMING)
+
+
+async def test_rotating_takes_confirm_and_is_not_destructive() -> None:
+    tools = await server_tools()
+
+    assert {t.name for t in tools} >= PDF_CONFIRMING
+    assert unconfirmed(tools, PDF_CONFIRMING) == []
+    assert {t.name for t in tools if destructive(t)}.isdisjoint(PDF_CONFIRMING)
+
+
+@pytest.mark.decision("decision-60")
+async def test_every_writing_pdf_tool_has_a_preview() -> None:
+    tools = [t for t in await server_tools() if "pdf" in t.tags]
+
+    assert len(tools) == 7
+    for tool in tools:
+        properties = cast("dict[str, dict[str, object]]", tool.parameters["properties"])
+        assert properties["dry_run"]["default"] is False
+        output = cast("dict[str, object]", tool.output_schema)
+        assert {"dry_run", "plan"} <= set(cast("dict[str, object]", output["properties"]))
 
 
 @pytest.mark.decision("decision-26")

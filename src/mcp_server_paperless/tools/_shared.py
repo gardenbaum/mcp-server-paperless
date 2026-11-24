@@ -364,8 +364,9 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
-    # Not destructive: the rotated file becomes a new version and the older one stays. Not
-    # idempotent: every call adds a version (and turns the pages further).
+    # Not destructive: the rotated file becomes a new version and the older one stays; showing an
+    # older file again needs confirm all the same. Not idempotent: every call adds a version (and
+    # turns the pages further).
     "rotate_documents": ToolAnnotations(
         title="Rotate documents",
         read_only_hint=False,
