@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from fakes.accounts import ADMIN
-from fakes.paperless import FakeDocument, FakeFile, FakePaperless, FakeState, seeded
+from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
 
 from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError
 from mcp_server_paperless.services.admin_system import SystemAdmin
@@ -176,9 +176,6 @@ async def test_an_e_mail_takes_the_file_of_the_upload_not_of_the_newest_version(
     [document] = [d for d in state.documents if d.id == LOST]
     newest = document.versions[0].model_copy(update={"id": 99, "is_root": False})
     document.versions.insert(0, newest)
-    document.version_files = {
-        number: FakeFile(document.original, None, "", document.mime_type) for number in (LOST, 99)
-    }
     state.missing.add((99, "original"))
     fake = FakePaperless(state, user=ADMIN[0], allow_writes=True)
 

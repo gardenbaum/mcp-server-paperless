@@ -3492,7 +3492,7 @@ class FakePaperless:
         if wanted in document.version_files:
             return document.version_files[wanted]
         stubs = [d for d in self.state.trash if d.id == wanted and d.root_id == document.id]
-        if not stubs and wanted != document.versions[0].id:
+        if not stubs and wanted not in {v.id for v in document.versions}:
             raise unseen_version(document.id, wanted)
         shown = stubs[0] if stubs else document
         return FakeFile(shown.original, shown.archive, shown.content, shown.mime_type)
