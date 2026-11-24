@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T13:42:49Z'
-updated_date: '2026-11-24T19:07:31Z'
+updated_date: '2026-11-24T19:55:39Z'
 labels:
   - pdf
 dependencies:
@@ -25,16 +25,16 @@ A date custom field hides the consume_file task of a rotated document, so rotate
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 rotate_documents reports a finished rotation also when a date field hides its task, by comparing the newest version before and after
-- [ ] #2 A version made by somebody else meanwhile is never taken for the rotation
-- [ ] #3 Contract, service and tool tests
+- [x] #1 rotate_documents reports a finished rotation also when a date field hides its task, by comparing the newest version before and after
+- [x] #2 A version made by somebody else meanwhile is never taken for the rotation
+- [x] #3 Contract, service and tool tests
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -58,4 +58,6 @@ Local: changed lines 100 % covered, 16 hand mutations of the conditions killed. 
 Independent review of 206f5d3, all points fixed test first: (1) what could be this request's own, on any of its documents, settles no earlier rotation; (2) nor does a version of a document with a listed upload under that name; (3) one list of versions a look, file names and histories read once (history only when every version is there), a look is cut at the bound, one last look of at most 10 s, the time taken is reported; (4) a started rotation without end has its own sentence, no time limit because none can be proven safe (decision-74); (5) rotations that ended while a counted one ran are counted; (6) the race of the last read is closed by (1). The fake models unsettled earlier rotations; contract tests are exact. Mutants by hand: at the first pass 5 survived (first-file check, own row among the operations, two boundaries, the cut at the bound); tests were added and all five are killed now. The first round's 16 left one out (it hit another function); killed, too.
 
 Second review of 9fef620. Correction of the note above: point (6) was NOT closed by (1); a rotation of another document, or an upload, that came while the versions were counted could settle an earlier rotation. Now tasks and operations are read again after the changed documents, and whatever came meanwhile is a doubt. Also: on every requested document nothing newer than the version shown before counts (clocks of two hosts); hidden and before are fields of RotationSearch. Operation None is no rotation any more: in the 3.5.1 source only execute_bulk_operation gives a bulk_update row an owner, always with operation and document_count (before_task_publish_handler); a rotation without a count stays unsettled. Surface snapshot: one more sentence in rotate_documents (10 seconds).
+
+Live evidence: full hosted E2E 45465564080 (9fef620) and 45470371956 (9952784) green. Three review rounds, the last without a code finding. The restrictions of decision-74 are presented to the owner; main with PLMCP-80.3 merged.
 <!-- SECTION:NOTES:END -->
