@@ -7926,7 +7926,7 @@
           'duplicates': dict({
             'anyOf': list([
               dict({
-                'description': 'The duplicates of a document, those in the trash last.',
+                'description': 'Duplicates, those in the trash last.',
                 'properties': dict({
                   'documents': dict({
                     'items': dict({
@@ -8050,7 +8050,7 @@
                         'differs': dict({
                           'default': list([
                           ]),
-                          'description': "Known fields whose value differs from the document's.",
+                          'description': "Known fields that differ from the document's.",
                           'items': dict({
                             'type': 'string',
                           }),
@@ -8107,7 +8107,7 @@
                             }),
                           ]),
                           'default': None,
-                          'description': 'same_file: identical original uploads; archive: only an archive file (the PDF Paperless made) is identical to a file of the other; null: unknown.',
+                          'description': 'same_file: identical original uploads; archive: only an archive file (the PDF Paperless made) is; null: unknown.',
                         }),
                         'mime_type': dict({
                           'anyOf': list([
@@ -23707,7 +23707,7 @@
           'duplicates': dict({
             'anyOf': list([
               dict({
-                'description': 'The duplicates of a document, those in the trash last.',
+                'description': 'Duplicates, those in the trash last.',
                 'properties': dict({
                   'documents': dict({
                     'items': dict({
@@ -23831,7 +23831,7 @@
                         'differs': dict({
                           'default': list([
                           ]),
-                          'description': "Known fields whose value differs from the document's.",
+                          'description': "Known fields that differ from the document's.",
                           'items': dict({
                             'type': 'string',
                           }),
@@ -23888,7 +23888,7 @@
                             }),
                           ]),
                           'default': None,
-                          'description': 'same_file: identical original uploads; archive: only an archive file (the PDF Paperless made) is identical to a file of the other; null: unknown.',
+                          'description': 'same_file: identical original uploads; archive: only an archive file (the PDF Paperless made) is; null: unknown.',
                         }),
                         'mime_type': dict({
                           'anyOf': list([
@@ -29379,7 +29379,7 @@
           'duplicates': dict({
             'anyOf': list([
               dict({
-                'description': 'The duplicates of a document, those in the trash last.',
+                'description': 'Duplicates, those in the trash last.',
                 'properties': dict({
                   'documents': dict({
                     'items': dict({
@@ -29503,7 +29503,7 @@
                         'differs': dict({
                           'default': list([
                           ]),
-                          'description': "Known fields whose value differs from the document's.",
+                          'description': "Known fields that differ from the document's.",
                           'items': dict({
                             'type': 'string',
                           }),
@@ -29560,7 +29560,7 @@
                             }),
                           ]),
                           'default': None,
-                          'description': 'same_file: identical original uploads; archive: only an archive file (the PDF Paperless made) is identical to a file of the other; null: unknown.',
+                          'description': 'same_file: identical original uploads; archive: only an archive file (the PDF Paperless made) is; null: unknown.',
                         }),
                         'mime_type': dict({
                           'anyOf': list([

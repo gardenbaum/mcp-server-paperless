@@ -494,12 +494,12 @@ class DuplicateDocument(BaseModel):
         Field(
             description=(
                 "same_file: identical original uploads; archive: only an archive file (the PDF "
-                "Paperless made) is identical to a file of the other; null: unknown."
+                "Paperless made) is; null: unknown."
             )
         ),
     ] = None
     differs: Annotated[
-        tuple[str, ...], Field(description="Known fields whose value differs from the document's.")
+        tuple[str, ...], Field(description="Known fields that differ from the document's.")
     ] = ()
     created: date | None = None
     added: datetime | None = None
@@ -520,7 +520,7 @@ class DuplicateDocument(BaseModel):
 
 
 class DuplicateList(BaseModel):
-    """The duplicates of a document, those in the trash last."""
+    """Duplicates, those in the trash last."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
