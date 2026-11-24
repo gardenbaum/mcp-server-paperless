@@ -650,8 +650,8 @@ async def test_a_trash_with_fewer_rows_than_its_count_is_a_failed_check() -> Non
 
 
 UNREAD = (
-    "Trash: neither its documents nor its deleted versions were checked, because it is larger than "
-    "2 MiB with the text of its documents."
+    "Trash: neither its documents nor its deleted versions were checked, because its entries "
+    "(the first 500) with the text of their documents are larger than 2 MiB."
 )
 LIMIT = 2 * MIB
 

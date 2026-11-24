@@ -66,8 +66,8 @@ CAPPED: Final = (
     "changed meanwhile may be missed."
 )
 TRASH_UNREAD: Final = (
-    "Trash: neither its documents nor its deleted versions were checked, because it is larger than "
-    "{mib} MiB with the text of its documents."
+    "Trash: neither its documents nor its deleted versions were checked, because its entries "
+    "(the first {entries}) with the text of their documents are larger than {mib} MiB."
 )
 UNNAMED: Final = "{more} more documents with the same file are not named."
 REJECTED_FOR: Final = "Paperless rejected the file: it already holds the same file, {where}."
@@ -511,7 +511,8 @@ class DuplicateFinder:
         return listed.entries, listed.count
 
     def _trash_unread(self) -> str:
-        return TRASH_UNREAD.format(mib=self._bounds.trash_bytes // MIB)
+        bounds = self._bounds
+        return TRASH_UNREAD.format(entries=bounds.trash_entries, mib=bounds.trash_bytes // MIB)
 
     async def _count_trash(self) -> int | None:
         """How many entries the trash has; None if even one is too large to read."""

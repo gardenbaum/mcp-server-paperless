@@ -30,8 +30,8 @@ pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-52")]
 TOOLS: Final = ("upload_document", "upload_document_version", "upload_documents")
 NEW: Final = b"%PDF-1.4 a new file"
 GAP: Final = (
-    "Trash: neither its documents nor its deleted versions were checked, because it is larger than "
-    "64 MiB with the text of its documents."
+    "Trash: neither its documents nor its deleted versions were checked, because its entries "
+    "(the first 500) with the text of their documents are larger than 64 MiB."
 )
 
 

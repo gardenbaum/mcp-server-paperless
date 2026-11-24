@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T07:06:13Z'
-updated_date: '2026-11-24T07:20:29Z'
+updated_date: '2026-11-24T07:23:34Z'
 labels: []
 dependencies: []
 priority: high
@@ -45,4 +45,6 @@ Above 64 MiB of trash the duplicate check fails and nothing can be uploaded (dec
 Red before the code at service, batch, adapter, contract (fake) and tool level (18 tests), then green. decision-52 (51 belongs to PLMCP-86). The old service test that a trash over the limit is a failed check is replaced by the gap tests (the part decision-52 supersedes). No snapshot changes: tool descriptions are unchanged (they already point to duplicates.not_checked). No E2E or live run locally.
 
 Full local run: 7371 passed; diff-cover 100 % (18 lines). Not run: the live side of the contract test (CI).
+
+Review of 6745069: m1 to m3 added to decision-52 as consequences; m4: the sentence says that the first 500 entries are meant.
 <!-- SECTION:NOTES:END -->

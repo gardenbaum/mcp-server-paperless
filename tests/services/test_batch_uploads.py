@@ -484,7 +484,7 @@ async def test_a_trash_too_large_to_check_is_named_once_for_the_call(root: Path)
 
     assert [f.status for f in batch.files] == ["uploaded", "uploaded"]
     assert [g for g in batch.not_checked if g.startswith("Trash: neither")] == [
-        TRASH_UNREAD.format(mib=64)
+        TRASH_UNREAD.format(entries=500, mib=64)
     ]
 
 
