@@ -312,8 +312,8 @@ class BulkNotes:
             return Ended(self._row(item, "unknown", why=why), stopped_by(second), silent=silent)
         why = f"{error.message} Read again: the note is"
         if there is not None:
-            return Ended(self._row(item, "added", there, why=f"{why} there."))
-        if silent:
+            row = self._row(item, "added", there, why=f"{why} there.")
+        elif silent:
             row = self._row(item, "unknown", why=f"{why} not there, but may still appear.")
         else:
             row = self._row(item, "failed", why=f"{why} not there.")

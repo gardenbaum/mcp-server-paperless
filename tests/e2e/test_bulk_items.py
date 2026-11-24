@@ -368,6 +368,10 @@ async def test_one_hundred_documents_take_a_few_calls_and_each_ends_in_time(
         )
         ids = [num(n) for n in cast("list[object]", found["selected_ids"])]
         assert len(ids) == 100
+        # As for a consumed document, the name Paperless gives a file: without one it takes a path
+        # that answers a note with the list from before.
+        name = "Document.objects.filter(pk=n).update(filename=f'{n:07}.txt')"
+        shell(f"[{name} for n in {ids}]")
         try:
             left = ids
             for _ in range(10):

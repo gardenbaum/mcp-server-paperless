@@ -30,7 +30,7 @@ class Ended[R]:
     Attributes:
         row: What became of it.
         stop: Why nothing more may be asked of Paperless; empty if it may.
-        silent: Whether an answer was lost and it is not known what became of the document.
+        silent: Whether an answer was lost.
     """
 
     row: R

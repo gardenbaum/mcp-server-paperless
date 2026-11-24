@@ -27,7 +27,12 @@ from mcp_server_paperless.domain.bulk_items import (
     UpdateStatus,
     ValueChange,
 )
-from mcp_server_paperless.domain.documents import DocumentPatch, DocumentState, Ref
+from mcp_server_paperless.domain.documents import (
+    CustomFieldValue,
+    DocumentPatch,
+    DocumentState,
+    Ref,
+)
 from mcp_server_paperless.domain.errors import (
     Ambiguous,
     AnswerTooLarge,
@@ -100,10 +105,13 @@ BY_NOW: Final = "By the time it was read again it was as asked."
 NOT_YET: Final = (
     "Read again: it is not, or only partly (see changes), as asked, and may still become so."
 )
-UNLINKED: Final = "Links to it may be gone on the documents it linked to."
+UNLINKED: Final = "Links to it may be gone on document {ids}."
 LINK_NEEDS: Final = "A document link needs change permission on the linked document."
 AGAIN: Final = "Pass these items again once the reason is gone; what is done stays as it is."
-GIVEN_AWAY: Final = "Leave out what was given away: you may no longer see or change it."
+GIVEN_AWAY: Final = (
+    "Leave out document {ids}, which was or may have been given away: you may no longer see or "
+    "change it."
+)
 TOO_SLOW: Final = (
     "Nothing was changed: checking the documents and their links took longer than "
     f"{RUN_SECONDS:g} seconds."
@@ -113,6 +121,8 @@ NOT_OWNER: Final = "Only its owner may change the owner."
 MAX_NUMBER: Final = 2**32 - 1
 GO_ON: Final = "Pass the items in left again; what is done stays as it is."
 CORRECT: Final = "Correct these items or leave them out; the others were not changed."
+# Characters of a refusal around what is wrong with an item, at most.
+ITEM_CHARS: Final = 100
 # What was sent to Paperless, or would be.
 SENT: Final[frozenset[UpdateStatus]] = frozenset({"would_change", "changed", "unknown"})
 # What is about one item and is named with it; anything else ends the call.
@@ -338,23 +348,19 @@ class BulkUpdates:
             try:
                 items.append(_Item(state, await self._editor.plan(edit, state)))
             except ABOUT_ITEM as error:
-                hint = [f"Hint: {cut(error.hint)}"] if error.hint else []
-                wrong[state.id] = [cut(error.message), *hint]
+                wrong[state.id] = [error.describe()]
         call = await self._call(items)
         for number, text in [
             *_number_conflicts(items),
             *await self._link_conflicts(call, until),
             *await self._owner_conflicts(call),
         ]:
-            wrong.setdefault(number, []).append(cut(text))
+            wrong.setdefault(number, []).append(text)
         if wrong:
-            told = "; ".join(
-                f"document {n}: {cut(' '.join(wrong[n]), 2 * WHY_CHARS)}" for n in ids if n in wrong
-            )
             verb = "is" if len(wrong) == 1 else "are"
             message = (
                 f"Nothing was changed: {len(wrong)} of {count_documents(len(ids))} {verb} "
-                f"refused. {told}"
+                f"refused. {_all({n: ' '.join(wrong[n]) for n in ids if n in wrong})}"
             )
             raise Validation(message, hint=CORRECT)
         return call
@@ -459,26 +465,33 @@ class BulkUpdates:
         user = await self._reader.get_signed_in()
         if user is not None and user.is_superuser:
             return []
-        found: list[tuple[int, str]] = []
-        away: set[int] = set()
-        for item in call.items:
-            patch = call.patches[item.id]
-            final = _final(item.state, patch, call.links)
-            for number, targets in sorted(final.items()):
-                lost = ", ".join(map(str, sorted(targets & away)))
-                if lost:
-                    name = quoted(call.names.of("custom_field", number))
-                    text = (
-                        f"{name} links to document {lost}, which an earlier item of this call "
-                        "gives away; put the link first."
-                    )
-                    found.append((item.id, text))
-            if "owner" not in patch.model_fields_set:
-                continue
-            if user is not None and item.state.owner not in {None, user.id}:
-                found.append((item.id, NOT_OWNER))
-            if patch.owner is not None and (user is None or patch.owner != user.id):
-                away.add(item.id)
+        found = [
+            (item.id, NOT_OWNER)
+            for item in call.owners
+            if user is not None and item.state.owner not in {None, user.id}
+        ]
+        away = {
+            item.id
+            for item in call.owners
+            if (owner := call.patches[item.id].owner) is not None
+            and (user is None or owner != user.id)
+        }
+        late = _links_to_given_away(call, call.items, away)
+        named = {item.id for item, _, _ in late}
+        first = sorted(call.items, key=lambda item: item.id not in named)
+        advice = (
+            "make this change in an earlier call"
+            if _links_to_given_away(call, first, away)
+            else "put this item first"
+        )
+        for item, number, targets in late:
+            name = quoted(call.names.of("custom_field", number))
+            lost = ", ".join(map(str, sorted(targets)))
+            text = (
+                f"{name} links to document {lost}, which an earlier item of this call gives away; "
+                f"{advice}."
+            )
+            found.append((item.id, text))
         return found
 
     async def _titled(
@@ -650,7 +663,7 @@ class BulkUpdates:
             return Ended(self._row(item, "unknown", why, changes=seen), silent=True)
         row = self._changed(item, call, before, after, patch)
         why = f"{error.message} Read again: it is as asked."
-        return Ended(row.model_copy(update={"why": why}))
+        return Ended(row.model_copy(update={"why": why}), silent=True)
 
     def _changed(
         self,
@@ -720,14 +733,15 @@ class BulkUpdates:
         if created:
             listed = ", ".join(quoted(name) for name in created)
             details.append(f"Tags created: {listed}.")
+        given = {item.id for item in call.owners}
+        gone = [row.id for row in report.documents if row.id in given and row.status in SENT]
+        away = [GIVEN_AWAY.format(ids=", ".join(map(str, gone)))] if gone else []
         if not changed and why and not any(row.changes for row in bad):
-            message = f"No document is known to be changed; {' '.join([lacking, *details])}"
+            message = f"No document is known to be changed; {' '.join([lacking, *details, *away])}"
             raise PaperlessMcpError(message, hint=READ_AGAIN)
         done = f"Changed {count_documents(changed)}."
         last = AGAIN if why else GO_ON
-        given = {item.id for item in call.owners}
-        away = any(row.id in given and row.status == "changed" for row in report.documents)
-        message = " ".join([lacking, done, *details, last, *([GIVEN_AWAY] if away else [])])
+        message = " ".join([lacking, done, *details, last, *away])
         return _bounded(report.model_copy(update={"message": message}))
 
     def _built(
@@ -766,6 +780,19 @@ def _scalar(state: DocumentState, name: str) -> object:
 def _json(value: object) -> JsonValue:
     """A plain field as JSON; dates in ISO form."""
     return value.isoformat() if isinstance(value, date) else cast("JsonValue", value)
+
+
+def _all(wrong: Mapping[int, str]) -> str:
+    """Every wrong item with what is wrong, in full unless that is larger than an answer may be."""
+    if sum(len(text) + ITEM_CHARS for text in wrong.values()) <= MAX_ANSWER - ITEM_CHARS:
+        room = MAX_ANSWER
+    else:
+        room = MAX_ANSWER // len(wrong) - 2 * ITEM_CHARS
+    told = {
+        n: text if len(text) <= room else f"{text[:room]}… ({len(text) - room} more characters)"
+        for n, text in wrong.items()
+    }
+    return "; ".join(f"document {n}: {text}" for n, text in told.items())
 
 
 def _spelled(name: str, also: Sequence[str]) -> str:
@@ -810,6 +837,34 @@ def _number_conflicts(items: Sequence[_Item]) -> list[tuple[int, str]]:
     return found
 
 
+def _links_to_given_away(
+    call: _Call, order: Sequence[_Item], away: set[int]
+) -> list[tuple[_Item, int, set[int]]]:
+    """The link fields an item would send with a document in ``away`` that was changed before it.
+
+    Links are mirrored as the items are made in this ``order``, so what an earlier item already
+    linked back is not sent again, unless another custom field of the document is.
+    """
+    found: list[tuple[_Item, int, set[int]]] = []
+    fields = {item.id: _values(item.state) for item in order}
+    gone: set[int] = set()
+    for item in order:
+        now = item.state.model_copy(
+            update={
+                "custom_fields": tuple(
+                    CustomFieldValue(field=n, value=v) for n, v in fields[item.id].items()
+                )
+            }
+        )
+        patch = item.plan.patch(now, call.placeholders)
+        for number, targets in sorted(_final(now, patch, call.links).items()):
+            if targets & gone:
+                found.append((item, number, targets & gone))
+        _mirror(now, patch, call.links, fields)
+        gone |= away & {item.id}
+    return found
+
+
 def _contradiction(item: _Item, other: _Item, number: int, name: str) -> list[tuple[int, str]]:
     """Both items, if one links to a document whose own item sets that field without the link."""
     if number not in other.fields or item.id in linked(other.plan.sets.get(number)):
@@ -836,10 +891,11 @@ def _refusal(
     if links & item.plan.sets.keys():
         why += f" {LINK_NEEDS}"
     final, have = _final(before, patch, links), _values(before)
-    if "owner" in patch.model_fields_set and any(
-        linked(have.get(number)) - {item.id} - targets for number, targets in final.items()
-    ):
-        why += f" {UNLINKED}"
+    dropped = {
+        n for number, targets in final.items() for n in linked(have.get(number)) - targets
+    } - {item.id}
+    if "owner" in patch.model_fields_set and dropped:
+        why += f" {UNLINKED.format(ids=', '.join(map(str, sorted(dropped))))}"
     return why
 
 

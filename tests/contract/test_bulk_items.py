@@ -142,12 +142,17 @@ async def test_a_document_in_the_trash_is_not_found(backend: Backend) -> None:
 async def test_a_note_is_stored_without_the_whitespace_around_it(backend: Backend) -> None:
     ports, document = backend.admin, backend.new_document()
 
-    note = await ports.document_writes.add_note(document, "  one\n two \n")
+    older = await ports.document_writes.add_note(document, "older")
 
-    assert note.note == "one\n two"
-    assert await ports.documents.list_document_notes(document) == (note,)
+    # Inside, the text stays as it is: line ends, tabs, doubled spaces, markup, decomposed letters.
+    text = "one\r\n two\t <b>x</b> & e\u0301  \u202f end"
+    note = await ports.document_writes.add_note(document, f"\u00a0 {text} \n")
+
+    assert note.note == text
+    assert note.id > older.id
+    assert await ports.documents.list_document_notes(document) == (older, note)
     [row] = await ports.documents.read_rows([document], ["notes"], max_bytes=SIZE)
-    assert row.notes == (note,)
+    assert row.notes == (older, note)
 
 
 CHANGER = frozenset({"view_document", "change_document", "view_customfield", "view_uisettings"})

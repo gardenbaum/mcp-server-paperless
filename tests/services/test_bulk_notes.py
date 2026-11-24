@@ -607,14 +607,14 @@ async def test_a_lost_answer_that_cannot_be_looked_up_stays_unknown(
     assert report.documents[0].why == f"{error.message} The notes could not be read again: gone"
 
 
-async def test_lost_answers_that_were_looked_up_do_not_stop_the_call() -> None:
+async def test_two_lost_answers_in_a_row_stop_also_if_both_were_looked_up() -> None:
     setup = Setup(scans=4)
     setup.fake.write_fails = dict.fromkeys(range(101, 105), TIMEOUT)
     setup.fake.applied = {101, 102, 103, 104}
 
     report = await setup.one(document_ids=(101, 102, 103, 104))
 
-    assert report.counts == {"added": 4}
+    assert report.counts == {"added": 2, "not_started": 2}
 
 
 async def test_two_lost_answers_in_a_row_stop_the_call() -> None:

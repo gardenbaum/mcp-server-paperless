@@ -983,7 +983,7 @@ async def test_a_refused_owner_change_may_have_taken_links_off() -> None:
     error = await setup.failed(item(101, owner="e2e-reader", remove_custom_fields=[LINK]))
     other = await setup.failed(item(101, owner="e2e-reader"))
 
-    assert "Links to it may be gone on the documents it linked to." in error.message
+    assert "Links to it may be gone on document 102." in error.message
     assert "Links" not in other.message
 
 
@@ -1068,14 +1068,14 @@ async def test_two_lost_answers_that_are_not_in_a_row_do_not_stop() -> None:
     assert report.counts == {"unknown": 2, "changed": 3}
 
 
-async def test_lost_answers_that_were_looked_up_do_not_stop_the_call() -> None:
+async def test_two_lost_answers_in_a_row_stop_also_if_both_were_looked_up() -> None:
     setup = Setup()
     setup.fake.write_fails = dict.fromkeys(range(101, 106), TIMEOUT)
     setup.fake.applied = {*range(101, 106)}
 
     report = await setup.run(*(named(n) for n in range(101, 106)))
 
-    assert report.counts == {"changed": 5}
+    assert report.counts == {"changed": 2, "not_started": 3}
 
 
 async def test_reads_that_fail_write_nothing_and_count_as_lost_answers() -> None:
@@ -1319,14 +1319,37 @@ async def test_the_reasons_a_result_repeats_are_limited_those_of_an_error_are_no
 # --- the review round
 
 
-async def test_a_refusal_of_one_hundred_long_values_is_bounded_and_names_every_item() -> None:
+async def test_a_refusal_larger_than_an_answer_is_cut_says_so_and_names_every_item() -> None:
     setup = Setup(writes=False, count=100)
 
     refusal = await setup.refused(*(item(100 + n, tags_add=["x" * 5000]) for n in range(1, 101)))
 
-    assert len(refusal.message) < 70_000
-    assert all(f"document {100 + n}: " in refusal.message for n in range(1, 101))
-    assert "create_missing_tags=true" in refusal.message
+    assert len(refusal.message) <= MAX_ANSWER
+    assert all(f"document {100 + n}: No tag is named" in refusal.message for n in range(1, 101))
+    assert refusal.message.count(" more characters)") == 100
+
+
+async def test_an_ordinary_refusal_is_told_in_full_as_a_single_update_tells_it() -> None:
+    setup = Setup(writes=False)
+    setup.state.tags += [FakeTag(id=500 + n, name="Bill " * 14 + "Bill", owner=2) for n in range(8)]
+
+    refusal = await setup.refused(item(101, tags_add=["bill " * 15]), named(102))
+
+    assert all(f"(id {500 + n})" in refusal.message for n in range(8))
+    assert "Pass the id of the one you mean." in refusal.message
+    assert "…" not in refusal.message
+
+
+async def test_a_single_long_refusal_is_cut_only_beyond_the_answer() -> None:
+    setup = Setup(writes=False)
+
+    whole = await setup.refused(item(101, tags_add=["x" * 90_000]))
+    cut = await setup.refused(item(101, tags_add=["x" * 200_000]), item(102, correspondent="no"))
+
+    assert "x" * 90_000 in whole.message
+    assert len(cut.message) <= MAX_ANSWER
+    assert "document 102: No correspondent is named 'no'." in cut.message
+    assert "more characters)" in cut.message
 
 
 async def test_many_contradictions_of_one_item_are_bounded_too() -> None:
@@ -1409,7 +1432,7 @@ async def test_a_link_to_a_document_an_earlier_item_gives_away_is_refused() -> N
 
     told = (
         f"document 102: '{LINK}' links to document 101, which an earlier item of this call gives "
-        "away; put the link first."
+        "away; put this item first."
     )
     assert told in refusal.message
 
@@ -1581,13 +1604,102 @@ async def test_created_tags_stay_when_every_document_changed_meanwhile() -> None
     assert [t.name for t in setup.state.tags].count("one") == 1
 
 
-async def test_what_is_left_says_that_a_document_given_away_cannot_be_repeated() -> None:
+async def test_what_is_left_names_the_documents_given_away() -> None:
     setup = Setup()
-    setup.fake.write_fails[102] = REFUSED[0]
+    setup.fake.write_fails[103] = REFUSED[0]
 
-    report = await setup.run(item(101, owner="e2e-reader"), named(102))
+    report = await setup.run(
+        item(101, owner="e2e-reader"), item(102, owner="e2e-reader"), named(103)
+    )
     other = await Setup().run(named(101), named(102))
 
-    told = "Leave out what was given away: you may no longer see or change it."
+    told = (
+        "Leave out document 101, 102, which was or may have been given away: you may no longer "
+        "see or change it."
+    )
     assert report.message.endswith(told)
-    assert told not in other.message
+    assert "given away" not in other.message
+
+
+async def test_an_owner_change_whose_outcome_is_unknown_is_named_too() -> None:
+    setup = Setup()
+    setup.fake.write_fails[101] = TIMEOUT
+    setup.fake.read_fails[101] = [None, NotFound("gone")]
+    report = await setup.run(item(101, owner="e2e-reader"), named(102))
+    alone = Setup()
+    alone.fake.write_fails[101] = TIMEOUT
+    alone.fake.read_fails[101] = [None, NotFound("gone")]
+
+    error = await alone.failed(item(101, owner="e2e-reader"))
+
+    told = "Leave out document 101, which was or may have been given away"
+    assert statuses(report) == {101: "unknown", 102: "changed"}
+    assert told in report.message
+    assert told in error.message
+
+
+async def test_an_owner_that_was_not_changed_is_not_called_given_away() -> None:
+    setup = Setup()
+    setup.fake.write_fails[101] = REFUSED[0]
+
+    report = await setup.run(item(101, owner="e2e-reader"), named(102))
+
+    assert "given away" not in report.message
+
+
+async def test_only_a_link_is_explained_by_what_a_link_needs() -> None:
+    setup = Setup()
+    setup.fake.write_fails[101] = PermissionDenied("The Paperless user may not.")
+
+    error = await setup.failed(item(101, custom_fields={TEXT: "x", LINK: []}))
+    other = await setup.failed(item(101, custom_fields={TEXT: "x"}))
+
+    assert "A document link needs" in error.message
+    assert "A document link needs" not in other.message
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+async def test_two_documents_given_away_that_link_each_other_are_changed(*, reverse: bool) -> None:
+    setup = Setup()
+    restricted(setup)
+    items = [
+        item(101, owner="e2e-reader", custom_fields={LINK: [102]}),
+        item(102, owner="e2e-reader", custom_fields={LINK: [101]}),
+    ]
+
+    report = await setup.run(*(reversed(items) if reverse else items))
+
+    assert report.counts == {"changed": 2}
+    assert (setup.links(101), setup.links(102)) == ([102], [101])
+    assert len([p for p in setup.fake.patches if p.custom_fields is not None]) == 1
+
+
+async def test_a_mirrored_link_that_would_be_sent_again_after_giving_away_is_refused() -> None:
+    # 102 gets the link back and then sends its whole list for the text.
+    setup = Setup(writes=False)
+    restricted(setup)
+    items = [
+        item(101, owner="e2e-reader", custom_fields={LINK: [102]}),
+        item(102, custom_fields={TEXT: "x"}),
+    ]
+
+    refusal = await setup.refused(*items)
+    fine = await setup.run(*reversed(items), dry_run=True)
+
+    assert "document 102: " in refusal.message
+    assert "gives away; put this item first." in refusal.message
+    assert fine.counts == {"would_change": 2}
+
+
+async def test_where_the_order_cannot_help_an_earlier_call_is_named() -> None:
+    setup = Setup(writes=False)
+    restricted(setup)
+    items = [
+        item(101, owner="e2e-reader", custom_fields={LINK: [102], TEXT: "x"}),
+        item(102, owner="e2e-reader", custom_fields={LINK: [101], TEXT: "x"}),
+    ]
+
+    for order in (items, items[::-1]):
+        refusal = await setup.refused(*order)
+        told = "which an earlier item of this call gives away; make this change in an earlier call."
+        assert told in refusal.message

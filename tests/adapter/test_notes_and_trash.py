@@ -243,10 +243,19 @@ async def test_the_new_note_is_the_newest_one_with_the_text_that_was_sent() -> N
     assert note.id == 3
 
 
-async def test_without_a_note_of_that_text_the_newest_note_is_taken() -> None:
-    # Paperless might store the text changed (it does not today); the write succeeded anyway.
+async def test_an_answer_without_a_note_of_that_text_is_unexpected() -> None:
+    # Never an old note: Paperless stores the text as it is, without the whitespace around it.
     client, _ = streaming(lambda _: httpx2.Response(200, json=[FIRST, SECOND]))
 
-    note = await PaperlessDocumentWriter(client).add_note(1, "text that was normalised")
+    with pytest.raises(PaperlessMcpError, match="unexpected response") as raised:
+        _ = await PaperlessDocumentWriter(client).add_note(1, "a third note")
+
+    assert "may have been applied" in (raised.value.hint or "")
+
+
+async def test_the_whitespace_paperless_drops_around_a_note_is_no_other_text() -> None:
+    client, _ = streaming(lambda _: httpx2.Response(200, json=[FIRST, SECOND]))
+
+    note = await PaperlessDocumentWriter(client).add_note(1, "\n  second note\u00a0\t")
 
     assert note.id == 3

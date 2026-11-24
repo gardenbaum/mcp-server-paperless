@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:34Z'
-updated_date: '2026-11-24T17:01:55Z'
+updated_date: '2026-11-24T17:39:35Z'
 labels:
   - bulk
 dependencies:
@@ -76,4 +76,8 @@ update_document itself does not check the largest serial number (schema ge=0 onl
 Found by the hosted run of 7bb3b35: live contract tests passed; the test of 100 documents failed (update_documents 100 in 12.1 s; add_notes stopped after two answers that were lost but looked up as added). A looked-up success no longer counts as silence (decision-73); why the answer of the POST is unusable for documents without a file is not known, the test now prints it. Its cleanup left rows that referred to the documents; fixed.
 Deviations not listed before: different notes show the start of the first 20 only (of the rest their length; all bound); tag names cut to 60; truncation of answers above 100,000 characters (values to 200, then left out, then the message); an added note after a lost answer is told by its text, not its author; add_notes shows the first 80 characters of a single note and its length.
 24 and 11 mutants by hand, survivors got tests.
+
+Second review round (from 49a3ca9; the hosted full E2E of 49a3ca9, 45443967598, was green, with the silence rule that is now taken back).
+A: what an earlier item mirrors is simulated, so two documents given away that link each other are changed; a list that would be sent again after giving away is refused, and where no order helps an earlier call is named. B: my cuts at 300/600 characters shortened ordinary refusals and are gone; a refusal is told in full up to 100,000 characters. OPEN, owner: that bound, together with the 100,000 of the answer. C: two lost answers in a row stop again, also if looked up (design 3.3), in both services. Cause of the failed 100-document test: the bare rows had no filename, so Paperless's handler returns before refresh_from_db and the POST answers the notes prefetched before [read in the source]. The rows get the name Paperless itself would generate, so the handler refreshes and moves no file; that the generated name equals the stored one and nothing is moved is read, not run. D: an answer without a note of the sent text is unusable (add_note too); an adapter test that pinned the opposite is replaced. Paperless only strips the text (DRF CharField) [read in the source; contract test]. E, G: affected ids named. F: decision-73 says what the 40 s do not bound. An owner change that ended unknown is named as perhaps given away, in the error too. Mutants at LINK_NEEDS and six more: killed.
+Correction of the dialog sizes: 598 links with 120-character titles give 47,769 characters (11,207 was with short titles).
 <!-- SECTION:NOTES:END -->
