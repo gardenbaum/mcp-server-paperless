@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T07:06:15Z'
-updated_date: '2026-11-24T09:50:38Z'
+updated_date: '2026-11-24T09:55:28Z'
 labels: []
 dependencies: []
 priority: low
@@ -49,4 +49,6 @@ Not shown: the CI log does not record that port 35909 had been used before.
 Fix: every stub issuer has its own URL path, so a reused port never shares a cache key. This also covers the tests of left out fields and of the unreachable issuer. Product code unchanged: one configured provider per process.
 The new test binds a port just released; if another process took it in between it fails with EADDRINUSE, not silently.
 tests/test_oidc.py and tests/test_cli.py: 108 passed on 3.14.
+
+The two hosted failures: run 45287744869 (0b8ef1b, check 3.15, port 37267) and check (3.14) of 0bcd9aa on #124 on 2026-11-24 (port 35909). The message in the log ends in (ValueError); 'Missing required OIDC endpoints' is what FastMCP raises inside, from its source and the reproduction. Review of 2dec66f: code approved; with every stub on one fixed port the suite passes with the fix and fails without it.
 <!-- SECTION:NOTES:END -->
