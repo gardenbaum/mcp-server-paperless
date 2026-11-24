@@ -1,11 +1,11 @@
 ---
 id: PLMCP-78
 title: 'Complete the trash: look into, find, restore and empty'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:49Z'
-updated_date: '2026-11-24T09:12:01Z'
+updated_date: '2026-11-24T10:25:35Z'
 labels: []
 dependencies: []
 priority: medium
@@ -21,21 +21,21 @@ The toolset trash (off by default) already lists, restores (up to 100 ids, no co
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every field the API gives for a trashed document except content is readable (content: next criterion), and the list can be narrowed by title, document type, kind (document or version), deletion date and id over all pages up to a stated cap, with truncated when the cap is hit (decision-4)
-- [ ] #2 Where Paperless serves them, text, thumbnail and file of a trashed document are readable; where not, the answer says so and names the closest way (restore first)
-- [ ] #3 Restore and delete for good also accept a narrowed list, which is resolved to ids and shown first, and only those ids are acted on; deleting needs confirm, restoring does not (or a decision changes that)
-- [ ] #4 The result lists each entry; that Paperless restores or deletes all or none is stated, and an id that blocks the call is named
-- [ ] #5 Whether reading and restoring belong in the default profile is decided; if a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
-- [ ] #6 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover each filter, the cap, trashed content, restore and delete by narrowed list, all-or-none refusals and a restricted user
-- [ ] #7 Every tool that trashes something (documents, versions, pdf, bulk, resolving duplicates) says how to restore it and which toolset that needs, as delete_document does
+- [x] #1 Every field the API gives for a trashed document except content is readable (content: next criterion), and the list can be narrowed by title, document type, kind (document or version), deletion date and id over all pages up to a stated cap, with truncated when the cap is hit (decision-4)
+- [x] #2 Where Paperless serves them, text, thumbnail and file of a trashed document are readable; where not, the answer says so and names the closest way (restore first)
+- [x] #3 Restore and delete for good also accept a narrowed list, which is resolved to ids and shown first, and only those ids are acted on; deleting needs confirm, restoring does not (or a decision changes that)
+- [x] #4 The result lists each entry; that Paperless restores or deletes all or none is stated, and an id that blocks the call is named
+- [x] #5 Whether reading and restoring belong in the default profile is decided; if a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
+- [x] #6 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover each filter, the cap, trashed content, restore and delete by narrowed list, all-or-none refusals and a restricted user
+- [x] #7 Every tool that trashes something (documents, versions, pdf, bulk, resolving duplicates) says how to restore it and which toolset that needs, as delete_document does
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -71,4 +71,12 @@ Review of 16f55da (2 Important, 9 Minor), all fixed: UTC days; fall back to smal
 Delta review of 07903bf (1 Important, 5 Minor), fixed: permissions and user_can_change of a deleted version are its document's (null with a named gap if unreadable, is_shared_by_requester null); list_trash without a title or type filter works while titles cannot be looked up; "deleted" only with a 404 of /root/; no second large read in a call, none after 429; texts. The single lookups after a change are ten at a time within 20 seconds instead of at most 100, so that all=true of more than 100 entries is still verified.
 
 Last review of 8b39d13, fixed test-first (9 red): document_exists tells 404 from 403 (DocumentReader; get_root unchanged), every answered lookup of a group is kept, and the naming of grants is inside the named gap.
+
+Merged with #122 (b73f310). Five review rounds, the last ones clean; Codex without open findings; hosted full E2E 45367465274 green on 91dc609, after which only two wordings changed. DoD 1 stays open (first slice written before its tests), DoD 2 unchecked (macOS-only failures). Follow-ups: PLMCP-111, and get_document_thumbnail shows trashed documents to view grants (design: own task, PLMCP-102).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The trash can be filtered, looked into (get_trash_entry with permissions, get_trashed_file) and acted on by a narrowed list that is shown first; every entry reports its outcome as seen afterwards (decisions 54 and 55). restore_from_trash answers entries instead of restored (breaking). OVERVIEW_GUIDE_LIMIT 2800 to 2835, approved by the owner.
+<!-- SECTION:FINAL_SUMMARY:END -->

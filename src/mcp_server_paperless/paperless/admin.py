@@ -56,6 +56,7 @@ from mcp_server_paperless.domain.errors import (
 )
 from mcp_server_paperless.domain.files import missing_files
 from mcp_server_paperless.domain.tasks import REJECTED, TaskState
+from mcp_server_paperless.domain.urls import text_without_credentials
 from mcp_server_paperless.paperless.client import opened
 from mcp_server_paperless.paperless.documents import PaperlessDocumentReader
 from mcp_server_paperless.paperless.pagination import Page
@@ -358,7 +359,9 @@ def _message(result: JsonValue) -> str | None:
     message = result.get("error_message")
     if not isinstance(message, str):
         return None
-    lines = [line.strip() for line in message.splitlines() if line.strip()]
+    lines = [
+        line.strip() for line in text_without_credentials(message).splitlines() if line.strip()
+    ]
     return lines[0][:MAX_MESSAGE] if lines else None
 
 

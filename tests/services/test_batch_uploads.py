@@ -67,6 +67,7 @@ if TYPE_CHECKING:
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-50")]
 
 WEB = "https://paperless.example"
+HIDDEN_ID = 4_711_000_000_000  # 13 digits: no task id or timestamp holds them by chance
 DOWN = UpstreamTimeout("Paperless did not respond in time.", hint="Retry later.")
 
 
@@ -525,14 +526,14 @@ async def test_a_restricted_user_gets_the_gaps_once_and_no_hidden_document(root:
         for u in state.users
     ]
     setup = Setup(root, user=READER[0], state=state)
-    setup.known(4711, pdf("known"))  # owned by the admin
+    setup.known(HIDDEN_ID, pdf("known"))  # owned by the admin
     _ = setup.file("a.pdf", pdf("known"))
     _ = setup.file("b.pdf")
 
     batch = await setup.directory()
 
     assert [f.status for f in batch.files] == ["uploaded", "uploaded"]
-    assert "4711" not in batch.model_dump_json()
+    assert str(HIDDEN_ID) not in batch.model_dump_json()
     assert len(set(batch.not_checked)) == len(batch.not_checked)
 
 

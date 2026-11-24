@@ -83,6 +83,7 @@ ENDPOINTS = ("llm_endpoint", "llm_embedding_endpoint", "remote_ocr_endpoint")
         ("https://s3cret@e.x", "https://e.x", True),
         ("https://u:s3cret@b@e.x/", "a URL that is not shown", True),
         ("u:s3cret@e.x", "a URL that is not shown", True),
+        ("https://u:s3cret%40e.x/v1", "a URL that is not shown", True),
         ("https://e.x/v1", "https://e.x/v1", False),
         ("", "", False),
     ],
@@ -211,6 +212,39 @@ async def test_a_new_url_is_written_without_its_empty_user(
     assert old in message
     assert outcome.message == "Changed 1 setting: llm_endpoint."
     assert setup.state.config == {"llm_endpoint": "https://new.x/"}
+
+
+UNCLEAR = pytest.mark.parametrize(
+    "url",
+    ["https://u:s3cret%40e.x/v1", "https://u:s3cret\uff20e.x/v1", "https://u:s3cret\ufe6be.x"],
+)
+
+
+@pytest.mark.decision("decision-66")
+@UNCLEAR
+@pytest.mark.parametrize("new", ["https://n.x/v1", None])
+async def test_a_confirmation_does_not_show_a_url_that_results_do_not(
+    url: str, new: str | None
+) -> None:
+    setup = Setup(writes=False)
+    setup.state.config = {"llm_endpoint": url}
+
+    message = await refusal(setup.service.update_config({"llm_endpoint": new}))
+
+    assert "llm_endpoint" in message
+    assert "a URL that is not shown" in message
+    assert "s3cret" not in message
+
+
+@pytest.mark.decision("decision-66")
+@UNCLEAR
+async def test_a_new_url_that_results_do_not_show_is_refused_without_its_text(url: str) -> None:
+    setup = Setup(writes=False)
+
+    with pytest.raises(Validation, match="the llm_endpoint cannot be shown") as raised:
+        _ = await setup.service.update_config({"llm_endpoint": url}, confirm=True)
+
+    assert "s3cret" not in raised.value.message
 
 
 @pytest.mark.decision("decision-64")
@@ -412,6 +446,75 @@ async def test_the_last_lines_of_a_log_are_returned_oldest_first() -> None:
         3,
     )
     assert not found.truncated
+
+
+@pytest.mark.decision("decision-66")
+async def test_log_lines_hold_no_credentials_of_the_urls_paperless_called() -> None:
+    setup = Setup()
+    setup.state.logs["paperless"] = [
+        "[2026-11-24 10:00:00,123] Webhook sent to https://user:p w@h.example/x",
+        "[2026-11-24 10:00:00,124] Error for url 'https://user:pw@h.example/x'",
+        "[2026-11-24 10:00:00,125] mail from a@b.example: https://h.example",
+        "[2026-11-24 10:00:00,126] sent to https://user:p",
+        "w@h.example/x",
+    ]
+
+    found = await setup.service.get_log("paperless", lines=5)
+
+    assert found.lines == (
+        "[2026-11-24 10:00:00,123] Webhook sent to a URL that is not shown",
+        "[2026-11-24 10:00:00,124] Error for url 'https://h.example/x'",
+        "[2026-11-24 10:00:00,125] mail from a@b.example: https://h.example",
+        "[2026-11-24 10:00:00,126] sent to a URL that is not shown",
+        "a URL that is not shown",
+    )
+    assert found.note == "4 line(s) are shown without the credentials of the URLs in them."
+
+
+CUT_SECRET = ["[2026-11-24 10:00:00,1] to https://user:se", "cr", "et@h.example/x", "end"]
+
+
+@pytest.mark.decision("decision-66")
+@pytest.mark.parametrize("before", [0, 2 * MAX_LOG_LINES])
+@pytest.mark.parametrize("lines", [1, 2, 3, 4])
+async def test_a_window_that_starts_inside_a_record_shows_no_rest_of_a_password(
+    lines: int, before: int
+) -> None:
+    setup = Setup()
+    setup.state.logs["paperless"] = ["[2026-11-24 09:00:00,1] a"] * before + CUT_SECRET
+
+    found = await setup.service.get_log("paperless", lines=lines)
+
+    hidden = "a URL that is not shown"
+    whole = (f"[2026-11-24 10:00:00,1] to {hidden}", hidden, hidden, "end")
+    assert found.lines == whole[-lines:]
+    assert (found.returned_lines, found.truncated) == (lines, False)
+    note = f"{lines - 1} line(s) are shown without the credentials of the URLs in them."
+    assert found.note == (note if lines > 1 else None)
+
+
+@pytest.mark.decision("decision-66")
+async def test_a_record_longer_than_all_that_is_read_shows_no_rest_of_a_password() -> None:
+    setup = Setup()
+    setup.state.logs["paperless"] = [*CUT_SECRET[:1], *["p"] * MAX_LOG_LINES, "et@h", "end"]
+
+    found = await setup.service.get_log("paperless", lines=3)
+
+    assert found.lines == ("a URL that is not shown", "a URL that is not shown", "end")
+
+
+@pytest.mark.decision("decision-66")
+async def test_the_undated_head_of_a_short_log_is_not_shown_either() -> None:
+    setup = Setup()
+    setup.state.logs["paperless"] = ["et@h", "end"]
+
+    found = await setup.service.get_log("paperless", lines=50)
+
+    assert found.lines == ("a URL that is not shown", "end")
+
+
+async def test_a_log_without_credentials_has_no_note() -> None:
+    assert (await Setup().service.get_log("paperless", lines=3)).note is None
 
 
 async def test_a_log_over_the_character_limit_keeps_the_newest_lines() -> None:

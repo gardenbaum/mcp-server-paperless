@@ -56,7 +56,12 @@ async def test_the_seeded_tags_are_read_through_the_server(stack: Stack) -> None
     assert output["status"] == 200
 
 
-SECRETS = ("e2e-secret-token-4711", "e2e-secret-bearer-4712", "e2e-secret-pdf-pass-4713")
+SECRETS = (
+    "e2e-secret-token-4711",
+    "e2e-secret-bearer-4712",
+    "e2e-secret-pdf-pass-4713",
+    "e2e-secret-url-4714",
+)
 
 
 @pytest.fixture
@@ -66,7 +71,7 @@ def workflow(stack: Stack) -> Iterator[Json]:
     The workflows API leaves the triggers and actions behind when it deletes a workflow, so the
     fixture deletes those too, also when the test fails.
     """
-    token, bearer, password = SECRETS
+    token, bearer, password, url = SECRETS
     unique = uuid.uuid4().hex
     made = stack.admin.post(
         "/api/workflows/",
@@ -79,7 +84,7 @@ def workflow(stack: Stack) -> Iterator[Json]:
                 {
                     "type": 4,
                     "webhook": {
-                        "url": "https://example.invalid/hook",
+                        "url": f"https://user:{url}@example.invalid/hook",
                         "use_params": True,
                         "as_json": False,
                         "params": {"token": token},

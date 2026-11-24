@@ -168,7 +168,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | Tool | Kind | What it does |
 |---|---|---|
 | `list_workflows` | read | List the workflows of Paperless with their triggers and actions. |
-| `get_workflow` | read | Read one workflow with its triggers and actions. |
+| `get_workflow` | read | Read one workflow with its triggers and actions, as list_workflows shows it. |
 | `create_workflow` | write, confirm | Create a workflow with its triggers and actions. |
 | `update_workflow` | write, confirm | Change a workflow; only the settings you name change. |
 | `delete_workflow` | destructive, confirm | Delete a workflow for good: it has no trash. |

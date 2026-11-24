@@ -963,7 +963,7 @@ async def test_a_workflow_that_is_disabled_or_only_assigns_needs_no_confirmation
                     webhook=WebhookSettings(url="https://user:pw@hooks.example:8443/a/b?token=1"),
                 ),
             ),
-            "send a POST request to 'https://hooks.example:8443'",
+            "send a POST request to 'https://hooks.example:8443', with credentials (not shown)",
         ),
         (
             (
@@ -1357,9 +1357,16 @@ async def test_a_hidden_header_keeps_the_value_stored_for_the_action_with_that_i
     assert headers(done.actions[0].settings) == {"X-Token": "(hidden)", "X-New": "(hidden)"}
 
 
-@pytest.mark.parametrize("action_id", [None, 99, 8])
+@pytest.mark.parametrize(
+    ("action_id", "message"),
+    [
+        (None, "Header 'X-Token' is shown as '\\(hidden\\)'"),
+        (99, "action 1 is a webhook with the id 99, which is not"),
+        (8, "Header 'X-Token' is shown as '\\(hidden\\)'"),
+    ],
+)
 async def test_a_hidden_header_without_a_stored_value_to_keep_is_refused(
-    action_id: int | None,
+    action_id: int | None, message: str
 ) -> None:
     setup = Setup()
     _ = setup.seed(
@@ -1374,7 +1381,7 @@ async def test_a_hidden_header_without_a_stored_value_to_keep_is_refused(
     )
     hook = WebhookSettings(url="https://h.example/b", headers={"X-Token": "(hidden)"})
 
-    with pytest.raises(Validation, match="Header 'X-Token' is shown as '\\(hidden\\)'"):
+    with pytest.raises(Validation, match=message):
         _ = await setup.workflows.update(
             "w",
             WorkflowEdit(actions=(ActionInput(type=4, id=action_id, webhook=hook),)),

@@ -337,6 +337,19 @@ async def test_processed_mail_without_filters_sends_none(make_client: ClientFact
     assert server.sent[0][3] == {"page": "1", "page_size": "25", "ordering": "-processed"}
 
 
+@pytest.mark.decision("decision-66")
+async def test_the_error_of_a_processed_mail_holds_no_credentials_of_a_url(
+    make_client: ClientFactory,
+) -> None:
+    server = Recording(page({**PROCESSED_WIRE, "error": "to https://user:pw@h.example/x"}))
+
+    found = await PaperlessMailReader(make_client(server)).list_processed_mail(
+        rule_id=None, status=None, page=1, page_size=25
+    )
+
+    assert found.mails[0].error == "to https://h.example/x"
+
+
 async def test_a_page_beyond_the_last_one_is_not_found(make_client: ClientFactory) -> None:
     server = Recording(httpx2.Response(404, json={"detail": "Invalid page."}))
 
