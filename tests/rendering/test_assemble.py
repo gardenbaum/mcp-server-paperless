@@ -170,11 +170,11 @@ def test_the_document_keeps_the_values_of_its_form() -> None:
 def test_links_and_annotations_come_with_their_page() -> None:
     link = (
         "/Annots [<< /Type /Annot /Subtype /Link /Rect [0 0 9 9] "
-        "/A << /S /URI /URI (https://example.org/) >> >>]"
+        "/A << /S /JavaScript /JS (app.beep) >> >>]"
     )
     source = pdf_of([""], page=f"/MediaBox [0 0 600 800] {link}")
 
-    assert b"https://example.org/" in assemble(TARGET, source, wanted()).content
+    assert b"app.beep" in assemble(TARGET, source, wanted()).content
 
 
 def test_other_pages_of_the_source_are_not_taken_along() -> None:
