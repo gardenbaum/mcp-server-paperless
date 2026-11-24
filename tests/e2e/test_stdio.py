@@ -108,7 +108,7 @@ async def test_the_environment_selects_the_tools_over_stdio(stack: Stack) -> Non
     }
     admin = {
         *("get_user", "get_group", "get_app_config", "list_tasks", "list_logs", "get_log"),
-        "bulk_download",
+        *("bulk_download", "inspect_pdf"),
     }
     listings |= mail | admin | {"paperless_api_get"}
     assert read_only == (default - writing) | listings | views
