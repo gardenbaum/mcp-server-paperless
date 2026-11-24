@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:51:16Z'
-updated_date: '2026-11-24T13:42:32Z'
+updated_date: '2026-11-24T14:31:44Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -82,4 +82,6 @@ The outer guard (_guarded) now covers merge_documents and rotate_documents too, 
 Delta review of b1f34da fixed, tests red first (N1 to N8): N1 the 5 second bound of unlocking is removed (it shortened an owner-ruled result), N2 a stopped call names every original, what is already in the trash and the task of the removal, N3 a part that cannot be checked does not stop the others, N4 lookups that break after the POST are problem failed, N5 and N6 the message of a stopped call, N7 test_pdf_next validates the arguments against the schemas and covers the guard (not red first; nor the last look of the search), N8 the condition covers both calls. test_pdf_next sets the switches of the fake directly: the setattr was banned by hygiene.
 
 Live failure of 9a3985b (full E2E 45402232899, shard 1/4): a new user's first request was in doubt (PENDING). Cause: Paperless queues bulk_update_documents after metadata changes with the type bulk_update, no owner, empty input, trigger source system (source of 3.5.1: signals/handlers.py, bulk_edit.py, tasks.py, serialisers.py, views.py, workflows/actions.py: its only file work is unlocking as a version). Every user who may view tasks sees these rows, and the adapter counted them as operations of the user, so anybody's metadata change in the last hour left everyone in doubt. Only rows with exactly this shape are left out now; a row with an owner, an input or another trigger still counts. Red first: 3 adapter tests; the 4 near misses stay a doubt. The contract test makes such a row itself. The third failure was a wrong fixture password in the test.
+
+Live rows (diagnostic run 45410381343, removed again): the rows counted against a fresh user were bulk_update rows with a named operation and owner null, of users deleted since (PaperlessTask.owner is SET_NULL); no row with empty input was among them, so the earlier note named the wrong cause. Prepared as option A, pending the owner's answer before the merge: in the search by name an operation is the caller's only if the caller owns it. Source of 3.5.1: all bulk views use IsAuthenticated (basic, token, session, remote user and auto login all give a User row), _queue_bulk_operation records request.user.pk, execute_bulk_operation and the consumer load that user by id (a deleted one raises), a deleted user's documents have owner null. The exclusion of the empty system rows is covered by it and gone; the doubt of listed tasks (decision-60) is as in 79.1. Red first: 12 adapter cases. copies() of the contract tests polls on a passing doubt.
 <!-- SECTION:NOTES:END -->

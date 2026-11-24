@@ -632,10 +632,8 @@ async def test_parts_whose_tasks_a_date_hides_are_found_by_their_file_names(
     gone = backend.restricted(FINDING, name=name)
     _ = await gone.pdf_writes.edit_pdf(other, (PageSlot(page=1),), output="new_version")
     await until_versions(backend, other, 2)
-    found_users = await backend.admin.permissions.list_users(
-        name_contains=name, page=1, page_size=1
-    )
-    [account] = found_users.users
+    accounts = await backend.admin.permissions.list_users(name_contains=name, page=1, page_size=1)
+    [account] = accounts.rows
     await backend.admin.management_writes.delete_user(account.id)
     user = backend.restricted(FINDING)
     slots = (PageSlot(page=1), PageSlot(page=2, document=1), PageSlot(page=3, document=1))
