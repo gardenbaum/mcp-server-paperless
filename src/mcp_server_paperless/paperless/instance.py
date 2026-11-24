@@ -117,7 +117,7 @@ class PaperlessInstanceReader:
         ui_settings = await self._unless_forbidden("/api/ui_settings/", _UiSettings)
         user = ui_settings.user if ui_settings else None
         return InstanceOverview(
-            paperless_version=response.headers.get("X-Version", "unknown"),
+            paperless_version=response.headers.get("X-Version") or "unknown",
             api_version=api_version,
             statistics=InstanceStatistics(
                 documents=statistics.documents_total,

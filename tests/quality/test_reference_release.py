@@ -55,7 +55,7 @@ def test_the_code_compares_with_the_release_the_docs_name_as_the_minimum() -> No
 
 
 @pytest.mark.decision("decision-57")
-def test_the_code_states_the_minimum_once() -> None:
+def test_no_second_value_in_the_code_states_the_minimum() -> None:
     parts = r",\s*".join(map(str, MINIMUM_RELEASE))
     stated = re.compile(rf"\(\s*{parts}\s*\)|[\"']{re.escape(pinned())}[\"']")
     texts = {

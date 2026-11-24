@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T20:43:01Z'
-updated_date: '2026-11-24T08:21:28Z'
+updated_date: '2026-11-24T08:32:39Z'
 labels:
   - tools
   - config
@@ -48,4 +48,6 @@ The minimum is paperless-ngx 3.5.1 (decision-43), but the server never compares 
 
 <!-- SECTION:NOTES:BEGIN -->
 Owner question (2026-11-24): the notice was first in paperless_version, for lack of budget; on the coordinator's instruction it is now a field of its own, too_old. DEFINITION_ADDED_LIMIT 750 -> 854 (measured 747 -> 854, 107 bytes), approved by the owner on 2026-11-24 (own field, as little as possible) before the number was known. Snapshot test_surface.ambr: the new field and its place in required, in each profile that has the overview; nothing else. Choices: only X.Y.Z is compared; a missing X-Version reads as unknown (before, the overview and the start failed); the log line comes from PaperlessClient, once per start, so also after an unreachable start. decision-57 supersedes the sentence of decision-43 that the version is not checked. No other limit or gate changed. Live tests are written but were not run locally.
+
+Review round (2026-11-24): X-Version counts only with X-Api-Version beside it; the 406 hint names the minimum (no snapshot or doc contains it); an empty X-Version is unknown too; clearer description of too_old. DEFINITION_ADDED_LIMIT is now 879 (instead of the 854 above; measured 879, so 132 bytes of too_old), within the owner's approval. Full local suite on 20ce23c: the two known macOS failures only (menu driver, socket path), diff-cover 100 %; later only targeted tests, for lack of memory.
 <!-- SECTION:NOTES:END -->

@@ -11,6 +11,7 @@ from fastmcp import Client
 from harness import paperless_settings, server_settings
 
 from e2e.helpers import EXPECTED_VERSION
+from mcp_server_paperless.domain.instance import MINIMUM
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
 from mcp_server_paperless.server import create_server, paperless_ports
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 
 pytestmark = [pytest.mark.e2e, pytest.mark.anyio, pytest.mark.decision("decision-57")]
 
-NOTICE = " is older than the minimum release 3.5.1: Paperless must be updated"
+NOTICE = f" is older than the minimum release {MINIMUM}: Paperless must be updated"
 
 
 @pytest.mark.parametrize(

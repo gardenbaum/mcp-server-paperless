@@ -14,7 +14,7 @@ decision-43 makes 3.5.1 the minimum but lets the server accept any release with 
 
 <!-- SECTION:DECISION:BEGIN -->
 - This supersedes one part of decision-43: "the server does not check the version (a startup check is a separate proposal)". Everything else of it stands.
-- The minimum is `MINIMUM_RELEASE` in `domain/instance.py`, compared with the `X-Version` header. Only `X.Y.Z` in ASCII digits is compared; anything else, and a missing header (read as `unknown`), gives no warning.
+- The minimum is `MINIMUM_RELEASE` in `domain/instance.py`, compared with the `X-Version` header of an answer that also carries `X-Api-Version` (Paperless sends both together, to an authenticated user), so that a gateway or a login page with an `X-Version` of its own is not believed. Only `X.Y.Z` in ASCII digits is compared; anything else, and a missing header (read as `unknown`), gives no warning.
 - It is a warning: an older release does not stop the start and takes no tool away.
 - The operator gets one warning line per start, from the first answer that reports the old release, so also when Paperless was unreachable at start.
 - `get_instance_overview` says it in a field of its own, `too_old`: the found release, the minimum and that Paperless must be updated.
@@ -23,8 +23,10 @@ decision-43 makes 3.5.1 the minimum but lets the server accept any release with 
 ## Consequences
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
-- `paperless_version` stays the plain release; `too_old` is null where there is nothing to say. It costs 107 bytes of output schema: `DEFINITION_ADDED_LIMIT` rises from 750 to 854, approved by the owner on 2026-11-24.
+- `paperless_version` stays the plain release; `too_old` is null where there is nothing to say. It costs 132 bytes of output schema: `DEFINITION_ADDED_LIMIT` rises from 750 to 879, approved by the owner on 2026-11-24.
 - A Paperless behind a proxy that removes `X-Version` (but keeps `X-Api-Version`) no longer fails the overview and the start.
+- A proxy that overrides `X-Version` on genuine answers cannot be told apart: its release is compared.
+- The hint for a refused API version (406, which carries no release) names the minimum too.
 - A pre-release of the minimum is reported by Paperless as the plain release or is not compared.
 <!-- SECTION:CONSEQUENCES:END -->
 

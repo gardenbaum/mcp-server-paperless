@@ -49,9 +49,9 @@ INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut 
 # upload_documents (PLMCP-85) and 21 of resolve_duplicates (PLMCP-86) over the 2758 of HTTP before;
 # both approved by the owner on 2026-11-23.
 OVERVIEW_GUIDE_LIMIT = 2800
-# Measured 854: 747 before, plus 107 of too_old (PLMCP-101); the rise from 750 was approved by the
+# Measured 879: 747 before, plus 132 of too_old (PLMCP-101); the rise from 750 was approved by the
 # owner on 2026-11-24.
-DEFINITION_ADDED_LIMIT = 854
+DEFINITION_ADDED_LIMIT = 879
 # The limit of every instructions text (test_registry.py TEXT_LIMIT): Claude Code cuts at 4,096.
 TEXT_LIMIT = 2048
 # Anything near a limit is a reason to look; a limit this far above the worst case is not tight.

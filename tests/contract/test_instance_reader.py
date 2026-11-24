@@ -8,6 +8,8 @@ from fastmcp import Client
 from guide_oracle import COMBINATIONS, Seen, check
 from harness import Recorded, serve
 
+from mcp_server_paperless.domain.instance import MINIMUM
+
 if TYPE_CHECKING:
     from contract.conftest import Backend
     from mcp_server_paperless.domain.instance import InstanceStatistics
@@ -120,7 +122,7 @@ async def test_only_an_older_release_is_called_too_old(
     assert result.structured_content is not None
     output = cast("dict[str, str | None]", result.structured_content)
     assert output["paperless_version"] == (version or backend.expected_version)
-    notice = f"{version} is older than the minimum release 3.5.1: Paperless must be updated"
+    notice = f"{version} is older than the minimum release {MINIMUM}: Paperless must be updated"
     if version in {"3.4.2", "3.5.0"}:
         assert (output["too_old"] or "").startswith(notice)
     else:

@@ -9538,7 +9538,7 @@
                 'type': 'null',
               }),
             ]),
-            'description': 'Null if not known to be.',
+            'description': 'Notice that Paperless must be updated; else null.',
           }),
           'toolsets': dict({
             'description': 'The toolsets on and off.',
@@ -25277,7 +25277,7 @@
                 'type': 'null',
               }),
             ]),
-            'description': 'Null if not known to be.',
+            'description': 'Notice that Paperless must be updated; else null.',
           }),
           'toolsets': dict({
             'description': 'The toolsets on and off.',
@@ -31027,7 +31027,7 @@
                 'type': 'null',
               }),
             ]),
-            'description': 'Null if not known to be.',
+            'description': 'Notice that Paperless must be updated; else null.',
           }),
           'toolsets': dict({
             'description': 'The toolsets on and off.',

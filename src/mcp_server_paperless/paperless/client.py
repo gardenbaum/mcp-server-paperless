@@ -560,8 +560,10 @@ class PaperlessClient:
                 "%s %s failed: %s", request.method, request.url.path, type(error).__name__
             )
             raise error_for_transport(error) from error
+        # Paperless sends both headers together; a gateway or login page may send X-Version alone.
+        genuine = "X-Api-Version" in response.headers
         notice = update_notice(response.headers.get("X-Version", ""))
-        if notice and not self._told_to_update:
+        if genuine and notice and not self._told_to_update:
             self._told_to_update = True
             logger.warning("Paperless %s", notice)
         return response

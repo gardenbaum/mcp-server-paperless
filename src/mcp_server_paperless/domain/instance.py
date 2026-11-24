@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # The oldest supported paperless-ngx (decision-43), compared with what Paperless reports.
 MINIMUM_RELEASE: Final = (3, 5, 1)
+MINIMUM: Final = ".".join(map(str, MINIMUM_RELEASE))
 _RELEASE = re.compile(r"(\d{1,9})\.(\d{1,9})\.(\d{1,9})", re.ASCII)
 
 
@@ -25,9 +26,8 @@ def update_notice(version: str) -> str | None:
     found = _RELEASE.fullmatch(version)
     if found is None or tuple(map(int, found.groups())) >= MINIMUM_RELEASE:
         return None
-    minimum = ".".join(map(str, MINIMUM_RELEASE))
     return (
-        f"{version} is older than the minimum release {minimum}: Paperless must be updated; until "
+        f"{version} is older than the minimum release {MINIMUM}: Paperless must be updated; until "
         "then some tools fail or answer differently"
     )
 
@@ -125,7 +125,9 @@ class ToolsetGuide(_Frozen):
 class ServerOverview(InstanceOverview):
     """The instance as the current user sees it, and the toolsets."""
 
-    too_old: Annotated[str | None, Field(description="Null if not known to be.")]
+    too_old: Annotated[
+        str | None, Field(description="Notice that Paperless must be updated; else null.")
+    ]
     toolsets: ToolsetGuide
 
     @classmethod

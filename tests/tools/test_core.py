@@ -12,13 +12,14 @@ from fastmcp.exceptions import ToolError
 from harness import FailsAfterProbe, Recorded, admin, serve
 
 from mcp_server_paperless.domain.errors import ConfirmationRequired, UpstreamUnreachable
+from mcp_server_paperless.domain.instance import MINIMUM
 from mcp_server_paperless.tools._shared import boundary
 
 pytestmark = pytest.mark.anyio
 
 TOO_OLD = (
-    "3.4.2 is older than the minimum release 3.5.1: Paperless must be updated; until then some "
-    "tools fail or answer differently"
+    f"3.4.2 is older than the minimum release {MINIMUM}: Paperless must be updated; until then "
+    "some tools fail or answer differently"
 )
 
 
@@ -133,7 +134,7 @@ async def test_more_like_id_warns_that_an_empty_result_can_be_an_index_problem()
 
 
 @pytest.mark.decision("decision-57")
-@pytest.mark.parametrize("version", ["3.4.2", "3.5.1", "3.6.0", "unknown", ""])
+@pytest.mark.parametrize("version", ["3.4.2", MINIMUM, "99.0.0", "unknown", ""])
 async def test_the_overview_says_so_when_paperless_is_too_old(version: str) -> None:
     overview = (await admin().get_overview()).model_copy(update={"paperless_version": version})
 
