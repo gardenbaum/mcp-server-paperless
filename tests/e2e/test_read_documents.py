@@ -79,10 +79,6 @@ def shell(code: str) -> None:
     )
 
 
-# No word that another document has: more-like-this would find that one too.
-BARE_TEXT = "plmcp80bare plmcp80words plmcp80test"
-
-
 @contextmanager
 def bare_documents(
     count: int, prefix: str = SCRATCH, created: str = "1990-01-01"
@@ -90,7 +86,7 @@ def bare_documents(
     """``count`` documents without a file, removed again without the trash."""
     name = f"{prefix}{uuid.uuid4().hex[:8]}"
     made = (
-        f"Document(title='{name}', content='{BARE_TEXT}', checksum=f'{name}{{n}}', "
+        f"Document(title='{name}', content='plmcp80bare words of a test', checksum=f'{name}{{n}}', "
         f"mime_type='text/plain', created='{created}')"
     )
     shell(f"Document.objects.bulk_create([{made} for n in range({count})])")
@@ -132,9 +128,14 @@ async def test_a_thousand_matches_are_read_well_within_the_timeout(
 
     with capsys.disabled():
         print(f"\nselect_documents {search}: {page.count} matches in {took:.2f} s")  # noqa: T201 -- the measurement of decision-69, read from the log
-    assert len(page.hits) == page.count
-    # more-like-this decides itself how many are similar.
-    assert page.count == 1000 if search != "similar" else page.count <= 1000
+    # One more than the limit is read at most, the count says how many there are.
+    assert len(page.hits) == min(page.count, 1001)
+    if search == "similar":
+        # All but the document itself. Documents of other tests may be similar too: Paperless
+        # gives more-like-this no list of fields.
+        assert page.count >= 999
+    else:
+        assert page.count == 1000
     assert took < 30  # the read times out after 60 s
 
 
