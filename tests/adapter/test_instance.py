@@ -254,6 +254,19 @@ async def test_other_failures_are_not_hidden(
         _ = await reader(make_client, responses).get_overview()
 
 
+@pytest.mark.decision("decision-66")
+async def test_a_status_error_holds_no_credentials_of_a_url(make_client: ClientFactory) -> None:
+    said = "Error connecting to redis://user:pw@broker:6379"
+    status = {**STATUS, "tasks": {**cast("Json", STATUS["tasks"]), "redis_error": said}}
+
+    overview = await reader(
+        make_client, instance(status=httpx2.Response(200, json=status))
+    ).get_overview()
+
+    assert overview.system_status is not None
+    assert overview.system_status.redis.error == "Error connecting to redis://broker:6379"
+
+
 async def test_every_component_keeps_its_own_error_message(make_client: ClientFactory) -> None:
     tasks = cast("Json", STATUS["tasks"])
     status = {

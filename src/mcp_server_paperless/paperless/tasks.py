@@ -13,6 +13,7 @@ from pydantic import BaseModel, JsonValue
 
 from mcp_server_paperless.domain.errors import NotFound
 from mcp_server_paperless.domain.tasks import REJECTED, TaskState, TaskStatus
+from mcp_server_paperless.domain.urls import text_without_credentials
 from mcp_server_paperless.paperless.pagination import Page
 
 if TYPE_CHECKING:
@@ -43,7 +44,9 @@ def _error_message(result: JsonValue) -> str | None:
     if not isinstance(result, dict):
         return None
     message = result.get("error_message")
-    return message.strip() if isinstance(message, str) and message.strip() else None
+    if not isinstance(message, str):
+        return None
+    return text_without_credentials(message).strip() or None
 
 
 def duplicate_of(result: JsonValue) -> int | None:
