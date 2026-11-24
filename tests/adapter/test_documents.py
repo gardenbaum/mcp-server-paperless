@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from adapter.conftest import ClientFactory
+    from mcp_server_paperless.domain.documents import FileVersion
 
 pytestmark = pytest.mark.anyio
 
@@ -943,3 +944,67 @@ async def test_the_owner_and_the_version_label_of_a_document_are_kept(
 
     assert record.owner == 2
     assert [v.version_label for v in record.versions] == ["scan 2"]
+
+
+# --- PLMCP-76: a file handed over chunk by chunk
+
+
+@pytest.mark.parametrize(
+    ("version", "version_id", "query"),
+    [
+        ("original", None, {"original": "true"}),
+        ("archive", None, {"original": "false"}),
+        ("archive", 34, {"original": "false", "version": "34"}),
+    ],
+)
+async def test_an_opened_file_has_its_type_and_name_before_its_bytes(
+    make_client: ClientFactory,
+    version: FileVersion,
+    version_id: int | None,
+    query: dict[str, str],
+) -> None:
+    server = Binary(PDF, "application/pdf", NON_ASCII_DISPOSITION)
+    reader = PaperlessDocumentReader(make_client(server))
+
+    async with reader.open_document_file(30, version, version_id=version_id) as opened:
+        content = b"".join([chunk async for chunk in opened.chunks])
+
+    assert (opened.mime_type, opened.filename) == (
+        "application/pdf",
+        "2026-11-12 probe-Ünï 日本語 €.pdf",
+    )
+    assert content == PDF
+    assert server.sent == [("/api/documents/30/download/", query)]
+
+
+async def test_an_opened_file_without_headers_is_an_unnamed_binary_file() -> None:
+    client, _ = streaming(lambda _: httpx2.Response(200, content=PDF))
+
+    async with PaperlessDocumentReader(client).open_document_file(1, "original") as opened:
+        assert (opened.mime_type, opened.filename) == ("application/octet-stream", None)
+
+
+@pytest.mark.parametrize(
+    ("version_id", "message"),
+    [(None, "No document 30 exists"), (34, "No version 34 exists on document 30")],
+)
+async def test_opening_a_missing_file_is_not_found(
+    make_client: ClientFactory, version_id: int | None, message: str
+) -> None:
+    reader = PaperlessDocumentReader(make_client(Resource({"detail": "Not found."}, status=404)))
+
+    with pytest.raises(NotFound, match=message):
+        async with reader.open_document_file(30, "original", version_id=version_id):
+            raise AssertionError
+
+
+async def test_a_not_found_of_whoever_reads_an_opened_file_stays_as_it_is(
+    make_client: ClientFactory,
+) -> None:
+    reader = PaperlessDocumentReader(
+        make_client(Binary(PDF, "application/pdf", NON_ASCII_DISPOSITION))
+    )
+    error = NotFound("mine")
+    with pytest.raises(NotFound, match="mine"):
+        async with reader.open_document_file(30, "original"):
+            raise error

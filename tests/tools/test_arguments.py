@@ -11,6 +11,7 @@ which reads what the scenarios gave (`observation.GIVEN`) after it ran them; so 
 file passes alone and in any order.
 """
 
+import hashlib
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, cast
@@ -415,6 +416,19 @@ async def test_files_are_uploaded_downloaded_and_shared_with_every_argument() ->
     await sweep(
         "bulk_download",
         {"document_ids": [1], "content": "both", "compression": "lzma", "follow_formatting": True},
+    )
+    archive = await admin().download_documents(
+        [1], content="archive", compression="none", follow_formatting=False, max_bytes=10_000
+    )
+    await sweep(
+        "bulk_download",
+        {
+            "document_ids": [1],
+            "offset": 1,
+            "max_bytes": 5,
+            "checksum": hashlib.sha256(archive.content).hexdigest(),
+        },
+        (),
     )
     await sweep(
         "create_share_link", {"document_id": 1, "expires_in_days": 3, "file_version": "original"}
@@ -886,6 +900,19 @@ async def test_documents_are_read_with_every_section_and_slice() -> None:
         with_real_files,
     )
     await sweep("download_document", {"document_id": 1})
+    file = await admin().get_document_file(1, "archive", max_bytes=10_000)
+    await sweep(
+        "download_document",
+        {
+            "document_id": 1,
+            "kind": "archive",
+            "version_id": 1,
+            "offset": 1,
+            "max_bytes": 5,
+            "checksum": hashlib.sha256(file.content).hexdigest(),
+        },
+        (),
+    )
     await sweep("add_note", {"document_id": 1, "note": "n"}, ())
     await sweep("delete_note", {"document_id": 1, "note_id": 1}, ())
     await sweep("list_document_versions", {"document_id": 1}, ())

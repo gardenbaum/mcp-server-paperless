@@ -48,7 +48,7 @@ claude plugin marketplace add gardenbaum/mcp-server-paperless
 claude plugin install mcp-server-paperless@gardenbaum
 ```
 
-Claude Code asks for seven options, of which only the Paperless URL and the token are required. After
+Claude Code asks for eight options, of which only the Paperless URL and the token are required. After
 an install from the shell, or to change a value later, run
 `/plugin configure mcp-server-paperless@gardenbaum` in a session, then restart Claude Code; the server
 starts once the two required values are set. Claude Code keeps the token in its credential store (the
@@ -72,9 +72,10 @@ claude plugin update mcp-server-paperless@gardenbaum
 | Paperless API token | The token of the Paperless user to act as (required) |
 | Public URL | Base URL for links shown to you, if it differs from the Paperless URL (default: none) |
 | Toolsets | Toolsets to offer, comma-separated, or `all` (default: `core,ai`). Once set, must not be empty: type `core,ai` to restore the default |
-| Read-only | Offer only tools that change nothing (default: off) |
+| Read-only | Offer only tools that change nothing in Paperless or on this machine (default: off) |
 | Disabled tools | Tools never offered, by name (default: none) |
 | Upload directories | Directories the model may upload files from by path (default: none) |
+| Download directories | Directories the model may save downloads into (default: none) |
 
 [Configuration](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md)
 explains the toolsets and options. The assistant knows which toolsets are off and tells you to
@@ -103,7 +104,8 @@ fits, and runs it on your computer. The version pins the package itself; its dep
 newest ones it allows when uvx installs it. The server sends requests only to your Paperless URL, with your
 token. What its tools return, including document text, goes to the AI model you use. Two tools
 (`ask_paperless_ai` and `get_ai_suggestions`) make Paperless query the LLM backend you configured in
-Paperless. The server reads local files only from the upload directories you name.
+Paperless. The server reads local files only from the upload directories you name and saves files only into the
+download directories you name.
 
 ## License
 

@@ -22,6 +22,7 @@ from mcp_server_paperless.settings import HttpSettings, ServerSettings
 from mcp_server_paperless.tools._shared import (
     ANNOTATIONS,
     MEDIA_TOOLS,
+    SAVING_ANNOTATIONS,
     TOOL_TOOLSETS,
     TOOLSETS,
     boundary,
@@ -38,9 +39,15 @@ pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-4")]
 
 # Default profile budget (design 6): the core and ai toolsets together.
 TOOL_BUDGET = 20
-# (tool, parameter) pairs that may take a server-side path: stdio-only uploads (decision-7).
+# (tool, parameter) pairs that may take a server-side path: stdio-only uploads (decision-7) and
+# saved downloads (decision-45).
 STDIO_PATH_PARAMETERS: frozenset[tuple[str, str]] = frozenset(
-    {("upload_document", "path"), ("upload_document_version", "path")}
+    {
+        ("upload_document", "path"),
+        ("upload_document_version", "path"),
+        ("download_document", "save_dir"),
+        ("bulk_download", "save_dir"),
+    }
 )
 # JSON schema formats pydantic gives Path, FilePath and DirectoryPath. Filesystem paths must be
 # typed as such, so this check sees them.
@@ -499,7 +506,9 @@ async def test_no_path_parameter_is_in_a_schema_unless_stdio_runs_with_an_allowl
     everywhere = {
         "http": serve(fake, toolsets=["all"]),
         # The allowlist alone is not enough: HTTP never offers a path, whatever is configured.
-        "http with an allowlist": serve(fake, toolsets=["all"], upload_dirs=[str(tmp_path)]),
+        "http with an allowlist": serve(
+            fake, toolsets=["all"], upload_dirs=[str(tmp_path)], download_dirs=[str(tmp_path)]
+        ),
         "stdio": serve(fake, toolsets=["all"], stdio=True),
     }
 
@@ -517,7 +526,9 @@ async def test_the_http_entrypoint_offers_base64_uploads_and_no_path_even_with_a
 ) -> None:
     app = create_app(
         paperless_settings(),
-        ServerSettings.model_validate({"toolsets": "all", "upload_dirs": str(tmp_path)}),
+        ServerSettings.model_validate(
+            {"toolsets": "all", "upload_dirs": str(tmp_path), "download_dirs": str(tmp_path)}
+        ),
         HttpSettings.model_validate({"allow_unauthenticated_loopback": True}),
     )
     server = cast("FastMCP", app.state.fastmcp_server)
@@ -538,16 +549,41 @@ async def test_the_path_parameter_exists_over_stdio_with_an_allowlist_and_is_all
     tmp_path: Path,
 ) -> None:
     server = serve(
-        admin(ai_enabled=True), toolsets=["all"], stdio=True, upload_dirs=[str(tmp_path)]
+        admin(ai_enabled=True),
+        toolsets=["all"],
+        stdio=True,
+        upload_dirs=[str(tmp_path)],
+        download_dirs=[str(tmp_path)],
+    )
+    tools = list(await server.list_tools())
+    expected = {
+        "upload_document.path",
+        "upload_document_version.path",
+        "download_document.save_dir",
+        "bulk_download.save_dir",
+    }
+
+    assert set(stdio_only_parameters(tools)) == expected
+    assert path_parameters(tools) == []
+    assert set(path_parameters(tools, frozenset())) == expected
+
+
+@pytest.mark.decision("decision-45")
+async def test_the_server_that_saves_downloads_follows_the_rules_of_every_tool(
+    tmp_path: Path,
+) -> None:
+    """Its tools differ from those the other tests see: the annotations come from a second table."""
+    server = serve(
+        admin(ai_enabled=True), toolsets=["all"], stdio=True, download_dirs=[str(tmp_path)]
     )
     tools = list(await server.list_tools())
 
-    assert stdio_only_parameters(tools) == ["upload_document.path", "upload_document_version.path"]
-    assert path_parameters(tools) == []
-    assert path_parameters(tools, frozenset()) == [
-        "upload_document.path",
-        "upload_document_version.path",
-    ]
+    assert off_table(tools, {**ANNOTATIONS, **SAVING_ANNOTATIONS}) == []
+    assert (untitled(tools), undescribed(tools), unguarded(tools)) == ([], [], [])
+    assert (not_one_toolset(tools), off_toolset_table(tools, TOOL_TOOLSETS)) == ([], [])
+    assert unconfirmed(tools) == []
+    assert {t.name for t in tools if destructive(t)} >= set(SAVING_ANNOTATIONS)
+    assert without_schema(tools, MEDIA_TOOLS) == media_with_schema(tools, MEDIA_TOOLS) == []
 
 
 @pytest.mark.decision("decision-11")
@@ -565,13 +601,17 @@ async def test_every_core_tool_that_can_return_document_text_is_known() -> None:
     assert {t.name for t in tools} - DOCUMENT_TEXT_TOOLS == {"get_instance_overview"}
 
 
-@pytest.mark.parametrize("upload_dirs", [None, ["/srv/paperless/consume"]])
+@pytest.mark.parametrize("directories", [None, ["/srv/paperless/consume"]])
 async def test_each_core_tool_that_returns_document_text_says_once_that_it_is_data(
-    upload_dirs: list[str] | None,
+    directories: list[str] | None,
 ) -> None:
-    """Over HTTP and as a stdio server with an allowlist, whose upload tool differs."""
+    """Over HTTP and as a stdio server with allowlists, whose upload and download tools differ."""
     server = serve(
-        admin(), toolsets=["core"], stdio=upload_dirs is not None, upload_dirs=upload_dirs or []
+        admin(),
+        toolsets=["core"],
+        stdio=directories is not None,
+        upload_dirs=directories or [],
+        download_dirs=directories or [],
     )
     tools = list(await server.list_tools())
 

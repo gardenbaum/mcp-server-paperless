@@ -18,15 +18,12 @@ from typing import TYPE_CHECKING
 
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentUpload, UploadResult
 from mcp_server_paperless.domain.errors import Validation, quoted
+from mcp_server_paperless.services.allowed_paths import clean_filename
 from mcp_server_paperless.services.custom_values import linked, require_visible, resolve_values
 from mcp_server_paperless.services.document_edits import MAX_TITLE
 from mcp_server_paperless.services.documents import document_link
 from mcp_server_paperless.services.task_outcome import follow
-from mcp_server_paperless.services.upload_source import (
-    clean_filename,
-    decode_base64,
-    read_allowed,
-)
+from mcp_server_paperless.services.upload_source import decode_base64, read_allowed
 from mcp_server_paperless.services.upload_types import sniff
 
 if TYPE_CHECKING:

@@ -54,6 +54,10 @@
           "description": "Absolute directories the upload tools may read files from by path (default: none)"
         },
         {
+          "name": "PAPERLESS_MCP_DOWNLOAD_DIRS",
+          "description": "Absolute directories the download tools may save files into (default: none)"
+        },
+        {
           "name": "PAPERLESS_MCP_MAX_UPLOAD_BYTES",
           "description": "Largest file the upload tools take, in bytes (at most 104857600)",
           "format": "number",
@@ -61,7 +65,7 @@
         },
         {
           "name": "PAPERLESS_MCP_MAX_DOWNLOAD_BYTES",
-          "description": "Largest file download_document attaches, in bytes (at most 33554432)",
+          "description": "Largest file or part the download tools attach, in bytes (at most 33554432)",
           "format": "number",
           "default": "524288"
         },

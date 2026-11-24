@@ -15,7 +15,9 @@ the rules below make it read nothing but a regular file inside a directory the o
   symlink is refused. At most ``max_bytes`` + 1 are read, so a file that grows is still bounded.
 - A file with more than one hard link is refused: a link can name a file outside the allowlist,
   and there is no telling where it came from. Names below the allowlist that start with a dot
-  (``.ssh``, ``.env``, ``.git``) are refused: credentials live there.
+  (``.ssh``, ``.env``, ``.git``) are refused: credentials live there. So are names that start
+  with a dot behind format characters (HFS+ ignores some) and names with control or line-break
+  characters.
 - A path with a ``..`` component is refused before anything is resolved. Resolving it first would
   answer differently depending on what exists outside the allowlist.
 - A path outside the allowlist, a missing one, an unreadable one and all of the above get the
@@ -29,33 +31,27 @@ decides the type from the content.
 """
 
 import base64
-import contextlib
 import os
 import stat
-import unicodedata
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.documents import MAX_UPLOAD_LIMIT
 from mcp_server_paperless.domain.errors import NotFound, Validation
+from mcp_server_paperless.services.allowed_paths import (
+    SECURE,
+    Refused,
+    inside,
+    open_directory,
+    unreadable,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-# Longest file name Paperless and common file systems take, in UTF-8 bytes.
-MAX_NAME_BYTES: Final = 255
-# Unicode categories no file name may hold: controls, format characters (bidirectional
-# overrides, zero-width and byte order marks) and line and paragraph separators.
-FORBIDDEN_CATEGORIES: Final = frozenset({"Cc", "Cf", "Zl", "Zp"})
 KIB: Final = 1024
 MIB: Final = KIB * KIB
-# `dir_fd` and `O_NOFOLLOW` are what make the walk safe; Windows has neither.
-SECURE: Final = os.open in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW")
 READ_CHUNK: Final = 64 * KIB
-
-
-class _Refused(Exception):  # noqa: N818 -- internal signal, turned into one client answer
-    """The path leads to something that is not a plain file to read."""
 
 
 def size_text(count: int) -> str:
@@ -73,26 +69,6 @@ def _too_large(max_bytes: int) -> Validation:
     if max_bytes < MAX_UPLOAD_LIMIT:
         hint = "Upload a smaller file; the operator can raise PAPERLESS_MCP_MAX_UPLOAD_BYTES."
     return Validation(message, hint=hint)
-
-
-def clean_filename(name: str) -> str:
-    """The name to upload under: directories gone, everything else (non-ASCII too) kept.
-
-    Raises:
-        Validation: Nothing usable is left, or the name has control characters or is too long.
-    """
-    last = name.replace("\\", "/").rsplit("/", 1)[-1].strip()
-    problem = None
-    if last in {"", ".", ".."}:
-        problem = "is empty or only dots"
-    elif any(unicodedata.category(c) in FORBIDDEN_CATEGORIES for c in last):
-        problem = "has control characters"
-    elif len(last.encode()) > MAX_NAME_BYTES:
-        problem = f"is longer than {MAX_NAME_BYTES} bytes"
-    if problem:
-        message = f"The file name {problem}."
-        raise Validation(message, hint="Give the file a plain name such as invoice.pdf.")
-    return last
 
 
 def decode_base64(content: str, *, max_bytes: int, path_hint: str = "") -> bytes:
@@ -139,18 +115,6 @@ def _outside(roots: Sequence[str]) -> NotFound:
     )
 
 
-def _inside(resolved: str, roots: Sequence[str]) -> tuple[str, tuple[str, ...]] | None:
-    """The allowlisted directory holding ``resolved`` and the path components below it."""
-    for root in roots:
-        real = os.path.realpath(root)
-        try:
-            relative = PurePath(resolved).relative_to(real).parts
-        except ValueError:
-            continue
-        return real, relative
-    return None
-
-
 def _read(fd: int, max_bytes: int) -> bytes:
     """At most ``max_bytes`` + 1 bytes from ``fd``."""
     chunks: list[bytes] = []
@@ -169,22 +133,18 @@ def _open_regular(
 ) -> bytes:
     """Walk ``parts`` below ``root`` without following a symlink and read the regular file."""
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
-    held = os.open(root, os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY)
+    held = open_directory(root, parts[:-1])
     try:
-        for part in parts[:-1]:
-            deeper = os.open(part, flags | os.O_DIRECTORY, dir_fd=held)
-            os.close(held)
-            held = deeper
         name = parts[-1]
         # Decided without opening: opening a pipe would wait for a writer.
         if not stat.S_ISREG(os.stat(name, dir_fd=held, follow_symlinks=False).st_mode):
-            raise _Refused
+            raise Refused
         at("checked")
         fd = os.open(name, flags | os.O_NONBLOCK, dir_fd=held)
         try:
             info = os.fstat(fd)
             if not stat.S_ISREG(info.st_mode) or info.st_nlink > 1:
-                raise _Refused
+                raise Refused
             if info.st_size > max_bytes:
                 raise _too_large(max_bytes)
             at("opened")
@@ -192,8 +152,7 @@ def _open_regular(
         finally:
             os.close(fd)
     finally:
-        with contextlib.suppress(OSError):
-            os.close(held)
+        os.close(held)
 
 
 def read_allowed(
@@ -233,12 +192,12 @@ def read_allowed(
         raise _outside(roots)
     try:
         resolved = os.path.realpath(path)
-        found = _inside(resolved, roots)
-        if found is None or not found[1] or any(part.startswith(".") for part in found[1]):
-            raise _Refused  # noqa: TRY301 -- one answer for every refusal
+        found = inside(resolved, roots)
+        if found is None or not found[1] or unreadable(found[1]):
+            raise Refused  # noqa: TRY301 -- one answer for every refusal
         at("resolved")
         data = _open_regular(found[0], found[1], max_bytes, at)
-    except OSError, ValueError, _Refused:  # ValueError: a path that cannot be encoded
+    except OSError, ValueError, Refused:  # ValueError: a path that cannot be encoded
         raise _outside(roots) from None
     if len(data) > max_bytes:
         raise _too_large(max_bytes)

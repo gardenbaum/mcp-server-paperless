@@ -25,6 +25,7 @@ Probed on 3.4.2 (PLMCP-31):
   an empty list an empty archive.
 """
 
+import contextlib
 import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, ClassVar, Final
@@ -47,11 +48,12 @@ from mcp_server_paperless.domain.admin import (
 )
 from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError, PermissionDenied
 from mcp_server_paperless.domain.tasks import REJECTED, TaskState
+from mcp_server_paperless.paperless.client import opened
 from mcp_server_paperless.paperless.pagination import Page
 from mcp_server_paperless.paperless.tasks import duplicate_of
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import AsyncGenerator, Sequence
     from types import TracebackType
 
     from mcp_server_paperless.domain.admin import (
@@ -61,6 +63,7 @@ if TYPE_CHECKING:
         RunnableTask,
         TaskType,
     )
+    from mcp_server_paperless.domain.files import OpenedFile
     from mcp_server_paperless.paperless.client import PaperlessClient
 
 USERS: Final = "/api/users/"
@@ -482,12 +485,7 @@ class PaperlessAdminReader:
         max_bytes: int,
     ) -> ArchiveFile:
         """See ``AdminReader.download_documents``."""
-        body = {
-            "documents": list(document_ids),
-            "content": content,
-            "compression": compression,
-            "follow_formatting": follow_formatting,
-        }
+        body = _selection(document_ids, content, compression, follow_formatting=follow_formatting)
         with Refused(DOWNLOAD):
             found = await self._client.stream_post(
                 BULK_DOWNLOAD, json=body, max_bytes=max_bytes, max_seconds=DOWNLOAD_SECONDS
@@ -499,6 +497,40 @@ class PaperlessAdminReader:
             truncated=found.truncated,
             timed_out=timed_out,
         )
+
+    @contextlib.asynccontextmanager
+    async def open_archive(
+        self,
+        document_ids: Sequence[int],
+        *,
+        content: ArchiveContent,
+        compression: Compression,
+        follow_formatting: bool,
+        wait_seconds: float,
+    ) -> AsyncGenerator[OpenedFile]:
+        """See ``AdminReader.open_archive``."""
+        body = _selection(document_ids, content, compression, follow_formatting=follow_formatting)
+        async with contextlib.AsyncExitStack() as stack:
+            with Refused(DOWNLOAD):
+                response = await stack.enter_async_context(
+                    self._client.stream("POST", BULK_DOWNLOAD, json=body, timeout=wait_seconds)
+                )
+            yield opened(response)
+
+
+def _selection(
+    document_ids: Sequence[int],
+    content: ArchiveContent,
+    compression: Compression,
+    *,
+    follow_formatting: bool,
+) -> dict[str, object]:
+    return {
+        "documents": list(document_ids),
+        "content": content,
+        "compression": compression,
+        "follow_formatting": follow_formatting,
+    }
 
 
 async def _read_config(client: PaperlessClient) -> AppConfigRecord:

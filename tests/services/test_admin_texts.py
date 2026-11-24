@@ -530,9 +530,9 @@ async def test_the_over_limit_note_is_exact() -> None:
     delivery = await system.download([1])
 
     assert delivery.report.note == (
-        "The archive is over the download limit of 10 bytes, so it is not attached. Ask for "
-        "fewer documents, fetch single files with download_document, or ask the administrator "
-        "to raise PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
+        "The archive is over the download limit of 10 bytes, so it is not attached. Call "
+        "again with offset=0 to read it in parts, ask for fewer documents, fetch single files with "
+        "download_document, or ask the administrator to raise PAPERLESS_MCP_MAX_DOWNLOAD_BYTES."
     )
 
 
