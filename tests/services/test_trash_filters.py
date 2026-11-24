@@ -1097,3 +1097,20 @@ async def test_an_entry_that_left_the_list_but_still_answers_is_not_called_delet
     result = await setup.on(hidden).empty([one], everything=False, confirm=True)
 
     assert [e.outcome for e in result.entries] == ["still_in_trash"]
+
+
+async def test_one_lookup_that_fails_leaves_that_entry_unverified() -> None:
+    setup = Setup()
+    first, second = await setup.trashed("first"), await setup.trashed("second")
+
+    class NoRoot(FakePaperless):
+        @override
+        async def get_root(self, document_id: int) -> int:
+            if document_id == second:
+                raise OUTAGE
+            return await super().get_root(document_id)
+
+    fake = NoRoot(setup.state, user="admin", allow_writes=True)
+    result = await setup.on(fake).empty([first, second], everything=False, confirm=True)
+
+    assert [e.outcome for e in result.entries] == ["deleted", "unverified"]
