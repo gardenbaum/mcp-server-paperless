@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:48Z'
-updated_date: '2026-11-24T00:03:54Z'
+updated_date: '2026-11-24T00:03:58Z'
 labels: []
 dependencies: []
 priority: high
@@ -31,7 +31,7 @@ By default Paperless keeps duplicates (with PAPERLESS_CONSUMER_DELETE_DUPLICATES
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [x] #1 Tests written first (red, then green) at every test level the change touches
+- [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
@@ -54,4 +54,6 @@ Approved design (owner, 2026-11-23), part 77. Failing test first at each level.
 Implemented per the approved design (part 77), decision-47. Red before green at adapter, contract (fake), service and tool level; live tests (contract/test_duplicates, e2e/test_upload_duplicates, e2e/test_rejected_duplicates) run on GitHub only. AC 2, 3 and 6 stay unchecked until the live runs are green.
 Conditions and trade-offs: (1) versions are read for the 5,000 last changed documents, 500 trash entries, 20 deleted versions; the result names what was not read. (2) A match is refused with the checksum and the matches in the scope; more than 100 originals are in the scope by count only. (3) A deleted version whose file Paperless cannot read makes the check fail and stops uploads until the trash is emptied (decision-47). (4) list_tasks shows a generic message for a rejected duplicate and no id; get_task names the document if visible. (5) list_trash rows got a checksum field. (6) The new E2E modules are not in the uploads/version_uploads aliases of scripts/e2e_ci.py, because an unmeasured module breaks the tier budget test; they run for duplicates.py and upload_hint.py and in e2e-full.
 Deliberate changes: surface snapshot (confirm, duplicates, checksum, descriptions; no tool added), docs/tools.md, api-coverage, schema guard entry for the HTML 403 of root/, test_http_uploads sends two different files (the second upload of the same file now asks), E2E texts of test_versions are unique. New workflow job e2e-duplicates in e2e-full.yml (own stack).
+
+DoD 1 stays unchecked until the live levels ran: the E2E tests were written after the code and have not run.
 <!-- SECTION:NOTES:END -->
