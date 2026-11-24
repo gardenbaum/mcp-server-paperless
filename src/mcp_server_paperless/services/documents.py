@@ -40,7 +40,7 @@ CHECK_SECONDS: Final = 30.0
 CHECKS_AT_ONCE: Final = 5
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Mapping
+    from collections.abc import Collection, Iterable, Mapping
     from datetime import date
 
     from pydantic import JsonValue
@@ -121,6 +121,36 @@ def listed_version(document: DocumentRecord, version_id: int | None) -> int:
     return listed[0] if version_id is None else version_id
 
 
+async def read_facts[V: int | None](
+    reader: DocumentReader, files: Iterable[tuple[int, V]], seconds: float
+) -> tuple[dict[tuple[int, V], FileMetadata], dict[tuple[int, V], str]]:
+    """The facts of the files (document and version), and why the others could not be read.
+
+    What failed comes first in the reasons, then what was not read within ``seconds`` for all.
+    """
+    wanted = list(files)
+    facts: dict[tuple[int, V], FileMetadata] = {}
+    reasons: dict[tuple[int, V], str] = {}
+    turn = asyncio.Semaphore(CHECKS_AT_ONCE)
+
+    async def read(number: int, version_id: V) -> None:
+        async with turn:
+            try:
+                found = await reader.get_document_metadata(number, version_id=version_id)
+            except PaperlessMcpError as error:
+                reasons[number, version_id] = error.message
+            else:
+                facts[number, version_id] = found
+
+    with contextlib.suppress(TimeoutError):
+        async with asyncio.timeout(seconds), asyncio.TaskGroup() as group:
+            for number, version_id in wanted:
+                _ = group.create_task(read(number, version_id))
+    late = f"The check took longer than {seconds:g} seconds."
+    reasons |= {key: late for key in wanted if key not in facts and key not in reasons}
+    return facts, reasons
+
+
 async def require_files(  # noqa: PLR0913 -- what is checked and how strictly
     reader: DocumentReader,
     documents: Mapping[int, int | None],
@@ -141,29 +171,15 @@ async def require_files(  # noqa: PLR0913 -- what is checked and how strictly
         NotFound: A file is missing; it names all that were found.
         PaperlessMcpError: With ``certain``, a document could not be checked.
     """
-    facts: dict[int, FileMetadata] = {}
-    reasons: list[str] = []
-    turn = asyncio.Semaphore(CHECKS_AT_ONCE)
-
-    async def read(number: int, version_id: int | None) -> None:
-        async with turn:
-            try:
-                facts[number] = await reader.get_document_metadata(number, version_id=version_id)
-            except PaperlessMcpError as error:
-                reasons.append(error.message)
-
-    with contextlib.suppress(TimeoutError):
-        async with asyncio.timeout(seconds), asyncio.TaskGroup() as group:
-            for number, version_id in documents.items():
-                _ = group.create_task(read(number, version_id))
-    checked = {number: facts[number] for number in documents if number in facts}
+    facts, reasons = await read_facts(reader, documents.items(), seconds)
+    checked = {key[0]: facts[key] for key in documents.items() if key in facts}
     refusal = missing_files(checked, [version], len(documents), choice=choice)
     if refusal is not None:
         raise refusal
-    unchecked = [number for number in documents if number not in facts]
+    unchecked = [number for number in documents if number not in checked]
     if certain and unchecked:
         s = "s" if len(unchecked) > 1 else ""
-        reason = reasons[0] if reasons else f"The check took longer than {seconds:g} seconds."
+        reason = next(iter(reasons.values()))
         message = (
             f"The file{s} of {joined(unchecked)} could not be checked, so nothing was merged: "
             "Paperless leaves a document whose file is missing out of a merge without saying so. "

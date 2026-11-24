@@ -170,7 +170,12 @@ class VersionsMerged(BaseModel):
     web_url: Annotated[str, Field(description="Link to the document in the Paperless web UI.")]
     message: Annotated[
         str | None,
-        Field(description="Set when the versions could not be listed or the merge is unconfirmed."),
+        Field(
+            description=(
+                "Set when the versions could not be listed, the merge is unconfirmed or Paperless "
+                "cannot find a file."
+            )
+        ),
     ] = None
     unconfirmed_task_id: Annotated[
         str | None,

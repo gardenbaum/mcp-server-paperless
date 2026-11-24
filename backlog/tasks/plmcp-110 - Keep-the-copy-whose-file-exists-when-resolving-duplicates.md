@@ -1,9 +1,11 @@
 ---
 id: PLMCP-110
 title: Keep the copy whose file exists when resolving duplicates
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T08:50:41Z'
+updated_date: '2026-11-24T10:12:26Z'
 labels:
   - safety
 dependencies: []
@@ -31,3 +33,12 @@ resolve_duplicates with trash can keep the document whose file Paperless cannot 
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Failing service tests: kept file missing (trash, merge, merge_documents_as_versions), unchecked, versions, archive, acceptance.
+2. One check of the root and newest file of each document (metadata/), shared by both services; require_files reads through the same helper.
+3. resolve_duplicates: refuse if a copy still has the file the kept one lacks, else name it; a merge that cannot be checked is refused. merge_documents_as_versions: name it, refuse what cannot be checked.
+4. Contract, tool and E2E tests (live ones hosted only), docs, decision, snapshots deliberately.
+<!-- SECTION:PLAN:END -->

@@ -17,6 +17,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
     quoted,
 )
+from mcp_server_paperless.domain.files import joined
 from mcp_server_paperless.domain.versions import (
     DocumentVersions,
     VersionDeleted,
@@ -25,6 +26,7 @@ from mcp_server_paperless.domain.versions import (
 )
 from mcp_server_paperless.services.document_edits import COUNTED
 from mcp_server_paperless.services.documents import document_link
+from mcp_server_paperless.services.file_checks import check_files
 from mcp_server_paperless.services.removal import RESTORE
 
 if TYPE_CHECKING:
@@ -241,6 +243,7 @@ class VersionService:
                 long or comes with several sources, or a source that has versions of its own.
             NotFound: A document does not exist or the user may not see it.
             PermissionDenied: The user may not change and delete the documents (own them).
+            PaperlessMcpError: Whether the files are there could not be checked.
         """
         text = self._checked(root_id, source_ids, label)
         root = await self._reader.get_document(root_id)
@@ -258,9 +261,21 @@ class VersionService:
                         "document instead, or delete its other versions first."
                     ),
                 )
+        files = await check_files(self._reader, (root, *sources))
+        if files.unchecked:
+            unchecked = list(files.unchecked)
+            s = "" if len(unchecked) == 1 else "s"
+            message = (
+                f"Whether Paperless can find the file{s} of {joined(unchecked)} could not be "
+                "checked, so nothing was merged: a merge is final. "
+                f"The reason: {next(iter(files.unchecked.values()))}"
+            )
+            raise PaperlessMcpError(message, hint="Try again in a moment.")
+        notes = files.notes(root_id)
+        missing = "".join(f" {note}." for note in notes)
         if not confirm:
             ConfirmationRequired.require(
-                merge_effect(root, sources, text),
+                ". ".join([merge_effect(root, sources, text), *notes]),
                 scope=[bound(d) for d in (root, *sources)],
             )
         try:
@@ -279,7 +294,7 @@ class VersionService:
                 message=(
                     f"Not confirmed: Paperless queued the merge as task {unconfirmed.task_id}, "
                     f"but {unconfirmed.reason}. Read it with get_task, then list the versions "
-                    "with list_document_versions, before repeating the call."
+                    f"with list_document_versions, before repeating the call.{missing}"
                 ),
             )
         try:
@@ -293,7 +308,7 @@ class VersionService:
                 web_url=link,
                 message=(
                     "The documents were merged, but the versions could not be read afterwards; "
-                    "list them with list_document_versions."
+                    f"list them with list_document_versions.{missing}"
                 ),
             )
         return VersionsMerged(
@@ -301,6 +316,7 @@ class VersionService:
             merged_document_ids=tuple(source_ids),
             versions=versions,
             web_url=link,
+            message=missing.strip() or None,
         )
 
     @staticmethod

@@ -2,8 +2,10 @@
 
 Only documents that Paperless takes for duplicates of the kept one in this very call are touched,
 all of them or none (decision-51). Everything Paperless would refuse and this server can see
-beforehand is refused first, with every document named. Afterwards the state is read again, so a
-change that failed, or that could not be followed, names what is gone and what is still there.
+beforehand is refused first, with every document named. So is keeping a document whose file
+Paperless cannot find while a duplicate still has it: duplicates are told by checksums, which
+outlive the files (decision-63). Afterwards the state is read again, so a change that failed, or
+that could not be followed, names what is gone and what is still there.
 
 Residual race: what is added to a duplicate (a note, a version) between the read and the request
 goes with it. A document in the trash can be restored; a merge is final.
@@ -28,10 +30,12 @@ from mcp_server_paperless.domain.errors import (
     Validation,
     quoted,
 )
+from mcp_server_paperless.domain.files import joined
 from mcp_server_paperless.services.bulk_documents import DRY_RUN, TO_GO_AHEAD
 from mcp_server_paperless.services.document_edits import COUNTED
 from mcp_server_paperless.services.documents import document_link, match_of, root_checksum
 from mcp_server_paperless.services.duplicates import SHOWN, describe
+from mcp_server_paperless.services.file_checks import check_files
 from mcp_server_paperless.services.versions import bound, merge_effect
 
 if TYPE_CHECKING:
@@ -41,6 +45,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.duplicate_resolution import ResolveAction
     from mcp_server_paperless.domain.ports import BulkWriter, DocumentReader, DocumentWriter
     from mcp_server_paperless.domain.tasks import Unconfirmed
+    from mcp_server_paperless.services.file_checks import FileCheck
     from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 NOT_DUPLICATE: Final = "Paperless does not take it for a duplicate of document {keep}"
@@ -49,6 +54,8 @@ UNSEEN: Final = "it does not exist outside the trash as a document this user may
 MAY_NOT: Final = "this user may not change it"
 HAS_VERSIONS: Final = "it has {count} versions, so it cannot be merged"
 STILL_THERE: Final = "it was still there when read again"
+NO_FILE: Final = "Paperless cannot find its file, and {others} still {have} it"
+UNCHECKED: Final = "whether Paperless can find its file could not be checked (the reason: {reason})"
 NOT_READ: Final = "what became of it could not be read"
 REPORTED: Final = (
     "Paperless reported the change as done; read the documents again before repeating the call."
@@ -72,6 +79,13 @@ OWNERS: Final[dict[ResolveAction, str]] = {
     "merge_as_versions": _OWN.format(" and the kept document"),
 }
 HAS_VERSIONS_HINT: Final = "Use action trash for it, or keep that document instead."
+NO_FILE_HINT: Final = (
+    "Keep a document whose file is there instead, or restore the missing file from a backup."
+)
+UNCHECKED_HINT: Final = (
+    "A merge is final, so every file is checked before it: try again in a moment, or use action "
+    "trash."
+)
 RESTORABLE: Final = (
     "{it} can be restored until the trash is emptied (by default after 30 days), in the Paperless "
     "web UI or with restore_from_trash (toolset trash)"
@@ -82,11 +96,16 @@ HIDDEN: Final = "Documents this user cannot see are not compared"
 
 @dataclass(frozen=True, slots=True)
 class _Group:
-    """The kept document, the duplicates to resolve and those that stay."""
+    """The kept document, the duplicates to resolve, those that stay, and what files are there."""
 
     keep: DocumentRecord
     duplicates: tuple[DocumentRecord, ...]
     others: tuple[DuplicateMatch, ...]
+    files: FileCheck
+
+    @property
+    def notes(self) -> list[str]:
+        return self.files.notes(self.keep.id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,14 +167,16 @@ class DuplicateResolver:
         Raises:
             ConfirmationRequired: ``confirm`` is false. Nothing was changed.
             Validation: The selection is empty, too large or repeated, a document is no duplicate
-                of the kept one outside the trash, or it cannot be merged. Nothing was changed.
+                of the kept one outside the trash, it cannot be merged, its file cannot be checked
+                before a merge, or Paperless cannot find the file of the kept one while a duplicate
+                has it. Nothing was changed.
             NotFound: The kept document does not exist, or the user may not see it.
             PermissionDenied: The user may not change the documents. Nothing was changed.
             PaperlessMcpError: The change failed; the message names what was seen afterwards.
         """
         _check(keep_id, duplicate_ids)
-        group = await self._group(keep_id, duplicate_ids)
-        blocked = _blocked(group, action)
+        group = await self._group(keep_id, duplicate_ids, action)
+        blocked, hint = _blocked(group, action)
         effect = _effect(group, action)
         if dry_run:
             return self._preview(group, action, effect, blocked)
@@ -163,7 +184,7 @@ class DuplicateResolver:
             message = f"Nothing was changed: {_listed(blocked)}."
             if any(b.why == MAY_NOT for b in blocked):
                 raise PermissionDenied(message, hint=OWNERS[action])
-            raise Validation(message, hint=HAS_VERSIONS_HINT)
+            raise Validation(message, hint=hint)
         if not confirm:
             ConfirmationRequired.require(
                 effect,
@@ -188,7 +209,9 @@ class DuplicateResolver:
 
     # --- reading ---------------------------------------------------------------------------------
 
-    async def _group(self, keep_id: int, duplicate_ids: Sequence[int]) -> _Group:
+    async def _group(
+        self, keep_id: int, duplicate_ids: Sequence[int], action: ResolveAction
+    ) -> _Group:
         """The documents, each of them a duplicate of the kept one now.
 
         Raises:
@@ -227,7 +250,22 @@ class DuplicateResolver:
             if d.id not in duplicate_ids
         )
         ordered = sorted(others, key=lambda o: (o.in_trash, o.document_id))
-        return _Group(keep=keep, duplicates=tuple(duplicates), others=tuple(ordered))
+        return _Group(
+            keep=keep,
+            duplicates=tuple(duplicates),
+            others=tuple(ordered),
+            files=await self._files(keep, duplicates, action),
+        )
+
+    async def _files(
+        self, keep: DocumentRecord, duplicates: Sequence[DocumentRecord], action: ResolveAction
+    ) -> FileCheck:
+        """Before the trash the duplicates matter only if the kept document lacks a file."""
+        if action == "trash":
+            kept = await check_files(self._reader, [keep])
+            if not kept.lost(keep.id):
+                return kept
+        return await check_files(self._reader, [keep, *duplicates])
 
     async def _after(self, group: _Group, action: ResolveAction) -> _After:
         """What became of the duplicates; never raises, because the change may be made.
@@ -296,6 +334,7 @@ class DuplicateResolver:
         message = f"{DRY_RUN} Confirming would {effect}. {TO_GO_AHEAD}"
         if blocked:
             message = f"{DRY_RUN} It would be refused as a whole: {_listed(blocked)}."
+            message = " ".join([message, *_sentences(group.notes)])
         return self._resolution(
             group,
             action,
@@ -371,23 +410,37 @@ def _check(keep_id: int, duplicate_ids: Sequence[int]) -> None:
         raise Validation(message, hint="List each document once.")
 
 
-def _blocked(group: _Group, action: ResolveAction) -> tuple[UnresolvedDuplicate, ...]:
-    """What Paperless would refuse, as far as it can be seen; it would refuse all of them then."""
-    merging = action == "merge_as_versions"
+def _sentences(notes: Sequence[str]) -> list[str]:
+    return [f"{note}." for note in notes]
 
-    def why(document: DocumentRecord) -> str | None:
-        if document.user_can_change is False:
-            return MAY_NOT
-        if merging and document is not group.keep and len(document.versions) > 1:
-            return HAS_VERSIONS.format(count=len(document.versions))
+
+def _blocked(group: _Group, action: ResolveAction) -> tuple[tuple[UnresolvedDuplicate, ...], str]:
+    """What is refused, all of it together, and what would help.
+
+    That is what Paperless would refuse, as far as it can be seen, and what would cost a file.
+    """
+    merging, keep, files = action == "merge_as_versions", group.keep, group.files
+    better = files.outdone_by(keep.id, [d.id for d in group.duplicates])
+
+    def why(document: DocumentRecord) -> tuple[str, str] | None:
+        # Trashing the duplicates does not touch the kept document.
+        if document.user_can_change is False and (merging or document is not keep):
+            return MAY_NOT, OWNERS[action]
+        if merging and document is not keep and len(document.versions) > 1:
+            return HAS_VERSIONS.format(count=len(document.versions)), HAS_VERSIONS_HINT
+        if merging and document.id in files.unchecked:
+            reason = files.unchecked[document.id].removesuffix(".")
+            return UNCHECKED.format(reason=reason), UNCHECKED_HINT
+        if better and document is keep:
+            have = "has" if len(better) == 1 else "have"
+            return NO_FILE.format(others=joined(better), have=have), NO_FILE_HINT
         return None
 
-    # Trashing the duplicates does not touch the kept document.
-    documents = (*([group.keep] if merging else []), *group.duplicates)
-    reasons = [(d, why(d)) for d in documents]
+    found = [(d, reason) for d in (keep, *group.duplicates) if (reason := why(d))]
+    hints = dict.fromkeys(hint for _, (_, hint) in found)
     return tuple(
-        UnresolvedDuplicate(id=d.id, title=d.title, why=reason) for d, reason in reasons if reason
-    )
+        UnresolvedDuplicate(id=d.id, title=d.title, why=reason) for d, (reason, _) in found
+    ), " ".join(hints)
 
 
 def _it(documents: Sequence[object]) -> str:
@@ -403,6 +456,7 @@ def _seen(group: _Group, action: ResolveAction, after: _After) -> str:
         parts.append(f"{where} now: {named}.")
     if after.not_resolved:
         parts.append(f"Not known to be resolved: {_listed(after.not_resolved)}.")
+    parts += _sentences(group.notes)
     return " ".join(parts)
 
 
@@ -418,7 +472,7 @@ def _effect(group: _Group, action: ResolveAction) -> str:
         )
     else:
         lead = f"{merge_effect(keep, duplicates, None)}. {FINAL.format(it=_it(duplicates))}"
-    parts = [lead, *(_details(d, group) for d in (keep, *duplicates))]
+    parts = [lead, *group.notes, *(_details(d, group) for d in (keep, *duplicates))]
     if group.others:
         more = len(group.others) - SHOWN
         rest = f" and {more} more" if more > 0 else ""
