@@ -333,8 +333,9 @@ async def get_app_config(ctx: Context) -> AppConfig:
     """Read the application configuration: the settings that have a value, OCR, barcodes, AI.
 
     Settings without a value follow the server's environment and are left out. API keys are
-    never returned; keys_configured names those that hold one. Any signed-in user may read it.
-    Change it with update_app_config.
+    never returned; keys_configured names those that hold one. URLs come without their
+    credentials; shown_in_part names those that may have some, and writing one back as shown
+    keeps them. Any signed-in user may read it. Change it with update_app_config.
     """
     return await services(ctx).system.get_config()
 
@@ -344,8 +345,9 @@ UPDATE_CONFIG_DESCRIPTION = f"""Change the application configuration: OCR, barco
 It applies to every user and to every document consumed from now on, and the AI settings decide
 which service gets the document text, so every change needs confirm: without it a dialog, or an
 error for you to show the user, first lists each setting with its old and new value, never a key
-(see confirm). Settings you leave out stay. A call that changes nothing says so. Needs the
-change_applicationconfiguration permission. Settings:
+(see confirm). Settings you leave out stay. A service URL written back as it was returned keeps
+its stored credentials; with an empty user name (https://@host/path) it loses them. A call that
+changes nothing says so. Needs the change_applicationconfiguration permission. Settings:
 {SETTINGS_HELP}
 """
 
