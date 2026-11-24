@@ -26,7 +26,7 @@ from mcp_server_paperless.services.bulk_updates import BulkUpdates
 from mcp_server_paperless.services.document_edits import DocumentEditor
 from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.pdf import PdfService
-from mcp_server_paperless.services.pdf_parts import Parts
+from mcp_server_paperless.services.pdf_parts import LAST_LOOK_SECONDS, Parts
 from mcp_server_paperless.services.pdf_replacing import Replacing
 from mcp_server_paperless.services.removal import DocumentRemoval
 from mcp_server_paperless.services.selection import DocumentSelector
@@ -118,6 +118,7 @@ def pdf_service(
     *,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     clock: Callable[[], float] = time.monotonic,
+    last_look: float = LAST_LOOK_SECONDS,
 ) -> PdfService:
     """`PdfService` on the fake, with everything it is built from."""
     web = "https://paperless.example"
@@ -131,7 +132,9 @@ def pdf_service(
         TaskService(fake, sleep=sleep, clock=clock),
         replacing,
         taxonomy,
-        parts=Parts(fake, fake, editor, taxonomy, replacing, web_url=web, sleep=sleep),
+        parts=Parts(
+            fake, fake, editor, taxonomy, replacing, web_url=web, sleep=sleep, last_look=last_look
+        ),
         web_url=web,
     )
 
