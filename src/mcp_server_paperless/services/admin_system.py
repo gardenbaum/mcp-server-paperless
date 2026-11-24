@@ -292,7 +292,7 @@ class SystemAdmin:
         for name, given in wanted.items():
             now = current.settings.get(name)
             value = _written(name, given)
-            if now in (given, value):
+            if now == value:
                 continue
             if now is not None and value == _returned(name, now):
                 if value == given:

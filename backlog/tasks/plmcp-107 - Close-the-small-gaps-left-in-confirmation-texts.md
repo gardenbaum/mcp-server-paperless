@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T07:06:16Z'
-updated_date: '2026-11-24T11:24:39Z'
+updated_date: '2026-11-24T11:28:06Z'
 labels: []
 dependencies: []
 priority: medium
@@ -70,4 +70,6 @@ Correction of ruling b (replaces the numbers above): one text takes at most 240 
 Measured: a name of 12-character escapes 231, of 6-character escapes 237 (not 237 for the former); at most 240. Both ends at 254: 591 and 597. Named modules: 1033 passed, 1 skipped; diff-cover 100 %.
 
 Delta review of f05766d (replaces what is said above about removing credentials by null and about the removed confirmation): N1/N2 an empty user name over the stored URL removes its credentials in one call; confirmation and result say 'remove(d) the credentials of', the empty user name is never written. The reset advice is gone (reason in decision-64). The sentence fits the description budget. N3, N4 message texts. N5 U+1425 added to the shared list, so excerpts of correct_document_text escape it too; two U+0301 on a space named as open. N6: cases added for a letter that is escaped or invisible not carrying an accent, and for private-use and blank signs between two quotes; the delta review text with the two mutants was not available here, so these are chosen from the code. Snapshot test_surface.ambr: update_app_config description only.
+
+Last review: D1, D2 in decision-64; D3 a stored empty user name written again is removed too (test seen red). N6 confirmed by the reviewer.
 <!-- SECTION:NOTES:END -->

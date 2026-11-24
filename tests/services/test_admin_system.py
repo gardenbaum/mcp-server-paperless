@@ -214,6 +214,21 @@ async def test_a_new_url_is_written_without_its_empty_user(
 
 
 @pytest.mark.decision("decision-64")
+@EMPTY_USER
+async def test_a_stored_empty_user_is_removed_by_writing_it_again(empty: str) -> None:
+    setup = Setup()
+    setup.state.config = {"llm_endpoint": f"https://{empty}e.x"}
+    asked = {"llm_endpoint": f"https://{empty}e.x"}
+
+    message = await refusal(setup.service.update_config(asked))
+    outcome = await setup.service.update_config(asked, confirm=True)
+
+    assert "remove the credentials of llm_endpoint 'https://e.x'" in message
+    assert outcome.changed == ("llm_endpoint",)
+    assert setup.state.config == {"llm_endpoint": "https://e.x"}
+
+
+@pytest.mark.decision("decision-64")
 async def test_only_a_service_url_loses_an_empty_user() -> None:
     setup = Setup()
 
