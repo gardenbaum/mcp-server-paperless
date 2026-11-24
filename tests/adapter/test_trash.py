@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
     from adapter.conftest import ClientFactory
-    from mcp_server_paperless.domain.trash import TrashPage
+    from mcp_server_paperless.domain.trash import TrashedRecord, TrashPage
 
 pytestmark = pytest.mark.anyio
 
@@ -364,3 +364,32 @@ class Broken(Chunks):
 async def test_a_connection_that_breaks_while_reading_is_an_outage() -> None:
     with pytest.raises(UpstreamUnreachable):
         _ = await read(httpx2.Response(200, stream=Broken(b"{")))
+
+
+async def find(response: httpx2.Response, ids: list[int]) -> dict[int, TrashedRecord]:
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        assert request.url.path == "/api/trash/"
+        assert dict(request.url.params) == {"page": "1", "page_size": "500"}
+        assert request.headers["Accept-Encoding"] == "identity"
+        return response
+
+    client, _ = streaming(answer)
+    return await PaperlessTrashReader(client).find_in_trash(ids, entries=500, max_bytes=64 * 1024)
+
+
+async def test_found_documents_come_with_their_facts_and_versions_are_left_out() -> None:
+    other = {**DOCUMENT, "id": 3302}
+    stream = Chunks(body(DOCUMENT, VERSION, other))
+
+    found = await find(httpx2.Response(200, stream=stream), [3301, 3305, 9])
+
+    assert found.keys() == {3301}
+    entry = found[3301]
+    assert (entry.title, entry.tags, entry.owner, entry.mime_type, entry.checksum) == (
+        "plmcp27-probe-b",
+        (3,),
+        2,
+        "text/plain",
+        "b5989a99fade41ed36af961e918ef43da955b8b08a4c8aa78430f2e6b7da43cb",
+    )
+    assert entry.original_file_name == "plmcp27-probe-b.txt"

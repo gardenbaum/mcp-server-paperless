@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from mcp_server_paperless.domain.documents import DocumentUpload
+from mcp_server_paperless.domain.documents import DocumentPatch, DocumentUpload
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 from mcp_server_paperless.domain.versions import VersionUpload
 from mcp_server_paperless.paperless.documents import unseen_document, unseen_version
@@ -368,6 +368,45 @@ async def test_merged_documents_become_versions_in_order_and_vanish_with_their_n
         with pytest.raises(NotFound):
             _ = await ports.documents.get_document(source)
         assert not backend.in_trash(source)
+
+
+@pytest.mark.contract(MERGE)
+async def test_the_first_archive_serial_number_goes_to_a_root_without_one_the_others_go(
+    backend: Backend,
+) -> None:
+    ports = backend.admin
+    root, plain, first, second = backend.new_documents(4)
+    low = uuid.uuid4().int % 4_000_000_000
+    for document, number in ((first, low), (second, low + 1)):
+        _ = await ports.document_writes.update_document(
+            document, DocumentPatch(archive_serial_number=number)
+        )
+
+    _ = await ports.document_writes.merge_as_versions(root, (plain, first), None)
+    after = (await ports.documents.get_document(root)).archive_serial_number
+    _ = await ports.document_writes.merge_as_versions(root, (second,), None)
+    kept = (await ports.documents.get_document(root)).archive_serial_number
+    # The number that was released is free again.
+    [other] = backend.new_documents(1)
+    reused = await ports.document_writes.update_document(
+        other, DocumentPatch(archive_serial_number=low + 1)
+    )
+
+    assert (after, kept, reused.archive_serial_number) == (low, low, low + 1)
+
+
+@pytest.mark.contract(MERGE)
+async def test_a_document_with_a_version_in_the_trash_is_not_merged(backend: Backend) -> None:
+    ports = backend.admin
+    root, source = backend.new_documents(2)
+    version = await add_version(backend, source, "plmcp86 deleted version")
+    _ = await ports.document_writes.delete_version(source, version)
+
+    with pytest.raises(Validation, match="existing versions"):
+        _ = await ports.document_writes.merge_as_versions(root, (source,), None)
+
+    assert len(await versions(ports, root)) == 1
+    assert len(await versions(ports, source)) == 1
 
 
 @pytest.mark.contract(MERGE)

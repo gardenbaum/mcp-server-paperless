@@ -20,6 +20,11 @@ from mcp_server_paperless.domain.bulk import (
     TaxonomyOperation,
 )
 from mcp_server_paperless.domain.documents import NameOrId
+from mcp_server_paperless.domain.duplicate_resolution import (
+    MAX_DUPLICATES,
+    DuplicateResolution,
+    ResolveAction,
+)
 from mcp_server_paperless.tools._shared import ANNOTATIONS, Confirm, boundary, services
 
 TOOLSET = "bulk"
@@ -116,4 +121,51 @@ async def bulk_edit_taxonomy(  # noqa: PLR0913 -- one parameter per concept, des
     """  # noqa: D205 -- the summary is one sentence; FastMCP sends the docstring as is
     return await services(ctx).bulk_taxonomy.edit(
         kind, items, operation, dry_run=dry_run, confirm=confirm
+    )
+
+
+@provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["resolve_duplicates"])
+@boundary
+async def resolve_duplicates(  # noqa: PLR0913 -- one parameter per concept, described for the LLM
+    ctx: Context,
+    keep_document_id: Annotated[int, Field(description="The document that stays.")],
+    duplicate_ids: Annotated[
+        list[int],
+        Field(
+            min_length=1,
+            max_length=MAX_DUPLICATES,
+            description=(
+                f"Ids of its duplicates to resolve, at most {MAX_DUPLICATES}, from get_document "
+                "with include duplicates; not those in the trash."
+            ),
+        ),
+    ],
+    action: Annotated[
+        ResolveAction,
+        Field(
+            description=(
+                "trash: they can be restored; merge_as_versions: they become versions of the kept "
+                "document for good and lose their metadata and notes."
+            )
+        ),
+    ],
+    *,
+    dry_run: DryRun = False,
+    confirm: Confirm = False,
+) -> DuplicateResolution:
+    """Keep one document and move its duplicates to the trash, or merge them into it as versions.
+
+    Find documents with duplicates with search_documents(has_duplicates=true) and compare the
+    copies with get_document(include=["duplicates"]) first: notes, tags and dates differ. With
+    trash the duplicates can be restored. Merging is final: they vanish for good, not even into
+    the trash, and lose their metadata and notes; only their files stay. dry_run=true previews;
+    without confirm a dialog, or an error for you to show the user, first describes the effect
+    (see confirm). Every document has to be a duplicate of the kept one now, outside the trash:
+    otherwise nothing changes and each one that is not is named. Documents you cannot see are never
+    compared. Needs change permission on the duplicates (for a merge on the kept document too),
+    ownership of them and the delete permission. resolved and not_resolved say what was seen
+    afterwards.
+    """
+    return await services(ctx).duplicate_resolver.resolve(
+        keep_document_id, duplicate_ids, action, dry_run=dry_run, confirm=confirm
     )

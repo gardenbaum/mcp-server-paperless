@@ -21,7 +21,7 @@ import pytest
 from e2e.helpers import pdf
 from fakes.admin import BOOLEANS, CHOICES, MINIMUMS
 from fakes.mail import FakeMailAccount, FakeMailRule
-from fakes.paperless import FakePaperless, FakeSavedView, FakeState, FakeTask, seeded
+from fakes.paperless import FakeDocument, FakePaperless, FakeSavedView, FakeState, FakeTask, seeded
 from fastmcp import Client
 from harness import serve
 
@@ -348,6 +348,7 @@ async def test_documents_are_searched_changed_and_uploaded_with_every_argument()
             "has_document_type": True,
             "has_storage_path": True,
             "has_tags": True,
+            "has_duplicates": True,
         },
     )
     await sweep("search_documents", {"more_like_id": 1})
@@ -358,6 +359,7 @@ async def test_documents_are_searched_changed_and_uploaded_with_every_argument()
             "has_document_type": False,
             "has_storage_path": False,
             "has_tags": False,
+            "has_duplicates": False,
         },
     )
     await sweep(
@@ -496,6 +498,32 @@ async def test_permissions_and_bulk_changes_take_every_argument() -> None:
             {"document_ids": [1], "operation": operation, "dry_run": False},
             (),
             prepare=bare,
+        )
+    assert not FAILED, "\n".join(FAILED)
+
+
+def with_copies(state: FakeState) -> None:
+    state.documents += [
+        FakeDocument(id=n, title=f"Copy {n}", owner=2, original=b"%PDF same") for n in (80, 81)
+    ]
+    state.documents[-2].custom_fields = {8: [2]}  # a linked document, whose title is read
+    state.trash.append(FakeDocument(id=82, title="Copy 82", owner=2, original=b"%PDF same"))
+
+
+async def test_duplicates_are_listed_and_resolved_in_both_ways() -> None:
+    arguments: Json = {"document_id": 80, "include": ["duplicates"]}
+    await sweep("get_document", arguments, (), prepare=with_copies)
+    for action in ("trash", "merge_as_versions"):
+        await sweep(
+            "resolve_duplicates",
+            {
+                "keep_document_id": 80,
+                "duplicate_ids": [81],
+                "action": action,
+                "dry_run": False,
+            },
+            (),
+            prepare=with_copies,
         )
     assert not FAILED, "\n".join(FAILED)
 
@@ -883,7 +911,10 @@ async def test_documents_are_read_with_every_section_and_slice() -> None:
     await sweep("get_instance_overview", {}, ())
     await sweep(
         "get_document",
-        {"document_id": 1, "include": ["notes", "history", "metadata", "versions", "suggestions"]},
+        {
+            "document_id": 1,
+            "include": ["notes", "history", "metadata", "versions", "suggestions", "duplicates"],
+        },
         (),
     )
     await sweep(

@@ -5,6 +5,7 @@ kind the user may not list leaves its names null instead of failing the search.
 """
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import re
@@ -12,15 +13,20 @@ from typing import TYPE_CHECKING, cast
 
 from mcp_server_paperless.domain.documents import (
     ContentSlice,
-    DocumentDetail,
     DocumentHistory,
+    DocumentRead,
+    DocumentRecord,
     DocumentSearchResult,
     DocumentSummary,
+    DuplicateDocument,
+    DuplicateList,
     FieldValue,
     Ref,
     SuggestionNames,
 )
 from mcp_server_paperless.domain.errors import (
+    AnswerCompressed,
+    AnswerTooLarge,
     FeatureUnavailable,
     NotFound,
     PermissionDenied,
@@ -36,15 +42,18 @@ if TYPE_CHECKING:
 
     from mcp_server_paperless.domain.documents import (
         CustomFieldValue,
+        DocumentFacts,
         DocumentHit,
         DocumentQuery,
-        DocumentRecord,
+        DuplicateKind,
         Include,
         NameFilters,
         NameOrId,
     )
-    from mcp_server_paperless.domain.ports import DocumentReader
+    from mcp_server_paperless.domain.duplicates import DuplicateRecord
+    from mcp_server_paperless.domain.ports import DocumentReader, TrashReader
     from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
+    from mcp_server_paperless.domain.trash import TrashedRecord
     from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 # The kinds a search row refers to by id.
@@ -62,7 +71,29 @@ HISTORY_LIMIT = 50
 # Most distinct linked documents whose titles a document read looks up.
 LINK_LIMIT = 100
 # The order sections are fetched and reported in.
-SECTIONS: tuple[Include, ...] = ("notes", "history", "metadata", "versions", "suggestions")
+SECTIONS: tuple[Include, ...] = (
+    "notes",
+    "history",
+    "metadata",
+    "versions",
+    "suggestions",
+    "duplicates",
+)
+# Most duplicates listed (each is a read of its own); the rest is counted.
+DUPLICATE_LIMIT = 25
+# What one read of the trash may cost, as in the check of uploads (decision-47).
+TRASH_ENTRIES = 500
+TRASH_BYTES = 64 * 1024 * 1024
+NOT_COMPARED = (
+    "Paperless compares original uploads and archive files, not later versions; documents this "
+    "user cannot see are never compared."
+)
+TRASH_DETAILS = "In the trash Paperless tells no notes, custom fields, page count or versions."
+NOT_LISTED = "Only the first {shown} of {total} duplicates are listed."
+UNREAD_DETAILS = (
+    "Only the title could be read of: {ids} (in the trash and not owned, beyond the first 500 "
+    "entries, a trash over 64 MiB, or changed meanwhile)."
+)
 MONETARY = re.compile(r"([A-Z]{3})(-?\d+(?:\.\d+)?)")
 
 
@@ -86,6 +117,20 @@ def text_state(document_id: int, version_id: int, text: str) -> str:
     """A fingerprint of the whole text of a version; versions often have the same text."""
     about = json.dumps([document_id, version_id, text])
     return hashlib.sha256(about.encode()).hexdigest()[:32]
+
+
+def root_checksum(document: DocumentRecord) -> str | None:
+    """The checksum of a document's original upload, in lower case."""
+    root = next((v.checksum for v in document.versions if v.is_root), None)
+    return root.lower() if root else None
+
+
+def match_of(document: DocumentRecord, checksum: str | None) -> DuplicateKind | None:
+    """How a duplicate whose original has ``checksum`` matches; None if that cannot be told."""
+    own = root_checksum(document)
+    if not own or not checksum:
+        return None
+    return "same_file" if checksum.lower() == own else "archive"
 
 
 def document_link(web_url: str, document_id: int) -> str:
@@ -155,9 +200,17 @@ async def owner_id(taxonomy: TaxonomyResolver, value: NameOrId | None) -> int | 
 class DocumentService:
     """Finds documents for the current user."""
 
-    def __init__(self, reader: DocumentReader, taxonomy: TaxonomyResolver, *, web_url: str) -> None:
+    def __init__(
+        self,
+        reader: DocumentReader,
+        trash: TrashReader,
+        taxonomy: TaxonomyResolver,
+        *,
+        web_url: str,
+    ) -> None:
         """Search through ``reader``; ``web_url`` is the base of links to the Paperless UI."""
         self._reader: DocumentReader = reader
+        self._trash: TrashReader = trash
         self._taxonomy: TaxonomyResolver = taxonomy
         self._web_url: str = web_url
 
@@ -245,7 +298,7 @@ class DocumentService:
     def _link(self, document_id: int) -> str:
         return document_link(self._web_url, document_id)
 
-    async def get(self, document_id: int, include: Collection[Include] = ()) -> DocumentDetail:
+    async def get(self, document_id: int, include: Collection[Include] = ()) -> DocumentRead:
         """One document with names, readable custom fields and the sections in ``include``.
 
         A section the user may not read in Paperless (notes and the audit log need their own
@@ -260,7 +313,7 @@ class DocumentService:
 
     async def detail(
         self, record: DocumentRecord, include: Collection[Include] = ()
-    ) -> DocumentDetail:
+    ) -> DocumentRead:
         """The detail of ``record`` as ``get`` returns it: names, readable fields, sections."""
         kinds: tuple[TaxonomyKind, ...] = (*REFERRED, "user")
         loaded = await asyncio.gather(*(self._known(kind) for kind in kinds))
@@ -274,7 +327,7 @@ class DocumentService:
                 sections.update(await self._section(section, record, known))
             except PermissionDenied, FeatureUnavailable:
                 unavailable.append(section)
-        return DocumentDetail(
+        return DocumentRead(
             id=record.id,
             title=record.title,
             created=record.created,
@@ -346,6 +399,93 @@ class DocumentService:
                         dates=found.dates,
                     )
                 }
+            case "duplicates":
+                return {"duplicates": await self._duplicates(record, known)}
+
+    async def _duplicates(
+        self, record: DocumentRecord, known: dict[TaxonomyKind, dict[int, TaxonomyItem]]
+    ) -> DuplicateList:
+        found = sorted(
+            await self._reader.get_duplicates(record.id),
+            key=lambda d: (d.deleted_at is not None, d.id),
+        )
+        shown = found[:DUPLICATE_LIMIT]
+        trashed = [d.id for d in shown if d.deleted_at is not None]
+        live = [d.id for d in shown if d.deleted_at is None]
+        records: dict[int, DocumentRecord | TrashedRecord] = {**await self._live(live)}
+        records.update(await self._trashed(trashed))
+        gaps = [NOT_COMPARED, *([TRASH_DETAILS] if trashed else [])]
+        if len(shown) < len(found):
+            gaps.append(NOT_LISTED.format(shown=len(shown), total=len(found)))
+        unread = [str(d.id) for d in shown if d.id not in records]
+        if unread:
+            gaps.append(UNREAD_DETAILS.format(ids=", ".join(unread)))
+        return DuplicateList(
+            total=len(found),
+            truncated=len(shown) < len(found),
+            documents=tuple(self._duplicate(record, d, records.get(d.id), known) for d in shown),
+            not_compared=tuple(gaps),
+        )
+
+    async def _live(self, ids: list[int]) -> dict[int, DocumentRecord]:
+        found: dict[int, DocumentRecord] = {}
+        for number in ids:
+            with contextlib.suppress(NotFound):  # deleted meanwhile
+                found[number] = await self._reader.get_document(number)
+        return found
+
+    async def _trashed(self, ids: list[int]) -> dict[int, TrashedRecord]:
+        if not ids:
+            return {}
+        try:
+            return await self._trash.find_in_trash(
+                ids, entries=TRASH_ENTRIES, max_bytes=TRASH_BYTES
+            )
+        except AnswerTooLarge, AnswerCompressed, PermissionDenied:
+            return {}
+
+    def _duplicate(
+        self,
+        record: DocumentRecord,
+        duplicate: DuplicateRecord,
+        read: DocumentRecord | TrashedRecord | None,
+        known: dict[TaxonomyKind, dict[int, TaxonomyItem]],
+    ) -> DuplicateDocument:
+        found = DuplicateDocument(
+            id=duplicate.id,
+            title=duplicate.title,
+            in_trash=duplicate.deleted_at is not None,
+            deleted_at=duplicate.deleted_at,
+            web_url=None if duplicate.deleted_at else self._link(duplicate.id),
+        )
+        if read is None:
+            return found
+        values: dict[str, object] = {
+            "created": read.created,
+            "added": read.added,
+            "owner": _maybe(known, "user", read.owner),
+            "correspondent": _maybe(known, "correspondent", read.correspondent),
+            "document_type": _maybe(known, "document_type", read.document_type),
+            "storage_path": _maybe(known, "storage_path", read.storage_path),
+            "tags": tuple(_ref(known, "tag", tag) for tag in read.tags),
+            "archive_serial_number": read.archive_serial_number,
+            "original_file_name": read.original_file_name,
+            "mime_type": read.mime_type,
+        }
+        if isinstance(read, DocumentRecord):
+            values |= {
+                "match": match_of(record, root_checksum(read)),
+                "page_count": read.page_count,
+                "notes_count": read.notes_count,
+                "custom_fields": _fields(known, read.custom_fields),
+                "version_count": len(read.versions),
+                "user_can_change": read.user_can_change,
+            }
+        else:
+            values["match"] = match_of(record, read.checksum)
+        theirs, ours = _comparable(read), _comparable(record)
+        differs = tuple(name for name in theirs if theirs[name] != ours[name])
+        return found.model_copy(update={**values, "differs": differs})
 
     async def content(
         self, document_id: int, *, offset: int, max_chars: int, version_id: int | None = None
@@ -371,6 +511,30 @@ class DocumentService:
             text_state=text_state(document_id, found.version_id, text),
             web_url=self._link(document_id),
         )
+
+
+def _comparable(document: DocumentFacts) -> dict[str, object]:
+    """What can tell two copies of a file apart, by field; less of a document in the trash."""
+    values: dict[str, object] = {
+        "title": document.title,
+        "created": document.created,
+        "owner": document.owner,
+        "correspondent": document.correspondent,
+        "document_type": document.document_type,
+        "storage_path": document.storage_path,
+        "tags": set(document.tags),
+        "archive_serial_number": document.archive_serial_number,
+        "original_file_name": document.original_file_name,
+        "mime_type": document.mime_type,
+    }
+    if isinstance(document, DocumentRecord):
+        values |= {
+            "page_count": document.page_count,
+            "notes_count": document.notes_count,
+            "custom_fields": {f.field: f.value for f in document.custom_fields},
+            "version_count": len(document.versions),
+        }
+    return values
 
 
 def _ref(

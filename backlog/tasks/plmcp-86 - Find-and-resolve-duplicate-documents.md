@@ -1,10 +1,11 @@
 ---
 id: PLMCP-86
 title: Find and resolve duplicate documents
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T12:21:59Z'
-updated_date: '2026-11-23T19:32:27Z'
+updated_date: '2026-11-24T02:12:49Z'
 labels: []
 dependencies:
   - PLMCP-77
@@ -36,3 +37,13 @@ Paperless keeps duplicates and knows them (duplicate_documents, filter has_dupli
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Port TrashReader.find_in_trash (facts of trashed documents, one bounded request as read_trash), fake, adapter and contract tests.
+2. search_documents has_duplicates; get_document include duplicates (DuplicateList) with what tells the copies apart.
+3. Archive serial numbers in the merge text (3.5.1 hands them over), shared by both merging tools; fake follows 3.5.1 (ASN, trashed versions).
+4. services/duplicate_resolution.py and tool resolve_duplicates (toolset bulk): verified in the same call, whole or refused, dry_run, dialog/confirm with a scope of documents, versions and checksums, states named after a failure.
+5. decision-51, registration, snapshots, docs, coverage table; E2E (admin, READER). Guide budget: wording shortened, limit unchanged.
+<!-- SECTION:PLAN:END -->

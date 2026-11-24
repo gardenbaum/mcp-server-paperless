@@ -162,6 +162,13 @@ in a [dialog](#confirmation) or is refused with a description of the effect, `co
 executes. Paperless checks every object
 first: if one may not be changed, none is. Deleting taxonomy is final (it has no trash).
 
+`resolve_duplicates` keeps one document and moves its duplicates to the trash or merges them into
+it as versions (at most 20 a call). `search_documents` with `has_duplicates` finds such documents
+and `get_document` with `include` `duplicates` lists the copies, also in the trash, and what differs.
+Only documents that Paperless takes for duplicates of the kept one at that moment are touched, all or
+none. From the trash they can be restored; a merge is final and drops their metadata and notes.
+Documents the user cannot see are never compared (decision-51 in `backlog/decisions/`).
+
 ### `versions`
 
 Off by default: `list_document_versions`, `upload_document_version`,

@@ -173,6 +173,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "notes": ("test_notes_and_trash",),
     "removal": ("test_notes_and_trash",),
     "uploads": ("test_document_upload", "test_upload_document"),
+    "duplicate_resolution": ("test_duplicates",),
     "duplicates": ("test_rejected_duplicates", "test_trash_order", "test_upload_duplicates"),
     "upload_hint": ("test_upload_duplicates",),
     "upload": ("test_document_upload", "test_upload_document"),

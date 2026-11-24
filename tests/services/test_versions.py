@@ -274,6 +274,42 @@ async def test_merging_one_document_without_a_label_says_so_in_the_singular() ->
     )
 
 
+@pytest.mark.parametrize(
+    ("root", "expected"),
+    [
+        (
+            None,
+            (
+                ". Besides, document 1 takes the archive serial number 7 of document {one}, "
+                "archive serial number 0 of document {two} is released."
+            ),
+        ),
+        (
+            5,
+            (
+                ". Besides, archive serial number 7 of document {one} is released, "
+                "archive serial number 0 of document {two} is released."
+            ),
+        ),
+    ],
+)
+async def test_merging_says_what_becomes_of_the_archive_serial_numbers(
+    root: int | None, expected: str
+) -> None:
+    setup = Setup(writes=False)
+    none, one, two = setup.document(), setup.document(), setup.document()
+    setup.state.documents[0].archive_serial_number = root
+    for number, asn in ((one, 7), (two, 0)):
+        next(d for d in setup.state.documents if d.id == number).archive_serial_number = asn
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.merge(PUBLIC, [none, one, two], None)
+
+    assert raised.value.message.endswith(
+        f"the file and text of document {two}" + expected.format(one=one, two=two)
+    )
+
+
 async def test_merging_three_documents_lists_them_with_commas_and_an_and() -> None:
     setup = Setup(writes=False)
     one, two, three = setup.document(), setup.document(), setup.document()

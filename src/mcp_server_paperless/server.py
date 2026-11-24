@@ -54,6 +54,7 @@ from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
 from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
 from mcp_server_paperless.services.document_edits import DocumentEditor
 from mcp_server_paperless.services.documents import DocumentService
+from mcp_server_paperless.services.duplicate_resolution import DuplicateResolver
 from mcp_server_paperless.services.duplicates import DuplicateFinder
 from mcp_server_paperless.services.file_sink import NO_SINK, FileSink
 from mcp_server_paperless.services.files import FileService
@@ -429,7 +430,9 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
         ) as client:
             adapters = ports(client)
             taxonomy = TaxonomyResolver(adapters.taxonomy, credentials, ttl=TAXONOMY_TTL)
-            documents = DocumentService(adapters.documents, taxonomy, web_url=web_url)
+            documents = DocumentService(
+                adapters.documents, adapters.trash, taxonomy, web_url=web_url
+            )
             duplicates = DuplicateFinder(adapters.documents, adapters.trash, web_url=web_url)
             tasks = TaskService(adapters.tasks, sleep=sleep, clock=clock, duplicates=duplicates)
             services = Services(
@@ -503,6 +506,13 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.documents, adapters.bulk_writes, taxonomy, web_url=web_url
                 ),
                 bulk_taxonomy=BulkTaxonomyEditor(adapters.taxonomy, adapters.bulk_writes, taxonomy),
+                duplicate_resolver=DuplicateResolver(
+                    adapters.documents,
+                    adapters.document_writes,
+                    adapters.bulk_writes,
+                    taxonomy,
+                    web_url=web_url,
+                ),
                 trash=TrashService(
                     adapters.trash, adapters.trash_writes, taxonomy, web_url=web_url
                 ),

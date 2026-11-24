@@ -82,7 +82,9 @@ class Setup:
         self.resolver: TaxonomyResolver = TaxonomyResolver(
             self.fake, StaticTokenProvider("t"), ttl=3600.0
         )
-        self.documents: DocumentService = DocumentService(self.fake, self.resolver, web_url=WEB)
+        self.documents: DocumentService = DocumentService(
+            self.fake, self.fake, self.resolver, web_url=WEB
+        )
         self.views: ViewService = ViewService(self.fake, self.fake, self.resolver, self.documents)
 
     def view(self, name: str) -> FakeSavedView:

@@ -16,7 +16,9 @@ from mcp_server_paperless.domain.tasks import TaskState, Wait
 # hint both read it.
 MAX_UPLOAD_LIMIT: Final = 100 * 1024 * 1024
 
-type Include = Literal["notes", "history", "metadata", "versions", "suggestions"]
+type Include = Literal["notes", "history", "metadata", "versions", "suggestions", "duplicates"]
+# same_file: the original uploads are identical; archive: only an archive file is.
+type DuplicateKind = Literal["same_file", "archive"]
 type Ordering = Literal[
     "created",
     "-created",
@@ -400,8 +402,8 @@ class Suggestions(BaseModel):
     dates: tuple[str, ...]
 
 
-class DocumentRecord(BaseModel):
-    """One document with ids where Paperless has them; no content, notes only counted."""
+class DocumentFacts(BaseModel):
+    """What Paperless tells of a document, live or in the trash, with ids where it has them."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
@@ -416,9 +418,14 @@ class DocumentRecord(BaseModel):
     document_type: int | None
     storage_path: int | None
     tags: tuple[int, ...]
-    custom_fields: tuple[CustomFieldValue, ...]
     original_file_name: str | None
     mime_type: str
+
+
+class DocumentRecord(DocumentFacts):
+    """One document with ids where Paperless has them; no content, notes only counted."""
+
+    custom_fields: tuple[CustomFieldValue, ...]
     page_count: int | None
     notes_count: int
     versions: tuple[DocumentVersion, ...]
@@ -473,6 +480,56 @@ class DocumentHistory(BaseModel):
     entries: tuple[HistoryEntry, ...]
 
 
+class DuplicateDocument(BaseModel):
+    """A document Paperless takes for a duplicate; what could not be read is null."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    title: str
+    in_trash: bool
+    deleted_at: datetime | None = None
+    match: Annotated[
+        DuplicateKind | None,
+        Field(
+            description=(
+                "same_file: identical original uploads; archive: only an archive file (the PDF "
+                "Paperless made) is identical to a file of the other; null: unknown."
+            )
+        ),
+    ] = None
+    differs: Annotated[
+        tuple[str, ...], Field(description="Known fields whose value differs from the document's.")
+    ] = ()
+    created: date | None = None
+    added: datetime | None = None
+    owner: Ref | None = None
+    correspondent: Ref | None = None
+    document_type: Ref | None = None
+    storage_path: Ref | None = None
+    tags: tuple[Ref, ...] | None = None
+    archive_serial_number: int | None = None
+    original_file_name: str | None = None
+    mime_type: str | None = None
+    page_count: int | None = None
+    notes_count: int | None = None
+    custom_fields: tuple[FieldValue, ...] | None = None
+    version_count: int | None = None
+    user_can_change: bool | None = None
+    web_url: Annotated[str | None, Field(description="Null in the trash.")] = None
+
+
+class DuplicateList(BaseModel):
+    """The duplicates of a document, those in the trash last."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    total: int
+    truncated: Annotated[bool, Field(description="More duplicates exist than are listed.")]
+    documents: tuple[DuplicateDocument, ...]
+    not_compared: tuple[str, ...]
+
+
 class DocumentDetail(BaseModel):
     """A document with names, readable custom fields and what ``include`` asked for."""
 
@@ -512,6 +569,14 @@ class DocumentDetail(BaseModel):
         tuple[Include, ...],
         Field(description="Included sections the user may not read in Paperless."),
     ] = ()
+
+
+class DocumentRead(DocumentDetail):
+    """A document as it is read, with its duplicates if ``include`` asked for them."""
+
+    duplicates: Annotated[
+        DuplicateList | None, Field(description="Only with include duplicates.")
+    ] = None
 
 
 class DocumentUpdate(DocumentDetail):

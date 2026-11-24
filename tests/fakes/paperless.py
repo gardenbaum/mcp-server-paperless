@@ -127,7 +127,7 @@ from mcp_server_paperless.domain.permissions import (
 )
 from mcp_server_paperless.domain.tasks import REJECTED, TaskState, TaskStatus, Unconfirmed
 from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyDetail, TaxonomyItem
-from mcp_server_paperless.domain.trash import TrashedDocument, TrashPage
+from mcp_server_paperless.domain.trash import TrashedDocument, TrashedRecord, TrashPage
 from mcp_server_paperless.domain.versions import VersionPage, VersionRow
 from mcp_server_paperless.domain.views import FilterRule, SavedView
 from mcp_server_paperless.domain.workflows import Workflow
@@ -1494,6 +1494,33 @@ class FakePaperless:
             raise AnswerTooLarge(message)
         return page
 
+    async def find_in_trash(
+        self, document_ids: Collection[int], *, entries: int, max_bytes: int
+    ) -> dict[int, TrashedRecord]:
+        """`TrashReader.find_in_trash`: the same page as `read_trash`, the rows as documents."""
+        page = await self.read_trash(entries=entries, max_bytes=max_bytes)
+        listed = {e.id for e in page.entries if e.version_of is None} & set(document_ids)
+        return {
+            d.id: TrashedRecord(
+                id=d.id,
+                title=d.title,
+                created=d.created,
+                added=d.added,
+                modified=d.modified,
+                archive_serial_number=d.archive_serial_number,
+                owner=d.owner,
+                correspondent=d.correspondent,
+                document_type=d.document_type,
+                storage_path=d.storage_path,
+                tags=tuple(d.tags),
+                original_file_name=d.original_filename,
+                mime_type=d.mime_type,
+                checksum=root_checksum(d),
+            )
+            for d in self.state.trash
+            if d.id in listed
+        }
+
     @write
     async def restore_from_trash(self, document_ids: Sequence[int]) -> None:
         """`TrashWriter.restore_from_trash` (TrashView.post, action `restore`).
@@ -1732,10 +1759,11 @@ class FakePaperless:
         Seen through the port it merges at once (the adapter waits for the task Paperless
         queues); probed on 3.4.2: the sources are removed for good (no trash) and
         keep nothing but their file; the last source becomes the newest version; a source with
-        versions, a version as source, a duplicate or an unknown id and a label with several
-        sources are 400s. The form is checked first (it does not look at who may see what: a
-        document the user may not see is a 403 below, not a missing one), then, for anyone but a
-        superuser: the global `change_document` and a change
+        versions (also one in the trash, 3.5.1), a version as source, a duplicate or an unknown id
+        and a label with several sources are 400s. The first archive serial number of the sources
+        goes to a root without one, the others are released. The form is checked first (it does
+        not look at who may see what: a document the user may not see is a 403 below, not a
+        missing one), then, for anyone but a superuser: the global `change_document` and a change
         grant or ownership of every document, ownership (or no owner) of every document, and the
         global `delete_document` (403), because the sources stop existing.
 
@@ -1756,7 +1784,8 @@ class FakePaperless:
                 "non_field_errors",
                 "version_label can only be used when merging one source document.",
             )
-        if any(len(seen[n].versions) > 1 for n in source_ids):
+        deleted = {d.root_id for d in state.trash}  # a version in the trash counts, too
+        if any(len(seen[n].versions) > 1 or n in deleted for n in source_ids):
             reject(
                 "non_field_errors",
                 "Documents with existing versions cannot be merged into another document.",
@@ -1776,6 +1805,8 @@ class FakePaperless:
             file = FakeFile(source.original, source.archive, source.content, source.mime_type)
             self._push(root, number, file, label, datetime.now(UTC))
             state.documents.remove(source)
+            if root.archive_serial_number is None:
+                root.archive_serial_number = source.archive_serial_number
 
     # --- PdfWriter ---------------------------------------------------------------------------
 
