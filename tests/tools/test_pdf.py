@@ -79,7 +79,10 @@ async def test_the_input_schemas_bound_the_selections() -> None:
         return cast("dict[str, Json]", tools[tool].input_schema["properties"])
 
     rotate = properties("rotate_documents")
-    assert set(rotate) == {"document_ids", "degrees", "wait_seconds"}
+    assert set(rotate) == {
+        *("document_ids", "degrees", "use_original_files"),
+        *("dry_run", "confirm", "wait_seconds"),
+    }
     assert (rotate["document_ids"]["minItems"], rotate["document_ids"]["maxItems"]) == (
         1,
         MAX_DOCUMENTS,
@@ -90,30 +93,41 @@ async def test_the_input_schemas_bound_the_selections() -> None:
         "document_ids",
         "metadata_document_id",
         "delete_originals",
+        "archive_fallback",
+        "use_original_files",
+        "dry_run",
         "confirm",
         "wait_seconds",
     }
     assert merge["document_ids"]["minItems"] == 2
     assert merge["confirm"]["description"] == CONFIRM_DESCRIPTION
+    one = {"document_id", "output", "version_id", "keep_metadata", "dry_run", "confirm"}
+    one |= {"wait_seconds"}
     split = properties("split_document")
-    assert set(split) == {"document_id", "parts", "output", "confirm", "wait_seconds"}
+    assert set(split) == one | {"parts"}
     assert (split["parts"]["minItems"], split["parts"]["maxItems"]) == (2, MAX_PARTS)
     assert split["output"]["enum"] == ["new_document", "replace_original"]
     pages = properties("delete_pages")
-    assert set(pages) == {"document_id", "pages", "output", "confirm", "wait_seconds"}
+    assert set(pages) == one | {"pages"}
     assert pages["output"]["enum"] == ["new_document", "new_version", "replace_original"]
     assert pages["output"]["default"] == "new_version"
     edit = properties("edit_pdf")
-    assert set(edit) == {"document_id", "pages", "output", "confirm", "wait_seconds"}
+    assert set(edit) == one | {"pages"}
     assert (edit["pages"]["minItems"], edit["pages"]["maxItems"]) == (1, MAX_PAGES)
     password = properties("remove_document_password")
-    assert set(password) == {"document_id", "password", "output", "confirm", "wait_seconds"}
+    assert set(password) == one | {"password"}
     assert password["password"]["minLength"] == 1
     reprocess = properties("reprocess_documents")
-    assert set(reprocess) == {"document_ids", "remote_ocr", "confirm", "wait_seconds"}
+    assert set(reprocess) == {
+        *("document_ids", "remote_ocr", "dry_run", "confirm", "wait_seconds"),
+    }
     for tool in TOOLS:
         wait = properties(tool)["wait_seconds"]
-        assert (wait["minimum"], wait["default"]) == (0, 0)
+        if tool in {"rotate_documents", "reprocess_documents"}:
+            assert (wait["minimum"], wait["default"]) == (0, 0)
+        else:
+            [number, _] = cast("list[Json]", wait["anyOf"])
+            assert (number["minimum"], wait["default"]) == (0, None)
 
 
 async def test_rotating_returns_the_result_of_the_operation() -> None:
@@ -251,3 +265,98 @@ async def test_reprocessing_needs_confirm_and_then_starts_the_tasks() -> None:
 
     assert (result["state"], result["produced_ids"]) == ("success", [])
     assert source.state.reprocessed == [FIRST]
+
+
+ONE: Json = {"document_id": FIRST, "dry_run": True}
+PREVIEWS: dict[str, Json] = {
+    "rotate_documents": {"document_ids": [FIRST], "degrees": 90, "dry_run": True},
+    "merge_documents": {"document_ids": [FIRST, SECOND], "delete_originals": True, "dry_run": True},
+    "split_document": {**ONE, "parts": ["1", "2"], "output": "replace_original"},
+    "delete_pages": {**ONE, "pages": "1"},
+    "edit_pdf": {**ONE, "pages": [{"page": 1}], "version_id": FIRST, "keep_metadata": False},
+    "remove_document_password": {**ONE, "document_id": LOCKED, "password": "s3cret"},
+    "reprocess_documents": {"document_ids": [FIRST], "dry_run": True},
+}
+CONFIRMED = {"merge_documents", "split_document", "delete_pages", "reprocess_documents"}
+
+
+@pytest.mark.parametrize("tool", TOOLS)
+async def test_every_tool_previews_without_a_confirmation_and_changes_nothing(tool: str) -> None:
+    source = fake(writes=False)
+
+    result = await call(source, tool, **PREVIEWS[tool])
+
+    assert (result["dry_run"], result["state"], result["tasks"]) == (True, "not_started", [])
+    plan = cast("Json", result["plan"])
+    assert plan["needs_confirm"] is (tool in CONFIRMED)
+    assert plan["produces"]
+    assert "s3cret" not in str(result)
+
+
+async def test_the_next_calls_of_an_unfinished_replacement_are_accepted_by_their_tools() -> None:
+    source = fake()
+
+    result = await call(
+        source,
+        "delete_pages",
+        document_id=FIRST,
+        pages="1",
+        output="replace_original",
+        confirm=True,
+        wait_seconds=0,
+    )
+
+    assert (result["trashed_ids"], source.state.trash) == ([], [])
+    [task] = cast("list[Json]", result["tasks"])
+    assert result["next"] == (
+        f'get_task(task_id="{task["task_id"]}", wait_seconds=30); only if every one succeeded and '
+        "made exactly one document (get_document), with 3 pages, and "
+        f"only if document {FIRST} is unchanged: delete_document(document_id={FIRST})"
+    )
+    async with Client(serve(source, toolsets=["core", "pdf"])) as client:
+        _ = await client.call_tool("delete_document", {"document_id": FIRST, "confirm": True})
+    assert [d.id for d in source.state.trash] == [FIRST]
+    # The other calls `next` can name, with the arguments it names.
+    async with Client(serve(source, toolsets=["core"])) as client:
+        answer = await client.call_tool(
+            "get_task", {"task_id": task["task_id"], "wait_seconds": 30}
+        )
+        numbered = await client.call_tool(
+            "update_document", {"document_id": SECOND, "archive_serial_number": 5}
+        )
+        cleared = await client.call_tool(
+            "update_document", {"document_id": SECOND, "clear": ["archive_serial_number"]}
+        )
+    assert not any(a.is_error for a in (answer, numbered, cleared))
+
+
+async def test_the_options_reach_paperless() -> None:
+    source = fake()
+    document = next(d for d in source.state.documents if d.id == FIRST)
+    document.tags = [1]
+    source.state.documents.append(
+        FakeDocument(id=13, title="Photo", owner=2, mime_type="image/png", page_count=1)
+    )
+
+    bare = await call(
+        source, "edit_pdf", document_id=FIRST, pages=[{"page": 1}], keep_metadata=False
+    )
+    merged = await call(source, "merge_documents", document_ids=[FIRST, 13], archive_fallback=True)
+    both = await call(
+        source, "merge_documents", document_ids=[FIRST, SECOND], use_original_files=True
+    )
+
+    [made] = cast("list[int]", bare["produced_ids"])
+    assert [1 in d.tags for d in source.state.documents if d.id == made] == [False]
+    assert cast("Json", merged["plan"])["produces"] == "1 new document with 5 pages"
+    assert cast("Json", both["plan"])["produces"] == "1 new document with 6 pages"
+
+
+async def test_the_merge_tool_does_not_claim_to_take_pdfs_only() -> None:
+    async with Client(serve(admin(), toolsets=["pdf"])) as client:
+        [merge] = [t for t in await client.list_tools() if t.name == "merge_documents"]
+
+    ids = cast("dict[str, Json]", merge.input_schema["properties"])["document_ids"]
+    assert "Only PDF files" not in (merge.description or "")
+    assert "other files need archive_fallback" in (merge.description or "")
+    assert str(ids["description"]).startswith("Ids of the documents to merge")

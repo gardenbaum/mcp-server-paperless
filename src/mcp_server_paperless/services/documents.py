@@ -159,8 +159,10 @@ async def require_files(  # noqa: PLR0913 -- what is checked and how strictly
     choice: bool = False,
     certain: bool = False,
     seconds: float = CHECK_SECONDS,
-) -> None:
+) -> dict[int, FileMetadata]:
     """Refuse documents whose file Paperless cannot find; the values name the versions.
+
+    Returns the file facts of every document that could be checked.
 
     ``choice``: the caller can ask for the other file kind, which the refusal then may name.
     A document that could not be checked within ``seconds`` (for all of them together) passes:
@@ -187,6 +189,7 @@ async def require_files(  # noqa: PLR0913 -- what is checked and how strictly
         )
         hint = f"Leave the document{s} out, or try again in a moment."
         raise PaperlessMcpError(message, hint=hint)
+    return checked
 
 
 def text_state(document_id: int, version_id: int, text: str) -> str:

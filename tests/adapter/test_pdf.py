@@ -7,7 +7,7 @@ are shaped like the ones recorded from Paperless.
 
 import asyncio
 import json
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, cast, override
 
 import httpx2
 import pytest
@@ -58,12 +58,31 @@ def row(
         "date_done": None,
         "duration_seconds": None,
         "wait_time_seconds": None,
-        "input_data": {} if filename is None else {"filename": filename, "mime_type": "x"},
+        "input_data": (
+            {}
+            if filename is None
+            else {
+                "filename": filename,
+                "mime_type": "x",
+                "overrides": {"skip_asn_if_exists": True},
+            }
+        ),
         "result_data": None,
         "related_document_ids": [],
         "acknowledged": False,
         "owner": owner if task_type == "consume_file" else None,
     }
+
+
+# The queued task of every operation: it ran while the files above were handed over.
+QUEUED: Json = {
+    **row(1, "bulk_update"),
+    "task_id": DONE_TASK,
+    "date_started": "2026-11-13T17:25:36.540000Z",
+    "date_done": "2026-11-13T17:25:36.550000Z",
+    "owner": 2,
+    "input_data": {"operation": "edit_pdf", "document_count": 1},
+}
 
 
 def task_id(number: int) -> str:
@@ -93,6 +112,9 @@ class Paperless:
         fail_late: bool = False,
     ) -> None:
         self.fail_late: bool = fail_late
+        self.queued: Json = {}
+        self.others: list[Json] = [QUEUED]
+        self.others_status: int = 200
         self.baseline_status: int = baseline_status
         self.unfiltered: bool = unfiltered
         self.tasks_status: int = tasks_status
@@ -108,7 +130,7 @@ class Paperless:
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
         if request.url.path == "/api/tasks/" and request.url.params.get("task_id") == DONE_TASK:
             # The queued task of the operation has succeeded; looking at it is not logged.
-            done = {**row(1, "bulk_update"), "task_id": DONE_TASK}
+            done = {**QUEUED, **self.queued}
             return httpx2.Response(
                 200, json={"count": 1, "next": None, "previous": None, "results": [done]}
             )
@@ -128,6 +150,9 @@ class Paperless:
 
     def _tasks(self, request: httpx2.Request) -> httpx2.Response:
         """The task list: the rows by phase of the request, filtered like Paperless does."""
+        if request.url.params.get("task_type") == "bulk_update":
+            found = {"count": len(self.others), "next": None, "previous": None}
+            return httpx2.Response(self.others_status, json={**found, "results": self.others})
         if self.tasks_status != 200 and (self._posted or self.tasks_status == 403):
             return httpx2.Response(self.tasks_status, json={"detail": "no"})
         if not self._posted and self.baseline_status != 200:
@@ -184,6 +209,7 @@ def writer(
     )
 
 
+LONG = "_".join(str(n) for n in range(1000, 1021))
 OLD = [row(10, "consume_file", "plmcp.pdf"), row(11, "mail_fetch")]
 
 
@@ -206,7 +232,12 @@ async def test_a_rotation_posts_the_documents_and_returns_the_tasks_made_for_the
 
     assert tasks.ids == (task_id(12), task_id(13))
     assert server.posts == [
-        ("POST", "/api/documents/rotate/", {}, {"documents": [4, 7], "degrees": -90})
+        (
+            "POST",
+            "/api/documents/rotate/",
+            {},
+            {"documents": [4, 7], "degrees": -90, "source_mode": "latest_version"},
+        )
     ]
 
 
@@ -288,9 +319,7 @@ async def test_merging_names_the_metadata_document_and_the_deletion_of_the_origi
 ) -> None:
     server = Paperless(OLD, [*OLD, row(12, "consume_file", "5_9_merged.pdf")])
 
-    tasks = await writer(make_client, server).merge_documents(
-        (5, 9), metadata_document_id=9, delete_originals=True
-    )
+    tasks = await writer(make_client, server).merge_documents((5, 9), metadata_document_id=9)
 
     assert tasks.ids == (task_id(12),)
     assert server.posts == [
@@ -298,7 +327,12 @@ async def test_merging_names_the_metadata_document_and_the_deletion_of_the_origi
             "POST",
             "/api/documents/merge/",
             {},
-            {"documents": [5, 9], "metadata_document_id": 9, "delete_originals": True},
+            {
+                "documents": [5, 9],
+                "metadata_document_id": 9,
+                "archive_fallback": False,
+                "source_mode": "latest_version",
+            },
         )
     ]
 
@@ -306,31 +340,81 @@ async def test_merging_names_the_metadata_document_and_the_deletion_of_the_origi
 async def test_merging_without_a_metadata_document_sends_none(make_client: ClientFactory) -> None:
     server = Paperless(OLD, [*OLD, row(12, "consume_file", "9_5_merged.pdf")])
 
-    tasks = await writer(make_client, server).merge_documents(
-        (9, 5), metadata_document_id=None, delete_originals=False
-    )
+    tasks = await writer(make_client, server).merge_documents((9, 5), metadata_document_id=None)
 
     assert tasks.ids == (task_id(12),)  # the merged file is named after the documents, in order
     assert server.posts[0][3] == {
         "documents": [9, 5],
         "metadata_document_id": None,
-        "delete_originals": False,
+        "archive_fallback": False,
+        "source_mode": "latest_version",
     }
 
 
-async def test_a_delete_of_originals_adds_a_task_that_is_not_reported(
+async def test_rotating_and_merging_can_take_the_first_files_and_archives(
     make_client: ClientFactory,
 ) -> None:
-    server = Paperless(
-        OLD,
-        [*OLD, row(12, "consume_file", "5_9_merged.pdf"), row(13, "bulk_delete")],
+    rotated = Paperless(OLD, [*OLD, row(12, "consume_file", "7_rotated.pdf")])
+    merged = Paperless(OLD, [*OLD, row(12, "consume_file", "5_9_merged.pdf")])
+
+    _ = await writer(make_client, rotated).rotate_documents((7,), 90, original_files=True)
+    _ = await writer(make_client, merged).merge_documents(
+        (5, 9), metadata_document_id=None, archive_fallback=True, original_files=True
     )
 
-    tasks = await writer(make_client, server).merge_documents(
-        (5, 9), metadata_document_id=None, delete_originals=True
-    )
+    assert rotated.posts[0][3] == {
+        "documents": [7],
+        "degrees": 90,
+        "source_mode": "explicit_selection",
+    }
+    assert merged.posts[0][3] == {
+        "documents": [5, 9],
+        "metadata_document_id": None,
+        "archive_fallback": True,
+        "source_mode": "explicit_selection",
+    }
 
-    assert tasks.ids == (task_id(12),)
+
+@pytest.mark.parametrize(
+    ("ids", "filename", "included"),
+    [
+        ((5, 9, 7), "5_9_7_merged.pdf", (5, 9, 7)),
+        ((5, 9, 7), "5_7_merged.pdf", (5, 7)),  # Paperless left one out
+        ((5, 9, 7), "9_merged.pdf", (9,)),
+        (tuple(range(1000, 1021)), f"{LONG[:100]}_merged.pdf", None),  # cut within id 1020
+        ((5, *range(1000, 1021)), f"{LONG[:100]}_merged.pdf", None),  # cut, without 5
+    ],
+)
+async def test_a_merged_file_says_which_documents_are_in_it(
+    make_client: ClientFactory, ids: tuple[int, ...], filename: str, included: object
+) -> None:
+    server = Paperless(OLD, [*OLD, row(12, "consume_file", filename)])
+
+    tasks = await writer(make_client, server).merge_documents(ids, metadata_document_id=None)
+
+    assert (tasks.ids, tasks.included, tasks.sources) == ((task_id(12),), included, ())
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "7_5_merged.pdf",
+        "5_5_merged.pdf",
+        "5_x_merged.pdf",
+        "5_9_merged.pdf.bak",
+        "5_9.pdf",
+        f"{LONG[:97]}_88_merged.pdf",
+    ],
+)
+async def test_a_merged_file_of_other_documents_or_another_order_is_not_taken(
+    make_client: ClientFactory, filename: str
+) -> None:
+    server = Paperless(OLD, [*OLD, row(12, "consume_file", filename)])
+    ids = (5, 9, 7, *range(1000, 1021))
+
+    tasks = await writer(make_client, server).merge_documents(ids, metadata_document_id=None)
+
+    assert (tasks.ids, tasks.included) == ((), None)
 
 
 PAGES = (PageSlot(page=2), PageSlot(page=1, rotate=90), PageSlot(page=3, document=1))
@@ -363,11 +447,67 @@ async def test_an_edit_into_new_documents_sends_the_pages_and_finds_one_task_per
                     {"page": 1, "rotate": 90, "doc": 0},
                     {"page": 3, "rotate": 0, "doc": 1},
                 ],
+                "source_mode": "latest_version",
                 "update_document": False,
-                "delete_original": False,
+                "include_metadata": True,
             },
         )
     ]
+    assert tasks.outputs == (0, 1)
+
+
+async def test_the_parts_of_an_edit_are_told_by_their_file_not_by_their_order(
+    make_client: ClientFactory,
+) -> None:
+    server = Paperless(
+        OLD,
+        [
+            *OLD,
+            row(12, "consume_file", "8_edit_2.pdf"),
+            row(13, "consume_file", "8_edit_3.pdf"),  # more parts than asked for: another edit's
+            row(14, "consume_file", "8_edit_1.pdf"),
+            row(15, "consume_file", "8_edit_1.pdf"),  # a later edit's
+        ],
+    )
+
+    tasks = await writer(make_client, server).edit_pdf(8, PAGES, output="new_document")
+
+    assert (tasks.ids, tasks.outputs) == ((task_id(12), task_id(14)), (1, 0))
+
+
+async def test_a_second_file_of_the_same_name_does_not_stand_in_for_a_missing_one(
+    make_client: ClientFactory,
+) -> None:
+    server = Paperless(
+        OLD,
+        [*OLD, row(12, "consume_file", "8_edit_1.pdf"), row(13, "consume_file", "8_edit_1.pdf")],
+    )
+
+    tasks = await writer(make_client, server).edit_pdf(8, PAGES, output="new_document")
+
+    assert (tasks.ids, tasks.expected) == ((task_id(12),), 2)
+
+
+async def test_a_version_is_sent_by_its_id_and_its_tasks_are_found_by_the_document(
+    make_client: ClientFactory,
+) -> None:
+    edited = Paperless(OLD, [*OLD, row(12, "consume_file", "8_edit_1.pdf")])
+    unlocked = Paperless(OLD, [*OLD, row(12, "consume_file", "8_unprotected.pdf")])
+    slots = (PageSlot(page=1),)
+
+    one = await writer(make_client, edited).edit_pdf(
+        8, slots, output="new_document", version_id=31, keep_metadata=False
+    )
+    two = await writer(make_client, unlocked).remove_password(
+        8, "x", output="new_document", version_id=8, keep_metadata=False
+    )
+
+    for server, sent in ((edited, 31), (unlocked, 8)):
+        body = server.posts[0][3]
+        assert isinstance(body, dict)
+        assert body["documents"] == [sent]
+        assert (body["source_mode"], body["include_metadata"]) == ("explicit_selection", False)
+    assert (one.ids, two.ids) == ((task_id(12),), (task_id(12),))
 
 
 async def test_an_edit_as_a_new_version_finds_the_edited_file(make_client: ClientFactory) -> None:
@@ -378,36 +518,21 @@ async def test_an_edit_as_a_new_version_finds_the_edited_file(make_client: Clien
     assert tasks.ids == (task_id(12),)
     body = server.posts[0][3]
     assert isinstance(body, dict)
-    assert (body["update_document"], body["delete_original"]) == (True, False)
-
-
-async def test_an_edit_that_replaces_the_original_asks_for_its_deletion(
-    make_client: ClientFactory,
-) -> None:
-    server = Paperless(OLD, [*OLD, row(12, "consume_file", "8_edit_1.pdf"), row(13, "bulk_delete")])
-
-    tasks = await writer(make_client, server).edit_pdf(
-        8, (PageSlot(page=1),), output="replace_original"
-    )
-
-    assert tasks.ids == (task_id(12),)
-    body = server.posts[0][3]
-    assert isinstance(body, dict)
-    assert (body["update_document"], body["delete_original"]) == (False, True)
+    assert (body["update_document"], tasks.outputs) == (True, ())
+    assert body["include_metadata"] is False
 
 
 @pytest.mark.parametrize(
-    ("output", "flags", "filename"),
+    ("output", "updates"),
     [
-        ("new_document", (False, False), "8_unprotected.pdf"),
-        ("new_version", (True, False), "8_unprotected.pdf"),
-        ("replace_original", (False, True), "8_unprotected.pdf"),
+        ("new_document", False),
+        ("new_version", True),
     ],
 )
 async def test_removing_a_password_sends_it_with_where_the_copy_goes(
-    make_client: ClientFactory, output: str, flags: tuple[bool, bool], filename: str
+    make_client: ClientFactory, output: str, *, updates: bool
 ) -> None:
-    server = Paperless(OLD, [*OLD, row(12, "consume_file", filename)])
+    server = Paperless(OLD, [*OLD, row(12, "consume_file", "8_unprotected.pdf")])
 
     tasks = await writer(make_client, server).remove_password(8, "s3cret", output=output)  # pyright: ignore[reportArgumentType] -- the parameter is the literal under test
 
@@ -420,8 +545,9 @@ async def test_removing_a_password_sends_it_with_where_the_copy_goes(
             {
                 "documents": [8],
                 "password": "s3cret",
-                "update_document": flags[0],
-                "delete_original": flags[1],
+                "source_mode": "latest_version",
+                "update_document": updates,
+                "include_metadata": not updates,
             },
         )
     ]
@@ -520,7 +646,7 @@ EVERY_OPERATION: list[tuple[str, Call, list[Json]]] = [
     ),
     (
         "merge",
-        lambda w: w.merge_documents((7, 9), metadata_document_id=None, delete_originals=False),
+        lambda w: w.merge_documents((7, 9), metadata_document_id=None),
         [row(12, "consume_file", "7_9_merged.pdf")],
     ),
     (
@@ -600,9 +726,7 @@ async def test_only_the_merged_file_of_exactly_these_documents_is_taken(
     ]
     server = Paperless(OLD, [*OLD, *other])
 
-    tasks = await writer(make_client, server).merge_documents(
-        (9, 5), metadata_document_id=None, delete_originals=False
-    )
+    tasks = await writer(make_client, server).merge_documents((9, 5), metadata_document_id=None)
 
     assert tasks.ids == (task_id(17),)
 
@@ -682,8 +806,7 @@ async def test_the_refusals_have_the_exact_words(make_client: ClientFactory) -> 
         "Rotating, splitting, deleting pages, editing and removing a password need the "
         "permission to change documents and ownership of every document (or no owner): a "
         "change grant is not enough. Merging and reprocessing accept a change grant. A new "
-        "document needs the permission to add documents, and deleting an original also needs "
-        "ownership and the permission to delete."
+        "document needs the permission to add documents."
     )
     assert (permission.value.message, permission.value.hint) == (
         "The Paperless user may not change these documents.",
@@ -870,9 +993,7 @@ async def test_a_long_list_of_documents_is_matched_by_the_truncated_merged_name(
     other = "_".join(str(n) for n in ids) + "_merged.pdf"
     server = Paperless(OLD, [*OLD, row(12, "consume_file", other), row(13, "consume_file", name)])
 
-    tasks = await writer(make_client, server).merge_documents(
-        ids, metadata_document_id=None, delete_originals=False
-    )
+    tasks = await writer(make_client, server).merge_documents(ids, metadata_document_id=None)
 
     assert tasks.ids == (task_id(13),)
 
@@ -932,9 +1053,7 @@ async def test_a_merge_names_no_source_because_its_result_is_a_document_of_its_o
 ) -> None:
     server = Paperless(OLD, [*OLD, row(12, "consume_file", "5_9_merged.pdf")])
 
-    tasks = await writer(make_client, server).merge_documents(
-        (5, 9), metadata_document_id=None, delete_originals=False
-    )
+    tasks = await writer(make_client, server).merge_documents((5, 9), metadata_document_id=None)
 
     assert (tasks.ids, tasks.sources) == ((task_id(12),), ())
 
@@ -1010,7 +1129,7 @@ FAILING: list[tuple[str, Call, str]] = [
     ("rotate", lambda w: w.rotate_documents((7,), 90), "rotation"),
     (
         "merge",
-        lambda w: w.merge_documents((7, 9), metadata_document_id=None, delete_originals=False),
+        lambda w: w.merge_documents((7, 9), metadata_document_id=None),
         "merge",
     ),
     ("reprocess", lambda w: w.reprocess_documents((7,), remote_ocr=False), "reprocessing"),
@@ -1136,3 +1255,132 @@ async def test_a_failed_mark_does_not_lose_the_queued_task_that_cannot_be_follow
 
     assert (tasks.ids, tasks.problem) == ((BULK_TASK,), "unconfirmed")
     assert len(server.posts) == 1
+
+
+NO_DOUBT = [*OLD, row(12, "consume_file", "8_edit_1.pdf"), row(13, "consume_file", "8_edit_2.pdf")]
+LATER = "2026-11-13T17:25:36.560000Z"
+EARLIER = "2026-11-13T17:25:36.530000Z"
+
+
+def other(**fields: object) -> Json:
+    return {**QUEUED, "id": 2, "task_id": task_id(2), **fields}
+
+
+async def doubt(
+    make_client: ClientFactory, after: list[Json] = NO_DOUBT, **server: object
+) -> str | None:
+    paperless = Paperless(OLD, after, settings_status=cast("int", server.get("settings", 200)))
+    paperless.queued = cast("Json", server.get("queued", {}))
+    paperless.others = [QUEUED, *cast("list[Json]", server.get("others", []))]
+    paperless.others_status = cast("int", server.get("status", 200))
+    tasks = await writer(make_client, paperless).edit_pdf(8, PAGES, output="new_document")
+    return tasks.doubt
+
+
+async def test_files_made_while_the_queued_task_ran_alone_are_its_own(
+    make_client: ClientFactory,
+) -> None:
+    before = other(date_started=EARLIER, date_done=EARLIER)
+    after = other(date_started=LATER, date_done=None)
+    waiting = other(date_started=None, date_done=None)
+    harmless = other(input_data={"operation": "set_correspondent"})
+    someone = other(owner=3)
+
+    found = await doubt(make_client, others=[before, after, waiting, harmless, someone])
+
+    assert found is None
+
+
+SAME = "another operation of this user ran at the same time"
+TIMES = "the times of its queued task are not known"
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {},
+        {"input_data": {"operation": "merge"}},
+        {"input_data": {"operation": "remove_password"}},
+        {"input_data": {}},  # an operation Paperless does not name
+        {"owner": None},
+        {"date_done": None},  # still running
+        {"date_started": EARLIER, "date_done": "2026-11-13T17:25:36.540000Z"},
+        {"date_started": "2026-11-13T17:25:36.550000Z", "date_done": LATER},
+    ],
+)
+async def test_another_operation_at_the_same_time_is_a_doubt(
+    make_client: ClientFactory, fields: Json
+) -> None:
+    assert await doubt(make_client, others=[other(**fields)]) == SAME
+
+
+@pytest.mark.parametrize("queued", [{"date_started": None}, {"date_done": None}])
+async def test_a_queued_task_without_times_is_a_doubt(
+    make_client: ClientFactory, queued: Json
+) -> None:
+    assert await doubt(make_client, queued=queued) == TIMES
+
+
+@pytest.mark.parametrize("created", [EARLIER, LATER])
+async def test_a_file_from_before_or_after_the_queued_task_is_a_doubt(
+    make_client: ClientFactory, created: str
+) -> None:
+    stray = [NO_DOUBT[0], NO_DOUBT[1], NO_DOUBT[2], {**NO_DOUBT[3], "date_created": created}]
+
+    assert await doubt(make_client, stray) == "a file was not handed over by its queued task"
+
+
+@pytest.mark.parametrize("overrides", [{"skip_asn_if_exists": False}, {}, None])
+async def test_a_file_that_was_not_handed_over_like_a_part_is_a_doubt(
+    make_client: ClientFactory, overrides: object
+) -> None:
+    data = {"filename": "8_edit_2.pdf", "overrides": overrides}
+
+    found = await doubt(make_client, [*NO_DOUBT[:3], {**NO_DOUBT[3], "input_data": data}])
+
+    assert found == "a file was not handed over by its queued task"
+
+
+@pytest.mark.parametrize("name", ["8_edit_1.pdf", "8_edit_3.pdf"])
+async def test_more_files_than_asked_for_are_a_doubt(make_client: ClientFactory, name: str) -> None:
+    found = await doubt(make_client, [*NO_DOUBT, row(14, "consume_file", name)])
+
+    assert found == "3 files of these names were handed over instead of 2"
+
+
+async def test_tasks_that_cannot_be_compared_are_a_doubt(make_client: ClientFactory) -> None:
+    unfiltered = await doubt(make_client, settings=403)
+    unread = await doubt(make_client, status=503)
+
+    assert unfiltered == "the current user is not known"
+    assert unread == "its tasks could not be compared"
+
+
+async def test_only_what_can_replace_an_original_is_compared(make_client: ClientFactory) -> None:
+    merged = Paperless(OLD, [*OLD, row(12, "consume_file", "8_9_merged.pdf")])
+    unlocked = Paperless(OLD, [*OLD, row(12, "consume_file", "8_unprotected.pdf")])
+    version = Paperless(OLD, [*OLD, row(12, "consume_file", "8_edited.pdf")])
+    for server in (merged, unlocked, version):
+        server.others = [QUEUED, other()]
+
+    one = await writer(make_client, merged).merge_documents((8, 9), metadata_document_id=None)
+    two = await writer(make_client, unlocked).remove_password(8, "x", output="new_document")
+    three = await writer(make_client, version).edit_pdf(8, PAGES[:1], output="new_version")
+
+    assert (one.doubt, two.doubt, three.doubt) == (SAME, SAME, None)
+
+
+async def test_two_merges_that_could_be_the_same_are_a_doubt(make_client: ClientFactory) -> None:
+    server = Paperless(
+        OLD,
+        [
+            *OLD,
+            row(12, "consume_file", "8_merged.pdf"),
+            row(13, "consume_file", "8_9_merged.pdf"),
+        ],
+    )
+
+    tasks = await writer(make_client, server).merge_documents((8, 9), metadata_document_id=None)
+
+    assert (tasks.ids, tasks.included) == ((task_id(13),), (8, 9))
+    assert tasks.doubt == "2 files of these names were handed over instead of 1"

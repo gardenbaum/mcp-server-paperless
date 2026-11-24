@@ -64,7 +64,7 @@ if TYPE_CHECKING:
         ProcessedMailPage,
         ProcessedStatus,
     )
-    from mcp_server_paperless.domain.pdf import Output, PageSlot, StartedTasks
+    from mcp_server_paperless.domain.pdf import FileOutput, PageSlot, StartedTasks
     from mcp_server_paperless.domain.permissions import (
         AccessChange,
         GroupPage,
@@ -146,6 +146,23 @@ class DocumentReader(Protocol):
             NotFound: No such document, the user may not see it, or it lists no such version (a
                 deleted one is not listed).
             PermissionDenied: The user lacks the global ``view_document`` permission.
+        """
+        ...
+
+    async def get_version_pages(self, document_id: int, version_id: int) -> int | None:
+        """How many pages a version of a document has, None where Paperless counted none.
+
+        Raises:
+            NotFound: No such document, the user may not see it, or it lists no such version.
+            PermissionDenied: The user lacks the global ``view_document`` permission.
+        """
+        ...
+
+    async def may_delete(self, owners: Sequence[int | None]) -> bool | None:
+        """Whether the user may delete documents of these owners; None where that is not known.
+
+        It needs the global ``delete_document`` permission and ownership (or no owner), or a
+        superuser. The user's permissions can be read only with ``view_uisettings``.
         """
         ...
 
@@ -826,12 +843,16 @@ class PdfWriter(Protocol):
     Permissions (probed on 3.4.2): all need the global permission to change documents. Rotating,
     editing, splitting, deleting pages and removing a password also need ownership of every
     document (or no owner; a change grant is not enough). Merging and reprocessing accept a
-    change grant. A new document needs the permission to add documents, and deleting an original
-    needs ownership and the permission to delete.
+    change grant. A new document needs the permission to add documents. No method deletes an
+    original: the services do that, after they verified what was made (decision-60).
     """
 
-    async def rotate_documents(self, document_ids: Sequence[int], degrees: int) -> StartedTasks:
+    async def rotate_documents(
+        self, document_ids: Sequence[int], degrees: int, *, original_files: bool = False
+    ) -> StartedTasks:
         """Rotate every page of the PDFs clockwise by ``degrees`` as a new version of each.
+
+        With ``original_files`` the first file of each document is rotated, not the newest.
 
         ``degrees`` is a multiple of 90, negative turns counter-clockwise. Each document gets its
         own task; the older version stays.
@@ -848,13 +869,16 @@ class PdfWriter(Protocol):
         document_ids: Sequence[int],
         *,
         metadata_document_id: int | None,
-        delete_originals: bool,
+        archive_fallback: bool = False,
+        original_files: bool = False,
     ) -> StartedTasks:
-        """Merge the PDFs, in this order, into one new document.
+        """Merge the PDFs, in this order, into one new document; they stay as they are.
 
         The new document takes the metadata (title with ' (merged)', tags, ...) of
         ``metadata_document_id`` if given, which must be one of the documents. With
-        ``delete_originals`` the merged documents go to the trash once the new one exists.
+        ``archive_fallback`` the archive PDF stands in for a file that is not a PDF, with
+        ``original_files`` the first file of each document is merged, not the newest. A document
+        that cannot be merged is left out without an error.
 
         Raises:
             PermissionDenied: See the class docstring.
@@ -863,12 +887,21 @@ class PdfWriter(Protocol):
         ...
 
     async def edit_pdf(
-        self, document_id: int, pages: Sequence[PageSlot], *, output: Output
+        self,
+        document_id: int,
+        pages: Sequence[PageSlot],
+        *,
+        output: FileOutput,
+        version_id: int | None = None,
+        keep_metadata: bool = True,
     ) -> StartedTasks:
         """Build files from the pages of one PDF: ``pages`` in order, grouped by their file.
 
         ``output`` decides where the result goes. ``new_version`` needs a single output file.
-        One task per output file.
+        One task per output file. ``version_id`` is the version whose file is read (the root's id
+        is its first file); Paperless checks the pages against the document that is sent, so
+        without it a newest version with more pages than the first file is refused. New documents
+        take the metadata of the document unless ``keep_metadata`` is false.
 
         Raises:
             PermissionDenied: See the class docstring.
@@ -879,9 +912,17 @@ class PdfWriter(Protocol):
         ...
 
     async def remove_password(
-        self, document_id: int, password: str, *, output: Output
+        self,
+        document_id: int,
+        password: str,
+        *,
+        output: FileOutput,
+        version_id: int | None = None,
+        keep_metadata: bool = True,
     ) -> StartedTasks:
         """Unlock an encrypted PDF with ``password``; ``output`` decides where the copy goes.
+
+        ``version_id`` and ``keep_metadata`` as for ``edit_pdf``.
 
         A file without a password makes Paperless start no task.
 

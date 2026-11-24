@@ -14,7 +14,16 @@ from contract.conftest import delete_and_empty_trash, live_in_trash
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import ENCRYPTED_PASSWORD, ENCRYPTED_PDF, consume, consume_text, num, pdf_pages
+from e2e.helpers import (
+    ENCRYPTED_PASSWORD,
+    ENCRYPTED_PDF,
+    consume,
+    consume_text,
+    num,
+    pdf_pages,
+    results,
+)
+from e2e.uploading import Scope as People
 from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
@@ -163,15 +172,96 @@ async def test_deleting_originals_needs_confirm_and_sends_them_to_the_trash(
         wait_seconds=30,
     )
 
-    _ = scope.made(merged)
-    assert merged["state"] == "success"
-    # Paperless deletes the originals once the merged document exists: give it a moment.
-    for _ in range(40):
-        if live_in_trash(stack, first) and live_in_trash(stack, second):
-            break
-        await asyncio.sleep(0.5)
+    [together] = scope.made(merged)
+    assert (merged["state"], merged["trashed_ids"]) == ("success", [first, second])
+    assert document(stack, together)["page_count"] == 2
     assert live_in_trash(stack, first)
     assert live_in_trash(stack, second)
+
+
+async def test_a_replaced_original_goes_once_its_parts_exist_and_hands_its_number_over(
+    stack: Stack, scope: Scope
+) -> None:
+    source, number = scope.pdf(3), uuid.uuid4().int % 1_000_000 + 8_000_000
+    _ = stack.admin.patch(
+        f"/api/documents/{source}/", json={"archive_serial_number": number}
+    ).raise_for_status()
+    shorter = {"document_id": source, "pages": "2", "output": "replace_original"}
+
+    preview = await run(stack, "delete_pages", **shorter, dry_run=True)
+    unwaited = await run(stack, "delete_pages", **shorter, confirm=True, wait_seconds=0)
+    await run_until_done(stack, unwaited, scope)
+    assert (preview["state"], preview["dry_run"]) == ("not_started", True)
+    assert (unwaited["trashed_ids"], live_in_trash(stack, source)) == ([], False)
+    assert f"delete_document(document_id={source})" in str(unwaited["next"])
+    replaced = await run(stack, "delete_pages", **shorter, confirm=True)
+
+    [made] = scope.made(replaced)
+    assert (replaced["state"], replaced["trashed_ids"]) == ("success", [source])
+    assert live_in_trash(stack, source)
+    assert document(stack, made)["page_count"] == 2
+    assert document(stack, made)["archive_serial_number"] == number
+
+
+async def run_until_done(stack: Stack, result: Json, scope: Scope) -> None:
+    """Follow the tasks of a result that was not waited for, for the cleanup."""
+    async with Client(
+        create_server(
+            paperless_settings(stack.base_url, stack.admin_token),
+            server_settings(toolsets=["core"]),
+        )
+    ) as client:
+        for task in cast("list[Json]", result["tasks"]):
+            done = await client.call_tool(
+                "get_task", {"task_id": task["task_id"], "wait_seconds": 30}
+            )
+            ids = cast("list[object]", cast("Json", done.structured_content)["document_ids"])
+            scope.ids.extend(num(n) for n in ids)
+
+
+async def test_a_document_longer_than_its_first_file_is_edited_on_its_last_page(
+    stack: Stack, scope: Scope
+) -> None:
+    source = scope.pdf(1)
+    doubled = [{"page": 1}, {"page": 1}, {"page": 1, "rotate": 90}]
+    longer = await run(
+        stack,
+        "edit_pdf",
+        document_id=source,
+        pages=doubled,
+        output="new_version",
+        wait_seconds=30,
+    )
+    [version] = scope.made(longer)
+    assert document(stack, source)["page_count"] == 3
+
+    last = await run(stack, "edit_pdf", document_id=source, pages=[{"page": 3}], wait_seconds=30)
+    [page] = scope.made(last)
+    assert document(stack, page)["page_count"] == 1
+    back = await refused(
+        stack,
+        "edit_pdf",
+        document_id=source,
+        pages=[{"page": 1}],
+        output="new_version",
+        version_id=source,
+    )
+    assert f"from its older version {source}" in back
+    assert versions(stack, source) == [version, source]
+
+
+async def test_a_merge_refuses_what_paperless_would_leave_out(stack: Stack, scope: Scope) -> None:
+    first, locked = scope.pdf(1), scope.locked()
+    text = consume_text(stack.admin, f"plmcp23-{uuid.uuid4().hex}")
+    scope.ids.append(text)
+
+    encrypted = await refused(stack, "merge_documents", document_ids=[first, locked])
+    plain = await refused(
+        stack, "merge_documents", document_ids=[first, text], archive_fallback=True
+    )
+
+    assert f"Document {locked} cannot be merged" in encrypted
+    assert f"Document {text} is not a PDF (text/plain) and has no archive PDF" in plain
 
 
 async def test_edit_pdf_reorders_and_turns_pages_into_a_new_document(
@@ -230,3 +320,39 @@ async def test_reprocessing_needs_confirm_and_starts_a_task(stack: Stack, scope:
     assert result["state"] == "success"
     [task] = cast("list[Json]", result["tasks"])
     assert task["document_ids"] == []
+
+
+async def test_a_user_who_may_not_view_tasks_keeps_the_original_and_is_told_how_to_go_on(
+    stack: Stack, scope: Scope
+) -> None:
+    people = People(stack)
+    source = scope.pdf(2)
+    try:
+        token = people.user("view_document", "change_document", "add_document", "delete_document")
+        _ = stack.admin.patch(f"/api/documents/{source}/", json={"owner": None}).raise_for_status()
+        answer = await people.call(
+            "delete_pages",
+            token,
+            document_id=source,
+            pages="1",
+            output="replace_original",
+            confirm=True,
+        )
+        result = cast("Json", answer.structured_content)
+
+        assert (result["state"], result["trashed_ids"]) == ("unknown", [])
+        assert "search_documents" in str(result["next"])
+        assert "delete_document" not in str(result["next"])
+        assert not live_in_trash(stack, source)
+        title = str(document(stack, source)["title"])
+        made: list[int] = []
+        for _ in range(60):
+            found = results(stack.admin.get("/api/documents/", params={"title__iexact": title}))
+            made = [num(row["id"]) for row in found if row["id"] != source]
+            if made:
+                break
+            await asyncio.sleep(1)
+        scope.ids.extend(made)
+        assert [document(stack, n)["page_count"] for n in made] == [1]
+    finally:
+        people.clean_up()

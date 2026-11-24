@@ -459,18 +459,8 @@ reason = "Paperless runs a workflow with a manual trigger on selected documents;
 
 [[open_fields]]
 operation = "POST /api/documents/edit_pdf/"
-fields = ["body:include_metadata", "body:source_mode"]
-task = "PLMCP-79"
-
-[[open_fields]]
-operation = "POST /api/documents/edit_pdf/"
 fields = ["body:from_webui"]
 task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/merge/"
-fields = ["body:archive_fallback", "body:source_mode"]
-task = "PLMCP-79"
 
 [[open_fields]]
 operation = "POST /api/documents/merge/"
@@ -489,28 +479,13 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/documents/remove_password/"
-fields = ["body:include_metadata", "body:source_mode"]
-task = "PLMCP-79"
-
-[[open_fields]]
-operation = "POST /api/documents/remove_password/"
 fields = ["body:from_webui"]
 task = "PLMCP-83"
 
 [[open_fields]]
 operation = "POST /api/documents/reprocess/"
-fields = ["body:all", "body:excluded_documents", "body:filters"]
-task = "PLMCP-79"
-
-[[open_fields]]
-operation = "POST /api/documents/reprocess/"
 fields = ["body:from_webui"]
 task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/rotate/"
-fields = ["body:all", "body:excluded_documents", "body:filters", "body:source_mode"]
-task = "PLMCP-79"
 
 [[open_fields]]
 operation = "POST /api/documents/rotate/"
@@ -588,3 +563,38 @@ operation = "POST /api/workflows/"
 fields = ["body:actions[].type=5", "body:actions[].type=8", "body:triggers[].type=5"]
 task = "PLMCP-87"
 reason = "the domain refuses password removal and applying AI suggestions (decision-21): they store passwords or query Paperless's AI backend, so the web UI keeps them. A manual trigger (type 5) is read but not written: it is run by hand from the web UI (PLMCP-97; PLMCP-87 decides whether to write it)."
+
+[[exclusion]]
+operation = "POST /api/documents/edit_pdf/"
+fields = ["body:delete_original"]
+quote = "Bitte alles wie von dir empfohlen umsetzen."
+date = "2026-11-24"
+source = "backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md"
+
+[[exclusion]]
+operation = "POST /api/documents/merge/"
+fields = ["body:delete_originals"]
+quote = "Bitte alles wie von dir empfohlen umsetzen."
+date = "2026-11-24"
+source = "backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md"
+
+[[exclusion]]
+operation = "POST /api/documents/remove_password/"
+fields = ["body:delete_original"]
+quote = "Bitte alles wie von dir empfohlen umsetzen."
+date = "2026-11-24"
+source = "backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md"
+
+[[exclusion]]
+operation = "POST /api/documents/reprocess/"
+fields = ["body:all", "body:excluded_documents", "body:filters"]
+quote = "Bitte alles wie von dir empfohlen umsetzen."
+date = "2026-11-24"
+source = "backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md"
+
+[[exclusion]]
+operation = "POST /api/documents/rotate/"
+fields = ["body:all", "body:excluded_documents", "body:filters"]
+quote = "Bitte alles wie von dir empfohlen umsetzen."
+date = "2026-11-24"
+source = "backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md"
