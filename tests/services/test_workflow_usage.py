@@ -16,6 +16,7 @@ from mcp_server_paperless.domain.workflows import (
     ACTION_TYPES,
     TRIGGER_FIELDS,
     PartUse,
+    TriggerTypeName,
     Usage,
     UsedKind,
     Workflow,
@@ -121,7 +122,7 @@ async def test_every_setting_that_names_an_object_is_searched(
         if k != field.kind and part_uses(made, k, 1)
     ]
 
-    assert found == [PartUse(part=part, id=7, setting=name)]  # pyright: ignore[reportArgumentType]
+    assert [(use.part, use.id, use.setting) for use in found] == [(part, 7, name)]
     assert other == []
     assert others == []
 
@@ -202,7 +203,7 @@ async def test_custom_fields_are_found_in_queries_by_id_and_by_name() -> None:
         "too short": json.dumps([1]),
         "too long": json.dumps(["e2e-string", "e2e-string", "e2e-string", "e2e-string"]),
         "no field": json.dumps([["e2e-string"], "exists", True]),
-        "too deep": "[" * 100_000,
+        "too deep": "[" * 1_000_000,
         "none": None,
     }
     for number, (name, query) in enumerate(queries.items(), start=1):
@@ -240,8 +241,10 @@ async def test_the_list_is_filtered_by_enabled_and_trigger_type() -> None:
     _ = setup.seed("Off", [trigger(4, BY_HAND)], enabled=False)
     _ = setup.seed("Edits", [trigger(5, EDIT)])
 
-    async def names(**given: object) -> list[str]:
-        listing = await setup.workflows.list(**given)  # pyright: ignore[reportArgumentType]
+    async def names(
+        *, enabled: bool | None = None, trigger: TriggerTypeName | None = None
+    ) -> list[str]:
+        listing = await setup.workflows.list(enabled=enabled, trigger=trigger)
         assert all(w.used_in == () for w in listing.workflows)
         return [w.name for w in listing.workflows]
 
@@ -282,6 +285,7 @@ async def test_a_single_part_is_shown_with_the_workflows_that_hold_it() -> None:
     assert shown.part.action == (await setup.workflows.get("One")).actions[0]
     assert shown.part.action.shown_in_part == ("webhook.url",)
     assert shown.part.trigger is None
+    assert shown.part.workflows == part.workflows
     assert (shown.id, shown.name, shown.triggers, shown.actions) == (None, None, (), ())
     for secret in ("planted", "pw"):
         assert secret not in shown.model_dump_json()
