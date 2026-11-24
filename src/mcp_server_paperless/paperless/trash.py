@@ -34,11 +34,17 @@ if TYPE_CHECKING:
 PATH = "/api/trash/"
 
 
+class _Version(BaseModel):
+    checksum: str | None = None
+    is_root: bool
+
+
 class _Row(BaseModel):
     id: int
     title: str
     deleted_at: datetime
     root_document: int | None
+    versions: list[_Version]
 
 
 class _Done(BaseModel):
@@ -65,8 +71,14 @@ def refused() -> PermissionDenied:
 
 
 def _entry(row: _Row) -> TrashedDocument:
+    # The row of a version lists its document's versions, not itself.
+    roots = [v.checksum for v in row.versions if v.is_root and row.root_document is None]
     return TrashedDocument(
-        id=row.id, title=row.title, deleted_at=row.deleted_at, version_of=row.root_document
+        id=row.id,
+        title=row.title,
+        deleted_at=row.deleted_at,
+        version_of=row.root_document,
+        checksum=next(iter(roots), None),
     )
 
 
@@ -85,6 +97,23 @@ class PaperlessTrashReader:
             )
         except NotFound:
             raise beyond_last_page(page) from None
+        return TrashPage(
+            count=found.count,
+            next_page=found.next_page,
+            entries=tuple(_entry(row) for row in found.results),
+        )
+
+    async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
+        """See ``TrashReader.read_trash``; parsing a large answer stops the event loop for a while.
+
+        Of the rows only what ``_Row`` names is kept.
+        """
+        found = await self._client.read_json(
+            PATH,
+            Page[_Row],
+            params={"page": 1, "page_size": entries},
+            max_bytes=max_bytes,
+        )
         return TrashPage(
             count=found.count,
             next_page=found.next_page,

@@ -1,9 +1,10 @@
 """upload_document for every caller: the file arrives as base64 content.
 
 This is the variant HTTP clients get, and stdio clients too unless the operator allows paths
-(``PAPERLESS_MCP_UPLOAD_DIRS``, see ``upload_stdio``). It has no path parameter and no code that
-reads a path (decision-7). The metadata parameters and the description's wording are shared with
-the stdio variant, which differs only in the source of the bytes.
+(``PAPERLESS_MCP_UPLOAD_DIRS``, see ``upload_stdio``); those also get the hint who does that. It
+has no path parameter and no code that reads a path (decision-7). The metadata parameters and the
+description's wording are shared with the stdio variant, which differs only in the source of the
+bytes.
 """
 
 from datetime import date
@@ -15,12 +16,21 @@ from pydantic import Field, JsonValue
 
 from mcp_server_paperless.domain.documents import NameOrId, UploadMetadata, UploadResult
 from mcp_server_paperless.services.tasks import MAX_WAIT_SECONDS
-from mcp_server_paperless.tools._shared import ANNOTATIONS, DOCUMENT_TEXT, boundary, services
+from mcp_server_paperless.tools._shared import (
+    ANNOTATIONS,
+    DOCUMENT_TEXT,
+    Confirm,
+    boundary,
+    services,
+)
+from mcp_server_paperless.tools.upload_hint import PATH_OFF
 
 TOOLSET = "core"
 
-# The tool's name is the same in both variants; the server registers exactly one of them.
+# The tool's name is the same in every variant; the server registers exactly one of them.
 remote = LocalProvider()
+# The remote form with the hint at paths, for stdio without an allowlist.
+hinted = LocalProvider()
 
 type Named = Annotated[NameOrId | None, Field(description="Name or id; see list_taxonomy.")]
 type Title = Annotated[
@@ -67,14 +77,23 @@ COMMON = (
     "search_documents; an unknown name is an error and nothing is uploaded; tags are never "
     "created. Paperless consumes the file later: the result holds the task_id and, with "
     "wait_seconds, the new document_id and web_url; a problem found only then (a taken archive "
-    "serial number) shows as state failure. Each call adds a document, also for content "
-    f"Paperless already holds (no duplicate check). {DOCUMENT_TEXT}"
+    "serial number) shows as state failure. A file "
+    "Paperless already holds (same bytes) is not sent without confirm: first a dialog, or an error "
+    "for you to show the user, names where it is (see confirm). Checked are the originals of "
+    "documents, the versions of the 5,000 last changed and 500 trash entries; not archive files "
+    "and what this user cannot see (duplicates.not_checked says more). "
+    f"{DOCUMENT_TEXT}"
 )
 
 
 DESCRIPTION = "Upload a file, sent as base64 content, to Paperless as a new document. " + COMMON
 
 
+@hinted.tool(
+    tags={TOOLSET},
+    annotations=ANNOTATIONS["upload_document"],
+    description=f"{DESCRIPTION} {PATH_OFF}",
+)
 @remote.tool(tags={TOOLSET}, annotations=ANNOTATIONS["upload_document"], description=DESCRIPTION)
 @boundary
 async def upload_document(  # noqa: PLR0913 -- the file plus one parameter per metadata field
@@ -109,6 +128,7 @@ async def upload_document(  # noqa: PLR0913 -- the file plus one parameter per m
     archive_serial_number: SerialNumber = None,
     custom_fields: CustomFields = None,
     wait_seconds: Wait = 0,
+    confirm: Confirm = False,
 ) -> UploadResult:
     """Upload a file as base64 content; the tool description is DESCRIPTION."""
     metadata = UploadMetadata(
@@ -122,5 +142,5 @@ async def upload_document(  # noqa: PLR0913 -- the file plus one parameter per m
         custom_fields=custom_fields or {},
     )
     return await services(ctx).uploads.from_content(
-        content_base64, filename, metadata, wait_seconds=wait_seconds
+        content_base64, filename, metadata, wait_seconds=wait_seconds, confirm=confirm
     )

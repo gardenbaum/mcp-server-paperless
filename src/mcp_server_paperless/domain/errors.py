@@ -353,6 +353,14 @@ class UpstreamUnreachable(UpstreamUnavailable):
     """No connection to Paperless could be made."""
 
 
+class AnswerCompressed(PaperlessMcpError):
+    """An answer was compressed although that was not asked for."""
+
+
+class AnswerTooLarge(PaperlessMcpError):
+    """An answer of Paperless is larger than what may be read of it."""
+
+
 class DeliveryUnknown(PaperlessMcpError):
     """A request that sends something out failed in a way that does not say whether it was sent."""
 

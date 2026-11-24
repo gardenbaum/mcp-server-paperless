@@ -85,6 +85,8 @@ ZIP: Final = "application/zip"
 SAVED_NAME: Final = "documents.zip"
 # How long Paperless may take to build an archive before its first byte, for one that is saved.
 SAVE_WAIT_SECONDS: Final = 600.0
+# Documents a confirmation names; the rest are counted.
+SHOWN_IDS: Final = 10
 # The settings that are URLs.
 ENDPOINTS: Final = frozenset({"llm_endpoint", "llm_embedding_endpoint", "remote_ocr_endpoint"})
 # Settings a confirmation names in full; the rest are counted.
@@ -165,6 +167,13 @@ def _config(record: AppConfigRecord) -> AppConfig:
         keys_configured=record.keys_configured,
         externally_configured_variables=record.externally_configured_variables,
     )
+
+
+def _archive_of(document_ids: Sequence[int]) -> str:
+    """A ZIP of these documents, for a message: the first ids, then how many more."""
+    rest = len(document_ids) - SHOWN_IDS
+    ids = ", ".join(map(str, document_ids[:SHOWN_IDS])) + (f" and {rest} more" if rest > 0 else "")
+    return f"a ZIP of {_plural(len(document_ids), 'document')} ({ids})"
 
 
 def _check_ids(document_ids: Sequence[int]) -> None:
@@ -545,7 +554,7 @@ class SystemAdmin:
         async with self._sink.open(directory) as target:
             source = ("archive", tuple(document_ids), content, compression, follow_formatting)
             name = file_name(save_as, SAVED_NAME, ZIP)
-            await target.claim(name, confirm=confirm, source=source)
+            await target.claim(name, confirm=confirm, what=_archive_of(document_ids), source=source)
             async with self._reader.open_archive(
                 document_ids,
                 content=content,

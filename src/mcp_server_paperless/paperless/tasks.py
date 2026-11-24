@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, JsonValue
 
 from mcp_server_paperless.domain.errors import NotFound
-from mcp_server_paperless.domain.tasks import TaskState, TaskStatus
+from mcp_server_paperless.domain.tasks import REJECTED, TaskState, TaskStatus
 from mcp_server_paperless.paperless.pagination import Page
 
 if TYPE_CHECKING:
@@ -46,6 +46,15 @@ def _error_message(result: JsonValue) -> str | None:
     return message.strip() if isinstance(message, str) and message.strip() else None
 
 
+def duplicate_of(result: JsonValue) -> int | None:
+    """What Paperless rejected a file for; such a task has no error message.
+
+    It is also the task's only related document, which the task neither made nor changed.
+    """
+    found = result.get("duplicate_of") if isinstance(result, dict) else None
+    return found if isinstance(found, int) else None
+
+
 class PaperlessTaskReader:
     """``TaskReader`` over the Paperless REST API."""
 
@@ -62,12 +71,14 @@ class PaperlessTaskReader:
         row = next((row for row in found.results if row.task_id == task_id), None)
         if row is None:
             raise not_found(task_id)
+        duplicate = duplicate_of(row.result_data)
         return TaskStatus(
             task_id=row.task_id,
             task_type=row.task_type,
             state=row.status,
-            message=_error_message(row.result_data),
-            document_ids=tuple(row.related_document_ids),
+            message=_error_message(row.result_data) if duplicate is None else REJECTED,
+            document_ids=tuple(row.related_document_ids) if duplicate is None else (),
+            duplicate_of=duplicate,
             created=row.date_created,
             finished=row.date_done,
         )

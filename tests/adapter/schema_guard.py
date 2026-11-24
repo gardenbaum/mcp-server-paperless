@@ -177,6 +177,10 @@ WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
         "3.5.1 answers a bare list, not the paginated envelope of the schema, and a null actor "
         "for system changes (PLMCP-11)"
     ),
+    ("GET", "/api/documents/{id}/root/", 403): (
+        "a document the user may not see is answered with HttpResponseForbidden, text/html "
+        "(documents/views.py of 3.5.1, PLMCP-77)"
+    ),
     ("GET", "/api/documents/{id}/thumb/", 403): (
         "a document the user may not see is answered with HttpResponseForbidden, text/html "
         "(PLMCP-12)"

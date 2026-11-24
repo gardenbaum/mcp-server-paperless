@@ -76,7 +76,8 @@ reference](tools.md) lists the kind of every tool.
 
 ### Confirmation
 
-A tool that can lose data or widen access needs your consent for that, in one of two ways:
+A tool that can lose data or widen access, or that would upload a file Paperless already holds,
+needs your consent for that, in one of two ways:
 
 - **A dialog**, where your client can show one (it declares form elicitation of MCP). A call
   without `confirm` shows you what would happen and waits. Only if you accept does the call go
@@ -304,9 +305,23 @@ larger than the file and must be written out by the caller in one tool call, so 
 far smaller. The size is checked on the text before anything is decoded, but the request body, its
 text and the decoded bytes are in memory together, over HTTP in several copies. Measured on a real
 HTTP server with a stand-in for Paperless (the peak of single runs on macOS, above about 125 MB
-when idle): a 10 MiB file took about 70 MB, four at once about 145 MB, and a 100 MiB file 640 MB on
-a fresh server and up to about 890 MB after an earlier upload. Nothing limits how many uploads run at once, so
-give a container the memory for the limit you set.
+when idle), with a duplicate check of 5,000 documents with a version each and 500 trash entries: with
+20 KB of text per entry a 10 MiB file took about 90 MB, four at once about 290 MB, and a 100 MiB file
+640 MB on a fresh server and about 880 MB after an upload of 40 MiB; with 132 KB per entry, just
+below the limit of 64 MiB for the trash, 205, 560 and 735 MB, and 140 MB for a file of 1 KiB. Nothing
+limits how many uploads run at once, so give a container the memory for the limit you set.
+
+**Duplicates.** Before anything is sent, both tools compare the file (its SHA-256) with what
+Paperless already holds: the originals of documents, the versions of the 5,000 most recently changed
+documents, and 500 trash entries. A file that is there already is sent only after a
+[confirmation](#confirmation) that names where it is. Archive files, versions of trashed documents
+and documents the Paperless user cannot see are not compared; the result lists every gap, and after
+consumption it, and `get_task`, report the duplicates Paperless found or the document it rejected the
+file for. If the check cannot run, because Paperless does not answer, because documents come and go while it
+reads, because it takes longer than 25 seconds, or because the trash
+entries with the text of their documents are larger than 64 MiB, nothing is uploaded; no setting and
+no `confirm` skips the check. The rules
+are decision-47 (`backlog/decisions/`).
 
 **Uploads by path.** With `PAPERLESS_MCP_UPLOAD_DIRS` set, the two tools also take a `path` on
 the machine the server runs on, which is what you want with Claude Code or Claude Desktop: the
@@ -315,7 +330,8 @@ model names the file instead of encoding it.
 - Directories are absolute, comma-separated or a JSON array. `/`, your home directory itself,
   `/proc`, `/sys`, `/dev` and `/run` are refused as entries.
 - Only the stdio transport ever offers the `path` parameter, and only when this is set; over
-  HTTP callers send base64 content.
+  HTTP callers send base64 content. Over stdio without it, the tools tell the assistant that the
+  operator can set it.
 - Symlinks are resolved and must end inside these directories; only regular files with a single
   hard link are read, `..` in a path is refused, and files or folders whose name starts with a
   dot below an entry (`.ssh`, `.env`) are never read, also when zero-width or direction
@@ -361,8 +377,11 @@ ranges and the server keeps nothing between calls, so every part reads the file 
   title and no text of a document can make the server write a script, a program or a `CLAUDE.md`.
   Names that start with a dot are refused.
 - An existing file is replaced only after a confirmation (a dialog where your client can show one,
-  else `confirm=true`), which names the file and the directory in full; if either is longer than 254
-  characters or holds characters that may not show, the replacement is refused. And only a plain file: never a link, a file
+  else `confirm=true`), which says what would be saved and names the file and the directory (where a
+  link leads) in full; if either is longer than 254
+  characters or holds characters that may not show, the replacement is refused. Opening the old file, a sync client, a backup or a `chmod`
+  can count as a change of it: the call then asks again or ends with "changed meanwhile". And only a
+  plain file: never a link, a file
   with a second name (hard link) or a device.
 - Up to 2 GiB and 30 minutes; 256 MiB of the disk stay free, checked while the file arrives. Only a complete file gets its name, and
   it is compared with the size and checksum Paperless knows (a ZIP archive must be whole). It
@@ -372,7 +391,7 @@ ranges and the server keeps nothing between calls, so every part reads the file 
   server can leave a hidden `.mcp-….part`, which you may delete.
 - Not on Windows: saving is refused there, as uploading by path is.
 
-The rules are decision-45 and decision-46 (`backlog/decisions/`).
+The rules are decision-45, decision-46 and, for replacing a file, decision-49 (`backlog/decisions/`).
 
 ### Page images
 
