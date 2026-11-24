@@ -195,11 +195,12 @@ class PaperlessTrashReader:
         """Read through ``client``."""
         self._client: PaperlessClient = client
 
-    async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
+    async def list_trash(self, *, page: int, page_size: int, max_bytes: int) -> TrashPage:
         """See ``TrashReader.list_trash``."""
+        params = {"page": page, "page_size": page_size}
         try:
-            found = await self._client.get(
-                PATH, Page[_Row], params={"page": page, "page_size": page_size}
+            found = await self._client.read_json(
+                PATH, Page[_Row], params=params, max_bytes=max_bytes, compressed=True
             )
         except NotFound:
             raise beyond_last_page(page) from None

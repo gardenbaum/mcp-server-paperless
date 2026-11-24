@@ -169,6 +169,8 @@ class Streamed:
 COMPRESSED_HINT = (
     "Check the proxy between this server and Paperless: it must honour Accept-Encoding: identity."
 )
+# The encodings httpx2 unpacks in pieces of at most 1 MiB (since 2.16.0).
+UNPACKED = frozenset({"gzip", "deflate", "zstd"})
 # The most bytes of an error answer that are read to describe it (they are only messages).
 ERROR_BODY_LIMIT = 64 * 1024
 
@@ -286,7 +288,7 @@ class PaperlessClient:
         finally:
             await response.aclose()
 
-    async def read_json[M: pydantic.BaseModel](
+    async def read_json[M: pydantic.BaseModel](  # noqa: PLR0913 -- the limits of the read
         self,
         path: str,
         model: type[M],
@@ -294,6 +296,7 @@ class PaperlessClient:
         params: Params | None = None,
         max_bytes: int,
         timeout: float | None = None,  # noqa: ASYNC109 -- the HTTP request timeout, not a cancel scope
+        compressed: bool = False,
     ) -> M:
         """GET ``path`` and validate a body of at most ``max_bytes`` bytes.
 
@@ -302,30 +305,32 @@ class PaperlessClient:
         It is parsed in a thread, which does not keep the event loop free: the parser holds the GIL
         (0.02 s for ordinary text, up to 0.8 s for a hostile body near 64 MiB).
 
-        The limit is enforced while the body is read, whatever its Content-Length says. A
-        compressed body is refused: one piece of it could unpack to any size.
+        The limit is enforced while the body is read, whatever its Content-Length says, and on what
+        it unpacks to. A compressed body is refused unless ``compressed`` takes the encodings that
+        httpx2 unpacks in pieces of at most 1 MiB.
 
         Raises:
-            AnswerCompressed: The body is compressed.
+            AnswerCompressed: The body is compressed, or in a way that is not taken.
             AnswerTooLarge: The body is larger than ``max_bytes``.
             PaperlessMcpError: The matching subclass for an error status or a failed transport, or
                 a body that does not match.
         """
         outgoing = self._build("GET", path, params=params, timeout=timeout)
-        outgoing.headers["Accept-Encoding"] = "identity"
+        if not compressed:
+            outgoing.headers["Accept-Encoding"] = "identity"
         response = await self._exchange(outgoing, stream=True)
         body = bytearray()
         try:
             if response.is_error:
                 raise error_for_status(await _with_capped_body(response))
             encoding = response.headers.get("Content-Encoding", "").strip().lower()
-            if encoding not in {"", "identity"}:
+            if encoding not in {"", "identity"} and not (compressed and encoding in UNPACKED):
                 message = (
                     f"The answer to GET {outgoing.url.path} was compressed although that was not "
                     "asked for."
                 )
                 raise AnswerCompressed(message, hint=COMPRESSED_HINT)
-            async for chunk in response.aiter_raw():
+            async for chunk in response.aiter_bytes():
                 if len(body) + len(chunk) > max_bytes:
                     message = f"Paperless sent more than {max_bytes} bytes for GET {path}."
                     raise AnswerTooLarge(message)
@@ -333,6 +338,8 @@ class PaperlessClient:
         except httpx2.TransportError as error:
             logger.warning("GET %s failed: %s", outgoing.url.path, type(error).__name__)
             raise error_for_transport(error) from error
+        except httpx2.DecodingError as error:
+            raise unexpected(response) from error
         finally:
             await response.aclose()
         try:

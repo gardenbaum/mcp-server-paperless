@@ -2,12 +2,16 @@
 
 import gzip
 import json
+import tracemalloc
+import zlib
+from compression import zstd
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast, override
 
 import httpx2
 import pytest
+from fakes.paperless import FakePaperless, seeded
 
 from adapter.conftest import streaming
 from mcp_server_paperless.domain.errors import (
@@ -16,15 +20,19 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
+    UnexpectedAnswer,
     UpstreamUnreachable,
     Validation,
 )
 from mcp_server_paperless.domain.trash import TrashedDetail
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.paperless.trash import (
     SCAN_TIMEOUT,
     PaperlessTrashReader,
     PaperlessTrashWriter,
 )
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.trash_scan import TrashScan
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -119,7 +127,9 @@ def listing(*rows: Json, count: int | None = None, after: str | None = None) -> 
 async def test_the_trash_is_listed_a_page_at_a_time(make_client: ClientFactory) -> None:
     server = Recorded(listing(DOCUMENT, VERSION, count=944, after="page=3&page_size=2"))
 
-    page = await PaperlessTrashReader(make_client(server)).list_trash(page=2, page_size=2)
+    page = await PaperlessTrashReader(make_client(server)).list_trash(
+        page=2, page_size=2, max_bytes=10**6
+    )
 
     assert server.sent == [("GET", "/api/trash/", {"page": "2", "page_size": "2"}, None)]
     assert (page.count, page.next_page) == (944, 3)
@@ -132,7 +142,9 @@ async def test_the_trash_is_listed_a_page_at_a_time(make_client: ClientFactory) 
 async def test_the_last_page_has_no_next_page(make_client: ClientFactory) -> None:
     server = Recorded(listing())
 
-    page = await PaperlessTrashReader(make_client(server)).list_trash(page=1, page_size=25)
+    page = await PaperlessTrashReader(make_client(server)).list_trash(
+        page=1, page_size=25, max_bytes=10**6
+    )
 
     assert (page.count, page.next_page, page.entries) == (0, None, ())
 
@@ -141,7 +153,9 @@ async def test_a_page_beyond_the_last_is_not_found_with_a_hint(make_client: Clie
     server = Recorded({"detail": "Invalid page."}, 404)
 
     with pytest.raises(NotFound) as raised:
-        _ = await PaperlessTrashReader(make_client(server)).list_trash(page=9, page_size=25)
+        _ = await PaperlessTrashReader(make_client(server)).list_trash(
+            page=9, page_size=25, max_bytes=10**6
+        )
 
     assert raised.value.message == "Page 9 of the trash does not exist."
     assert (
@@ -153,7 +167,9 @@ async def test_listing_without_the_view_permission_is_denied(make_client: Client
     server = Recorded({"detail": "You do not have permission to perform this action."}, 403)
 
     with pytest.raises(PermissionDenied):
-        _ = await PaperlessTrashReader(make_client(server)).list_trash(page=1, page_size=25)
+        _ = await PaperlessTrashReader(make_client(server)).list_trash(
+            page=1, page_size=25, max_bytes=10**6
+        )
 
 
 @pytest.mark.parametrize(
@@ -497,7 +513,9 @@ async def test_every_field_the_api_documents_is_read() -> None:
 async def test_the_list_tells_what_chooses_an_entry(make_client: ClientFactory) -> None:
     server = Recorded(listing(FULL, VERSION))
 
-    page = await PaperlessTrashReader(make_client(server)).list_trash(page=1, page_size=25)
+    page = await PaperlessTrashReader(make_client(server)).list_trash(
+        page=1, page_size=25, max_bytes=10**6
+    )
 
     first, second = page.entries
     assert (first.document_type, first.owner, first.mime_type) == (5, 2, "text/plain")
@@ -564,3 +582,122 @@ async def test_the_grants_of_an_entry_are_read_with_full_perms() -> None:
     assert (found.view_users, found.view_groups) == ((3, 4), (5,))
     assert (found.change_users, found.change_groups) == ((4,), ())
     assert absent is None
+
+
+# --- a page of the list: bounded, and compressed answers are unpacked (decision-77) ---------------
+
+
+async def list_page(
+    response: httpx2.Response, max_bytes: int = 100_000
+) -> tuple[TrashPage, httpx2.Request]:
+    asked: list[httpx2.Request] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        asked.append(request)
+        return response
+
+    client, _ = streaming(answer)
+    page = await PaperlessTrashReader(client).list_trash(page=1, page_size=100, max_bytes=max_bytes)
+    return page, asked[0]
+
+
+def packed(encoding: str, data: bytes) -> bytes:
+    raw = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+    return {
+        "identity": data,
+        "gzip": gzip.compress(data),
+        "GZIP": gzip.compress(data),
+        "deflate": zlib.compress(data),
+        "Deflate": raw.compress(data) + raw.flush(),
+        "zstd": zstd.compress(data),
+    }[encoding]
+
+
+ENCODINGS = ["identity", "gzip", "GZIP", "deflate", "Deflate", "zstd"]
+
+
+@pytest.mark.parametrize("encoding", ENCODINGS)
+async def test_a_page_is_read_up_to_the_limit_of_what_it_unpacks_to(encoding: str) -> None:
+    whole = body(DOCUMENT, VERSION)
+
+    def answer() -> httpx2.Response:
+        stream = Chunks(packed(encoding, whole))
+        return httpx2.Response(200, headers={"Content-Encoding": encoding}, stream=stream)
+
+    page, request = await list_page(answer(), max_bytes=len(whole))
+
+    assert [e.id for e in page.entries] == [3301, 3305]
+    assert "gzip" in request.headers["Accept-Encoding"]  # compressed answers stay welcome
+    with pytest.raises(AnswerTooLarge):
+        _ = await list_page(answer(), max_bytes=len(whole) - 1)
+
+
+async def test_a_page_stops_at_the_limit_while_it_is_read() -> None:
+    stream = Chunks(*[b"x" * 100] * 50)
+
+    with pytest.raises(AnswerTooLarge):
+        _ = await list_page(httpx2.Response(200, stream=stream), max_bytes=250)
+
+    assert stream.sent == 3
+
+
+@pytest.mark.parametrize("encoding", ["gzip", "deflate", "Deflate", "zstd"])
+async def test_a_small_piece_that_unpacks_to_much_is_not_unpacked_whole(encoding: str) -> None:
+    bomb = packed(encoding, b" " * 100_000_000)
+    stream = Chunks(bomb)
+    response = httpx2.Response(200, headers={"Content-Encoding": encoding}, stream=stream)
+    tracemalloc.start()
+    try:
+        with pytest.raises(AnswerTooLarge):
+            _ = await list_page(response, max_bytes=1_000_000)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert peak < 20_000_000
+
+
+@pytest.mark.parametrize("encoding", ["br", "x-unknown", "gzip, gzip"])
+async def test_a_page_compressed_in_another_way_is_refused_unread(encoding: str) -> None:
+    stream = Chunks(b"anything")
+    response = httpx2.Response(200, headers={"Content-Encoding": encoding}, stream=stream)
+
+    with pytest.raises(AnswerCompressed) as raised:
+        _ = await list_page(response)
+
+    assert "proxy between this server and Paperless" in (raised.value.hint or "")
+    assert stream.sent == 0
+
+
+@pytest.mark.parametrize("encoding", ["gzip", "deflate", "zstd"])
+@pytest.mark.parametrize("broken", ["no such thing", "cut off"])
+async def test_a_compressed_page_that_is_broken_is_an_unexpected_answer(
+    encoding: str, broken: str
+) -> None:
+    whole = packed(encoding, body(DOCUMENT))
+    stream = Chunks(whole[: len(whole) // 2] if broken == "cut off" else b"no such thing")
+    response = httpx2.Response(200, headers={"Content-Encoding": encoding}, stream=stream)
+
+    with pytest.raises(UnexpectedAnswer, match="unexpected response for GET /api/trash/"):
+        _ = await list_page(response)
+
+
+@pytest.mark.parametrize("encoding", ["gzip", "zstd"])
+async def test_ids_are_found_behind_a_proxy_that_compresses_every_answer(encoding: str) -> None:
+    asked: list[str] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        asked.append(request.url.params["page_size"])
+        stream = Chunks(packed(encoding, body(DOCUMENT, VERSION)))
+        return httpx2.Response(200, headers={"Content-Encoding": encoding}, stream=stream)
+
+    client, _ = streaming(answer)
+    documents = FakePaperless(seeded(), user="admin")
+    taxonomy = TaxonomyResolver(documents, StaticTokenProvider("t"), ttl=1.0)
+    scan = TrashScan(PaperlessTrashReader(client), documents, taxonomy)
+
+    entries, small = await scan.require([3301])
+
+    assert [e.id for e in entries] == [3301]
+    assert small
+    assert asked == ["1000", "100"]

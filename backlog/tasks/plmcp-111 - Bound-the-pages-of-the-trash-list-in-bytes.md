@@ -1,9 +1,11 @@
 ---
 id: PLMCP-111
 title: Bound the pages of the trash list in bytes
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T09:06:02Z'
+updated_date: '2026-11-24T21:18:21Z'
 labels:
   - safety
 dependencies: []
@@ -31,3 +33,17 @@ list_trash pages (100 rows with full texts) have no byte limit and accept compre
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Red: adapter tests of list_trash (byte limit while reading, also decoded from gzip, deflate and zstd; small bomb stops early; unknown encodings refused; broken body), service tests (pages that are too large are read in smaller ones for ids; an entry too large alone; list and all=true), contract test of the limit.
+2. Green: list_trash takes max_bytes and reads through read_json, which can decode compressed bodies in bounded pieces (httpx2 decodes at most 1 MiB at a time since 2.16.0, our minimum). The other trash reads stay: uncompressed only (decision-54).
+3. TrashScan.locate and empty all=true fall back to pages of 10 and 1 entries where 100 (1,001) are over the limit; a decision records it.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+decision-77. list_trash takes max_bytes (64 MiB) and reads through read_json, which can now unpack gzip, deflate and zstd in pieces of at most 1 MiB (httpx2 2.16.0, our minimum). Ids are looked for in pages of 100, 10 and 1 entries where larger ones are over the limit; an entry over it alone is passed, and a missing id is then an error of its own. empty all=true falls back to pages only if they hold exactly the counted entries. The other reads stay as decision-54 has them. The port gains max_bytes, so the fake and the tests that override it changed; the fake bounds list_trash in one place. Code and tests were written together; red was shown by mutation (no limit: 11 tests; compressed refused: 18; pages never larger again: 1). Trade-off for the owner: filters and the duplicate check of uploads could work behind a compressing proxy in the same way (changes decisions 47 and 54).
+<!-- SECTION:NOTES:END -->

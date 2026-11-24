@@ -4,6 +4,7 @@ Pages of that order can overlap or skip entries (seen on PostgreSQL, decision-47
 looked for in one bounded request first; pages follow only for ids that were not in it.
 """
 
+import contextlib
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Final
@@ -20,16 +21,18 @@ from mcp_server_paperless.domain.errors import (
 from mcp_server_paperless.services.documents import TRASH_BYTES
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import AsyncGenerator, Sequence
 
     from mcp_server_paperless.domain.ports import DocumentReader, TrashReader
-    from mcp_server_paperless.domain.trash import TrashedDocument, TrashFilter
+    from mcp_server_paperless.domain.trash import TrashedDocument, TrashFilter, TrashPage
     from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 # Most entries a filter looks at, in one request (the number ``all=true`` handles, too).
 MAX_SCAN: Final = 1000
 # Entries per request while the trash is paged through, and when one request is too large.
 PAGE: Final = 100
+# How much smaller a page becomes that is too large: 100, 10 and 1 entries.
+STEP: Final = 10
 # shortcut: the trash is paged through for 100,000 entries, so that an answer that always names a
 # next page ends; raise it once a trash is larger.
 MAX_PAGES: Final = 1000
@@ -46,6 +49,13 @@ OWNER_ONLY: Final = (
 NOT_LISTED_HINT: Final = (
     "List the trash with list_trash. Entries of documents the user does not own are not "
     "listed, and a version is listed only while its document is not in the trash."
+)
+
+
+TOO_LARGE: Final = "An entry of the trash is over the limit of 64 MiB and was not read."
+TOO_LARGE_HINT: Final = (
+    "Look at the trash in the Paperless web UI, or list it with list_trash and page_size=1, which "
+    "skips that entry with the next page."
 )
 
 
@@ -156,7 +166,11 @@ class TrashScan:
     async def locate(
         self, ids: Sequence[int], *, small: bool = False
     ) -> tuple[dict[int, TrashedDocument], Scan]:
-        """Those of ``ids`` that are in the trash, reading on until all are found."""
+        """Those of ``ids`` that are in the trash, reading on until all are found.
+
+        Raises:
+            AnswerTooLarge: Some are not found, and an entry was too large to be read.
+        """
         wanted = set(ids)
         try:
             scan = await self.first(small=small)
@@ -165,12 +179,49 @@ class TrashScan:
                 raise
             scan = Scan((), 1, small=True)  # nothing is known of it: pages follow
         found = {e.id: e for e in scan.entries if e.id in wanted}
-        page: int | None = None if scan.complete else 1
-        while page is not None and wanted - found.keys():
-            listed = await self._reader.list_trash(page=page, page_size=PAGE)
-            found |= {e.id: e for e in listed.entries if e.id in wanted}
-            page = following(page, listed.next_page) if listed.entries else None
+        if scan.complete or wanted <= found.keys():
+            return found, scan
+        unread = False
+        async with contextlib.aclosing(self.pages()) as pages:
+            async for page in pages:
+                if page is None:
+                    unread = True
+                    continue
+                found |= {e.id: e for e in page.entries if e.id in wanted}
+                if wanted <= found.keys():
+                    return found, scan
+        if unread:
+            missing = ", ".join(str(number) for number in ids if number not in found)
+            message = f"Not found among the entries that can be read: {missing}. {TOO_LARGE}"
+            raise AnswerTooLarge(message, hint=TOO_LARGE_HINT)
         return found, scan
+
+    async def pages(self) -> AsyncGenerator[TrashPage | None]:
+        """The trash in pages of ``PAGE`` entries, where they are too large in smaller ones.
+
+        None stands for an entry that is too large on its own.
+        """
+        start, size = 0, PAGE
+        while start < PAGE * MAX_PAGES:
+            number = start // size + 1
+            try:
+                page = await self._reader.list_trash(
+                    page=number, page_size=size, max_bytes=TRASH_BYTES
+                )
+            except AnswerTooLarge:
+                if size > 1:
+                    size //= STEP
+                    continue
+                yield None
+            except NotFound:  # the entry before was the last one
+                return
+            else:
+                yield page
+                if not page.entries or page.next_page is None or page.next_page <= number:
+                    return
+            start += size
+            while size < PAGE and start % (size * STEP) == 0:
+                size *= STEP
 
     async def require(self, ids: Sequence[int]) -> tuple[list[TrashedDocument], bool]:
         """The entries with these ids, in that order, and whether only small requests worked.

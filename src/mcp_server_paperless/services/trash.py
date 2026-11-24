@@ -36,15 +36,20 @@ from mcp_server_paperless.domain.trash import (
     TrashRestored,
 )
 from mcp_server_paperless.services.document_edits import COUNTED
-from mcp_server_paperless.services.documents import document_link, known_items, maybe_ref
-from mcp_server_paperless.services.trash_scan import limited
+from mcp_server_paperless.services.documents import (
+    TRASH_BYTES,
+    document_link,
+    known_items,
+    maybe_ref,
+)
+from mcp_server_paperless.services.trash_scan import TOO_LARGE, limited
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine, Sequence
 
     from mcp_server_paperless.domain.ports import DocumentReader, TrashReader, TrashWriter
     from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
-    from mcp_server_paperless.domain.trash import Outcome, TrashFilter, TrashItem
+    from mcp_server_paperless.domain.trash import Outcome, TrashFilter, TrashItem, TrashPage
     from mcp_server_paperless.services.taxonomy import TaxonomyResolver
     from mcp_server_paperless.services.trash_scan import Selection, TrashScan
 
@@ -71,6 +76,13 @@ CHECKED: Final = (
     "Paperless checks all ids before it changes any, but a failure half-way can leave a part."
 )
 NO_ID: Final = "Paperless does not say which id it refuses, and every one is still listed."
+IN_STEPS: Final = "Empty in steps with document_ids from list_trash."
+NOT_ALL: Final = (
+    "The trash is too large to be read at once, and its pages do not show every entry once: "
+    "nothing was emptied."
+)
+SMALLER: Final = "List fewer entries at once with a smaller page_size."
+SKIP: Final = "This entry is too large on its own; go on with the next page."
 ONE_OF: Final = "Pass exactly one of document_ids and filter."
 ONE_OF_THREE: Final = "Pass exactly one of document_ids, filter and all=true."
 NO_FILTER: Final = "An empty filter would match every entry: nothing was changed."
@@ -161,12 +173,13 @@ class TrashService:
         """One page of the trash, or of the entries that match ``wanted``.
 
         Raises:
+            AnswerTooLarge: The entries of the page are too large to be read at once.
             NotFound: ``page`` is beyond the last page, or no such document type.
             Validation: The days contradict each other.
             PermissionDenied: The user may not view documents.
         """
         if not wanted:
-            found = await self._reader.list_trash(page=page, page_size=page_size)
+            found = await self._page(page, page_size)
             return TrashList(
                 web_url=trash_link(self._web_url),
                 count=found.count,
@@ -189,6 +202,15 @@ class TrashService:
             truncated=selection.truncated,
             notice=selection.notice,
         )
+
+    async def _page(self, page: int, page_size: int) -> TrashPage:
+        try:
+            return await self._reader.list_trash(
+                page=page, page_size=page_size, max_bytes=TRASH_BYTES
+            )
+        except AnswerTooLarge:
+            message = "The entries of this page are too large to be read at once (over 64 MiB)."
+            raise AnswerTooLarge(message, hint=SMALLER if page_size > 1 else SKIP) from None
 
     async def _rows(self, entries: Sequence[TrashedDocument]) -> tuple[TrashEntry, ...]:
         kinds: tuple[TaxonomyKind, ...] = ("document_type", "user") if entries else ()
@@ -500,19 +522,39 @@ class TrashService:
     async def _everything(self) -> list[TrashedDocument]:
         """Every entry the user sees, in one request, so that the count and the ids agree.
 
+        Where that is too large they come in pages, and have to be as many as the trash counts.
+
         Raises:
+            AnswerTooLarge: The pages do not hold every entry.
             Validation: The trash holds more than ``max_all`` entries.
         """
-        listed = await self._reader.list_trash(page=1, page_size=self._max_all + 1)
-        if listed.count > self._max_all:
-            message = (
-                f"The trash holds {listed.count} entries; all=true handles at most "
-                f"{self._max_all} at once."
-            )
-            raise Validation(message, hint="Empty in steps with document_ids from list_trash.")
         # Offset paging has no tie-breaker in Paperless, so a read may repeat an entry.
-        entries = list({e.id: e for e in listed.entries}.values())
-        return await self._scan.titled(entries)
+        entries: dict[int, TrashedDocument] = {}
+        try:
+            listed = await self._reader.list_trash(
+                page=1, page_size=self._max_all + 1, max_bytes=TRASH_BYTES
+            )
+            self._check_all(listed.count)
+            entries = {e.id: e for e in listed.entries}
+        except AnswerTooLarge:
+            counts: set[int] = set()
+            async for page in self._scan.pages():
+                if page is None:
+                    raise AnswerTooLarge(TOO_LARGE, hint=IN_STEPS) from None
+                self._check_all(page.count)
+                counts.add(page.count)
+                entries |= {e.id: e for e in page.entries}
+            if counts != {len(entries)}:
+                raise AnswerTooLarge(NOT_ALL, hint=IN_STEPS) from None
+        return await self._scan.titled(list(entries.values()))
+
+    def _check_all(self, count: int) -> None:
+        if count > self._max_all:
+            message = (
+                f"The trash holds {count} entries; all=true handles at most {self._max_all} at "
+                "once."
+            )
+            raise Validation(message, hint=IN_STEPS)
 
     @staticmethod
     def _effect(entries: Sequence[TrashedDocument], *, everything: bool) -> str:

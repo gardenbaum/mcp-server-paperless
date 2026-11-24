@@ -508,10 +508,11 @@ class Moody(FakePaperless):
     written: bool = False
 
     @override
-    async def list_trash(self, *, page: int, page_size: int) -> TrashPage:  # read_trash, too
+    async def list_trash(self, *, page: int, page_size: int, max_bytes: int) -> TrashPage:
+        # read_trash, too
         if self.written and self.after:
             raise self.after
-        return await super().list_trash(page=page, page_size=page_size)
+        return await super().list_trash(page=page, page_size=page_size, max_bytes=max_bytes)
 
     @override
     async def get_root(self, document_id: int) -> int:
@@ -772,8 +773,8 @@ class Endless(FakePaperless):
         return page if self.next_is == "same" else page + 1
 
     @override
-    async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
-        found = await super().list_trash(page=1, page_size=page_size)
+    async def list_trash(self, *, page: int, page_size: int, max_bytes: int) -> TrashPage:
+        found = await super().list_trash(page=1, page_size=page_size, max_bytes=max_bytes)
         entries = () if self.empty else found.entries
         return found.model_copy(update={"entries": entries, "next_page": self._next(page)})
 
@@ -1096,8 +1097,8 @@ async def test_an_entry_that_left_the_list_but_still_answers_is_not_called_delet
             self.state.stuck = stay
 
         @override
-        async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
-            found = await super().list_trash(page=page, page_size=page_size)
+        async def list_trash(self, *, page: int, page_size: int, max_bytes: int) -> TrashPage:
+            found = await super().list_trash(page=page, page_size=page_size, max_bytes=max_bytes)
             if not self.state.stuck:
                 return found
             return found.model_copy(update={"entries": (), "count": 0})
@@ -1166,3 +1167,158 @@ async def test_a_permission_lost_after_the_write_leaves_it_unverified_without_mo
     assert emptied.count == 0
     assert back in setup.alive()
     assert gone not in setup.ids()
+
+
+# --- pages that are too large (decision-77) -------------------------------------------------------
+
+
+class Heavy(FakePaperless):
+    """A trash whose entries weigh 1 each, or too much; more than `most` is too large at once."""
+
+    most: int = 10**9
+    huge: tuple[int, ...] = ()
+    asked: tuple[tuple[int, int], ...] = ()
+
+    @override
+    async def list_trash(self, *, page: int, page_size: int, max_bytes: int) -> TrashPage:
+        assert max_bytes == 64 * 1024 * 1024
+        self.asked = (*self.asked, (page, page_size))
+        found = await super().list_trash(page=page, page_size=page_size, max_bytes=max_bytes)
+        if sum(10**6 if e.id in self.huge else 1 for e in found.entries) > self.most:
+            message = "Paperless sent too many bytes for GET /api/trash/."
+            raise AnswerTooLarge(message)
+        return found
+
+
+def heavy(setup: Setup, most: int, *huge: int) -> Heavy:
+    fake = Heavy(setup.state, user="admin", allow_writes=True)
+    fake.most, fake.huge = most, huge
+    return fake
+
+
+async def many(setup: Setup, count: int) -> list[int]:
+    """Entries in the order of the trash."""
+    made = [await setup.trashed(f"doc {n}") for n in range(count)]
+    return made[::-1]
+
+
+async def test_ids_are_found_in_smaller_pages_where_larger_ones_are_too_large() -> None:
+    setup = Setup()
+    numbers = await many(setup, 125)
+    fake = heavy(setup, 9, numbers[12])
+
+    result = await capped(setup, 1000, fake).restore([numbers[21], numbers[120]])
+
+    assert [e.outcome for e in result.entries] == ["restored", "restored"]
+
+
+async def test_after_a_page_that_is_too_large_the_next_ones_are_large_again() -> None:
+    setup = Setup()
+    numbers = await many(setup, 205)
+    fake = heavy(setup, 100, numbers[3])
+
+    found, _ = await TrashScan(fake, fake, setup.taxonomy).locate([numbers[204]])
+
+    assert found.keys() == {numbers[204]}
+    ones = tuple((n, 1) for n in range(1, 11))
+    tens = tuple((n, 10) for n in range(2, 11))
+    assert fake.asked[2:] == ((1, 100), (1, 10), *ones, *tens, (2, 100), (3, 100))
+
+
+@pytest.mark.parametrize("at", [0, 4])  # the first and the last one
+async def test_an_entry_that_is_too_large_alone_is_named_only_where_ids_are_missing(
+    at: int,
+) -> None:
+    setup = Setup()
+    numbers = await many(setup, 5)
+    fake = heavy(setup, 100, numbers[at])
+    service = capped(setup, 1000, fake)
+
+    with pytest.raises(AnswerTooLarge) as raised:
+        _ = await service.restore([numbers[2], numbers[at]])
+    found = await service.restore([numbers[2]])
+
+    assert raised.value.message == (
+        f"Not found among the entries that can be read: {numbers[at]}. "
+        "An entry of the trash is over the limit of 64 MiB and was not read."
+    )
+    assert raised.value.hint == (
+        "Look at the trash in the Paperless web UI, or list it with list_trash and page_size=1, "
+        "which skips that entry with the next page."
+    )
+    assert [e.outcome for e in found.entries] == ["restored"]
+
+
+async def test_a_page_of_the_list_that_is_too_large_says_how_to_go_on() -> None:
+    setup = Setup()
+    numbers = await many(setup, 3)
+    service = capped(setup, 1000, heavy(setup, 1, numbers[0]))
+
+    for size, hint in (
+        (2, "List fewer entries at once with a smaller page_size."),
+        (1, "This entry is too large on its own; go on with the next page."),
+    ):
+        with pytest.raises(AnswerTooLarge) as raised:
+            _ = await service.list(TrashFilter(), page=1, page_size=size)
+        assert raised.value.message == (
+            "The entries of this page are too large to be read at once (over 64 MiB)."
+        )
+        assert raised.value.hint == hint
+    second = await service.list(TrashFilter(), page=2, page_size=1)
+    assert [e.id for e in second.entries] == [numbers[1]]
+
+
+async def test_everything_is_emptied_in_pages_where_one_request_is_too_large() -> None:
+    setup = Setup()
+    numbers = await many(setup, 25)
+    service = capped(setup, 1000, heavy(setup, 10))
+
+    with pytest.raises(ConfirmationRequired, match="delete ALL 25 entries"):
+        _ = await service.empty(None, everything=True)
+    result = await service.empty(None, everything=True, confirm=True)
+
+    assert sorted(result.document_ids) == sorted(numbers)
+    assert setup.ids() == []
+
+
+@pytest.mark.parametrize("why", ["an entry too large", "pages overlap", "the trash changes"])
+async def test_everything_is_refused_where_the_pages_do_not_show_every_entry(why: str) -> None:
+    setup = Setup(writes=False)
+    numbers = await many(setup, 12)
+
+    class Odd(Heavy):
+        @override
+        async def list_trash(self, *, page: int, page_size: int, max_bytes: int) -> TrashPage:
+            overlap = why == "pages overlap" and page_size < PAGE and page == 2
+            found = await super().list_trash(
+                page=1 if overlap else page, page_size=page_size, max_bytes=max_bytes
+            )
+            if overlap:
+                return found.model_copy(update={"next_page": None})
+            if why == "the trash changes" and page == 2:
+                return found.model_copy(update={"count": 11})
+            return found
+
+    fake = Odd(setup.state, user="admin")
+    fake.most = 11
+    if why == "an entry too large":
+        fake.huge = (numbers[5],)
+
+    with pytest.raises(AnswerTooLarge) as raised:
+        _ = await capped(setup, 1000, fake).empty(None, everything=True, confirm=True)
+
+    assert raised.value.hint == "Empty in steps with document_ids from list_trash."
+    assert len(setup.ids()) == 12
+
+
+async def test_everything_in_pages_keeps_the_most_it_handles() -> None:
+    setup = Setup(writes=False)
+    _ = await many(setup, 12)
+    fake = heavy(setup, 10)
+    scan = TrashScan(fake, fake, setup.taxonomy)
+    service = TrashService(fake, fake, fake, scan, setup.taxonomy, web_url=WEB, max_all=11)
+
+    with pytest.raises(Validation, match="all=true handles at most 11 at once"):
+        _ = await service.empty(None, everything=True, confirm=True)
+
+    assert fake.asked == ((1, 12), (1, 100), (1, 10))

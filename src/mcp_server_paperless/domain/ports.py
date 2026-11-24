@@ -717,15 +717,18 @@ class ViewWriter(Protocol):
 class TrashReader(Protocol):
     """The Paperless trash: deleted documents and versions the current user may see."""
 
-    async def list_trash(self, *, page: int, page_size: int) -> TrashPage:
+    async def list_trash(self, *, page: int, page_size: int, max_bytes: int) -> TrashPage:
         """One page of the trash, in Paperless order (by creation date, newest first).
 
         A version deleted from a document is an entry of its own, but not while its document is
         in the trash too (the document's entry covers it). The user sees the entries of
         documents they own or that have no owner, all of them for a superuser; a view grant is
-        not enough.
+        not enough. The rows carry the whole text of the documents, so at most ``max_bytes`` are
+        read; that counts what a compressed answer unpacks to.
 
         Raises:
+            AnswerCompressed: The answer is compressed in a way that cannot be unpacked in parts.
+            AnswerTooLarge: The page is larger than ``max_bytes``.
             NotFound: ``page`` is beyond the last page.
             PermissionDenied: The user lacks the global ``view_document`` permission.
         """
