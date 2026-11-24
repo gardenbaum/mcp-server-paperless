@@ -646,7 +646,7 @@ async def test_an_accepted_merge_does_not_cover_changed_metadata(changed: int, f
     }
     with pytest.raises(ConfirmationRequired) as first:
         _ = await setup.service.merge(PUBLIC, [other], None)
-    setattr(document, field, values[field])
+    vars(document)[field] = values[field]
     with pytest.raises(ConfirmationRequired) as second:
         _ = await setup.service.merge(PUBLIC, [other], None)
 

@@ -680,9 +680,9 @@ def _checksum(document: FakeDocument) -> None:
 CHANGES: dict[str, Callable[[FakeDocument], None]] = {
     "tags": lambda d: d.tags.__setitem__(0, 2),
     "custom field": lambda d: d.custom_fields.__setitem__(1, "other"),
-    "correspondent": lambda d: setattr(d, "correspondent", 1),
-    "created": lambda d: setattr(d, "created", date(2020, 1, 1)),
-    "end of the title": lambda d: setattr(d, "title", d.title[:-1] + "!"),
+    "correspondent": lambda d: vars(d).update(correspondent=1),
+    "created": lambda d: vars(d).update(created=date(2020, 1, 1)),
+    "end of the title": lambda d: vars(d).update(title=d.title[:-1] + "!"),
     "modified": _modified,
     "version checksum": _checksum,
 }
