@@ -230,6 +230,27 @@ async def test_debug_does_not_log_answers(
     assert ANSWER not in logged
 
 
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("transport", ENTRYPOINTS)
+async def test_failed_resources_and_prompts_are_private_above_debug_also_at_debug(
+    transport: str, mode: ConnectMode, tmp_path: Path
+) -> None:
+    log = tmp_path / "stderr"
+    with paperless(unavailable_but_for_documents) as url:
+        env = environment(url, PAPERLESS_MCP_LOG_LEVEL="DEBUG")
+        async with connected(transport, mode, env, log) as client:
+            with pytest.raises(MCPError, match=ANSWER):
+                _ = await client.read_resource("paperless://documents/7")
+            with pytest.raises(MCPError):
+                _ = await client.read_resource(f"paperless://documents/{ARGUMENT}")
+            with pytest.raises(MCPError):
+                _ = await client.get_prompt("annual_review", {"year": ARGUMENT})
+
+    above = [line for line in log.read_text().splitlines() if '"level": "DEBUG"' not in line]
+    assert [line for line in above if "document_detail failed" in line]
+    assert not [line for line in above if ANSWER in line or ARGUMENT in line]
+
+
 async def test_the_traceback_of_a_failed_prompt_is_in_the_debug_log(tmp_path: Path) -> None:
     """The proof that the tests above would see an argument, and a way to find a bug."""
     log = tmp_path / "stderr"

@@ -1,27 +1,36 @@
 """Logging: JSON lines on stderr, one record per tool call, nothing sensitive at INFO or above."""
 
+import asyncio
 import json
 import logging
+import re
 import sys
 import threading
 import warnings
-from typing import TYPE_CHECKING, cast
+from errno import errorcode
+from typing import TYPE_CHECKING, Never, cast, override
 
 import httpx2
 import pytest
+from fakes.paperless import FakePaperless, seeded
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 from harness import FailsAfterProbe, admin, serve
+from mcp import MCPError
+from pydantic import ValidationError as PydanticValidationError
 
-from mcp_server_paperless.domain.errors import UpstreamUnavailable, Validation
+from mcp_server_paperless.domain.diagnostics import error_place, error_types
+from mcp_server_paperless.domain.errors import Conflict, UpstreamUnavailable, Validation
 from mcp_server_paperless.observability import (
     RequestContext,
     configure_logging,
-    error_types,
     request_id,
     server_failure,
 )
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
+from mcp_server_paperless.settings import ServerSettings
+from mcp_server_paperless.tools._shared import boundary
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -85,56 +94,171 @@ def failure() -> ValueError:
         return error
 
 
+HERE = r"at [\w.]*test_observability:\d+ in failure"
+
+
 @pytest.mark.usefixtures("isolated_logging")
 @pytest.mark.parametrize("level", ["INFO", "DEBUG"])
-def test_an_exception_is_logged_by_its_types_and_as_a_whole_only_at_debug(
+def test_an_exception_is_logged_by_types_and_place_and_as_a_whole_only_at_debug(
     capsys: pytest.CaptureFixture[str], level: str
 ) -> None:
     configure_logging(level)
 
     logging.getLogger("any.library").error("failed for %s", "x", exc_info=failure())
 
-    *traceback, record = lines(capsys.readouterr().err)
-    assert record["message"] == "failed for x (ValueError from KeyError)"
+    *whole, record = lines(capsys.readouterr().err)
+    assert re.fullmatch(
+        rf"failed for x \(ValueError from KeyError {HERE}\)", str(record["message"])
+    )
     assert record["level"] == "ERROR"
     assert "exc_info" not in record
-    assert len(traceback) == (level == "DEBUG")
-    for whole in traceback:
-        assert whole["level"] == "DEBUG"
-        assert whole["message"] == "traceback of a record of any.library"
-        assert f"ValueError: {CONTENT}" in str(whole["exc_info"])
+    assert len(whole) == (level == "DEBUG")
+    for original in whole:
+        assert original["level"] == "DEBUG"
+        assert original["message"] == "original of a record of any.library: failed for x"
+        assert f"ValueError: {CONTENT}" in str(original["exc_info"])
 
 
 def test_the_types_of_groups_and_cycles_are_named_once() -> None:
     cause, other = KeyError(CONTENT), TypeError(CONTENT)
     cause.__context__ = other
     other.__context__ = cause
-    group = ExceptionGroup(CONTENT, [cause, OSError(CONTENT)])
+    group = ExceptionGroup(CONTENT, [cause, OSError(CONTENT), OSError(48, CONTENT)])
 
-    assert error_types(group) == "ExceptionGroup[KeyError from TypeError, OSError]"
+    named = error_types(group)
+    assert named == f"ExceptionGroup[KeyError from TypeError, OSError, OSError({errorcode[48]})]"
     assert error_types(None) == ""
+    assert error_place(group) == ""
+
+
+def test_the_place_is_the_innermost_frame_of_this_package() -> None:
+    with pytest.raises(PydanticValidationError) as caught:
+        _ = ServerSettings.model_validate({"max_upload_bytes": CONTENT})
+    assert error_place(caught.value).startswith(" at pydantic.")  # none of the package's own
+
+    async def fails() -> None:
+        raise failure()
+
+    async def call() -> None:
+        _ = await boundary(fails)()
+
+    with pytest.raises(ToolError) as refused:
+        asyncio.run(call())
+    grouped = ExceptionGroup(CONTENT, [refused.value])
+    assert error_place(grouped).startswith(" at mcp_server_paperless.tools._shared:")
+    assert error_place(ValueError(CONTENT)) == ""
+    assert error_place(None) == ""
 
 
 @pytest.mark.usefixtures("isolated_logging")
+@pytest.mark.parametrize("level", ["INFO", "DEBUG"])
 def test_messages_that_hold_values_are_logged_without_them(
-    capsys: pytest.CaptureFixture[str],
+    capsys: pytest.CaptureFixture[str], level: str
 ) -> None:
-    configure_logging("INFO")
+    configure_logging(level)
 
     logging.getLogger("asyncio").error(
         "Task exception was never retrieved\nfuture: %s", CONTENT, exc_info=failure()
     )
-    logging.getLogger("any.library").error("Error reading resource 'x://canary'")
+    library = logging.getLogger("any.library")
+    library.error("Error reading resource 'x://%s'", CONTENT)
+    library.error("failed: %s, %s", "x", ValueError(CONTENT))
+    library.error("failed: %(error)s", {"error": ValueError(CONTENT)})
+    library.error(failure())
+    library.error("no error here", exc_info=True)
+    library.error("%(a)s", {"a": "b"})
 
-    event_loop, resource = lines(capsys.readouterr().err)
-    assert event_loop["message"] == "error in the event loop (ValueError from KeyError)"
-    assert resource["message"] == "Error reading resource"
+    records = lines(capsys.readouterr().err)
+    above = [str(r["message"]) for r in records if r["level"] == "ERROR"]
+    assert re.fullmatch(
+        rf"error in the event loop \(ValueError from KeyError {HERE}\)", above.pop(0)
+    )
+    assert above == [
+        "Error reading resource",
+        "failed: x, ValueError",
+        "failed: ValueError",
+        "ValueError from KeyError",
+        "no error here",
+        "b",
+    ]
+    originals = [str(r["message"]) for r in records if r["level"] == "DEBUG"]
+    assert [CONTENT in line for line in originals] == ([True] * 5 if level == "DEBUG" else [])
+
+
+class Broken:
+    """A value that cannot be shown."""
+
+    @override
+    def __str__(self) -> str:
+        raise RuntimeError(CONTENT)
+
+    @override
+    def __repr__(self) -> str:
+        raise RuntimeError(CONTENT)
+
+
+@pytest.mark.usefixtures("isolated_logging")
+@pytest.mark.parametrize("level", ["INFO", "DEBUG"])
+def test_a_record_that_cannot_be_rendered_is_named_and_breaks_nothing(
+    capsys: pytest.CaptureFixture[str], level: str
+) -> None:
+    configure_logging(level)
+    library = logging.getLogger("any.library")
+
+    library.error("%d", CONTENT)
+    library.error(Broken())
+    library.error("failed: %s", Broken(), exc_info=failure())
+    library.error("fine", extra={"shown": Broken()})
+
+    captured = capsys.readouterr().err
+    assert CONTENT not in captured.replace(f"ValueError: {CONTENT}", "").replace(
+        f"KeyError: '{CONTENT}'", ""
+    )
+    above = [r for r in lines(captured) if r["level"] == "ERROR"]
+    place = r"a record of any.library at .*test_observability.py:\d+ cannot be rendered"
+    assert len(above) == 4
+    for record in above:
+        assert re.match(place, str(record["message"]))
+        assert record["logger"] == "any.library"
+    assert "ValueError from KeyError" in str(above[2]["message"])
+
+
+@pytest.mark.usefixtures("isolated_logging")
+def test_a_rebuilt_record_is_private_too(capsys: pytest.CaptureFixture[str]) -> None:
+    configure_logging("INFO")
+    error = failure()
+    assert logging.makeLogRecord({}).levelno is None
+
+    rebuilt = logging.makeLogRecord(
+        {
+            "name": "any.library",
+            "levelno": logging.ERROR,
+            "levelname": "ERROR",
+            "msg": "failed",
+            "exc_info": (type(error), error, error.__traceback__),
+        }
+    )
+    logging.getLogger().handle(rebuilt)
+
+    [record] = lines(capsys.readouterr().err)
+    assert str(record["message"]).startswith("failed (ValueError from KeyError")
+    assert "exc_info" not in record
 
 
 class Unraisable:
     """What ``sys.unraisablehook`` gets."""
 
-    exc_value: BaseException | None = failure()
+    def __init__(self, kind: type[BaseException], error: BaseException | None) -> None:
+        self.exc_type: type[BaseException] = kind
+        self.exc_value: BaseException | None = error
+
+
+def unraisable(kind: type[BaseException], error: BaseException | None) -> None:
+    sys.unraisablehook(cast("sys.UnraisableHookArgs", cast("object", Unraisable(kind, error))))
+
+
+def failing() -> None:
+    raise failure()
 
 
 @pytest.mark.usefixtures("isolated_logging")
@@ -145,27 +269,53 @@ def test_what_python_prints_itself_is_logged_by_type(
     configure_logging(level)
 
     sys.excepthook(ValueError, failure(), None)
-    sys.unraisablehook(cast("sys.UnraisableHookArgs", cast("object", Unraisable())))
-    thread = threading.Thread(target=lambda: int(CONTENT))
-    thread.start()
-    thread.join()
+    unraisable(ValueError, failure())
+    unraisable(ValueError, None)
+    sys.excepthook(KeyboardInterrupt, KeyboardInterrupt(CONTENT), None)
+    for target in (failing, sys.exit):
+        thread = threading.Thread(target=target)
+        thread.start()
+        thread.join()
     warnings.showwarning(UserWarning(CONTENT), UserWarning, "file.py", 3)
-    logging.getLogger("any.library").error("%d", CONTENT)  # a record that cannot be rendered
 
     records = lines(capsys.readouterr().err)
-    above = [str(r["message"]) for r in records if r["level"] != "DEBUG"]
-    assert above[:2] == ["unhandled error (ValueError from KeyError)"] * 2
-    assert above[2] == "unhandled error (ValueError)"
-    assert above[3] == "UserWarning at file.py:3"
-    assert len(above) == 4
+    above = [(r["level"], str(r["message"])) for r in records if r["level"] != "DEBUG"]
+    levels = ["CRITICAL", "CRITICAL", "CRITICAL", "INFO", "CRITICAL", "WARNING"]
+    assert [shown for shown, _ in above] == levels
+    messages = [message for _, message in above]
+    for index in (0, 1, 4):
+        assert messages[index].startswith("unhandled error (ValueError from KeyError at ")
+    assert messages[2] == "unhandled error (ValueError)"
+    assert messages[3] == "stopped by KeyboardInterrupt"
+    assert messages[5] == "UserWarning at file.py:3"
     assert CONTENT not in str(above)
     assert (CONTENT in str(records)) == (level == "DEBUG")
 
 
 def test_a_failed_start_is_told_by_the_fixed_text_or_by_type() -> None:
-    assert server_failure(UpstreamUnavailable("Down.", hint="Wait.")) == "Down. Hint: Wait."
+    down = UpstreamUnavailable("Down.", hint="Wait.")
+    assert server_failure(down) == "Down. Hint: Wait."
     assert server_failure(Validation(CONTENT)) == "The server failed: Validation."
-    assert server_failure(failure()) == "The server failed: ValueError from KeyError."
+    assert server_failure(Conflict(CONTENT)) == "The server failed: Conflict."
+    named = server_failure(failure())
+    assert re.fullmatch(rf"The server failed: ValueError from KeyError {HERE}\.", named)
+
+    # What a task group raises around the error of a start, also when it is not the only one.
+    group = ExceptionGroup(CONTENT, [ValueError(CONTENT), ExceptionGroup(CONTENT, [down])])
+    assert server_failure(group) == "Down. Hint: Wait."
+    assert server_failure(ExceptionGroup(CONTENT, [Validation(CONTENT)])) == (
+        "The server failed: ExceptionGroup[Validation]."
+    )
+
+
+def test_a_failed_start_is_logged_as_a_whole_at_debug(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+
+    _ = server_failure(Validation(CONTENT))
+
+    [record] = caplog.records
+    assert record.levelno == logging.DEBUG
+    assert CONTENT in caplog.text
 
 
 async def request_with_query() -> None:
@@ -290,8 +440,71 @@ async def test_a_failed_lifespan_is_reported_without_its_traceback() -> None:
 
     await RequestContext(app)({"type": "lifespan"}, receive, send)
 
-    text = "The server failed: ValueError from KeyError."
-    assert sent == [
-        {"type": "lifespan.startup.complete"},
-        {"type": "lifespan.shutdown.failed", "message": text},
-    ]
+    complete, failed = sent
+    assert complete == {"type": "lifespan.startup.complete"}
+    assert re.fullmatch(
+        rf"The server failed: ValueError from KeyError {HERE}\.",
+        str(cast("object", failed["message"])),
+    )
+
+
+async def test_the_name_of_an_unknown_tool_is_logged_shortened(
+    fastmcp_records: pytest.LogCaptureFixture,
+) -> None:
+    fastmcp_records.set_level(logging.INFO)
+
+    async with Client(serve(admin())) as client:
+        _ = await client.call_tool("x" * 500, raise_on_error=False)
+
+    [call] = [r for r in fastmcp_records.records if r.getMessage() == "tool call"]
+    assert vars(call)["tool"] == "x" * 100
+
+
+@pytest.mark.parametrize(
+    ("address", "name"),
+    [
+        (f"paperless://documents/{QUERY}", "document"),
+        (f"paperless://documents/7/content?offset={QUERY}", "document_content"),
+        ("paperless://documents/1/content?offset=-1", "document_content"),
+        (f"paperless://{QUERY}", None),
+    ],
+)
+async def test_a_resource_that_cannot_be_read_is_named_without_its_address(
+    fastmcp_records: pytest.LogCaptureFixture, address: str, name: str | None
+) -> None:
+    fastmcp_records.set_level(logging.INFO)
+
+    async with Client(serve(admin())) as client:
+        with pytest.raises(MCPError):
+            _ = await client.read_resource(address)
+
+    [record] = [r for r in fastmcp_records.records if r.getMessage() == "resource failed"]
+    assert vars(record)["resource"] == name
+    assert vars(record)["error"]
+    assert QUERY not in str(vars(record))
+
+
+@pytest.mark.parametrize("broken", [True, False])
+async def test_the_framework_logs_a_handled_resource_error_only_at_debug(
+    fastmcp_records: pytest.LogCaptureFixture, *, broken: bool
+) -> None:
+    error = KeyError(CONTENT) if broken else Validation(CONTENT)
+    fastmcp_records.set_level(logging.INFO, logger="mcp_server_paperless")
+    fastmcp_records.set_level(logging.DEBUG, logger="fastmcp")
+
+    class Fails(FakePaperless):
+        @override
+        async def get_document(self, document_id: int) -> Never:
+            raise error
+
+    documents = Fails(seeded(), user="admin")
+    async with Client(serve(admin(), documents=documents)) as client:
+        with pytest.raises(MCPError):
+            _ = await client.read_resource("paperless://documents/1")
+
+    [own] = [r for r in fastmcp_records.records if r.name == "fastmcp.server.server"]
+    assert own.levelno == logging.DEBUG
+    failed = [r for r in fastmcp_records.records if "document_detail failed" in r.getMessage()]
+    assert str(cast("object", vars(failed[0])["at"])).startswith(
+        "mcp_server_paperless.services.documents:"
+    )

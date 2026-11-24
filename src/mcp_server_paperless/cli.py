@@ -62,7 +62,7 @@ def main(protect: Callable[[], None] = protect_process) -> None:
     try:
         # No banner: it is noise on stderr and would check PyPI for updates (decision-7).
         create_server(paperless, settings, stdio=True).run(transport="stdio", show_banner=False)
-    except PaperlessMcpError as error:
+    except (PaperlessMcpError, ExceptionGroup) as error:
         _fail(server_failure(error))
 
 
@@ -91,6 +91,6 @@ def main_http(
     try:
         app = create_app(paperless, settings, http, oidc=oidc)
     except PaperlessMcpError as error:
-        _fail(error.describe())
+        _fail(server_failure(error))
     if not run(uvicorn_server(app, http)):
         _fail("the HTTP server did not start; see the log above")

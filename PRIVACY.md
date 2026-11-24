@@ -73,7 +73,8 @@ client or whoever runs the server.
 
 At the default log levels it logs:
 
-- for each tool call: the tool's name, a request id, the duration, and success, that it asked for
+- for each tool call: the tool's name (of an unknown tool the first 100 characters of the name the
+  caller gave), a request id, the duration, and success, that it asked for
   a confirmation, or the type of error. What the dialog shows and the answer are not logged;
 - for each HTTP request, one record with method, path, status, duration and the request id (which
   the caller may choose), and none of its query string, headers, body or IP address;
@@ -82,11 +83,13 @@ At the default log levels it logs:
   contain ids and, for `paperless_api_get`, is the path the model asked for;
 - errors outside tool calls: when a resource or prompt fails, its name and the type of the error;
   when the startup check fails, a fixed text or the type. Neither quotes an argument or Paperless's
-  answer, and no traceback is logged; Python warnings appear as type and place in the code;
+  answer. Errors appear as their types and the place in the code, without traceback, and Python
+  warnings as type and place;
 - with sign-in through an identity provider, client ids and names, your user id at the provider,
   parts of token ids, authorization codes the server does not recognise, and values from failed
-  sign-in requests (error, description, state, requested resource),
-  and sign-in errors, unexpected ones by type.
+  sign-in requests (error, description, state, requested resource), the issuer or audience of a
+  token that is refused, and sign-in errors. FastMCP writes these values into its own messages;
+  where it logs an error as such, only the type appears.
 
 Apart from the names, addresses and values listed above, its records contain no arguments or
 results, and it does not log your Paperless token or bearer tokens, at these levels.

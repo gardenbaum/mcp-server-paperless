@@ -26,6 +26,7 @@ from mcp.types import (
 )
 from pydantic import BaseModel, Field, JsonValue
 
+from mcp_server_paperless.domain.diagnostics import error_place
 from mcp_server_paperless.domain.documents import NameOrId
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
@@ -1128,6 +1129,11 @@ def guide_for(ctx: Context, *, ai_enabled: bool | None) -> ToolsetGuide:
     return cast("GuideFor", ctx.lifespan_context[GUIDE])(now=ai_enabled)
 
 
+def _place(error: BaseException) -> dict[str, str]:
+    """Where in the code ``error`` was raised, for a log record."""
+    return {"at": error_place(error).removeprefix(" at ")}
+
+
 def boundary[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
     """The boundary of a tool: confirmation dialogs, and every exception as a ``ToolError``.
 
@@ -1153,7 +1159,7 @@ def boundary[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R
         except PaperlessMcpError as error:
             raise ToolError(error.describe()) from None
         except Exception as error:
-            logger.error("%s failed: %s", name, type(error).__name__)  # noqa: TRY400 -- no traceback above DEBUG
+            logger.error("%s failed: %s", name, type(error).__name__, extra=_place(error))  # noqa: TRY400 -- no traceback above DEBUG
             logger.debug("%s failed", name, exc_info=True)
             message = f"Internal error in {name}; the server log has details."
             raise ToolError(message) from None
@@ -1178,10 +1184,10 @@ def resource_boundary[**P, R](resource: Callable[P, Awaitable[R]]) -> Callable[P
         except ResourceError:
             raise
         except PaperlessMcpError as error:
-            logger.info("%s failed: %s", name, type(error).__name__)
+            logger.info("%s failed: %s", name, type(error).__name__, extra=_place(error))
             raise ResourceError(error.describe(), log_level=logging.DEBUG) from None
         except Exception as error:
-            logger.error("%s failed: %s", name, type(error).__name__)  # noqa: TRY400 -- no traceback above DEBUG
+            logger.error("%s failed: %s", name, type(error).__name__, extra=_place(error))  # noqa: TRY400 -- no traceback above DEBUG
             logger.debug("%s failed", name, exc_info=True)
             message = f"Internal error in {name}; the server log has details."
             raise ResourceError(message, log_level=logging.DEBUG) from None

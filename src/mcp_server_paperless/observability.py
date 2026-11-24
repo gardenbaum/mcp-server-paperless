@@ -16,6 +16,7 @@ import threading
 import time
 import uuid
 import warnings
+from collections.abc import Mapping
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final, cast, override
@@ -24,13 +25,16 @@ from fastmcp.server.dependencies import get_http_request
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools import InputRequiredToolResult
 
+from mcp_server_paperless.domain.diagnostics import error_place, error_types, members
 from mcp_server_paperless.domain.errors import Conflict, PaperlessMcpError, Validation
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from fastmcp import Context
+    from fastmcp.resources import ResourceResult
     from fastmcp.tools import ToolResult
-    from mcp.types import CallToolRequestParams
+    from mcp.types import CallToolRequestParams, ReadResourceRequestParams
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 # Loggers that would put request URLs, and with them search text, into INFO records, or answers
@@ -44,6 +48,8 @@ request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
 _REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 REQUEST_ID_HEADER: Final = "x-request-id"
 MAX_LOGGED_PATH: Final = 256
+# A tool that does not exist is logged by the name the caller gave it.
+MAX_LOGGED_NAME: Final = 100
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +65,8 @@ class JsonFormatter(logging.Formatter):
 
     @override
     def format(self, record: logging.LogRecord) -> str:
+        if record.exc_info:
+            _make_private(record)  # a record that did not come from the factory
         payload: dict[str, object] = {
             "time": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
@@ -72,51 +80,86 @@ class JsonFormatter(logging.Formatter):
         payload |= {key: value for key, value in extras.items() if key not in _STANDARD}
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
-        return json.dumps(payload, default=str)
-
-
-def error_types(error: BaseException | None, seen: set[int] | None = None) -> str:
-    """The types of ``error``, of what it groups and of what it came from: no message, no values."""
-    seen = set() if seen is None else seen
-    names: list[str] = []
-    while error is not None and id(error) not in seen:
-        seen.add(id(error))
-        name = type(error).__name__
-        if isinstance(error, BaseExceptionGroup):
-            members = error.exceptions
-            name += f"[{', '.join(error_types(member, seen) for member in members)}]"
-        names.append(name)
-        error = error.__cause__ or error.__context__
-    return " from ".join(names)
+        try:
+            return json.dumps(payload, default=str)
+        except Exception:  # noqa: BLE001 -- a value that cannot be shown
+            payload = {"level": record.levelname, "logger": record.name}
+            return json.dumps(payload | {"message": unrenderable(record)})
 
 
 def server_failure(error: BaseException | None) -> str:
     """What may be said of a failed start or stop: no text that can quote Paperless."""
-    if isinstance(error, PaperlessMcpError) and not isinstance(error, Validation | Conflict):
-        return error.describe()
-    logger.debug("traceback of the failure", exc_info=error)
-    return f"The server failed: {error_types(error)}."
+    for member in members(error):  # a task group wraps what a start raises
+        if isinstance(member, PaperlessMcpError) and not isinstance(member, Validation | Conflict):
+            return member.describe()
+    logger.debug("the server failed", exc_info=error)
+    return f"The server failed: {error_types(error)}{error_place(error)}."
 
 
 def private_record(*args: object, **kwargs: object) -> logging.LogRecord:
-    """The log record factory: above DEBUG an exception is named by its types only.
+    """The log record factory: above DEBUG an exception is named by its types and its place only.
 
     It applies to every logger and handler: messages and tracebacks of libraries quote arguments
-    and what Paperless answered (pydantic quotes its input). The whole traceback follows at DEBUG.
+    and what Paperless answered (pydantic quotes its input). The original follows at DEBUG. The
+    limit: text a library already formatted into its message is not recognised as an error's.
     """
     record = cast("Callable[..., logging.LogRecord]", logging.LogRecord)(*args, **kwargs)
-    if record.levelno <= logging.DEBUG:
-        return record
+    _make_private(record)
+    return record
+
+
+def _make_private(record: logging.LogRecord) -> None:
+    """Take out of ``record`` what can quote a value; never raises."""
+    # makeLogRecord asks the factory for a record without a level (typeshed does not say so).
+    level = cast("int | None", record.levelno)
+    if level is None or level <= logging.DEBUG:
+        return
+    error = record.exc_info[1] if record.exc_info else None
+    try:
+        original = record.getMessage()
+        changed = _replace_message(record)
+        shown = record.getMessage()
+    except Exception:  # noqa: BLE001 -- the caller only logs: whatever its values do, say where
+        original, changed = "cannot be rendered", False
+        shown = unrenderable(record)
+    if changed or error is not None:
+        logger.debug("original of a record of %s: %s", record.name, original, exc_info=error)
+    if error is not None:
+        shown += f" ({error_types(error)}{error_place(error)})"
+    if changed or error is not None or shown.startswith(unrenderable(record)):
+        record.msg, record.args = shown, None
+    record.exc_info = record.exc_text = None
+
+
+def unrenderable(record: logging.LogRecord) -> str:
+    """What is logged in place of a record whose message or values cannot be shown."""
+    return f"a record of {record.name} at {record.pathname}:{record.lineno} cannot be rendered"
+
+
+def _replace_message(record: logging.LogRecord) -> bool:
+    """Whether ``record`` was changed: exceptions become types."""
+    message = cast("object", record.msg)
     if record.name == "asyncio":
         # Its messages hold the repr of tasks, callbacks and their exceptions.
         record.msg, record.args = "error in the event loop", None
-    elif str(record.msg).startswith(_READING_RESOURCE):
-        record.msg = _READING_RESOURCE  # without the address: it holds the caller's values
-    if record.exc_info:
-        logger.debug("traceback of a record of %s", record.name, exc_info=record.exc_info)
-        record.msg = f"{record.msg} ({error_types(record.exc_info[1])})"
-        record.exc_info = None
-    return record
+    elif str(message).startswith(_READING_RESOURCE):
+        # Without the address, which holds the caller's values; CallLogging names the resource.
+        record.msg, record.args = _READING_RESOURCE, None
+    elif isinstance(message, BaseException):
+        record.msg, record.args = error_types(message), None
+    elif isinstance(record.args, Mapping):
+        if not any(isinstance(value, BaseException) for value in record.args.values()):
+            return False
+        record.args = {key: _named(value) for key, value in record.args.items()}
+    elif any(isinstance(value, BaseException) for value in record.args or ()):
+        record.args = tuple(_named(value) for value in record.args or ())
+    else:
+        return False
+    return True
+
+
+def _named(value: object) -> object:
+    return error_types(value) if isinstance(value, BaseException) else value
 
 
 def _log_warning(
@@ -127,8 +170,16 @@ def _log_warning(
     logger.debug("%s", message)
 
 
-def _log_unhandled(error: BaseException | None) -> None:
-    logger.critical("unhandled error", exc_info=error)
+def _log_unhandled(kind: type[BaseException], error: BaseException | None) -> None:
+    """Log what Python would print of an error nobody handled."""
+    if issubclass(kind, SystemExit):
+        return
+    if issubclass(kind, KeyboardInterrupt):
+        logger.info("stopped by %s", kind.__name__)
+    elif error is None:
+        logger.critical("unhandled error (%s)", kind.__name__)
+    else:
+        logger.critical("unhandled error", exc_info=error)
 
 
 def configure_logging(level: str) -> None:
@@ -143,11 +194,10 @@ def configure_logging(level: str) -> None:
     for name in QUIET_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
     logging.setLogRecordFactory(private_record)
-    logging.raiseExceptions = False  # it would print the arguments of a record that fails
     warnings.showwarning = _log_warning
-    sys.excepthook = lambda _kind, error, _traceback: _log_unhandled(error)
-    threading.excepthook = lambda args: _log_unhandled(args.exc_value)
-    sys.unraisablehook = lambda args: _log_unhandled(args.exc_value)
+    sys.excepthook = lambda kind, error, _traceback: _log_unhandled(kind, error)
+    threading.excepthook = lambda args: _log_unhandled(args.exc_type, args.exc_value)
+    sys.unraisablehook = lambda args: _log_unhandled(args.exc_type, args.exc_value)
 
 
 class CallLogging(Middleware):
@@ -182,9 +232,37 @@ class CallLogging(Middleware):
             duration_ms = round((time.perf_counter() - started) * 1000, 1)
             logger.info(
                 "tool call",
-                extra={"tool": context.message.name, "duration_ms": duration_ms, **outcome},
+                extra={
+                    "tool": context.message.name[:MAX_LOGGED_NAME],
+                    "duration_ms": duration_ms,
+                    **outcome,
+                },
             )
             request_id.reset(token)
+
+    @override
+    async def on_read_resource(
+        self,
+        context: MiddlewareContext[ReadResourceRequestParams],
+        call_next: CallNext[ReadResourceRequestParams, ResourceResult],
+    ) -> ResourceResult:
+        """Log a resource that could not be read by its name, without its address."""
+        try:
+            return await call_next(context)
+        except Exception as error:
+            cause = error.__cause__ or error
+            logger.info(
+                "resource failed",
+                extra={"resource": await _resource_name(context), "error": error_types(cause)},
+            )
+            raise
+
+
+async def _resource_name(context: MiddlewareContext[ReadResourceRequestParams]) -> str | None:
+    """The name of the resource template an address belongs to, None if there is none."""
+    server = cast("Context", context.fastmcp_context).fastmcp  # set for every request
+    template = await server.get_resource_template(str(context.message.uri))
+    return template.name if template else None
 
 
 def _http_request_id() -> str | None:

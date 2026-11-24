@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:18:23Z'
-updated_date: '2026-11-24T21:25:25Z'
+updated_date: '2026-11-24T21:57:40Z'
 labels: []
 dependencies: []
 priority: medium
@@ -50,4 +50,6 @@ The work on the privacy policy (PLMCP-71) found four places where content can re
 Red first: 12 of 15 canary tests failed on main's code; green after. Design: one log record factory (observability.private_record) names exceptions by type above DEBUG for every logger; hooks cover warnings, uncaught, thread and unraisable errors; sse_starlette is held at WARNING, so no answer is logged at any level.
 Deliberate test changes: test_exceptions_are_rendered_into_the_record (asserted that the text of an exception is logged at ERROR) and test_a_resource_domain_error_is_logged_at_info_with_its_hint (asserted the leak) now assert the opposite.
 Further leaks fixed: FastMCP's resource address, startup 400/409 text on both transports, tracebacks of all libraries, asyncio's reprs, Python warnings, uncaught/thread/unraisable errors, arguments of a record that cannot be rendered. Reported, not changed (documented in PRIVACY.md): path of a failed Paperless request (model-chosen for paperless_api_get), the name of an unknown tool in the call record, sign-in values, HTTP path.
+
+Review round (PR #153): grouped startup errors keep their fixed text; exceptions as message or argument become types; the factory cannot raise and no record is lost (raiseExceptions untouched, the assertion that pinned the silent loss changed); asyncio originals at DEBUG; place in the code for logged errors; failed resources named by CallLogging; unknown tool names cut to 100 characters. Limit, documented: text FastMCP itself formats into sign-in messages.
 <!-- SECTION:NOTES:END -->

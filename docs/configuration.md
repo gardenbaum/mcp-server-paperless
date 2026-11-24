@@ -590,7 +590,8 @@ Paperless is back.
 Logs go to stderr (the server's own records as JSON lines). At INFO and above, the records of tool
 calls, resources and prompts hold no arguments, results or error messages, and the API token and
 bearer tokens are not logged. Errors, also those of the libraries and of a failed startup check, are
-logged by type, without message or traceback; a fixed text says what a rejected token or API
+logged by type and place in the code, without message or traceback (FastMCP's messages about a
+failed sign-in through an identity provider quote some of its values; the policy lists them); a fixed text says what a rejected token or API
 version means. `DEBUG` logs the tracebacks, which can quote arguments and what Paperless answered,
 document content included, because an error could not be traced without them; arguments can also
 appear in other records. The answers to the client are not logged, at no level and over neither
