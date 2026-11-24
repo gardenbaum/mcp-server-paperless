@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T11:11:57Z'
-updated_date: '2026-11-24T13:18:31Z'
+updated_date: '2026-11-24T13:19:08Z'
 labels:
   - safety
 dependencies: []
@@ -63,4 +63,6 @@ Targeted tests only: 2417 passed, diff coverage 100 %, ruff, basedpyright of the
 Delta review of 2650c31, after merging main (bdf8bf9): red first (28 failing rows), then green. get_log reads 1000 lines, redacts and shows the last ones asked for; the undated head of a cut log is not shown up to its last line with an @ (get_log, /api/logs/). Own hint for an unknown action id; anchored spelling comparison (linear, tested); an empty user name alone is not called credentials in workflows; *_url keys, and url in /api/status/, are redacted (the vendored docs do not say whether redis_url holds a password; the status tool does not return it). Own tests changed: the record tests pass from_start, one raw log text carries a date. 1914 targeted tests passed, diff coverage 100 %. No snapshot, limit, budget or gate changed.
 
 Last review of e5f1a5f: from_start removed, the rule for the undated head of a log always applies (a short log too; replaces what the note above says on tests with from_start: record tests now start with a dated line). The id check runs before the URL and the headers are looked at, so one row (id 99) of test_a_hidden_header_without_a_stored_value_to_keep_is_refused now expects the refusal of the id instead of the header. 5 rows red first.
+
+test_workflow_messages asks for its hidden header on an action that exists (id 6, not 9), so its message and the snapshot stay as they were. 1467 targeted tests passed.
 <!-- SECTION:NOTES:END -->
