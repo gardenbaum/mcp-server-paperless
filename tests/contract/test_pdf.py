@@ -603,12 +603,9 @@ async def copies(backend: Backend, user: Ports, files: CopiedFiles | None) -> Fo
     deadline = time.monotonic() + SECONDS
     while True:
         found = await user.pdf_writes.find_copies(files)
-        if found.doubt is not None:  # DIAGNOSTIC PLMCP-79.3
-            from e2e.diag793 import dump  # noqa: PLC0415
-
-            if client := getattr(user.pdf_writes, "_client", None):
-                await dump(client, files.request)
-        if found.doubt is not None or None not in found.ids:
+        if found.doubt is not None and not found.passing:
+            return found
+        if found.doubt is None and None not in found.ids:
             for number in found.ids:
                 if number is not None:
                     backend.track_document(number)
@@ -626,10 +623,20 @@ async def test_parts_whose_tasks_a_date_hides_are_found_by_their_file_names(
     document, other = backend.new_pdf(3), backend.new_pdf(1)
     value = await dated(backend, document)
     _ = await dated(backend, other)
-    # Somebody's metadata change: Paperless queues an update without owner for it.
+    # A metadata change of somebody, and a PDF operation of a user who is deleted since: neither
+    # has an owner afterwards, and everybody sees them.
     tags = {tag.name: tag.id for tag in await backend.admin.taxonomy.list_taxonomy("tag")}
     change = TagsChange(add=(tags["e2e-finance"],))
     _ = await backend.admin.bulk_writes.bulk_edit_documents((other,), change)
+    name = f"contract-gone-{uuid.uuid4().hex[:12]}"
+    gone = backend.restricted(FINDING, name=name)
+    _ = await gone.pdf_writes.edit_pdf(other, (PageSlot(page=1),), output="new_version")
+    await until_versions(backend, other, 2)
+    found_users = await backend.admin.permissions.list_users(
+        name_contains=name, page=1, page_size=1
+    )
+    [account] = found_users.users
+    await backend.admin.management_writes.delete_user(account.id)
     user = backend.restricted(FINDING)
     slots = (PageSlot(page=1), PageSlot(page=2, document=1), PageSlot(page=3, document=1))
 

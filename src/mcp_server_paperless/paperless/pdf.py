@@ -38,7 +38,7 @@ from mcp_server_paperless.paperless.pagination import Page
 from mcp_server_paperless.paperless.queued import Queued, TaskWaiter, not_applied, task_failed
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Iterator, Sequence
+    from collections.abc import Awaitable, Callable, Collection, Iterator, Sequence
 
     from mcp_server_paperless.domain.pdf import FileOutput, LookupProblem, PageSlot
     from mcp_server_paperless.paperless.client import PaperlessClient
@@ -71,7 +71,6 @@ class _Task(BaseModel):
     date_started: AwareDatetime | None = None
     date_done: AwareDatetime | None = None
     owner: int | None = None
-    trigger_source: str = ""
     input_data: JsonValue = None
 
     @property
@@ -89,15 +88,6 @@ class _Task(BaseModel):
         """What a queued task does, as far as it says."""
         named = self.input_data.get("operation") if isinstance(self.input_data, dict) else None
         return named if isinstance(named, str) else None
-
-    @property
-    def own_work(self) -> bool:
-        """Whether Paperless queued it for itself after a metadata change (3.5.1).
-
-        ``bulk_update_documents`` shares its type with the operations of users, but has no owner
-        and no input, and hands over no new document (a workflow may unlock a file as a version).
-        """
-        return self.owner is None and self.input_data == {} and self.trigger_source == "system"
 
     @property
     def leaves_number(self) -> bool:
@@ -550,7 +540,7 @@ class PaperlessPdfWriter:
             return NOT_OWN
         others = [
             row
-            for row in _copying(bulk, queued, user)
+            for row in _copying(bulk, queued, {None, user})
             if row.date_started is not None
             and row.date_started <= end
             and (row.date_done is None or row.date_done >= start)
@@ -625,7 +615,9 @@ class PaperlessPdfWriter:
         oldest = min(row.created for row in operations.results)
         if operations.next_page is not None and oldest > start - BACKLOG:
             return UNCOMPARED
-        others = list(_copying(operations.results, files.request, user))
+        # 3.5.1 records the caller as owner of every operation. One without an owner is of a user
+        # who was deleted since, whose files are not the caller's, or Paperless's own update.
+        others = list(_copying(operations.results, files.request, {user}))
         if any(
             row.date_started and (not row.date_done or row.date_done >= start) for row in others
         ):
@@ -696,11 +688,10 @@ def _doubtful(files: CopiedFiles, doubt: str) -> FoundCopies:
     return FoundCopies(ids=nothing, doubt=doubt, passing=doubt == PENDING)
 
 
-def _copying(rows: Sequence[_Task], queued: str, user: int) -> Iterator[_Task]:
-    """The other operations of this user that hand over files a copy could be taken for."""
+def _copying(rows: Sequence[_Task], queued: str, owners: Collection[int | None]) -> Iterator[_Task]:
+    """The other operations of these owners that hand over files a copy could be taken for."""
     for row in rows:
-        theirs = row.owner in {None, user} and not row.own_work
-        if row.task_id != queued and theirs and row.operation in COPYING:
+        if row.task_id != queued and row.owner in owners and row.operation in COPYING:
             yield row
 
 
