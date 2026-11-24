@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from e2e.helpers import num, results, seq
+from e2e.helpers import lose_file, num, results, seq
 from e2e.uploading import Scope, output, text, unique
 
 if TYPE_CHECKING:
@@ -213,3 +213,45 @@ async def test_the_trash_of_others_is_listed_by_title_only(scope: Scope, stack: 
     [trashed] = listed(found)
     assert (trashed["id"], trashed["in_trash"], trashed["match"]) == (gone, True, None)
     assert any(str(gone) in gap for gap in cast("list[str]", found["not_compared"]))
+
+
+@pytest.mark.decision("decision-63")
+@pytest.mark.parametrize("action", ["trash", "merge_as_versions"])
+async def test_the_copy_whose_file_exists_is_the_one_to_keep(
+    stack: Stack, scope: Scope, action: str
+) -> None:
+    content = unique()
+    lost, whole = scope.document(content), scope.document(content)
+    lose_file(stack.admin, lost, "original")
+    call: Json = {"keep_document_id": lost, "duplicate_ids": [whole], "action": action}
+    other: Json = {"keep_document_id": whole, "duplicate_ids": [lost], "action": action}
+
+    preview = output(await scope.call("resolve_duplicates", None, **call, dry_run=True))
+    refused = await scope.call("resolve_duplicates", None, **call, confirm=True)
+    assert stack.admin.get(f"/api/documents/{whole}/").status_code == 200
+    done = output(await scope.call("resolve_duplicates", None, **other, confirm=True))
+
+    why = f"Paperless cannot find its file, and document {whole} still has it"
+    assert [d["why"] for d in cast("list[Json]", preview["not_resolved"])] == [why]
+    assert refused.is_error
+    assert why in text(refused)
+    assert [d["id"] for d in cast("list[Json]", done["resolved"])] == [lost]
+    assert "WARNING" not in str(done["message"])
+
+
+@pytest.mark.decision("decision-63")
+async def test_a_file_no_copy_has_is_named_before_and_after(stack: Stack, scope: Scope) -> None:
+    content = unique()
+    keep, copy = scope.document(content), scope.document(content)
+    for document in (keep, copy):
+        lose_file(stack.admin, document, "original")
+    call: Json = {"keep_document_id": keep, "duplicate_ids": [copy], "action": "trash"}
+
+    preview = output(await scope.call("resolve_duplicates", None, **call, dry_run=True))
+    asked = await scope.call("resolve_duplicates", None, **call)
+    done = output(await scope.call("resolve_duplicates", None, **call, confirm=True))
+
+    for message in (str(preview["message"]), text(asked), str(done["message"])):
+        assert f"WARNING: Paperless cannot find the original of document {keep}." in message
+        assert f"Paperless cannot find the original of document {copy}." in message
+    assert in_trash(stack, copy)

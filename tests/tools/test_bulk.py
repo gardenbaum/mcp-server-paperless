@@ -355,3 +355,28 @@ async def test_a_document_that_is_no_duplicate_is_an_error_that_names_it() -> No
 
     assert "document 1: Paperless does not take it for a duplicate of document 10" in text
     assert "document 999: it does not exist outside the trash" in text
+
+
+@pytest.mark.decision("decision-63")
+@pytest.mark.parametrize("action", ["trash", "merge_as_versions"])
+async def test_the_copy_whose_file_exists_is_the_one_to_keep(action: str) -> None:
+    arguments = {"keep_document_id": 10, "duplicate_ids": [11], "action": action}
+    state = copies()
+    state.missing = {(10, "original")}
+    quiet = FakePaperless(state, user="admin")
+    why = "Paperless cannot find its file, and document 11 still has it"
+
+    preview = await call(quiet, "resolve_duplicates", **arguments, dry_run=True)
+    refused = await refusal(quiet, "resolve_duplicates", **arguments, confirm=True)
+    state.missing.add((11, "original"))
+    asked = await refusal(quiet, "resolve_duplicates", **arguments)
+    writer = FakePaperless(state, user="admin", allow_writes=True)
+    done = await call(writer, "resolve_duplicates", **arguments, confirm=True)
+
+    [blocked] = cast("list[Json]", preview["not_resolved"])
+    assert (blocked["id"], blocked["why"], preview["resolved"]) == (10, why, [])
+    assert why in refused
+    assert "Keep a document whose file is there instead" in refused
+    for text in (asked, str(done["message"])):
+        assert "WARNING: Paperless cannot find the original" in text
+    assert "document 10" in asked

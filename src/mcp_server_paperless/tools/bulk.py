@@ -163,9 +163,11 @@ async def resolve_duplicates(  # noqa: PLR0913 -- one parameter per concept, des
     their files stay. dry_run=true previews; without confirm a dialog, or an error for you to show
     the user, first describes the effect (see confirm). Every document has to be a duplicate of the
     kept one now, outside the trash: otherwise nothing changes and each one that is not is named.
-    Documents you cannot see are never compared. Needs the permissions to change and delete
-    documents and ownership of the duplicates, for a merge of the kept document too (or no owner).
-    resolved, not_resolved and kept_seen say what was seen afterwards.
+    Documents you cannot see are never compared. Keeping a document whose file Paperless cannot find
+    is refused while a duplicate still has it; otherwise a missing file is named. Needs the
+    permissions to change and delete documents and ownership of the duplicates, for a merge of the
+    kept document too (or no owner). resolved, not_resolved and kept_seen say what was seen
+    afterwards.
     """
     return await services(ctx).duplicate_resolver.resolve(
         keep_document_id, duplicate_ids, action, dry_run=dry_run, confirm=confirm

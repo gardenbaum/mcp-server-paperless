@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T08:50:41Z'
-updated_date: '2026-11-24T10:12:26Z'
+updated_date: '2026-11-24T10:20:04Z'
 labels:
   - safety
 dependencies: []
@@ -42,3 +42,13 @@ resolve_duplicates with trash can keep the document whose file Paperless cannot 
 3. resolve_duplicates: refuse if a copy still has the file the kept one lacks, else name it; a merge that cannot be checked is refused. merge_documents_as_versions: name it, refuse what cannot be checked.
 4. Contract, tool and E2E tests (live ones hosted only), docs, decision, snapshots deliberately.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Design in decision-63. resolve_duplicates (both actions) refuses to keep a document known to lack its original while a duplicate of the call has it; every other missing file is named in preview, confirmation, result and failure. merge_documents_as_versions names it instead of refusing (the files stay as versions, and it is the way to give a document its file back). Checked are the root version (what Paperless compares) and the newest; a later version with the same checksum is the same file; an archive version alone is only named. Trash: an unchecked file is said, not refused; merges fail closed with the reason, in both tools, for the kept and the merged documents. The check runs again in the confirmed call and its findings are in the confirmation text in full.
+The reading part of require_files became read_facts (5 at once, 30 s; behaviour and message of require_files unchanged).
+Requests: one metadata read more per trash (two with several versions); all documents of a merge, or of a trash whose kept document lacks a file. The latter checks twice, at most 60 s.
+Changed deliberately: surface snapshot (description of resolve_duplicates and merge_documents_as_versions say it, description of VersionsMerged.message: also set when a file is missing); docs/api-coverage.md regenerated (two more tools read metadata/). No limit, gate, budget or contract raised or weakened, no accepted decision edited. decision-62, which the CLI gave first, was deleted again: numbers start at 63 here.
+Evidence: targeted modules, basedpyright, ruff, import contracts, diff-cover 100 %, 12 hand mutants (2 survivors got tests, all killed). The tests of the services were written together with the code and not run red before it; that they fail without it is shown by the mutants only. just check, the live contract tests and the E2E tests have not run (hosted only).
+<!-- SECTION:NOTES:END -->

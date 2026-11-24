@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Literal, final, override
 
 import pytest
 from fakes.accounts import ADMIN
-from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
+from fakes.paperless import FakeDocument, FakePaperless, FakeState, FakeUser, seeded
 
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
@@ -49,7 +49,7 @@ TIMEOUT = "Paperless did not respond in time."
 class Flaky(FakePaperless):
     """The fake, with metadata that cannot be read of some documents, and an unfollowed merge."""
 
-    broken: frozenset[int] = frozenset()
+    broken: frozenset[int] = frozenset()  # documents and versions
     slow: bool = False
     reads: tuple[int, ...] = ()
     unfollowed: bool = False
@@ -63,7 +63,7 @@ class Flaky(FakePaperless):
         self.reads += (document_id,)
         if self.slow:
             await asyncio.sleep(60)
-        if document_id in self.broken:
+        if not self.broken.isdisjoint({document_id, version_id}):
             raise UpstreamTimeout(TIMEOUT)
         return await super().get_document_metadata(document_id, version_id=version_id)
 
@@ -287,6 +287,36 @@ async def test_a_trash_that_cannot_be_checked_says_so_and_goes_on() -> None:
         assert f"WARNING: {UNSURE}." in message
         assert TIMEOUT not in message
     assert [d.id for d in done.resolved] == [11, 12]
+
+
+async def test_a_version_is_named_also_when_the_other_could_not_be_checked() -> None:
+    setup = Setup()
+    setup.fake.broken = frozenset({await setup.version(10)})
+    setup.lose(10, 11, 12)
+
+    message = (await setup.ask("trash")).message
+
+    assert f"{LOST_WARNING} (version 10). WARNING: {UNSURE}." in message
+
+
+async def test_trashing_duplicates_needs_no_right_to_change_the_kept_document() -> None:
+    setup = Setup()
+    setup.state.users.append(
+        FakeUser(
+            id=9,
+            username="limited",
+            permissions=frozenset({"view_document", "change_document", "delete_document"}),
+        )
+    )
+    setup.get(10).owner, setup.get(11).owner = 2, 9
+    setup.get(10).viewers = {9}
+    fake = Flaky(setup.state, user="limited")
+    taxonomy = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
+    service = DuplicateResolver(fake, fake, fake, taxonomy, web_url=WEB)
+
+    preview = await service.resolve(10, [11], "trash", dry_run=True)
+
+    assert [d.id for d in preview.resolved] == [11]
 
 
 async def test_a_lost_file_and_copies_that_cannot_be_checked_are_both_named() -> None:

@@ -284,6 +284,21 @@ async def test_merging_with_confirm_makes_versions_and_removes_the_sources() -> 
     assert {d.id for d in state.documents}.isdisjoint({10, 11})
 
 
+@pytest.mark.decision("decision-63")
+async def test_a_merge_into_a_document_without_its_file_says_so() -> None:
+    state = seeded()
+    with_documents(state, 10)
+    state.missing = {(1, "original")}
+    arguments = {"root_document_id": 1, "source_document_ids": [10]}
+
+    asked = await refusal(fake(state, writes=False), "merge_documents_as_versions", **arguments)
+    done = await call(fake(state), "merge_documents_as_versions", **arguments, confirm=True)
+
+    assert "WARNING: Paperless cannot find the original of document 1." in asked
+    assert "WARNING: Paperless cannot find the original of document 1." in str(done["message"])
+    assert done["versions"] is not None
+
+
 async def test_a_merge_label_is_passed_on_for_one_document() -> None:
     state = seeded()
     with_documents(state, 10)

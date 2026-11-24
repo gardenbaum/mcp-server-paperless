@@ -15,7 +15,7 @@ from fastmcp import Client
 from fastmcp.client.transports import StdioTransport
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import consume_text, num
+from e2e.helpers import consume_text, lose_file, num
 from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
@@ -170,6 +170,21 @@ async def test_documents_are_merged_as_versions_only_with_confirm(
     assert [v["id"] for v in found] == [second, first, root]
     gone = await refused(stack, "list_document_versions", document_id=first)
     assert f"No document {first}" in gone
+
+
+@pytest.mark.decision("decision-63")
+async def test_a_merge_into_a_document_without_its_file_says_so(stack: Stack, scope: Scope) -> None:
+    root, source = scope.document(), scope.document()
+    lose_file(stack.admin, root, "original")
+    arguments = {"root_document_id": root, "source_document_ids": [source]}
+
+    asked = await refused(stack, "merge_documents_as_versions", **arguments)
+    merged = await run(stack, "merge_documents_as_versions", **arguments, confirm=True)
+
+    warning = f"WARNING: Paperless cannot find the original of document {root}."
+    assert warning in asked
+    assert warning in str(merged["message"])
+    assert [v["id"] for v in cast("list[Json]", merged["versions"])] == [source, root]
 
 
 async def test_a_read_only_user_may_list_but_not_change_versions(
