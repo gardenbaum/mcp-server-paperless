@@ -528,12 +528,56 @@ def test_the_cut_takes_the_same_characters_of_a_name_whatever_is_escaped() -> No
 
 
 @pytest.mark.decision("decision-64")
-def test_the_longest_name_has_an_escape_of_twelve_characters_for_each_of_its_own() -> None:
-    widest = chr(0x1F676)
+@pytest.mark.parametrize(
+    ("character", "escaped"),
+    [(chr(0x1F676), 12), (chr(0x201D), 6)],
+)
+def test_a_name_made_of_escapes_takes_at_most_240_characters(character: str, escaped: int) -> None:
+    fit = (240 - 2 - 1) // escaped  # without the quotes and the cut mark
+    escape = json.dumps(character)[1:-1]
+    for text in (character * 60, character * 900):
+        for limit in (60, 80):
+            assert quoted(text, limit) == f"'{escape * fit}…'"
+    exact = "x" * (238 % escaped) + character * (238 // escaped)
+    assert len(quoted(exact)) == 240
+    assert len(exact) < 60
+    assert quoted(exact)[-2:] != "…'"
+    assert quoted("x" + exact)[-2:] == "…'"
+    assert len(quoted("x" + exact)) <= 240
 
-    assert len(quoted(widest * 60)) == 60 * 12 + 2
-    assert len(quoted(widest * 900)) == 59 * 12 + 3
-    assert len(both_ends(widest * 900, 254)) == 253 * 12 + 3
+
+@pytest.mark.decision("decision-64")
+def test_a_text_shown_with_both_ends_takes_at_most_240_or_600_characters() -> None:
+    widest = chr(0x1F676)
+    for limit, most in ((60, 240), (254, 600)):
+        for text in (widest * limit, widest * 900, "a" + widest * 300 + ".end", "'" + widest * 900):
+            shown = both_ends(text, limit)
+            assert most - 24 < len(shown) <= most
+            head, tail = shown[1:-1].split("…")
+            assert head
+            assert head.count("\\") % 2 == tail.count("\\") % 2 == 0  # no half escape
+            assert tail.endswith(".end" if text[0] == "a" else "ude76")
+            assert len(tail) > len(head)
+
+
+@pytest.mark.decision("decision-64")
+def test_a_normal_name_with_a_few_quotes_is_cut_where_it_always_was() -> None:
+    low, high = chr(0x201E), chr(0x201C)
+    name = f"{low}{'x' * 20}{high}, {low}{'y' * 20}{high} {'z' * 40}"
+    expected = name[:59].replace(low, BACKSLASH + "u201e").replace(high, BACKSLASH + "u201c")
+
+    assert quoted(name) == f"'{expected}{chr(0x2026)}'"
+    shown = both_ends(high * 5 + "x" * 300, 254)
+    assert shown == f"'{(BACKSLASH + 'u201c') * 5}{'x' * 79}{chr(0x2026)}{'x' * 169}'"
+
+
+@pytest.mark.decision("decision-64")
+def test_what_a_cut_leaves_at_its_edges_is_judged_by_what_stands_there() -> None:
+    letter = "o" + chr(0x30B)
+
+    shown = both_ends(letter * 100, 9)
+
+    assert shown == f"'{letter}o{chr(0x2026)}{BACKSLASH}u030b{letter * 2}'"
 
 
 @pytest.mark.decision("decision-48")

@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Final, Literal
 from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterator, Sequence
+    from collections.abc import Callable, Generator, Iterator, Sequence
 
 
 class PaperlessMcpError(Exception):
@@ -165,11 +165,24 @@ def quoted(text: str, limit: int = 60) -> str:
     characters that hide or reorder what the reader sees. Single quotes, or double quotes when the
     text holds a single quote; with both, the single ones become typographic apostrophes. What
     else can be read as a double quote is escaped after the cut (decision-64): an escape does not
-    count and is never cut itself.
+    count and is never cut itself, but a text that gets too long by them is cut earlier.
+    """
+    return _in_quotes(_cut(text, limit, lambda line, most: f"{line[: most - 1]}…"))
+
+
+def _cut(text: str, limit: int, shorten: Callable[[str, int], str]) -> str:
+    """``text`` on one line, escaped, with at most ``limit`` characters before the escapes.
+
+    With them and its quotes it takes at most 240 characters, more only where ``limit`` is for a
+    destination (600 for the longest).
     """
     line = _line(text)
-    shown = line if len(line) <= limit else line[: limit - 1] + "…"
-    return _in_quotes(_without_look_alikes(shown))
+    room = max(240, limit * 600 // DESTINATION_LIMIT) - 2
+    while True:
+        shown = _without_look_alikes(line if len(line) <= limit else shorten(line, limit))
+        if len(shown) <= room:
+            return shown
+        limit -= 1
 
 
 def _in_quotes(shown: str) -> str:
@@ -190,10 +203,9 @@ DESTINATION_LIMIT: Final = 254
 
 def both_ends(text: str, limit: int = 60) -> str:
     """``text`` like ``quoted``, but cut in its middle: what decides about a host is its end."""
-    line = _line(text)
-    if len(line) > limit:
-        line = f"{line[: limit // 3]}…{line[-(limit - limit // 3 - 1) :]}"
-    return quoted(line, limit)
+    return _in_quotes(
+        _cut(text, limit, lambda line, m: f"{line[: m // 3]}…{line[-(m - m // 3 - 1) :]}")
+    )
 
 
 # Categories no destination holds: control, format, unassigned, private and surrogate characters,

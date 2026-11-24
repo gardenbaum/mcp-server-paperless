@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T07:06:16Z'
-updated_date: '2026-11-24T11:19:25Z'
+updated_date: '2026-11-24T11:22:49Z'
 labels: []
 dependencies: []
 priority: medium
@@ -64,4 +64,8 @@ Review of 44e4b57, fixed on top (replaces what the notes above say about the cut
 - Open by ruling c: look-alike single quotes within single quotes, look-alikes in new text destinations, look-alike letters before the @ of an address.
 Changed on purpose: test_surface.ambr again (both descriptions, field text); CUT in test_confirmation_text.py counts an escape as one character. The tests of the counted cut are replaced.
 Evidence: red first, then 2150 passed, 1 skipped in named modules; diff-cover 100 % against origin/main; ruff, basedpyright, import contracts clean. origin/main (e429b87) merged with -s ours: its tree equals d0f24e9.
+
+Correction of ruling b (replaces the numbers above): one text takes at most 240 characters in quoted(), quotes, escapes and cut mark included; both_ends() 240 at 60 and 600 at 254 (the larger of 240 and limit * 600 / 254). Above that the cut moves forward until it fits, always at a whole escape. New worst cases: 237 characters for a name of 12-character escapes (722 before), both ends at 254 at most 600 (3039 before), longest refusal 3403 (8716 before; test pin 9000 -> 3403, the measured value).
+
+Measured: a name of 12-character escapes 231, of 6-character escapes 237 (not 237 for the former); at most 240. Both ends at 254: 591 and 597. Named modules: 1033 passed, 1 skipped; diff-cover 100 %.
 <!-- SECTION:NOTES:END -->

@@ -239,8 +239,8 @@ async def test_hostile_text_stands_in_a_refusal_only_quoted_and_cut(tool: str) -
 
 
 # The server itself caps no refusal. The longest here (update_user, which names the user and their
-# groups and permissions many times) has 8716 characters.
-WORST: Final = 9000
+# groups and permissions many times) has 3403 characters.
+WORST: Final = 3403
 
 
 @pytest.mark.decision("decision-64")
