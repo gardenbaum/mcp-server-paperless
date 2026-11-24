@@ -5,6 +5,7 @@ The fakes of the filter refusals are created without `allow_writes`: any write w
 
 import asyncio
 import itertools
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, override
 
@@ -519,6 +520,12 @@ class Moody(FakePaperless):
         return await super().get_root(document_id)
 
     @override
+    async def document_exists(self, document_id: int) -> bool:
+        if self.single:
+            raise self.single
+        return await super().document_exists(document_id)
+
+    @override
     async def get_document_titles(self, document_ids: Collection[int]) -> dict[int, str]:
         if self.single:
             raise self.single
@@ -727,18 +734,17 @@ async def test_a_lookup_that_fails_leaves_the_reason_out() -> None:
 
 async def test_looking_up_one_by_one_ends_after_its_time() -> None:
     setup = Setup()
-    for number in range(AT_ONCE + 1):
-        _ = await setup.trashed(f"doc {number}")
+    ids = [await setup.trashed(f"doc {number}") for number in range(AT_ONCE)]
 
     class Slow(FakePaperless):
         looks: int = 0
 
         @override
-        async def get_root(self, document_id: int) -> int:
+        async def document_exists(self, document_id: int) -> bool:
             self.looks += 1
-            if self.looks > AT_ONCE:
+            if document_id == ids[4]:
                 await asyncio.sleep(30)
-            return await super().get_root(document_id)
+            return await super().document_exists(document_id)
 
     fake = Slow(setup.state, user="admin", allow_writes=True)
     scan = TrashScan(fake, fake, setup.taxonomy)
@@ -746,8 +752,11 @@ async def test_looking_up_one_by_one_ends_after_its_time() -> None:
 
     result = await service.empty(None, everything=True, confirm=True)
 
-    outcomes = [e.outcome for e in result.entries]
-    assert (outcomes.count("deleted"), outcomes.count("unverified")) == (AT_ONCE, 1)
+    # What was answered meanwhile is kept.
+    assert fake.looks == AT_ONCE
+    assert {e.id: e.outcome for e in result.entries if e.outcome != "deleted"} == {
+        ids[4]: "unverified"
+    }
 
 
 class Endless(FakePaperless):
@@ -1105,12 +1114,34 @@ async def test_one_lookup_that_fails_leaves_that_entry_unverified() -> None:
 
     class NoRoot(FakePaperless):
         @override
-        async def get_root(self, document_id: int) -> int:
-            if document_id == second:
+        async def document_exists(self, document_id: int) -> bool:
+            if document_id == first:
                 raise OUTAGE
-            return await super().get_root(document_id)
+            return await super().document_exists(document_id)
 
     fake = NoRoot(setup.state, user="admin", allow_writes=True)
     result = await setup.on(fake).empty([first, second], everything=False, confirm=True)
 
-    assert [e.outcome for e in result.entries] == ["deleted", "unverified"]
+    assert [e.outcome for e in result.entries] == ["unverified", "deleted"]
+
+
+async def test_an_entry_whose_owner_changed_meanwhile_is_not_called_deleted() -> None:
+    """Paperless swallowed the emptying, and the entry is hidden from this user now (403)."""
+    setup = Setup()
+    one = await setup.trashed("doc", owner=None)
+    deleter = replace(setup.fake.user, id=77, username="deleter", is_superuser=False)
+    setup.state.users.append(
+        replace(deleter, permissions=frozenset({"view_document", "delete_document"}))
+    )
+
+    class Raced(FakePaperless):
+        @override
+        async def empty_trash(self, document_ids: Sequence[int]) -> None:
+            for entry in self.state.trash:
+                entry.owner = 2
+
+    raced = Raced(setup.state, user="deleter", allow_writes=True)
+    result = await setup.on(raced).empty([one], everything=False, confirm=True)
+
+    assert [e.outcome for e in result.entries] == ["unverified"]
+    assert (result.count, setup.ids()) == (0, [one])

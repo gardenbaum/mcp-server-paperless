@@ -20,7 +20,9 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.domain.versions import VersionUpload
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.documents import DocumentService
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.trash_scan import TrashScan
 from mcp_server_paperless.services.trashed_documents import (
     DOCUMENT_LIMITS,
@@ -39,6 +41,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.bulk import ObjectPermissions
     from mcp_server_paperless.domain.documents import DocumentRecord
     from mcp_server_paperless.domain.permissions import ObjectAccess, PermissionKind
+    from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
     from mcp_server_paperless.domain.trash import TrashLookup
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-54")]
@@ -488,3 +491,29 @@ async def test_too_many_requests_do_not_lead_to_smaller_ones() -> None:
         _ = await looking(setup, fake).entry(one, max_chars=1)
 
     assert fake.asked == [(1, 1000)]
+
+
+class NoNames(FakePaperless):
+    """The groups cannot be listed for now, so grants have no names."""
+
+    @override
+    async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
+        if kind == "group":
+            message = "Paperless could not be reached."
+            raise UpstreamUnreachable(message)
+        return await super().list_taxonomy(kind)
+
+
+@pytest.mark.parametrize("version", [False, True])
+async def test_grants_without_names_for_want_of_the_groups_are_a_gap(
+    version: bool,  # noqa: FBT001 -- a parametrised flag, not a switch
+) -> None:
+    setup = Setup()
+    one = (await setup.version("Report"))[1] if version else await setup.trashed("Doc")
+    fake = NoNames(setup.state, user="admin")
+    setup.taxonomy = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=0.0)
+
+    found = await looking(setup, fake).entry(one, max_chars=1)
+
+    assert (found.id, found.permissions) == (one, None)
+    assert found.limits == (VERSION_LIMITS if version else DOCUMENT_LIMITS) + NO_PERMISSIONS

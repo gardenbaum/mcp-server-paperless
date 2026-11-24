@@ -1001,6 +1001,13 @@ class FakePaperless:
             raise unseen_document(document_id)
         return document.root_id or document.id
 
+    async def document_exists(self, document_id: int) -> bool:
+        """`DocumentReader.document_exists` (the `root` action: 404 only for a missing one)."""
+        return any(
+            document_id in {d.id, *(v.id for v in d.versions)}
+            for d in (*self.state.documents, *self.state.trash)
+        )
+
     async def get_duplicates(self, document_id: int) -> tuple[DuplicateRecord, ...]:
         """`DocumentReader.get_duplicates` (the detail view, `duplicate_documents`)."""
         return tuple(

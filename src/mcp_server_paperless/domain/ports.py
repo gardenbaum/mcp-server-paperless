@@ -257,6 +257,10 @@ class DocumentReader(Protocol):
         """
         ...
 
+    async def document_exists(self, document_id: int) -> bool:
+        """Whether a document or version has this id: also in the trash, also if it is hidden."""
+        ...
+
     async def get_duplicates(self, document_id: int) -> tuple[DuplicateRecord, ...]:
         """The documents Paperless takes for duplicates of this one, in the trash too.
 

@@ -439,6 +439,10 @@ class TrashService:
         listed = {e.id for e in scan.entries} if scan else set[int]()
         outcomes.update(dict.fromkeys(listed & outcomes.keys(), "still_in_trash"))
         left = [e for e in entries if e.id not in listed]
+
+        async def look(entry: TrashedDocument) -> None:
+            outcomes[entry.id] = await self._outcome(entry, done)
+
         with contextlib.suppress(PaperlessMcpError, TimeoutError):  # the rest stays unverified
             async with asyncio.timeout(self._check_seconds):
                 live = await self._live([e.id for e in left if e.version_of is None])
@@ -447,14 +451,10 @@ class TrashService:
                 )
                 unseen = [e for e in left if e.id not in live]
                 for start in range(0, len(unseen), AT_ONCE):
-                    some = unseen[start : start + AT_ONCE]
-                    looks = await asyncio.gather(
-                        *(self._outcome(e, done) for e in some), return_exceptions=True
-                    )
-                    for entry, look in zip(some, looks, strict=True):
-                        if isinstance(look, BaseException):
-                            raise look
-                        outcomes[entry.id] = look
+                    looks = (look(e) for e in unseen[start : start + AT_ONCE])
+                    for failure in await asyncio.gather(*looks, return_exceptions=True):
+                        if failure is not None:
+                            raise failure
         return outcomes
 
     async def _live(self, ids: Sequence[int]) -> set[int]:
@@ -467,10 +467,12 @@ class TrashService:
 
     async def _outcome(self, entry: TrashedDocument, done: Outcome) -> Outcome:
         """What became of one entry that is neither listed nor a document outside the trash."""
+        if done == "deleted" and not await self._documents.document_exists(entry.id):
+            return "deleted"
         try:
             root = await self._documents.get_root(entry.id)
-        except NotFound:
-            return "deleted" if done == "deleted" else "unverified"
+        except NotFound:  # gone, or hidden from this user
+            return "unverified"
         try:
             document = await self._documents.get_document(root)
         except NotFound:

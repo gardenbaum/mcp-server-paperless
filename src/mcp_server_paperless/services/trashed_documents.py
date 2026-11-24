@@ -178,9 +178,9 @@ class TrashedDocuments:
             found = await self._trash.get_trash_permissions(
                 document_id, page=where.number, page_size=where.size, max_bytes=TRASH_BYTES
             )
+            return None if found is None else await self._documents.grants(found)
         except PaperlessMcpError:
             return None
-        return None if found is None else await self._documents.grants(found)
 
     async def _of_document(self, document_id: int) -> tuple[TrashGrants | None, bool | None]:
         """Who may use the document of a version, and whether the user may change it.

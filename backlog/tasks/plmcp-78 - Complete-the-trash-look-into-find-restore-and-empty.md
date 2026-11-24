@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:49Z'
-updated_date: '2026-11-24T09:06:38Z'
+updated_date: '2026-11-24T09:12:01Z'
 labels: []
 dependencies: []
 priority: medium
@@ -69,4 +69,6 @@ Full local run (375cef2): green but for the two known macOS failures and a wrapp
 Review of 16f55da (2 Important, 9 Minor), all fixed: UTC days; fall back to small requests on transient failures; what pages may have skipped is not said for sure; the failure beside a success is told; outcomes are looked for; versions with the title and type of their document; only the wanted row is kept; the cost per file part is in decision-54. Security finding: no read of whole rows is unbounded; a compressed answer is refused unread. The schema guard lists full_perms for GET /api/trash/. SCAN_TIMEOUT 120 -> 60 s, because there is a fallback now. PLMCP-99: the filter path and the second call are tested with the dialog required. The page fallback for ids still uses list_trash, which has no size limit on main.
 
 Delta review of 07903bf (1 Important, 5 Minor), fixed: permissions and user_can_change of a deleted version are its document's (null with a named gap if unreadable, is_shared_by_requester null); list_trash without a title or type filter works while titles cannot be looked up; "deleted" only with a 404 of /root/; no second large read in a call, none after 429; texts. The single lookups after a change are ten at a time within 20 seconds instead of at most 100, so that all=true of more than 100 entries is still verified.
+
+Last review of 8b39d13, fixed test-first (9 red): document_exists tells 404 from 403 (DocumentReader; get_root unchanged), every answered lookup of a group is kept, and the naming of grants is inside the named gap.
 <!-- SECTION:NOTES:END -->

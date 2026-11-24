@@ -442,3 +442,23 @@ async def test_the_grants_of_a_deleted_version_are_those_of_its_document(backend
     assert hidden == []
     # A deleted version is no document of the list, so its root has to be asked for.
     assert await ports.permissions.get_permissions("document", [version]) == []
+
+
+@pytest.mark.contract("DocumentReader.document_exists")
+async def test_hidden_documents_exist_and_emptied_ones_do_not(backend: Backend) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp78 existing")
+    version = await add_version(backend, document, "plmcp78 existing version")
+    seers = (ports, backend.restricted(frozenset({"view_document"})), backend.blind)
+
+    async def seen(number: int) -> list[bool]:
+        return [await seer.documents.document_exists(number) for seer in seers[:2]]
+
+    assert await seen(document) == await seen(version) == [True, True]
+    assert await seers[2].documents.document_exists(document) is True
+    await ports.document_writes.delete_document(document)
+    assert await seen(document) == await seen(version) == [True, True]
+    with pytest.raises(NotFound):  # hidden and missing look alike here
+        _ = await seers[1].documents.get_root(document)
+    await ports.trash_writes.empty_trash([document])
+    assert await seen(document) == await seen(version) == [False, False]
