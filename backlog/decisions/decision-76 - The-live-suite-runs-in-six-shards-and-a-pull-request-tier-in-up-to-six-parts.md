@@ -1,8 +1,9 @@
 ---
+updated_date: '2026-11-24T20:59:51Z'
 id: decision-76
 title: The live suite runs in six shards and a pull-request tier in up to six parts
 date: '2026-11-24T20:21:58Z'
-status: proposed
+status: accepted
 ---
 ## Context
 
@@ -25,6 +26,7 @@ Decision-58 splits about 2970 s of live tests over four shards of 25 minutes. PL
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
 - Two more runners per full run and per pull request; with several pull requests at once jobs can queue longer.
+- The owner approved six shards and six parts on 2026-11-24 ("Alles wie von dir empfohlen.", everything as you recommend).
 - `tests/contract/test_pdf.py` alone takes 440 s, close to the tier budget: when it grows, it has to be split into two modules.
 <!-- SECTION:CONSEQUENCES:END -->
 
