@@ -29,6 +29,9 @@ DEFAULT_SIZE: Final = 1568
 # Contact sheets: pages of one (4 x 3), and seconds after which the rest is left to another call.
 TILES: Final = 12
 SHEET_SECONDS: Final = 20.0
+# When the last tile has to be drawn: what is left of the 30 seconds of the child is for writing
+# the sheets, for starting it and for the pipe.
+DRAWN_SECONDS: Final = 24.0
 # Runs of equal pages in one layout.
 MAX_RUNS: Final = 100
 # The longest side of a page that is reported: ten kilometres.
@@ -97,6 +100,7 @@ class OverviewRequest(BaseModel):
         pages: Page specification (see ``services.page_ranges``).
         sheets: Whether contact sheets are drawn.
         seconds: When to stop and leave the rest to another call.
+        drawn_seconds: When the last page has to be drawn, if it is as slow as the slowest.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
@@ -107,6 +111,7 @@ class OverviewRequest(BaseModel):
     max_sheets: int = MAX_IMAGES
     max_bytes: int = MAX_IMAGE_BYTES
     seconds: float = SHEET_SECONDS
+    drawn_seconds: float = DRAWN_SECONDS
 
 
 type Side = Annotated[float, Field(gt=0, le=MAX_SIDE_MM)]
@@ -148,7 +153,10 @@ class ContactSheet(BaseModel):
 
 
 class Overview(BaseModel):
-    """The layout and the sheets, in the order asked for, and the pages neither covers any more."""
+    """The layout and the sheets, in the order asked for, and the pages they leave out.
+
+    With sheets the layout is of the pages on them.
+    """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
@@ -166,14 +174,18 @@ class RenderFailed(Exception):  # noqa: N818 -- an outcome, as the names of doma
         reason: Why; the caller turns it into a message.
         page_count: How many pages the file has, if the page specification is wrong.
         megapixels: How large the image is, if it is too large.
+        page: The page it was at when the time was over, if it is known.
     """
 
-    def __init__(self, *, reason: Reason, page_count: int = 0, megapixels: float = 0.0) -> None:
+    def __init__(
+        self, *, reason: Reason, page_count: int = 0, megapixels: float = 0.0, page: int = 0
+    ) -> None:
         """Create the failure. No text in it: the file and the child that reads it are untrusted."""
         super().__init__(reason)
         self.reason: Reason = reason
         self.page_count: int = page_count
         self.megapixels: float = megapixels
+        self.page: int = page
 
 
 class PageRenderer(Protocol):

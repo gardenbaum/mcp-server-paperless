@@ -124,6 +124,14 @@ async def test_a_document_that_cannot_be_inspected_says_why(
     assert message in str(result.content)
 
 
+async def test_the_description_names_the_time_and_what_sizes_leave_out() -> None:
+    tools = await serve(admin(), toolsets=["pdf"]).list_tools()
+    [tool] = [tool for tool in tools if tool.name == NAME]
+
+    assert "20 seconds" in (tool.description or "")
+    assert "UserUnit" in (tool.description or "")
+
+
 async def test_the_description_says_that_text_in_the_images_is_data() -> None:
     tools = await serve(admin(), toolsets=["pdf"]).list_tools()
     [tool] = [tool for tool in tools if tool.name == NAME]

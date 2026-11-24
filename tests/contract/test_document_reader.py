@@ -718,7 +718,8 @@ async def test_a_document_without_its_thumbnail_says_so(backend: Backend) -> Non
 @pytest.mark.contract("DocumentReader.get_document_metadata")
 async def test_the_original_and_the_archive_of_a_pdf_can_be_inspected(backend: Backend) -> None:
     title = named("inspect")
-    content = pdf_pages([f"{title} {n}" for n in range(1, 4)])
+    # Short: Paperless makes no archive of a PDF with more than 50 characters of text.
+    content = pdf_pages([f"{n} {uuid.uuid4().hex[:6]}" for n in range(1, 4)])
     number = backend.upload(title, "inspect.pdf", content, "application/pdf")
     service = PageService(backend.admin.documents, ChildRenderer(), web_url="http://paperless/")
 

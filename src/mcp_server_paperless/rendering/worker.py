@@ -13,6 +13,7 @@ import struct
 import sys
 import time
 from functools import partial
+from itertools import batched, groupby, islice
 from typing import TYPE_CHECKING, BinaryIO, Final, Protocol, cast, override
 
 import pypdfium2
@@ -41,7 +42,7 @@ from mcp_server_paperless.rendering.wire import Job, answer
 from mcp_server_paperless.services.page_ranges import parse_pages
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Iterable, Iterator, Mapping
 
     from mcp_server_paperless.domain.rendering import Reason, Region, RenderRequest
 
@@ -105,8 +106,6 @@ SPACE: Final = 6
 NUMBER_SIZE: Final = 24
 DESK: Final = (200, 200, 200)
 INK: Final = (0, 0, 0)
-# The layout may take this share of the time, so that some is left for the sheets.
-LAYOUT_SHARE: Final = 0.5
 MM_PER_POINT: Final = 25.4 / 72
 
 # Pillow's own pixel limit only warns up to twice its value; every frame is checked here instead.
@@ -148,6 +147,9 @@ class _Pdf(_Source):
             found = self._pdf[page - 1]
         except pypdfium2.PdfiumError as error:
             raise RenderFailed(reason="damaged") from error
+        return self._drawn(found, size, region)
+
+    def _drawn(self, found: pypdfium2.PdfPage, size: int, region: Region) -> Image.Image:
         page_width, page_height = found.get_size()
         scale, width, height = _scaled(page_width, page_height, region, size)
         bitmap = pypdfium2.PdfBitmap.new_native(width, height, pypdfium2.raw.FPDFBitmap_BGR)
@@ -165,25 +167,33 @@ class _Pdf(_Source):
             pypdfium2.raw.FPDF_FFLDraw(found.formenv, bitmap, found, *place)
         return bitmap.to_pil()
 
-    def shape(self, page: int) -> PageShape | None:
-        """The shape of a page (from 1); None if it is missing or has no usable size."""
+    def _loaded(self, page: int) -> tuple[PageShape, pypdfium2.PdfPage] | None:
+        """A page (from 1) and its shape; None if it is missing or has no usable size."""
         try:
             found = self._pdf[page - 1]
             width, height = (round(side * MM_PER_POINT, 1) for side in found.get_size())
-            return PageShape.model_validate(
+            shape = PageShape.model_validate(
                 {"width_mm": width, "height_mm": height, "rotation": found.get_rotation()}
             )
         except pypdfium2.PdfiumError, ValidationError:
             return None
+        return shape, found
 
-    def tile(self, page: int, shape: PageShape | None) -> Image.Image:
-        """The page as large as it fits above its number; nothing if it cannot be read."""
-        if shape is None:
-            return Image.new("RGB", (1, 1), DESK)
+    def shape(self, page: int) -> PageShape | None:
+        """The shape of a page."""
+        loaded = self._loaded(page)
+        return loaded and loaded[0]
+
+    def tile(self, page: int) -> tuple[PageShape | None, Image.Image]:
+        """The shape of a page, and the page as large as it fits above its number."""
+        loaded = self._loaded(page)
+        if loaded is None:
+            return None, Image.new("RGB", (1, 1), DESK)
+        shape, found = loaded
         width, height = CELL - 2 * SPACE, CELL - STRIP - SPACE
         longest = max(shape.width_mm, shape.height_mm)
         fits = min(width * longest / shape.width_mm, height * longest / shape.height_mm)
-        return self.draw(page, max(1, int(fits)), WHOLE)
+        return shape, self._drawn(found, max(1, int(fits)), WHOLE)
 
 
 def _stored(region: Region, orientation: int) -> Region:
@@ -495,20 +505,51 @@ def label_font() -> ImageFont.FreeTypeFont:
     return font
 
 
-def _layout(source: _Pdf, pages: list[int], late: Callable[[], bool]) -> list[PageRun]:
-    """The shapes of the pages until it is late, at least of the first."""
-    runs: list[tuple[PageShape | None, list[int]]] = []
+def _runs(shapes: Iterable[tuple[int, PageShape | None]]) -> list[PageRun]:
+    """Pages and their shapes as runs, until there are too many."""
+    runs: list[PageRun] = []
+    for shape, group in islice(groupby(shapes, key=lambda found: found[1]), MAX_RUNS):
+        runs.append(PageRun(pages=tuple(page for page, _ in group), shape=shape))
+    return runs
+
+
+def _shapes(
+    source: _Pdf, pages: list[int], late: Callable[[], bool]
+) -> Iterator[tuple[int, PageShape | None]]:
+    """Pages and their shapes until it is late, at least the first."""
+    for page in pages[:1]:
+        yield page, source.shape(page)
+    for page in pages[1:]:
+        if late():
+            break
+        yield page, source.shape(page)
+
+
+def _tiles(  # noqa: PLR0913 -- the pages, the limits, the clock, and whom to tell
+    source: _Pdf,
+    pages: list[int],
+    request: OverviewRequest,
+    *,
+    clock: Callable[[], float],
+    started: float,
+    announce: Callable[[int], None],
+) -> Iterator[tuple[int, PageShape | None, Image.Image]]:
+    """Pages, their shapes and tiles while another as slow as the slowest ends in time.
+
+    At least the first.
+    """
+    slowest: float | None = None
     for page in pages:
-        if runs and late():
+        begun = clock()
+        elapsed = begun - started
+        if slowest is not None and (
+            elapsed >= request.seconds or elapsed + slowest > request.drawn_seconds
+        ):
             break
-        shape = source.shape(page)
-        if runs and runs[-1][0] == shape:
-            runs[-1][1].append(page)
-        elif len(runs) == MAX_RUNS:
-            break
-        else:
-            runs.append((shape, [page]))
-    return [PageRun(pages=tuple(found), shape=shape) for shape, found in runs]
+        announce(page)
+        shape, tile = source.tile(page)
+        slowest = max(slowest or 0.0, clock() - begun)
+        yield page, shape, tile
 
 
 def _sheet(tiles: list[tuple[int, Image.Image]], font: ImageFont.FreeTypeFont) -> Image.Image:
@@ -528,62 +569,61 @@ def _sheet(tiles: list[tuple[int, Image.Image]], font: ImageFont.FreeTypeFont) -
     return sheet
 
 
-def overview(
+def overview(  # noqa: PLR0913 -- the file, the job, and one keyword per seam
     content: bytes,
     request: OverviewRequest,
     font: ImageFont.FreeTypeFont,
     *,
     clock: Callable[[], float] = time.monotonic,
+    started: float | None = None,
+    announce: Callable[[int], None] = lambda _: None,
 ) -> Overview:
     """Sizes, rotation and contact sheets of the pages ``request`` asks for, until it is late.
 
-    At least one page is described and shown, so that asking for the rest comes to an end. The
-    sheets share the bytes of a call: all of them are shown, at a lower quality if it must be.
+    At least one page is described and shown; ``announce`` is told of each page before it is drawn,
+    because one that takes too long ends the process. The sheets share the bytes of a call: all of
+    them are shown, at a lower quality if it must be.
 
     Raises:
         RenderFailed: The file cannot be read, or it has no such page.
     """
-    started = clock()
-
-    def late(share: float) -> bool:
-        return clock() - started >= request.seconds * share
-
+    begun = clock() if started is None else started
     source = _Pdf(content)
     pages = _pages(source.page_count, request.pages)
-    runs = _layout(source, pages, lambda: late(LAYOUT_SHARE))
-    shown = 0
+    if not request.sheets:
+        runs = _runs(_shapes(source, pages, lambda: clock() - begun >= request.seconds))
+        described = sum(len(run.pages) for run in runs)
+        return Overview(
+            page_count=source.page_count, runs=tuple(runs), layout_rest=tuple(pages[described:])
+        )
+    most = min(request.max_sheets, math.ceil(len(pages) / TILES))
+    shapes: list[tuple[int, PageShape | None]] = []
     sheets: list[ContactSheet] = []
-    most = min(request.max_sheets, math.ceil(len(pages) / TILES)) if request.sheets else 0
     left = request.max_bytes
-    while len(sheets) < most:
-        tiles: list[tuple[int, Image.Image]] = []
-        for page in pages[shown : shown + TILES]:
-            if shown + len(tiles) and late(1.0):
-                break
-            tiles.append((page, source.tile(page, source.shape(page))))
-        if not tiles:
-            break
-        image = _sheet(tiles, font)
+    shown = _tiles(
+        source, pages[: most * TILES], request, clock=clock, started=begun, announce=announce
+    )
+    for group in batched(shown, TILES, strict=False):
+        shapes += [(page, shape) for page, shape, _ in group]
+        image = _sheet([(page, tile) for page, _, tile in group], font)
         budget = left // (most - len(sheets))
         whole = _webp(image, QUALITY)
         smaller, data = _fitted(image, whole, budget)
         sheets.append(
             ContactSheet(
-                pages=tuple(page for page, _ in tiles),
+                pages=tuple(page for page, _, _ in group),
                 width=smaller.width,
                 height=smaller.height,
                 data=data,
                 reduced=len(whole) > budget,
             )
         )
-        shown += len(tiles)
         left -= len(data)
     return Overview(
         page_count=source.page_count,
-        runs=tuple(runs),
-        layout_rest=tuple(pages[sum(len(run.pages) for run in runs) :]),
+        runs=tuple(_runs(shapes)),
         sheets=tuple(sheets),
-        rest=tuple(pages[shown:]) if request.sheets else (),
+        rest=tuple(pages[len(shapes) :]),
     )
 
 
@@ -592,6 +632,12 @@ def main(stdin: BinaryIO, stdout: BinaryIO, guard: Callable[[int, float], None])
 
     ``guard`` bounds the process by the memory and the seconds of the job.
     """
+    started = time.monotonic()
+
+    def announce(page: int) -> None:
+        _ = stdout.write(b"%d\n" % page)
+        stdout.flush()
+
     # All plugins now, and what LAB images are converted with: the process may not be able to open
     # their modules later.
     _ = Image.init()
@@ -599,7 +645,7 @@ def main(stdin: BinaryIO, stdout: BinaryIO, guard: Callable[[int, float], None])
     job = Job.model_validate_json(stdin.readline())
     request = job.request
     work: Callable[[bytes], Rendered | Overview] = (
-        partial(overview, request=request, font=label_font())
+        partial(overview, request=request, font=label_font(), started=started, announce=announce)
         if isinstance(request, OverviewRequest)
         else partial(render, request=request)
     )

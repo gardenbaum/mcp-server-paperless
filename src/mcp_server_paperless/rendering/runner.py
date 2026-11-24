@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Final, cast
 
 from mcp_server_paperless.domain.rendering import RenderFailed
 from mcp_server_paperless.rendering.limits import MEMORY_EXIT, TIME_EXIT
-from mcp_server_paperless.rendering.wire import Job, answer_of, encoded, overview_of
+from mcp_server_paperless.rendering.wire import Job, answer_of, encoded, overview_of, started_page
 
 if TYPE_CHECKING:
     from asyncio import StreamReader, StreamWriter
@@ -61,13 +61,12 @@ async def _feed(stdin: StreamWriter, head: bytes, content: bytes) -> None:
         stdin.close()
 
 
-async def _output(stdout: StreamReader, limit: int) -> bytes:
-    """Everything the child writes, at most ``limit`` bytes."""
-    try:
-        _ = await stdout.readexactly(limit + 1)
-    except asyncio.IncompleteReadError as end:
-        return end.partial
-    raise RenderFailed(reason="crashed")
+async def _collect(stdout: StreamReader, limit: int, output: bytearray) -> None:
+    """Everything the child writes into ``output``, at most ``limit`` bytes."""
+    while chunk := await stdout.read(_CHUNK):
+        output += chunk
+        if len(output) > limit:
+            raise RenderFailed(reason="crashed")
 
 
 class ChildRenderer:
@@ -121,13 +120,14 @@ class ChildRenderer:
         process = asyncio.subprocess.Process(transport, protocol, loop)
         # Both are pipes, as asked for.
         stdin, stdout = cast("StreamWriter", process.stdin), cast("StreamReader", process.stdout)
+        output = bytearray()
         feed = asyncio.create_task(_feed(stdin, encoded(head), content))
         try:
             async with asyncio.timeout(self._seconds):
-                output = await _output(stdout, self._output_bytes)
+                await _collect(stdout, self._output_bytes, output)
                 code = await process.wait()
         except TimeoutError as error:
-            raise RenderFailed(reason="timeout") from error
+            raise RenderFailed(reason="timeout", page=started_page(bytes(output))) from error
         finally:
             _ = feed.cancel()
             try:
@@ -141,5 +141,6 @@ class ChildRenderer:
                 # holds the other end: a full or an inherited pipe would stay open.
                 transport.close()
         if code:
-            raise RenderFailed(reason=_EXITS.get(code, "crashed"))
-        return output
+            reason: Reason = _EXITS.get(code, "crashed")
+            raise RenderFailed(reason=reason, page=started_page(bytes(output)))
+        return bytes(output)

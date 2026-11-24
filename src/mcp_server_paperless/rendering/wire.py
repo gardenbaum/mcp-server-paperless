@@ -3,6 +3,7 @@
 The server does not trust the answer: it holds no text, and what does not add up is a crash.
 """
 
+import re
 from itertools import accumulate
 from typing import Annotated
 
@@ -117,6 +118,19 @@ def answer(found: Rendered | Overview | RenderFailed) -> bytes:
     return encoded(head) + b"".join(image.data for image in found.images)
 
 
+# What the child writes before its answer: a line for each page it begins to draw.
+_ANNOUNCED = re.compile(rb"(?:[0-9]{1,6}\n)*")
+# Nothing but such lines, the last of them perhaps not whole.
+_DRAWING = re.compile(rb"(?:[0-9]{1,6}\n)*([0-9]{1,6})\n[0-9]{0,6}")
+
+
+def started_page(output: bytes) -> int:
+    """The page the child was at when its output ended; 0 if it was at none, or unknown."""
+    found = _DRAWING.fullmatch(output)
+    page = int(found[1]) if found else 0
+    return page if page <= MAX_PAGES else 0
+
+
 def _is_webp(data: bytes) -> bool:
     return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
 
@@ -186,14 +200,14 @@ def answer_of(output: bytes, request: RenderRequest) -> Rendered:
 
 
 def overview_of(output: bytes, request: OverviewRequest) -> Overview:
-    """What the child answered to ``request``.
+    """What the child answered to ``request``, after the pages it began to draw.
 
     The child counts pages, the server names them: it cannot answer others than it was asked for.
 
     Raises:
         RenderFailed: The failure it answered, or the answer does not fit the request.
     """
-    head, wanted, data = _read(output, request.pages)
+    head, wanted, data = _read(_ANNOUNCED.sub(b"", output, count=1), request.pages)
     described = list(accumulate(run.count for run in head.runs))
     shown = list(accumulate(sheet.count for sheet in head.sheets))
     sizes = [sheet.size_bytes for sheet in head.sheets]
@@ -201,8 +215,8 @@ def overview_of(output: bytes, request: OverviewRequest) -> Overview:
         described
         and described[-1] <= len(wanted)
         and len(shown) <= request.max_sheets
+        and (not shown or shown[-1] == described[-1])
         and bool(shown) is request.sheets
-        and (not shown or shown[-1] <= len(wanted))
         and sum(sizes) == len(data) <= request.max_bytes
     ):
         raise RenderFailed(reason="crashed")
@@ -212,7 +226,7 @@ def overview_of(output: bytes, request: OverviewRequest) -> Overview:
             PageRun(pages=tuple(wanted[end - run.count : end]), shape=run.shape)
             for run, end in zip(head.runs, described, strict=True)
         ),
-        layout_rest=tuple(wanted[described[-1] :]),
+        layout_rest=() if shown else tuple(wanted[described[-1] :]),
         sheets=tuple(
             ContactSheet(
                 pages=tuple(wanted[end - sheet.count : end]),

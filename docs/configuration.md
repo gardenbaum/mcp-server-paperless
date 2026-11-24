@@ -502,7 +502,9 @@ from those of other CMYK images (8 to 23 levels of 255 measured); the text is th
 `inspect_pdf` (toolset `pdf`) reads PDFs and archive PDFs within the same limits and the same turn.
 Its images are contact sheets of 12 numbered pages, at most 5 a call; a sheet that does not fit into
 its share of the 720 KiB has a lower quality, and the report says so. After 20 seconds it stops and
-names the pages that are left. The layout lists at most 100 runs of equal pages a call. Sizes are in
+names the pages that are left; a single page that takes longer than the 30 seconds ends the call
+with an error that names it. The layout is of the pages on the sheets, or with `overview=false` of
+all, at most 100 runs of equal pages a call. Sizes are in
 millimetres as PDFium shows the page, without a `UserUnit` of the file.
 
 A page that does not fit alone is shown at a lower quality or smaller, and the report says so. Every

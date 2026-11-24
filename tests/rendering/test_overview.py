@@ -8,6 +8,8 @@ from hashlib import shake_256
 from typing import TYPE_CHECKING
 
 import pytest
+from PIL import Image as PIL_Image
+from PIL import ImageChops, ImageDraw
 
 from mcp_server_paperless.domain.rendering import (
     MAX_IMAGE_BYTES,
@@ -18,7 +20,7 @@ from mcp_server_paperless.domain.rendering import (
     RenderFailed,
 )
 from mcp_server_paperless.rendering.runner import ChildRenderer
-from mcp_server_paperless.rendering.wire import Job, answer, encoded, overview_of
+from mcp_server_paperless.rendering.wire import Job, answer, encoded, overview_of, started_page
 from mcp_server_paperless.rendering.worker import label_font, main, overview
 from rendering.files import ENCRYPTED_PDF, QUADRANTS, corners, opened, pdf_of
 from rendering.test_main import Guard, pdf_with_pages
@@ -29,7 +31,7 @@ if TYPE_CHECKING:
 
     from PIL import Image
 
-pytestmark = pytest.mark.decision("decision-42")
+pytestmark = [pytest.mark.decision("decision-42"), pytest.mark.decision("decision-65")]
 
 A4, A5 = "/MediaBox [0 0 595.276 841.89]", "/MediaBox [0 0 419.528 595.276]"
 CELL = 392
@@ -236,45 +238,100 @@ def test_a_single_sheet_may_have_all_the_bytes() -> None:
 
 
 class Clock:
-    """Moves on by `step` each time it is read."""
+    """Moves on by `step` each time it is read, or by each step in turn (the last one stays)."""
 
-    def __init__(self, step: float) -> None:
+    def __init__(self, *steps: float) -> None:
         self.now: float = 0.0
-        self.step: float = step
+        self.steps: list[float] = list(steps)
 
     def __call__(self) -> float:
-        self.now += self.step
+        self.now += self.steps.pop(0) if len(self.steps) > 1 else self.steps[0]
         return self.now
 
 
-def test_a_slow_file_stops_early_and_says_what_is_left() -> None:
-    # Each page takes a second: ten for the layout, then the sheets until the twentieth.
-    found = overview(pdf_of([""] * 40), asked(), FONT, clock=Clock(1.0))
+def test_the_layout_alone_stops_after_its_time_and_says_what_is_left() -> None:
+    found = overview(pdf_of([""] * 40), asked(sheets=False), FONT, clock=Clock(1.0))
 
-    covered = [page for run in found.runs for page in run.pages]
+    [run] = found.runs
+    assert 19 <= len(run.pages) <= 21
+    assert found.layout_rest == tuple(range(len(run.pages) + 1, 41))
+
+
+def test_sheets_stop_after_their_time_between_two_tiles() -> None:
+    # Two looks at the clock a tile: ten tiles in twenty seconds.
+    found = overview(pdf_of([""] * 40), asked(seconds=30.0), FONT, clock=Clock(1.0))
+
     shown = [page for sheet in found.sheets for page in sheet.pages]
-    assert covered == list(range(1, len(covered) + 1))
-    assert 8 <= len(covered) <= 11
-    assert found.layout_rest == tuple(range(len(covered) + 1, 41))
-    assert 7 <= len(shown) <= 11
+    assert 9 <= len(shown) <= 13
     assert found.rest == tuple(range(len(shown) + 1, 41))
+    assert [page for run in found.runs for page in run.pages] == shown
 
 
-def test_the_stop_comes_between_two_tiles_of_any_sheet() -> None:
-    found = overview(pdf_of([""] * 40), asked(seconds=54.0), FONT, clock=Clock(1.0))
+def test_no_tile_is_started_that_as_slow_as_the_slowest_would_not_end_in_time() -> None:
+    # (start, tile, look, tile, look, ...): tiles of 1, 9 and 1 seconds, then 16 have passed.
+    clock = Clock(0.0, 0.0, 1.0, 0.0, 9.0, 0.0, 1.0, 5.0, 0.0)
 
-    assert [len(sheet.pages) for sheet in found.sheets] == [12, 12, 3]
-    assert found.sheets[2].width == 3 * CELL
-    assert found.rest == tuple(range(28, 41))
+    found = overview(pdf_of([""] * 10), asked(), FONT, clock=clock)
+
+    # 16 + 9 is past the 24 that leave time for the encoding, though 16 is not past 20.
+    assert [sheet.pages for sheet in found.sheets] == [(1, 2, 3)]
+    assert found.rest == tuple(range(4, 11))
+
+
+def test_a_first_tile_that_took_long_is_the_last_and_is_kept() -> None:
+    found = overview(pdf_of([""] * 3), asked(), FONT, clock=Clock(0.0, 0.0, 13.0, 0.0))
+
+    assert [sheet.pages for sheet in found.sheets] == [(1,)]
+    assert found.rest == (2, 3)
+
+
+def test_time_before_the_drawing_counts() -> None:
+    found = overview(pdf_of([""] * 3), asked(), FONT, clock=Clock(0.0), started=-21.0)
+
+    assert [sheet.pages for sheet in found.sheets] == [(1,)]
 
 
 def test_a_file_slower_than_the_time_still_shows_one_page() -> None:
     found = overview(pdf_of([""] * 3), asked(), FONT, clock=Clock(100.0))
+    layout = overview(pdf_of([""] * 3), asked(sheets=False), FONT, clock=Clock(100.0))
 
-    assert [run.pages for run in found.runs] == [(1,)]
-    assert found.layout_rest == (2, 3)
     assert [sheet.pages for sheet in found.sheets] == [(1,)]
     assert found.rest == (2, 3)
+    assert ([run.pages for run in layout.runs], layout.layout_rest) == ([(1,)], (2, 3))
+
+
+def test_every_tile_is_announced_before_it_is_drawn() -> None:
+    announced: list[int] = []
+
+    _ = overview(pdf_of([""] * 3), asked("3,1-2"), FONT, announce=announced.append)
+
+    assert announced == [3, 1, 2]
+
+
+def drawn_number(number: int) -> Image.Image:
+    """The number as it should stand below its page, drawn here."""
+    strip = PIL_Image.new("L", (CELL, 34), 200)
+    ImageDraw.Draw(strip).text((CELL // 2, 3), str(number), fill=0, font=FONT, anchor="ma")
+    return strip
+
+
+def difference(tile: Image.Image, number: int) -> float:
+    """How much the strip of a tile differs from the one of `number`: the mean per pixel."""
+    strip = tile.crop((0, CELL - 34, CELL, CELL)).convert("L")
+    found = ImageChops.difference(strip, drawn_number(number)).histogram()
+    return sum(value * count for value, count in enumerate(found)) / sum(found)
+
+
+@pytest.mark.parametrize("pages", ["1-12", "49-60", "61", "7,100-101"])
+def test_the_number_below_a_page_is_its_own(pages: str) -> None:
+    [sheet] = overview(pdf_of([""] * 101), asked(pages), FONT).sheets
+
+    shown = opened(sheet.data)
+    for place, page in enumerate(sheet.pages):
+        tile = cell(shown, place)
+        assert difference(tile, page) < 0.8
+        for other in (page - 1, page + 1):
+            assert difference(tile, other) > difference(tile, page) + 0.5
 
 
 @pytest.mark.parametrize(
@@ -326,11 +383,31 @@ def test_the_answer_is_the_overview() -> None:
 
 
 def test_what_is_left_is_in_the_answer() -> None:
-    request = asked(max_sheets=1)
+    sheets, layout = asked(max_sheets=1), asked(sheets=False)
+    content = mixed(*[A4, A5] * 60)
 
-    found = overview_of(run(mixed(*[A4, A5] * 60), request)[1], request)
+    shown = overview_of(run(content, sheets)[1], sheets)
+    described = overview_of(run(content, layout)[1], layout)
 
-    assert (found.layout_rest, found.rest[0]) == (tuple(range(101, 121)), 13)
+    assert (shown.layout_rest, shown.rest[0]) == ((), 13)
+    assert [len(one.pages) for one in shown.runs] == [1] * 12
+    assert described.layout_rest == tuple(range(101, 121))
+
+
+def test_the_pages_are_announced_before_the_answer() -> None:
+    out = run(pdf_of([""] * 3), asked("3,1"))[1]
+
+    assert out.startswith(b'3\n1\n{"')
+    assert started_page(b"3\n1\n") == 1
+    assert started_page(b"3\n1") == 3  # the last line is not complete
+    assert started_page(out) == 0  # it is not at a page any more
+
+
+@pytest.mark.parametrize(
+    "output", [b"", b"x\n", b"0\n", b"200001\n", b"-1\n", b"9" * 5000 + b"\n", b"1\nx"]
+)
+def test_an_announcement_that_is_none_names_no_page(output: bytes) -> None:
+    assert started_page(output) == 0
 
 
 def test_a_failure_is_an_answer() -> None:
@@ -364,9 +441,11 @@ def said(
 
 def test_an_answer_that_adds_up_is_taken_and_the_pages_follow_from_the_request() -> None:
     found = overview_of(said(runs=[(1, SHAPE), (1, None)], sheets=[2]), asked("3,1-2"))
+    layout = overview_of(said(runs=[(2, SHAPE)], sheets=[]), asked("3,1-2", sheets=False))
 
     assert [run.pages for run in found.runs] == [(3,), (1,)]
-    assert (found.layout_rest, found.sheets[0].pages, found.rest) == ((2,), (3, 1), (2,))
+    assert (found.layout_rest, found.sheets[0].pages, found.rest) == ((), (3, 1), (2,))
+    assert (layout.layout_rest, layout.rest) == ((2,), ())
     assert overview_of(said(sheets=[]), asked(sheets=False)) == Overview(
         page_count=3, runs=(PageRun(pages=(1, 2, 3), shape=PageShape.model_validate(SHAPE)),)
     )
@@ -389,6 +468,10 @@ def test_an_answer_that_adds_up_is_taken_and_the_pages_follow_from_the_request()
         said(runs=[(1, {**SHAPE, "width_mm": "wide"})]),
         said(runs=[(1, {**SHAPE, "rotation": 45})]),
         said(sheets=[]),
+        said(sheets=[2]),  # the layout is of the pages on the sheets
+        said(runs=[(2, SHAPE)]),
+        b"1\n" + said(sheets=[]),
+        b"1\nx\n" + said(),
         said(sheets=[4]),  # more pages than asked for
         said(sheets=[2, 2]),
         said(sheets=[0, 3]),
@@ -416,7 +499,7 @@ def test_an_answer_that_does_not_add_up_is_a_crash(answer: bytes) -> None:
 @pytest.mark.parametrize(
     ("answer", "request_"),
     [
-        (said(runs=[(1, SHAPE)] * 101, sheets=[1], count=200), asked()),
+        (said(runs=[(1, SHAPE)] * 101, sheets=[], count=200), asked(sheets=False)),
         (said(sheets=[13], count=20), asked()),
         (said(sheets=[1, 1]), asked(max_sheets=1)),
         (said(), asked(max_bytes=11)),
@@ -433,9 +516,12 @@ def test_more_than_a_call_may_have_is_a_crash(answer: bytes, request_: OverviewR
 
 
 def test_the_most_a_call_may_have_is_taken() -> None:
-    full = overview_of(said(runs=[(1, SHAPE)] * 100, sheets=[12] * 5, count=200), asked())
+    full = overview_of(said(runs=[(1, SHAPE)] * 60, sheets=[12] * 5, count=200), asked())
+    alone = asked(sheets=False)
+    layout = overview_of(said(runs=[(1, SHAPE)] * 100, sheets=[], count=200), alone)
 
-    assert (len(full.runs), len(full.sheets), full.rest[0]) == (100, 5, 61)
+    assert (len(full.runs), len(full.sheets), full.rest[0]) == (60, 5, 61)
+    assert (len(layout.runs), layout.layout_rest[0]) == (100, 101)
     assert len(overview_of(said(), asked(max_bytes=12)).sheets) == 1
 
 
@@ -488,3 +574,29 @@ async def test_the_real_child_stops_at_its_memory() -> None:
         _ = await ChildRenderer(memory_bytes=10_000_000).inspect(pdf_of([""] * 60), asked())
 
     assert raised.value.reason == "memory"
+
+
+PROGRESS = "sys.stdout.write('4\\n30\\n')\nsys.stdout.flush()\n"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("end", ["import time\ntime.sleep(60)", "raise SystemExit(74)"])
+async def test_a_child_over_its_time_names_the_page_it_was_at(end: str) -> None:
+    code = READ + PROGRESS + end
+    renderer = ChildRenderer(command=(sys.executable, "-I", "-c", code), seconds=2.0)
+
+    with pytest.raises(RenderFailed) as raised:
+        _ = await renderer.inspect(b"x", asked())
+
+    assert (raised.value.reason, raised.value.page) == ("timeout", 30)
+
+
+@pytest.mark.anyio
+async def test_a_child_over_its_time_before_any_page_names_none() -> None:
+    code = READ + "import time\ntime.sleep(60)"
+    renderer = ChildRenderer(command=(sys.executable, "-I", "-c", code), seconds=2.0)
+
+    with pytest.raises(RenderFailed) as raised:
+        _ = await renderer.inspect(b"x", asked())
+
+    assert (raised.value.reason, raised.value.page) == ("timeout", 0)
