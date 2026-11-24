@@ -184,7 +184,7 @@ class PdfService:
         if metadata_document_id is not None and metadata_document_id not in document_ids:
             message = f"Document {metadata_document_id} is not among the documents to merge."
             raise Validation(message, hint="Take the metadata from one of the merged documents.")
-        documents = await self._documents(document_ids, pdf=True)
+        documents = await self._documents(document_ids, pdf=True, merging=True)
         summary = f"merge documents {_ids(document_ids)} into one new document"
         if delete_originals:
             if not confirm:
@@ -425,7 +425,9 @@ class PdfService:
             note=REPROCESS_NOTE,
         )
 
-    async def _documents(self, document_ids: Sequence[int], *, pdf: bool) -> list[DocumentRecord]:
+    async def _documents(
+        self, document_ids: Sequence[int], *, pdf: bool, merging: bool = False
+    ) -> list[DocumentRecord]:
         """The documents, after the checks that need no write; each must be ours to change."""
         if not document_ids:
             message = "Name at least one document."
@@ -446,7 +448,7 @@ class PdfService:
                 raise Validation(message, hint="Only PDF files can be changed this way.")
             found.append(document)
         # A merge would leave such a document out without a word; the others would only fail.
-        await require_files(self._reader, dict.fromkeys(document_ids), "original")
+        await require_files(self._reader, dict.fromkeys(document_ids), "original", certain=merging)
         return found
 
     async def _paged(self, document_id: int) -> tuple[DocumentRecord, int]:

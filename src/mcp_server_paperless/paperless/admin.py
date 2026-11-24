@@ -72,7 +72,7 @@ if TYPE_CHECKING:
         RunnableTask,
         TaskType,
     )
-    from mcp_server_paperless.domain.documents import FileVersion
+    from mcp_server_paperless.domain.documents import FileMetadata, FileVersion
     from mcp_server_paperless.domain.files import OpenedFile
     from mcp_server_paperless.paperless.client import PaperlessClient
 
@@ -549,15 +549,15 @@ class PaperlessAdminReader:
         if error.status != HTTPStatus.INTERNAL_SERVER_ERROR:
             return error
         reader = PaperlessDocumentReader(self._client)
-        lost: list[int] = []
-        # What was found counts, also when the rest cannot be read or takes too long.
-        with contextlib.suppress(TimeoutError, PaperlessMcpError):
+        facts: dict[int, FileMetadata] = {}
+        # What was found counts, also when others cannot be read or the rest takes too long.
+        with contextlib.suppress(TimeoutError):
             async with asyncio.timeout(self._lookup_seconds):
                 for number in document_ids:
-                    facts = await reader.get_document_metadata(number)
-                    if any(facts.lacks(version) for version in ARCHIVE_FILES[content]):
-                        lost.append(number)
-        return missing_files(lost) if lost else error
+                    with contextlib.suppress(PaperlessMcpError):
+                        facts[number] = await reader.get_document_metadata(number)
+        versions, total = ARCHIVE_FILES[content], len(document_ids)
+        return missing_files(facts, versions, total, choice=True) or error
 
 
 def _selection(

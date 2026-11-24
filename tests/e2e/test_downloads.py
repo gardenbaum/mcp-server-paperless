@@ -282,6 +282,8 @@ async def test_a_document_whose_file_is_lost_is_read_and_the_file_said_to_be_mis
             ]
     finally:
         _ = stack.admin.delete(f"/api/documents/{number}/")
+        emptied: Json = {"action": "empty", "documents": [number]}
+        _ = stack.admin.post("/api/trash/", json=emptied).raise_for_status()
 
     assert found.structured_content is not None
     facts = cast("Json", found.structured_content["file_metadata"])

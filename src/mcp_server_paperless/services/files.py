@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from mcp_server_paperless.domain.documents import FileDelivery, FileReport, Thumbnail
 from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError, Validation
-from mcp_server_paperless.domain.files import FilePart, FilePartReport, SavedFileReport
+from mcp_server_paperless.domain.files import STILL_READ, FilePart, FilePartReport, SavedFileReport
 from mcp_server_paperless.services.documents import document_link, listed_version
 from mcp_server_paperless.services.file_sink import NO_SINK, Expected, file_name
 from mcp_server_paperless.services.transfer import (
@@ -73,6 +73,8 @@ def _facts(document_id: int, metadata: FileMetadata, version: FileVersion) -> _F
     if not metadata.has_archive_version:
         message = f"Document {document_id} has no archive version."
         hint = 'Call download_document with kind="original"; it is the only file the document has.'
+        if metadata.lacks("original"):
+            hint = STILL_READ
         raise NotFound(message, hint=hint)
     pdf = PurePath(name).with_suffix(".pdf").name if name else None
     return _Facts(metadata.archive_size, metadata.archive_checksum, PDF, pdf)
@@ -198,12 +200,15 @@ class FileService:
         size, known = facts.size, facts.checksum
         if size is None:
             # The file is missing: this says so.
-            async with self._reader.open_document_file(document_id, version, version_id=shown):
+            async with (
+                time_limit(MAX_SECONDS),
+                self._reader.open_document_file(document_id, version, version_id=shown),
+            ):
                 pass
         if size is None or known is None:
             noun = "archive" if version == "archive" else "original"
             message = (
-                f"Paperless does not know the size and checksum of the {noun} of document "
+                f"Paperless does not give the size and checksum of the {noun} of document "
                 f"{document_id}, so it is not read in parts."
             )
             raise PaperlessMcpError(message, hint=f"Open it at {link}.")

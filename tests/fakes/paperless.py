@@ -3205,9 +3205,10 @@ class FakePaperless:
         chosen = [known[number] for number in document_ids]
         if not all(d.visible_to(self.user) for d in chosen):
             raise denied(DOWNLOAD)
-        lost = [d for d in document_ids if await self._lacks(d, ARCHIVE_FILES[content])]
-        if lost:
-            raise missing_files(lost)
+        facts = {d: await FakePaperless.get_document_metadata(self, d) for d in document_ids}
+        lost = missing_files(facts, ARCHIVE_FILES[content], len(facts), choice=True)
+        if lost is not None:
+            raise lost
         files: list[tuple[str, bytes]] = []
         stored = [d for d in self.state.documents if d in chosen]
         for doc in sorted(stored, key=lambda d: d.created, reverse=True):
@@ -3224,10 +3225,6 @@ class FakePaperless:
         if len(archive) > max_bytes:
             return ArchiveFile(content=b"", truncated=True)
         return ArchiveFile(content=archive, truncated=False)
-
-    async def _lacks(self, document_id: int, versions: Sequence[FileVersion]) -> bool:
-        facts = await FakePaperless.get_document_metadata(self, document_id)
-        return any(facts.lacks(version) for version in versions)
 
     @contextlib.asynccontextmanager
     async def open_archive(
@@ -3505,8 +3502,8 @@ class FakePaperless:
         file = self._file_of(document, version_id)
         number = document.versions[0].id if version_id is None else version_id
         lost, named = self.state.missing, number not in self.state.nameless
-        # Without a name Paperless looks for a file named after the id, which is not there.
-        original = named and (number, "original") not in lost
+        # Without a name Paperless takes the default one, {id:07}.{type}: the file is found.
+        original = (number, "original") not in lost
         archive = file.archive if (number, "archive") not in lost else None
         return FileMetadata(
             original_filename=document.original_filename if named else None,

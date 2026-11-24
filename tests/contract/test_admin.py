@@ -566,7 +566,9 @@ async def test_an_archive_with_a_missing_file_names_the_document(backend: Backen
             )
         with pytest.raises(NotFound) as opened:
             _ = await opened_archive(backend.admin, [whole, lost], content)
-        assert raised.value.message == f"Paperless cannot find a file of document {lost}."
+        assert raised.value.message == (
+            f"Paperless cannot find a file of document {lost} (1 of the 2 chosen)."
+        )
         assert opened.value.message == raised.value.message
 
 

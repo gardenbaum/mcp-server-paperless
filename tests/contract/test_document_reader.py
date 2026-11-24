@@ -647,7 +647,6 @@ async def test_a_file_over_the_byte_limit_is_truncated_but_still_named_and_typed
         (["original"], (False, True), "original", "archive"),
         (["archive"], (True, False), "archive version", "original"),
         (["original", "archive"], (False, False), "original", None),
-        (["names"], (False, True), "original", "archive"),
     ],
 )
 async def test_a_document_without_its_file_is_read_and_the_file_is_said_to_be_missing(
@@ -677,8 +676,6 @@ async def test_a_document_without_its_file_is_read_and_the_file_is_said_to_be_mi
         before.archive_checksum,
         True,
     )
-    nameless = lost == ["names"]
-    assert (facts.original_filename is None, facts.media_filename is None) == (nameless, nameless)
     assert raised.value.message == f"Paperless cannot find the {noun} of document {number}."
     assert opened.value.message == (
         f"Paperless cannot find the {noun} of document {number} (version {number})."
@@ -688,6 +685,22 @@ async def test_a_document_without_its_file_is_read_and_the_file_is_said_to_be_mi
         file = await documents.get_document_file(number, other, max_bytes=MAX)
         assert file.content.startswith(b"%PDF")
     assert (await documents.get_document(number)).id == number
+
+
+@pytest.mark.contract("DocumentReader.get_document_metadata")
+@pytest.mark.contract("DocumentReader.get_document_file")
+async def test_a_document_without_file_names_still_has_its_files(backend: Backend) -> None:
+    """Without a name Paperless takes the default one, which the files of the stack have."""
+    number = uploaded(backend, named("plmcp105"), "plmcp105.pdf", "application/pdf")
+    documents = backend.admin.documents
+    backend.lose_file(number, "names")
+
+    facts = await documents.get_document_metadata(number)
+    file = await documents.get_document_file(number, "original", max_bytes=MAX)
+
+    assert (facts.original_filename, facts.media_filename) == (None, None)
+    assert (facts.original_size, bool(facts.archive_size)) == (len(file.content), True)
+    assert hashlib.sha256(file.content).hexdigest() == facts.original_checksum
 
 
 @pytest.mark.contract("DocumentReader.get_document_thumbnail")

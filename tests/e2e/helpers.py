@@ -564,6 +564,9 @@ MEDIA = "/usr/src/paperless/media/documents"
 def lose_file(api: httpx2.Client, document: int, part: FilePart) -> None:
     """Take a file of a document with one version away from Paperless, or its file names.
 
+    Without its name the file stays where it is and is found: the stack sets no file name format,
+    so the name Paperless falls back to is the one the file has.
+
     Paperless has no API for it: files get lost on the disk, names are null in old databases.
     """
     if part == "names":

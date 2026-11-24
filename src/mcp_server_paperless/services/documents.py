@@ -9,7 +9,7 @@ import contextlib
 import hashlib
 import json
 import re
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Final, cast
 
 from mcp_server_paperless.domain.documents import (
     ContentSlice,
@@ -31,8 +31,12 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from mcp_server_paperless.domain.files import missing_files
+from mcp_server_paperless.domain.files import joined, missing_files
 from mcp_server_paperless.services.search_syntax import query_notices
+
+# How long a check for missing files takes at most, and how many documents it reads at once.
+CHECK_SECONDS: Final = 30.0
+CHECKS_AT_ONCE: Final = 5
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping
@@ -46,6 +50,7 @@ if TYPE_CHECKING:
         DocumentHit,
         DocumentQuery,
         DuplicateKind,
+        FileMetadata,
         FileVersion,
         Include,
         NameFilters,
@@ -114,21 +119,50 @@ def listed_version(document: DocumentRecord, version_id: int | None) -> int:
     return listed[0] if version_id is None else version_id
 
 
-async def require_files(
-    reader: DocumentReader, documents: Mapping[int, int | None], version: FileVersion
+async def require_files(  # noqa: PLR0913 -- what is checked and how strictly
+    reader: DocumentReader,
+    documents: Mapping[int, int | None],
+    version: FileVersion,
+    *,
+    choice: bool = False,
+    certain: bool = False,
+    seconds: float = CHECK_SECONDS,
 ) -> None:
     """Refuse documents whose file Paperless cannot find; the values name the versions.
 
+    ``choice``: the caller can ask for the other file kind, which the refusal then may name.
+    A document that could not be checked within ``seconds`` (for all of them together) passes:
+    the operation then says itself what is wrong. Not with ``certain``, for a merge, where Paperless
+    says nothing.
+
     Raises:
-        NotFound: See above; it names all of them.
+        NotFound: A file is missing; it names all that were found.
+        PaperlessMcpError: With ``certain``, a document could not be checked.
     """
-    lost = [
-        number
-        for number, version_id in documents.items()
-        if (await reader.get_document_metadata(number, version_id=version_id)).lacks(version)
-    ]
-    if lost:
-        raise missing_files(lost)
+    facts: dict[int, FileMetadata] = {}
+    turn = asyncio.Semaphore(CHECKS_AT_ONCE)
+
+    async def read(number: int, version_id: int | None) -> None:
+        async with turn:
+            with contextlib.suppress(PaperlessMcpError):
+                facts[number] = await reader.get_document_metadata(number, version_id=version_id)
+
+    with contextlib.suppress(TimeoutError):
+        async with asyncio.timeout(seconds), asyncio.TaskGroup() as group:
+            for number, version_id in documents.items():
+                _ = group.create_task(read(number, version_id))
+    checked = {number: facts[number] for number in documents if number in facts}
+    refusal = missing_files(checked, [version], len(documents), choice=choice)
+    if refusal is not None:
+        raise refusal
+    unchecked = [number for number in documents if number not in facts]
+    if certain and unchecked:
+        noun = "files" if len(unchecked) > 1 else "file"
+        message = (
+            f"The {noun} of {joined(unchecked)} could not be checked, so nothing was merged: "
+            "Paperless leaves a document whose file is missing out of a merge without saying so."
+        )
+        raise PaperlessMcpError(message, hint="Try again in a moment.")
 
 
 def text_state(document_id: int, version_id: int, text: str) -> str:

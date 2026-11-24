@@ -16,7 +16,7 @@ pytestmark = pytest.mark.anyio
 
 LOST = 7
 MESSAGE = f"Paperless cannot find the original of document {LOST}"
-A_FILE = f"Paperless cannot find a file of document {LOST}."
+A_FILE = f"Paperless cannot find a file of document {LOST}"
 
 
 def server() -> FastMCP:

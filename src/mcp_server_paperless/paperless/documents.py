@@ -35,7 +35,7 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from mcp_server_paperless.domain.files import missing_file
+from mcp_server_paperless.domain.files import missing_file, not_sent
 from mcp_server_paperless.domain.versions import VersionPage, VersionRow
 from mcp_server_paperless.paperless.client import MAY_BE_APPLIED, opened
 from mcp_server_paperless.paperless.disposition import filename
@@ -670,12 +670,14 @@ class PaperlessDocumentReader:
 
     async def _not_sent(
         self, document_id: int, version: FileVersion, version_id: int | None
-    ) -> NotFound:
+    ) -> PaperlessMcpError:
         """Why a file is a 404: no such document or version, or Paperless cannot find the file."""
         try:
             facts = await self.get_document_metadata(document_id, version_id=version_id)
         except NotFound as unseen:
             return unseen
+        if not facts.lacks(version):
+            return not_sent(document_id)
         return missing_file(document_id, version, facts, version_id)
 
     async def _file(

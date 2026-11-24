@@ -11,13 +11,15 @@ import httpx2
 import pytest
 
 from adapter.conftest import streaming
-from mcp_server_paperless.domain.errors import NotFound, UpstreamUnavailable
+from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError, UpstreamUnavailable
 from mcp_server_paperless.paperless.admin import LOOKUP_SECONDS, PaperlessAdminReader
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
 from mcp_server_paperless.paperless.documents import PaperlessDocumentReader
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
     from mcp_server_paperless.domain.admin import ArchiveContent
     from mcp_server_paperless.domain.documents import FileVersion
 
@@ -132,6 +134,25 @@ async def test_a_file_that_is_missing_is_not_a_missing_document(
     ]
 
 
+@pytest.mark.parametrize("kind", ["original", "archive"])
+async def test_a_file_that_is_listed_but_not_sent_is_not_called_missing(kind: FileVersion) -> None:
+    server = Server({3: {**KEPT, **ARCHIVED, "archive_size": 7}})
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await reader(server).get_document_file(3, kind, max_bytes=100)
+
+    assert not isinstance(raised.value, NotFound)
+    assert raised.value.describe() == (
+        "Paperless did not send the file of document 3 although it lists it. Hint: Try again; if "
+        "it stays so, an administrator can check the media directory of Paperless."
+    )
+
+
+async def test_without_an_archive_version_the_original_that_was_not_sent_is_neutral() -> None:
+    with pytest.raises(PaperlessMcpError, match="although it lists it"):
+        _ = await reader(Server({3: KEPT})).get_document_file(3, "archive", max_bytes=100)
+
+
 async def test_a_thumbnail_that_is_missing_is_not_a_missing_document() -> None:
     server = Server({3: KEPT})
 
@@ -150,7 +171,11 @@ DOCUMENTS = {1: KEPT, 2: {**LOST, **ARCHIVED, "archive_size": 7}, 3: {**KEPT, **
 
 @pytest.mark.parametrize(
     ("content", "lost"),
-    [("originals", "2 and 4"), ("archive", "3 and 4"), ("both", "2, 3 and 4")],
+    [
+        ("originals", "2 and 4 (2 of the 4 chosen)"),
+        ("archive", "3 and 4 (2 of the 4 chosen)"),
+        ("both", "2, 3 and 4 (3 of the 4 chosen)"),
+    ],
 )
 async def test_an_archive_without_a_file_names_the_documents(
     content: ArchiveContent, lost: str
@@ -182,6 +207,45 @@ async def test_an_archive_without_a_file_names_the_documents(
         "metadata can still be read. Restore the files from a backup."
     )
     assert opened.value.describe() == raised.value.describe()
+
+
+def archive_of(server: Server, numbers: list[int], content: ArchiveContent) -> Awaitable[object]:
+    client, _ = streaming(server)
+    return PaperlessAdminReader(client).download_documents(
+        numbers, content=content, compression="none", follow_formatting=False, max_bytes=10
+    )
+
+
+@pytest.mark.parametrize(
+    ("content", "numbers", "hint"),
+    [
+        ("originals", [1, 2], "Choosing the archive versions instead works for all of them. "),
+        ("both", [1, 2], "Choosing the archive versions instead works for all of them. "),
+        ("archive", [1, 3], "Choosing the originals instead works for all of them. "),
+        ("archive", [2, 3], ""),
+        ("both", [2, 3], ""),
+    ],
+)
+async def test_the_other_content_is_named_if_it_works_for_all(
+    content: ArchiveContent, numbers: list[int], hint: str
+) -> None:
+    with pytest.raises(NotFound) as raised:
+        _ = await archive_of(Server(DOCUMENTS, status=500), numbers, content)
+
+    assert raised.value.hint is not None
+    assert raised.value.hint.startswith(hint)
+    assert ("instead works" in raised.value.hint) is bool(hint)
+
+
+async def test_a_document_that_cannot_be_checked_does_not_hide_the_others() -> None:
+    with pytest.raises(NotFound) as raised:
+        _ = await archive_of(Server(DOCUMENTS, status=500), [99, 4], "archive")
+
+    assert raised.value.describe() == (
+        "Paperless cannot find a file of document 4 (1 of the 2 chosen). Hint: Leave it out; its "
+        "text and metadata can still be read. Restore the file from a backup. The list may be "
+        "incomplete: 1 could not be checked."
+    )
 
 
 @pytest.mark.parametrize(
