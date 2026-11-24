@@ -4,7 +4,7 @@ title: Ask the user to confirm destructive actions in a dialog where the client 
 status: In Progress
 assignee: []
 created_date: '2026-11-23T18:44:53Z'
-updated_date: '2026-11-23T23:41:26Z'
+updated_date: '2026-11-24T07:06:12Z'
 labels:
   - tools
   - safety
@@ -26,15 +26,15 @@ Every confirmation today is an error plus a second call with confirm=true (decis
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A new decision records the choice and supersedes the parts of decision-6 and decision-15 that rule elicitation out; doc-1 5.5, doc-2, docs/fastmcp-reading-guide.md, domain/errors.py, the confirm parameter description, README.md and docs/configuration.md agree with it
-- [ ] #2 A call without confirm on a client that declares form elicitation shows the user the same effect text as the refusal, and runs only after the user accepts, on both protocol eras
-- [ ] #3 Decline, cancel and a malformed answer change nothing and return an error that tells the assistant not to retry on its own; a timeout, a disconnect, or an expired or invalid state changes nothing
-- [ ] #4 Clients that do not declare form elicitation get exactly the present refusal and confirm=true flow, except for three message changes the owner approved (the owner-change refusal of update_document names the document and the new owner; messages lose control, format and other hidden characters; text the server did not write, such as mail hosts, e-mail recipients, webhook hosts, note authors, permission names, list or object settings, is quoted) and for one rule the main agent decided under the owner's instruction of 2026-11-23 "merge bitte selbstständig. Wähle bei Entscheidungen deine Empfehlung." and reported to the owner the same evening, no objection so far: destinations are shown in full and refused where that is not possible
-- [ ] #5 An acceptance applies only to the call and the effect that was shown: with changed arguments it changes nothing, and a target whose effect changed in between asks again and changes nothing
-- [ ] #6 On 2026-07-28, an answer without valid server-issued state for this effect, or with state already used, changes nothing
-- [ ] #7 One mechanism covers every tool with a confirm parameter, guarded by a registry test with a self-test; no tool is added to the default profile
-- [ ] #8 Error handling, logging, redaction, output schemas and read-only mode are verified on rounds that ask; the dialog text and answers are not logged and never hold a secret
-- [ ] #9 Unit and E2E tests drive accept, decline, cancel and no-handler on a handshake and a 2026-07-28 connection, over stdio and HTTP, including a call that waits longer than the usual request timeouts
+- [x] #1 A new decision records the choice and supersedes the parts of decision-6 and decision-15 that rule elicitation out; doc-1 5.5, doc-2, docs/fastmcp-reading-guide.md, domain/errors.py, the confirm parameter description, README.md and docs/configuration.md agree with it
+- [x] #2 A call without confirm on a client that declares form elicitation shows the user the same effect text as the refusal, and runs only after the user accepts, on both protocol eras
+- [x] #3 Decline, cancel and a malformed answer change nothing and return an error that tells the assistant not to retry on its own; a timeout, a disconnect, or an expired or invalid state changes nothing
+- [x] #4 Clients that do not declare form elicitation get exactly the present refusal and confirm=true flow, except for three message changes the owner approved (the owner-change refusal of update_document names the document and the new owner; messages lose control, format and other hidden characters; text the server did not write, such as mail hosts, e-mail recipients, webhook hosts, note authors, permission names, list or object settings, is quoted) and for one rule the main agent decided under the owner's instruction of 2026-11-23 "merge bitte selbstständig. Wähle bei Entscheidungen deine Empfehlung." and reported to the owner the same evening, no objection so far: destinations are shown in full and refused where that is not possible
+- [x] #5 An acceptance applies only to the call and the effect that was shown: with changed arguments it changes nothing, and a target whose effect changed in between asks again and changes nothing
+- [x] #6 On 2026-07-28, an answer without valid server-issued state for this effect, or with state already used, changes nothing
+- [x] #7 One mechanism covers every tool with a confirm parameter, guarded by a registry test with a self-test; no tool is added to the default profile
+- [x] #8 Error handling, logging, redaction, output schemas and read-only mode are verified on rounds that ask; the dialog text and answers are not logged and never hold a secret
+- [x] #9 Unit and E2E tests drive accept, decline, cancel and no-handler on a handshake and a 2026-07-28 connection, over stdio and HTTP, including a call that waits longer than the usual request timeouts
 - [ ] #10 The behaviour is tried in Claude Code and one further real client, and the documentation says which clients were seen to show the dialog
 <!-- AC:END -->
 
@@ -42,7 +42,7 @@ Every confirmation today is an error plus a second call with confirm=true (decis
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -90,4 +90,6 @@ Second delta review of ba7e1b4 fixed: a host is refused unless the 2003 and 2008
 Third delta review, follow-up: an empty AI or OCR setting is called empty, only the three endpoints are read as URLs, a service URL may hold plain credentials again (never shown, bound by the scope), and a webhook URL may hold a backslash after its query starts.
 
 Confirmations of an AI or OCR endpoint say that a URL has credentials and whether a change only adds, replaces or removes them, without showing them.
+
+Merged as 1b98736 (#111). Four independent reviews (binding, concurrency, replay, drops on both eras; nothing blocking at the end), hosted full E2E 45288127294 on 48e6b71 and main's on 1b98736 green. Open: criterion 10 (real clients).
 <!-- SECTION:NOTES:END -->

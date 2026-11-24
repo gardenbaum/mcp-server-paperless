@@ -4,6 +4,7 @@ title: Fix the contradictory confirm sentence in the update_user tool descriptio
 status: To Do
 assignee: []
 created_date: '2026-11-22T21:20:29Z'
+updated_date: '2026-11-24T07:06:13Z'
 labels:
   - tools
 dependencies: []
@@ -31,3 +32,9 @@ Found while writing the docs (PLMCP-51): the description of update_user (src/pap
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+PLMCP-98 (#111) corrected the description of update_user and the snapshot; open is the test that pins the named cases (criterion 1).
+<!-- SECTION:NOTES:END -->

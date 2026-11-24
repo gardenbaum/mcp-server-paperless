@@ -3,7 +3,7 @@ id: doc-2
 title: AI contributor workflow
 type: guide
 created_date: '2026-11-12T16:23:00Z'
-updated_date: '2026-11-23T21:01:15Z'
+updated_date: '2026-11-24T07:06:51Z'
 ---
 # AI contributor workflow
 
@@ -14,10 +14,10 @@ How AI sessions (local or Claude Code cloud) implement Backlog tasks in this rep
 A controller session runs the loop and delegates; it keeps its own context small.
 
 1. Controller: pick the next task whose dependencies are merged; `git switch -c plmcp-N-<slug>` from an up-to-date main; set the task In Progress and assign it.
-2. Implementer subagent (model sonnet, worktree isolation when tasks run in parallel): read `backlog instructions task-execution`, record the plan with `backlog task edit PLMCP-N --plan`, then strict TDD: every new test at every level (adapter, contract, service, tool, e2e) is run red before the code exists, then green. Append progress with `--append-notes`. Local evidence before the PR: `just check`, the e2e tests of the touched toolset (`uv run pytest -m e2e <files> --no-cov` under `flock /tmp/paperless-e2e.lock`) and mutation of the changed modules only (`uv run mutmut run "<module>*"`, new equivalents recorded). The live suite runs in CI as a fast `e2e` tier on each pull request (the stdio test and the contract and e2e modules of the touched toolsets, a few minutes, not a required check) and in full, in three shards, after each merge to main and nightly (`e2e-full.yml`; decision-23, decision-24); the full mutation run with the 80 % gate runs in the weekly workflow and is dispatched by hand at the end of each milestone.
+2. Implementer subagent (model sonnet, worktree isolation when tasks run in parallel): read `backlog instructions task-execution`, record the plan with `backlog task edit PLMCP-N --plan`, then strict TDD: every new test at every level (adapter, contract, service, tool, e2e) is run red before the code exists, then green. Append progress with `--append-notes`. The controller opens a draft PR with the first useful commit, so that CI runs from then on (owner, 2026-11-24). Local evidence: `just check`, and mutation of the changed modules by hand where it matters. No E2E or live run is made locally (owner, 2026-11-24): it runs on GitHub, in the PR and with `gh workflow run e2e-full.yml --ref <branch>`, and is debugged from its logs. The live suite runs in CI as a fast `e2e` tier on each pull request (the stdio test and the contract and e2e modules of the touched toolsets, a few minutes, not a required check) and in full, in three shards, after each merge to main and nightly (`e2e-full.yml`; decision-23, decision-24); the full mutation run with the 80 % gate runs in the weekly workflow and is dispatched by hand at the end of each milestone.
 3. Reviewer subagent (model opus, independent, sees only the diff, the task and the design): checks acceptance criteria, design, decisions and gates. Findings are Critical, Important or Minor; Critical and Important are fixed in up to three fix rounds, each verified with `just check` and the affected tests only; Minor findings that later tasks depend on are fixed now, the rest go to the task notes as deferred.
 4. Controller: read `backlog instructions task-finalization`, check acceptance criteria with evidence, write the final summary, set status Done, commit on the branch. Leave a Definition-of-Done item unchecked when it is not true and say why.
-5. Implementer: rebase onto origin/main and report the branch HEAD with the gate results. Controller: set the task Done, push, open the PR (mirroring the PR template), wait for the required checks, for the `e2e` tier (not required, but red is fixed before merging: decision-23) and for the Codex review to complete, handle every review thread, squash-merge, delete the branch, update main. While a PR waits for CI or review, start the next independent task.
+5. Implementer: merge origin/main and report the branch HEAD with the gate results. Controller: push, complete the PR text (mirroring the PR template), dispatch the full E2E suite on the branch, wait for the required checks, for the `e2e` tier (not required, but red is fixed before merging: decision-23) and for the Codex review to complete, handle every review thread, squash-merge, delete the branch, update main. While a PR waits for CI or review, start the next independent task.
 
 The local gates are deliberately narrower than the merge gates so agents do not wait on runs CI repeats: the 80 % mutation gate is unchanged, and decision-24 records why e2e no longer gates pull requests.
 
@@ -32,11 +32,11 @@ The local gates are deliberately narrower than the merge gates so agents do not 
 ## When something blocks
 
 - CI runs stuck in "queued": do not debug Actions. Re-create the commit with a fresh SHA (`git commit --amend --no-edit`), push it on a new branch, open a new PR that references the old one, close the old one.
-- A merge blocked for long: continue with tasks that do not depend on it, branched from main. A task that needs the blocked code is stacked on that PR's branch; CI runs only for PRs against main, so `just check` and a full `just e2e` in the session are the evidence until the base merges, then rebase onto main and retarget the PR.
+- A merge blocked for long: continue with tasks that do not depend on it, branched from main. A task that needs the blocked code is stacked on that PR's branch; CI runs only for PRs against main, so open its PR against main too (it shows the base's changes until that merges), and merge main into the branch afterwards: a pushed branch is never rebased.
 
 ## Parallel work
 
-At most two tasks at a time, chosen for independent dependencies and little file overlap. Never run `just e2e` concurrently: there is one shared Paperless stack. Hotspots every new tool touches: `tools/core.py`, `tools/_shared.py` (ANNOTATIONS), `tests/tools/__snapshots__/test_surface.ambr`, `tests/fakes/paperless.py`, `domain/ports.py`, `server.py`. After each merge, rebase the other branch and regenerate snapshots deliberately (say so in the commit message).
+At most two tasks at a time, chosen for independent dependencies and little file overlap. Hotspots every new tool touches: `tools/core.py`, `tools/_shared.py` (ANNOTATIONS), `tests/tools/__snapshots__/test_surface.ambr`, `tests/fakes/paperless.py`, `domain/ports.py`, `server.py`. After each merge, merge main into the other branch and regenerate snapshots deliberately (say so in the commit message).
 
 ## Standing rulings
 

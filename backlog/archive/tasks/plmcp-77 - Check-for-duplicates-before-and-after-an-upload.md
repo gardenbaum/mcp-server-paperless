@@ -1,11 +1,11 @@
 ---
 id: PLMCP-77
 title: Check for duplicates before and after an upload
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:48Z'
-updated_date: '2026-11-24T01:24:03Z'
+updated_date: '2026-11-24T07:06:06Z'
 labels: []
 dependencies: []
 priority: high
@@ -34,7 +34,7 @@ By default Paperless keeps duplicates (with PAPERLESS_CONSUMER_DELETE_DUPLICATES
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -64,4 +64,6 @@ Delta review of 9d5cdfd (C1, I1, M1 to M6) and Codex P2 (confirm lost with a pat
 AC 2, 3 and 6 ticked on the controller's word, with the hosted runs it reported: 45292725686 on 2199077 (fully green, e2e-duplicates included) and 45302569892 on ade6696 (e2e-postgres, e2e-duplicates and e2e-office green; the shards were still running when this was written, the controller corrects the ticks if they fail). The commits after ade6696 (compressed answer, merge of decision-49, second delta review) have not run live.
 DoD 1 stays unchecked: adapter, contract (fake), service and tool tests were red first, but the E2E and live contract tests were written with or after the code and never ran red, so the sentence 'at every test level' is not true.
 Second delta review (0 critical, 0 important): m1, m2, m4 fixed; a document is named once.
+
+Merged as 9265cd7 (#114); main green with e2e-duplicates and e2e-postgres. The owner answered on 2026-11-24 on a trash above 64 MiB: upload and say that the trash was not checked (PLMCP-104).
 <!-- SECTION:NOTES:END -->
