@@ -7,6 +7,7 @@ neither appears in any tool result, error text or structured content.
 import base64
 import io
 import zipfile
+from dataclasses import replace
 from typing import cast
 
 import pytest
@@ -145,6 +146,64 @@ async def test_changing_access_is_refused_until_confirmed_then_written() -> None
     done = await call(fake(state), "update_user", user="e2e-reader", is_staff=True, confirm=True)
 
     assert cast("Json", done["user"])["is_staff"] is True
+
+
+CONFIRMED: list[tuple[str, Json]] = [
+    ("a new e-mail address", {"email": "new@x.org"}),
+    ("a rename", {"username": "rita"}),
+    ("superuser or staff status", {"is_superuser": True}),
+    ("superuser or staff status", {"is_staff": True}),
+    ("deactivating", {"is_active": False}),
+    ("reactivating", {"is_active": True}),
+    ("a new password", {"password": PASSWORD}),
+    ("groups", {"groups": ["e2e-group"]}),
+    ("permissions", {"permissions": ["add_tag"]}),
+]
+UNCONFIRMED: list[tuple[str, Json]] = [
+    ("First and last name", {"first_name": "Rita"}),
+    ("First and last name", {"last_name": "Reed"}),
+    ("clearing the e-mail address", {"email": ""}),
+]
+
+
+@pytest.mark.parametrize(
+    ("words", "change", "address", "asks"),
+    [
+        *((words, change, "old@x.org", True) for words, change in CONFIRMED),
+        ("a new e-mail address", {"email": "first@x.org"}, None, True),
+        *((words, change, "old@x.org", False) for words, change in UNCONFIRMED),
+    ],
+)
+async def test_update_user_asks_for_exactly_the_changes_its_description_names(
+    words: str,
+    change: Json,
+    address: str | None,
+    asks: bool,  # noqa: FBT001 -- a parametrised flag, not a switch
+) -> None:
+    async with Client(server(fake())) as client:
+        tool = next(t for t in await client.list_tools() if t.name == "update_user")
+    text = " ".join((tool.description or "").split())
+    _, _, rest = text.partition("needs confirm: ")
+    named, _, rest = rest.partition(". ")
+    exempt = next(part for part in rest.split(". ") if "need none" in part)
+    assert text.count("need confirm") + text.count("needs confirm") == 1
+    assert text.count("need none") == 1
+    assert (words in named, words in exempt) == (asks, not asks)
+
+    state = seeded()
+    position = next(i for i, u in enumerate(state.users) if u.username == "e2e-reader")
+    active = not change.get("is_active", False)
+    before = replace(state.users[position], email=address, is_active=active)
+    state.users[position] = before
+
+    if asks:
+        assert "Nothing was changed. Confirming would" in await refusal(
+            fake(state, writes=False), "update_user", user="e2e-reader", **change
+        )
+        assert state.users[position] == before
+    else:
+        done = await call(fake(state), "update_user", user="e2e-reader", **change)
+        assert done["changed"] is True
 
 
 async def test_deleting_a_user_needs_confirm_and_the_deleted_user_is_gone() -> None:
