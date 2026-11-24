@@ -62,7 +62,7 @@ Limits.
 | `GET /api/document_types/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/document_types/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/document_types/{id}/` |  | PLMCP-83 |
-| `GET /api/documents/` | `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents`, `get_document` and 9 more |  |
+| `GET /api/documents/` | `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents`, `get_document` and 8 more |  |
 | `POST /api/documents/bulk_download/` | `bulk_download` |  |
 | `POST /api/documents/bulk_edit/` | `bulk_edit_documents`, `resolve_duplicates` |  |
 | `POST /api/documents/chat/` | `ask_paperless_ai` |  |
