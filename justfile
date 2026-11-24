@@ -387,7 +387,7 @@ e2e-imap:
     }
     trap cleanup EXIT
     "${compose[@]}" up -d
-    uv run pytest -m imap_e2e --no-cov --durations=20 -rP
+    uv run pytest -m imap_e2e --no-cov --durations=20
 
 # Stop the E2E stack and delete its volumes, so the next start is a fresh instance.
 e2e-down:

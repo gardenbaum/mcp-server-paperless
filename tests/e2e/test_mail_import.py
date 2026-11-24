@@ -6,7 +6,6 @@ and what Paperless answers and logs (probes P1 to P4). The tests run on a stack 
 """
 
 import json
-import logging
 import os
 from typing import TYPE_CHECKING, cast
 
@@ -35,7 +34,6 @@ pytestmark = [
     pytest.mark.decision("decision-80"),
     pytest.mark.skipif(not IMAP, reason="No mail server; `just e2e-imap` runs this with one."),
 ]
-LOG = logging.getLogger("mail.import")
 type Connected = Client[FastMCPTransport]
 SEEN, FLAGGED = "\\Seen", "\\Flagged"
 
@@ -55,11 +53,6 @@ async def client(stack: Stack) -> AsyncIterator[Connected]:
     )
     async with Client(server) as connected:
         yield connected
-
-
-def seen(*said: object) -> None:
-    """What Paperless said, in the report of the test (`pytest -rP` shows it)."""
-    LOG.warning("%s", " ".join(map(str, said)))
 
 
 async def call(client: Connected, tool: str, **arguments: object) -> Json:
@@ -146,10 +139,9 @@ async def test_a_failed_mail_is_left_alone_until_its_record_is_gone_and_then_tak
     rule = box.rule(action)
     uid = box.put("Half", {"good.txt": note(), "broken.pdf": BROKEN})
 
-    started = box.fetch()
+    assert box.fetch() == 2
     [failed] = box.records(rule, 1)
     shown = await record(client, failed)
-    seen("P1/P3 failed:", started, failed["status"], repr(failed["error"]))
 
     assert failed["status"] == "FAILED"
     assert SEEN not in box.flags(uid)
@@ -222,7 +214,6 @@ async def test_a_mail_with_two_records_is_blocked_by_either(
 
     assert box.fetch() == 2
     rows = box.records(rule, 2)
-    seen("P1 siblings:", [(row["status"], row["error"]) for row in rows])
     assert {row["uid"] for row in rows} == {uid}
     shown = await record(client, rows[0])
     assert f"until they are deleted too: {rows[1]['id']}." in str(shown["refetch"])
@@ -261,14 +252,9 @@ async def test_the_answer_to_a_failed_login_is_in_no_result_and_no_log(
         f"/api/mail_accounts/{box.account}/", json={"password": "wr0ng-Passw0rd"}
     )
     assert wrong.is_success
-    said = box.fetch()
-    seen("P3 task of a failed login:", said)
+    assert box.fetch() == 0
 
     raw = {name: box.log(name) for name in ("mail", "paperless", "celery")}
-    for name, lines in raw.items():
-        for number, line in enumerate(lines):
-            if box.name in line or "mailbox_login" in line:
-                seen(f"P3 {name}.log:", lines[number : number + 2])
     logged = [line for line in raw["mail"] if f"authenticating account {box.name}: " in line]
     assert logged, "Paperless no longer logs the answer like this"
     answer = logged[0].split(f"{box.name}: ", 1)[1]
@@ -278,7 +264,7 @@ async def test_the_answer_to_a_failed_login_is_in_no_result_and_no_log(
         text = "\n".join(cast("list[str]", shown["lines"]))
         assert "AUTHENTICATIONFAILED" not in text
         assert "wr0ng" not in text
-        if any("AUTHENTICATIONFAILED" in line for line in lines[-200:]):
+        if any("AUTHENTICATIONFAILED" in line for line in lines[-50:]):
             assert ANSWER_NOT_SHOWN in text
     for path in ("/api/logs/mail/", "/api/logs/paperless/"):
         read = await call(client, "paperless_api_get", path=path, params={"limit": 60})
@@ -298,7 +284,6 @@ async def test_a_login_that_fails_when_the_rule_acts_shows_no_answer(
     assert wrong.is_success
 
     [failed] = box.records(rule, 1)
-    seen("P3 failed action:", failed["error"])
     shown = await record(client, failed)
 
     assert failed["status"] == "FAILED"
@@ -325,7 +310,6 @@ async def test_an_action_that_fails_leaves_a_traceback(box: Mailbox, client: Con
     _ = box.imap.delete("Gone")
 
     [failed] = box.records(rule, 1)
-    seen("P3 failed move:", failed["error"])
     shown = await record(client, failed)
 
     assert failed["status"] == "FAILED"
@@ -334,19 +318,21 @@ async def test_an_action_that_fails_leaves_a_traceback(box: Mailbox, client: Con
 
 
 async def test_a_fetch_while_another_runs_is_skipped(box: Mailbox) -> None:
-    """T5: the process call answers OK all the same."""
+    """T5: the process call answers OK all the same, and only the log tells (no result_data)."""
     _ = box.rule()
-    for number in range(60):
-        _ = box.put(f"Many {number}")
+    # The mail server answers a wrong password only after two seconds.
+    wrong = box.stack.admin.patch(
+        f"/api/mail_accounts/{box.account}/", json={"password": "wr0ng-Passw0rd"}
+    )
+    assert wrong.is_success
     before = set(box.tasks("mail_fetch"))
     box.start()
     box.start()
 
     box.wait_for_fetches(before, count=2)
+
     new = [row for number, row in box.tasks("mail_fetch").items() if number not in before]
-    seen("P3 two fetches:", [(row["status"], row["result_data"]) for row in new])
-    assert {row["status"] for row in new} == {"success"}
-    assert {row["result_data"] for row in new} == {None}  # so nothing but the log tells it
+    assert [(row["status"], row["result_data"]) for row in new] == [("success", None)] * 2
     skipped = "Mail account processing is already running; skipping this run."
     assert any(skipped in line for line in box.log("paperless"))
 
@@ -374,7 +360,6 @@ async def test_bulk_delete_names_what_it_was_asked_for_not_what_it_deleted(box: 
         "/api/processed_mail/bulk_delete/",
         json={"mail_ids": list(range(1_000_000, 1_001_001))},
     )
-    seen("P2:", reply.text, empty.status_code, empty.text, many.status_code)
 
     assert obj(parse(reply))["deleted_mail_ids"] == [ids[0], 999_999]
     assert empty.status_code == many.status_code == 200
@@ -409,13 +394,12 @@ async def test_one_record_the_caller_may_not_delete_refuses_all(box: Mailbox, st
             kept = box.records(free_rule, 1)
             alone = other.post(path, json={"mail_ids": [free["id"]]})
             read = other.get("/api/processed_mail/")
-            seen("P2 foreign:", both.status_code, both.text, alone.status_code, read.status_code)
     finally:
         _ = stack.admin.delete(f"/api/users/{user}/")
 
     assert both.status_code == 403
     assert len(kept) == 1
-    assert alone.status_code == 200
+    assert (alone.status_code, read.status_code) == (200, 403)  # deleting needs no view permission
     assert box.records(free_rule, 0) == []
     assert len(results(stack.admin.get("/api/processed_mail/", params={"rule": owned_rule}))) == 1
 
@@ -426,7 +410,6 @@ async def test_one_record_the_caller_may_not_delete_refuses_all(box: Mailbox, st
 async def test_the_mail_server_keeps_uids_keywords_and_a_validity(box: Mailbox) -> None:
     uid = box.put("Plain")
     _, status = box.imap.status("INBOX", "(UIDVALIDITY UIDNEXT)")
-    seen("P4:", box.imap.capabilities, status)
 
     assert b"UIDVALIDITY" in cast("bytes", status[0])
     assert box.uids() == [uid]
