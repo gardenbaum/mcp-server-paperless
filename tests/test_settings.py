@@ -1,5 +1,5 @@
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from pydantic import ValidationError
@@ -90,7 +90,7 @@ def test_an_empty_required_variable_is_refused(monkeypatch: pytest.MonkeyPatch, 
     assert invalid_fields(PaperlessSettings) == [(name.removeprefix("PAPERLESS_").lower(),)]
 
 
-EMPTY_LISTS = {"disabled_tools", "upload_dirs"}
+EMPTY_LISTS = {"disabled_tools", "upload_dirs", "download_dirs"}
 
 
 def test_an_empty_token_is_refused_however_the_settings_are_built() -> None:
@@ -116,7 +116,7 @@ def test_an_empty_list_setting_is_an_empty_list(
 
     settings = ServerSettings()
 
-    assert (settings.disabled_tools, settings.upload_dirs) == ((), ())
+    assert (settings.disabled_tools, settings.upload_dirs, settings.download_dirs) == ((), (), ())
 
 
 @pytest.mark.parametrize("variable", ["PAPERLESS_URL", "PAPERLESS_PUBLIC_URL"])
@@ -303,72 +303,87 @@ def test_the_upload_limit_must_be_a_positive_whole_number(
     assert invalid_fields(ServerSettings) == [("max_upload_bytes",)]
 
 
-def test_uploading_by_path_is_off_by_default() -> None:
-    assert ServerSettings.model_validate({}).upload_dirs == ()
+DIRECTORY_SETTINGS = ["upload_dirs", "download_dirs"]
+
+
+def directories(field: str) -> object:
+    return cast("object", getattr(ServerSettings.model_validate({}), field))
+
+
+@pytest.mark.parametrize("field", DIRECTORY_SETTINGS)
+def test_no_directory_is_allowed_by_default(field: str) -> None:
+    assert directories(field) == ()
 
 
 @pytest.mark.parametrize(
     "value",
     ["/data/in,/home/me/scans", '["/data/in", "/home/me/scans"]', " /data/in , /home/me/scans,, "],
 )
+@pytest.mark.parametrize("field", DIRECTORY_SETTINGS)
 def test_the_upload_directories_are_a_list_of_absolute_paths(
-    monkeypatch: pytest.MonkeyPatch, value: str
+    monkeypatch: pytest.MonkeyPatch, field: str, value: str
 ) -> None:
-    monkeypatch.setenv("PAPERLESS_MCP_UPLOAD_DIRS", value)
+    monkeypatch.setenv(f"PAPERLESS_MCP_{field.upper()}", value)
 
-    assert ServerSettings.model_validate({}).upload_dirs == ("/data/in", "/home/me/scans")
+    assert directories(field) == ("/data/in", "/home/me/scans")
 
 
 @pytest.mark.parametrize("value", ["scans", "/data/in,relative/dir", "~/scans", "."])
+@pytest.mark.parametrize("field", DIRECTORY_SETTINGS)
 def test_a_relative_upload_directory_is_refused_because_it_would_depend_on_where_the_server_starts(
-    monkeypatch: pytest.MonkeyPatch, value: str
+    monkeypatch: pytest.MonkeyPatch, field: str, value: str
 ) -> None:
-    monkeypatch.setenv("PAPERLESS_MCP_UPLOAD_DIRS", value)
+    monkeypatch.setenv(f"PAPERLESS_MCP_{field.upper()}", value)
 
-    assert invalid_fields(ServerSettings) == [("upload_dirs",)]
+    assert invalid_fields(ServerSettings) == [(field,)]
 
 
+@pytest.mark.parametrize("field", DIRECTORY_SETTINGS)
 def test_the_filesystem_root_is_refused_as_an_upload_directory(
     monkeypatch: pytest.MonkeyPatch,
+    field: str,
 ) -> None:
-    monkeypatch.setenv("PAPERLESS_MCP_UPLOAD_DIRS", "/")
+    monkeypatch.setenv(f"PAPERLESS_MCP_{field.upper()}", "/")
 
-    assert invalid_fields(ServerSettings) == [("upload_dirs",)]
+    assert invalid_fields(ServerSettings) == [(field,)]
 
 
 @pytest.mark.parametrize("directory", ["/proc", "/sys", "/dev", "/run", "/proc/self", "/dev/pts"])
+@pytest.mark.parametrize("field", DIRECTORY_SETTINGS)
 def test_a_pseudo_file_system_is_refused_as_an_upload_directory(
-    monkeypatch: pytest.MonkeyPatch, directory: str
+    monkeypatch: pytest.MonkeyPatch, field: str, directory: str
 ) -> None:
-    monkeypatch.setenv("PAPERLESS_MCP_UPLOAD_DIRS", directory)
+    monkeypatch.setenv(f"PAPERLESS_MCP_{field.upper()}", directory)
 
-    assert invalid_fields(ServerSettings) == [("upload_dirs",)]
+    assert invalid_fields(ServerSettings) == [(field,)]
 
 
+@pytest.mark.parametrize("field", DIRECTORY_SETTINGS)
 def test_the_home_directory_itself_is_refused_but_a_folder_in_it_is_fine(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, field: str, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("PAPERLESS_MCP_UPLOAD_DIRS", str(tmp_path))
-    assert invalid_fields(ServerSettings) == [("upload_dirs",)]
+    monkeypatch.setenv(f"PAPERLESS_MCP_{field.upper()}", str(tmp_path))
+    assert invalid_fields(ServerSettings) == [(field,)]
 
-    monkeypatch.setenv("PAPERLESS_MCP_UPLOAD_DIRS", f"{tmp_path}/scans, {tmp_path}/../other")
-    assert ServerSettings.model_validate({}).upload_dirs == (
+    monkeypatch.setenv(f"PAPERLESS_MCP_{field.upper()}", f"{tmp_path}/scans, {tmp_path}/../other")
+    assert directories(field) == (
         f"{tmp_path}/scans",
         f"{tmp_path}/../other",
     )
 
 
+@pytest.mark.parametrize("field", DIRECTORY_SETTINGS)
 def test_a_symlink_to_the_home_directory_is_refused_too(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, field: str, tmp_path: Path
 ) -> None:
     home = tmp_path / "home"
     home.mkdir()
     (tmp_path / "shortcut").symlink_to(home, target_is_directory=True)
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("PAPERLESS_MCP_UPLOAD_DIRS", str(tmp_path / "shortcut"))
+    monkeypatch.setenv(f"PAPERLESS_MCP_{field.upper()}", str(tmp_path / "shortcut"))
 
-    assert invalid_fields(ServerSettings) == [("upload_dirs",)]
+    assert invalid_fields(ServerSettings) == [(field,)]
 
 
 # --- HTTP transport (PLMCP-34) ---------------------------------------------------------------

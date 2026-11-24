@@ -77,6 +77,7 @@ async def test_a_thumbnail_is_image_content_with_a_report() -> None:
         "max_bytes": None,
         "web_url": "http://paperless.test/documents/1/details",
         "note": None,
+        "version_id": None,
     }
 
 

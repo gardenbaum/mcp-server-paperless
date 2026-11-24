@@ -103,6 +103,10 @@ class ServerSettings(BaseSettings):
             root, the home directory itself, /proc, /sys, /dev and /run are refused as
             entries, and files and folders whose name starts with a dot below an entry are never
             read (``.ssh``, ``.env``).
+        download_dirs: Directories ``download_document`` and ``bulk_download`` may save files into
+            (``PAPERLESS_MCP_DOWNLOAD_DIRS``), with the rules of ``upload_dirs``. Empty (the
+            default): nothing is ever saved. Only the stdio transport offers it, and only without
+            ``read_only`` (decision-45).
     """
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
@@ -117,6 +121,7 @@ class ServerSettings(BaseSettings):
     max_download_bytes: int = Field(default=512 * 1024, ge=1, le=32 * 1024 * 1024)
     max_upload_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=MAX_UPLOAD_LIMIT)
     upload_dirs: Annotated[tuple[str, ...], NoDecode] = ()
+    download_dirs: Annotated[tuple[str, ...], NoDecode] = ()
 
     @field_validator("toolsets", mode="before")
     @classmethod
@@ -128,24 +133,24 @@ class ServerSettings(BaseSettings):
     def _split_disabled_tools(cls, value: object) -> object:
         return _names(value, lower=False)
 
-    @field_validator("upload_dirs", mode="before")
+    @field_validator("upload_dirs", "download_dirs", mode="before")
     @classmethod
-    def _split_upload_dirs(cls, value: object) -> object:
+    def _split_directories(cls, value: object) -> object:
         return _names(value, lower=False)
 
-    @field_validator("upload_dirs", mode="after")
+    @field_validator("upload_dirs", "download_dirs", mode="after")
     @classmethod
-    def _check_upload_dirs(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+    def _check_directories(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         for directory in value:
             if not Path(directory).is_absolute():
                 message = f"{directory!r} is not an absolute path; name each directory in full"
                 raise ValueError(message)
             real = os.path.realpath(directory)
             if real == os.path.realpath(os.sep):
-                message = "the file system root is no upload directory; name the directories"
+                message = "the file system root is too much to allow; name the directories"
                 raise ValueError(message)
             if real == os.path.realpath(Path("~").expanduser()):
-                message = "the home directory itself is no upload directory; name a folder in it"
+                message = "the home directory itself is too much to allow; name a folder in it"
                 raise ValueError(message)
             if any(real == fs or real.startswith(fs + os.sep) for fs in PSEUDO_FILE_SYSTEMS):
                 message = "/proc, /sys, /dev and /run hold no documents; name a folder with files"

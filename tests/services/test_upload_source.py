@@ -15,12 +15,8 @@ from typing import TYPE_CHECKING
 import pytest
 
 from mcp_server_paperless.domain.errors import NotFound, Validation
-from mcp_server_paperless.services.upload_source import (
-    clean_filename,
-    decode_base64,
-    read_allowed,
-    size_text,
-)
+from mcp_server_paperless.services.allowed_paths import clean_filename
+from mcp_server_paperless.services.upload_source import decode_base64, read_allowed, size_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -217,7 +213,17 @@ def test_a_file_with_two_names_is_refused(allowed: Path) -> None:
     _ = refused(allowed / "second name.pdf", allowed)
 
 
-@pytest.mark.parametrize("name", [".ssh/id.pdf", "sub/.hidden.pdf", ".env", "sub/.git/config"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        *(".ssh/id.pdf", "sub/.hidden.pdf", ".env", "sub/.git/config"),
+        # HFS+ ignores these characters: there the names are .ssh and .env, too.
+        *(f"{chr(0x200C)}.ssh/id.pdf", f"{chr(0xFEFF)}.env", f"sub/.{chr(0x200D)}git/config"),
+        f"{chr(0x202E)}{chr(0x200C)}.git/config",
+        # Control and line-break characters.
+        *("a\nb.pdf", "sub\tx/b.pdf", f"a{chr(0x2028)}b.pdf", f"sub{chr(0x2029)}x/b.pdf"),
+    ],
+)
 def test_dot_files_and_dot_directories_below_the_allowlist_are_refused(
     allowed: Path, name: str
 ) -> None:
@@ -228,6 +234,27 @@ def test_dot_files_and_dot_directories_below_the_allowlist_are_refused(
     refused_alike = refused(target, allowed)
 
     assert refused_alike.message == refused(allowed / "nope.pdf", allowed).message
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        f"{chr(0x1F468)}{chr(0x200D)}{chr(0x1F469)}.pdf",  # a family: two emoji and a joiner
+        f"{chr(0x1F468)}{chr(0x200D)}{chr(0x1F469)}/scan.pdf",
+        f"a{chr(0xAD)}b.pdf",
+        f"a{chr(0x200C)}.b.pdf",
+    ],
+)
+def test_a_file_or_directory_with_format_characters_is_read(allowed: Path, name: str) -> None:
+    """Read only: such a file name is no upload name, so the call has to give another filename."""
+    target = allowed / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _ = target.write_bytes(b"%PDF-1.4 x")
+
+    assert read_allowed(str(target), [str(allowed)], max_bytes=LIMIT) == (
+        target.name,
+        b"%PDF-1.4 x",
+    )
 
 
 def test_a_dot_directory_above_the_allowlist_is_no_problem(tmp_path: Path) -> None:

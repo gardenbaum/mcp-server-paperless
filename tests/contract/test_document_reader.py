@@ -3,6 +3,7 @@
 The seed's ids differ between the backends, so every test looks them up by name first.
 """
 
+import hashlib
 import uuid
 from datetime import timedelta
 from typing import TYPE_CHECKING
@@ -520,6 +521,52 @@ async def test_the_original_and_the_archive_are_pdfs_of_the_size_the_metadata_na
     assert original.content != archive.content
     assert (original.filename or "").endswith(f"{PUBLIC}.pdf")
     assert (archive.filename or "").endswith(f"{PUBLIC}.pdf")
+
+
+@pytest.mark.contract("DocumentReader.open_document_file")
+async def test_an_opened_original_and_archive_match_the_size_and_checksum_of_the_metadata(
+    backend: Backend,
+) -> None:
+    public = await document(backend.reader, PUBLIC)
+    documents = backend.reader.documents
+    metadata = await documents.get_document_metadata(public.id)
+    facts: dict[FileVersion, tuple[int | None, str | None]] = {
+        "original": (metadata.original_size, metadata.original_checksum),
+        "archive": (metadata.archive_size, metadata.archive_checksum),
+    }
+
+    for version, (size, checksum) in facts.items():
+        async with documents.open_document_file(public.id, version) as opened:
+            content = b"".join([chunk async for chunk in opened.chunks])
+
+        assert opened.mime_type == "application/pdf"
+        assert (opened.filename or "").endswith(f"{PUBLIC}.pdf")
+        assert (len(content), hashlib.sha256(content).hexdigest()) == (size, checksum)
+
+
+@pytest.mark.contract("DocumentReader.open_document_file")
+async def test_opening_the_file_of_a_missing_hidden_or_blind_document(backend: Backend) -> None:
+    private = await document(backend.admin, PRIVATE)
+
+    for ports, number, refusal in (
+        (backend.admin, MISSING, NotFound),
+        (backend.reader, private.id, PermissionDenied),
+        (backend.blind, private.id, PermissionDenied),
+    ):
+        with pytest.raises(refusal):
+            async with ports.documents.open_document_file(number, "original"):
+                raise AssertionError
+
+
+@pytest.mark.contract("DocumentReader.open_document_file")
+async def test_an_opened_file_may_be_left_before_its_end(backend: Backend) -> None:
+    public = await document(backend.reader, PUBLIC)
+
+    async with backend.reader.documents.open_document_file(public.id, "original") as opened:
+        assert await anext(opened.chunks)
+
+    async with backend.reader.documents.open_document_file(public.id, "original") as again:
+        assert await anext(again.chunks)
 
 
 @pytest.mark.contract("DocumentReader.get_document_file")

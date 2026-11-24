@@ -54,6 +54,7 @@ from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
 from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
 from mcp_server_paperless.services.document_edits import DocumentEditor
 from mcp_server_paperless.services.documents import DocumentService
+from mcp_server_paperless.services.file_sink import NO_SINK, FileSink
 from mcp_server_paperless.services.files import FileService
 from mcp_server_paperless.services.instance import InstanceService
 from mcp_server_paperless.services.mail import MailService
@@ -78,6 +79,8 @@ from mcp_server_paperless.tools import (
     ai,
     bulk,
     core,
+    downloads,
+    downloads_stdio,
     mail,
     pdf,
     permissions,
@@ -183,10 +186,13 @@ class Catalogue:
 
     Attributes:
         providers: One FastMCP provider per toolset module.
-        remote_providers: Providers added when the server offers no uploads by path: the tools
-            that exist in every mode, in their form for HTTP (and for stdio without an allowlist).
+        remote_providers: Providers added when the server offers no uploads by path: the upload
+            tools in their form for HTTP (and for stdio without an allowlist).
         local_providers: Providers added instead of ``remote_providers`` when the server runs
             over stdio with an upload allowlist: the same tools in their form with a path.
+        plain_downloads: Providers of the download tools when the server saves nothing.
+        saving_downloads: Providers added instead of ``plain_downloads`` when the server runs over
+            stdio with download directories and without read-only mode (decision-45).
         annotations: The central annotation table, keyed by tool name.
         tool_toolsets: The toolset of every tool, keyed by tool name.
         toolsets: Every toolset name.
@@ -205,6 +211,8 @@ class Catalogue:
     requires: Mapping[str, str]
     remote_providers: Sequence[Provider] = ()
     local_providers: Sequence[Provider] = ()
+    plain_downloads: Sequence[Provider] = ()
+    saving_downloads: Sequence[Provider] = ()
     prompt_specs: Mapping[str, prompts.PromptSpec] = field(
         default_factory=dict[str, prompts.PromptSpec]
     )
@@ -234,6 +242,8 @@ CATALOGUE: Final = Catalogue(
     requires=TOOLSET_REQUIRES,
     remote_providers=(upload.remote, versions.remote),
     local_providers=(upload_stdio.local, versions_stdio.local),
+    plain_downloads=(downloads.remote,),
+    saving_downloads=(downloads_stdio.local,),
     prompt_specs=prompts.SPECS,
     summaries=TOOLSET_SUMMARIES,
 )
@@ -356,7 +366,8 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
         clock: Measures the task wait; tests pass the clock their ``sleep`` advances.
         stdio: Whether the server runs over stdio. Only then, and only with
             ``settings.upload_dirs``, does ``upload_document`` take a path; in every other
-            case that parameter is in no schema (decision-7).
+            case that parameter is in no schema (decision-7). The same goes for saving downloads
+            with ``settings.download_dirs`` (decision-45).
         auth: Authentication of the HTTP endpoint (the HTTP app's static bearer tokens); ``None``
             for stdio and for the flagged unauthenticated loopback mode.
         dialogs: The times and the clock of the confirmation dialogs; tests pass short ones.
@@ -376,7 +387,12 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     credentials = StaticTokenProvider(paperless.token.get_secret_value())
     web_url = str(paperless.public_url or paperless.url)
     by_path = stdio and bool(settings.upload_dirs)
-    variants = catalogue.local_providers if by_path else catalogue.remote_providers
+    saving = stdio and bool(settings.download_dirs) and not settings.read_only
+    variants = [
+        *(catalogue.local_providers if by_path else catalogue.remote_providers),
+        *(catalogue.saving_downloads if saving else catalogue.plain_downloads),
+    ]
+    sink = FileSink(settings.download_dirs) if saving else NO_SINK
 
     # Allowlist the selected toolsets (resources carry the tags too), then take out tools:
     # later visibility rules override earlier ones.
@@ -413,7 +429,10 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 ),
                 documents=documents,
                 files=FileService(
-                    adapters.documents, web_url=web_url, max_bytes=settings.max_download_bytes
+                    adapters.documents,
+                    web_url=web_url,
+                    max_bytes=settings.max_download_bytes,
+                    sink=sink,
                 ),
                 pages=PageService(adapters.documents, renderer or ChildRenderer(), web_url=web_url),
                 edits=DocumentEditor(
@@ -440,6 +459,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.management,
                     adapters.management_writes,
                     max_bytes=settings.max_download_bytes,
+                    sink=sink,
                 ),
                 uploads=UploadService(
                     adapters.documents,

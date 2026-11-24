@@ -3,7 +3,7 @@ id: doc-1
 title: paperless-mcp design
 type: specification
 created_date: '2026-11-09T19:21:00Z'
-updated_date: '2026-11-23T21:01:15Z'
+updated_date: '2026-11-23T22:38:31Z'
 ---
 # mcp-server-paperless — Design
 
@@ -224,6 +224,8 @@ Pure use-case logic, fully testable against in-memory fakes:
   is shaped so that neither answer changes code below `server.py` and the provider.
 - Filesystem/network rules: server-side file paths are accepted **only** in stdio mode and only
   inside configured allowlisted directories; HTTP mode accepts base64 uploads up to a size limit.
+  Downloads are attached whole or in parts over both transports; over stdio, with allowlisted
+  download directories and without read-only mode, they can be saved there (decision-45).
   No tool fetches arbitrary URLs.
 
 ### 5.8 Configuration
@@ -241,7 +243,7 @@ Names are indicative; the builder finalises parameters within §5.5. "Phase" ref
 
 | Toolset (default) | Tools | Phase |
 |---|---|---|
-| **core** (on) — read | `search_documents` (full text, more-like, structured filters by name/id, dates, custom-field query, paging, ordering) · `get_document` (detail + names; `include`: notes, history, metadata, versions, suggestions) · `get_document_content` (sliced) · `get_document_thumbnail` · `get_document_pages` (page images, decision-42) · `download_document` (original/archive) · `list_taxonomy(kind, name_contains)` · `get_instance_overview` (statistics, system status, versions, current user, capabilities) · `get_task(task_id, wait_seconds)` · `run_saved_view` (moved from views by decision-34) | M1 |
+| **core** (on) — read | `search_documents` (full text, more-like, structured filters by name/id, dates, custom-field query, paging, ordering) · `get_document` (detail + names; `include`: notes, history, metadata, versions, suggestions) · `get_document_content` (sliced) · `get_document_thumbnail` · `get_document_pages` (page images, decision-42) · `download_document` (original/archive, any version; whole, in parts, or saved over stdio: decision-45) · `list_taxonomy(kind, name_contains)` · `get_instance_overview` (statistics, system status, versions, current user, capabilities) · `get_task(task_id, wait_seconds)` · `run_saved_view` (moved from views by decision-34) | M1 |
 | **core** (on) — write | `update_document` (merge semantics) · `add_note` · `delete_note` · `delete_document` (→ trash, confirm) · `upload_document` (base64 / stdio allowlisted path; metadata by name; optional wait) · `create_taxonomy_item` · `update_taxonomy_item` · `delete_taxonomy_item` (confirm) | M2 |
 | **ai** (on if Paperless AI enabled) | `ask_paperless_ai` (RAG chat over all or given documents) · `get_ai_suggestions` | M2 |
 | bulk | `bulk_edit_documents` (typed operations: tags add/remove/modify, correspondent, type, storage path, custom fields, delete, reprocess; `dry_run`, confirm) · `bulk_edit_taxonomy` (delete, permissions) | M3 |
@@ -253,7 +255,7 @@ Names are indicative; the builder finalises parameters within §5.5. "Phase" ref
 | permissions | `set_permissions` (documents and taxonomy; owner, view/change users/groups; merge or replace) · `list_users` · `list_groups` | M3 |
 | mail | mail accounts list/get/create/update/delete/test/process (passwords write-only, never returned) · mail rules CRUD · `list_processed_mail` | M4 |
 | workflows | workflows list/get/create/update/delete (triggers and actions nested) | M4 |
-| admin | users CRUD · groups CRUD · application config get/update · logs list/get · tasks list/acknowledge/run (e.g. classifier training, sanity check) · `bulk_download` | M4 |
+| admin | users CRUD · groups CRUD · application config get/update · logs list/get · tasks list/acknowledge/run (e.g. classifier training, sanity check) · `bulk_download` (ZIP: whole, in parts, or saved over stdio: decision-45) | M4 |
 | raw (off) | `paperless_api_get(path, params)` — read-only GET under `/api/`, size-capped, for anything not covered | M4 |
 
 Target size of the default profile (`core` + `ai`): ≤ 20 tools; a test enforces the budget.

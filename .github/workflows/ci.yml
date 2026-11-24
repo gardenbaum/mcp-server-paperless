@@ -56,7 +56,11 @@ jobs:
       - run: just imports
       - run: just deps
       - run: just secrets
+      # A disk that is really full, for the tests of saved downloads (decision-45).
+      - run: sudo mkdir /mnt/full-disk && sudo mount -t tmpfs -o size=8m,mode=1777 tmpfs /mnt/full-disk
       - run: just cov-diff origin/main
+        env:
+          PAPERLESS_MCP_FULL_DISK: /mnt/full-disk
 
   # The renderer's process limits have a Windows part (memory is read through kernel32): the tests
   # of rendering/ run there too, with the real child process (decision-42). Not a required check.

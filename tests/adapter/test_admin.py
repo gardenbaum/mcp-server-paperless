@@ -1154,3 +1154,72 @@ async def test_a_cut_off_archive_says_whether_it_was_size_or_time(
 
     assert (found.content, found.truncated, found.timed_out) == (b"", True, timed_out)
     await http.aclose()
+
+
+# --- PLMCP-76: a ZIP archive handed over chunk by chunk
+
+
+async def test_an_opened_archive_hands_over_its_bytes_and_waits_as_long_as_asked() -> None:
+    seen: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request)
+        headers = {
+            "Content-Type": "application/zip",
+            "Content-Disposition": 'attachment; filename="documents.zip"',
+        }
+        return httpx2.Response(200, content=b"PK-zip", headers=headers)
+
+    client, _ = streaming(handler)
+
+    async with PaperlessAdminReader(client).open_archive(
+        [1, 2], content="both", compression="lzma", follow_formatting=True, wait_seconds=600
+    ) as opened:
+        content = b"".join([chunk async for chunk in opened.chunks])
+
+    assert (opened.mime_type, opened.filename, content) == (
+        "application/zip",
+        "documents.zip",
+        b"PK-zip",
+    )
+    [request] = seen
+    assert (request.method, request.url.path) == ("POST", "/api/documents/bulk_download/")
+    assert json.loads(request.content) == {
+        "documents": [1, 2],
+        "content": "both",
+        "compression": "lzma",
+        "follow_formatting": True,
+    }
+    assert cast("dict[str, float]", request.extensions["timeout"])["read"] == 600
+
+
+async def test_an_opened_archive_without_headers_is_an_unnamed_binary_file() -> None:
+    client, _ = streaming(lambda _: httpx2.Response(200, content=b"PK"))
+
+    async with PaperlessAdminReader(client).open_archive(
+        [1], content="archive", compression="none", follow_formatting=False, wait_seconds=1
+    ) as opened:
+        assert (opened.mime_type, opened.filename) == ("application/octet-stream", None)
+
+
+async def test_opening_an_archive_the_user_may_not_have_says_what_is_needed() -> None:
+    client, _ = streaming(lambda _: httpx2.Response(403, text="Insufficient permissions"))
+
+    with pytest.raises(PermissionDenied, match="may not download these documents") as raised:
+        async with PaperlessAdminReader(client).open_archive(
+            [1], content="archive", compression="none", follow_formatting=False, wait_seconds=1
+        ):
+            raise AssertionError
+
+    assert raised.value.hint
+
+
+async def test_a_refusal_of_whoever_reads_an_opened_archive_stays_as_it_is() -> None:
+    client, _ = streaming(lambda _: httpx2.Response(200, content=b"PK"))
+
+    error = PermissionDenied("mine")
+    with pytest.raises(PermissionDenied, match="mine"):
+        async with PaperlessAdminReader(client).open_archive(
+            [1], content="archive", compression="none", follow_formatting=False, wait_seconds=1
+        ):
+            raise error

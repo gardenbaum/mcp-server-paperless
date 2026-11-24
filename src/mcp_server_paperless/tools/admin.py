@@ -1,4 +1,6 @@
-"""The admin toolset: users, groups, application configuration, logs, tasks, bulk download.
+"""The admin toolset: users, groups, application configuration, logs and tasks.
+
+The toolset's ``bulk_download`` is in ``downloads``, beside the download of one file.
 
 Opt-in (``PAPERLESS_MCP_TOOLSETS=core,admin``) and mostly for superusers. Listing users and groups
 stays with ``list_users`` and ``list_groups`` of the permissions toolset; these tools take a
@@ -8,23 +10,16 @@ account deletion, every change of the configuration and the tasks that retrain o
 decision-26).
 """
 
-import base64
-import hashlib
 from typing import Annotated
 
 from fastmcp import Context
 from fastmcp.server.providers import LocalProvider
-from fastmcp.tools import ToolResult
-from mcp.types import BlobResourceContents, ContentBlock, EmbeddedResource, TextContent
 from pydantic import Field, JsonValue, PlainValidator, SecretStr, WithJsonSchema
 
 from mcp_server_paperless.domain.admin import (
     CONFIG_SETTINGS,
     Acknowledged,
     AppConfig,
-    ArchiveContent,
-    ArchiveReport,
-    Compression,
     ConfigOutcome,
     Deletion,
     GroupDetail,
@@ -43,7 +38,6 @@ from mcp_server_paperless.domain.documents import NameOrId
 from mcp_server_paperless.domain.tasks import TaskState
 from mcp_server_paperless.services.admin_system import (
     DEFAULT_LOG_LINES,
-    MAX_DOCUMENTS,
     MAX_LOG_LINES,
 )
 from mcp_server_paperless.tools._shared import ANNOTATIONS, Confirm, boundary, services
@@ -508,60 +502,3 @@ async def run_task(
     or an error for you to show the user, first says what happens (see confirm). Superusers only.
     """
     return await services(ctx).system.run_task(task_type, confirm=confirm)
-
-
-# --- bulk download
-
-
-@provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["bulk_download"])
-@boundary
-async def bulk_download(
-    ctx: Context,
-    document_ids: Annotated[
-        list[PositiveId],
-        Field(
-            min_length=1,
-            max_length=MAX_DOCUMENTS,
-            description=f"Document ids from search_documents; at most {MAX_DOCUMENTS}, each once.",
-        ),
-    ],
-    *,
-    content: Annotated[
-        ArchiveContent,
-        Field(
-            description=(
-                "archive: the searchable PDF/A files (the original where there is none); "
-                "originals: the files as uploaded; both: originals plus the archive files."
-            )
-        ),
-    ] = "archive",
-    compression: Annotated[Compression, Field(description="ZIP compression.")] = "none",
-    follow_formatting: Annotated[
-        bool, Field(description="Name the files by the storage path format of each document.")
-    ] = False,
-) -> ToolResult:
-    """Get the files of several documents as one ZIP archive, attached as an embedded resource.
-
-    The archive comes as MCP content after a JSON report (file name, size, delivered), never
-    written to disk. An archive over the server's download limit (512 KiB unless the
-    administrator changed it) is not attached: delivered is false and the note says what to do.
-    The whole request fails if one document is hidden from the user. Use download_document for
-    one file.
-    """
-    delivery = await services(ctx).system.download(
-        document_ids, content=content, compression=compression, follow_formatting=follow_formatting
-    )
-    report: ArchiveReport = delivery.report
-    blocks: list[ContentBlock] = [TextContent(type="text", text=report.model_dump_json())]
-    if delivery.data is not None:
-        digest = hashlib.sha256(
-            f"{report.content}:{','.join(map(str, report.document_ids))}".encode()
-        ).hexdigest()[:16]
-        blob = BlobResourceContents(
-            uri=f"paperless://documents/archive/{digest}/{report.filename}",
-            mime_type=report.mime_type,
-            blob=base64.b64encode(delivery.data).decode(),
-            _meta={"filename": report.filename},
-        )
-        blocks.append(EmbeddedResource(type="resource", resource=blob))
-    return ToolResult(content=blocks)
