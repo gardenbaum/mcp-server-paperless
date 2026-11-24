@@ -1,9 +1,11 @@
 ---
 id: PLMCP-112
 title: Return webhook URLs without their credentials
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T11:11:57Z'
+updated_date: '2026-11-24T12:14:20Z'
 labels:
   - safety
 dependencies: []
@@ -31,3 +33,12 @@ get_workflow, list_workflows, the results of create_workflow and update_workflow
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. domain/urls.py: the form of a URL in results, the empty user name, URLs inside text (logs, error texts); admin_system uses it.
+2. WorkflowService: results without credentials (shown_in_part per action, note), write-back by action id, fail closed otherwise, confirmations.
+3. raw reader (webhook URLs, logs), get_log, error texts of Paperless.
+4. Tests first at domain, adapter, service, tool and contract level; new decision; docs.
+<!-- SECTION:PLAN:END -->

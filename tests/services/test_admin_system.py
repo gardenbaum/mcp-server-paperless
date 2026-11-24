@@ -414,6 +414,24 @@ async def test_the_last_lines_of_a_log_are_returned_oldest_first() -> None:
     assert not found.truncated
 
 
+@pytest.mark.decision("decision-66")
+async def test_log_lines_hold_no_credentials_of_the_urls_paperless_called() -> None:
+    setup = Setup()
+    setup.state.logs["paperless"] = [
+        "[paperless.webhooks] Webhook sent to https://user:p w@h.example/x",
+        "Error for url 'https://user:pw@h.example/x'",
+        "https://h.example: mail from a@b.example",
+    ]
+
+    found = await setup.service.get_log("paperless", lines=3)
+
+    assert found.lines == (
+        "(credentials not shown) [paperless.webhooks] Webhook sent to https://h.example/x",
+        "Error for url (credentials not shown) 'https://h.example/x'",
+        "https://h.example: mail from a@b.example",
+    )
+
+
 async def test_a_log_over_the_character_limit_keeps_the_newest_lines() -> None:
     setup = Setup()
     setup.state.logs["mail"] = [f"{n:04d} " + "x" * 995 for n in range(50)]

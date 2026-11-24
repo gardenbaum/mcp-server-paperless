@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from mcp_server_paperless.domain.errors import PaperlessMcpError, Validation
 from mcp_server_paperless.domain.raw import RawApiResult
+from mcp_server_paperless.domain.urls import log_line, shown_url
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -199,6 +200,33 @@ def redact(value: JsonValue) -> tuple[JsonValue, int]:
     return value, 0
 
 
+def _url_hidden(value: JsonValue, *, in_webhook: bool = False) -> tuple[JsonValue, int]:
+    """``value`` with the URLs of webhooks without credentials, and how many had some."""
+    if isinstance(value, dict):
+        cleaned: dict[str, JsonValue] = {}
+        count = 0
+        for key, item in value.items():
+            if in_webhook and key == "url" and isinstance(item, str):
+                cleaned[key] = shown_url(item)
+                count += cleaned[key] != item
+            else:
+                cleaned[key], inner = _url_hidden(item, in_webhook=key == "webhook")
+                count += inner
+        return cleaned, count
+    if isinstance(value, list):
+        rows = [_url_hidden(item, in_webhook=in_webhook) for item in value]
+        return [row for row, _ in rows], sum(count for _, count in rows)
+    return value, 0
+
+
+def _lines_hidden(value: JsonValue) -> tuple[JsonValue, int]:
+    """The lines of a log without the credentials of URLs, and how many had some."""
+    lines = value if isinstance(value, list) else [value]
+    cleaned: list[JsonValue] = [log_line(li) if isinstance(li, str) else li for li in lines]
+    count = sum(new != old for new, old in zip(cleaned, lines, strict=True))
+    return (cleaned if isinstance(value, list) else cleaned[0]), count
+
+
 def _is_json(content_type: str) -> bool:
     return content_type.partition(";")[0].strip().lower() == "application/json"
 
@@ -249,40 +277,45 @@ def _result(path: str, reply: RawReply) -> RawApiResult:
     except ValueError:
         message = f"Paperless sent an unexpected response for GET {path}."
         raise PaperlessMcpError(message) from None
+    is_log = path.lower().startswith("/api/logs/")
+    parsed, urls = _lines_hidden(parsed) if is_log else _url_hidden(parsed)
     data, redacted = redact(parsed)
     text = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
     if len(text) > MAX_OUTPUT:
-        return _cut(path, reply, text=text[:MAX_OUTPUT], redacted=redacted)
+        return _cut(path, reply, text=text[:MAX_OUTPUT], redacted=redacted, urls=urls)
     return RawApiResult(
         path=path,
         status=reply.status,
         data=data,
         truncated=False,
         text=None,
-        redacted=redacted,
-        note=_redaction_note(redacted),
+        redacted=redacted + urls,
+        note=_redaction_note(redacted, urls),
     )
 
 
-def _redaction_note(redacted: int) -> str | None:
-    if not redacted:
-        return None
-    return f"{redacted} secret value(s) were replaced with {REDACTED}."
+def _redaction_note(redacted: int, urls: int) -> str | None:
+    notes = [f"{redacted} secret value(s) were replaced with {REDACTED}."] if redacted else []
+    if urls:
+        notes.append(f"{urls} URL(s) or log line(s) are shown without credentials.")
+    return " ".join(notes) or None
 
 
-def _cut(path: str, reply: RawReply, *, text: str | None, redacted: int) -> RawApiResult:
+def _cut(
+    path: str, reply: RawReply, *, text: str | None, redacted: int, urls: int = 0
+) -> RawApiResult:
     """The result for an answer that is too long: its first part, or nothing if unreadable."""
     narrowing = (
         "The answer is too long to return whole. Narrow it with params: page_size, page, "
         "fields, ordering or filters of the endpoint."
     )
-    secrets = _redaction_note(redacted)
+    secrets = _redaction_note(redacted, urls)
     return RawApiResult(
         path=path,
         status=reply.status,
         data=None,
         truncated=True,
         text=text,
-        redacted=redacted,
+        redacted=redacted + urls,
         note=f"{narrowing} {secrets}" if secrets else narrowing,
     )

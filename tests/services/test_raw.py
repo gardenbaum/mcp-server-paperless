@@ -909,3 +909,57 @@ def test_the_format_param_is_refused_with_exact_words() -> None:
         "The param format is refused: Paperless answers it with a misleading error."
     )
     assert refused.value.hint == "Answers are JSON already; leave format out."
+
+
+@pytest.mark.decision("decision-66")
+@pytest.mark.parametrize("nested", [False, True])
+async def test_the_urls_of_webhooks_lose_their_credentials_and_the_result_says_so(
+    *, nested: bool
+) -> None:
+    action = {
+        "type": 4,
+        "webhook": {"id": 3, "url": "https://user:pw@h.example/x", "headers": {"A": "b"}},
+    }
+    plain = {"type": 4, "webhook": {"id": 4, "url": "https://h.example/y"}, "url": "a:b@c"}
+    unclear = {"type": 4, "webhook": {"id": 5, "url": "https://us/er:pw@h.example/x"}}
+    body: object = {"results": [action, plain, unclear]}
+    if nested:
+        body = {"workflows": [{"actions": [action, plain, unclear]}]}
+
+    result = await RawApiService(Recording(json_reply(body))).get("/api/workflow_actions/", {})
+
+    text = json.dumps(result.data)
+    assert "pw" not in text
+    assert '"https://h.example/x"' in text
+    assert '"a URL that is not shown"' in text
+    assert '"a:b@c"' in text
+    assert result.redacted == 3
+    assert result.note == (
+        "1 secret value(s) were replaced with [redacted]. "
+        "2 URL(s) or log line(s) are shown without credentials."
+    )
+
+
+@pytest.mark.decision("decision-66")
+async def test_log_lines_lose_the_credentials_of_the_urls_in_them() -> None:
+    lines = ["Webhook sent to https://user:pw@h.example/x", "mail a@b.example"]
+
+    result = await RawApiService(Recording(json_reply(lines))).get("/api/LOGS/paperless/", {})
+
+    assert result.data == [
+        "Webhook sent to (credentials not shown) https://h.example/x",
+        "mail a@b.example",
+    ]
+    assert result.redacted == 1
+
+
+@pytest.mark.decision("decision-66")
+async def test_a_cut_answer_has_no_credentials_either() -> None:
+    url = "https://user:pw@h.example/x"
+    reply = json_reply([{"webhook": {"url": url}, "rest": "x" * MAX_OUTPUT}])
+
+    result = await RawApiService(Recording(reply)).get("/api/workflows/", {})
+
+    assert result.truncated
+    assert "pw" not in str(result.text)
+    assert "shown without credentials" in str(result.note)

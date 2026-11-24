@@ -82,7 +82,10 @@ UPDATE_DESCRIPTION = (
 triggers and actions each replace the whole list (pass all that should remain; an empty list
 removes them). To keep a webhook header value, which is never shown, send it as '(hidden)' on an
 action that carries the id it has in get_workflow (only while the URL keeps its scheme, host
-and port); headers left out of a webhook are removed. Returns the workflow as stored.
+and port); headers left out of a webhook are removed. A webhook URL written back as shown, on an
+action that carries that id, keeps its stored user name and password; with an empty user name
+(https://@host/path) it loses them, and a shown URL that cannot be told apart by the id is refused.
+Returns the workflow as stored.
 
 """
     + REFERENCE
@@ -95,7 +98,8 @@ async def list_workflows(ctx: Context) -> WorkflowListing:
     """List the workflows of Paperless with their triggers and actions.
 
     Settings show names for tags, correspondents and so on, and only what is not at its default;
-    they use the names create_workflow takes. Webhook header values and passwords are never shown.
+    they use the names create_workflow takes. Webhook header values, the user name and password in
+    webhook URLs (shown_in_part says where) and passwords are never shown.
     Needs the view permission for workflows in Paperless.
     """
     return await services(ctx).workflows.list()
@@ -104,7 +108,7 @@ async def list_workflows(ctx: Context) -> WorkflowListing:
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["get_workflow"])
 @boundary
 async def get_workflow(ctx: Context, workflow: Workflow) -> WorkflowInfo:
-    """Read one workflow with its triggers and actions.
+    """Read one workflow with its triggers and actions, as list_workflows shows it.
 
     The workflow matches by exact name, then ignoring case and accents, or by id; an unknown or
     ambiguous name is an error that lists the closest names or candidates.

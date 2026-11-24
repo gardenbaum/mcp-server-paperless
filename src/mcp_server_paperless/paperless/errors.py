@@ -20,6 +20,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.domain.instance import MINIMUM
+from mcp_server_paperless.domain.urls import text_without_credentials
 
 MAX_MESSAGES = 10
 MAX_MESSAGE_LENGTH = 200
@@ -33,8 +34,12 @@ DOCUMENT_NOT_FOUND_BODY = "Document not found"
 
 
 def _clean(text: str) -> str:
-    """One line without control characters, cut to a bounded length."""
+    """One line without control characters and credentials of URLs, cut to a bounded length.
+
+    Paperless repeats a webhook URL it refuses; a stored one is not the caller's to see.
+    """
     line = " ".join("".join(c if c.isprintable() else " " for c in text).split())
+    line = text_without_credentials(line, spaces=True)
     if len(line) > MAX_MESSAGE_LENGTH:
         return line[: MAX_MESSAGE_LENGTH - 1] + "…"
     return line
