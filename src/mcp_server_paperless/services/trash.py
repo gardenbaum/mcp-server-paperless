@@ -42,7 +42,7 @@ from mcp_server_paperless.services.documents import (
     known_items,
     maybe_ref,
 )
-from mcp_server_paperless.services.trash_scan import TOO_LARGE, limited
+from mcp_server_paperless.services.trash_scan import OVER, TOO_LARGE, limited
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine, Sequence
@@ -75,6 +75,7 @@ WHEN_CONFIRMED = (
 CHECKED: Final = (
     "Paperless checks all ids before it changes any, but a failure half-way can leave a part."
 )
+UNKNOWN_ID: Final = "Which id it refuses is unknown."
 NO_ID: Final = "Paperless does not say which id it refuses, and every one is still listed."
 IN_STEPS: Final = "Empty in steps with document_ids from list_trash."
 NOT_ALL: Final = (
@@ -436,10 +437,12 @@ class TrashService:
 
     async def _blocking(self, entries: Sequence[TrashedDocument], *, small: bool) -> str:
         try:
-            found, _ = await self._scan.locate([e.id for e in entries], small=small)
+            found, scan = await self._scan.locate([e.id for e in entries], small=small)
         except PaperlessMcpError:
-            return "Which id it refuses is unknown."
+            return UNKNOWN_ID
         gone = [str(e.id) for e in entries if e.id not in found]
+        if gone and scan.unread:
+            return UNKNOWN_ID
         return f"No longer listed: {', '.join(gone)}." if gone else NO_ID
 
     async def _outcomes(
@@ -538,12 +541,14 @@ class TrashService:
             entries = {e.id: e for e in listed.entries}
         except AnswerTooLarge:
             counts: set[int] = set()
-            async for page in self._scan.pages():
-                if page is None:
-                    raise AnswerTooLarge(TOO_LARGE, hint=IN_STEPS) from None
-                self._check_all(page.count)
-                counts.add(page.count)
-                entries |= {e.id: e for e in page.entries}
+            async with contextlib.aclosing(self._scan.pages()) as pages:
+                async for page in pages:
+                    if isinstance(page, str):
+                        message = f"{OVER}: nothing was emptied." if page == TOO_LARGE else NOT_ALL
+                        raise AnswerTooLarge(message, hint=IN_STEPS) from None
+                    self._check_all(page.count)
+                    counts.add(page.count)
+                    entries |= {e.id: e for e in page.entries}
             if counts != {len(entries)}:
                 raise AnswerTooLarge(NOT_ALL, hint=IN_STEPS) from None
         return await self._scan.titled(list(entries.values()))

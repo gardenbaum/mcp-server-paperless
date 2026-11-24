@@ -36,6 +36,7 @@ from mcp_server_paperless.paperless.errors import (
     error_for_status,
     error_for_transport,
 )
+from mcp_server_paperless.paperless.unpacking import ENCODINGS, BrokenBodyError, unpacked
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.credentials import CredentialProvider
@@ -169,20 +170,24 @@ class Streamed:
 COMPRESSED_HINT = (
     "Check the proxy between this server and Paperless: it must honour Accept-Encoding: identity."
 )
-# The encodings httpx2 unpacks in pieces of at most 1 MiB (since 2.16.0).
-UNPACKED = frozenset({"gzip", "deflate", "zstd"})
 # The most bytes of an error answer that are read to describe it (they are only messages).
 ERROR_BODY_LIMIT = 64 * 1024
 
 
-async def _with_capped_body(response: httpx2.Response) -> httpx2.Response:
-    """``response`` with at most ``ERROR_BODY_LIMIT`` bytes of its streamed body read."""
+async def _with_capped_body(
+    response: httpx2.Response, chunks: AsyncGenerator[bytes] | None = None
+) -> httpx2.Response:
+    """``response`` with at most ``ERROR_BODY_LIMIT`` bytes of its streamed body read.
+
+    ``chunks`` is the body if it is not read as httpx2 decodes it; what is broken of it is left out.
+    """
     body = b""
-    async for chunk in response.aiter_bytes():
-        body += chunk
-        if len(body) >= ERROR_BODY_LIMIT:
-            body = body[:ERROR_BODY_LIMIT]
-            break
+    with contextlib.suppress(AnswerTooLarge, BrokenBodyError):
+        async for chunk in chunks or response.aiter_bytes():
+            body += chunk
+            if len(body) >= ERROR_BODY_LIMIT:
+                body = body[:ERROR_BODY_LIMIT]
+                break
     return httpx2.Response(response.status_code, content=body)
 
 
@@ -305,9 +310,9 @@ class PaperlessClient:
         It is parsed in a thread, which does not keep the event loop free: the parser holds the GIL
         (0.02 s for ordinary text, up to 0.8 s for a hostile body near 64 MiB).
 
-        The limit is enforced while the body is read, whatever its Content-Length says, and on what
-        it unpacks to. A compressed body is refused unless ``compressed`` takes the encodings that
-        httpx2 unpacks in pieces of at most 1 MiB.
+        The limit is enforced while the body is read, whatever its Content-Length says, on what
+        arrives as well as on what it unpacks to. A compressed body is refused unless
+        ``compressed`` asks for and takes the encodings of ``unpacking``.
 
         Raises:
             AnswerCompressed: The body is compressed, or in a way that is not taken.
@@ -316,21 +321,22 @@ class PaperlessClient:
                 a body that does not match.
         """
         outgoing = self._build("GET", path, params=params, timeout=timeout)
-        if not compressed:
-            outgoing.headers["Accept-Encoding"] = "identity"
+        taken = ENCODINGS if compressed else ("identity",)
+        outgoing.headers["Accept-Encoding"] = ", ".join(taken)
         response = await self._exchange(outgoing, stream=True)
         body = bytearray()
         try:
-            if response.is_error:
-                raise error_for_status(await _with_capped_body(response))
             encoding = response.headers.get("Content-Encoding", "").strip().lower()
-            if encoding not in {"", "identity"} and not (compressed and encoding in UNPACKED):
+            if response.is_error:
+                chunks = unpacked(response, encoding, ERROR_BODY_LIMIT)
+                raise error_for_status(await _with_capped_body(response, chunks))
+            if encoding not in {"", "identity", *taken}:
                 message = (
                     f"The answer to GET {outgoing.url.path} was compressed although that was not "
                     "asked for."
                 )
                 raise AnswerCompressed(message, hint=COMPRESSED_HINT)
-            async for chunk in response.aiter_bytes():
+            async for chunk in unpacked(response, encoding, max_bytes):
                 if len(body) + len(chunk) > max_bytes:
                     message = f"Paperless sent more than {max_bytes} bytes for GET {path}."
                     raise AnswerTooLarge(message)
@@ -338,7 +344,7 @@ class PaperlessClient:
         except httpx2.TransportError as error:
             logger.warning("GET %s failed: %s", outgoing.url.path, type(error).__name__)
             raise error_for_transport(error) from error
-        except httpx2.DecodingError as error:
+        except BrokenBodyError as error:
             raise unexpected(response) from error
         finally:
             await response.aclose()

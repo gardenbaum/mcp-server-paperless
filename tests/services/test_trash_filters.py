@@ -32,6 +32,7 @@ from mcp_server_paperless.services.trash import (
     CHECKED,
     NO_FILTER,
     NO_ID,
+    NOT_ALL,
     ONE_OF,
     TrashService,
 )
@@ -40,13 +41,16 @@ from mcp_server_paperless.services.trash_scan import (
     MAX_PAGES,
     NOT_LISTED_HINT,
     PAGE,
+    SKIPPED,
+    STOPPED,
+    TOO_LARGE,
     TrashScan,
 )
 from mcp_server_paperless.services.trashed_documents import TrashedDocuments
 from services.test_trash import DAY, WEB, Setup
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Collection, Sequence
+    from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Sequence
 
     from mcp_server_paperless.domain.documents import DocumentPage, DocumentQuery, DocumentRecord
     from mcp_server_paperless.domain.trash import TrashList, TrashPage
@@ -1225,28 +1229,102 @@ async def test_after_a_page_that_is_too_large_the_next_ones_are_large_again() ->
     assert fake.asked[2:] == ((1, 100), (1, 10), *ones, *tens, (2, 100), (3, 100))
 
 
+async def test_a_page_grows_back_at_once_at_the_end_of_a_block() -> None:
+    setup = Setup()
+    numbers = await many(setup, 205)
+    fake = heavy(setup, 100, numbers[99])
+
+    _ = await TrashScan(fake, fake, setup.taxonomy).locate([numbers[204]])
+
+    ones = tuple((n, 1) for n in range(91, 101))
+    tens = tuple((n, 10) for n in range(1, 11))
+    assert fake.asked[2:] == ((1, 100), *tens, *ones, (2, 100), (3, 100))
+
+
+async def test_pages_are_only_read_for_what_is_missing() -> None:
+    setup = Setup()
+    numbers = await many(setup, 205)
+
+    whole, some, early = heavy(setup, 10**9), heavy(setup, 10**9), heavy(setup, 10**9)
+    _ = await TrashScan(whole, whole, setup.taxonomy).locate([4242])
+    _ = await TrashScan(some, some, setup.taxonomy, cap=10).locate([numbers[3]])
+    _ = await TrashScan(early, early, setup.taxonomy, cap=10).locate([numbers[120]])
+
+    assert whole.asked == ((1, 1000),)
+    assert some.asked == ((1, 10),)
+    assert early.asked == ((1, 10), (1, 100), (2, 100))
+
+
 @pytest.mark.parametrize("at", [0, 4])  # the first and the last one
-async def test_an_entry_that_is_too_large_alone_is_named_only_where_ids_are_missing(
+async def test_an_entry_that_is_too_large_alone_hides_neither_the_rest_nor_the_reasons(
     at: int,
 ) -> None:
     setup = Setup()
     numbers = await many(setup, 5)
+    alive = setup.document("alive")
     fake = heavy(setup, 100, numbers[at])
     service = capped(setup, 1000, fake)
 
-    with pytest.raises(AnswerTooLarge) as raised:
-        _ = await service.restore([numbers[2], numbers[at]])
+    with pytest.raises(NotFound) as raised:
+        _ = await service.restore([numbers[2], numbers[at], alive])
+    shown = await service.list(TrashFilter(ids=(numbers[2], numbers[at])), page=1, page_size=5)
     found = await service.restore([numbers[2]])
 
-    assert raised.value.message == (
-        f"Not found among the entries that can be read: {numbers[at]}. "
-        "An entry of the trash is over the limit of 64 MiB and was not read."
-    )
+    assert raised.value.message == f"Not found in the trash: {numbers[at]}, {alive}."
     assert raised.value.hint == (
-        "Look at the trash in the Paperless web UI, or list it with list_trash and page_size=1, "
-        "which skips that entry with the next page."
+        f"{numbers[at]} is in the trash, but was not found in the list: that may be because it is "
+        f"listed for its owner only. {alive} is not deleted. {TOO_LARGE} {SKIPPED} "
+        f"{NOT_LISTED_HINT}"
     )
+    assert TOO_LARGE == (
+        "An entry over the limit of 64 MiB was not read, so it may be one of these: look in the "
+        "Paperless web UI."
+    )
+    assert [e.id for e in shown.entries] == [numbers[2]]
+    assert shown.notice == f"Not found in the trash: {numbers[at]}. {TOO_LARGE} {SKIPPED}"
     assert [e.outcome for e in found.entries] == ["restored"]
+
+
+async def test_a_refused_id_beside_an_entry_that_is_too_large_is_not_called_gone() -> None:
+    setup = Setup()
+    numbers = await many(setup, 3)
+
+    class Grown(Heavy):
+        @override
+        async def restore_from_trash(self, document_ids: Sequence[int]) -> None:
+            self.most: int = 100
+            self.huge: tuple[int, ...] = (numbers[0],)
+            message = "Paperless refused."
+            raise Validation(message)
+
+    fake = Grown(setup.state, user="admin", allow_writes=True)
+
+    with pytest.raises(Validation, match="Which id it refuses is unknown"):
+        _ = await capped(setup, 1000, fake).restore([numbers[0]])
+
+
+async def test_the_pages_search_makes_a_thousand_requests_at_most() -> None:
+    setup = Setup()
+    _ = await many(setup, 3)
+
+    class Wide(Heavy):
+        @override
+        async def list_trash(self, *, page: int, page_size: int, max_bytes: int) -> TrashPage:
+            found = await super().list_trash(page=1, page_size=page_size, max_bytes=max_bytes)
+            if page_size > 1:
+                message = "too large"
+                raise AnswerTooLarge(message)
+            return found.model_copy(update={"next_page": page + 1})
+
+    fake = Wide(setup.state, user="admin")
+    scan = TrashScan(fake, fake, setup.taxonomy)
+
+    with pytest.raises(NotFound) as raised:
+        _ = await scan.require([4242])
+
+    assert len(fake.asked) == 2 + 1000
+    assert STOPPED in (raised.value.hint or "")
+    assert STOPPED == "The trash was looked through in 1000 requests and is longer."
 
 
 async def test_a_page_of_the_list_that_is_too_large_says_how_to_go_on() -> None:
@@ -1308,7 +1386,36 @@ async def test_everything_is_refused_where_the_pages_do_not_show_every_entry(why
         _ = await capped(setup, 1000, fake).empty(None, everything=True, confirm=True)
 
     assert raised.value.hint == "Empty in steps with document_ids from list_trash."
+    assert raised.value.message == (
+        "An entry over the limit of 64 MiB was not read: nothing was emptied."
+        if why == "an entry too large"
+        else NOT_ALL
+    )
     assert len(setup.ids()) == 12
+
+
+async def test_the_pages_are_closed_when_everything_is_refused() -> None:
+    setup = Setup(writes=False)
+    _ = await many(setup, 12)
+    fake = heavy(setup, 10)
+    closed: list[bool] = []
+
+    class Watched(TrashScan):
+        @override
+        async def pages(self) -> AsyncGenerator[TrashPage | str]:
+            try:
+                async for page in super().pages():
+                    yield page
+            finally:
+                closed.append(True)
+
+    scan = Watched(fake, fake, setup.taxonomy)
+    service = TrashService(fake, fake, fake, scan, setup.taxonomy, web_url=WEB, max_all=11)
+
+    async with asyncio.timeout(5):
+        with pytest.raises(Validation):
+            _ = await service.empty(None, everything=True)
+        assert closed == [True]
 
 
 async def test_everything_in_pages_keeps_the_most_it_handles() -> None:

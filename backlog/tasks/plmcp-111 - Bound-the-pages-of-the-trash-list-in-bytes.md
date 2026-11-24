@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T09:06:02Z'
-updated_date: '2026-11-24T21:18:21Z'
+updated_date: '2026-11-24T21:51:10Z'
 labels:
   - safety
 dependencies: []
@@ -46,4 +46,6 @@ list_trash pages (100 rows with full texts) have no byte limit and accept compre
 
 <!-- SECTION:NOTES:BEGIN -->
 decision-77. list_trash takes max_bytes (64 MiB) and reads through read_json, which can now unpack gzip, deflate and zstd in pieces of at most 1 MiB (httpx2 2.16.0, our minimum). Ids are looked for in pages of 100, 10 and 1 entries where larger ones are over the limit; an entry over it alone is passed, and a missing id is then an error of its own. empty all=true falls back to pages only if they hold exactly the counted entries. The other reads stay as decision-54 has them. The port gains max_bytes, so the fake and the tests that override it changed; the fake bounds list_trash in one place. Code and tests were written together; red was shown by mutation (no limit: 11 tests; compressed refused: 18; pages never larger again: 1). Trade-off for the owner: filters and the duplicate check of uploads could work behind a compressing proxy in the same way (changes decisions 47 and 54).
+
+Review: hostile compressed answers. The body is now unpacked with zlib in paperless/unpacking.py: raw bytes count, data after the end is refused at once, gzip and deflate only and asked for explicitly, error bodies bounded too; tests red first (2.7 GB of process memory before; under 40 MB now). zstd is not taken any more (decision-77, proposed). The pages search has a limit of 1,000 requests; an unread entry is told beside found entries and reasons; the hint that pages can skip entries stands for restore too. Survivor tests added after the code, shown by mutation: while, scan.complete, wanted <= found (both), aclosing, smaller pages, request limit. Not caught by a test: the loop that drains what still waits inside zlib once all input has gone in; no input was found that reaches it. Not changed: other streamed reads and the error bodies of downloads still use httpx2's decoders and keep data after the end.
 <!-- SECTION:NOTES:END -->

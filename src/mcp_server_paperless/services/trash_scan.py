@@ -5,7 +5,7 @@ looked for in one bounded request first; pages follow only for ids that were not
 """
 
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Final
 
@@ -33,8 +33,8 @@ MAX_SCAN: Final = 1000
 PAGE: Final = 100
 # How much smaller a page becomes that is too large: 100, 10 and 1 entries.
 STEP: Final = 10
-# shortcut: the trash is paged through for 100,000 entries, so that an answer that always names a
-# next page ends; raise it once a trash is larger.
+# shortcut: the trash is paged through in at most 1,000 requests (100,000 entries, fewer where the
+# pages are small), so that a search always ends; raise it once a trash is larger.
 MAX_PAGES: Final = 1000
 # Missing ids whose reason is looked up (two requests each); the rest is only named.
 EXPLAINED: Final = 10
@@ -52,11 +52,9 @@ NOT_LISTED_HINT: Final = (
 )
 
 
-TOO_LARGE: Final = "An entry of the trash is over the limit of 64 MiB and was not read."
-TOO_LARGE_HINT: Final = (
-    "Look at the trash in the Paperless web UI, or list it with list_trash and page_size=1, which "
-    "skips that entry with the next page."
-)
+OVER: Final = "An entry over the limit of 64 MiB was not read"
+TOO_LARGE: Final = f"{OVER}, so it may be one of these: look in the Paperless web UI."
+STOPPED: Final = f"The trash was looked through in {MAX_PAGES} requests and is longer."
 
 
 def all_too_large() -> AnswerTooLarge:
@@ -84,11 +82,13 @@ class Scan:
         entries: The entries, each once, in Paperless order.
         total: How many entries the trash holds.
         small: The large request did not work, so it is not made again.
+        unread: What could not be looked at in the pages, in words.
     """
 
     entries: tuple[TrashedDocument, ...]
     total: int
     small: bool = False
+    unread: str | None = None
 
     @property
     def complete(self) -> bool:
@@ -120,6 +120,8 @@ class Selection:
         parts: list[str] = []
         if self.missing:
             parts.append(f"Not found in the trash: {', '.join(map(str, self.missing))}.")
+        if self.missing and self.scan.unread:
+            parts.append(self.scan.unread)
         if self.truncated and self.by_id:
             parts.append(SKIPPED)
         elif self.truncated:
@@ -166,11 +168,7 @@ class TrashScan:
     async def locate(
         self, ids: Sequence[int], *, small: bool = False
     ) -> tuple[dict[int, TrashedDocument], Scan]:
-        """Those of ``ids`` that are in the trash, reading on until all are found.
-
-        Raises:
-            AnswerTooLarge: Some are not found, and an entry was too large to be read.
-        """
+        """Those of ``ids`` that are in the trash, reading on until all are found."""
         wanted = set(ids)
         try:
             scan = await self.first(small=small)
@@ -181,28 +179,25 @@ class TrashScan:
         found = {e.id: e for e in scan.entries if e.id in wanted}
         if scan.complete or wanted <= found.keys():
             return found, scan
-        unread = False
+        unread: list[str] = []
         async with contextlib.aclosing(self.pages()) as pages:
             async for page in pages:
-                if page is None:
-                    unread = True
+                if isinstance(page, str):
+                    unread.append(page)
                     continue
                 found |= {e.id: e for e in page.entries if e.id in wanted}
                 if wanted <= found.keys():
                     return found, scan
-        if unread:
-            missing = ", ".join(str(number) for number in ids if number not in found)
-            message = f"Not found among the entries that can be read: {missing}. {TOO_LARGE}"
-            raise AnswerTooLarge(message, hint=TOO_LARGE_HINT)
-        return found, scan
+        return found, replace(scan, unread=" ".join(dict.fromkeys(unread)) or None)
 
-    async def pages(self) -> AsyncGenerator[TrashPage | None]:
+    async def pages(self) -> AsyncGenerator[TrashPage | str]:
         """The trash in pages of ``PAGE`` entries, where they are too large in smaller ones.
 
-        None stands for an entry that is too large on its own.
+        A text stands for what could not be read: an entry that is too large on its own, or the rest
+        after ``MAX_PAGES`` requests.
         """
         start, size = 0, PAGE
-        while start < PAGE * MAX_PAGES:
+        for _ in range(MAX_PAGES):
             number = start // size + 1
             try:
                 page = await self._reader.list_trash(
@@ -212,7 +207,7 @@ class TrashScan:
                 if size > 1:
                     size //= STEP
                     continue
-                yield None
+                yield TOO_LARGE
             except NotFound:  # the entry before was the last one
                 return
             else:
@@ -222,6 +217,7 @@ class TrashScan:
             start += size
             while size < PAGE and start % (size * STEP) == 0:
                 size *= STEP
+        yield STOPPED
 
     async def require(self, ids: Sequence[int]) -> tuple[list[TrashedDocument], bool]:
         """The entries with these ids, in that order, and whether only small requests worked.
@@ -232,14 +228,15 @@ class TrashScan:
         found, scan = await self.locate(ids)
         missing = [number for number in ids if number not in found]
         if missing:
-            raise await self.unlisted(missing)
+            raise await self.unlisted(missing, scan)
         return await self.titled([found[number] for number in ids]), scan.small
 
-    async def unlisted(self, missing: Sequence[int]) -> NotFound:
+    async def unlisted(self, missing: Sequence[int], scan: Scan) -> NotFound:
         """The error for ids that are not listed, with the reason where Paperless tells one."""
         message = f"Not found in the trash: {', '.join(map(str, missing))}."
         reasons = [await self._reason(number) for number in missing[:EXPLAINED]]
-        return NotFound(message, hint=" ".join([r for r in reasons if r] + [NOT_LISTED_HINT]))
+        gaps = [scan.unread, None if scan.complete else SKIPPED]
+        return NotFound(message, hint=" ".join([*filter(None, [*reasons, *gaps]), NOT_LISTED_HINT]))
 
     async def select(self, wanted: TrashFilter) -> Selection:
         """The entries that match ``wanted``, in Paperless order.

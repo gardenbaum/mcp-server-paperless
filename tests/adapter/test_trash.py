@@ -2,9 +2,9 @@
 
 import gzip
 import json
-import tracemalloc
+import subprocess
+import sys
 import zlib
-from compression import zstd
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast, override
@@ -31,6 +31,7 @@ from mcp_server_paperless.paperless.trash import (
     PaperlessTrashReader,
     PaperlessTrashWriter,
 )
+from mcp_server_paperless.paperless.unpacking import PIECE
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.trash_scan import TrashScan
 
@@ -609,11 +610,10 @@ def packed(encoding: str, data: bytes) -> bytes:
         "GZIP": gzip.compress(data),
         "deflate": zlib.compress(data),
         "Deflate": raw.compress(data) + raw.flush(),
-        "zstd": zstd.compress(data),
     }[encoding]
 
 
-ENCODINGS = ["identity", "gzip", "GZIP", "deflate", "Deflate", "zstd"]
+ENCODINGS = ["identity", "gzip", "GZIP", "deflate", "Deflate"]
 
 
 @pytest.mark.parametrize("encoding", ENCODINGS)
@@ -627,7 +627,7 @@ async def test_a_page_is_read_up_to_the_limit_of_what_it_unpacks_to(encoding: st
     page, request = await list_page(answer(), max_bytes=len(whole))
 
     assert [e.id for e in page.entries] == [3301, 3305]
-    assert "gzip" in request.headers["Accept-Encoding"]  # compressed answers stay welcome
+    assert request.headers["Accept-Encoding"] == "gzip, deflate"  # what is unpacked
     with pytest.raises(AnswerTooLarge):
         _ = await list_page(answer(), max_bytes=len(whole) - 1)
 
@@ -641,23 +641,130 @@ async def test_a_page_stops_at_the_limit_while_it_is_read() -> None:
     assert stream.sent == 3
 
 
-@pytest.mark.parametrize("encoding", ["gzip", "deflate", "Deflate", "zstd"])
-async def test_a_small_piece_that_unpacks_to_much_is_not_unpacked_whole(encoding: str) -> None:
-    bomb = packed(encoding, b" " * 100_000_000)
-    stream = Chunks(bomb)
+async def test_a_page_of_one_byte_pieces_is_read() -> None:
+    for encoding in ENCODINGS:
+        stream = Chunks(*[bytes([b]) for b in packed(encoding, body(DOCUMENT))], b"")
+        response = httpx2.Response(200, headers={"Content-Encoding": encoding}, stream=stream)
+
+        page, _ = await list_page(response)
+
+        assert [e.id for e in page.entries] == [3301]
+
+
+@pytest.mark.parametrize("more", range(1, 10))
+async def test_what_is_still_to_come_out_when_all_has_gone_in_is_read(more: int) -> None:
+    """A raw stream has no checksum after it, so its last bytes can wait inside zlib."""
+    whole = body(DOCUMENT)
+    stream = Chunks(packed("Deflate", whole.ljust(PIECE + more)))
+    response = httpx2.Response(200, headers={"Content-Encoding": "deflate"}, stream=stream)
+
+    page, _ = await list_page(response, max_bytes=2 * PIECE)
+
+    assert [e.id for e in page.entries] == [3301]
+
+
+@pytest.mark.parametrize("encoding", ["gzip", "deflate", "Deflate"])
+@pytest.mark.parametrize("apart", [True, False])
+async def test_data_after_the_end_of_the_stream_is_refused_at_once(
+    encoding: str,
+    apart: bool,  # noqa: FBT001 -- a parametrised flag, not a switch
+) -> None:
+    whole = packed(encoding, body(DOCUMENT))
+    start = [whole, b"x"] if apart else [whole + b"x"]
+    stream = Chunks(*start, *[b"x" * 1000] * 50)
     response = httpx2.Response(200, headers={"Content-Encoding": encoding}, stream=stream)
-    tracemalloc.start()
-    try:
-        with pytest.raises(AnswerTooLarge):
-            _ = await list_page(response, max_bytes=1_000_000)
-        _, peak = tracemalloc.get_traced_memory()
-    finally:
-        tracemalloc.stop()
 
-    assert peak < 20_000_000
+    with pytest.raises(UnexpectedAnswer):
+        _ = await list_page(response)
+
+    assert stream.sent == len(start)
 
 
-@pytest.mark.parametrize("encoding", ["br", "x-unknown", "gzip, gzip"])
+async def test_compressed_data_that_unpacks_to_nothing_counts_too() -> None:
+    packer = zlib.compressobj(wbits=31)
+    start = packer.compress(b"") + packer.flush(zlib.Z_SYNC_FLUSH)
+    stream = Chunks(start, *[b"\0\0\0\xff\xff" * 1000] * 100)  # empty blocks
+    response = httpx2.Response(200, headers={"Content-Encoding": "gzip"}, stream=stream)
+
+    with pytest.raises(AnswerTooLarge):
+        _ = await list_page(response, max_bytes=20_000)
+
+    assert stream.sent == 5
+
+
+@pytest.mark.parametrize("body_", ["junk", "cut off", "fine", "endless"])
+async def test_the_body_of_an_error_is_read_within_bounds(body_: str) -> None:
+    detail = gzip.compress(b'{"detail": "Invalid page."}')
+    streams = {
+        "junk": Chunks(b"no gzip", *[b"x" * 1000] * 500),
+        "cut off": Chunks(detail[:-9]),
+        "fine": Chunks(detail),
+        "endless": Chunks(detail, *[b"x" * 1000] * 500),
+    }
+    stream = streams[body_]
+    headers = {"Content-Encoding": "gzip"}
+
+    with pytest.raises(NotFound, match="Page 1 of the trash"):
+        _ = await list_page(httpx2.Response(404, headers=headers, stream=stream))
+
+    assert stream.sent <= 2
+
+
+MEMORY = """
+import asyncio, gzip, resource, sys, zlib, httpx2
+from mcp_server_paperless.domain.errors import PaperlessMcpError
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
+from mcp_server_paperless.paperless.trash import PaperlessTrashReader
+
+EMPTY = b'{"count":0,"next":null,"previous":null,"results":[]}'
+packer = zlib.compressobj(wbits=31)
+start = packer.compress(b"") + packer.flush(zlib.Z_SYNC_FLUSH)
+pieces, encoding, status = {
+    "trail": ([gzip.compress(EMPTY)] + [b"x" * 65536] * 1024, "gzip", 200),
+    "deflate trail": ([zlib.compress(EMPTY)] + [b"x" * 65536] * 1024, "deflate", 200),
+    "empty": ([start] + [bytes([0, 0, 0, 255, 255]) * 13000] * 1024, "gzip", 200),
+    "bomb": ([gzip.compress(b" " * 300_000_000)], "gzip", 200),
+    "error": ([gzip.compress(EMPTY)] + [b"x" * 65536] * 1024, "gzip", 500),
+}[sys.argv[1]]
+
+
+class Body(httpx2.AsyncByteStream):
+    async def __aiter__(self):
+        for piece in pieces:
+            yield piece
+
+
+async def main():
+    answer = httpx2.Response(status, headers={"Content-Encoding": encoding}, stream=Body())
+    async with httpx2.AsyncClient(
+        base_url="http://x", transport=httpx2.MockTransport(lambda _: answer)
+    ) as http:
+        client = PaperlessClient(
+            http, StaticTokenProvider("t"), retry=RetryPolicy(), upload_timeout=5
+        )
+        await PaperlessTrashReader(client).list_trash(page=1, page_size=1, max_bytes=1_000_000)
+
+
+before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+try:
+    asyncio.run(main())
+except PaperlessMcpError:
+    print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before)
+"""
+
+
+@pytest.mark.parametrize("how", ["trail", "deflate trail", "empty", "bomb", "error"])
+def test_a_hostile_compressed_answer_takes_little_memory_of_the_process(how: str) -> None:
+    done = subprocess.run(  # noqa: S603 -- this interpreter and a script of this file
+        [sys.executable, "-c", MEMORY, how], capture_output=True, text=True, check=True, timeout=60
+    )
+
+    unit = 1 if sys.platform == "darwin" else 1024
+    assert int(done.stdout) * unit < 40_000_000
+
+
+@pytest.mark.parametrize("encoding", ["br", "zstd", "x-unknown", "gzip, gzip"])
 async def test_a_page_compressed_in_another_way_is_refused_unread(encoding: str) -> None:
     stream = Chunks(b"anything")
     response = httpx2.Response(200, headers={"Content-Encoding": encoding}, stream=stream)
@@ -669,7 +776,7 @@ async def test_a_page_compressed_in_another_way_is_refused_unread(encoding: str)
     assert stream.sent == 0
 
 
-@pytest.mark.parametrize("encoding", ["gzip", "deflate", "zstd"])
+@pytest.mark.parametrize("encoding", ["gzip", "deflate"])
 @pytest.mark.parametrize("broken", ["no such thing", "cut off"])
 async def test_a_compressed_page_that_is_broken_is_an_unexpected_answer(
     encoding: str, broken: str
@@ -682,7 +789,7 @@ async def test_a_compressed_page_that_is_broken_is_an_unexpected_answer(
         _ = await list_page(response)
 
 
-@pytest.mark.parametrize("encoding", ["gzip", "zstd"])
+@pytest.mark.parametrize("encoding", ["gzip", "deflate"])
 async def test_ids_are_found_behind_a_proxy_that_compresses_every_answer(encoding: str) -> None:
     asked: list[str] = []
 
