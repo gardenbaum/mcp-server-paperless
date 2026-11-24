@@ -35,10 +35,10 @@ A newer version alone proves nothing: anybody who may change the document can ad
 - A request for several documents is in doubt as a whole.
 - Two users who share one Paperless account are one user here.
 - Times are compared as Paperless wrote them, as in decision-67.
-- Cost: each look reads one list of versions, one of operations and one of tasks. What a version is does not change, so its file name is read once, and the history of a document once, when every version is there or at the end: for 20 documents at most 20 + 20 reads over the whole wait. After an earlier rotation each look reads three lists more (changed documents, tasks and operations again), and the same once for each version added in that time. The list of documents has no file names of versions, so these are single reads.
+- Cost: the user is read once; each look reads one list of versions, one of operations and one of tasks. What a version is does not change, so its file name is read once, and the history of a document once, when every version is there or at the end: for 20 documents at most 20 + 20 reads over the whole wait. After an earlier rotation a look in which every version is there, and the last one, reads at most three lists more (changed documents, tasks and, if the count was settled, operations again), and the same once for each version added in that time. The list of documents has no file names of versions, so these are single reads.
 - A look is cut at the bound; one last look follows, which reads only what is not known yet and may take 10 seconds. The time reported is the time taken, also where it is more than the bound.
 - A listed task is still told by its file name, time and owner alone. For a document with a date 3.5.1 lists none, so there it could only be an upload of the same user under that name in the 3 seconds of the lookup.
-- The description of `rotate_documents` grows by one sentence; no limit changes.
+- The description of `rotate_documents` grows by two sentences; no limit changes.
 
 ## Alternatives
 
