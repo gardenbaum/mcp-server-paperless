@@ -131,7 +131,7 @@ class _Call:
 
 
 def _named(items: Sequence[_Item]) -> str:
-    return named([(item.id, item.title) for item in items])
+    return named(list(dict.fromkeys((item.id, item.title) for item in items)))
 
 
 def _notes(count: int) -> str:
@@ -216,7 +216,7 @@ class BulkNotes:
             return self._report(call, {}, _nothing(call))
         if call.alone or not confirm:
             ids = ", ".join(str(item.id) for item in adding)
-            hint = NEXT_CALL.format(ids=ids).replace(" and operation,", " and note,")
+            hint = NEXT_CALL.format(ids=ids, what="note")
             ConfirmationRequired.require(
                 call.effect,
                 scope=[(item.id, item.text) for item in adding],
@@ -312,8 +312,8 @@ class BulkNotes:
             return Ended(self._row(item, "unknown", why=why), stopped_by(second), silent=silent)
         why = f"{error.message} Read again: the note is"
         if there is not None:
-            row = self._row(item, "added", there, why=f"{why} there.")
-        elif silent:
+            return Ended(self._row(item, "added", there, why=f"{why} there."))
+        if silent:
             row = self._row(item, "unknown", why=f"{why} not there, but may still appear.")
         else:
             row = self._row(item, "failed", why=f"{why} not there.")

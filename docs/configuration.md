@@ -218,7 +218,8 @@ all that are wrong. One confirmation covers the call: it names every document (t
 20), every new owner, every new tag and the documents that mirrored links change. Then the documents are
 read again and changed one after the other, for at most 40 seconds: a document whose values someone
 changed meanwhile or that Paperless refuses is left as it is, the others go on, and the answer names what
-became of each. Repeating the call goes on with the rest. A serial number can move to another document
+became of each. Repeating the call goes on with the rest;
+leave out documents whose owner was changed: one you may no longer see refuses the repeated call. A serial number can move to another document
 if the one that releases it comes first; a swap takes two calls. `add_notes` adds a note to many documents,
 chosen like those of `bulk_edit_documents`, or a note of its own to each (at most 100 a call). A note
 whose text is there already is skipped, so it needs the permission to view notes (decision-73).

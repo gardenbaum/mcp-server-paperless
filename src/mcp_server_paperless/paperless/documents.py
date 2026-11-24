@@ -25,6 +25,7 @@ from mcp_server_paperless.domain.documents import (
     FileMetadata,
     HistoryEntry,
     Note,
+    SignedIn,
     Suggestions,
 )
 from mcp_server_paperless.domain.duplicates import DuplicateRecord
@@ -603,6 +604,14 @@ class PaperlessDocumentReader:
         if any(owner not in {None, rights.user.id} for owner in owners):
             return False
         return None if rights.permissions is None else "delete_document" in rights.permissions
+
+    async def get_signed_in(self) -> SignedIn | None:
+        """See ``DocumentReader.get_signed_in``: ``/api/ui_settings/`` names the user."""
+        try:
+            user = (await self._client.get("/api/ui_settings/", _Rights)).user
+        except PermissionDenied:
+            return None
+        return SignedIn(id=user.id, is_superuser=user.is_superuser)
 
     async def list_document_notes(self, document_id: int) -> tuple[Note, ...]:
         """See ``DocumentReader.list_document_notes``."""

@@ -50,6 +50,7 @@ if TYPE_CHECKING:
         FileVersion,
         HistoryEntry,
         Note,
+        SignedIn,
         Suggestions,
     )
     from mcp_server_paperless.domain.duplicates import DuplicateRecord
@@ -198,6 +199,10 @@ class DocumentReader(Protocol):
         It needs the global ``delete_document`` permission and ownership (or no owner), or a
         superuser. The user's permissions can be read only with ``view_uisettings``.
         """
+        ...
+
+    async def get_signed_in(self) -> SignedIn | None:
+        """The user the credential belongs to; None without the ``view_uisettings`` permission."""
         ...
 
     async def list_document_notes(self, document_id: int) -> tuple[Note, ...]:

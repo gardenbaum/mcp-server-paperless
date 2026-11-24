@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from pydantic import JsonValue
 
     from mcp_server_paperless.domain.bulk_items import UpdateReport
-    from mcp_server_paperless.domain.documents import DocumentPatch, DocumentRecord
+    from mcp_server_paperless.domain.documents import DocumentPatch, DocumentRecord, SignedIn
     from mcp_server_paperless.domain.selection import DocumentRow, ReadField
     from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
 
@@ -58,6 +58,11 @@ class World(FakePaperless):
         self.takes: float = 0.0
         self.lists: int = 0
         self.list_fails: PaperlessMcpError | None = None
+        self.nobody: bool = False  # whether the user may not read who they are
+        self.limits: list[int] = []
+        self.changeable: set[int] = set()
+        self.list_takes: float = 0.0
+        self.tag_takes: float = 0.0
         self.listed: list[str] = []
         self.got: list[int] = []
         self.sent: list[int] = []
@@ -71,14 +76,28 @@ class World(FakePaperless):
         # What others do right before a document is read again.
         self.before: dict[int, Callable[[], object]] = {}
 
+    def rows_know_grants(self, rows: tuple[DocumentRow, ...]) -> tuple[DocumentRow, ...]:
+        """A single read of the fake does not model grants to change; list rows do here."""
+        return tuple(
+            row.model_copy(update={"user_can_change": True}) if row.id in self.changeable else row
+            for row in rows
+        )
+
     @override
     async def read_rows(
         self, document_ids: Sequence[int], fields: Sequence[ReadField], *, max_bytes: int
     ) -> tuple[DocumentRow, ...]:
         self.lists += 1
+        self.limits.append(max_bytes)
+        self.now += self.list_takes
         if self.list_fails is not None:
             raise self.list_fails
-        return await super().read_rows(document_ids, fields, max_bytes=max_bytes)
+        rows = await super().read_rows(document_ids, fields, max_bytes=max_bytes)
+        return self.rows_know_grants(rows)
+
+    @override
+    async def get_signed_in(self) -> SignedIn | None:
+        return None if self.nobody else await super().get_signed_in()
 
     @override
     async def get_document(self, document_id: int) -> DocumentRecord:
@@ -110,6 +129,7 @@ class World(FakePaperless):
 
     @override
     async def create_tag(self, name: str) -> TaxonomyItem:
+        self.now += self.tag_takes
         if name in self.tag_fails:
             raise self.tag_fails[name]
         return await super().create_tag(name)
@@ -328,10 +348,10 @@ async def test_a_preview_shows_every_value_and_writes_nothing() -> None:
     assert [(r.id, r.name) for r in report.also_changed] == [(104, "Scan 4")]
     assert report.left == (101, 103)
     assert report.message == (
-        "Dry run, nothing was changed. Confirming would change 2 documents: 101 'Scan 1' "
-        "(title 'Scan 1' -> 'Neu'; tags +'brand new', +'e2e-inbox'), 103 'Scan 3' "
-        f"('{LINK}' none -> [104 'Scan 4']); create the tag 'brand new', private to you until "
-        "shared; and, because document links are mirrored, also change 1 document besides "
+        "Dry run, nothing was changed. Confirming would create the tag 'brand new', private to you "
+        "until shared; change 2 documents: 101 'Scan 1' (title 'Scan 1' -> 'Neu'; tags "
+        f"+'brand new', +'e2e-inbox'), 103 'Scan 3' ('{LINK}' none -> [104 'Scan 4']); and, "
+        "because document links are mirrored, also change 1 document besides "
         "(104 'Scan 4'). Paperless runs its workflows for changed documents on each. To go ahead, "
         "call again without dry_run; pass confirm=true only if the user already agreed."
     )
@@ -738,7 +758,12 @@ async def test_owner_changes_and_new_tags_are_shown_in_full_also_beyond_twenty()
 
     # As every text the server did not write: cut to 60 characters (decision-44), but bound.
     shown = long[:59] + "…"
-    assert f"create the tags '{shown}', 'Other', private to you" in refusal.message
+    also = "'Other' (also for 'OTHER')"
+    assert f"create the tags '{shown}', {also}, private to you" in refusal.message
+    start = "Nothing was changed. Confirming would change the owner of document 121"
+    assert refusal.message.startswith(start)
+    places = [refusal.message.index(part) for part in (start, "create the tags", "change 24")]
+    assert places == sorted(places)
     told = (
         "change the owner of document 121 'Scan 21' to 'e2e-reader' (id 3) and of document 122 "
         "'Scan 22' to no owner (every user who may view documents sees it): a new owner takes it "
@@ -948,8 +973,10 @@ async def test_a_refused_link_says_what_it_needs() -> None:
 
 
 async def test_a_refused_owner_change_may_have_taken_links_off() -> None:
-    # Paperless unlinks the other documents before it checks the owner.
+    # Paperless unlinks the other documents before it checks the owner; beforehand it is refused
+    # where the user is known.
     setup = Setup()
+    setup.fake.nobody = True
     setup.link(101, [102])
     setup.fake.write_fails[101] = PermissionDenied("The Paperless user may not.")
 
@@ -1041,6 +1068,16 @@ async def test_two_lost_answers_that_are_not_in_a_row_do_not_stop() -> None:
     assert report.counts == {"unknown": 2, "changed": 3}
 
 
+async def test_lost_answers_that_were_looked_up_do_not_stop_the_call() -> None:
+    setup = Setup()
+    setup.fake.write_fails = dict.fromkeys(range(101, 106), TIMEOUT)
+    setup.fake.applied = {*range(101, 106)}
+
+    report = await setup.run(*(named(n) for n in range(101, 106)))
+
+    assert report.counts == {"changed": 5}
+
+
 async def test_reads_that_fail_write_nothing_and_count_as_lost_answers() -> None:
     setup = Setup()
     setup.fake.read_fails = {102: [TIMEOUT], 103: [TIMEOUT]}
@@ -1113,7 +1150,7 @@ async def test_nothing_is_started_after_forty_seconds() -> None:
 
 async def test_a_call_that_ran_out_of_time_before_the_first_write_is_no_error() -> None:
     setup = Setup(writes=False)
-    times = iter([0.0, 40.0])
+    times = iter([0.0, 0.0, 40.0])
     setup.updates = bulk_updates(setup.fake, clock=lambda: next(times))
 
     report = await setup.run(named(101))
@@ -1277,3 +1314,280 @@ async def test_the_reasons_a_result_repeats_are_limited_those_of_an_error_are_no
     assert report.message.count("(failed)") == 10
     assert " And 2 more. " in report.message
     assert error.message.count("(failed): no " + "x" * 296 + "…") == 12
+
+
+# --- the review round
+
+
+async def test_a_refusal_of_one_hundred_long_values_is_bounded_and_names_every_item() -> None:
+    setup = Setup(writes=False, count=100)
+
+    refusal = await setup.refused(*(item(100 + n, tags_add=["x" * 5000]) for n in range(1, 101)))
+
+    assert len(refusal.message) < 70_000
+    assert all(f"document {100 + n}: " in refusal.message for n in range(1, 101))
+    assert "create_missing_tags=true" in refusal.message
+
+
+async def test_many_contradictions_of_one_item_are_bounded_too() -> None:
+    setup = Setup(writes=False, count=100)
+    every = [100 + n for n in range(2, 101)]
+
+    refusal = await setup.refused(
+        item(101, custom_fields={LINK: every}),
+        *(item(n, custom_fields={LINK: []}) for n in every),
+    )
+
+    assert len(refusal.message) < 70_000
+    assert all(f"document {n}: " in refusal.message for n in [101, *every])
+
+
+async def test_the_largest_serial_number_is_checked_beforehand() -> None:
+    setup = Setup()
+
+    refusal = await setup.refused(item(101, archive_serial_number=4_294_967_296))
+    report = await setup.run(item(101, archive_serial_number=4_294_967_295))
+
+    assert "document 101: An archive serial number is at most 4294967295." in refusal.message
+    assert report.counts == {"changed": 1}
+
+
+def restricted(setup: Setup) -> None:
+    """The user becomes one with every permission a change needs, but no superuser."""
+    setup.fake.user = replace(
+        setup.fake.user,
+        is_superuser=False,
+        permissions=frozenset(
+            {
+                *("view_document", "change_document", "view_uisettings", "view_user"),
+                *("view_customfield", "view_tag"),
+            }
+        ),
+    )
+
+
+def granted(setup: Setup, number: int) -> None:
+    """The document is someone else's, with a grant to change it (the fake's rows know grants)."""
+    setup.document(number).owner = 3
+    setup.document(number).viewers = setup.document(number).editors = {2}
+    setup.fake.changeable.add(number)
+
+
+@pytest.mark.parametrize("values", [{}, {"remove_custom_fields": [LINK]}])
+async def test_an_owner_change_by_another_than_the_owner_is_refused_beforehand(
+    values: dict[str, object],
+) -> None:
+    setup = Setup(writes=False)
+    restricted(setup)
+    granted(setup, 101)
+    setup.link(101, [102])
+
+    refusal = await setup.refused(item(101, owner=2, **values), named(102))
+
+    assert "document 101: Only its owner may change the owner." in refusal.message
+    assert "document 102:" not in refusal.message
+
+
+@pytest.mark.parametrize("owner", [2, None])
+async def test_the_owner_and_anyone_without_an_owner_may_change_it(owner: int | None) -> None:
+    setup = Setup()
+    restricted(setup)
+    setup.document(101).owner = owner
+
+    report = await setup.run(item(101, owner="e2e-reader"))
+
+    assert report.counts == {"changed": 1}
+
+
+async def test_a_link_to_a_document_an_earlier_item_gives_away_is_refused() -> None:
+    setup = Setup(writes=False)
+    restricted(setup)
+
+    refusal = await setup.refused(
+        item(101, owner="e2e-reader"), item(102, custom_fields={LINK: [101]})
+    )
+
+    told = (
+        f"document 102: '{LINK}' links to document 101, which an earlier item of this call gives "
+        "away; put the link first."
+    )
+    assert told in refusal.message
+
+
+async def test_the_link_first_works_and_so_does_a_superuser_in_any_order() -> None:
+    items = [item(101, owner="e2e-reader"), item(102, custom_fields={LINK: [101]})]
+    mine, superuser = Setup(), Setup()
+    restricted(mine)
+
+    first = await mine.run(*reversed(items))
+    second = await superuser.run(*items)
+
+    assert (first.counts, second.counts) == ({"changed": 2}, {"changed": 2})
+
+
+@pytest.mark.parametrize("values", [{"clear": ["owner"]}, {"owner": 2}])
+async def test_a_document_that_anyone_or_the_user_then_owns_can_still_be_linked(
+    values: dict[str, object],
+) -> None:
+    setup = Setup(writes=False)
+    restricted(setup)
+    setup.document(101).owner = None if "owner" in values else 2
+
+    report = await setup.run(
+        item(101, **values), item(102, custom_fields={LINK: [101]}), dry_run=True
+    )
+
+    assert report.counts == {"would_change": 2}
+
+
+async def test_a_link_after_giving_away_is_refused_where_the_user_is_not_known() -> None:
+    setup = Setup(writes=False)
+    setup.fake.nobody = True
+
+    refusal = await setup.refused(
+        item(101, owner="e2e-reader"), item(102, custom_fields={LINK: [101]})
+    )
+
+    assert "which an earlier item of this call gives away" in refusal.message
+
+
+async def test_who_is_signed_in_is_asked_for_owner_changes_only() -> None:
+    setup = Setup(writes=False)
+    setup.fake.user = replace(
+        setup.fake.user, is_superuser=False, permissions=frozenset({"view_document"})
+    )
+
+    report = await setup.run(named(101), dry_run=True)
+
+    assert report.counts == {"would_change": 1}
+
+
+async def test_only_what_was_sent_counts_for_the_other_documents() -> None:
+    setup = Setup()
+    setup.fake.write_fails = {102: REFUSED[0], 103: LIMITED}
+
+    report = await setup.run(
+        item(101, custom_fields={LINK: [1]}),
+        item(102, custom_fields={LINK: [2]}),
+        item(103, custom_fields={LINK: [105]}),
+        item(104, custom_fields={LINK: [105]}),
+    )
+
+    assert statuses(report) == {101: "changed", 102: "failed", 103: "failed", 104: "not_started"}
+    assert [r.id for r in report.also_changed] == [1]
+
+
+async def test_a_lost_change_counts_as_sent() -> None:
+    setup = Setup()
+    setup.fake.write_fails[102] = TIMEOUT
+
+    report = await setup.run(named(101), item(102, custom_fields={LINK: [103]}))
+
+    assert [r.id for r in report.also_changed] == [103]
+
+
+async def test_one_document_that_was_changed_partly_is_a_result_not_an_error() -> None:
+    setup = Setup()
+    setup.fake.write_fails[101] = TIMEOUT
+
+    def partly() -> None:
+        setup.document(101).title = "New 101"
+
+    setup.fake.before[101] = lambda: setup.fake.before.update({101: partly})
+    report = await setup.run(item(101, title="New 101", correspondent="e2e-acme"))
+
+    assert statuses(report) == {101: "unknown"}
+    assert [c.new for c in report.documents[0].changes] == ["New 101"]
+    assert report.left == (101,)
+
+
+async def test_every_list_request_is_bounded_by_64_mib() -> None:
+    setup = Setup(writes=False)
+
+    _ = await setup.run(item(101, custom_fields={LINK: [1]}), dry_run=True)
+
+    assert setup.fake.limits == [64 * 1024 * 1024] * 2
+
+
+async def test_no_tag_is_created_after_forty_seconds_and_those_that_were_are_named() -> None:
+    setup = Setup()
+    setup.fake.tag_takes = 20.0
+
+    report = await setup.run(item(101, tags_add=["a", "b", "c"]), create=True)
+
+    assert statuses(report) == {101: "not_started"}
+    assert report.created_tags == ("a", "b")
+    assert [t.name for t in setup.state.tags if t.name in {"a", "b", "c"}] == ["a", "b"]
+    assert "Tags created: 'a', 'b'." in report.message
+    assert setup.fake.got == []
+
+
+async def test_checks_that_take_longer_than_forty_seconds_end_the_call() -> None:
+    setup = Setup(writes=False, count=150)
+    setup.fake.list_takes = 25.0
+    link = item(101, custom_fields={LINK: [*range(102, 251)]})
+
+    error = await setup.failed(link)
+    preview = await setup.run(link, dry_run=True)
+
+    assert error.message == (
+        "Nothing was changed: checking the documents and their links took longer than 40 seconds."
+    )
+    assert error.hint == "Name fewer documents or links per call."
+    assert preview.counts == {"would_change": 1}  # a preview writes nothing and may take its time
+
+
+async def test_two_spellings_of_a_new_tag_are_both_shown_and_bound() -> None:
+    setup = Setup(writes=False)
+
+    one = await setup.asked(
+        item(101, tags_add=["Brand new"]), item(102, tags_add=["BRAND new"]), create=True
+    )
+    two = await setup.asked(
+        item(101, tags_add=["Brand new"]), item(102, tags_add=["Brand new"]), create=True
+    )
+
+    assert "create the tag 'Brand new' (also for 'BRAND new'), private" in one.message
+    assert "also for" not in two.message
+
+
+async def test_an_unlinked_field_that_only_resends_a_stored_link_is_no_dropped_one() -> None:
+    # Nothing but the title changes, so no custom field is sent and no link is dropped.
+    setup = Setup(writes=False)
+    setup.link(101, [102])
+    setup.link(102, [101])
+
+    report = await setup.run(named(101), dry_run=True)
+
+    assert report.also_changed == ()
+
+
+async def test_only_a_missing_right_is_explained_by_the_link() -> None:
+    setup = Setup()
+    setup.fake.write_fails[101] = Validation("Paperless rejected the request: no.")
+
+    error = await setup.failed(item(101, custom_fields={LINK: [102]}))
+
+    assert "A document link needs" not in error.message
+
+
+async def test_created_tags_stay_when_every_document_changed_meanwhile() -> None:
+    setup = Setup()
+    setup.fake.before[101] = lambda: setup.document(101).__dict__.update(tags=[1])
+
+    error = await setup.failed(item(101, tags_add=["one"]), create=True)
+
+    assert "Tags created: 'one'." in error.message
+    assert [t.name for t in setup.state.tags].count("one") == 1
+
+
+async def test_what_is_left_says_that_a_document_given_away_cannot_be_repeated() -> None:
+    setup = Setup()
+    setup.fake.write_fails[102] = REFUSED[0]
+
+    report = await setup.run(item(101, owner="e2e-reader"), named(102))
+    other = await Setup().run(named(101), named(102))
+
+    told = "Leave out what was given away: you may no longer see or change it."
+    assert report.message.endswith(told)
+    assert told not in other.message

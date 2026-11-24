@@ -162,10 +162,13 @@ HOSTILE: Final[dict[str, Json]] = {
         "documents": [
             {
                 "document_id": 10,
+                "title": EVIL,
                 "owner": 3,
+                "correspondent": 1,
                 "tags_add": [EVIL],
-                "custom_fields": {"1": EVIL, "8": [11]},
+                "custom_fields": {"1": EVIL, "10": "kept", "8": [11]},
             },
+            {"document_id": 14, "clear": ["owner"], "tags_add": [1]},
         ],
         "create_missing_tags": True,
     },

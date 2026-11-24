@@ -83,7 +83,7 @@ TO_GO_AHEAD_BY_IDS: Final = (
 )
 NEXT_CALL: Final = (
     "Show the user these documents and the effect. Once they agree, call again with the same "
-    "filters (or saved_view), exclude_ids and operation, and with document_ids=[{ids}] and "
+    "filters (or saved_view), exclude_ids and {what}, and with document_ids=[{ids}] and "
     "confirm=true: exactly these are changed, and none if one of them no longer matches. With "
     "filters or saved_view alone, confirm=true is not enough."
 )
@@ -263,7 +263,9 @@ class BulkDocumentEditor:
         """
         ids = [hit.id for hit in outcome.changing]
         files = await self._reader.get_newest_versions(ids) if outcome.resolved.on_files else {}
-        hint = NEXT_CALL.format(ids=", ".join(map(str, ids))) if outcome.alone else CONFIRM_HINT
+        listed = ", ".join(map(str, ids))
+        next_call = NEXT_CALL.format(ids=listed, what="operation")
+        hint = next_call if outcome.alone else CONFIRM_HINT
         ConfirmationRequired.require(
             outcome.effect, scope=(outcome.scope, sorted(files.items())), hint=hint
         )

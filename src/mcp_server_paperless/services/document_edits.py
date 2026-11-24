@@ -38,7 +38,7 @@ from mcp_server_paperless.services.tag_hierarchy import blocked_removals, close_
 from mcp_server_paperless.services.taxonomy import fold
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Iterable, Sequence
+    from collections.abc import Callable, Collection, Iterable, Sequence
 
     from pydantic import JsonValue
 
@@ -466,8 +466,10 @@ class DocumentEditor:
         _check_new_names(added)
         return _Tags(add=added, remove=removed, replace=None, parents=parents)
 
-    async def create_tags(self, names: Iterable[str]) -> Created:
-        """Create the tags that do not exist yet, once per name.
+    async def create_tags(
+        self, names: Iterable[str], *, go_on: Callable[[], bool] = lambda: True
+    ) -> Created:
+        """Create the tags that do not exist yet, once per name, while ``go_on``.
 
         Raises:
             PaperlessMcpError: One could not be created; the message names those that were.
@@ -477,6 +479,8 @@ class DocumentEditor:
         try:
             for name in wanted:
                 if fold(name) not in created:
+                    if not go_on():
+                        break
                     try:
                         created[fold(name)] = (name, (await self._tag_writer.create_tag(name)).id)
                     except PaperlessMcpError as error:

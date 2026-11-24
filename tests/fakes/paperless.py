@@ -99,6 +99,7 @@ from mcp_server_paperless.domain.documents import (
     FileMetadata,
     HistoryEntry,
     Note,
+    SignedIn,
     Suggestions,
 )
 from mcp_server_paperless.domain.duplicates import DuplicateRecord
@@ -2195,6 +2196,12 @@ class FakePaperless:
             return None
         owns = all(owner in {None, user.id} for owner in owners)
         return user.is_superuser or (owns and user.has("delete_document"))
+
+    async def get_signed_in(self) -> SignedIn | None:
+        """`DocumentReader.get_signed_in` (UiSettingsView: needs `view_uisettings`)."""
+        if not self.user.has("view_uisettings"):
+            return None
+        return SignedIn(id=self.user.id, is_superuser=self.user.is_superuser)
 
     @write
     async def rotate_documents(

@@ -59,6 +59,7 @@ class World(FakePaperless):
         self.now: float = 0.0
         self.takes: float = 0.0
         self.lists: int = 0
+        self.limits: list[int] = []
         self.list_fails: PaperlessMcpError | None = None
         self.checking: bool = False
         self.read: list[int] = []
@@ -74,6 +75,7 @@ class World(FakePaperless):
         self, document_ids: Sequence[int], fields: Sequence[ReadField], *, max_bytes: int
     ) -> tuple[DocumentRow, ...]:
         self.lists += 1
+        self.limits.append(max_bytes)
         if self.list_fails is not None:
             raise self.list_fails
         rows = await super().read_rows(document_ids, fields, max_bytes=max_bytes)
@@ -605,6 +607,16 @@ async def test_a_lost_answer_that_cannot_be_looked_up_stays_unknown(
     assert report.documents[0].why == f"{error.message} The notes could not be read again: gone"
 
 
+async def test_lost_answers_that_were_looked_up_do_not_stop_the_call() -> None:
+    setup = Setup(scans=4)
+    setup.fake.write_fails = dict.fromkeys(range(101, 105), TIMEOUT)
+    setup.fake.applied = {101, 102, 103, 104}
+
+    report = await setup.one(document_ids=(101, 102, 103, 104))
+
+    assert report.counts == {"added": 4}
+
+
 async def test_two_lost_answers_in_a_row_stop_the_call() -> None:
     setup = Setup(scans=4)
     setup.fake.write_fails = {102: TIMEOUT, 103: TIMEOUT}
@@ -768,3 +780,31 @@ async def test_notes_too_large_to_read_are_refused() -> None:
         _ = await setup.each((101, "x"))
 
     assert raised.value.message == "The notes of these documents are larger than 64 MiB."
+
+
+async def test_a_document_with_two_notes_is_named_and_counted_once() -> None:
+    setup = Setup(writes=False)
+    viewer_only(setup)
+
+    with pytest.raises(PermissionDenied) as raised:
+        _ = await setup.each((102, "a"), (102, "b"), confirm=True)
+
+    assert raised.value.message.startswith("You may not change 1 document (102 'Scan 2'), so")
+
+
+async def test_two_notes_of_one_document_that_are_left_count_one_document() -> None:
+    setup = Setup()
+    setup.fake.write_fails[102] = PermissionDenied("no")
+
+    report = await setup.each((101, "x"), (102, "a"), (102, "b"))
+
+    assert (report.left, report.remaining, report.matched) == ((102,), 1, 2)
+    assert report.counts == {"added": 1, "failed": 2}
+
+
+async def test_the_list_request_is_bounded_by_64_mib() -> None:
+    setup = Setup(writes=False)
+
+    _ = await setup.one(dry_run=True)
+
+    assert setup.fake.limits == [64 * 1024 * 1024]

@@ -103,8 +103,18 @@ NOT_YET: Final = (
 UNLINKED: Final = "Links to it may be gone on the documents it linked to."
 LINK_NEEDS: Final = "A document link needs change permission on the linked document."
 AGAIN: Final = "Pass these items again once the reason is gone; what is done stays as it is."
+GIVEN_AWAY: Final = "Leave out what was given away: you may no longer see or change it."
+TOO_SLOW: Final = (
+    "Nothing was changed: checking the documents and their links took longer than "
+    f"{RUN_SECONDS:g} seconds."
+)
+NOT_OWNER: Final = "Only its owner may change the owner."
+# The largest archive serial number of Paperless.
+MAX_NUMBER: Final = 2**32 - 1
 GO_ON: Final = "Pass the items in left again; what is done stays as it is."
 CORRECT: Final = "Correct these items or leave them out; the others were not changed."
+# What was sent to Paperless, or would be.
+SENT: Final[frozenset[UpdateStatus]] = frozenset({"would_change", "changed", "unknown"})
 # What is about one item and is named with it; anything else ends the call.
 ABOUT_ITEM: Final = (Ambiguous, NotFound, PermissionDenied, Validation)
 
@@ -171,6 +181,8 @@ class _Call:
     links: set[int]
     patches: dict[int, DocumentPatch]
     also: list[tuple[int, str]] = field(default_factory=list[tuple[int, str]])
+    # The other documents each item changes by its links.
+    reach: dict[int, set[int]] = field(default_factory=dict)
     # In phase 2: the tags created, and the custom fields each document is expected to have.
     created: Created = field(default_factory=dict[str, tuple[str, int]])
     fields: dict[int, dict[int, JsonValue]] = field(default_factory=dict)
@@ -182,6 +194,21 @@ class _Call:
     @property
     def new_tags(self) -> list[str]:
         return [name for name, _ in self.placeholders.values()]
+
+    @property
+    def spellings(self) -> dict[str, list[str]]:
+        """The new tags by name, and the other ways the items spell them."""
+        found: dict[str, list[str]] = {name: [] for name in self.new_tags}
+        for name in (n for item in self.items for n in item.plan.tags.new):
+            first = self.placeholders[fold(name)][0]
+            if name != first and name not in found[first]:
+                found[first].append(name)
+        return found
+
+    @property
+    def owners(self) -> list[_Item]:
+        """The items that change an owner."""
+        return [i for i in self.items if "owner" in self.patches[i.id].model_fields_set]
 
 
 def _values(state: DocumentState) -> dict[int, JsonValue]:
@@ -257,7 +284,9 @@ class BulkUpdates:
                 and at least one is not as asked; the message names them.
         """
         until = self._clock() + RUN_SECONDS
-        call = await self._check(values, create_missing_tags=create_missing_tags)
+        call = await self._check(
+            values, create_missing_tags=create_missing_tags, until=None if dry_run else until
+        )
         changing = call.changing
         if dry_run:
             return self._preview(call)
@@ -265,7 +294,9 @@ class BulkUpdates:
             return self._report(call, {}, (), "")
         if not confirm:
             ConfirmationRequired.require(self._effect(call), scope=self._scope(call))
-        call.created = await self._editor.create_tags(call.new_tags)
+        call.created = await self._editor.create_tags(
+            call.new_tags, go_on=lambda: self._clock() < until
+        )
         call.names.created = {number: name for name, number in call.created.values()}
         call.fields = {item.id: _values(item.state) for item in call.items}
         rows, stop = await one_by_one(
@@ -279,7 +310,9 @@ class BulkUpdates:
 
     # --- phase 1
 
-    async def _check(self, values: Sequence[DocumentValues], *, create_missing_tags: bool) -> _Call:
+    async def _check(
+        self, values: Sequence[DocumentValues], *, create_missing_tags: bool, until: float | None
+    ) -> _Call:
         """What the call would do; refuses it as a whole if anything is wrong."""
         ids = [value.document_id for value in values]
         if not 1 <= len(ids) <= MAX_DOCUMENTS:
@@ -289,7 +322,7 @@ class BulkUpdates:
         if twice:
             message = f"Nothing was changed: documents named twice: {', '.join(map(str, twice))}."
             raise Validation(message, hint="Put all values of a document into one item.")
-        rows = await self._rows(ids, FIELDS)
+        rows = await self._rows(ids, FIELDS, until)
         wrong: dict[int, list[str]] = {}
         items: list[_Item] = []
         for value in values:
@@ -305,12 +338,19 @@ class BulkUpdates:
             try:
                 items.append(_Item(state, await self._editor.plan(edit, state)))
             except ABOUT_ITEM as error:
-                wrong[state.id] = [error.describe()]
+                hint = [f"Hint: {cut(error.hint)}"] if error.hint else []
+                wrong[state.id] = [cut(error.message), *hint]
         call = await self._call(items)
-        for number, text in [*_number_conflicts(items), *await self._link_conflicts(call)]:
-            wrong.setdefault(number, []).append(text)
+        for number, text in [
+            *_number_conflicts(items),
+            *await self._link_conflicts(call, until),
+            *await self._owner_conflicts(call),
+        ]:
+            wrong.setdefault(number, []).append(cut(text))
         if wrong:
-            told = "; ".join(f"document {n}: {' '.join(wrong[n])}" for n in ids if n in wrong)
+            told = "; ".join(
+                f"document {n}: {cut(' '.join(wrong[n]), 2 * WHY_CHARS)}" for n in ids if n in wrong
+            )
             verb = "is" if len(wrong) == 1 else "are"
             message = (
                 f"Nothing was changed: {len(wrong)} of {count_documents(len(ids))} {verb} "
@@ -320,11 +360,12 @@ class BulkUpdates:
         return call
 
     async def _rows(
-        self, ids: Iterable[int], fields: Sequence[ReadField]
+        self, ids: Iterable[int], fields: Sequence[ReadField], until: float | None
     ) -> dict[int, DocumentRow]:
         wanted = list(ids)
         found: dict[int, DocumentRow] = {}
         for start in range(0, len(wanted), MAX_DOCUMENTS):
+            self._require_time(until)
             part = wanted[start : start + MAX_DOCUMENTS]
             try:
                 rows = await self._reader.read_rows(part, fields, max_bytes=SELECT_BYTES)
@@ -333,6 +374,11 @@ class BulkUpdates:
                 raise AnswerTooLarge(message, hint="Name fewer documents per call.") from None
             found.update((row.id, row) for row in rows)
         return found
+
+    def _require_time(self, until: float | None) -> None:
+        """Refuse what cannot be checked in time; nothing would be written after that anyway."""
+        if until is not None and self._clock() >= until:
+            raise PaperlessMcpError(TOO_SLOW, hint="Name fewer documents or links per call.")
 
     async def _known(self, items: Sequence[_Item]) -> dict[TaxonomyKind, dict[int, TaxonomyItem]]:
         """The objects of the kinds the items name."""
@@ -367,14 +413,14 @@ class BulkUpdates:
             patches={item.id: item.plan.patch(item.state, placeholders) for item in items},
         )
 
-    async def _link_conflicts(self, call: _Call) -> list[tuple[int, str]]:
+    async def _link_conflicts(self, call: _Call, until: float | None) -> list[tuple[int, str]]:
         """What is wrong with document links, by document; also finds who else changes."""
         finals = {
             item.id: _final(item.state, call.patches[item.id], call.links) for item in call.items
         }
         targets = {n for final in finals.values() for ids in final.values() for n in ids}
         of_call = {item.id: item for item in call.items}
-        rows = await self._rows(sorted(targets - of_call.keys()), LINKED_FIELDS)
+        rows = await self._rows(sorted(targets - of_call.keys()), LINKED_FIELDS, until)
         call.names.titles |= {n: row.title for n, row in rows.items() if row.title is not None}
         have = {n: _values(item.state) for n, item in of_call.items()} | {
             n: {v.field: v.value for v in row.custom_fields or ()} for n, row in rows.items()
@@ -383,7 +429,7 @@ class BulkUpdates:
             n for n in targets if n not in have or (n in rows and rows[n].user_can_change is False)
         }
         found: list[tuple[int, str]] = []
-        others: set[int] = set()
+        call.reach = {item.id: set() for item in call.items}
         for item, number in itertools.product(call.items, sorted(call.links)):
             name = quoted(call.names.of("custom_field", number))
             final = finals[item.id].get(number, set())
@@ -397,19 +443,51 @@ class BulkUpdates:
             new = {n for n in final - unusable if item.id not in linked(have[n].get(number))}
             before = linked(_values(item.state).get(number)) - {item.id}
             dropped = before - final if finals[item.id] else set[int]()
-            others |= {
+            call.reach[item.id] |= {
                 n for n in new | dropped if n not in of_call or number not in of_call[n].fields
             }
             kept = linked(item.plan.sets.get(number)) - {item.id}
             for other in sorted((kept | new) & of_call.keys()):
                 found += _contradiction(item, of_call[other], number, name)
-        call.also = await self._titled(others, call)
+        call.also = await self._titled({n for ids in call.reach.values() for n in ids}, call, until)
         return found
 
-    async def _titled(self, numbers: set[int], call: _Call) -> list[tuple[int, str]]:
+    async def _owner_conflicts(self, call: _Call) -> list[tuple[int, str]]:
+        """Owner changes Paperless would refuse, and links to what was given away before them."""
+        if not call.owners:
+            return []
+        user = await self._reader.get_signed_in()
+        if user is not None and user.is_superuser:
+            return []
+        found: list[tuple[int, str]] = []
+        away: set[int] = set()
+        for item in call.items:
+            patch = call.patches[item.id]
+            final = _final(item.state, patch, call.links)
+            for number, targets in sorted(final.items()):
+                lost = ", ".join(map(str, sorted(targets & away)))
+                if lost:
+                    name = quoted(call.names.of("custom_field", number))
+                    text = (
+                        f"{name} links to document {lost}, which an earlier item of this call "
+                        "gives away; put the link first."
+                    )
+                    found.append((item.id, text))
+            if "owner" not in patch.model_fields_set:
+                continue
+            if user is not None and item.state.owner not in {None, user.id}:
+                found.append((item.id, NOT_OWNER))
+            if patch.owner is not None and (user is None or patch.owner != user.id):
+                away.add(item.id)
+        return found
+
+    async def _titled(
+        self, numbers: set[int], call: _Call, until: float | None
+    ) -> list[tuple[int, str]]:
         """Titles of the other documents a change reaches ('#id' if hidden)."""
         lacking = sorted(numbers - call.names.titles.keys())
         for start in range(0, len(lacking), MAX_DOCUMENTS):
+            self._require_time(until)
             part = lacking[start : start + MAX_DOCUMENTS]
             call.names.titles |= await self._reader.get_document_titles(part)
         return [(n, call.names.titles.get(n, f"#{n}")) for n in sorted(numbers)]
@@ -474,18 +552,19 @@ class BulkUpdates:
             changes = self._planned(item, call)
             what = "; ".join(c.text for c in changes) if at < SHOWN else _joined(changes)
             told.append(f"{item.id} {quoted(item.state.title)} ({what})")
-        parts = [f"change {count_documents(len(told))}: {', '.join(told)}"]
-        if call.new_tags:
-            noun = "tag" if len(call.new_tags) == 1 else "tags"
-            listed = ", ".join(quoted(name) for name in call.new_tags)
-            parts.append(f"create the {noun} {listed}, private to you until shared")
-        owners = [i for i in call.changing if "owner" in call.patches[i.id].model_fields_set]
-        if owners:
+        parts: list[str] = []
+        if call.owners:
             handed = " and of ".join(
-                f"document {i.id} {quoted(i.state.title)} to {self._owner(i, call)}" for i in owners
+                f"document {i.id} {quoted(i.state.title)} to {self._owner(i, call)}"
+                for i in call.owners
             )
             lose = "a new owner takes it over and you may lose access to it"
             parts.append(f"change the owner of {handed}: {lose}")
+        if call.new_tags:
+            noun = "tag" if len(call.new_tags) == 1 else "tags"
+            listed = ", ".join(_spelled(name, also) for name, also in call.spellings.items())
+            parts.append(f"create the {noun} {listed}, private to you until shared")
+        parts.append(f"change {count_documents(len(told))}: {', '.join(told)}")
         if call.also:
             others = named(call.also, " besides")
             parts.append(f"and, because document links are mirrored, also change {others}")
@@ -510,7 +589,7 @@ class BulkUpdates:
             )
             for i in call.changing
         ]
-        return touched, call.new_tags, call.also
+        return touched, call.spellings, call.also
 
     def _preview(self, call: _Call) -> UpdateReport:
         rows = {
@@ -571,7 +650,7 @@ class BulkUpdates:
             return Ended(self._row(item, "unknown", why, changes=seen), silent=True)
         row = self._changed(item, call, before, after, patch)
         why = f"{error.message} Read again: it is as asked."
-        return Ended(row.model_copy(update={"why": why}), silent=True)
+        return Ended(row.model_copy(update={"why": why}))
 
     def _changed(
         self,
@@ -641,12 +720,14 @@ class BulkUpdates:
         if created:
             listed = ", ".join(quoted(name) for name in created)
             details.append(f"Tags created: {listed}.")
-        if not changed and why:
+        if not changed and why and not any(row.changes for row in bad):
             message = f"No document is known to be changed; {' '.join([lacking, *details])}"
             raise PaperlessMcpError(message, hint=READ_AGAIN)
         done = f"Changed {count_documents(changed)}."
         last = AGAIN if why else GO_ON
-        message = " ".join([lacking, done, *details, last])
+        given = {item.id for item in call.owners}
+        away = any(row.id in given and row.status == "changed" for row in report.documents)
+        message = " ".join([lacking, done, *details, last, *([GIVEN_AWAY] if away else [])])
         return _bounded(report.model_copy(update={"message": message}))
 
     def _built(
@@ -659,6 +740,8 @@ class BulkUpdates:
         dry_run: bool = False,
     ) -> UpdateReport:
         documents = tuple(rows.get(item.id) or self._row(item, "unchanged") for item in call.items)
+        sent = {row.id for row in documents if row.status in SENT}
+        reached = {n for number in sent for n in call.reach[number]}
         counts: dict[UpdateStatus, int] = {}
         for row in documents:
             counts[row.status] = counts.get(row.status, 0) + 1
@@ -667,7 +750,7 @@ class BulkUpdates:
             counts=counts,
             documents=documents,
             also_changed=tuple(
-                Ref(id=n, name=call.names.titles.get(n)) for n, _ in (call.also if rows else ())
+                Ref(id=n, name=call.names.titles.get(n)) for n, _ in call.also if n in reached
             ),
             created_tags=created,
             left=tuple(row.id for row in documents if row.status not in {"changed", "unchanged"}),
@@ -683,6 +766,11 @@ def _scalar(state: DocumentState, name: str) -> object:
 def _json(value: object) -> JsonValue:
     """A plain field as JSON; dates in ISO form."""
     return value.isoformat() if isinstance(value, date) else cast("JsonValue", value)
+
+
+def _spelled(name: str, also: Sequence[str]) -> str:
+    more = f" (also for {', '.join(map(quoted, also))})" if also else ""
+    return f"{quoted(name)}{more}"
 
 
 def _joined(changes: Sequence[_Change]) -> str:
@@ -708,6 +796,8 @@ def _number_conflicts(items: Sequence[_Item]) -> list[tuple[int, str]]:
         if wanted.count(number) > 1:
             text = f"Archive serial number {number} is given to several documents of this call."
             found.append((item.id, text))
+        elif number is not None and number > MAX_NUMBER:
+            found.append((item.id, f"An archive serial number is at most {MAX_NUMBER}."))
         elif number is not None:
             for other, held in holders.items():
                 if held == number and other != item.id:

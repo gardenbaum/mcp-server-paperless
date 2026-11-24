@@ -7,7 +7,7 @@ import pytest
 
 from mcp_server_paperless.domain.bulk import FieldsChange
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch, DocumentState
-from mcp_server_paperless.domain.errors import NotFound, Validation
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 
 if TYPE_CHECKING:
     from pydantic import JsonValue
@@ -148,3 +148,92 @@ async def test_a_note_is_stored_without_the_whitespace_around_it(backend: Backen
     assert await ports.documents.list_document_notes(document) == (note,)
     [row] = await ports.documents.read_rows([document], ["notes"], max_bytes=SIZE)
     assert row.notes == (note,)
+
+
+CHANGER = frozenset({"view_document", "change_document", "view_customfield", "view_uisettings"})
+
+
+@pytest.mark.contract("DocumentReader.get_signed_in")
+async def test_who_is_signed_in_is_known_to_users_who_may_read_their_settings(
+    backend: Backend,
+) -> None:
+    mine = await backend.admin.documents.get_signed_in()
+    other = await backend.restricted(CHANGER).documents.get_signed_in()
+    hidden = await backend.restricted(frozenset({"view_document"})).documents.get_signed_in()
+
+    assert mine is not None
+    assert mine.is_superuser
+    assert other is not None
+    assert not other.is_superuser
+    assert other.id != mine.id
+    assert hidden is None
+
+
+@pytest.mark.contract(UPDATE)
+async def test_a_link_to_a_document_that_may_not_be_changed_is_refused(backend: Backend) -> None:
+    ports, (first, second) = backend.admin, backend.new_documents(2)
+    link, text = await field(ports, "e2e-documentlink"), await field(ports, "e2e-string")
+    changer = backend.restricted(CHANGER, view=[second])
+    unowned = DocumentPatch(owner=None)
+    _ = await ports.document_writes.update_document(first, unowned)
+
+    await put(changer, first, {text: "x"})
+    with pytest.raises(PermissionDenied):
+        await put(changer, first, {link: [second], text: "x"})
+
+    assert await values(ports, first) == {text: "x"}
+    assert link not in await values(ports, second)
+
+
+@pytest.mark.contract(UPDATE)
+async def test_an_owner_gives_a_document_away_and_sees_it_in_the_answer_only(
+    backend: Backend,
+) -> None:
+    ports, (document,) = backend.admin, backend.new_documents(1)
+    changer = backend.restricted(CHANGER)
+    user = await changer.documents.get_signed_in()
+    admin = await ports.documents.get_signed_in()
+    assert user is not None
+    assert admin is not None
+    _ = await ports.document_writes.update_document(document, DocumentPatch(owner=user.id))
+
+    answer = await changer.document_writes.update_document(document, DocumentPatch(owner=admin.id))
+    with pytest.raises(NotFound):
+        _ = await changer.documents.get_document(document)
+    with pytest.raises(NotFound):
+        _ = await changer.document_writes.update_document(document, DocumentPatch(title="x"))
+
+    assert answer.owner == admin.id
+
+
+@pytest.mark.contract(UPDATE)
+async def test_another_than_the_owner_may_not_change_the_owner(backend: Backend) -> None:
+    ports, (document,) = backend.admin, backend.new_documents(1)
+    changer = backend.restricted(CHANGER, change=[document])
+    user = await changer.documents.get_signed_in()
+    assert user is not None
+
+    with pytest.raises(PermissionDenied):
+        _ = await changer.document_writes.update_document(document, DocumentPatch(owner=user.id))
+
+    assert (await ports.documents.get_document(document)).owner != user.id
+
+
+@pytest.mark.contract(ADD)
+async def test_a_note_needs_the_right_to_add_notes_and_to_change_the_document(
+    backend: Backend,
+) -> None:
+    ports, (first, second) = backend.admin, backend.new_documents(2)
+    reading = frozenset({"view_document", "change_document", "view_note"})
+
+    viewer = backend.restricted(reading, change=[first])
+    assert await viewer.documents.list_document_notes(first) == ()
+    with pytest.raises(PermissionDenied):
+        _ = await viewer.document_writes.add_note(first, "x")
+    adder = backend.restricted(reading | {"add_note"}, view=[second])
+    assert await adder.documents.list_document_notes(second) == ()
+    with pytest.raises(PermissionDenied):
+        _ = await adder.document_writes.add_note(second, "x")
+
+    assert await ports.documents.list_document_notes(first) == ()
+    assert await ports.documents.list_document_notes(second) == ()

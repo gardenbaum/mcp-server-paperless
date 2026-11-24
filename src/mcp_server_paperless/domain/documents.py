@@ -477,6 +477,15 @@ class DocumentState(BaseModel):
     user_can_change: bool | None
 
 
+class SignedIn(BaseModel):
+    """The user the credential belongs to."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    is_superuser: bool
+
+
 class DocumentText(BaseModel):
     """The whole OCR text of one version of a document, and what a change of it needs to know."""
 
