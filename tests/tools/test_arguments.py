@@ -12,7 +12,8 @@ file passes alone and in any order.
 """
 
 import hashlib
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, cast
 
@@ -28,10 +29,14 @@ from harness import serve
 from mcp_server_paperless.domain.admin import CONFIG_READ_ONLY, CONFIG_SETTINGS
 from mcp_server_paperless.domain.views import FilterRule
 from mcp_server_paperless.domain.workflows import Workflow, WorkflowAction, WorkflowTrigger
+from mcp_server_paperless.services.batch_uploads import cursor
 from mcp_server_paperless.services.documents import text_state
 from mcp_server_paperless.services.filter_rules import SPECS
+from mcp_server_paperless.tools._shared import LOCAL_TOOLSETS
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from fastmcp.client import FastMCPTransport
 
 pytestmark = pytest.mark.anyio
@@ -83,12 +88,19 @@ SESSIONS: list[Session] = []
 
 @pytest.fixture(autouse=True)
 async def _session() -> AsyncIterator[None]:
+    async with serving():
+        yield
+
+
+@asynccontextmanager
+async def serving(*, only: frozenset[str] | None = None, **how: object) -> AsyncGenerator[None]:
+    """A server for `sweep`; its tools (`only` some of them) must have a scenario each."""
     fake = admin()
     before = observation.RECORDING
     observation.RECORDING = True  # the ports note their calls, to tell a write from none
     try:
-        async with Client(serve(fake, toolsets=["all"])) as client:
-            tools = await client.list_tools()
+        async with Client(serve(fake, toolsets=["all"], **how)) as client:  # pyright: ignore[reportArgumentType] -- keyword passthrough
+            tools = [t for t in await client.list_tools() if only is None or t.name in only]
             reads = frozenset(
                 t.name for t in tools if t.annotations and t.annotations.read_only_hint
             )
@@ -438,6 +450,28 @@ async def test_files_are_uploaded_downloaded_and_shared_with_every_argument() ->
         "create_share_link", {"document_id": 1, "expires_in_days": 3, "file_version": "original"}
     )
     await sweep("create_share_bundle", {"document_ids": [1]})
+    assert not FAILED, "\n".join(FAILED)
+
+
+async def test_several_files_are_uploaded_with_every_argument(tmp_path: Path) -> None:
+    _ = (tmp_path / "a.pdf").write_bytes(pdf("a"))
+    _ = (tmp_path / "b.pdf").write_bytes(pdf("b"))
+    common: Json = {
+        "correspondent": 1,
+        "document_type": 1,
+        "storage_path": 1,
+        "tags": [1],
+        "created": "2026-01-02",
+        "custom_fields": {"e2e-string": "x"},
+        "wait_seconds": 0,
+    }
+    async with serving(only=frozenset(LOCAL_TOOLSETS), stdio=True, upload_dirs=[str(tmp_path)]):
+        await sweep("upload_documents", {**common, "paths": [str(tmp_path / "a.pdf")]}, ())
+        await sweep("upload_documents", {**common, "directory": str(tmp_path)}, ("dry_run",))
+        for recursive in (True, False):
+            after = cursor(str(tmp_path / "a.pdf"), str(tmp_path), recursive=recursive)
+            given = {"directory": str(tmp_path), "recursive": recursive, "after": after}
+            await sweep("upload_documents", {**common, **given}, ())
     assert not FAILED, "\n".join(FAILED)
 
 

@@ -18,6 +18,10 @@ from mcp_server_paperless.domain.errors import Validation
 from mcp_server_paperless.tools._shared import (
     ANNOTATIONS,
     Confirm,
+    Created,
+    CustomFields,
+    Named,
+    Tags,
     boundary,
     check_transport,
     services,
@@ -25,11 +29,7 @@ from mcp_server_paperless.tools._shared import (
 from mcp_server_paperless.tools.upload import (
     COMMON,
     TOOLSET,
-    Created,
-    CustomFields,
-    Named,
     SerialNumber,
-    Tags,
     Title,
     Wait,
 )

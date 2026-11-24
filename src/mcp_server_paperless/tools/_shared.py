@@ -10,12 +10,14 @@ calls on ``Services``. The registry tests
 import functools
 import logging
 from dataclasses import dataclass
+from datetime import date
 from typing import TYPE_CHECKING, Annotated, Final, Protocol, cast
 
 from fastmcp.exceptions import ResourceError, ToolError
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import Field, JsonValue
 
+from mcp_server_paperless.domain.documents import NameOrId
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     NotConfirmed,
@@ -33,6 +35,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.admin_accounts import AccountAdmin
     from mcp_server_paperless.services.admin_system import SystemAdmin
     from mcp_server_paperless.services.ai import AiService
+    from mcp_server_paperless.services.batch_uploads import BatchUploadService
     from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
     from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
     from mcp_server_paperless.services.document_edits import DocumentEditor
@@ -203,6 +206,10 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "run_task": "admin",
     "bulk_download": "admin",
 }
+
+# Tools that exist only over stdio with upload directories (decision-50): beside the table above,
+# because over HTTP nothing may name them.
+LOCAL_TOOLSETS: Final[Mapping[str, str]] = {"upload_documents": "bulk"}
 
 # Toolsets that need a Paperless capability, mapped to it (only "ai" so far); the startup probe
 # hides such a toolset when the capability is known to be missing.
@@ -905,6 +912,18 @@ SAVING_ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
     for name in ("download_document", "bulk_download")
 }
 
+# The annotations of ``LOCAL_TOOLSETS``. Like upload_document it adds documents and takes nothing
+# away, and every call adds more. It asks for no confirm, because it never sends a known duplicate.
+LOCAL_ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
+    "upload_documents": ToolAnnotations(
+        title="Upload several documents",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=False,
+    ),
+}
+
 logger = logging.getLogger(__name__)
 
 # The `confirm` parameter of every destructive tool (decision-6, decision-15, decision-44).
@@ -916,6 +935,27 @@ type Confirm = Annotated[
             "user, and the tool runs only if they accept; with any other nothing changes and the "
             "error says what would happen. Describe that to the user and pass true only once they "
             "agree, or if they already asked for exactly this."
+        )
+    ),
+]
+
+# What the upload tools take for the new documents.
+type Named = Annotated[NameOrId | None, Field(description="Name or id; see list_taxonomy.")]
+type Created = Annotated[
+    date | None, Field(description="Creation date (YYYY-MM-DD); default: Paperless reads it.")
+]
+type Tags = Annotated[
+    list[NameOrId] | None,
+    Field(description="Tag names or ids; they must exist (none is created)."),
+]
+type CustomFields = Annotated[
+    dict[str, JsonValue] | None,
+    Field(
+        description=(
+            "Custom field values keyed by field name or id. Values by data type: string/longtext "
+            "text; url with scheme; date 'YYYY-MM-DD'; boolean true/false; integer; float; "
+            "monetary 'EUR12.50' (or 12.5); documentlink a list of document ids; select the "
+            "option's label."
         )
     ),
 ]
@@ -962,6 +1002,7 @@ class Services:
     tasks: TaskService
     ai: AiService
     uploads: UploadService
+    upload_batches: BatchUploadService
     versions: VersionService
     version_uploads: VersionUploadService
     text_edits: TextEditor

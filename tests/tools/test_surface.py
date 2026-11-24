@@ -169,6 +169,26 @@ async def test_upload_document_version_as_a_stdio_server_with_an_allowlist_offer
     assert tool.model_dump(mode="json", by_alias=True, exclude_none=True) == snapshot
 
 
+@pytest.mark.decision("decision-50")
+async def test_upload_documents_as_a_stdio_server_with_an_allowlist_offers_it(
+    snapshot: SnapshotAssertion,
+) -> None:
+    """The one tool that exists only in this mode (PLMCP-85)."""
+    server = serve(
+        admin(ai_enabled=True),
+        toolsets=["bulk"],
+        stdio=True,
+        upload_dirs=["/srv/paperless/consume"],
+    )
+    async with Client(server) as client:
+        [tool] = [t for t in await client.list_tools() if t.name == "upload_documents"]
+    wire = tool.model_dump(mode="json", by_alias=True, exclude_none=True)
+    schemas = cast("dict[str, Schema]", wire)
+
+    assert incompatible(tool.name, schemas["inputSchema"], schemas["outputSchema"]) == []
+    assert wire == snapshot
+
+
 @pytest.mark.decision("decision-45")
 @pytest.mark.parametrize("name", ["download_document", "bulk_download"])
 async def test_a_download_tool_as_a_stdio_server_with_download_directories_offers_it(

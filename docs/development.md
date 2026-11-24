@@ -47,7 +47,7 @@ Changed lines need 100 % test coverage (`just cov-diff`); the whole code base at
 ```sh
 just e2e-up                   # start the pinned Paperless stack for the live tests
 just e2e                      # the live suite against it
-just mutation                 # mutmut on services/ and paperless/, fails below the 80 % gate, a few minutes
+just mutation                 # mutmut on services/ and paperless/, fails below the 80 % gate, more than an hour
 just e2e-latest               # live suite against the latest stable paperless-ngx 3.x image
 just e2e-office               # Office and e-mail documents, with Tika and Gotenberg
 just e2e-duplicates           # a Paperless that rejects duplicates

@@ -264,11 +264,6 @@ function_hash = "0b79ab9c6026"
 reason = "retry=None is falsy like retry=False, so the request is not retried either way."
 
 [[equivalent]]
-mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁadd_note__mutmut_11"
-function_hash = "4b4ad4f40f16"
-reason = "httpx2 upper-cases the method when it builds the request, so 'post' sends exactly what 'POST' sends."
-
-[[equivalent]]
 mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁdelete_note__mutmut_5"
 function_hash = "f3d927e26557"
 reason = "request() only tests retry for truth (`if retry`), so None and False both switch retries off."
@@ -289,11 +284,6 @@ function_hash = "5d60b85a9db1"
 reason = "httpx2 upper-cases the method when it builds the request, so 'delete' sends exactly what 'DELETE' sends."
 
 [[equivalent]]
-mutant = "mcp_server_paperless.services.taxonomy_edits.xǁTaxonomyEditorǁdelete__mutmut_16"
-function_hash = "5fe9ec283ed8"
-reason = "Only tags have a parent, so the parent map built from the rows of any other kind has no children and descendants() returns the empty set whether or not the kind is checked."
-
-[[equivalent]]
 mutant = "mcp_server_paperless.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁcreate_taxonomy_item__mutmut_21"
 function_hash = "f1693232a782"
 reason = "httpx2 upper-cases the method when it builds the request, so 'post' is sent as 'POST'."
@@ -312,26 +302,6 @@ reason = "_body() tests create only for truth and an update means false; None is
 mutant = "mcp_server_paperless.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁupdate_taxonomy_item__mutmut_33"
 function_hash = "9e402a3c722c"
 reason = "httpx2 upper-cases the method when it builds the request, so 'patch' is sent as 'PATCH'."
-
-[[equivalent]]
-mutant = "mcp_server_paperless.paperless.taxonomy.xǁPaperlessTaxonomyWriterǁdelete_taxonomy_item__mutmut_7"
-function_hash = "00e012f88109"
-reason = "httpx2 upper-cases the method when it builds the request, so 'delete' is sent as 'DELETE'."
-
-[[equivalent]]
-mutant = "mcp_server_paperless.services.allowed_paths.x_clean_filename__mutmut_5"
-function_hash = "314b5f13ef27"
-reason = "rsplit with another maxsplit and `problem = ''` instead of None: [-1] is the same last component, and an empty problem is falsy like None."
-
-[[equivalent]]
-mutant = "mcp_server_paperless.services.allowed_paths.x_clean_filename__mutmut_14"
-function_hash = "314b5f13ef27"
-reason = "rsplit with another maxsplit and `problem = ''` instead of None: [-1] is the same last component, and an empty problem is falsy like None."
-
-[[equivalent]]
-mutant = "mcp_server_paperless.services.allowed_paths.x_clean_filename__mutmut_17"
-function_hash = "314b5f13ef27"
-reason = "rsplit with another maxsplit and `problem = ''` instead of None: [-1] is the same last component, and an empty problem is falsy like None."
 
 [[equivalent]]
 mutant = "mcp_server_paperless.services.upload_source.x__read__mutmut_14"
@@ -372,11 +342,6 @@ reason = "O_CLOEXEC cannot be observed (O_RDONLY is 0); a stat that follows link
 mutant = "mcp_server_paperless.services.upload_source.x__open_regular__mutmut_22"
 function_hash = "ba98d1cf61e4"
 reason = "O_CLOEXEC cannot be observed (O_RDONLY is 0); a stat that follows links is backed by the O_NOFOLLOW open that comes next."
-
-[[equivalent]]
-mutant = "mcp_server_paperless.services.allowed_paths.x_open_directory__mutmut_3"
-function_hash = "5190daefaeba"
-reason = "O_CLOEXEC cannot be observed, and O_RDONLY is 0."
 
 [[equivalent]]
 mutant = "mcp_server_paperless.services.upload_types.x__zipped__mutmut_22"
@@ -444,11 +409,6 @@ function_hash = "ef2ece8f2e84"
 reason = "httpx2 upper-cases the method when it builds the request, so 'delete' sends exactly what 'DELETE' sends."
 
 [[equivalent]]
-mutant = "mcp_server_paperless.paperless.documents.xǁPaperlessDocumentWriterǁmerge_as_versions__mutmut_20"
-function_hash = "ffa9b505dd24"
-reason = "httpx2 upper-cases the method when it builds the request, so 'post' sends exactly what 'POST' sends."
-
-[[equivalent]]
 mutant = "mcp_server_paperless.paperless.bulk.xǁPaperlessBulkWriterǁbulk_edit_documents__mutmut_21"
 function_hash = "17bd5caa6988"
 reason = "httpx2 upper-cases the method when it builds the request, so \"post\" goes out as POST; the client reads only the built request's method."
@@ -514,19 +474,9 @@ function_hash = "c52f682f4e53"
 reason = "deleted=None instead of False: _described only tests the flag for truthiness, and both are falsy."
 
 [[equivalent]]
-mutant = "mcp_server_paperless.services.trash.xǁTrashServiceǁempty__mutmut_72"
-function_hash = "b5c85ce89154"
-reason = "deleted=None instead of False: _described only tests the flag for truthiness, and both are falsy."
-
-[[equivalent]]
 mutant = "mcp_server_paperless.paperless.trash.xǁPaperlessTrashWriterǁ_post__mutmut_26"
 function_hash = "2d408d05e432"
 reason = "httpx2 upper-cases the method when it builds the request, so \"post\" goes out as POST; the client reads only the built request's method."
-
-[[equivalent]]
-mutant = "mcp_server_paperless.services.pdf.xǁPdfServiceǁreprocess__mutmut_6"
-function_hash = "93c62a1f2bbe"
-reason = "pdf=None is falsy like pdf=False: reprocessing takes any file type, and `_documents` only tests `pdf` for truth."
 
 [[equivalent]]
 mutant = "mcp_server_paperless.services.pdf.xǁPdfServiceǁ_result__mutmut_154"
@@ -757,11 +707,6 @@ reason = "typing.cast returns its second argument unchanged and never looks at t
 mutant = "mcp_server_paperless.services.workflows.x__object__mutmut_9"
 function_hash = "65e2545e72f7"
 reason = "typing.cast returns its second argument unchanged and never looks at the first, which only the type checker reads."
-
-[[equivalent]]
-mutant = "mcp_server_paperless.services.workflows.x__origin__mutmut_4"
-function_hash = "afdd83f752ca"
-reason = "Both URLs are compared with the same folding, so upper-case and lower-case schemes compare alike."
 
 [[equivalent]]
 mutant = "mcp_server_paperless.services.workflows.xǁWorkflowServiceǁ_setting__mutmut_12"

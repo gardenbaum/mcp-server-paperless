@@ -13,7 +13,7 @@ from fastmcp import Client
 from harness import admin, serve
 
 from mcp_server_paperless.settings import ServerSettings
-from mcp_server_paperless.tools._shared import TOOL_TOOLSETS, TOOLSETS
+from mcp_server_paperless.tools._shared import LOCAL_TOOLSETS, TOOL_TOOLSETS, TOOLSETS
 
 if TYPE_CHECKING:
     from mcp.types import Prompt, Tool
@@ -25,6 +25,8 @@ PAGE = Path(__file__).resolve().parents[2] / "docs" / "tools.md"
 DEFAULT_TOOLSETS = ServerSettings.model_construct().toolsets
 # The end of a sentence: a full stop before a capital letter (not the one in "e.g. failed").
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+
+LOCAL = " (stdio with upload directories)"
 
 INTRO = """\
 # Tool reference
@@ -82,13 +84,17 @@ def render(tools: list[Tool], prompts: list[Prompt]) -> str:
         )
     ]
     for toolset in ordered_toolsets():
-        names = [name for name, owner in TOOL_TOOLSETS.items() if owner == toolset]
+        names = [
+            name
+            for name, owner in (*TOOL_TOOLSETS.items(), *LOCAL_TOOLSETS.items())
+            if owner == toolset
+        ]
         suffix = " (on by default)" if toolset in DEFAULT_TOOLSETS else ""
         rows = [f"## `{toolset}`{suffix}", "", "| Tool | Kind | What it does |", "|---|---|---|"]
-        rows += [
-            f"| `{name}` | {kind(by_name[name])} | {summary(by_name[name].description or '')} |"
-            for name in names
-        ]
+        for name in names:
+            label = f"`{name}`{LOCAL if name in LOCAL_TOOLSETS else ''}"
+            about = summary(by_name[name].description or "")
+            rows.append(f"| {label} | {kind(by_name[name])} | {about} |")
         parts.append("\n".join(rows) + "\n")
     rows = [
         "## Prompts",
@@ -110,7 +116,11 @@ def render(tools: list[Tool], prompts: list[Prompt]) -> str:
 async def surface() -> tuple[list[Tool], list[Prompt]]:
     # AI on, so that capability gating cannot hide the ai toolset from the page.
     async with Client(serve(admin(ai_enabled=True), toolsets=["all"])) as client:
-        return await client.list_tools(), await client.list_prompts()
+        tools, prompts = await client.list_tools(), await client.list_prompts()
+    local = serve(admin(), toolsets=["bulk"], stdio=True, upload_dirs=["/srv/scans"])
+    async with Client(local) as client:
+        tools += [tool for tool in await client.list_tools() if tool.name in LOCAL_TOOLSETS]
+    return tools, prompts
 
 
 def test_a_summary_is_the_first_sentence_on_one_line() -> None:
@@ -124,7 +134,7 @@ def test_a_summary_is_the_first_sentence_on_one_line() -> None:
 async def test_the_page_covers_the_whole_catalogue() -> None:
     tools, _ = await surface()
 
-    assert {tool.name for tool in tools} == set(TOOL_TOOLSETS)
+    assert {tool.name for tool in tools} == {*TOOL_TOOLSETS, *LOCAL_TOOLSETS}
 
 
 async def test_every_destructive_tool_has_a_confirmation_step() -> None:

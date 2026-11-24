@@ -44,25 +44,25 @@ Limits.
 | `GET /api/config/{id}/` |  | PLMCP-83 |
 | `PATCH /api/config/{id}/` | `update_app_config` |  |
 | `PUT /api/config/{id}/` |  | PLMCP-83 |
-| `GET /api/correspondents/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 9 more |  |
+| `GET /api/correspondents/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 10 more |  |
 | `POST /api/correspondents/` | `create_taxonomy_item` |  |
 | `DELETE /api/correspondents/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/correspondents/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/correspondents/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/correspondents/{id}/` |  | PLMCP-83 |
-| `GET /api/custom_fields/` | `bulk_edit_documents`, `create_workflow`, `delete_taxonomy_item`, `get_document`, `list_taxonomy` and 5 more |  |
+| `GET /api/custom_fields/` | `bulk_edit_documents`, `create_workflow`, `delete_taxonomy_item`, `get_document`, `list_taxonomy` and 6 more |  |
 | `POST /api/custom_fields/` | `create_taxonomy_item` |  |
 | `DELETE /api/custom_fields/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/custom_fields/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/custom_fields/{id}/` | `update_taxonomy_item` |  |
 | `PUT /api/custom_fields/{id}/` |  | PLMCP-83 |
-| `GET /api/document_types/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 9 more |  |
+| `GET /api/document_types/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_workflow`, `delete_taxonomy_item` and 10 more |  |
 | `POST /api/document_types/` | `create_taxonomy_item` |  |
 | `DELETE /api/document_types/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/document_types/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/document_types/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/document_types/{id}/` |  | PLMCP-83 |
-| `GET /api/documents/` | `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents`, `get_document` and 8 more |  |
+| `GET /api/documents/` | `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents`, `get_document` and 9 more |  |
 | `POST /api/documents/bulk_download/` | `bulk_download` |  |
 | `POST /api/documents/bulk_edit/` | `bulk_edit_documents`, `resolve_duplicates` |  |
 | `POST /api/documents/chat/` | `ask_paperless_ai` |  |
@@ -72,13 +72,13 @@ Limits.
 | `POST /api/documents/merge/` | `merge_documents` |  |
 | `POST /api/documents/merge_as_versions/` | `merge_documents_as_versions`, `resolve_duplicates` |  |
 | `GET /api/documents/next_asn/` |  | PLMCP-83 |
-| `POST /api/documents/post_document/` | `upload_document` |  |
+| `POST /api/documents/post_document/` | `upload_document`, `upload_documents` |  |
 | `POST /api/documents/remove_password/` | `remove_document_password` |  |
 | `POST /api/documents/reprocess/` | `reprocess_documents` |  |
 | `POST /api/documents/rotate/` | `rotate_documents` |  |
 | `POST /api/documents/selection_data/` |  | PLMCP-83 |
 | `DELETE /api/documents/{id}/` | `delete_document` |  |
-| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 16 more |  |
+| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 17 more |  |
 | `PATCH /api/documents/{id}/` | `correct_document_text`, `set_permissions`, `update_document` |  |
 | `PUT /api/documents/{id}/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/ai_suggestions/` | `get_ai_suggestions` |  |
@@ -90,7 +90,7 @@ Limits.
 | `GET /api/documents/{id}/notes/` | `delete_note`, `get_document` |  |
 | `POST /api/documents/{id}/notes/` | `add_note` |  |
 | `GET /api/documents/{id}/preview/` |  | PLMCP-83 |
-| `GET /api/documents/{id}/root/` | `upload_document`, `upload_document_version` |  |
+| `GET /api/documents/{id}/root/` | `upload_document`, `upload_document_version`, `upload_documents` |  |
 | `GET /api/documents/{id}/share_links/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/suggestions/` | `get_document` |  |
 | `GET /api/documents/{id}/thumb/` | `get_document_thumbnail` |  |
@@ -151,20 +151,20 @@ Limits.
 | `GET /api/share_links/{id}/` | `delete_share_link` |  |
 | `GET /api/statistics/` | `get_instance_overview` |  |
 | `GET /api/status/` | `get_instance_overview` |  |
-| `GET /api/storage_paths/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_workflow`, `delete_taxonomy_item`, `get_document` and 7 more |  |
+| `GET /api/storage_paths/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_workflow`, `delete_taxonomy_item`, `get_document` and 8 more |  |
 | `POST /api/storage_paths/` | `create_taxonomy_item` |  |
 | `POST /api/storage_paths/test/` |  | PLMCP-83 |
 | `DELETE /api/storage_paths/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/storage_paths/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/storage_paths/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/storage_paths/{id}/` |  | PLMCP-83 |
-| `GET /api/tags/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_taxonomy_item`, `delete_taxonomy_item` and 10 more |  |
+| `GET /api/tags/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_mail_rule`, `create_taxonomy_item`, `delete_taxonomy_item` and 11 more |  |
 | `POST /api/tags/` | `create_taxonomy_item`, `update_document` |  |
 | `DELETE /api/tags/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/tags/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/tags/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/tags/{id}/` |  | PLMCP-83 |
-| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `get_task`, `list_tasks` and 9 more |  |
+| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `get_task`, `list_tasks` and 10 more |  |
 | `POST /api/tasks/acknowledge/` | `acknowledge_tasks` |  |
 | `GET /api/tasks/active/` |  | PLMCP-89 |
 | `POST /api/tasks/run/` | `run_task` |  |
@@ -172,7 +172,7 @@ Limits.
 | `GET /api/tasks/summary/` |  | PLMCP-89 |
 | `GET /api/tasks/{id}/` |  | PLMCP-89 |
 | `POST /api/token/` |  | PLMCP-83 |
-| `GET /api/trash/` | `empty_trash`, `list_trash`, `restore_from_trash`, `upload_document`, `upload_document_version` |  |
+| `GET /api/trash/` | `empty_trash`, `list_trash`, `restore_from_trash`, `upload_document`, `upload_document_version` and 1 more |  |
 | `POST /api/trash/` | `empty_trash`, `restore_from_trash` |  |
 | `GET /api/ui_settings/` | `delete_pages`, `delete_user`, `edit_pdf`, `email_documents`, `get_instance_overview` and 6 more |  |
 | `POST /api/ui_settings/` |  | PLMCP-88 |
