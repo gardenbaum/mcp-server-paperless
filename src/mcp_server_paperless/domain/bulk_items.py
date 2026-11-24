@@ -130,7 +130,7 @@ class UpdateReport(BaseModel):
     truncated: Annotated[
         bool,
         Field(
-            description="Values, changes or other documents were left out: the answer was too large."
+            description="Values, changes or other documents are left out: the answer was too large."
         ),
     ] = False
     message: str
