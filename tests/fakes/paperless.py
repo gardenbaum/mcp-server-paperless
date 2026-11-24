@@ -27,7 +27,7 @@ import uuid
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from pathlib import PurePath
-from typing import TYPE_CHECKING, Concatenate, cast
+from typing import TYPE_CHECKING, Concatenate, Literal, cast
 
 from pydantic import JsonValue
 
@@ -109,7 +109,7 @@ from mcp_server_paperless.domain.errors import (
     UpstreamUnreachable,
     Validation,
 )
-from mcp_server_paperless.domain.files import OpenedFile
+from mcp_server_paperless.domain.files import OpenedFile, missing_file, missing_files
 from mcp_server_paperless.domain.instance import (
     ComponentStatus,
     CurrentUser,
@@ -135,6 +135,7 @@ from mcp_server_paperless.paperless.admin import (
     ACK_TASKS,
     ADD_GROUP,
     ADD_USER,
+    ARCHIVE_FILES,
     CHANGE_CONFIG,
     CHANGE_GROUP,
     CHANGE_USER,
@@ -155,6 +156,7 @@ from mcp_server_paperless.paperless.admin import (
 from mcp_server_paperless.paperless.admin import beyond_last_page as beyond_tasks
 from mcp_server_paperless.paperless.bulk import documents_refused, objects_refused
 from mcp_server_paperless.paperless.documents import (
+    NO_THUMBNAIL_HINT,
     beyond_last_page,
     unseen_document,
     unseen_note,
@@ -523,6 +525,11 @@ class FakeState:
 
     users: list[FakeUser] = field(default_factory=list[FakeUser])
     documents: list[FakeDocument] = field(default_factory=list[FakeDocument])
+    # The files Paperless cannot find, by version id, and the versions without file names.
+    missing: set[tuple[int, Literal["original", "archive", "thumbnail"]]] = field(
+        default_factory=set[tuple[int, Literal["original", "archive", "thumbnail"]]]
+    )
+    nameless: set[int] = field(default_factory=set[int])
     tags: list[FakeTag] = field(default_factory=list[FakeTag])
     correspondents: list[FakeTaxonomy] = field(default_factory=list[FakeTaxonomy])
     document_types: list[FakeTaxonomy] = field(default_factory=list[FakeTaxonomy])
@@ -3198,6 +3205,9 @@ class FakePaperless:
         chosen = [known[number] for number in document_ids]
         if not all(d.visible_to(self.user) for d in chosen):
             raise denied(DOWNLOAD)
+        lost = [d for d in document_ids if await self._lacks(d, ARCHIVE_FILES[content])]
+        if lost:
+            raise missing_files(lost)
         files: list[tuple[str, bytes]] = []
         stored = [d for d in self.state.documents if d in chosen]
         for doc in sorted(stored, key=lambda d: d.created, reverse=True):
@@ -3214,6 +3224,10 @@ class FakePaperless:
         if len(archive) > max_bytes:
             return ArchiveFile(content=b"", truncated=True)
         return ArchiveFile(content=archive, truncated=False)
+
+    async def _lacks(self, document_id: int, versions: Sequence[FileVersion]) -> bool:
+        facts = await FakePaperless.get_document_metadata(self, document_id)
+        return any(facts.lacks(version) for version in versions)
 
     @contextlib.asynccontextmanager
     async def open_archive(
@@ -3489,14 +3503,19 @@ class FakePaperless:
         """`DocumentReader.get_document_metadata` (the `metadata` action)."""
         document = self._sub(document_id)
         file = self._file_of(document, version_id)
+        number = document.versions[0].id if version_id is None else version_id
+        lost, named = self.state.missing, number not in self.state.nameless
+        # Without a name Paperless looks for a file named after the id, which is not there.
+        original = named and (number, "original") not in lost
+        archive = file.archive if (number, "archive") not in lost else None
         return FileMetadata(
-            original_filename=document.original_filename,
+            original_filename=document.original_filename if named else None,
             original_mime_type=file.mime_type,
-            original_size=len(file.original),
+            original_size=len(file.original) if original else None,
             original_checksum=sha256(file.original),
-            media_filename=f"e2e/2026/{document.original_filename}",
+            media_filename=f"e2e/2026/{document.original_filename}" if named else None,
             has_archive_version=file.archive is not None,
-            archive_size=None if file.archive is None else len(file.archive),
+            archive_size=None if archive is None else len(archive),
             archive_checksum=None if file.archive is None else sha256(file.archive),
             archive_media_filename=(
                 None if file.archive is None else f"e2e/2026/{document.original_filename}"
@@ -3506,6 +3525,9 @@ class FakePaperless:
     async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
         """`DocumentReader.get_document_thumbnail` (the `thumb` action: WebP, numbered name)."""
         document = self._sub(document_id)
+        if (document.versions[0].id, "thumbnail") in self.state.missing:
+            message = f"Paperless cannot find the thumbnail of document {document_id}."
+            raise NotFound(message, hint=NO_THUMBNAIL_HINT)
         return DocumentFile(
             content=document.thumbnail,
             mime_type="image/webp",
@@ -3526,6 +3548,9 @@ class FakePaperless:
         """
         document = self._sub(document_id)
         file = self._file_of(document, version_id)
+        facts = await FakePaperless.get_document_metadata(self, document_id, version_id=version_id)
+        if facts.lacks(version):
+            raise missing_file(document_id, version, facts, version_id)
         archive = version == "archive" and file.archive is not None
         mime_type = file.mime_type
         if mime_type.startswith("text/"):

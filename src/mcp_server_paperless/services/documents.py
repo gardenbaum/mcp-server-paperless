@@ -31,10 +31,11 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
 )
+from mcp_server_paperless.domain.files import missing_files
 from mcp_server_paperless.services.search_syntax import query_notices
 
 if TYPE_CHECKING:
-    from collections.abc import Collection
+    from collections.abc import Collection, Mapping
     from datetime import date
 
     from pydantic import JsonValue
@@ -45,6 +46,7 @@ if TYPE_CHECKING:
         DocumentHit,
         DocumentQuery,
         DuplicateKind,
+        FileVersion,
         Include,
         NameFilters,
         NameOrId,
@@ -110,6 +112,23 @@ def listed_version(document: DocumentRecord, version_id: int | None) -> int:
         message = f"Document {document.id} has no version {version_id}."
         raise NotFound(message, hint="Its versions are in get_document with include versions.")
     return listed[0] if version_id is None else version_id
+
+
+async def require_files(
+    reader: DocumentReader, documents: Mapping[int, int | None], version: FileVersion
+) -> None:
+    """Refuse documents whose file Paperless cannot find; the values name the versions.
+
+    Raises:
+        NotFound: See above; it names all of them.
+    """
+    lost = [
+        number
+        for number, version_id in documents.items()
+        if (await reader.get_document_metadata(number, version_id=version_id)).lacks(version)
+    ]
+    if lost:
+        raise missing_files(lost)
 
 
 def text_state(document_id: int, version_id: int, text: str) -> str:

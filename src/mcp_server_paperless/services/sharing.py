@@ -30,7 +30,7 @@ from mcp_server_paperless.domain.sharing import (
     ShareLinkInfo,
     ShareLinkListing,
 )
-from mcp_server_paperless.services.documents import document_link
+from mcp_server_paperless.services.documents import document_link, require_files
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -391,6 +391,8 @@ class SharingService:
             raise mail_disabled()
         titles = await self._titles(ids)
         kind: FileVersionKind = "archive" if use_archive_version else "original"
+        # Paperless sends the original upload of a document, not its newest version.
+        await require_files(self._documents, {number: number for number in ids}, kind)
         shown = [destination(address, "e-mail address", "email") for address in addresses]
         if not confirm:
             named = joined([f"{quoted(titles[number])} (id {number})" for number in ids])

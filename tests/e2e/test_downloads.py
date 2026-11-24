@@ -19,7 +19,7 @@ from fastmcp import Client
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
 from mcp.types import BlobResourceContents, EmbeddedResource, TextContent
 
-from e2e.helpers import consume, parse, pdf, results
+from e2e.helpers import consume, lose_file, parse, pdf, results
 from e2e.test_http import MCP_TOKEN, running
 from e2e.test_stdio import console_script
 
@@ -247,3 +247,47 @@ async def test_read_only_mode_and_no_directory_mean_nothing_is_saved(
             assert data.startswith(b"%PDF")
 
     assert list(tmp_path.iterdir()) == []  # noqa: ASYNC240 -- a test looking at its directory
+
+
+async def test_a_document_whose_file_is_lost_is_read_and_the_file_said_to_be_missing(
+    stack: Stack,
+) -> None:
+    title = f"plmcp105 {uuid.uuid4().hex[:12]}"
+    _, number = consume(stack.admin, title, pdf(title))
+    assert number is not None
+    try:
+        lose_file(stack.admin, number, "original")
+        lose_file(stack.admin, number, "thumbnail")
+        asked: Json = {"document_id": number}
+        bulk: Json = {
+            "document_ids": [stack.seeded.public_document, number],
+            "content": "originals",
+        }
+        settings = {"PAPERLESS_MCP_TOOLSETS": "core,admin,pdf"}
+        async with Client(script(stack, settings)) as client:
+            found = await client.call_tool("get_document", {**asked, "include": ["metadata"]})
+            _, archive = opened(
+                await client.call_tool("download_document", {**asked, "kind": "archive"})
+            )
+            refusals = [
+                str((await client.call_tool(name, arguments, raise_on_error=False)).content)
+                for name, arguments in (
+                    ("download_document", asked),
+                    ("download_document", {**asked, "offset": 0}),
+                    ("get_document_pages", asked),
+                    ("get_document_thumbnail", asked),
+                    ("bulk_download", bulk),
+                    ("rotate_documents", {"document_ids": [number], "degrees": 90}),
+                )
+            ]
+    finally:
+        _ = stack.admin.delete(f"/api/documents/{number}/")
+
+    assert found.structured_content is not None
+    facts = cast("Json", found.structured_content["file_metadata"])
+    assert facts["original_size"] is None
+    assert facts["original_checksum"]
+    assert archive.startswith(b"%PDF")
+    for refusal in refusals:
+        assert "Paperless cannot find" in refusal
+        assert f"document {number}" in refusal

@@ -1,9 +1,11 @@
 ---
 id: PLMCP-105
 title: Read documents whose file is missing
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T07:06:14Z'
+updated_date: '2026-11-24T08:37:42Z'
 labels: []
 dependencies: []
 priority: medium
@@ -29,3 +31,13 @@ Paperless answers metadata with size null when the file of a document or version
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Failing adapter tests: metadata with null size and names; download, opened file and thumbnail that 404 on a document that exists; bulk download that 500s.
+2. Domain: FileMetadata nullable (original_size, original_filename, media_filename), FileMetadata.lacks, missing_file(s) errors. Adapter: a 404 of a file is told apart with the metadata; a 500 of the bulk download likewise.
+3. Fake: state.missing_files; contract (fake and live: files removed in the stack's container); service and tool tests.
+4. PDF operations and e-mail ask the metadata first (a merge leaves the document out silently, an e-mail failure is reported as unknown delivery).
+5. E2E, surface snapshot, docs. Nothing live runs locally.
+<!-- SECTION:PLAN:END -->

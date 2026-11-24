@@ -65,7 +65,7 @@ def _facts(document_id: int, metadata: FileMetadata, version: FileVersion) -> _F
     Raises:
         NotFound: The document has no archive version.
     """
-    name = PurePath(metadata.original_filename).name or None
+    name = PurePath(metadata.original_filename or "").name or None
     if version == "original":
         return _Facts(
             metadata.original_size, metadata.original_checksum, metadata.original_mime_type, name
@@ -196,6 +196,10 @@ class FileService:
         facts = _facts(document_id, metadata, version)
         link = document_link(self._web_url, document_id)
         size, known = facts.size, facts.checksum
+        if size is None:
+            # The file is missing: this says so.
+            async with self._reader.open_document_file(document_id, version, version_id=shown):
+                pass
         if size is None or known is None:
             noun = "archive" if version == "archive" else "original"
             message = (

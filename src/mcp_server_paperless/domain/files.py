@@ -1,15 +1,48 @@
 """Files as they are handed over: chunk by chunk, in parts, or saved into a directory."""
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, ClassVar
+from typing import TYPE_CHECKING, Annotated, ClassVar, Final
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from mcp_server_paperless.domain.admin import ArchiveContent
 from mcp_server_paperless.domain.documents import FileVersion
+from mcp_server_paperless.domain.errors import NotFound
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Sequence
+
+    from mcp_server_paperless.domain.documents import FileMetadata
+
+
+STILL_READ: Final = "Its text and metadata can still be read; restore the file from a backup."
+LEAVE_OUT: Final = (
+    "Leave them out; their text and metadata can still be read. Restore the files from a backup."
+)
+
+
+def missing_file(
+    document_id: int, version: FileVersion, facts: FileMetadata, version_id: int | None = None
+) -> NotFound:
+    """The error for a document whose file Paperless cannot find."""
+    nouns: dict[FileVersion, str] = {"original": "original", "archive": "archive version"}
+    wanted = facts.sent_for(version)
+    other: FileVersion = "original" if wanted == "archive" else "archive"
+    # Without an archive version the other file is the missing one.
+    there = not facts.lacks(other)
+    named = "" if version_id is None else f" (version {version_id})"
+    return NotFound(
+        f"Paperless cannot find the {nouns[wanted]} of document {document_id}{named}.",
+        hint=f"Ask for the {nouns[other]}, which is there." if there else STILL_READ,
+    )
+
+
+def missing_files(document_ids: Sequence[int]) -> NotFound:
+    """The error for an operation on documents of which some have a file Paperless cannot find."""
+    *rest, last = [str(number) for number in document_ids]
+    named = f"documents {', '.join(rest)} and {last}" if rest else f"document {last}"
+    hint = LEAVE_OUT if rest else STILL_READ
+    return NotFound(f"Paperless cannot find a file of {named}.", hint=hint)
 
 
 @dataclass(frozen=True, slots=True)
