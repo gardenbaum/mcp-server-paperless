@@ -173,6 +173,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "notes": ("test_notes_and_trash",),
     "removal": ("test_notes_and_trash",),
     "uploads": ("test_document_upload", "test_upload_document"),
+    "duplicate_resolution": ("test_duplicates",),
     "duplicates": (
         "test_batch_uploads",
         "test_rejected_duplicates",
@@ -188,6 +189,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "bulk_stdio": ("test_batch_uploads", "test_upload_batches"),
     "upload_stdio": ("test_document_upload", "test_upload_document"),
     "version_uploads": ("test_document_versions", "test_versions"),
+    "trash": ("test_duplicates",),
     "versions": ("test_document_versions",),
     "versions_stdio": ("test_document_versions", "test_versions"),
     "views": ("test_search", "test_view_filters"),

@@ -64,13 +64,13 @@ Limits.
 | `PUT /api/document_types/{id}/` |  | PLMCP-83 |
 | `GET /api/documents/` | `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents`, `get_document` and 8 more |  |
 | `POST /api/documents/bulk_download/` | `bulk_download` |  |
-| `POST /api/documents/bulk_edit/` | `bulk_edit_documents` |  |
+| `POST /api/documents/bulk_edit/` | `bulk_edit_documents`, `resolve_duplicates` |  |
 | `POST /api/documents/chat/` | `ask_paperless_ai` |  |
 | `POST /api/documents/delete/` |  | PLMCP-80 |
 | `POST /api/documents/edit_pdf/` | `delete_pages`, `edit_pdf`, `split_document` |  |
 | `POST /api/documents/email/` | `email_documents` |  |
 | `POST /api/documents/merge/` | `merge_documents` |  |
-| `POST /api/documents/merge_as_versions/` | `merge_documents_as_versions` |  |
+| `POST /api/documents/merge_as_versions/` | `merge_documents_as_versions`, `resolve_duplicates` |  |
 | `GET /api/documents/next_asn/` |  | PLMCP-83 |
 | `POST /api/documents/post_document/` | `upload_document`, `upload_documents` |  |
 | `POST /api/documents/remove_password/` | `remove_document_password` |  |
@@ -78,7 +78,7 @@ Limits.
 | `POST /api/documents/rotate/` | `rotate_documents` |  |
 | `POST /api/documents/selection_data/` |  | PLMCP-83 |
 | `DELETE /api/documents/{id}/` | `delete_document` |  |
-| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 16 more |  |
+| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 17 more |  |
 | `PATCH /api/documents/{id}/` | `correct_document_text`, `set_permissions`, `update_document` |  |
 | `PUT /api/documents/{id}/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/ai_suggestions/` | `get_ai_suggestions` |  |
@@ -164,7 +164,7 @@ Limits.
 | `GET /api/tags/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/tags/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/tags/{id}/` |  | PLMCP-83 |
-| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `get_task`, `list_tasks` and 9 more |  |
+| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `get_task`, `list_tasks` and 10 more |  |
 | `POST /api/tasks/acknowledge/` | `acknowledge_tasks` |  |
 | `GET /api/tasks/active/` |  | PLMCP-89 |
 | `POST /api/tasks/run/` | `run_task` |  |
@@ -290,7 +290,7 @@ an argument.
 
 | Operation | Fields |
 |---|---|
-| `GET /api/documents/` | `query:added__date__gt`, `query:added__date__lt`, `query:archive_serial_number`, `query:archive_serial_number__gt`, `query:archive_serial_number__isnull`, `query:archive_serial_number__lt`, `query:content__icontains`, `query:correspondent__id__in`, `query:correspondent__id__none`, `query:created__date__gt`, `query:created__date__lt`, `query:created__day`, `query:created__month`, `query:created__year`, `query:custom_fields__icontains`, `query:custom_fields__id__all`, `query:custom_fields__id__in`, `query:custom_fields__id__none`, `query:document_type__id__in`, `query:document_type__id__none`, `query:has_custom_fields`, `query:has_duplicates`, `query:mime_type`, `query:modified__date__gt`, `query:modified__date__lt`, `query:owner__id__in`, `query:owner__id__none`, `query:owner__isnull`, `query:shared_by__id`, `query:storage_path__id__in`, `query:storage_path__id__none`, `query:text`, `query:title_search` |
+| `GET /api/documents/` | `query:added__date__gt`, `query:added__date__lt`, `query:archive_serial_number`, `query:archive_serial_number__gt`, `query:archive_serial_number__isnull`, `query:archive_serial_number__lt`, `query:content__icontains`, `query:correspondent__id__in`, `query:correspondent__id__none`, `query:created__date__gt`, `query:created__date__lt`, `query:created__day`, `query:created__month`, `query:created__year`, `query:custom_fields__icontains`, `query:custom_fields__id__all`, `query:custom_fields__id__in`, `query:custom_fields__id__none`, `query:document_type__id__in`, `query:document_type__id__none`, `query:has_custom_fields`, `query:mime_type`, `query:modified__date__gt`, `query:modified__date__lt`, `query:owner__id__in`, `query:owner__id__none`, `query:owner__isnull`, `query:shared_by__id`, `query:storage_path__id__in`, `query:storage_path__id__none`, `query:text`, `query:title_search` |
 
 ## Fields the adapter chooses for itself
 

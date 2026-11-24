@@ -492,6 +492,7 @@ async def test_the_confirm_check_has_destructive_tools_to_check() -> None:
         "delete_document_version",
         "merge_documents_as_versions",
         "correct_document_text",  # decision-48
+        "resolve_duplicates",  # decision-51
         "empty_trash",
         "set_permissions",  # decision-19: every change is confirmed, merge included
     }

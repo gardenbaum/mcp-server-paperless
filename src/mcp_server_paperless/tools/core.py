@@ -20,9 +20,9 @@ from mcp_server_paperless.domain.documents import (
     Clearable,
     ContentSlice,
     DocumentDeleted,
-    DocumentDetail,
     DocumentEdit,
     DocumentQuery,
+    DocumentRead,
     DocumentSearchResult,
     DocumentUpdate,
     FileReport,
@@ -395,6 +395,15 @@ async def search_documents(  # noqa: PLR0913 -- one parameter per filter, descri
             )
         ),
     ] = None,
+    has_duplicates: Annotated[
+        bool | None,
+        Field(
+            description=(
+                "true: the original or archive file is also in another document you can see, "
+                "maybe in the trash; false: it is not. Later versions are not compared."
+            )
+        ),
+    ] = None,
     ordering: Annotated[
         Ordering | None,
         Field(description="Sort field, '-' for descending; default newest first or relevance."),
@@ -437,6 +446,7 @@ async def search_documents(  # noqa: PLR0913 -- one parameter per filter, descri
         document_type_isnull=_absent(has_document_type),
         storage_path_isnull=_absent(has_storage_path),
         tagged=has_tags,
+        has_duplicates=has_duplicates,
         custom_field_query=custom_field_query,
         ordering=ordering,
     )
@@ -490,11 +500,12 @@ async def get_document(
                 "Extra sections: notes (their text), history "
                 f"(the newest {HISTORY_LIMIT} changes, no OCR text), "
                 "metadata (file names, sizes, checksums), versions (file versions), "
-                "suggestions (the classifier's correspondents, tags, types, paths, dates)."
+                "suggestions (the classifier's correspondents, tags, types, paths, dates), "
+                "duplicates (documents with the same file, also in the trash, and what differs)."
             )
         ),
     ] = None,
-) -> DocumentDetail:
+) -> DocumentRead:
     """Read one document: names, dates, tags, readable custom fields, notes count and web_url.
 
     Never returns the document text; use get_document_content for it. Custom fields are

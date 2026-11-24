@@ -52,6 +52,7 @@ def world() -> FakeState:
     state.trash = [FakeDocument(id=30, title="Old")]
     state.documents.append(FakeDocument(id=13, title="Known", owner=2, original=KNOWN))
     state.documents.append(FakeDocument(id=14, title="Versions", owner=2))
+    state.documents.append(FakeDocument(id=15, title="Known copy", owner=2, original=KNOWN))
     state.share_links = [FakeShareLink(id=1, document=1, owner=2)]
     state.share_bundles = [FakeShareBundle(id=1, documents=(1,), owner=2)]
     state.mail_accounts = [
@@ -107,6 +108,11 @@ CALLS: Final[dict[str, Json]] = {
         "document_id": 10,
         "text_state": text_state(10, 10, ""),
         "text": "typed from the page",
+    },
+    "resolve_duplicates": {
+        "keep_document_id": 13,
+        "duplicate_ids": [15],
+        "action": "merge_as_versions",
     },
     "delete_saved_view": {"view": "e2e-view"},
     "empty_trash": {"all": True},

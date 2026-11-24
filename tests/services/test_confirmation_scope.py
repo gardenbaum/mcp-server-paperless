@@ -328,7 +328,7 @@ def create_workflow(state: FakeState) -> Callable[[], Awaitable[object]]:
 
 def delete_view(state: FakeState) -> Callable[[], Awaitable[object]]:
     fake, taxonomy = fakes(state)
-    documents = DocumentService(fake, taxonomy, web_url=WEB)
+    documents = DocumentService(fake, fake, taxonomy, web_url=WEB)
     service = ViewService(fake, fake, taxonomy, documents)
     return lambda: service.delete("e2e-view", confirm=False)
 
@@ -373,7 +373,7 @@ def split(state: FakeState) -> Callable[[], Awaitable[object]]:
 
 def change_owner(state: FakeState) -> Callable[[], Awaitable[object]]:
     fake, taxonomy = fakes(state)
-    documents = DocumentService(fake, taxonomy, web_url=WEB)
+    documents = DocumentService(fake, fake, taxonomy, web_url=WEB)
     service = DocumentEditor(fake, fake, fake, taxonomy, documents=documents)
     return lambda: service.update(1, DocumentEdit(owner="e2e-reader"))
 

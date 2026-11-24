@@ -67,6 +67,55 @@ def require_change(document: DocumentRecord | DocumentText) -> None:
         raise PermissionDenied(message, hint="Ask the owner of the document, or use another user.")
 
 
+def bound(document: DocumentRecord) -> object:
+    """What the confirmation of a merge binds of a document: everything but the order of lists.
+
+    ``modified`` alone is not enough: the bulk edits of Paperless leave it as it is.
+    """
+    lists = {
+        "tags": tuple(sorted(document.tags)),
+        "custom_fields": tuple(sorted(document.custom_fields, key=lambda f: f.field)),
+    }
+    return document.model_copy(update=lists)
+
+
+def merge_effect(root: DocumentRecord, sources: Sequence[DocumentRecord], label: str | None) -> str:
+    """What merging would do, for a confirmation: the sources vanish for good."""
+
+    def described(source: DocumentRecord) -> str:
+        notes = f"{source.notes_count} note{'' if source.notes_count == 1 else 's'}"
+        return f"document {source.id} {quoted(source.title)} ({notes})"
+
+    names = [described(s) for s in sources]
+    many = len(sources) > 1
+    shown = f"{', '.join(names[:-1])} and {names[-1]}" if many else names[0]
+    versions = "as its newest versions" if many else "as its newest version"
+    if label:
+        versions += f", labelled {quoted(label)}"
+    who = "the merged documents vanish" if many else "the merged document vanishes"
+    loss = "Their titles" if many else "Its title"
+    return (
+        f"merge {shown} into document {root.id} {quoted(root.title)} {versions}: {who} for "
+        f"good, not even into the trash. {loss}, tags, correspondents, notes and other "
+        f"metadata are lost; only {'their files stay' if many else 'its file stays'}, as "
+        f"{'versions' if many else 'a version'} of document {root.id}, which then shows the "
+        f"file and text of document {sources[-1].id}{_numbers(root, sources)}"
+    )
+
+
+def _numbers(root: DocumentRecord, sources: Sequence[DocumentRecord]) -> str:
+    """What becomes of the archive serial numbers: a root without one takes the first."""
+    held = [(s.id, s.archive_serial_number) for s in sources if s.archive_serial_number is not None]
+    parts: list[str] = []
+    if held and root.archive_serial_number is None:
+        (number, taken), *held = held
+        parts.append(
+            f"document {root.id} takes the archive serial number {taken} of document {number}"
+        )
+    parts += [f"archive serial number {gone} of document {n} is released" for n, gone in held]
+    return f". Besides, {', '.join(parts)}" if parts else ""
+
+
 class VersionService:
     """Reads and changes the file versions of documents for the current user."""
 
@@ -211,8 +260,8 @@ class VersionService:
                 )
         if not confirm:
             ConfirmationRequired.require(
-                self._effect(root, sources, text),
-                scope=[d.newest_file for d in (root, *sources)],
+                merge_effect(root, sources, text),
+                scope=[bound(d) for d in (root, *sources)],
             )
         try:
             unconfirmed = await self._writer.merge_as_versions(root_id, tuple(source_ids), text)
@@ -276,25 +325,3 @@ class VersionService:
             hint = "Merge one document to label it, or use set_document_version_label afterwards."
             raise Validation(message, hint=hint)
         return text
-
-    @staticmethod
-    def _effect(root: DocumentRecord, sources: Sequence[DocumentRecord], label: str | None) -> str:
-        def described(source: DocumentRecord) -> str:
-            notes = f"{source.notes_count} note{'' if source.notes_count == 1 else 's'}"
-            return f"document {source.id} {quoted(source.title)} ({notes})"
-
-        names = [described(s) for s in sources]
-        many = len(sources) > 1
-        shown = f"{', '.join(names[:-1])} and {names[-1]}" if many else names[0]
-        versions = "as its newest versions" if many else "as its newest version"
-        if label:
-            versions += f", labelled {quoted(label)}"
-        who = "the merged documents vanish" if many else "the merged document vanishes"
-        loss = "Their titles" if many else "Its title"
-        return (
-            f"merge {shown} into document {root.id} {quoted(root.title)} {versions}: {who} for "
-            f"good, not even into the trash. {loss}, tags, correspondents, notes and other "
-            f"metadata are lost; only {'their files stay' if many else 'its file stays'}, as "
-            f"{'versions' if many else 'a version'} of document {root.id}, which then shows the "
-            f"file and text of document {sources[-1].id}"
-        )
