@@ -1,6 +1,6 @@
 {
   "name": "mcp-server-paperless",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Search, read, file, tag and upload documents in your paperless-ngx 3.x archive, by name and with a confirmation step before anything final.",
   "author": {
     "name": "gardenbaum"
@@ -19,7 +19,7 @@
     "paperless": {
       "command": "uvx",
       "args": [
-        "mcp-server-paperless==0.3.2"
+        "mcp-server-paperless==0.4.0"
       ],
       "env": {
         "PAPERLESS_URL": "${PAPERLESS_URL}",
