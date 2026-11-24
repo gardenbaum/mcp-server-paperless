@@ -20,13 +20,13 @@ from PIL import Image
 
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentPatch, DocumentQuery
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
-from mcp_server_paperless.domain.pdf import PageSlot, StartedTasks
+from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, PageSlot, StartedTasks
 from mcp_server_paperless.domain.versions import VersionUpload
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from contract.conftest import Backend
+    from contract.conftest import Backend, Ports
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-6")]
 
@@ -35,6 +35,7 @@ MERGE = "PdfWriter.merge_documents"
 EDIT = "PdfWriter.edit_pdf"
 PASSWORD = "PdfWriter.remove_password"
 REPROCESS = "PdfWriter.reprocess_documents"
+COPIES = "PdfWriter.find_copies"
 PDF = "application/pdf"
 MISSING = 999_999
 SECONDS = 180.0
@@ -576,6 +577,153 @@ async def test_a_date_among_the_custom_fields_hides_the_task_of_a_new_document_o
     for number in made:
         backend.track_document(number)
     assert (await ports.documents.get_document(made[0])).custom_fields == (dated,)
+
+
+# A user of its own: what others of the suite did in the last hour is not its doing.
+FINDING = EDITING | {
+    *("view_paperlesstask", "view_uisettings", "view_customfield", "view_tag", "view_documenttype"),
+    *("view_correspondent", "view_storagepath"),
+}
+
+
+async def dated(backend: Backend, document: int) -> CustomFieldValue:
+    """Give the document a date among its custom fields, and no owner."""
+    ports = backend.admin
+    kinds = {f.name: f.id for f in await ports.taxonomy.list_taxonomy("custom_field")}
+    value = CustomFieldValue(field=kinds["e2e-date"], value="2026-01-15")
+    patch = DocumentPatch(custom_fields=(value,), owner=None)
+    _ = await ports.document_writes.update_document(document, patch)
+    return value
+
+
+async def copies(backend: Backend, user: Ports, files: CopiedFiles | None) -> FoundCopies:
+    """Wait until every file of the request is found, or a doubt; tracks the documents."""
+    assert files is not None
+    deadline = time.monotonic() + SECONDS
+    while True:
+        found = await user.pdf_writes.find_copies(files)
+        if found.doubt is not None or None not in found.ids:
+            for number in found.ids:
+                if number is not None:
+                    backend.track_document(number)
+            return found
+        assert time.monotonic() < deadline, "Paperless did not finish in time"
+        await asyncio.sleep(0.5)
+
+
+@pytest.mark.contract(COPIES)
+@pytest.mark.contract(EDIT)
+@pytest.mark.decision("decision-67")
+async def test_parts_whose_tasks_a_date_hides_are_found_by_their_file_names(
+    backend: Backend,
+) -> None:
+    document, other = backend.new_pdf(3), backend.new_pdf(1)
+    value = await dated(backend, document)
+    _ = await dated(backend, other)
+    user = backend.restricted(FINDING)
+    slots = (PageSlot(page=1), PageSlot(page=2, document=1), PageSlot(page=3, document=1))
+
+    first = await user.pdf_writes.edit_pdf(other, (PageSlot(page=1),), output="new_document")
+    [one] = (await copies(backend, user, first.files)).ids
+    tasks = await user.pdf_writes.edit_pdf(document, slots, output="new_document")
+    found = await copies(backend, user, tasks.files)
+
+    assert (tasks.ids, tasks.problem) == ((), None)
+    assert one is not None
+    # The earlier operation is known to have made something else: its file is there.
+    assert found.doubt is None
+    assert [await pages(backend, n) for n in found.ids if n is not None] == [1, 2]
+    for n, number in enumerate(found.ids, start=1):
+        assert number is not None
+        record = await user.documents.get_document(number)
+        assert record.original_file_name == f"{document}_edit_{n}.pdf"
+        assert record.custom_fields == (value,)
+
+
+@pytest.mark.contract(COPIES)
+@pytest.mark.contract(EDIT)
+@pytest.mark.decision("decision-67")
+async def test_a_second_request_for_the_same_document_leaves_both_in_doubt(
+    backend: Backend,
+) -> None:
+    document = backend.new_pdf(1)
+    _ = await dated(backend, document)
+    user, page = backend.restricted(FINDING), (PageSlot(page=1),)
+
+    first = await user.pdf_writes.edit_pdf(document, page, output="new_document")
+    assert (await copies(backend, user, first.files)).doubt is None
+    second = await user.pdf_writes.edit_pdf(document, page, output="new_document")
+
+    assert first.files is not None
+    assert second.files is not None
+    later = await user.pdf_writes.find_copies(second.files)
+    earlier = await user.pdf_writes.find_copies(first.files)
+    assert (later.doubt, later.ids) == (
+        "files of earlier operations of this user may still come",
+        (None,),
+    )
+    assert earlier.doubt is not None
+    assert earlier.ids == (None,)
+    await two_made(backend, user, f"{document}_edit_1.pdf")
+
+
+async def two_made(backend: Backend, user: Ports, name: str) -> None:
+    """Wait for both documents of a name, for the cleanup."""
+    deadline = time.monotonic() + SECONDS
+    while True:
+        listed = await user.documents.search_documents(
+            DocumentQuery(ordering="-added"), page=1, page_size=25
+        )
+        rows = [await user.documents.get_document(hit.id) for hit in listed.hits]
+        made = [row.id for row in rows if row.original_file_name == name]
+        if len(made) == 2:
+            break
+        assert time.monotonic() < deadline, "Paperless did not finish in time"
+        await asyncio.sleep(0.5)
+    for number in made:
+        backend.track_document(number)
+
+
+@pytest.mark.contract(COPIES)
+@pytest.mark.contract(MERGE)
+@pytest.mark.contract(PASSWORD)
+@pytest.mark.decision("decision-67")
+async def test_a_merged_and_an_unlocked_document_are_found_by_their_file_names(
+    backend: Backend,
+) -> None:
+    document, second, locked = backend.new_pdf(2), backend.new_pdf(1), backend.new_encrypted("s3c")
+    for number in (document, second, locked):
+        _ = await dated(backend, number)
+    merging, unlocking = backend.restricted(FINDING), backend.restricted(FINDING)
+
+    merged = await merging.pdf_writes.merge_documents(
+        (document, second), metadata_document_id=document
+    )
+    unlocked = await unlocking.pdf_writes.remove_password(locked, "s3c", output="new_document")
+
+    [together] = (await copies(backend, merging, merged.files)).ids
+    [opened] = (await copies(backend, unlocking, unlocked.files)).ids
+    assert merged.files is not None
+    assert merged.files.included == (document, second)
+    assert together is not None
+    assert opened is not None
+    assert (await pages(backend, together), await pages(backend, opened)) == (3, 1)
+
+
+@pytest.mark.contract(COPIES)
+@pytest.mark.decision("decision-67")
+async def test_only_who_may_view_tasks_and_is_known_finds_the_files(backend: Backend) -> None:
+    files = CopiedFiles(request=str(uuid.uuid4()), names=("1_edit_1.pdf",))
+    viewing = backend.restricted(frozenset({"view_document", "view_uisettings"}))
+    unknown = backend.restricted(frozenset({"view_document", "view_paperlesstask"}))
+    known = backend.restricted(FINDING)
+
+    with pytest.raises(PermissionDenied):
+        _ = await viewing.pdf_writes.find_copies(files)
+    assert (await unknown.pdf_writes.find_copies(files)).doubt == "the current user is not known"
+    assert (await known.pdf_writes.find_copies(files)).doubt == (
+        "the times of its queued task are not known"
+    )
 
 
 def photo() -> bytes:

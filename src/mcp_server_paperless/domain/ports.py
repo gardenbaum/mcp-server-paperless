@@ -64,7 +64,13 @@ if TYPE_CHECKING:
         ProcessedMailPage,
         ProcessedStatus,
     )
-    from mcp_server_paperless.domain.pdf import FileOutput, PageSlot, StartedTasks
+    from mcp_server_paperless.domain.pdf import (
+        CopiedFiles,
+        FileOutput,
+        FoundCopies,
+        PageSlot,
+        StartedTasks,
+    )
     from mcp_server_paperless.domain.permissions import (
         AccessChange,
         GroupPage,
@@ -940,6 +946,20 @@ class PdfWriter(Protocol):
         Raises:
             PermissionDenied: See the class docstring.
             Validation: An id does not exist or is listed twice.
+        """
+        ...
+
+    async def find_copies(self, files: CopiedFiles) -> FoundCopies:
+        """The documents that have the file names of a request, as far as they exist now.
+
+        For requests whose tasks Paperless does not list (a date among the custom fields that are
+        copied). They are the current user's, added since the queued task of the request started,
+        and one of each name. A doubt is whatever lets them be another request's: a file too many,
+        a listed task for one of the names, another copying operation of the user at the same time
+        or later, or an earlier one of the last hour whose files may still come.
+
+        Raises:
+            PermissionDenied: The user may not view tasks or documents.
         """
         ...
 

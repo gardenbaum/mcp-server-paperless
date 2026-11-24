@@ -1,9 +1,11 @@
 ---
 id: PLMCP-79.3
 title: 'PDF tools c: metadata per part, safe replacing, extract_pages'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T08:51:16Z'
+updated_date: '2026-11-24T13:00:33Z'
 labels: []
 dependencies:
   - PLMCP-79.1
@@ -33,3 +35,13 @@ Third part of PLMCP-79 (design approved by the owner on 2026-11-24 (all 14 decis
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Hidden products (owner ruling of 2026-11-24): PdfWriter.find_copies finds the documents of a request whose tasks a date custom field hides by file name; adapter, fake, contract (fake and 3.5.1), doubt rules.
+2. PartMetadata resolved before the start, parts verified and patched one by one through DocumentEditor (services/pdf_parts.py); split_document part_metadata; parts[] and original in the result; replacing waits for metadata.
+3. extract_pages: new document, verify, metadata, re-read, new version of the rest; every failure row of the design.
+4. Plan, confirmation texts and scopes, decisions, annotations, budgets, coverage table, README, docs/tools.md, snapshots.
+5. E2E and live contract tests, read from CI; draft PR.
+<!-- SECTION:PLAN:END -->

@@ -54,6 +54,36 @@ class PageSlot(BaseModel):
 type LookupProblem = Literal["forbidden", "failed", "unconfirmed"]
 
 
+class CopiedFiles(BaseModel):
+    """How to find the new documents of a request whose tasks Paperless does not list.
+
+    Attributes:
+        request: The queued task of the request.
+        names: The name of each output file, in their order.
+        included: The documents the name of a merged file stands for, None where it was cut.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    request: str
+    names: tuple[str, ...]
+    included: tuple[int, ...] | None = None
+
+
+class FoundCopies(BaseModel):
+    """The documents with the file names of a request.
+
+    Attributes:
+        ids: The document of each name, None where there is none yet, or where they are in doubt.
+        doubt: Why it cannot be told that they are the request's own: then nothing is done to them.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    ids: tuple[int | None, ...]
+    doubt: str | None = None
+
+
 class StartedTasks(BaseModel):
     """The tasks Paperless started for a request, as far as they could be found.
 
@@ -73,6 +103,7 @@ class StartedTasks(BaseModel):
         doubt: Why it cannot be told that these tasks are the request's own, if so: good enough to
             report, not to trash anything for.
         detail: For ``unconfirmed``: why the queued task could not be followed.
+        files: For new documents: how to find them where Paperless lists no task for them.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
@@ -85,6 +116,7 @@ class StartedTasks(BaseModel):
     problem: LookupProblem | None = None
     doubt: str | None = None
     detail: str | None = None
+    files: CopiedFiles | None = None
 
 
 # Output models are tool output schemas: a one-line class docstring each, and field descriptions
