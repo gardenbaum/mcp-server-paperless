@@ -370,6 +370,25 @@ e2e-postgres:
     "${compose[@]}" up -d
     uv run pytest -m postgres_e2e --no-cov --durations=20
 
+# Run the tests of mail imports (marker `imap_e2e`) against the pinned Paperless with a mail server
+# (tests/e2e/compose.imap.yaml), and with Tika and Gotenberg, which whole mails need. Own compose
+# project and ports (8017, mail server 8018), so a stack from `e2e-up` is untouched; the stack is
+# removed afterwards, container logs of a failed run land in e2e-imap-containers.log.
+e2e-imap:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PAPERLESS_E2E_PORT="${PAPERLESS_E2E_PORT:-8017}"
+    export PAPERLESS_E2E_IMAP=1
+    compose=(docker compose -p paperless-mcp-e2e-imap -f tests/e2e/compose.yaml -f tests/e2e/compose.office.yaml -f tests/e2e/compose.imap.yaml)
+    cleanup() {
+        local status=$?
+        if (( status != 0 )); then "${compose[@]}" logs --no-color > e2e-imap-containers.log || true; fi
+        "${compose[@]}" down --volumes --remove-orphans
+    }
+    trap cleanup EXIT
+    "${compose[@]}" up -d
+    uv run pytest -m imap_e2e --no-cov --durations=20 -rP
+
 # Stop the E2E stack and delete its volumes, so the next start is a fresh instance.
 e2e-down:
     docker compose -f tests/e2e/compose.yaml down --volumes --remove-orphans

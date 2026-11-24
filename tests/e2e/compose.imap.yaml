@@ -1,0 +1,20 @@
+# Overlay of `just e2e-imap` (with compose.office.yaml): the E2E stack with a mail server. Every user
+# name signs in with the one password and gets a mailbox of its own.
+services:
+  imap:
+    # renovate: datasource=docker depName=dovecot/dovecot
+    image: dovecot/dovecot:2.4.5@sha256:a2e908c9a93698f3923104ea5be7f4beacde9586242aff5d8059599d0042c62a
+    ports:
+      - "127.0.0.1:${PAPERLESS_E2E_IMAP_PORT:-8018}:31143"
+    environment:
+      USER_PASSWORD: e2e-imap-Passw0rd-4711
+    volumes:
+      - ./dovecot/e2e.conf:/etc/dovecot/conf.d/e2e.conf:ro
+
+  paperless:
+    depends_on:
+      - imap
+    environment:
+      # The tests start every fetch themselves; two workers, so that one can meet another.
+      PAPERLESS_EMAIL_TASK_CRON: disable
+      PAPERLESS_TASK_WORKERS: "2"

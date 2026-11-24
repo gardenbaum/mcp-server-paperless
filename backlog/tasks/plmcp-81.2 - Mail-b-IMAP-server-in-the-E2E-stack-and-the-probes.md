@@ -1,9 +1,11 @@
 ---
 id: PLMCP-81.2
 title: 'Mail b: IMAP server in the E2E stack and the probes'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T22:44:55Z'
+updated_date: '2026-11-24T23:10:18Z'
 labels:
   - mail
 dependencies:
@@ -34,3 +36,9 @@ Second part of PLMCP-81, test only: the E2E stack has no IMAP server, so a fetch
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Overlay compose.imap.yaml (Dovecot by digest), just e2e-imap, job in e2e-full.yml, marker imap_e2e. 2. Probes P1 to P4 as live tests in tests/e2e/test_mail_import.py (with what Paperless said in the report). 3. A temporary workflow runs only them on the draft PR; it and -rP go before the PR is ready. 4. What differs from the table of the design stops PLMCP-81.3 and is reported.
+<!-- SECTION:PLAN:END -->

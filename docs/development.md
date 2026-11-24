@@ -50,6 +50,7 @@ just e2e                      # the live suite against it
 just mutation                 # mutmut on services/ and paperless/, fails below the 80 % gate, more than an hour
 just e2e-latest               # live suite against the latest stable paperless-ngx 3.x image
 just e2e-office               # Office and e-mail documents, with Tika and Gotenberg
+just e2e-imap                 # Mail imports, with a mail server
 just e2e-duplicates           # a Paperless that rejects duplicates
 just e2e-postgres             # Paperless on PostgreSQL: the order of the trash
 just renderer-drift-check     # locked pypdfium2 vs. the newest release
