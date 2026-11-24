@@ -1,11 +1,11 @@
 ---
 id: PLMCP-107
 title: Close the small gaps left in confirmation texts
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T07:06:16Z'
-updated_date: '2026-11-24T11:28:06Z'
+updated_date: '2026-11-24T12:56:15Z'
 labels: []
 dependencies: []
 priority: medium
@@ -31,7 +31,7 @@ Left by the reviews of PLMCP-98 and 75: get_app_config and the result of update_
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -73,3 +73,9 @@ Delta review of f05766d (replaces what is said above about removing credentials 
 
 Last review: D1, D2 in decision-64; D3 a stored empty user name written again is removed too (test seen red). N6 confirmed by the reviewer.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Service URLs come without credentials, webhook URLs with more than one @ are refused, look-alike double quotes in names are escaped (decision-64). Review clean, Codex without findings, hosted full E2E 45384110271 green, merged as 64ef42a (#130).
+<!-- SECTION:FINAL_SUMMARY:END -->

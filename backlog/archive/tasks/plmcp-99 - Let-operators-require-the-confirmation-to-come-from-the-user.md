@@ -1,11 +1,11 @@
 ---
 id: PLMCP-99
 title: Let operators require the confirmation to come from the user
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-23T18:44:54Z'
-updated_date: '2026-11-24T08:07:24Z'
+updated_date: '2026-11-24T08:40:18Z'
 labels:
   - safety
   - config
@@ -37,7 +37,7 @@ With confirmation dialogs the assistant can still skip the dialog by passing con
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -57,4 +57,12 @@ PAPERLESS_MCP_REQUIRE_DIALOG (decision-53). The boundary drops confirm=true, so 
 Review fixes: the AST check reads every module (keyed by path) and allows only the caller's own confirm; exact reasons on the wire; NO_FORMS true in every case; the refusal names the way out where there was nobody to ask; tool is positional-only in confirmed(); HTTP variants of the upload tools tested (the HTTP download tools have no confirm). The plugin does not offer the option: it pins 0.3.2, which would silently ignore it. It is added with the first pin that knows the setting, together with the README table (a test keeps them equal). server.json has it: its version is written from the tag, a test forces its list.
 
 Full local check at a13b426: 7886 passed, diff-cover 100 %, the known macOS failure plus test_a_socket_is_not_a_file (AF_UNIX path, see report). E2E runs on GitHub.
+
+Merged with #121 (245ce24). Review and delta review clean; Codex without findings; hosted full E2E 45353668848 green on 5ce1879, whose tree equals the merged one. DoD 2 stays unchecked (macOS-only failures). Follow-up: PLMCP-109.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+PAPERLESS_MCP_REQUIRE_DIALOG (off by default) makes every confirmation require an accepted dialog on stdio and HTTP; anything else changes nothing and names the reason and the setting (decision-53). The plugin offers it with PLMCP-109.
+<!-- SECTION:FINAL_SUMMARY:END -->
