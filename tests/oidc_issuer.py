@@ -12,6 +12,7 @@ import base64
 import contextlib
 import hashlib
 import http.server
+import itertools
 import json
 import secrets
 import threading
@@ -28,6 +29,9 @@ if TYPE_CHECKING:
 CLIENT_ID = "paperless-mcp-test-client"
 CLIENT_SECRET = "stub-issuer-client-secret-not-a-secret"
 SUBJECT = "alice"
+# FastMCP caches discovery documents by URL and a port may come back within a run: a path of its
+# own keeps each stub's URL unique in the process.
+_NUMBERS = itertools.count(1)
 
 
 @dataclass
@@ -97,12 +101,13 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         url = urlsplit(self.path)
+        base = urlsplit(self.issuer.url).path
         query = {key: values[0] for key, values in parse_qs(url.query).items()}
-        if url.path == "/.well-known/openid-configuration":
+        if url.path == f"{base}/.well-known/openid-configuration":
             self._send(200, self.issuer.discovery())
-        elif url.path == "/jwks":
+        elif url.path == f"{base}/jwks":
             self._send(200, {"keys": [self.issuer.key.as_dict(private=False)]})
-        elif url.path == "/authorize":
+        elif url.path == f"{base}/authorize":
             self.issuer.authorizations.append(query)
             if query.get("client_id") != CLIENT_ID:
                 self._send(400, {"error": "invalid_client"})
@@ -118,7 +123,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         form = {k: v[0] for k, v in parse_qs(self.rfile.read(length).decode()).items()}
         self.issuer.token_requests.append(form)
-        if urlsplit(self.path).path != "/token":
+        if urlsplit(self.path).path != f"{urlsplit(self.issuer.url).path}/token":
             self._send(404, {"error": "not_found"})
             return
         expected = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
@@ -155,11 +160,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
 
 @contextlib.contextmanager
-def stub_issuer() -> Generator[Issuer]:
-    """Serve a stub issuer on a free loopback port while the block runs."""
+def stub_issuer(port: int = 0) -> Generator[Issuer]:
+    """Serve a stub issuer on a loopback port (a free one by default) while the block runs."""
     key = jwk.RSAKey.generate_key(2048, parameters={"kid": "stub-key", "use": "sig"})
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
-    issuer = Issuer(url=f"http://127.0.0.1:{server.server_port}", key=key)
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), _Handler)
+    issuer = Issuer(url=f"http://127.0.0.1:{server.server_port}/issuer-{next(_NUMBERS)}", key=key)
     server.RequestHandlerClass = type("Handler", (_Handler,), {"issuer": issuer})
     thread = threading.Thread(target=server.serve_forever, args=(0.05,), daemon=True)
     thread.start()
