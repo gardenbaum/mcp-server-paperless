@@ -85,7 +85,7 @@ Limits.
 | `GET /api/documents/{id}/download/` | `download_document`, `get_document_pages` |  |
 | `POST /api/documents/{id}/email/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/history/` | `get_document` |  |
-| `GET /api/documents/{id}/metadata/` | `download_document`, `get_document`, `get_document_pages` |  |
+| `GET /api/documents/{id}/metadata/` | `delete_pages`, `download_document`, `edit_pdf`, `email_documents`, `get_document` and 6 more |  |
 | `DELETE /api/documents/{id}/notes/` | `delete_note` |  |
 | `GET /api/documents/{id}/notes/` | `delete_note`, `get_document` |  |
 | `POST /api/documents/{id}/notes/` | `add_note` |  |

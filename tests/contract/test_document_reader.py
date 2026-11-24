@@ -16,6 +16,8 @@ from mcp_server_paperless.domain.documents import DocumentQuery
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 
 if TYPE_CHECKING:
+    from e2e.helpers import FilePart
+
     from contract.conftest import Backend, Ports
     from mcp_server_paperless.domain.documents import DocumentHit, FileVersion
     from mcp_server_paperless.domain.taxonomy import TaxonomyKind
@@ -396,9 +398,9 @@ async def test_the_file_metadata_describes_the_files(backend: Backend) -> None:
 
     assert metadata.original_filename == f"{PUBLIC}.pdf"
     assert metadata.original_mime_type == "application/pdf"
-    assert metadata.original_size > 0
+    assert metadata.original_size
     assert metadata.original_checksum
-    assert metadata.media_filename.endswith(f"{PUBLIC}.pdf")
+    assert (metadata.media_filename or "").endswith(f"{PUBLIC}.pdf")
     assert metadata.has_archive_version
     assert (metadata.archive_size or 0) > 0
     assert metadata.archive_checksum
@@ -634,3 +636,77 @@ async def test_a_file_over_the_byte_limit_is_truncated_but_still_named_and_typed
         assert (cut.content, cut.truncated, cut.mime_type) == (b"", True, "application/pdf")
         assert (cut.filename or "").endswith(f"{PUBLIC}.pdf")
         assert (len(whole.content), whole.truncated) == (size, False)
+
+
+@pytest.mark.contract("DocumentReader.get_document_metadata")
+@pytest.mark.contract("DocumentReader.get_document_file")
+@pytest.mark.contract("DocumentReader.open_document_file")
+@pytest.mark.parametrize(
+    ("lost", "sizes", "noun", "other"),
+    [
+        (["original"], (False, True), "original", "archive"),
+        (["archive"], (True, False), "archive version", "original"),
+        (["original", "archive"], (False, False), "original", None),
+    ],
+)
+async def test_a_document_without_its_file_is_read_and_the_file_is_said_to_be_missing(
+    backend: Backend,
+    lost: list[FilePart],
+    sizes: tuple[bool, bool],
+    noun: str,
+    other: FileVersion | None,
+) -> None:
+    number = uploaded(backend, named("plmcp105"), "plmcp105.pdf", "application/pdf")
+    documents = backend.admin.documents
+    before = await documents.get_document_metadata(number)
+    for part in lost:
+        backend.lose_file(number, part)
+
+    facts = await documents.get_document_metadata(number)
+    kind: FileVersion = "archive" if noun == "archive version" else "original"
+    with pytest.raises(NotFound) as raised:
+        _ = await documents.get_document_file(number, kind, max_bytes=MAX)
+    with pytest.raises(NotFound) as opened:
+        async with documents.open_document_file(number, kind, version_id=number):
+            raise AssertionError
+
+    assert (facts.original_size is not None, facts.archive_size is not None) == sizes
+    assert (facts.original_checksum, facts.archive_checksum, facts.has_archive_version) == (
+        before.original_checksum,
+        before.archive_checksum,
+        True,
+    )
+    assert raised.value.message == f"Paperless cannot find the {noun} of document {number}."
+    assert opened.value.message == (
+        f"Paperless cannot find the {noun} of document {number} (version {number})."
+    )
+    if other is not None:
+        assert "which is there" in (raised.value.hint or "")
+        file = await documents.get_document_file(number, other, max_bytes=MAX)
+        assert file.content.startswith(b"%PDF")
+    assert (await documents.get_document(number)).id == number
+
+
+@pytest.mark.contract("DocumentReader.get_document_metadata")
+@pytest.mark.contract("DocumentReader.get_document_file")
+async def test_a_document_without_file_names_still_has_its_files(backend: Backend) -> None:
+    """Without a name Paperless takes the default one, which the files of the stack have."""
+    number = uploaded(backend, named("plmcp105"), "plmcp105.pdf", "application/pdf")
+    documents = backend.admin.documents
+    backend.lose_file(number, "names")
+
+    facts = await documents.get_document_metadata(number)
+    file = await documents.get_document_file(number, "original", max_bytes=MAX)
+
+    assert (facts.original_filename, facts.media_filename) == (None, None)
+    assert (facts.original_size, bool(facts.archive_size)) == (len(file.content), True)
+    assert hashlib.sha256(file.content).hexdigest() == facts.original_checksum
+
+
+@pytest.mark.contract("DocumentReader.get_document_thumbnail")
+async def test_a_document_without_its_thumbnail_says_so(backend: Backend) -> None:
+    number = uploaded(backend, named("plmcp105"), "plmcp105.txt", "text/plain")
+    backend.lose_file(number, "thumbnail")
+
+    with pytest.raises(NotFound, match=f"cannot find the thumbnail of document {number}"):
+        _ = await backend.admin.documents.get_document_thumbnail(number)
