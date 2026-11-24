@@ -77,7 +77,7 @@ if TYPE_CHECKING:
         TaxonomyValues,
         WritableKind,
     )
-    from mcp_server_paperless.domain.trash import TrashedRecord, TrashPage
+    from mcp_server_paperless.domain.trash import TrashedRecord, TrashLookup, TrashPage
     from mcp_server_paperless.domain.versions import VersionPage, VersionUpload
     from mcp_server_paperless.domain.views import SavedView, ViewValues
     from mcp_server_paperless.domain.workflows import Workflow, WorkflowValues
@@ -188,7 +188,7 @@ class DocumentReader(Protocol):
         ...
 
     async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
-        """The thumbnail image of a document (WebP).
+        """The thumbnail image of a document (WebP), also in the trash (of its first version).
 
         Raises:
             NotFound: No such document.
@@ -680,6 +680,19 @@ class TrashReader(Protocol):
         """Those of the documents that are among the first ``entries`` entries, by id.
 
         Versions are left out. One request, like ``read_trash``, with the same bounds and errors.
+        """
+        ...
+
+    async def look_up_in_trash(
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
+    ) -> TrashLookup:
+        """Everything of one entry, a version too, if it is on this page of the trash.
+
+        The text is the entry's own: of a document the first version's, of a version its own. One
+        request, bounded like ``read_trash``, with the same errors.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
         """
         ...
 

@@ -18,12 +18,21 @@ takes ``{action: restore|empty, documents: [ids]}`` and answers
 """
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
+from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentVersion
+from mcp_server_paperless.domain.duplicates import DuplicateRecord
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
-from mcp_server_paperless.domain.trash import TrashedDocument, TrashedRecord, TrashPage
+from mcp_server_paperless.domain.trash import (
+    TrashedDetail,
+    TrashedDocument,
+    TrashedNote,
+    TrashedRecord,
+    TrashLookup,
+    TrashPage,
+)
 from mcp_server_paperless.paperless.pagination import Page
 
 if TYPE_CHECKING:
@@ -32,6 +41,8 @@ if TYPE_CHECKING:
     from mcp_server_paperless.paperless.client import PaperlessClient
 
 PATH = "/api/trash/"
+# One request of many entries: Paperless looks up the versions of each row by itself.
+SCAN_TIMEOUT: Final = 120.0
 
 
 class _Version(BaseModel):
@@ -45,20 +56,52 @@ class _Row(BaseModel):
     deleted_at: datetime
     root_document: int | None
     versions: list[_Version]
+    created: date
+    mime_type: str
+    document_type: int | None
+    owner: int | None
+    archived_file_name: str | None
 
 
 class _Facts(_Row):
-    created: date
     added: datetime
     modified: datetime
     archive_serial_number: int | None
-    owner: int | None
     correspondent: int | None
-    document_type: int | None
     storage_path: int | None
     tags: list[int]
     original_file_name: str | None
-    mime_type: str
+
+
+class _User(BaseModel):
+    username: str
+
+
+class _Note(BaseModel):
+    id: int
+    note: str
+    format: str | None = None
+    created: datetime | None = None
+    user: _User | None = None
+
+
+class _Value(BaseModel):
+    field: int
+    value: JsonValue
+
+
+class _Full(_Facts):
+    """Every field of an entry. ``permissions`` is only sent on request (``full_perms``)."""
+
+    versions: list[DocumentVersion]  # pyright: ignore[reportIncompatibleVariableOverride] -- read only
+    created_date: date
+    duplicate_documents: list[DuplicateRecord]
+    user_can_change: bool
+    is_shared_by_requester: bool
+    notes: list[_Note]
+    custom_fields: list[_Value]
+    page_count: int | None
+    content: str
 
 
 class _Done(BaseModel):
@@ -96,7 +139,35 @@ def _entry(row: _Row) -> TrashedDocument:
         title=row.title,
         deleted_at=row.deleted_at,
         version_of=row.root_document,
+        created=row.created,
+        mime_type=row.mime_type,
+        document_type=row.document_type,
+        owner=row.owner,
+        has_archive=row.archived_file_name is not None,
         checksum=_checksum(row),
+    )
+
+
+def _detail(row: _Full) -> TrashedDetail:
+    notes = [
+        TrashedNote(
+            id=n.id,
+            note=n.note,
+            format=n.format,
+            created=n.created,
+            user=n.user.username if n.user else None,
+        )
+        for n in row.notes
+    ]
+    fields = [CustomFieldValue(field=v.field, value=v.value) for v in row.custom_fields]
+    return TrashedDetail.model_validate(
+        {
+            **row.model_dump(exclude={"notes", "custom_fields", "root_document"}),
+            "version_of": row.root_document,
+            "notes": notes,
+            "notes_count": len(notes),
+            "custom_fields": fields,
+        }
     )
 
 
@@ -126,7 +197,7 @@ class PaperlessTrashReader:
 
         Of the rows only what ``_Row`` names is kept.
         """
-        found = await self._first(Page[_Row], entries, max_bytes)
+        found = await self._bounded(Page[_Row], entries, max_bytes)
         return TrashPage(
             count=found.count,
             next_page=found.next_page,
@@ -137,16 +208,31 @@ class PaperlessTrashReader:
         self, document_ids: Collection[int], *, entries: int, max_bytes: int
     ) -> dict[int, TrashedRecord]:
         """See ``TrashReader.find_in_trash``."""
-        found = await self._first(Page[_Facts], entries, max_bytes)
+        found = await self._bounded(Page[_Facts], entries, max_bytes)
         return {
             row.id: TrashedRecord.model_validate({**row.model_dump(), "checksum": _checksum(row)})
             for row in found.results
             if row.root_document is None and row.id in document_ids
         }
 
-    async def _first[M: BaseModel](self, model: type[M], entries: int, max_bytes: int) -> M:
-        params = {"page": 1, "page_size": entries}
-        return await self._client.read_json(PATH, model, params=params, max_bytes=max_bytes)
+    async def look_up_in_trash(
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int
+    ) -> TrashLookup:
+        """See ``TrashReader.look_up_in_trash``."""
+        try:
+            found = await self._bounded(Page[_Full], page_size, max_bytes, page=page)
+        except NotFound:
+            raise beyond_last_page(page) from None
+        row = next((row for row in found.results if row.id == document_id), None)
+        return TrashLookup(entry=None if row is None else _detail(row), next_page=found.next_page)
+
+    async def _bounded[M: BaseModel](
+        self, model: type[M], entries: int, max_bytes: int, *, page: int = 1
+    ) -> M:
+        params = {"page": page, "page_size": entries}
+        return await self._client.read_json(
+            PATH, model, params=params, max_bytes=max_bytes, timeout=SCAN_TIMEOUT
+        )
 
 
 class PaperlessTrashWriter:

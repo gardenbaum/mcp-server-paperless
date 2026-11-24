@@ -196,6 +196,14 @@ async def owner_id(taxonomy: TaxonomyResolver, value: NameOrId | None) -> int | 
         raise PermissionDenied(error.message, hint=hint) from None
 
 
+async def known_items(taxonomy: TaxonomyResolver, kind: TaxonomyKind) -> dict[int, TaxonomyItem]:
+    """The objects of ``kind`` by id, for names; none if the user may not list them."""
+    try:
+        return {item.id: item for item in await taxonomy.items(kind)}
+    except PermissionDenied:
+        return {}
+
+
 class DocumentService:
     """Finds documents for the current user."""
 
@@ -272,10 +280,7 @@ class DocumentService:
         return await owner_id(self._taxonomy, value)
 
     async def _known(self, kind: TaxonomyKind) -> dict[int, TaxonomyItem]:
-        try:
-            return {item.id: item for item in await self._taxonomy.items(kind)}
-        except PermissionDenied:
-            return {}
+        return await known_items(self._taxonomy, kind)
 
     def _summary(
         self, hit: DocumentHit, known: dict[TaxonomyKind, dict[int, TaxonomyItem]]
@@ -285,9 +290,9 @@ class DocumentService:
             title=hit.title,
             created=hit.created,
             added=hit.added,
-            correspondent=_maybe(known, "correspondent", hit.correspondent),
-            document_type=_maybe(known, "document_type", hit.document_type),
-            storage_path=_maybe(known, "storage_path", hit.storage_path),
+            correspondent=maybe_ref(known, "correspondent", hit.correspondent),
+            document_type=maybe_ref(known, "document_type", hit.document_type),
+            storage_path=maybe_ref(known, "storage_path", hit.storage_path),
             tags=tuple(_ref(known, "tag", tag) for tag in hit.tags),
             custom_fields=_fields(known, hit.custom_fields),
             highlights=hit.highlights,
@@ -333,10 +338,10 @@ class DocumentService:
             added=record.added,
             modified=record.modified,
             archive_serial_number=record.archive_serial_number,
-            owner=_maybe(known, "user", record.owner),
-            correspondent=_maybe(known, "correspondent", record.correspondent),
-            document_type=_maybe(known, "document_type", record.document_type),
-            storage_path=_maybe(known, "storage_path", record.storage_path),
+            owner=maybe_ref(known, "user", record.owner),
+            correspondent=maybe_ref(known, "correspondent", record.correspondent),
+            document_type=maybe_ref(known, "document_type", record.document_type),
+            storage_path=maybe_ref(known, "storage_path", record.storage_path),
             tags=tuple(_ref(known, "tag", tag) for tag in record.tags),
             custom_fields=_fields(known, record.custom_fields, titles),
             original_file_name=record.original_file_name,
@@ -462,10 +467,10 @@ class DocumentService:
         values: dict[str, object] = {
             "created": read.created,
             "added": read.added,
-            "owner": _maybe(known, "user", read.owner),
-            "correspondent": _maybe(known, "correspondent", read.correspondent),
-            "document_type": _maybe(known, "document_type", read.document_type),
-            "storage_path": _maybe(known, "storage_path", read.storage_path),
+            "owner": maybe_ref(known, "user", read.owner),
+            "correspondent": maybe_ref(known, "correspondent", read.correspondent),
+            "document_type": maybe_ref(known, "document_type", read.document_type),
+            "storage_path": maybe_ref(known, "storage_path", read.storage_path),
             "tags": tuple(_ref(known, "tag", tag) for tag in read.tags),
             "archive_serial_number": read.archive_serial_number,
             "original_file_name": read.original_file_name,
@@ -543,9 +548,10 @@ def _ref(
     return Ref(id=number, name=item.name if item else None)
 
 
-def _maybe(
+def maybe_ref(
     known: dict[TaxonomyKind, dict[int, TaxonomyItem]], kind: TaxonomyKind, number: int | None
 ) -> Ref | None:
+    """The object of ``kind`` with its name if known; None for no id."""
     return None if number is None else _ref(known, kind, number)
 
 

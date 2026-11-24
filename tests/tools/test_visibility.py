@@ -169,7 +169,14 @@ async def test_read_only_mode_offers_only_tools_with_the_read_only_hint() -> Non
         (CORE - writing)
         | SHIPPED_AI
         | READ_VIEWS
-        | {"list_document_versions", "list_trash", "list_users", "list_groups"}
+        | {
+            "list_document_versions",
+            "list_trash",
+            "get_trash_entry",
+            "get_trashed_file",
+            "list_users",
+            "list_groups",
+        }
         | READ_SHARING
         | READ_MAIL
         | RAW

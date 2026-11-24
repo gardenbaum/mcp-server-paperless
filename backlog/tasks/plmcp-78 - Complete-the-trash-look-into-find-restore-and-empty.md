@@ -1,10 +1,11 @@
 ---
 id: PLMCP-78
 title: 'Complete the trash: look into, find, restore and empty'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T12:14:49Z'
-updated_date: '2026-11-23T18:30:55Z'
+updated_date: '2026-11-24T07:46:37Z'
 labels: []
 dependencies: []
 priority: medium
@@ -36,3 +37,13 @@ The toolset trash (off by default) already lists, restores (up to 100 ids, no co
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Rows, TrashFilter, scan (one bounded request, decision-47) and list_trash filters, tests first
+2. get_trash_entry (all fields, text slice) and get_trashed_file (thumbnail, file, parts as decision-45)
+3. restore/empty by filter (shows, never acts without a dialog bound to the ids), per-entry outcomes, reading the trash again, naming the blocking id
+4. Criterion 7 texts and registry table
+5. Fake, contract, tool and E2E tests; decisions 54/55; docs, snapshots
+<!-- SECTION:PLAN:END -->

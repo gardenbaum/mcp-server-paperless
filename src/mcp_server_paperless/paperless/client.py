@@ -284,9 +284,17 @@ class PaperlessClient:
             await response.aclose()
 
     async def read_json[M: pydantic.BaseModel](
-        self, path: str, model: type[M], *, params: Params | None = None, max_bytes: int
+        self,
+        path: str,
+        model: type[M],
+        *,
+        params: Params | None = None,
+        max_bytes: int,
+        timeout: float | None = None,  # noqa: ASYNC109 -- the HTTP request timeout, not a cancel scope
     ) -> M:
         """GET ``path`` and validate a body of at most ``max_bytes`` bytes.
+
+        ``timeout`` replaces the client's default timeout (seconds) for this request.
 
         It is parsed in a thread, which does not keep the event loop free: the parser holds the GIL
         (0.02 s for ordinary text, up to 0.8 s for a hostile body near 64 MiB).
@@ -300,7 +308,7 @@ class PaperlessClient:
             PaperlessMcpError: The matching subclass for an error status or a failed transport, or
                 a body that does not match.
         """
-        outgoing = self._build("GET", path, params=params)
+        outgoing = self._build("GET", path, params=params, timeout=timeout)
         outgoing.headers["Accept-Encoding"] = "identity"
         response = await self._exchange(outgoing, stream=True)
         body = bytearray()

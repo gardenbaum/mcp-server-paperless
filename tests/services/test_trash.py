@@ -19,10 +19,12 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
 )
+from mcp_server_paperless.domain.trash import MAX_IDS, TrashFilter
 from mcp_server_paperless.domain.versions import VersionUpload
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
-from mcp_server_paperless.services.trash import LOST, MAX_IDS, SHOWN, WHEN_CONFIRMED, TrashService
+from mcp_server_paperless.services.trash import LOST, SHOWN, WHEN_CONFIRMED, TrashService
+from mcp_server_paperless.services.trash_scan import TrashScan
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.trash import TrashPage
@@ -42,9 +44,11 @@ class Setup:
         self.taxonomy: TaxonomyResolver = TaxonomyResolver(
             self.fake, StaticTokenProvider("t"), ttl=3600.0
         )
-        self.service: TrashService = TrashService(
-            self.fake, self.fake, self.taxonomy, web_url=WEB, max_all=max_all
-        )
+        self.service: TrashService = self.on(self.fake, max_all=max_all)
+
+    def on(self, fake: FakePaperless, *, max_all: int = 1000, web_url: str = WEB) -> TrashService:
+        scan = TrashScan(fake, fake, self.taxonomy)
+        return TrashService(fake, fake, fake, scan, self.taxonomy, web_url=web_url, max_all=max_all)
 
     def document(self, title: str, *, owner: int | None = 2) -> int:
         number = max(d.id for d in (*self.state.documents, *self.state.trash)) + 1
@@ -86,12 +90,12 @@ async def test_the_trash_is_listed_with_a_page_the_total_and_the_trash_page_link
     older = await setup.trashed("older")
     newer = await setup.trashed("newer")
 
-    result = await setup.service.list(page=1, page_size=10)
+    result = await setup.service.list(TrashFilter(), page=1, page_size=10)
 
     assert (result.count, result.page, result.next_page) == (2, 1, None)
     assert result.web_url == "https://paperless.example/trash"
-    slashed = TrashService(setup.fake, setup.fake, setup.taxonomy, web_url=WEB + "/pX/")
-    listed = await slashed.list(page=1, page_size=10)
+    slashed = setup.on(setup.fake, web_url=WEB + "/pX/")
+    listed = await slashed.list(TrashFilter(), page=1, page_size=10)
     assert listed.web_url == "https://paperless.example/pX/trash"
     # The order is Paperless's (by creation date); only the content is pinned here.
     assert {(e.id, e.title, e.deleted_at, e.version_of) for e in result.entries} == {
@@ -105,20 +109,20 @@ async def test_a_page_of_the_trash_names_the_next_one() -> None:
     for number in range(3):
         _ = await setup.trashed(f"doc {number}")
 
-    first = await setup.service.list(page=1, page_size=2)
-    second = await setup.service.list(page=2, page_size=2)
+    first = await setup.service.list(TrashFilter(), page=1, page_size=2)
+    second = await setup.service.list(TrashFilter(), page=2, page_size=2)
 
     assert (first.count, first.next_page, len(first.entries)) == (3, 2, 2)
     assert (second.next_page, len(second.entries)) == (None, 1)
     with pytest.raises(NotFound):
-        _ = await setup.service.list(page=3, page_size=2)
+        _ = await setup.service.list(TrashFilter(), page=3, page_size=2)
 
 
 async def test_a_user_without_the_view_permission_cannot_list() -> None:
     setup = Setup("e2e-blind")
 
     with pytest.raises(PermissionDenied):
-        _ = await setup.service.list(page=1, page_size=25)
+        _ = await setup.service.list(TrashFilter(), page=1, page_size=25)
 
 
 # --- restore ------------------------------------------------------------------------------------
@@ -131,7 +135,7 @@ async def test_restoring_brings_documents_back_and_says_what_each_was() -> None:
 
     result = await setup.service.restore([one, version, two])
 
-    assert [e.id for e in result.restored] == [one, version, two]
+    assert [e.id for e in result.entries] == [one, version, two]
     assert result.message == (
         "Restored 2 documents and 1 version from the trash: "
         f"document {one} 'Invoice one', version {version} of document {document} 'Report' "
@@ -139,13 +143,13 @@ async def test_restoring_brings_documents_back_and_says_what_each_was() -> None:
     )
     assert setup.ids() == []
     assert {one, two} <= set(setup.alive())
-    assert [(e.title, e.version_of) for e in result.restored] == [
+    assert [(e.title, e.version_of) for e in result.entries] == [
         ("Invoice one", None),
         ("Report", document),
         ("Invoice two", None),
     ]
     # Every restored entry links to its document; a version links to the document it belongs to.
-    assert [e.web_url for e in result.restored] == [
+    assert [e.web_url for e in result.entries] == [
         f"{WEB}/documents/{one}/details",
         f"{WEB}/documents/{document}/details",
         f"{WEB}/documents/{two}/details",
@@ -180,7 +184,7 @@ async def test_ids_are_deduplicated_and_an_empty_or_huge_list_is_refused() -> No
     one = await setup.trashed("Twice")
 
     result = await setup.service.restore([one, one])
-    assert [e.id for e in result.restored] == [one]
+    assert [e.id for e in result.entries] == [one]
 
     with pytest.raises(Validation) as empty:
         _ = await setup.service.restore([])
@@ -198,7 +202,7 @@ async def test_exactly_the_most_ids_are_accepted() -> None:
 
     result = await setup.service.restore(ids)
 
-    assert [e.id for e in result.restored] == ids
+    assert [e.id for e in result.entries] == ids
 
 
 async def test_entries_on_later_pages_of_the_trash_are_found_too() -> None:
@@ -213,7 +217,7 @@ async def test_entries_on_later_pages_of_the_trash_are_found_too() -> None:
 
     result = await setup.service.restore([oldest, newest])
 
-    assert [e.id for e in result.restored] == [oldest, newest]
+    assert [e.id for e in result.entries] == [oldest, newest]
 
 
 async def test_an_id_that_is_not_in_the_trash_is_not_found_and_nothing_is_restored() -> None:
@@ -240,7 +244,7 @@ async def test_a_version_cannot_be_restored_while_its_document_is_in_the_trash()
         _ = await setup.service.restore([version])
 
     result = await setup.service.restore([document])
-    assert [e.id for e in result.restored] == [document]
+    assert [e.id for e in result.entries] == [document]
 
 
 async def test_a_user_without_the_delete_permission_may_not_restore() -> None:
@@ -277,7 +281,7 @@ async def test_ids_and_all_together_are_ambiguous() -> None:
     with pytest.raises(Validation) as raised:
         _ = await setup.service.empty([one], everything=True, confirm=True)
 
-    assert raised.value.message == "Pass either document_ids or all=true, not both."
+    assert raised.value.message == "Pass exactly one of document_ids, filter and all=true."
     assert raised.value.hint == "Use document_ids for some entries, all=true for every one."
 
 
@@ -332,7 +336,7 @@ async def test_all_asks_for_one_entry_more_than_it_handles_to_see_a_larger_trash
             return await super().list_trash(page=page, page_size=page_size)
 
     recording = Recording(setup.state, user=setup.fake.user.username)
-    service = TrashService(recording, recording, setup.taxonomy, web_url=WEB, max_all=5)
+    service = setup.on(recording, max_all=5)
 
     result = await service.empty(None, everything=True)
 
@@ -360,7 +364,7 @@ async def test_an_entry_a_page_read_returns_twice_is_emptied_once() -> None:
             return found.model_copy(update={"entries": (*found.entries, *found.entries[:1])})
 
     repeating = Repeating(setup.state, user=fake.user.username, allow_writes=True)
-    service = TrashService(repeating, repeating, setup.taxonomy, web_url=WEB)
+    service = setup.on(repeating)
     for number in range(3):
         _ = await setup.trashed(f"Doc {number}")
 
@@ -441,7 +445,7 @@ async def test_a_user_lists_only_the_entries_of_documents_they_own_or_nobody_own
     mine = await setup.trashed("Theirs and not mine", owner=2)
     shared = await setup.trashed("Nobody's", owner=None)
 
-    listed = await setup.service.list(page=1, page_size=10)
+    listed = await setup.service.list(TrashFilter(), page=1, page_size=10)
 
     assert [e.id for e in listed.entries] == [shared]
     assert mine in setup.ids()
