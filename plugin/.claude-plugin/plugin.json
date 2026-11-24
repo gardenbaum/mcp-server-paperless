@@ -1,7 +1,7 @@
 {
   "name": "mcp-server-paperless",
   "displayName": "MCP Server for Paperless-ngx",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Search, read, file, tag and upload documents in your paperless-ngx 3.x archive, by name and with a confirmation step before anything final.",
   "author": {
     "name": "gardenbaum",
@@ -24,7 +24,7 @@
     "paperless": {
       "command": "uvx",
       "args": [
-        "mcp-server-paperless==0.3.2"
+        "mcp-server-paperless==0.3.3"
       ],
       "env": {
         "PAPERLESS_URL": "${user_config.paperless_url}",
