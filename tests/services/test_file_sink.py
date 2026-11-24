@@ -172,6 +172,7 @@ async def test_short_writes_are_continued(tree: Tree) -> None:
 # --- replacing
 
 
+@pytest.mark.decision("decision-49")
 async def test_an_existing_file_is_replaced_only_with_confirm(tree: Tree) -> None:
     old = tree.sub / NAME
     _ = old.write_bytes(b"old!")
@@ -214,6 +215,7 @@ async def test_a_replacement_that_cannot_be_shown_is_refused_also_with_confirm(
     _ = await save(tree, "new.pdf", directory=directory)  # a new file needs no confirmation
 
 
+@pytest.mark.decision("decision-49")
 async def test_a_confirmation_shows_the_whole_name_and_directory_or_is_refused(tree: Tree) -> None:
     directory = tree.allowed / "d"
     while len(str(directory)) < 200:
@@ -235,6 +237,7 @@ async def test_a_confirmation_shows_the_whole_name_and_directory_or_is_refused(t
             _ = await save(tree, directory=deeper, confirm=confirm)
 
 
+@pytest.mark.decision("decision-49")
 async def test_a_confirmation_names_the_directory_a_link_leads_to(tree: Tree) -> None:
     (tree.allowed / "short").symlink_to(tree.sub)
     _ = (tree.sub / NAME).write_bytes(b"old")
@@ -252,6 +255,7 @@ async def fingerprint(tree: Tree, source: object = 1) -> str:
 
 
 @pytest.mark.decision("decision-44")
+@pytest.mark.decision("decision-49")
 async def test_an_acceptance_covers_the_file_the_directory_and_what_is_saved(tree: Tree) -> None:
     """The text is the same each time; what it is about is not."""
     target = tree.sub / NAME
@@ -862,6 +866,7 @@ async def test_without_hard_links_a_swapped_reservation_is_left_alone(
     assert (target.read_bytes(), tree.names()) == (theirs, [NAME, "filler"])
 
 
+@pytest.mark.decision("decision-49")
 async def test_without_hard_links_bytes_written_before_the_reservation_is_looked_at_are_kept(
     tree: Tree,
 ) -> None:

@@ -1,4 +1,6 @@
-"""Where a download is saved: one file in a directory the operator allowed (stdio; decision-45).
+"""Where a download is saved: one file in a directory the operator allowed (stdio only).
+
+The rules are decision-45, and decision-49 for replacing a file.
 
 The directory and the name come from a model that reads documents others wrote, so the rules make
 the server write nothing but one new plain file, or replace one that was confirmed:

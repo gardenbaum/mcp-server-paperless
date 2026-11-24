@@ -375,7 +375,7 @@ ranges and the server keeps nothing between calls, so every part reads the file 
   server can leave a hidden `.mcp-….part`, which you may delete.
 - Not on Windows: saving is refused there, as uploading by path is.
 
-The rules are decision-45 and decision-46 (`backlog/decisions/`).
+The rules are decision-45, decision-46 and, for replacing a file, decision-49 (`backlog/decisions/`).
 
 ### Page images
 

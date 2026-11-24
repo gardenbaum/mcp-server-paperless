@@ -408,6 +408,7 @@ async def refusal(call: Awaitable[object]) -> ConfirmationRequired:
 
 
 @pytest.mark.decision("decision-44")
+@pytest.mark.decision("decision-49")
 async def test_an_acceptance_names_the_document_the_kind_the_version_and_its_content(
     tmp_path: Path,
 ) -> None:
@@ -437,6 +438,7 @@ async def test_an_acceptance_names_the_document_the_kind_the_version_and_its_con
 
 
 @pytest.mark.decision("decision-44")
+@pytest.mark.decision("decision-49")
 async def test_an_acceptance_names_the_documents_and_options_of_an_archive(tmp_path: Path) -> None:
     service, where = system(fake_with(), tmp_path), str(tmp_path)
     _ = (tmp_path / "documents.zip").write_bytes(b"old")
