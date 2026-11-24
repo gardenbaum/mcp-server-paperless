@@ -25,6 +25,7 @@ from mcp_server_paperless.domain.documents import (
     FileMetadata,
     HistoryEntry,
     Note,
+    SignedIn,
     Suggestions,
 )
 from mcp_server_paperless.domain.duplicates import DuplicateRecord
@@ -604,6 +605,14 @@ class PaperlessDocumentReader:
             return False
         return None if rights.permissions is None else "delete_document" in rights.permissions
 
+    async def get_signed_in(self) -> SignedIn | None:
+        """See ``DocumentReader.get_signed_in``: ``/api/ui_settings/`` names the user."""
+        try:
+            user = (await self._client.get("/api/ui_settings/", _Rights)).user
+        except PermissionDenied:
+            return None
+        return SignedIn(id=user.id, is_superuser=user.is_superuser)
+
     async def list_document_notes(self, document_id: int) -> tuple[Note, ...]:
         """See ``DocumentReader.list_document_notes``."""
         found = await self._one(document_id, "notes/", _Notes)
@@ -885,7 +894,8 @@ class PaperlessDocumentWriter:
         """See ``DocumentWriter.add_note``.
 
         Paperless answers 200 with every note of the document, the new one last (picked as the
-        newest with the text that was sent, since others may add notes meanwhile), or with
+        newest with the text that was sent, without the whitespace around it, which Paperless
+        drops; others may add notes meanwhile, and an answer without it is unusable), or with
         ``{"error": ...}`` and status 200 when it could not save it. A 403 means the global note
         permission is missing, the document is hidden, or the user may not change it.
         """
@@ -898,10 +908,10 @@ class PaperlessDocumentWriter:
         if isinstance(answer.root, _SaveError):
             message = "Paperless could not save the note."
             raise Validation(message, hint="Check the Paperless log for the reason.")
-        if not answer.root:
+        mine = [row for row in answer.root if row.note.strip() == text.strip()]
+        if not mine:
             message = f"Paperless sent an unexpected response for POST {PATH}{document_id}/notes/."
             raise PaperlessMcpError(message, hint=MAY_BE_APPLIED)
-        mine = [row for row in answer.root if row.note == text] or answer.root
         return _note(max(mine, key=lambda row: row.id))
 
     async def delete_note(self, document_id: int, note_id: int) -> None:

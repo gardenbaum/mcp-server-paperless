@@ -38,7 +38,7 @@ claude mcp add paperless --env PAPERLESS_URL=https://paperless.example.org \
 
 mcp-server-paperless is a [Model Context Protocol](https://modelcontextprotocol.io) server for
 paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai, Cursor, VS
-Code and any other MCP client 97 tools in 13 toolsets that cover most of what the Paperless API
+Code and any other MCP client 99 tools in 13 toolsets that cover most of what the Paperless API
 can do, from a search to saved views, mail rules and workflows. It starts small and careful: 20
 tools by default, names instead of ids, and a confirmation step before anything that cannot be
 undone.
@@ -99,7 +99,7 @@ people who want all of the following in one server:
 - 🛡️ **Nothing final without your yes.** Before a tool deletes, overwrites, publishes or shares
   anything, it reports what would happen and waits for your confirmation. Changes to many
   documents at once can be previewed first.
-- 🪶 **Small to start with.** Only 20 tools by default out of the 97, so the assistant starts
+- 🪶 **Small to start with.** Only 20 tools by default out of the 99, so the assistant starts
   with the essentials and you decide what else it may do. Search results are short lists and long
   documents are read piece by piece, so a conversation does not fill up with text it does not
   need.
@@ -234,7 +234,7 @@ docker run -d --name mcp-server-paperless -p 127.0.0.1:8001:8000 \
     -e PAPERLESS_TOKEN=your-api-token \
     -e PAPERLESS_MCP_HTTP_AUTH_TOKENS="$MCP_TOKEN" \
     -e PAPERLESS_MCP_HTTP_ALLOWED_HOSTS=localhost \
-    ghcr.io/gardenbaum/mcp-server-paperless:0.3.0
+    ghcr.io/gardenbaum/mcp-server-paperless:0.4.0
 
 claude mcp add --transport http paperless http://127.0.0.1:8001/mcp \
     --header "Authorization: Bearer $MCP_TOKEN"
@@ -251,7 +251,7 @@ variables: [Connect claude.ai](https://github.com/gardenbaum/mcp-server-paperles
 
 ## Toolsets
 
-The 97 tools are grouped into toolsets, and only two are on by default, so the model is not
+The 99 tools are grouped into toolsets, and only two are on by default, so the model is not
 handed tools you never use. Switch more on with `PAPERLESS_MCP_TOOLSETS=core,ai,pdf,trash` or
 `all`, and restart the server. The assistant is told which toolsets are off, what each adds and how to
 switch them on (never for a session: only you decide, see
@@ -261,7 +261,7 @@ switch them on (never for a session: only you decide, see
 |---|---|---|---|
 | `core` | 18 | on | Search, read, see pages as images, download, file and upload documents; run saved views; notes; tags, correspondents, types, storage paths and custom fields; background tasks |
 | `ai` | 2 | on | Ask Paperless AI about your documents and get its filing suggestions (offered only while Paperless AI is enabled) |
-| `bulk` | 5 | | Read many documents in one call, change many documents or taxonomy items in one step and resolve duplicates, with a dry run first; over stdio with upload directories also upload several files or a directory |
+| `bulk` | 7 | | Read many documents in one call, change many documents or taxonomy items in one step, give many documents values or notes of their own and resolve duplicates, with a dry run first; over stdio with upload directories also upload several files or a directory |
 | `pdf` | 10 | | See all pages at a glance with their sizes, insert pages of another document, rotate, merge, split with metadata per part, extract and delete pages, edit PDFs, remove passwords, reprocess |
 | `versions` | 6 | | The file versions of a document: list, upload, label, delete, merge documents as versions, correct the text |
 | `trash` | 5 | | List and filter the trash, look into an entry, get its file, restore it, empty the trash |
@@ -288,8 +288,9 @@ takes more than a misunderstanding:
   any other client nothing changes until the call is repeated with `confirm=true`,
   unless you allow only dialogs with `PAPERLESS_MCP_REQUIRE_DIALOG=true`
   ([details](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/configuration.md#confirmation)).
-- **Dry runs for bulk edits.** `bulk_edit_documents`, `bulk_edit_taxonomy` and
-  `resolve_duplicates` preview what would change before they ask for confirmation.
+- **Dry runs for bulk edits.** `bulk_edit_documents`, `update_documents`, `add_notes`,
+  `bulk_edit_taxonomy` and `resolve_duplicates` preview what would change before they ask for confirmation. A search filter or
+  saved view never acts by itself: every document it would change is named first.
 - **The trash first.** Deleting a document moves it to the Paperless trash, from where it can be
   restored. Emptying the trash is a separate tool in a toolset that is off by default.
 - **You choose the surface.** Toolsets are opt-in, `PAPERLESS_MCP_READ_ONLY=true` offers only

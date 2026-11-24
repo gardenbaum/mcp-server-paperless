@@ -137,6 +137,8 @@ async def test_bulk_is_whole_in_every_mode(tmp_path: Path) -> None:
     shared = [
         "read_documents",
         "bulk_edit_documents",
+        "update_documents",
+        "add_notes",
         "bulk_edit_taxonomy",
         "resolve_duplicates",
     ]

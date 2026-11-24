@@ -25,12 +25,14 @@ class Unconfirmed(BaseModel):
     Attributes:
         task_id: The queued task; ``get_task`` reads it.
         reason: Why it could not be followed to its end, as the rest of a sentence.
+        rate_limited: Whether it was given up because of HTTP 429: ask for nothing more.
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     task_id: str
     reason: str
+    rate_limited: bool = False
 
 
 # What a task says that Paperless ended because it already holds the file; which document that is

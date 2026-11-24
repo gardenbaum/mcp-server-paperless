@@ -20,6 +20,22 @@ MAX_NOTE_CHARS = 10_000
 EXCERPT_CHARS = 40
 
 
+def check_note(text: str, where: str = "") -> None:
+    """Refuse a note Paperless would not take, or that is no remark; ``where`` starts the message.
+
+    Raises:
+        Validation: The text is empty or blank, or longer than ``MAX_NOTE_CHARS``.
+    """
+    if not text.strip():
+        message = f"{where}A note cannot be empty."
+        raise Validation(message, hint="Pass the text of the note.")
+    if len(text) > MAX_NOTE_CHARS:
+        message = (
+            f"{where}A note holds at most {MAX_NOTE_CHARS} characters; this one has {len(text)}."
+        )
+        raise Validation(message, hint="Shorten the note or split it into several.")
+
+
 class NoteService:
     """Adds and deletes notes for the current user."""
 
@@ -37,12 +53,7 @@ class NoteService:
             NotFound: No such document.
             PermissionDenied: The user may not add notes, or not to this document.
         """
-        if not text.strip():
-            message = "A note cannot be empty."
-            raise Validation(message, hint="Pass the text of the note.")
-        if len(text) > MAX_NOTE_CHARS:
-            message = f"A note holds at most {MAX_NOTE_CHARS} characters; this one has {len(text)}."
-            raise Validation(message, hint="Shorten the note or split it into several.")
+        check_note(text)
         note = await self._writer.add_note(document_id, text)
         return NoteAdded(
             document_id=document_id, note=note, web_url=document_link(self._web_url, document_id)

@@ -200,6 +200,30 @@ in a [dialog](#confirmation) or is refused with a description of the effect, `co
 executes. Paperless checks every object
 first: if one may not be changed, none is. Deleting taxonomy is final (it has no trash).
 
+`bulk_edit_documents` chooses documents like `read_documents`: by ids, filters or a saved view. Every
+document a call changes is named before (of other documents that mirrored links change at most 100),
+and a filter or a view alone never acts: you accept the named
+documents in a dialog, or, in a client without dialogs, a second call repeats the filter and names
+their ids with `confirm=true` (refused if one no longer matches). Such a second call without a dialog
+does not bind the current values: a tag someone added in between is not noticed. At most 100 documents change per
+call; the same call goes on with the rest. If what a selection excludes is not there (a deleted tag
+excludes nothing), the change is refused; a filter cannot reprocess more than 100 documents at once.
+Paperless runs the change as a task: if that fails half way, or the answer is lost, the
+documents are read again and the answer says which are as asked, which are not changed and which are
+unknown (decision-71).
+
+`update_documents` changes up to 100 documents with values of their own, every field `update_document`
+knows. Everything that can be known is checked first, and one wrong item refuses the whole call, naming
+all that are wrong. One confirmation covers the call: it names every document (the values of the first
+20), every new owner, every new tag and the documents that mirrored links change. Then the documents are
+read again and changed one after the other, for at most 40 seconds: a document whose values someone
+changed meanwhile or that Paperless refuses is left as it is, the others go on, and the answer names what
+became of each. Repeating the call goes on with the rest;
+leave out documents whose owner was changed: one you may no longer see refuses the repeated call. A serial number can move to another document
+if the one that releases it comes first; a swap takes two calls. `add_notes` adds a note to many documents,
+chosen like those of `bulk_edit_documents`, or a note of its own to each (at most 100 a call). A note
+whose text is there already is skipped, so it needs the permission to view notes (decision-73).
+
 `resolve_duplicates` keeps one document and moves its duplicates to the trash or merges them into
 it as versions (at most 20 a call). `search_documents` with `has_duplicates` finds such documents
 and `get_document` with `include` `duplicates` lists the copies, also in the trash, and what differs.
@@ -276,7 +300,11 @@ date and tags. Where Paperless lists no task because a date custom field is copi
 documents are found by their file names, with a wait only and only if nothing else can be taken for
 them. That needs the permissions `view_uisettings`, `view_paperlesstask` and `view_customfield` (to
 see which custom fields are dates), and no other editing, merging, splitting or unlocking of this
-user in the last hour that is not known to have made something else.
+user in the last hour that is not known to have made something else. A rotation is told by the new
+version in the same way: also `view_logentry` is needed (and the audit log), because only the history
+says who added a version. The versions of all earlier rotations of this user that ended in the last
+hour must exist and be countable: one that failed, or whose version was deleted since, or more than
+100 documents changed, or tasks listed, in that time leave the answer unknown.
 `reprocess_documents` does the same as the `reprocess` operation of `bulk_edit_documents` but
 returns its tasks.
 

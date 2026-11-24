@@ -545,6 +545,42 @@ async def test_permissions_and_bulk_changes_take_every_argument() -> None:
             (),
             prepare=bare,
         )
+    by_filter: Json = {
+        "document_ids": [1],
+        "exclude_ids": [2],
+        "filters": {"title_contains": "e2e"},
+    }
+    for chosen in (by_filter, {"document_ids": [1], "saved_view": "e2e-view"}):
+        arguments: Json = {**chosen, "operation": {"op": "remove_tags", "tags": [4]}}
+        await sweep("bulk_edit_documents", arguments, (), prepare=bare)
+    assert not FAILED, "\n".join(FAILED)
+
+
+async def test_many_documents_take_every_value_and_notes_every_choice() -> None:
+    every: Json = {
+        "document_id": 1,
+        "title": "Renamed",
+        "correspondent": 1,
+        "document_type": 1,
+        "storage_path": 1,
+        "created": "2026-01-01",
+        "archive_serial_number": 4242,
+        "owner": 3,
+        "tags_add": ["brand new"],
+        "tags_remove": [4],
+        "custom_fields": {"e2e-string": "x"},
+        "remove_custom_fields": ["e2e-integer"],
+    }
+    documents: list[Json] = [every, {"document_id": 2, "clear": ["owner"], "tags_set": [1]}]
+    arguments: Json = {"documents": documents, "create_missing_tags": True, "dry_run": False}
+    await sweep("update_documents", arguments, ("dry_run",), prepare=bare)
+    filters: Json = {"title_contains": "e2e"}
+    for chosen in (
+        {"document_ids": [1], "exclude_ids": [2], "filters": filters},
+        {"document_ids": [1], "saved_view": "e2e-view"},
+    ):
+        await sweep("add_notes", {**chosen, "note": "New", "dry_run": False}, ("dry_run",))
+    await sweep("add_notes", {"notes": [{"document_id": 1, "note": "New"}]}, ())
     assert not FAILED, "\n".join(FAILED)
 
 

@@ -167,10 +167,10 @@ ALIASES: dict[str, tuple[str, ...]] = {
         "test_search",
         "test_update_document",
     ),
-    "document_edits": ("test_document_writer", "test_update_document"),
+    "document_edits": ("test_bulk_items", "test_document_writer", "test_update_document"),
     "custom_values": ("test_document_writer", "test_update_document"),
     "files": ("test_files",),
-    "notes": ("test_notes_and_trash",),
+    "notes": ("test_bulk_items", "test_notes_and_trash"),
     "removal": ("test_notes_and_trash",),
     "uploads": ("test_document_upload", "test_upload_document"),
     "duplicate_resolution": ("test_duplicates",),
@@ -197,12 +197,16 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "views": ("test_search", "test_view_filters"),
     "filter_rules": ("test_search", "test_view_filters", "test_views"),
     "bulk_documents": ("test_bulk",),
+    "bulk_operations": ("test_bulk",),
+    "bulk_updates": ("test_bulk_items",),
+    "bulk_notes": ("test_bulk_items",),
+    "document_runner": ("test_bulk_items",),
     "bulk_taxonomy": ("test_bulk",),
     # tools/selection.py selects toolsets; domain/ and services/selection.py choose documents.
     "selection": ("test_bulk", "test_read_documents", "test_toolset_guide"),
-    "read_documents": ("test_selection",),
-    # tools/bulk.py also reads many documents.
-    "bulk": ("test_read_documents", "test_selection"),
+    "read_documents": ("test_bulk_items", "test_selection"),
+    # tools/bulk.py also reads many documents, and changes them one by one.
+    "bulk": ("test_bulk_items", "test_read_documents", "test_selection"),
     "page_ranges": ("test_pages", "test_pdf"),
     "pages": ("test_pages_files",),
     # inspect_pdf and insert_pages.

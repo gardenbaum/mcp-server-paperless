@@ -258,7 +258,10 @@ class DocumentsRead(BaseModel):
     left: Annotated[
         tuple[int, ...],
         Field(
-            description="Shown without the text asked for, or left out: pass them as document_ids."
+            description=(
+                "Shown without the text asked for, or left out: pass them as document_ids. A text "
+                "dropped for its size is in too_large, not here."
+            )
         ),
     ] = ()
     failed: Annotated[

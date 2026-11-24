@@ -58,11 +58,11 @@ class Selected:
         hits: The selected documents, in the order of the ids or of the search.
         matched: How many documents match, the excluded ones too.
         missing: Named ids that do not exist or are hidden from the user.
-        also_matching: With ids and filters: what matches now and was not named.
+        others: With ids and filters: what matches now and was not named.
         excluded_absent: What is excluded although the user's list does not hold it. An object
             that was deleted excludes nothing, so more matches than was meant; one that is hidden
             from the user does exclude. The two cannot be told apart, so it is noticed, not
-            refused; whoever changes documents decides on it (PLMCP-80.2).
+            refused; whoever changes documents refuses it (decision-71).
         excluded_unchecked: What is excluded of a kind the user may not list: not known.
         notices: What the caller should know of the filters.
     """
@@ -70,10 +70,44 @@ class Selected:
     hits: tuple[DocumentHit, ...]
     matched: int
     missing: tuple[int, ...] = ()
-    also_matching: tuple[int, ...] = ()
+    others: tuple[DocumentHit, ...] = ()
     excluded_absent: tuple[str, ...] = ()
     excluded_unchecked: tuple[str, ...] = ()
     notices: tuple[str, ...] = ()
+
+    @property
+    def also_matching(self) -> tuple[int, ...]:
+        """The ids of ``others``."""
+        return tuple(hit.id for hit in self.others)
+
+
+def require_exclusions(chosen: Selected) -> None:
+    """Refuse a change whose selection excludes what the user's list does not hold.
+
+    Raises:
+        Validation: It may have been deleted and exclude nothing (decision-71).
+    """
+    if chosen.excluded_absent:
+        message = (
+            f"Nothing was changed: the selection excludes {', '.join(chosen.excluded_absent)}, "
+            "which you cannot see. If it was deleted, it excludes nothing and more matches "
+            "than was meant."
+        )
+        hint = (
+            "Use filters or a view without it, or pass the document_ids that read_documents "
+            "shows instead of the filters."
+        )
+        raise Validation(message, hint=hint)
+
+
+def unchecked(chosen: Selected) -> str:
+    """What could not be checked about a selection, as the end of a confirmation; or nothing."""
+    if not chosen.excluded_unchecked:
+        return ""
+    return (
+        f"; whether {', '.join(chosen.excluded_unchecked)} still exists, which the "
+        "selection excludes, could not be checked: if not, more matches than was meant"
+    )
 
 
 def _empty(value: object) -> bool:
@@ -176,15 +210,15 @@ class DocumentSelector:
         matches = await self._read(query)
         excluded = set(selection.exclude_ids)
         hits = tuple(hit for hit in matches if hit.id not in excluded)
-        also: tuple[int, ...] = ()
+        others: tuple[DocumentHit, ...] = ()
         if ids:
             _require_all(ids, hits)
-            also = tuple(hit.id for hit in hits if hit.id not in ids)
+            others = tuple(hit for hit in hits if hit.id not in ids)
             hits = _arranged([hit for hit in hits if hit.id in ids], ids, ordering)
         return Selected(
             hits,
             len(matches),
-            also_matching=also,
+            others=others,
             excluded_absent=absent,
             excluded_unchecked=unchecked,
             notices=notices,

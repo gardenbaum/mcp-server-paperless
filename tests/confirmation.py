@@ -96,6 +96,13 @@ CALLS: Final[dict[str, Json]] = {
         "operation": {"op": "add_tags", "tags": ["e2e-inbox"]},
         "dry_run": False,
     },
+    "update_documents": {
+        "documents": [
+            {"document_id": 10, "title": "Renamed", "owner": "e2e-reader"},
+            {"document_id": 11, "tags_add": ["e2e-inbox"]},
+        ],
+    },
+    "add_notes": {"document_ids": [10, 11], "note": "Paid"},
     "bulk_edit_taxonomy": {
         "kind": "correspondent",
         "items": ["e2e-acme"],

@@ -22,19 +22,22 @@ from fakes.paperless import (
     seeded,
 )
 from fakes.sharing import FakeShareBundle
-from harness import pdf_service
+from harness import bulk_editor, pdf_service
 
 from mcp_server_paperless.domain.bulk import (
     AddTags,
     DeleteDocuments,
     DeleteItems,
+    ModifyCustomFields,
     ReprocessDocuments,
+    SetCorrespondent,
 )
 from mcp_server_paperless.domain.documents import DocumentEdit
 from mcp_server_paperless.domain.errors import ConfirmationRequired, accepting
 from mcp_server_paperless.domain.mail import MailRuleSettings
 from mcp_server_paperless.domain.pdf import PageSlot, PartMetadata
 from mcp_server_paperless.domain.permissions import PermissionsRequest
+from mcp_server_paperless.domain.selection import Selection
 from mcp_server_paperless.domain.taxonomy import SelectOption
 from mcp_server_paperless.domain.taxonomy_edits import TaxonomyEdit
 from mcp_server_paperless.domain.views import FilterRule
@@ -50,7 +53,6 @@ from mcp_server_paperless.domain.workflows import (
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.admin_accounts import AccountAdmin
 from mcp_server_paperless.services.admin_system import SystemAdmin
-from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
 from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
 from mcp_server_paperless.services.document_edits import DocumentEditor
 from mcp_server_paperless.services.documents import DocumentService
@@ -70,6 +72,7 @@ from mcp_server_paperless.services.workflows import WorkflowService
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from mcp_server_paperless.domain.bulk import BulkOperation
     from mcp_server_paperless.services.pdf import PdfService
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-44")]
@@ -99,21 +102,36 @@ def swap_trash(state: FakeState) -> None:
 def bulk_documents(state: FakeState) -> Callable[[], Awaitable[object]]:
     state.documents = [FakeDocument(id=n, title=f"Doc {n}") for n in MANY]
     fake, taxonomy = fakes(state)
-    service = BulkDocumentEditor(fake, fake, taxonomy, web_url=WEB)
+    service = bulk_editor(fake, taxonomy)
+    chosen = Selection(document_ids=tuple(MANY))
     operation = AddTags(op="add_tags", tags=["e2e-inbox"])
-    return lambda: service.edit(list(MANY), operation, dry_run=False, confirm=False)
+    return lambda: service.edit(chosen, operation, dry_run=False, confirm=False)
 
 
-def swap_changing(state: FakeState) -> None:
-    """Another document already has the tag; the count and the named ones stay."""
-    by_id = {d.id: d for d in state.documents}
-    by_id[111].tags, by_id[112].tags = by_id[112].tags, by_id[111].tags
+def bulk_operation(
+    operation: BulkOperation,
+) -> Callable[[FakeState], Callable[[], Awaitable[object]]]:
+    def make(state: FakeState) -> Callable[[], Awaitable[object]]:
+        state.documents = [FakeDocument(id=n, title=f"Doc {n}") for n in MANY]
+        service = bulk_editor(*fakes(state))
+        chosen = Selection(document_ids=tuple(MANY))
+        return lambda: service.edit(chosen, operation, dry_run=False, confirm=False)
+
+    return make
 
 
-def bulk_documents_with_one_done(state: FakeState) -> Callable[[], Awaitable[object]]:
-    call = bulk_documents(state)
-    state.documents[-1].tags = [4]
-    return call
+def other_current_tag(state: FakeState) -> None:
+    state.documents[-1].tags = [1]
+
+
+def other_current_correspondent(state: FakeState) -> None:
+    state.correspondents.append(FakeTaxonomy(id=2, name="another"))
+    state.documents[-1].correspondent = 2
+
+
+def other_current_value(state: FakeState) -> None:
+    [number] = [f.id for f in state.custom_fields if f.name == "e2e-string"]
+    state.documents[-1].custom_fields = {number: "another"}
 
 
 def other_tag(state: FakeState) -> None:
@@ -426,8 +444,9 @@ def bulk_call(
 ) -> Callable[[FakeState], Callable[[], Awaitable[object]]]:
     def make(state: FakeState) -> Callable[[], Awaitable[object]]:
         fake = scans(state)
-        service = BulkDocumentEditor(fake, fake, fakes(state)[1], web_url=WEB)
-        return lambda: service.edit([1, 2], operation, dry_run=False, confirm=False)
+        service = bulk_editor(fake, fakes(state)[1])
+        chosen = Selection(document_ids=(1, 2))
+        return lambda: service.edit(chosen, operation, dry_run=False, confirm=False)
 
     return make
 
@@ -551,7 +570,17 @@ NEWER_FILE = {
         (cut, other_pages),
         (change_owner, other_owner),
         (trash, swap_trash),
-        (bulk_documents_with_one_done, swap_changing),
+        (bulk_documents, other_current_tag),
+        (
+            bulk_operation(SetCorrespondent(op="set_correspondent", correspondent=1)),
+            other_current_correspondent,
+        ),
+        (
+            bulk_operation(
+                ModifyCustomFields(op="modify_custom_fields", values={"e2e-string": "x"})
+            ),
+            other_current_value,
+        ),
         (bulk_documents, other_tag),
         (bulk_taxonomy, swap_child),
         (correspondents, other_correspondent),

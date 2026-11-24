@@ -50,6 +50,7 @@ if TYPE_CHECKING:
         FileVersion,
         HistoryEntry,
         Note,
+        SignedIn,
         Suggestions,
     )
     from mcp_server_paperless.domain.duplicates import DuplicateRecord
@@ -69,6 +70,7 @@ if TYPE_CHECKING:
         FileOutput,
         FoundCopies,
         PageSlot,
+        RotationSearch,
         StartedTasks,
     )
     from mcp_server_paperless.domain.permissions import (
@@ -198,6 +200,10 @@ class DocumentReader(Protocol):
         It needs the global ``delete_document`` permission and ownership (or no owner), or a
         superuser. The user's permissions can be read only with ``view_uisettings``.
         """
+        ...
+
+    async def get_signed_in(self) -> SignedIn | None:
+        """The user the credential belongs to; None without the ``view_uisettings`` permission."""
         ...
 
     async def list_document_notes(self, document_id: int) -> tuple[Note, ...]:
@@ -569,19 +575,20 @@ class TaxonomyWriter(Protocol):
 class BulkWriter(Protocol):
     """Changes to many documents or taxonomy objects in one request.
 
-    Paperless checks every selected object first and then changes all of them, or answers an
-    error and changes none. Ids that do not exist, appear twice or are an empty list are
-    rejected as a whole (callers deduplicate and check before they ask).
+    Paperless checks every selected object first: a refusal changes none. Documents are then
+    changed by a queued task, which can fail half way. Ids that do not exist, appear twice or are
+    an empty list are rejected as a whole (callers deduplicate and check before they ask).
     """
 
     async def bulk_edit_documents(
-        self, document_ids: Sequence[int], change: DocumentChange
+        self, document_ids: Sequence[int], change: DocumentChange, *, stop_on_limit: bool = False
     ) -> Unconfirmed | None:
         """Apply ``change`` to every document of ``document_ids``.
 
         Tags are removed (with their child tags) and then added (with their parent tags); custom
         fields are set one by one and the others stay. A deletion moves to the trash;
-        reprocessing is queued and runs in the background.
+        reprocessing is queued and runs in the background. ``stop_on_limit`` gives the queued task
+        up at HTTP 429 instead of waiting that out.
 
         Returns:
             None when the change is made (Paperless queues it as a task and the writer
@@ -591,6 +598,7 @@ class BulkWriter(Protocol):
         Raises:
             PermissionDenied: The user may not change one of the documents (nothing is changed),
                 or may not delete it: that needs ownership.
+            TaskFailed: The queued task failed; part of the change may be made.
             Validation: An id or a referenced object does not exist, or a value is wrong; the
                 message names the reason and nothing is changed.
         """
@@ -987,6 +995,25 @@ class PdfWriter(Protocol):
         or later, or an earlier one of the last hour whose files may still come. The last is looked
         into once every file is there; ``final`` asks for it anyway, so that those that are there
         can be used.
+
+        Raises:
+            PermissionDenied: The user may not view tasks or documents.
+        """
+        ...
+
+    async def find_rotations(self, search: RotationSearch, *, final: bool = False) -> FoundCopies:
+        """The versions a rotation made of the documents of ``search.hidden``, as they exist now.
+
+        For documents whose tasks Paperless does not list (a date among their custom fields). A
+        version is taken only if it is newer than the one shown before, was added since the queued
+        task started, has the file name of a rotation of this document, and the history says that
+        the current user added it; so what somebody else adds never is. A doubt is whatever lets it
+        be another request of the same user's: two such versions, a listed task for the file name
+        that was not done before, another rotation at the same time or later, or an earlier one of
+        the last hour whose versions are not all there; and a document or history that may not be
+        read. History and earlier ones are looked into once every version is there; ``final`` asks
+        for it anyway, so that those that are there can be used. ``search`` keeps what does not
+        change, so the same one is passed for every look.
 
         Raises:
             PermissionDenied: The user may not view tasks or documents.
