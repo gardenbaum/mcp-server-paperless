@@ -1551,13 +1551,13 @@ async def test_two_spellings_of_a_new_tag_are_both_shown_and_bound() -> None:
     assert "also for" not in two.message
 
 
-async def test_an_unlinked_field_that_only_resends_a_stored_link_is_no_dropped_one() -> None:
-    # Nothing but the title changes, so no custom field is sent and no link is dropped.
+async def test_a_document_whose_fields_are_not_sent_drops_no_link() -> None:
+    # 103 makes the call know the link fields; of 101 only the title is sent.
     setup = Setup(writes=False)
     setup.link(101, [102])
     setup.link(102, [101])
 
-    report = await setup.run(named(101), dry_run=True)
+    report = await setup.run(named(101), item(103, custom_fields={TEXT: "x"}), dry_run=True)
 
     assert report.also_changed == ()
 

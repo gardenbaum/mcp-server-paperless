@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T12:54:34Z'
-updated_date: '2026-11-24T16:41:14Z'
+updated_date: '2026-11-24T17:01:55Z'
 labels:
   - bulk
 dependencies:
@@ -68,4 +68,12 @@ Deviations from the design:
 - An own new note after a lost answer is told by its text, not by its author (another request is needed for who the user is).
 - The answer of a PATCH comes from before the workflows for changed documents run [read in the source], so workflow changes are not in the result.
 - A lost change that is seen made in part shows what was seen.
+
+Review round (head before: 7bb3b35).
+OPEN, owner: (1) the hostile update_documents case of tests/tools/test_confirmation_text.py. Commit 7e808fe had cut its input (title, correspondent, select field, second document) to stay below WORST = 3403 and did not say so; that was a weakened test. The full case of de3f2e9 is back. Measured now: 4897 characters. WORST is not raised, the input not cut, so test_names_made_of_escapes_only_do_not_make_a_refusal_endless[update_documents] is RED. (2) Names of new tags in a dialog: cut to 60 (decision-44) or uncut (6a 'in full'); unchanged until answered. (3) A cap on dialog length: none yet. Measured dialog sizes: one document with 598 links 11,207 characters; 100 documents with 128-character titles and a new title each 10,299, with an owner change each 22,150; with titles made of escapes only 30,579 and 59,330.
+Done: owner changes and new tags stand before the change list; a preflight refusal repeats at most 300 characters of a message and 600 per item and names every item; largest serial number, owner change by another than the owner and a link to a document an earlier item gives away are refused beforehand (get_signed_in, new port method, needs view_uisettings; without it the owner cannot be checked and a refused item that also drops links may have unlinked them, told in its why); also_changed only for what was sent; a partly seen change is a result; notes of one document count one document; two spellings of a new tag are named; NEXT_CALL has a place for the word; 40 s also bound tag creation and the list requests (what is not checked by then refuses the call, nothing is written; a preview may take longer, because bounding it would cut it; a running request ends with the client's timeout).
+update_document itself does not check the largest serial number (schema ge=0 only): reported, not changed.
+Found by the hosted run of 7bb3b35: live contract tests passed; the test of 100 documents failed (update_documents 100 in 12.1 s; add_notes stopped after two answers that were lost but looked up as added). A looked-up success no longer counts as silence (decision-73); why the answer of the POST is unusable for documents without a file is not known, the test now prints it. Its cleanup left rows that referred to the documents; fixed.
+Deviations not listed before: different notes show the start of the first 20 only (of the rest their length; all bound); tag names cut to 60; truncation of answers above 100,000 characters (values to 200, then left out, then the message); an added note after a lost answer is told by its text, not its author; add_notes shows the first 80 characters of a single note and its length.
+24 and 11 mutants by hand, survivors got tests.
 <!-- SECTION:NOTES:END -->
