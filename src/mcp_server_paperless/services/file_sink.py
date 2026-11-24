@@ -1,4 +1,6 @@
-"""Where a download is saved: one file in a directory the operator allowed (stdio; decision-45).
+"""Where a download is saved: one file in a directory the operator allowed (stdio only).
+
+The rules are decision-45, and decision-49 for replacing a file.
 
 The directory and the name come from a model that reads documents others wrote, so the rules make
 the server write nothing but one new plain file, or replace one that was confirmed:
@@ -127,7 +129,7 @@ _ENDINGS: Final[Mapping[str, tuple[str, ...]]] = {
     f"{_OPEN}graphics": (".odg",),
 }
 
-type _Identity = tuple[int, int, int, int]
+type _Identity = tuple[int, int, int, int, int]
 
 
 class System:
@@ -250,6 +252,17 @@ def _shown(text: str, what: str) -> str:
         raise Validation(refusal.message, hint=hint) from None
 
 
+def _identity(found: os.stat_result) -> _Identity:
+    """What tells a file from another one, and from itself with other content."""
+    return (
+        found.st_dev,
+        found.st_ino,
+        found.st_size,
+        found.st_mtime_ns,
+        found.st_ctime_ns,  # nobody can set it back
+    )
+
+
 def _meanwhile() -> PaperlessMcpError:
     message = "The directory or the file changed meanwhile; nothing was saved."
     return PaperlessMcpError(message, hint="Look at the directory, then try again.")
@@ -310,8 +323,8 @@ class FileSink:
 
         ``at`` is a test seam, called with the stage just reached: ``resolved`` (the path is
         approved), ``created`` (the temporary file exists), ``written`` (it is complete),
-        ``commit`` (everything was compared) and ``reserved`` (without hard links: the name is
-        taken).
+        ``commit`` (everything was compared) and, without hard links, ``made`` (the name is taken)
+        and ``reserved`` (what took it was looked at).
         """
         self.roots: tuple[str, ...] = tuple(roots)
         self.max_bytes: int = max_bytes
@@ -408,11 +421,11 @@ class Target:
             system.close(self._fd)
         self._fd = None
 
-    async def claim(self, name: str, *, confirm: bool, source: object) -> None:
+    async def claim(self, name: str, *, confirm: bool, what: str, source: object) -> None:
         """Decide what becomes of ``name``, before anything is downloaded.
 
-        ``source`` is what would be saved: an acceptance in the dialog covers that only, and only
-        the file that was there.
+        ``what`` would be saved, in words; ``source`` is the same exactly: an acceptance in the
+        dialog covers that only, and only the file that was there.
 
         Raises:
             ConfirmationRequired: A file of that name exists and ``confirm`` is not set.
@@ -423,11 +436,13 @@ class Target:
         self._existing = await _blocking(self._look)
         if self._existing is None:
             return
-        file, directory = _shown(name, "file name"), _shown(self._given, "directory")
+        # Not as given: a link inside the allowed directory leads elsewhere in it.
+        real = str(PurePath(self._root, *self._parts))
+        file, directory = _shown(name, "file name"), _shown(real, "directory")
         if not confirm:
-            _, _, size, changed = self._existing
+            _, _, size, changed, _ = self._existing
             day = self._sink.system.date(changed / 1e9)
-            effect = f"replace the file {file} ({size} bytes{day}) in {directory}"
+            effect = f"replace the file {file} ({size} bytes{day}) in {directory} with {what}"
             held = os.fstat(self._directory)
             scope = (self._existing, (held.st_dev, held.st_ino), source)
             ConfirmationRequired.require(effect, scope=scope)
@@ -465,7 +480,7 @@ class Target:
         if not stat.S_ISREG(found.st_mode) or found.st_nlink != 1:
             message = f"{quoted(self._name)} in that directory is not a plain file of its own."
             raise Validation(message, hint="Choose another name with save_as.")
-        return found.st_dev, found.st_ino, found.st_size, found.st_mtime_ns
+        return _identity(found)
 
     def _make(self, name: str) -> int:
         flags = os.O_RDWR | NEW | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -590,10 +605,13 @@ class Target:
             reserved = self._make(self._name)
         except FileExistsError:
             raise _appeared() from None
+        self._sink.at("made")
         mine = os.fstat(reserved)
         with contextlib.suppress(OSError):
             self._sink.system.close(reserved)
-        ours = (mine.st_dev, mine.st_ino, 0, mine.st_mtime_ns)
+        ours = _identity(mine)
+        if mine.st_size:
+            raise _meanwhile()  # somebody wrote into it already
         self._sink.at("reserved")
         if self._look() != ours:
             raise _meanwhile()
