@@ -33,6 +33,7 @@ from mcp_server_paperless.domain.errors import (
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
+    from mcp_server_paperless.domain.bulk import ObjectPermissions
     from mcp_server_paperless.domain.documents import DocumentFile, FileVersion
     from mcp_server_paperless.domain.trash import TrashedDetail, TrashedDocument
 
@@ -247,9 +248,16 @@ MIB = 1024 * 1024
 
 
 async def look_up(ports: Ports, document: int) -> TrashedDetail | None:
-    """The entry: what was made today is among the first entries of the shared trash."""
-    found = await ports.trash.look_up_in_trash(document, page=1, page_size=SCAN, max_bytes=64 * MIB)
-    return found.entry
+    """The entry, page by page: the trash is shared with every other test."""
+    page: int | None = 1
+    while page is not None:
+        found = await ports.trash.look_up_in_trash(
+            document, page=page, page_size=SCAN, max_bytes=64 * MIB
+        )
+        if found.entry is not None:
+            return found.entry
+        page = found.next_page
+    return None
 
 
 @pytest.mark.contract(LOOK)
@@ -387,3 +395,32 @@ async def test_a_deleted_version_is_listed_to_the_owner_of_its_document(backend:
     _ = await ports.document_writes.update_document(document, DocumentPatch(owner=None))
 
     assert await look_up(backend.reader, version)
+
+
+@pytest.mark.contract("TrashReader.get_trash_permissions")
+async def test_the_grants_of_an_entry_are_told_to_those_who_see_it(backend: Backend) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp78 granted file")
+    granted = backend.restricted(frozenset({"view_document"}), change=[document])
+    await ports.document_writes.delete_document(document)
+
+    async def grants(seen: Ports) -> ObjectPermissions | None:
+        page: int | None = 1
+        while page is not None:
+            found = await seen.trash.get_trash_permissions(
+                document, page=page, page_size=SCAN, max_bytes=64 * MIB
+            )
+            if found is not None:
+                return found
+            there = await seen.trash.look_up_in_trash(
+                document, page=page, page_size=SCAN, max_bytes=64 * MIB
+            )
+            page = there.next_page
+        return None
+
+    found = await grants(ports)
+
+    assert found
+    assert len(found.view_users) == len(found.change_users) == 1
+    assert (found.view_groups, found.change_groups) == ((), ())
+    assert await grants(granted) is None

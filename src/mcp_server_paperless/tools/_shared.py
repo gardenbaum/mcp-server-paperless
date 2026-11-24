@@ -721,8 +721,6 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
-    # Not destructive (decision-6): it only undoes a deletion and drops nothing. Restoring again
-    # leaves the state as it is (idempotent), though the second call fails.
     "get_trash_entry": ToolAnnotations(
         title="Get trash entry",
         read_only_hint=True,
@@ -735,6 +733,8 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    # Not destructive (decision-6): it only undoes a deletion and drops nothing. Restoring again
+    # leaves the state as it is (idempotent), though the second call fails.
     "restore_from_trash": ToolAnnotations(
         title="Restore from trash",
         read_only_hint=False,

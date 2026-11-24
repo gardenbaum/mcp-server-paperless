@@ -227,7 +227,7 @@ async def test_an_id_that_is_not_in_the_trash_is_not_found_and_nothing_is_restor
     with pytest.raises(NotFound) as raised:
         _ = await setup.service.restore([one, 4242, 4243])
 
-    assert raised.value.message == "Not in the trash: 4242, 4243."
+    assert raised.value.message == "Not found in the trash: 4242, 4243."
     assert raised.value.hint == (
         "List the trash with list_trash. Entries of documents the user does not own are not "
         "listed, and a version is listed only while its document is not in the trash."
@@ -240,7 +240,7 @@ async def test_a_version_cannot_be_restored_while_its_document_is_in_the_trash()
     document, version = await setup.version("Both")
     await setup.writer.delete_document(document)
 
-    with pytest.raises(NotFound, match=f"Not in the trash: {version}"):
+    with pytest.raises(NotFound, match=f"Not found in the trash: {version}"):
         _ = await setup.service.restore([version])
 
     result = await setup.service.restore([document])
@@ -392,7 +392,7 @@ async def test_emptying_something_not_in_the_trash_is_not_found_before_asking_to
     one = await setup.trashed("Here")
 
     for confirm in (False, True):
-        with pytest.raises(NotFound, match="Not in the trash: 4242"):
+        with pytest.raises(NotFound, match="Not found in the trash: 4242"):
             _ = await setup.service.empty([one, 4242], everything=False, confirm=confirm)
     assert setup.ids() == [one]
 

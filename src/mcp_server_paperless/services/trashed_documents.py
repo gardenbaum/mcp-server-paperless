@@ -7,10 +7,17 @@ here the entry has to be in the trash list of the user, which shows owners and s
 """
 
 import hashlib
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from mcp_server_paperless.domain.documents import FileDelivery, FileReport, Thumbnail
-from mcp_server_paperless.domain.errors import AnswerTooLarge, NotFound, PaperlessMcpError
+from mcp_server_paperless.domain.errors import (
+    AnswerCompressed,
+    AnswerTooLarge,
+    NotFound,
+    PaperlessMcpError,
+    UpstreamUnavailable,
+)
 from mcp_server_paperless.domain.files import FilePart, FilePartReport
 from mcp_server_paperless.domain.trash import TrashEntryDetail, TrashText
 from mcp_server_paperless.services.documents import TRASH_BYTES
@@ -23,12 +30,12 @@ from mcp_server_paperless.services.transfer import (
     time_limit,
 )
 from mcp_server_paperless.services.trash import trash_link
-from mcp_server_paperless.services.trash_scan import PAGE, following
+from mcp_server_paperless.services.trash_scan import PAGE, all_too_large, following
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.documents import FileKind, FileVersion
     from mcp_server_paperless.domain.ports import DocumentReader, TrashReader
-    from mcp_server_paperless.domain.trash import TrashedDetail
+    from mcp_server_paperless.domain.trash import TrashedDetail, TrashGrants, TrashLookup
     from mcp_server_paperless.services.documents import DocumentService
     from mcp_server_paperless.services.trash_scan import TrashScan
 
@@ -39,12 +46,23 @@ DOCUMENT_LIMITS = (
     "whole, without confirm."
 )
 VERSION_LIMITS = (
-    "Text, thumbnail and file are those of this version. Its history and the size of its files "
+    "Text, thumbnail and file are those of this version, and its title, type, owner and other "
+    "fields are those of its upload. Its history and the size of its files "
     "are not shown in the trash: restore it first with restore_from_trash, which attaches it to "
     "its document again, without confirm."
 )
+NO_PERMISSIONS = " Who may view or change it could not be read just now."
 RESTORE_FIRST = "Restore it first with restore_from_trash, then use the tools for documents."
 NO_FILE = "Paperless does not serve this file while the document is in the trash."
+
+
+@dataclass(frozen=True, slots=True)
+class _Page:
+    """A page of the trash as it was asked for; without ``max_bytes`` not bounded."""
+
+    number: int
+    size: int
+    max_bytes: int | None
 
 
 class TrashedDocuments:
@@ -82,7 +100,8 @@ class TrashedDocuments:
             AnswerTooLarge: The trash around it is too large to read.
             PermissionDenied: The user may not view documents.
         """
-        found = await self._find(document_id)
+        found, where = await self._find(document_id)
+        permissions = await self._permissions(document_id, where)
         overview = await self._documents.detail(found)
         whole = found.content
         end = offset + max_chars
@@ -99,6 +118,7 @@ class TrashedDocuments:
             archived_file_name=found.archived_file_name,
             is_shared_by_requester=found.is_shared_by_requester,
             user_can_change=found.user_can_change,
+            permissions=permissions,
             notes=found.notes,
             versions=found.versions,
             duplicate_documents=found.duplicate_documents,
@@ -110,30 +130,49 @@ class TrashedDocuments:
             )
             if text
             else None,
-            limits=DOCUMENT_LIMITS if found.version_of is None else VERSION_LIMITS,
+            limits=(DOCUMENT_LIMITS if found.version_of is None else VERSION_LIMITS)
+            + (NO_PERMISSIONS if permissions is None else ""),
         )
 
-    async def _find(self, document_id: int) -> TrashedDetail:
-        """The entry: in one request if it is among the first, else page by page."""
-        page: int | None
+    async def _find(self, document_id: int) -> tuple[TrashedDetail, _Page]:
+        """The entry and where it was: in one request if it is among the first, else in pages."""
+        page: int | None = 1
+        bound: int | None = TRASH_BYTES
         try:
-            found = await self._trash.look_up_in_trash(
-                document_id, page=1, page_size=self._scan.cap, max_bytes=TRASH_BYTES
-            )
-        except AnswerTooLarge:
-            page = 1
+            found = await self._look_up(document_id, large := _Page(1, self._scan.cap, bound))
+        except AnswerCompressed:
+            bound = None  # a compressed answer cannot be bounded; pages are small
+        except AnswerTooLarge, UpstreamUnavailable:
+            pass
         else:
             if found.entry is not None:
-                return found.entry
+                return found.entry, large
             page = 1 if found.next_page is not None else None
         while page is not None:
-            found = await self._trash.look_up_in_trash(
-                document_id, page=page, page_size=PAGE, max_bytes=TRASH_BYTES
-            )
+            small = _Page(page, PAGE, bound)
+            try:
+                found = await self._look_up(document_id, small)
+            except AnswerTooLarge:
+                raise all_too_large() from None
             if found.entry is not None:
-                return found.entry
+                return found.entry, small
             page = following(page, found.next_page)
         raise await self._scan.unlisted([document_id])
+
+    async def _look_up(self, document_id: int, where: _Page) -> TrashLookup:
+        return await self._trash.look_up_in_trash(
+            document_id, page=where.number, page_size=where.size, max_bytes=where.max_bytes
+        )
+
+    async def _permissions(self, document_id: int, where: _Page) -> TrashGrants | None:
+        """Who may view and change an entry, with names; None if that could not be read."""
+        try:
+            found = await self._trash.get_trash_permissions(
+                document_id, page=where.number, page_size=where.size, max_bytes=where.max_bytes
+            )
+        except PaperlessMcpError:
+            return None
+        return None if found is None else await self._documents.grants(found)
 
     async def thumbnail(self, document_id: int) -> Thumbnail:
         """The thumbnail of an entry.

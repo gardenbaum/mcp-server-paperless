@@ -31,6 +31,7 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
 )
+from mcp_server_paperless.domain.trash import TrashGrants
 from mcp_server_paperless.services.search_syntax import query_notices
 
 if TYPE_CHECKING:
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
 
     from pydantic import JsonValue
 
+    from mcp_server_paperless.domain.bulk import ObjectPermissions
     from mcp_server_paperless.domain.documents import (
         CustomFieldValue,
         DocumentFacts,
@@ -350,6 +352,19 @@ class DocumentService:
             notes_count=record.notes_count,
             web_url=self._link(record.id),
         ).model_copy(update={**sections, "unavailable": tuple(unavailable)})
+
+    async def grants(self, given: ObjectPermissions) -> TrashGrants:
+        """The users and groups of ``given`` with their names."""
+        known: dict[TaxonomyKind, dict[int, TaxonomyItem]] = {
+            "user": await self._known("user"),
+            "group": await self._known("group"),
+        }
+        return TrashGrants(
+            view_users=tuple(_ref(known, "user", n) for n in given.view_users),
+            view_groups=tuple(_ref(known, "group", n) for n in given.view_groups),
+            change_users=tuple(_ref(known, "user", n) for n in given.change_users),
+            change_groups=tuple(_ref(known, "group", n) for n in given.change_groups),
+        )
 
     async def _linked_titles(
         self, record: DocumentRecord, known: dict[TaxonomyKind, dict[int, TaxonomyItem]]

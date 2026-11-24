@@ -18,10 +18,11 @@ takes ``{action: restore|empty, documents: [ids]}`` and answers
 """
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Annotated, Final, cast
 
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, BeforeValidator, JsonValue, SkipValidation
 
+from mcp_server_paperless.domain.bulk import ObjectPermissions
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentVersion
 from mcp_server_paperless.domain.duplicates import DuplicateRecord
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
@@ -38,11 +39,13 @@ from mcp_server_paperless.paperless.pagination import Page
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
 
-    from mcp_server_paperless.paperless.client import PaperlessClient
+    from mcp_server_paperless.paperless.client import PaperlessClient, Params
+
+    type Json = dict[str, object]
 
 PATH = "/api/trash/"
 # One request of many entries: Paperless looks up the versions of each row by itself.
-SCAN_TIMEOUT: Final = 120.0
+SCAN_TIMEOUT: Final = 60.0
 
 
 class _Version(BaseModel):
@@ -102,6 +105,20 @@ class _Full(_Facts):
     custom_fields: list[_Value]
     page_count: int | None
     content: str
+
+
+class _Grant(BaseModel):
+    users: list[int]
+    groups: list[int]
+
+
+class _Permissions(BaseModel):
+    view: _Grant
+    change: _Grant
+
+
+class _Granted(BaseModel):
+    permissions: _Permissions
 
 
 class _Done(BaseModel):
@@ -216,20 +233,58 @@ class PaperlessTrashReader:
         }
 
     async def look_up_in_trash(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
     ) -> TrashLookup:
         """See ``TrashReader.look_up_in_trash``."""
-        try:
-            found = await self._bounded(Page[_Full], page_size, max_bytes, page=page)
-        except NotFound:
-            raise beyond_last_page(page) from None
-        row = next((row for row in found.results if row.id == document_id), None)
-        return TrashLookup(entry=None if row is None else _detail(row), next_page=found.next_page)
+        params: Params = {"page": page, "page_size": page_size}
+        row, following = await self._one(_Full, document_id, params, max_bytes)
+        return TrashLookup(entry=None if row is None else _detail(row), next_page=following)
 
-    async def _bounded[M: BaseModel](
-        self, model: type[M], entries: int, max_bytes: int, *, page: int = 1
-    ) -> M:
-        params = {"page": page, "page_size": entries}
+    async def get_trash_permissions(
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+    ) -> ObjectPermissions | None:
+        """See ``TrashReader.get_trash_permissions``.
+
+        With ``full_perms`` Paperless sends ``permissions`` in place of ``user_can_change`` and
+        ``is_shared_by_requester``, so it takes a request of its own.
+        """
+        params: Params = {"page": page, "page_size": page_size, "full_perms": "true"}
+        row, _ = await self._one(_Granted, document_id, params, max_bytes)
+        if row is None:
+            return None
+        view, change = row.permissions.view, row.permissions.change
+        return ObjectPermissions(
+            view_users=tuple(view.users),
+            view_groups=tuple(view.groups),
+            change_users=tuple(change.users),
+            change_groups=tuple(change.groups),
+        )
+
+    async def _one[M: BaseModel](
+        self, model: type[M], document_id: int, params: Params, max_bytes: int | None
+    ) -> tuple[M | None, int | None]:
+        """The row of one entry if it is on the page, and the next page."""
+
+        def wanted(row: object) -> M | None:
+            # The other rows, with the whole text of other documents, are not kept.
+            held = isinstance(row, dict) and cast("Json", row).get("id") == document_id
+            return model.model_validate(row) if held else None
+
+        rows = Page[Annotated[SkipValidation[M | None], BeforeValidator(wanted)]]
+        try:
+            found = await (
+                self._client.get(PATH, rows, params=params)
+                if max_bytes is None
+                else self._client.read_json(
+                    PATH, rows, params=params, max_bytes=max_bytes, timeout=SCAN_TIMEOUT
+                )
+            )
+        except NotFound:
+            raise beyond_last_page(int(params["page"])) from None
+        return next((row for row in found.results if row is not None), None), found.next_page
+
+    async def _bounded[M: BaseModel](self, model: type[M], entries: int, max_bytes: int) -> M:
+        params = {"page": 1, "page_size": entries}
         return await self._client.read_json(
             PATH, model, params=params, max_bytes=max_bytes, timeout=SCAN_TIMEOUT
         )

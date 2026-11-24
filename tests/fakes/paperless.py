@@ -80,6 +80,7 @@ from mcp_server_paperless.domain.admin import (
 from mcp_server_paperless.domain.ai import AiSuggestions, ChatAnswer, ChatSource
 from mcp_server_paperless.domain.bulk import (
     FieldsChange,
+    ObjectPermissions,
     ReferenceChange,
     TagsChange,
     TrashDocuments,
@@ -193,7 +194,6 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.bulk import (
         BulkKind,
         DocumentChange,
-        ObjectPermissions,
         PermissionsChange,
     )
     from mcp_server_paperless.domain.documents import FileVersion
@@ -1550,7 +1550,7 @@ class FakePaperless:
         return entry.version_files.get(entry.id, shown)
 
     async def look_up_in_trash(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
     ) -> TrashLookup:
         """`TrashReader.look_up_in_trash`: a page of `list_trash`, one row of it whole.
 
@@ -1560,12 +1560,30 @@ class FakePaperless:
         listed = await self.list_trash(page=page, page_size=page_size)
         shown = {e.id for e in listed.entries}
         rows = [d for d in self.state.trash if d.id in shown]
-        if sum(len(d.content.encode()) for d in rows) > max_bytes:
+        size = sum(len(d.content.encode()) for d in rows)
+        if max_bytes is not None and size > max_bytes:
             message = f"Paperless sent more than {max_bytes} bytes for GET /api/trash/."
             raise AnswerTooLarge(message)
         entry = next((d for d in rows if d.id == document_id), None)
         return TrashLookup(
             entry=None if entry is None else self._trash_row(entry), next_page=listed.next_page
+        )
+
+    async def get_trash_permissions(
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+    ) -> ObjectPermissions | None:
+        """`TrashReader.get_trash_permissions`: the same row with `full_perms`."""
+        found = await self.look_up_in_trash(
+            document_id, page=page, page_size=page_size, max_bytes=max_bytes
+        )
+        if found.entry is None:
+            return None
+        [entry] = [d for d in self.state.trash if d.id == document_id]
+        return ObjectPermissions(
+            view_users=tuple(sorted(entry.viewers)),
+            view_groups=tuple(sorted(entry.view_groups)),
+            change_users=tuple(sorted(entry.editors)),
+            change_groups=tuple(sorted(entry.change_groups)),
         )
 
     def _trash_row(self, entry: FakeDocument) -> TrashedDetail:

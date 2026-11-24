@@ -164,7 +164,7 @@ async def test_the_list_is_paged() -> None:
 async def test_restoring_something_that_is_not_in_the_trash_is_a_tool_error_with_a_hint() -> None:
     text = await refusal(fake(), "restore_from_trash", document_ids=[1])
 
-    assert "Not in the trash: 1." in text
+    assert "Not found in the trash: 1." in text
     assert "Hint: 1 is not deleted. List the trash with list_trash." in text
 
 
@@ -355,7 +355,7 @@ async def test_an_entry_comes_with_its_fields_and_its_text_in_slices() -> None:
     assert "restore_from_trash" in str(plain["limits"])
     text = cast("Json", sliced["text"])
     assert (text["content"], text["next_offset"], text["total_chars"]) == ("0123", 4, 10)
-    assert "Not in the trash: 2." in await refusal(source, "get_trash_entry", document_id=2)
+    assert "Not found in the trash: 2." in await refusal(source, "get_trash_entry", document_id=2)
 
 
 async def files(source: FakePaperless, **arguments: object) -> list[object]:

@@ -206,7 +206,7 @@ version is re-attached to its document) and empties the trash.
 
 `list_trash` filters by title, document type, kind, day of deletion and ids. Paperless cannot filter
 its trash, so the server looks at the first 1,000 entries in one request of at most 64 MiB (then at
-100), and `truncated` says when there are more; `ids` finds any entry. Of a document in the trash
+100), and `truncated` says when there are more; `ids` also looks beyond them entry. Of a document in the trash
 Paperless shows the text, thumbnail and file of its first version and no notes or custom field
 values: restore it to read the rest.
 

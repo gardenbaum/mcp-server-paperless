@@ -31,7 +31,12 @@ if TYPE_CHECKING:
         UserValues,
     )
     from mcp_server_paperless.domain.ai import AiSuggestions, ChatAnswer
-    from mcp_server_paperless.domain.bulk import BulkKind, DocumentChange, PermissionsChange
+    from mcp_server_paperless.domain.bulk import (
+        BulkKind,
+        DocumentChange,
+        ObjectPermissions,
+        PermissionsChange,
+    )
     from mcp_server_paperless.domain.documents import (
         DocumentFile,
         DocumentPage,
@@ -684,12 +689,23 @@ class TrashReader(Protocol):
         ...
 
     async def look_up_in_trash(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
     ) -> TrashLookup:
         """Everything of one entry, a version too, if it is on this page of the trash.
 
         The text is the entry's own: of a document the first version's, of a version its own. One
-        request, bounded like ``read_trash``, with the same errors.
+        request, bounded like ``read_trash``, with the same errors; with None neither bounded nor
+        refused when it is compressed.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+        """
+        ...
+
+    async def get_trash_permissions(
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+    ) -> ObjectPermissions | None:
+        """Who may view and change an entry, if it is on this page; read like ``look_up_in_trash``.
 
         Raises:
             NotFound: ``page`` is beyond the last page.

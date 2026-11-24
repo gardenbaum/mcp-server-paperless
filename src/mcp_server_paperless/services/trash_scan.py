@@ -4,6 +4,7 @@ Pages of that order can overlap or skip entries (seen on PostgreSQL, decision-47
 looked for in one bounded request first; pages follow only for ids that were not in it.
 """
 
+import contextlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
@@ -13,6 +14,7 @@ from mcp_server_paperless.domain.errors import (
     AnswerTooLarge,
     NotFound,
     PaperlessMcpError,
+    UpstreamUnavailable,
     Validation,
 )
 from mcp_server_paperless.services.documents import TRASH_BYTES
@@ -33,11 +35,25 @@ PAGE: Final = 100
 MAX_PAGES: Final = 1000
 # Missing ids whose reason is looked up (two requests each); the rest is only named.
 EXPLAINED: Final = 10
-UNSEEN: Final = "more may match. list_trash without a filter pages through all, and ids finds any."
+UNSEEN: Final = (
+    "more may match. list_trash without a filter pages through the trash, and ids also looks "
+    "beyond them."
+)
+SKIPPED: Final = "The trash could not be read at once, and its pages can skip entries."
+OWNER_ONLY: Final = (
+    "but was not found in the list: that may be because it is listed for its owner only."
+)
 NOT_LISTED_HINT: Final = (
     "List the trash with list_trash. Entries of documents the user does not own are not "
     "listed, and a version is listed only while its document is not in the trash."
 )
+
+
+def all_too_large() -> AnswerTooLarge:
+    """The error for a trash of which not even a few entries can be read at once."""
+    message = "The entries of the trash are too large to be looked through at once."
+    hint = "List them page by page with list_trash, without a filter."
+    return AnswerTooLarge(message, hint=hint)
 
 
 def following(page: int, next_page: int | None) -> int | None:
@@ -68,7 +84,7 @@ class Selection:
     """The entries a filter matches, and what it could not look at.
 
     Attributes:
-        missing: Ids of the filter that are not in the trash.
+        missing: Ids of the filter that were not found in the trash.
     """
 
     entries: tuple[TrashedDocument, ...]
@@ -79,15 +95,17 @@ class Selection:
     @property
     def truncated(self) -> bool:
         """Whether more entries may match than were looked at."""
-        return not (self.by_id or self.scan.complete)
+        return not self.scan.complete and (bool(self.missing) or not self.by_id)
 
     @property
     def notice(self) -> str | None:
         """What was not looked at, in words."""
         parts: list[str] = []
         if self.missing:
-            parts.append(f"Not in the trash: {', '.join(map(str, self.missing))}.")
-        if self.truncated:
+            parts.append(f"Not found in the trash: {', '.join(map(str, self.missing))}.")
+        if self.truncated and self.by_id:
+            parts.append(SKIPPED)
+        elif self.truncated:
             seen, total = len(self.scan.entries), self.scan.total
             parts.append(f"Only {seen} of the {total} entries were looked at; {UNSEEN}")
         return " ".join(parts) or None
@@ -111,22 +129,21 @@ class TrashScan:
         self.cap: int = cap
 
     async def first(self) -> Scan:
-        """The first ``cap`` entries in one request, or fewer if their texts are too large.
+        """The first ``cap`` entries in one request, or fewer if that does not work.
 
         Raises:
             AnswerTooLarge: Even few entries are too large.
+            UpstreamUnavailable: Even few entries could not be read.
         """
         try:
             page = await self._reader.read_trash(entries=self.cap, max_bytes=TRASH_BYTES)
-        except AnswerTooLarge:
+        except AnswerTooLarge, UpstreamUnavailable:
             try:
                 page = await self._reader.read_trash(
                     entries=min(PAGE, self.cap), max_bytes=TRASH_BYTES
                 )
             except AnswerTooLarge:
-                message = "The entries of the trash are too large to be looked through at once."
-                hint = "List them page by page with list_trash, without a filter."
-                raise AnswerTooLarge(message, hint=hint) from None
+                raise all_too_large() from None
         return Scan(tuple({e.id: e for e in page.entries}.values()), page.count)
 
     async def locate(self, ids: Sequence[int]) -> tuple[dict[int, TrashedDocument], Scan]:
@@ -134,7 +151,7 @@ class TrashScan:
         wanted = set(ids)
         try:
             scan = await self.first()
-        except AnswerTooLarge, AnswerCompressed:
+        except AnswerTooLarge, AnswerCompressed, UpstreamUnavailable:
             scan = Scan((), 1)  # nothing is known of it: pages follow
         found = {e.id: e for e in scan.entries if e.id in wanted}
         page: int | None = None if scan.complete else 1
@@ -154,11 +171,14 @@ class TrashScan:
         missing = [number for number in ids if number not in found]
         if missing:
             raise await self.unlisted(missing)
-        return [found[number] for number in ids]
+        entries = [found[number] for number in ids]
+        with contextlib.suppress(PaperlessMcpError):  # only titles: acting does not need them
+            return await self.rooted(entries)
+        return entries
 
     async def unlisted(self, missing: Sequence[int]) -> NotFound:
         """The error for ids that are not listed, with the reason where Paperless tells one."""
-        message = f"Not in the trash: {', '.join(map(str, missing))}."
+        message = f"Not found in the trash: {', '.join(map(str, missing))}."
         reasons = [await self._reason(number) for number in missing[:EXPLAINED]]
         return NotFound(message, hint=" ".join([r for r in reasons if r] + [NOT_LISTED_HINT]))
 
@@ -185,32 +205,35 @@ class TrashScan:
             found, scan = await self.locate(ids)
             entries = [found[number] for number in ids if number in found]
             missing = [number for number in ids if number not in found]
+        entries = await self.rooted(entries)
         title = (wanted.title or "").casefold()
         matching = [
             e
             for e in entries
             if title in e.title.casefold()
+            and type_id in {None, e.document_type}
             and wanted.kind in {None, "document" if e.version_of is None else "version"}
-            and (first is None or e.deleted_at.date() >= first)
-            and (last is None or e.deleted_at.date() <= last)
+            and (first is None or e.deleted_on >= first)
+            and (last is None or e.deleted_on <= last)
         ]
-        if type_id is not None:
-            types = await self._types(matching)
-            matching = [e for e in matching if types[e.id] == type_id]
         return Selection(tuple(matching), scan, tuple(missing), by_id=wanted.ids is not None)
 
-    async def _types(self, entries: Sequence[TrashedDocument]) -> dict[int, int | None]:
-        """The document type of each entry; a version without one has its document's."""
-        types = {e.id: e.document_type for e in entries}
-        bare = [e for e in entries if e.version_of is not None and e.document_type is None]
-        roots = list(dict.fromkeys(e.version_of for e in bare if e.version_of is not None))
-        live: dict[int, int | None] = {}
+    async def rooted(self, entries: Sequence[TrashedDocument]) -> list[TrashedDocument]:
+        """The entries; versions with the title and document type their document has now.
+
+        Their own are those of the upload, without a type.
+        """
+        roots = list(dict.fromkeys(e.version_of for e in entries if e.version_of is not None))
+        live: dict[int | None, dict[str, object]] = {}
         for start in range(0, len(roots), PAGE):
             page = await self._documents.search_documents(
                 DocumentQuery(ids=tuple(roots[start : start + PAGE])), page=1, page_size=PAGE
             )
-            live |= {hit.id: hit.document_type for hit in page.hits}
-        return types | {e.id: live.get(e.version_of) for e in bare if e.version_of is not None}
+            live |= {
+                hit.id: {"title": hit.title, "document_type": hit.document_type}
+                for hit in page.hits
+            }
+        return [e.model_copy(update=live.get(e.version_of, {})) for e in entries]
 
     async def _reason(self, number: int) -> str | None:
         """Why an id is not listed, if Paperless lets this user know."""
@@ -226,9 +249,9 @@ class TrashScan:
                     f"{number} is a version of document {root}, which is in the trash itself: "
                     f"use {root}."
                 )
-            return f"{number} is in the trash, but listed only for its owner."
+            return f"{number} is in the trash, {OWNER_ONLY}"
         except PaperlessMcpError:
             return None
         if root == number or number in {v.id for v in document.versions}:
             return f"{number} is not deleted."
-        return f"{number} is a deleted version of document {root}, but not listed for this user."
+        return f"{number} is a deleted version of document {root}, {OWNER_ONLY}"

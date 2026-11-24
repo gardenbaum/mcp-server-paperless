@@ -11102,6 +11102,130 @@
               }),
             ]),
           }),
+          'permissions': dict({
+            'anyOf': list([
+              dict({
+                'description': 'Who may view and who may change an entry, besides its owner.',
+                'properties': dict({
+                  'change_groups': dict({
+                    'items': dict({
+                      'description': 'An object a document refers to; name is null if the user may not see it.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'change_users': dict({
+                    'items': dict({
+                      'description': 'An object a document refers to; name is null if the user may not see it.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'view_groups': dict({
+                    'items': dict({
+                      'description': 'An object a document refers to; name is null if the user may not see it.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'view_users': dict({
+                    'items': dict({
+                      'description': 'An object a document refers to; name is null if the user may not see it.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                }),
+                'required': list([
+                  'view_users',
+                  'view_groups',
+                  'change_users',
+                  'change_groups',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Null if they could not be read; see limits.',
+          }),
           'storage_path': dict({
             'anyOf': list([
               dict({
@@ -11303,6 +11427,7 @@
           'archived_file_name',
           'is_shared_by_requester',
           'user_can_change',
+          'permissions',
           'notes',
           'versions',
           'duplicate_documents',
@@ -13646,8 +13771,9 @@
         trash, its entry covers the versions. You see the entries of documents you own or that have no
         owner; a superuser sees every entry. Filters are combined with AND. They look at up to 1000
         entries (fewer if their texts are over 64 MiB): truncated is true when the trash holds more,
-        and the notice says how to go on; ids finds any entry. web_url is the trash page of the web UI.
-        count is the total; pass next_page as page to see more. Needs the permission to view documents.
+        and the notice says how to go on; ids also looks beyond them. web_url is the
+        trash page of the web UI. count is the total; pass next_page as page to see more. Needs the
+        permission to view documents.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -13858,7 +13984,7 @@
                       'type': 'null',
                     }),
                   ]),
-                  'description': 'Null: no owner.',
+                  'description': 'Null: no owner. Of a version: the owner at its upload.',
                 }),
                 'title': dict({
                   'type': 'string',
@@ -33556,6 +33682,130 @@
               }),
             ]),
           }),
+          'permissions': dict({
+            'anyOf': list([
+              dict({
+                'description': 'Who may view and who may change an entry, besides its owner.',
+                'properties': dict({
+                  'change_groups': dict({
+                    'items': dict({
+                      'description': 'An object a document refers to; name is null if the user may not see it.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'change_users': dict({
+                    'items': dict({
+                      'description': 'An object a document refers to; name is null if the user may not see it.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'view_groups': dict({
+                    'items': dict({
+                      'description': 'An object a document refers to; name is null if the user may not see it.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'view_users': dict({
+                    'items': dict({
+                      'description': 'An object a document refers to; name is null if the user may not see it.',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'anyOf': list([
+                            dict({
+                              'type': 'string',
+                            }),
+                            dict({
+                              'type': 'null',
+                            }),
+                          ]),
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                }),
+                'required': list([
+                  'view_users',
+                  'view_groups',
+                  'change_users',
+                  'change_groups',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Null if they could not be read; see limits.',
+          }),
           'storage_path': dict({
             'anyOf': list([
               dict({
@@ -33757,6 +34007,7 @@
           'archived_file_name',
           'is_shared_by_requester',
           'user_can_change',
+          'permissions',
           'notes',
           'versions',
           'duplicate_documents',
@@ -36100,8 +36351,9 @@
         trash, its entry covers the versions. You see the entries of documents you own or that have no
         owner; a superuser sees every entry. Filters are combined with AND. They look at up to 1000
         entries (fewer if their texts are over 64 MiB): truncated is true when the trash holds more,
-        and the notice says how to go on; ids finds any entry. web_url is the trash page of the web UI.
-        count is the total; pass next_page as page to see more. Needs the permission to view documents.
+        and the notice says how to go on; ids also looks beyond them. web_url is the
+        trash page of the web UI. count is the total; pass next_page as page to see more. Needs the
+        permission to view documents.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -36312,7 +36564,7 @@
                       'type': 'null',
                     }),
                   ]),
-                  'description': 'Null: no owner.',
+                  'description': 'Null: no owner. Of a version: the owner at its upload.',
                 }),
                 'title': dict({
                   'type': 'string',

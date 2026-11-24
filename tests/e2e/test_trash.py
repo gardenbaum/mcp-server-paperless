@@ -123,7 +123,9 @@ async def test_a_deleted_document_is_listed_restored_and_emptied_only_with_confi
         assert str(entry["web_url"]).endswith(f"/documents/{kept}/details")
         assert not live_in_trash(stack, kept)
         assert note_count(stack, kept) == 1
-        assert "Not in the trash" in await refused(admin, "restore_from_trash", document_ids=[kept])
+        assert "Not found in the trash" in await refused(
+            admin, "restore_from_trash", document_ids=[kept]
+        )
 
         # Emptying needs a selection and confirm, in both forms; nothing changed so far.
         assert "Name what to empty" in await refused(admin, "empty_trash", confirm=True)
@@ -151,7 +153,7 @@ async def test_a_deleted_document_is_listed_restored_and_emptied_only_with_confi
     # Someone who cannot see an entry cannot empty it either.
     async with Client(server(stack, stack.reader_token)) as reader:
         hidden = await refused(reader, "empty_trash", document_ids=[other], confirm=True)
-    assert f"Not in the trash: {other}" in hidden
+    assert f"Not found in the trash: {other}" in hidden
     assert live_in_trash(stack, other)
 
 
@@ -189,6 +191,13 @@ async def test_every_field_of_a_row_is_known(stack: Stack, users: Users) -> None
     [row] = [r for r in rows if r["id"] == document]
     entry = output(await users.call("get_trash_entry", document_id=document, text=True))
 
+    # `permissions` comes with full_perms only, in place of two other fields.
+    granting = results(
+        stack.admin.get("/api/trash/", params={"page_size": 1000, "full_perms": "true"})
+    )
+    assert "permissions" in next(r for r in granting if r["id"] == document)
+    assert cast("Json", entry["permissions"])["change_users"] == []
+    assert "could not be read" not in str(entry["limits"])
     renamed = {"root_document": "version_of", "content": "text"}
     assert {renamed.get(name, name) for name in row} <= entry.keys()
 
@@ -292,7 +301,7 @@ async def test_all_or_none_and_the_id_that_blocks_is_named(stack: Stack, users: 
         refused = text(
             await users.call(tool, None, document_ids=[ready, alive, version, 999_999], **confirm)
         )
-        assert f"Not in the trash: {alive}, {version}, 999999." in refused
+        assert f"Not found in the trash: {alive}, {version}, 999999." in refused
         assert f"{alive} is not deleted." in refused
         assert f"{version} is a version of document {document}" in refused
         assert live_in_trash(stack, ready)
@@ -321,12 +330,12 @@ async def test_a_restricted_user_sees_and_changes_only_owned_and_unowned_entries
     assert ids(listed) == {owned, unowned}
     for number in (shared, hidden):
         for tool in ("get_trash_entry", "get_trashed_file"):
-            assert f"Not in the trash: {number}" in text(
+            assert f"Not found in the trash: {number}" in text(
                 await users.call(tool, token, document_id=number)
             )
     refused = text(await users.call("restore_from_trash", token, document_ids=everything))
-    assert f"Not in the trash: {shared}, {hidden}." in refused
-    assert f"{shared} is in the trash, but listed only for its owner." in refused
+    assert f"Not found in the trash: {shared}, {hidden}." in refused
+    assert f"{shared} is in the trash, but was not found in the list" in refused
     # Without the global permission Paperless refuses and names no id.
     denied = text(await users.call("restore_from_trash", viewer, document_ids=[unowned]))
     assert "Paperless does not say which id it refuses" in denied

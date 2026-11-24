@@ -4,7 +4,7 @@ The fakes of the filter refusals are created without `allow_writes`: any write w
 """
 
 import itertools
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, override
 
 import pytest
@@ -17,6 +17,8 @@ from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
     NotFound,
     PermissionDenied,
+    UpstreamTimeout,
+    UpstreamUnavailable,
     UpstreamUnreachable,
     Validation,
     accepting,
@@ -35,8 +37,9 @@ from mcp_server_paperless.services.trashed_documents import TrashedDocuments
 from services.test_trash import DAY, WEB, Setup
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Collection, Sequence
 
+    from mcp_server_paperless.domain.documents import DocumentPage, DocumentQuery
     from mcp_server_paperless.domain.trash import TrashList, TrashPage
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-55")]
@@ -129,7 +132,7 @@ async def test_ids_and_other_filters_are_combined_and_missing_ids_are_named() ->
     narrowed = await found(setup, TrashFilter(ids=(two, one), title="doc"))
 
     assert [e.id for e in both.entries] == [two, one]
-    assert both.notice == "Not in the trash: 4242."
+    assert both.notice == "Not found in the trash: 4242."
     assert (both.truncated, both.scanned) == (False, None)
     assert [e.id for e in narrowed.entries] == [one]
     assert narrowed.notice is None
@@ -198,7 +201,7 @@ async def test_the_cap_is_told_and_ids_reach_beyond_it() -> None:
     assert (over.count, over.scanned, over.truncated) == (3, 3, True)
     assert over.notice == (
         "Only 3 of the 4 entries were looked at; more may match. list_trash without a filter "
-        "pages through all, and ids finds any."
+        "pages through the trash, and ids also looks beyond them."
     )
     assert (beyond.count, beyond.truncated, beyond.notice) == (4, False, None)
 
@@ -328,7 +331,10 @@ async def test_an_empty_filter_and_one_without_a_match_act_on_nothing() -> None:
 
     for wanted, said in (
         (TrashFilter(), NO_FILTER),
-        (TrashFilter(ids=(4242,)), "matches no entry: nothing was %s. Not in the trash: 4242."),
+        (
+            TrashFilter(ids=(4242,)),
+            "matches no entry: nothing was %s. Not found in the trash: 4242.",
+        ),
     ):
         with pytest.raises(Validation) as restoring:
             _ = await setup.service.restore(None, wanted)
@@ -440,7 +446,9 @@ async def test_every_id_that_blocks_is_named_with_the_reason_paperless_lets_it_k
     with pytest.raises(NotFound) as raised:
         _ = await setup.service.restore([alive, version, live_version, 4242])
 
-    assert raised.value.message == f"Not in the trash: {alive}, {version}, {live_version}, 4242."
+    assert (
+        raised.value.message == f"Not found in the trash: {alive}, {version}, {live_version}, 4242."
+    )
     assert raised.value.hint == (
         f"{alive} is not deleted. {version} is a version of document {document}, which is in the "
         f"trash itself: use {document}. {live_version} is not deleted. {NOT_LISTED_HINT}"
@@ -462,8 +470,10 @@ async def test_an_entry_only_shared_with_the_user_is_told_as_the_owners() -> Non
         _ = await setup.service.empty([shared, version], everything=False, confirm=True)
 
     assert raised.value.hint == (
-        f"{shared} is in the trash, but listed only for its owner. {version} is a deleted version "
-        f"of document {document}, but not listed for this user. {NOT_LISTED_HINT}"
+        f"{shared} is in the trash, but was not found in the list: that may be because it is "
+        f"listed for its owner only. {version} is a deleted version of document {document}, but "
+        f"was not found in the list: that may be because it is listed for its owner only. "
+        f"{NOT_LISTED_HINT}"
     )
 
 
@@ -489,16 +499,22 @@ class Moody(FakePaperless):
     written: bool = False
 
     @override
-    async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
+    async def list_trash(self, *, page: int, page_size: int) -> TrashPage:  # read_trash, too
         if self.written and self.after:
             raise self.after
-        return await super().read_trash(entries=entries, max_bytes=max_bytes)
+        return await super().list_trash(page=page, page_size=page_size)
 
     @override
     async def get_root(self, document_id: int) -> int:
         if self.single:
             raise self.single
         return await super().get_root(document_id)
+
+    @override
+    async def get_document_titles(self, document_ids: Collection[int]) -> dict[int, str]:
+        if self.single:
+            raise self.single
+        return await super().get_document_titles(document_ids)
 
     async def _failing(self) -> None:
         self.written = True
@@ -535,9 +551,7 @@ async def test_an_id_that_vanished_before_a_refusal_is_named() -> None:
     with pytest.raises(Validation) as raised:
         _ = await setup.on(fake).restore([one, two])
 
-    assert raised.value.message == (
-        f"Paperless rejected the request. No longer in the trash: {one}."
-    )
+    assert raised.value.message == (f"Paperless rejected the request. No longer listed: {one}.")
     assert raised.value.hint == "h"
 
 
@@ -593,7 +607,8 @@ async def test_a_restore_that_failed_half_way_says_what_came_back() -> None:
     assert [e.outcome for e in result.entries] == ["restored", "still_in_trash"]
     assert result.message == (
         f"Restored 1 document from the trash: document {back} 'back'. "
-        f"Still in the trash: document {left} 'left'. {CHECKED}"
+        f"Still in the trash: document {left} 'left'. {CHECKED} Paperless reported: "
+        "Paperless could not be reached."
     )
 
 
@@ -624,7 +639,7 @@ async def test_a_failed_look_afterwards_never_hides_what_was_done() -> None:
     setup = Setup()
     one, two = await setup.trashed("one"), await setup.trashed("two")
     fake = moody(setup)
-    fake.after = OUTAGE
+    fake.after = fake.single = OUTAGE
 
     restored = await setup.on(fake).restore([one])
     fake.written = False
@@ -673,7 +688,7 @@ async def test_one_by_one_a_restored_entry_has_to_be_seen() -> None:
 
     result = await capped(setup, 1, bounded(setup)).restore([version, document])
 
-    assert [e.outcome for e in result.entries] == ["unverified", "unverified"]
+    assert [e.outcome for e in result.entries] == ["still_in_trash", "still_in_trash"]
 
 
 async def test_one_by_one_an_outage_ends_the_checks() -> None:
@@ -733,7 +748,7 @@ class Endless(FakePaperless):
 
     @override
     async def look_up_in_trash(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
     ) -> TrashLookup:
         return TrashLookup(entry=None, next_page=self._next(page))
 
@@ -767,3 +782,182 @@ async def test_an_answer_that_always_names_a_next_page_ends(
         _ = await looking.entry(4242, max_chars=1)
 
     assert (found, pages, fake.pages) == ({}, listed, looked)
+
+
+# --- findings of the review -----------------------------------------------------------------------
+
+EAST = timezone(timedelta(hours=1))
+
+
+async def test_the_day_of_a_deletion_is_the_utc_day_whatever_zone_paperless_answers_in() -> None:
+    setup = Setup()
+    one = await setup.trashed("doc")
+    deleted(setup, one, datetime(2026, 11, 10, 0, 30, tzinfo=EAST))
+    ninth, tenth = date(2026, 11, 9), date(2026, 11, 10)
+
+    assert await ids(setup, TrashFilter(deleted_from=ninth, deleted_to=ninth)) == [one]
+    assert await ids(setup, TrashFilter(deleted_from=tenth)) == []
+    with pytest.raises(ConfirmationRequired, match="deleted 2026-11-09"):
+        _ = await setup.service.empty([one], everything=False)
+
+
+TRANSIENT = [
+    UpstreamTimeout("Paperless did not answer in time."),
+    UpstreamUnavailable("Paperless is temporarily unavailable."),
+    UpstreamUnreachable("Paperless could not be reached."),
+]
+
+
+class Straining(FakePaperless):
+    """Reads of more than `fits` entries fail with `error`."""
+
+    error: Exception = TRANSIENT[0]
+    fits: int = 0
+
+    @override
+    async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
+        if entries > self.fits:
+            raise self.error
+        return await super().read_trash(entries=entries, max_bytes=max_bytes)
+
+
+def straining(setup: Setup, error: Exception, *, fits: int = 0) -> Straining:
+    fake = Straining(setup.state, user="admin", allow_writes=True)
+    fake.error, fake.fits = error, fits
+    return fake
+
+
+@pytest.mark.parametrize("error", TRANSIENT)
+async def test_a_large_request_that_fails_for_now_falls_back_to_small_ones(
+    error: Exception,
+) -> None:
+    setup = Setup()
+    back, gone = await setup.trashed("back"), await setup.trashed("gone")
+    for number in range(PAGE):
+        _ = await setup.trashed(f"doc {number}")
+    service = capped(setup, 1000, straining(setup, error))
+
+    listed = await service.list(TrashFilter(ids=(back,)), page=1, page_size=5)
+    restored = await service.restore([back])
+    emptied = await service.empty([gone], everything=False, confirm=True)
+    some = await capped(setup, 1000, straining(setup, error, fits=PAGE)).list(
+        TrashFilter(title="doc"), page=1, page_size=5
+    )
+
+    assert [e.id for e in listed.entries] == [back]
+    assert [e.outcome for e in restored.entries] == ["restored"]
+    assert [e.outcome for e in emptied.entries] == ["deleted"]
+    assert (some.scanned, some.truncated) == (PAGE, False)
+    with pytest.raises(type(error)):
+        _ = await service.list(TrashFilter(title="doc"), page=1, page_size=5)
+
+
+async def test_a_missing_permission_is_not_tried_again_in_smaller_requests() -> None:
+    setup = Setup()
+    one = await setup.trashed("doc")
+    denied = PermissionDenied("The Paperless user may not perform this action.")
+
+    with pytest.raises(PermissionDenied):
+        _ = await capped(setup, 1000, straining(setup, denied, fits=PAGE)).list(
+            TrashFilter(title="doc"), page=1, page_size=5
+        )
+    with pytest.raises(PermissionDenied):
+        _ = await capped(setup, 1000, straining(setup, denied)).restore([one])
+
+
+async def test_ids_that_pages_may_have_skipped_are_not_said_to_be_missing_for_sure() -> None:
+    setup = Setup()
+    one = await setup.trashed("doc")
+    _ = await setup.trashed("other")
+
+    partial = await capped(setup, 1).list(TrashFilter(ids=(one, 4242)), page=1, page_size=5)
+    whole = await setup.service.list(TrashFilter(ids=(one, 4242)), page=1, page_size=5)
+
+    assert partial.truncated is True
+    assert partial.notice == (
+        "Not found in the trash: 4242. The trash could not be read at once, and its pages can "
+        "skip entries."
+    )
+    assert (whole.truncated, whole.notice) == (False, "Not found in the trash: 4242.")
+
+
+async def test_a_version_is_listed_and_found_with_the_title_and_type_its_document_has_now() -> None:
+    setup = Setup()
+    invoice = setup.state.document_types[0]
+    document, version = await setup.version("Old title")
+    [live] = [d for d in setup.state.documents if d.id == document]
+    live.title, live.document_type = "New title", invoice.id
+
+    [row] = (await found(setup, TrashFilter())).entries
+    assert (row.title, row.document_type and row.document_type.id) == ("New title", invoice.id)
+    assert await ids(setup, TrashFilter(title="new title")) == [version]
+    assert await ids(setup, TrashFilter(title="old title")) == []
+    with pytest.raises(ConfirmationRequired, match="'New title'"):
+        _ = await setup.service.empty([version], everything=False)
+    with pytest.raises(ConfirmationRequired, match="'New title'"):
+        _ = await setup.service.empty(None, everything=True)
+
+
+class NoSearch(FakePaperless):
+    @override
+    async def search_documents(
+        self, query: DocumentQuery, *, page: int, page_size: int
+    ) -> DocumentPage:
+        raise OUTAGE
+
+
+async def test_acting_on_versions_does_not_need_the_title_of_their_document() -> None:
+    setup = Setup()
+    _, version = await setup.version("Report")
+    fake = NoSearch(setup.state, user="admin", allow_writes=True)
+
+    assert (await setup.on(fake).restore([version])).entries[0].title == "Report"
+
+
+async def test_a_document_that_answers_is_never_called_deleted() -> None:
+    """Someone restored it at the same moment: it left the trash, but is not gone."""
+    setup = Setup()
+    one = await setup.trashed("doc")
+    _, version = await setup.version("Report")
+
+    class Raced(FakePaperless):
+        @override
+        async def empty_trash(self, document_ids: Sequence[int]) -> None:
+            await self.restore_from_trash(document_ids)
+
+    raced = Raced(setup.state, user="admin", allow_writes=True)
+    result = await setup.on(raced).empty([one, version], everything=False, confirm=True)
+
+    assert [e.outcome for e in result.entries] == ["unverified", "unverified"]
+    assert (result.count, result.document_ids) == (0, ())
+
+
+async def test_what_left_the_trash_but_is_not_seen_again_is_not_called_restored() -> None:
+    setup = Setup()
+    one = await setup.trashed("doc")
+    _, version = await setup.version("Report")
+
+    class Raced(FakePaperless):
+        @override
+        async def restore_from_trash(self, document_ids: Sequence[int]) -> None:
+            await self.empty_trash(document_ids)
+
+    raced = Raced(setup.state, user="admin", allow_writes=True)
+    result = await setup.on(raced).restore([one, version])
+
+    assert [e.outcome for e in result.entries] == ["unverified", "unverified"]
+
+
+async def test_a_version_covered_by_its_document_in_the_trash_is_still_there() -> None:
+    setup = Setup()
+    document, version = await setup.version("Report")
+
+    class Raced(FakePaperless):
+        @override
+        async def empty_trash(self, document_ids: Sequence[int]) -> None:
+            await self.delete_document(document)
+
+    raced = Raced(setup.state, user="admin", allow_writes=True)
+    result = await setup.on(raced).empty([version], everything=False, confirm=True)
+
+    assert [e.outcome for e in result.entries] == ["still_in_trash"]

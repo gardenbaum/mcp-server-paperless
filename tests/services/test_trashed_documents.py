@@ -9,10 +9,14 @@ from fakes.paperless import FakePaperless, FakeState
 
 from mcp_server_paperless.domain.documents import DocumentFile
 from mcp_server_paperless.domain.errors import (
+    AnswerCompressed,
     AnswerTooLarge,
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
+    UpstreamTimeout,
+    UpstreamUnavailable,
+    UpstreamUnreachable,
     Validation,
 )
 from mcp_server_paperless.domain.versions import VersionUpload
@@ -21,6 +25,7 @@ from mcp_server_paperless.services.trash_scan import TrashScan
 from mcp_server_paperless.services.trashed_documents import (
     DOCUMENT_LIMITS,
     NO_FILE,
+    NO_PERMISSIONS,
     RESTORE_FIRST,
     VERSION_LIMITS,
     TrashedDocuments,
@@ -28,6 +33,7 @@ from mcp_server_paperless.services.trashed_documents import (
 from services.test_trash import WEB, Setup
 
 if TYPE_CHECKING:
+    from mcp_server_paperless.domain.bulk import ObjectPermissions
     from mcp_server_paperless.domain.trash import TrashLookup
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-54")]
@@ -111,7 +117,7 @@ async def test_text_and_file_of_a_document_are_those_of_its_first_version() -> N
     assert found.text.content == "first text"
     assert [v.id for v in found.versions] == [number]
     assert file.data == b"first file"
-    with pytest.raises(NotFound, match=f"Not in the trash: {second}") as raised:
+    with pytest.raises(NotFound, match=f"Not found in the trash: {second}") as raised:
         _ = await service.entry(second, max_chars=100)
     assert f"use {number}" in (raised.value.hint or "")
 
@@ -135,6 +141,8 @@ class Pages(FakePaperless):
     """Remembers the pages that were asked for; the first request may be too large."""
 
     too_large: bool = False
+    error: Exception | None = None
+    fits: int = 0
 
     @override
     def __init__(self, state: FakeState, *, user: str) -> None:
@@ -142,13 +150,21 @@ class Pages(FakePaperless):
         self.asked: list[tuple[int, int]] = []
 
     @override
+    async def get_trash_permissions(
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+    ) -> ObjectPermissions | None:
+        return None
+
+    @override
     async def look_up_in_trash(
-        self, document_id: int, *, page: int, page_size: int, max_bytes: int
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
     ) -> TrashLookup:
         self.asked.append((page, page_size))
         if self.too_large and len(self.asked) == 1:
             message = "too large"
             raise AnswerTooLarge(message)
+        if self.error and max_bytes is not None and page_size > self.fits:
+            raise self.error
         return await super().look_up_in_trash(
             document_id, page=page, page_size=page_size, max_bytes=max_bytes
         )
@@ -167,7 +183,7 @@ async def test_an_entry_beyond_one_request_is_found_page_by_page(
 
     assert found.id == numbers[0]
     assert fake.asked == [(1, 1), (1, 100), (2, 100)]
-    with pytest.raises(NotFound, match="Not in the trash: 4242"):
+    with pytest.raises(NotFound, match="Not found in the trash: 4242"):
         _ = await looking(setup, fake, cap=1).entry(4242, max_chars=1)
 
 
@@ -293,7 +309,7 @@ async def test_a_view_grant_does_not_show_what_the_list_does_not() -> None:
         service.part(shared, "original", offset=0),
         service.thumbnail(shared),
     ):
-        with pytest.raises(NotFound, match=f"Not in the trash: {shared}"):
+        with pytest.raises(NotFound, match=f"Not found in the trash: {shared}"):
             _ = await call
     assert (await service.entry(nobody, max_chars=1)).owner is None
     assert (await service.download(nobody, "original")).data
@@ -307,3 +323,94 @@ async def test_a_user_who_may_not_view_documents_sees_nothing() -> None:
         _ = await looking(setup).entry(one, max_chars=1)
     with pytest.raises(PermissionDenied):
         _ = await looking(setup).download(one, "original")
+
+
+@pytest.mark.parametrize(
+    ("error", "asked"),
+    [
+        (UpstreamTimeout("slow"), [(1, 1000), (1, 100)]),
+        (UpstreamUnavailable("502"), [(1, 1000), (1, 100)]),
+        (UpstreamUnreachable("gone"), [(1, 1000), (1, 100)]),
+        (AnswerCompressed("gzip"), [(1, 1000), (1, 100)]),
+    ],
+)
+async def test_an_entry_is_found_in_small_requests_where_a_large_one_does_not_work(
+    error: Exception, asked: list[tuple[int, int]]
+) -> None:
+    setup = Setup()
+    one = await setup.trashed("Doc")
+    fake = Pages(setup.state, user="admin")
+    # A compressed answer is never bounded, so it has no size that fits.
+    fake.error, fake.fits = error, 0 if isinstance(error, AnswerCompressed) else 100
+
+    found = await looking(setup, fake).entry(one, max_chars=1)
+
+    assert (found.id, fake.asked) == (one, asked)
+
+
+async def test_a_lookup_that_fails_for_good_says_why() -> None:
+    setup = Setup()
+    one = await setup.trashed("Doc")
+    for error in (AnswerTooLarge("large"), PermissionDenied("no"), UpstreamTimeout("slow")):
+        fake = Pages(setup.state, user="admin")
+        fake.error = error
+        with pytest.raises(type(error)) as raised:
+            _ = await looking(setup, fake).entry(one, max_chars=1)
+        if isinstance(error, AnswerTooLarge):
+            assert raised.value.hint == "List them page by page with list_trash, without a filter."
+        assert len(fake.asked) == (1 if isinstance(error, PermissionDenied) else 2)
+
+
+async def test_a_version_says_that_its_fields_are_those_of_its_upload() -> None:
+    setup = Setup()
+    _, version = await setup.version("Report")
+
+    limits = (await looking(setup).entry(version, max_chars=1)).limits
+
+    assert "title, type, owner and other fields are those of its upload" in limits
+
+
+async def test_the_grants_of_an_entry_come_with_names() -> None:
+    setup = Setup()
+    one = await setup.trashed("Doc")
+    [entry] = [d for d in setup.state.trash if d.id == one]
+    entry.viewers, entry.editors, entry.view_groups = {3}, {3}, {1}
+
+    found = await looking(setup).entry(one, max_chars=1)
+
+    assert found.permissions
+    assert [(r.id, r.name) for r in found.permissions.view_users] == [(3, READER[0])]
+    assert [(r.id, r.name) for r in found.permissions.change_users] == [(3, READER[0])]
+    assert [(r.id, r.name) for r in found.permissions.view_groups] == [(1, "e2e-group")]
+    assert found.permissions.change_groups == ()
+    assert found.user_can_change is True
+    assert NO_PERMISSIONS not in found.limits
+
+
+class NoGrants(FakePaperless):
+    failure: PaperlessMcpError | None = None
+
+    @override
+    async def get_trash_permissions(
+        self, document_id: int, *, page: int, page_size: int, max_bytes: int | None
+    ) -> ObjectPermissions | None:
+        if self.failure:
+            raise self.failure
+        return None
+
+
+@pytest.mark.parametrize(
+    "failure", [None, UpstreamTimeout("slow"), PermissionDenied("no"), AnswerTooLarge("large")]
+)
+async def test_grants_that_could_not_be_read_do_not_lose_the_entry(
+    failure: PaperlessMcpError | None,
+) -> None:
+    setup = Setup()
+    one = await setup.trashed("Doc")
+    fake = NoGrants(setup.state, user="admin")
+    fake.failure = failure
+
+    found = await looking(setup, fake).entry(one, max_chars=1)
+
+    assert (found.id, found.permissions) == (one, None)
+    assert found.limits == DOCUMENT_LIMITS + NO_PERMISSIONS

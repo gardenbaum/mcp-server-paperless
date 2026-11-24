@@ -502,3 +502,57 @@ async def test_the_list_tells_what_chooses_an_entry(make_client: ClientFactory) 
     assert (first.document_type, first.owner, first.mime_type) == (5, 2, "text/plain")
     assert (first.created.isoformat(), first.has_archive) == ("2026-11-13", True)
     assert second.has_archive is False
+
+
+async def test_other_rows_than_the_wanted_one_are_not_kept_and_not_even_complete() -> None:
+    """They carry the whole text of other documents."""
+    odd: Json = {"id": 1, "content": "x"}
+
+    found, _ = await look_up(httpx2.Response(200, stream=Chunks(body(odd, FULL))), 3301)
+
+    assert found.entry
+    assert found.entry.id == 3301
+
+
+async def test_a_lookup_without_a_bound_takes_a_compressed_answer(
+    make_client: ClientFactory,
+) -> None:
+    server = Recorded(listing(FULL))
+
+    found = await PaperlessTrashReader(make_client(server)).look_up_in_trash(
+        3301, page=1, page_size=100, max_bytes=None
+    )
+
+    assert found.entry
+    assert server.sent[0][2] == {"page": "1", "page_size": "100"}
+
+
+async def test_a_wanted_row_that_is_not_what_it_should_be_is_an_error() -> None:
+    with pytest.raises(PaperlessMcpError, match="unexpected response"):
+        _ = await look_up(httpx2.Response(200, stream=Chunks(body({"id": 3301}))), 3301)
+
+
+async def test_the_grants_of_an_entry_are_read_with_full_perms() -> None:
+    granted: Json = {
+        "id": 3301,
+        "permissions": {
+            "view": {"users": [3, 4], "groups": [5]},
+            "change": {"users": [4], "groups": []},
+        },
+    }
+    asked: list[httpx2.Request] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        asked.append(request)
+        return httpx2.Response(200, stream=Chunks(body({"id": 1}, granted)))
+
+    client, _ = streaming(answer)
+    reader = PaperlessTrashReader(client)
+    found = await reader.get_trash_permissions(3301, page=2, page_size=50, max_bytes=9_999)
+    absent = await reader.get_trash_permissions(9, page=2, page_size=50, max_bytes=9_999)
+
+    assert dict(asked[0].url.params) == {"page": "2", "page_size": "50", "full_perms": "true"}
+    assert found
+    assert (found.view_users, found.view_groups) == ((3, 4), (5,))
+    assert (found.change_users, found.change_groups) == ((4,), ())
+    assert absent is None

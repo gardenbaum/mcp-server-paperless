@@ -6,7 +6,7 @@ file there too, as an entry of its own. Restoring puts the document back, or re-
 version to its document; emptying removes the entries for good.
 """
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
@@ -92,13 +92,18 @@ class TrashedDocument(TrashItem):
     ``checksum`` is the SHA-256 of a deleted document's original upload, None for a version.
     """
 
-    deleted_at: datetime
+    deleted_at: datetime  # in whatever zone Paperless answers; see deleted_on
     created: date
     mime_type: str
     document_type: int | None
     owner: int | None
     has_archive: bool
     checksum: str | None = None
+
+    @property
+    def deleted_on(self) -> date:
+        """The UTC day of the deletion."""
+        return self.deleted_at.astimezone(UTC).date()
 
 
 class TrashEntry(TrashItem):
@@ -108,7 +113,9 @@ class TrashEntry(TrashItem):
     created: date
     mime_type: str
     document_type: Ref | None
-    owner: Annotated[Ref | None, Field(description="Null: no owner.")]
+    owner: Annotated[
+        Ref | None, Field(description="Null: no owner. Of a version: the owner at its upload.")
+    ]
     checksum: Annotated[
         str | None,
         Field(description="SHA-256 of a deleted document's original upload; null for a version."),
@@ -205,6 +212,17 @@ class TrashText(BaseModel):
     ]
 
 
+class TrashGrants(BaseModel):
+    """Who may view and who may change an entry, besides its owner."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    view_users: tuple[Ref, ...]
+    view_groups: tuple[Ref, ...]
+    change_users: tuple[Ref, ...]
+    change_groups: tuple[Ref, ...]
+
+
 class TrashEntryDetail(DocumentOverview):
     """Everything Paperless tells of an entry of the trash."""
 
@@ -217,6 +235,9 @@ class TrashEntryDetail(DocumentOverview):
     archived_file_name: str | None
     is_shared_by_requester: bool
     user_can_change: bool | None
+    permissions: Annotated[
+        TrashGrants | None, Field(description="Null if they could not be read; see limits.")
+    ]
     notes: tuple[TrashedNote, ...]
     versions: Annotated[
         tuple[DocumentVersion, ...],
