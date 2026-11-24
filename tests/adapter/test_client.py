@@ -1,6 +1,7 @@
 """PaperlessClient: headers, retries, error mapping and redaction, on real endpoint shapes."""
 
 import asyncio
+import contextlib
 import email.utils
 import logging
 from datetime import timedelta
@@ -33,6 +34,7 @@ from mcp_server_paperless.domain.errors import (
     UpstreamUnreachable,
     Validation,
 )
+from mcp_server_paperless.domain.instance import MINIMUM
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.paperless.client import (
     ERROR_BODY_LIMIT,
@@ -1270,3 +1272,92 @@ async def test_an_error_of_the_reader_passes_through_a_stream_and_closes_it() ->
             raise error
 
     assert body.closed
+
+
+OLD = {"X-Version": "3.4.2", "X-Api-Version": "10"}  # Paperless sends both, or none (no user)
+OLD_RELEASE = (
+    f"Paperless 3.4.2 is older than the minimum release {MINIMUM}: Paperless must be updated; "
+    "until then some tools fail or answer differently"
+)
+
+
+def notices(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if "minimum release" in r.getMessage()]
+
+
+@pytest.mark.decision("decision-57")
+async def test_an_old_release_is_logged_once_by_the_first_answer_that_reports_it(
+    make_client: ClientFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.WARNING, logger=CLIENT_LOGGER)
+    old = answer(200, TAG_PAGE, **OLD)
+    client = make_client(Script(answer(200, TAG_PAGE), old, old))
+
+    _ = await client.request("GET", "/api/tags/")
+    assert caplog.records == []
+    _ = await client.request("GET", "/api/tags/")
+    _ = await client.request("GET", "/api/tags/")
+
+    assert [(r.levelno, r.getMessage()) for r in caplog.records] == [(logging.WARNING, OLD_RELEASE)]
+
+
+@pytest.mark.decision("decision-57")
+@pytest.mark.parametrize("status", [200, 404])
+async def test_an_old_release_is_logged_when_it_is_a_stream_or_an_error_that_reports_it(
+    caplog: pytest.LogCaptureFixture, status: int
+) -> None:
+    client, _ = streaming(lambda _: httpx2.Response(status, headers=OLD))
+
+    with contextlib.suppress(NotFound):
+        _ = await client.download("/api/documents/1/download/", max_bytes=100)
+
+    assert notices(caplog) == [OLD_RELEASE]
+
+
+@pytest.mark.decision("decision-57")
+async def test_an_answer_that_refuses_the_api_version_reports_no_release(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Paperless negotiates the version before it knows the user: no version headers."""
+    client, _ = streaming(lambda _: httpx2.Response(406))
+
+    with pytest.raises(UnsupportedVersion) as caught:
+        _ = await client.download("/api/documents/1/download/", max_bytes=100)
+
+    assert caught.value.hint == f"This server needs paperless-ngx 3.x, {MINIMUM} or later."
+    assert notices(caplog) == []
+
+
+@pytest.mark.decision("decision-57")
+async def test_a_release_on_an_answer_that_is_not_from_paperless_is_not_believed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A gateway's 503 and a login redirect with their own X-Version; the real one still counts."""
+    foreign = {"X-Version": "1.2.3"}
+    answers = iter(
+        [
+            httpx2.Response(503, headers=foreign),
+            httpx2.Response(302, headers={**foreign, "Location": "/login/"}),
+            httpx2.Response(200, headers=OLD),
+        ]
+    )
+    client, _ = streaming(lambda _: next(answers))
+
+    _ = await client.download("/api/documents/1/download/", max_bytes=100)
+    assert notices(caplog) == []
+    _ = await client.download("/api/documents/1/download/", max_bytes=100)
+
+    assert notices(caplog) == [OLD_RELEASE]
+
+
+@pytest.mark.decision("decision-57")
+@pytest.mark.parametrize("version", [None, "", "dev", "3.4", MINIMUM, "99.0.0"])
+async def test_any_other_version_is_not_logged(
+    make_client: ClientFactory, caplog: pytest.LogCaptureFixture, version: str | None
+) -> None:
+    caplog.set_level(logging.WARNING, logger=CLIENT_LOGGER)
+    headers = {"X-Api-Version": "10"} | ({} if version is None else {"X-Version": version})
+
+    _ = await make_client(Script(answer(200, TAG_PAGE, **headers))).request("GET", "/api/tags/")
+
+    assert caplog.records == []
