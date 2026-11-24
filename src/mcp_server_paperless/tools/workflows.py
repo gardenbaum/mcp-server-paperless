@@ -71,7 +71,8 @@ CREATE_DESCRIPTION = (
     """Create a workflow with its triggers and actions.
 
 Returns it as stored. enabled defaults to true; pass enabled=false to build it first and switch it
-on later with update_workflow.
+on later with update_workflow. Hidden values of a workflow you read are not copied: give webhook
+URLs with their credentials and header values again.
 
 """
     + REFERENCE

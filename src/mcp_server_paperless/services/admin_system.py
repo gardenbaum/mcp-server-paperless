@@ -37,13 +37,13 @@ from mcp_server_paperless.domain.errors import (
     both_ends,
     destination,
     quoted,
-    without_credentials,
 )
 from mcp_server_paperless.domain.files import ArchivePartReport, FilePart, SavedArchiveReport
 from mcp_server_paperless.domain.urls import (
     URL_NOT_SHOWN,
+    lines_without_credentials,
     shown_url,
-    text_without_credentials,
+    without_credentials,
     without_empty_user,
 )
 from mcp_server_paperless.services.file_sink import NO_SINK, Expected, file_name
@@ -375,7 +375,7 @@ class SystemAdmin:
             message = f"lines must be between 1 and {MAX_LOG_LINES}."
             raise Validation(message, hint="Ask for fewer lines, or read the log in the web UI.")
         read = await self._reader.get_log(name, limit=lines)
-        found = [text_without_credentials(line) for line in read]
+        found = lines_without_credentials(read)
         kept: list[str] = []
         used = 0
         for line in reversed(found):

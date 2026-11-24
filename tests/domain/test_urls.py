@@ -6,6 +6,7 @@ import pytest
 
 from mcp_server_paperless.domain.urls import (
     URL_NOT_SHOWN,
+    lines_without_credentials,
     shown_url,
     text_without_credentials,
     without_empty_user,
@@ -24,6 +25,9 @@ pytestmark = pytest.mark.decision("decision-66")
         ("https://u:p\uff20h", URL_NOT_SHOWN),
         ("https://u:p\ufe6bh", URL_NOT_SHOWN),
         ("https://u:p%40h/x", URL_NOT_SHOWN),
+        ("//p%40h/x", URL_NOT_SHOWN),
+        ("r?u=https%3A%2F%2Fu:p%40h", URL_NOT_SHOWN),
+        ("http:///u:p%40h", URL_NOT_SHOWN),
         ("https://u:p%40q@h/x?a=b%40c", "https://h/x?a=b%40c"),
     ],
 )
@@ -37,6 +41,8 @@ def test_the_shown_form(url: str, shown: str) -> None:
         ("https://@h/x", "https://h/x"),
         ("https://:@h", "https://h"),
         ("https://@h/x@y?z@", "https://h/x@y?z@"),
+        ("https://@@h/x", "https://h/x"),
+        ("https://:@:@h", "https://h"),
         ("https://@u@h/x", "https://@u@h/x"),
         ("https://u@h/x", "https://u@h/x"),
     ],
@@ -154,6 +160,44 @@ def test_an_empty_user_is_taken_off(url: str, written: str) -> None:
             "a https://h/x?m=a@b c",
             f"a {URL_NOT_SHOWN} c",
         ),
+        (
+            "to //p@h/x ok",
+            f"to {URL_NOT_SHOWN} ok",
+        ),
+        (
+            "to \\\\p@h/x ok",
+            f"to {URL_NOT_SHOWN} ok",
+        ),
+        (
+            "to p@h:443 ok",
+            f"to {URL_NOT_SHOWN} ok",
+        ),
+        (
+            "to p@[::1]/x ok",
+            f"to {URL_NOT_SHOWN} ok",
+        ),
+        (
+            "//p@h then http://x/y a",
+            f"{URL_NOT_SHOWN} then http://x/y a",
+        ),
+        (
+            "to //mailto:p@h ok",
+            f"to {URL_NOT_SHOWN} ok",
+        ),
+        (
+            "to xmailto:p@h ok",
+            f"to {URL_NOT_SHOWN} ok",
+        ),
+        (
+            "to MAILTO:u:p@h ok",
+            f"to {URL_NOT_SHOWN} ok",
+        ),
+        # Left: what an e-mail address, a path of a file or a name can be.
+        ("<mailto:a@b.example> ok", "<mailto:a@b.example> ok"),
+        ("from a@b.example: why", "from a@b.example: why"),
+        ("me@b.example.INBOX, a@b.example/INBOX", "me@b.example.INBOX, a@b.example/INBOX"),
+        ("/media/a@b/c.pdf line 3:1", "/media/a@b/c.pdf line 3:1"),
+        ("a@b.example", "a@b.example"),
     ],
 )
 def test_credentials_in_text_go_and_more_only_where_it_cannot_be_told(
@@ -170,4 +214,39 @@ def test_a_hostile_text_is_read_in_linear_time(part: str) -> None:
 
     _ = text_without_credentials(part * 300_000)
 
+    assert time.process_time() - started < 5  # quadratic would take minutes
+
+
+@pytest.mark.parametrize(
+    ("lines", "shown"),
+    [
+        (["to https://u:p", "q@h/x ok"], [f"to {URL_NOT_SHOWN}", f"{URL_NOT_SHOWN} ok"]),
+        (
+            ["a", "to https://u:p", "", "q", "q@h", "z"],
+            ["a", f"to {URL_NOT_SHOWN}", URL_NOT_SHOWN, URL_NOT_SHOWN, URL_NOT_SHOWN, "z"],
+        ),
+        (
+            ["to https://u:p\nq", "q@h\nok"],
+            [f"to {URL_NOT_SHOWN}\n{URL_NOT_SHOWN}", f"{URL_NOT_SHOWN}\nok"],
+        ),
+        (
+            ["[2026-11-24 10:00:00,123] [INFO] https://h/x", "[2026-11-24 10:00:01,123] by a@b"],
+            ["[2026-11-24 10:00:00,123] [INFO] https://h/x", "[2026-11-24 10:00:01,123] by a@b"],
+        ),
+        ([], []),
+    ],
+)
+def test_a_url_split_over_lines_of_a_record_loses_its_credentials(
+    lines: list[str], shown: list[str]
+) -> None:
+    assert lines_without_credentials(lines) == shown
+
+
+@pytest.mark.parametrize("line", ["https://u:p", "q@h", "[2026-11-24 1:0:0] https://u", "\n", ""])
+def test_many_lines_are_read_in_linear_time(line: str) -> None:
+    started = time.process_time()
+
+    shown = lines_without_credentials([line] * 300_000)
+
+    assert len(shown) == 300_000
     assert time.process_time() - started < 5  # quadratic would take minutes

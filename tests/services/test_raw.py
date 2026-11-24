@@ -942,15 +942,60 @@ async def test_the_urls_of_webhooks_lose_their_credentials_and_the_result_says_s
 
 @pytest.mark.decision("decision-66")
 async def test_log_lines_lose_the_credentials_of_the_urls_in_them() -> None:
-    lines = ["Webhook sent to https://user:pw@h.example/x", "mail a@b.example"]
+    lines = [
+        "[2026-11-24 10:00:00,123] Webhook sent to https://user:pw@h.example/x",
+        "[2026-11-24 10:00:00,124] mail a@b.example",
+        "[2026-11-24 10:00:00,125] to https://user:p",
+        3,
+        "w@h.example/x",
+    ]
 
     result = await RawApiService(Recording(json_reply(lines))).get("/api/LOGS/paperless/", {})
 
     assert result.data == [
-        "Webhook sent to https://h.example/x",
-        "mail a@b.example",
+        "[2026-11-24 10:00:00,123] Webhook sent to https://h.example/x",
+        "[2026-11-24 10:00:00,124] mail a@b.example",
+        "[2026-11-24 10:00:00,125] to a URL that is not shown",
+        3,
+        "a URL that is not shown",
     ]
-    assert result.redacted == 1
+    assert result.redacted == 3
+
+
+@pytest.mark.decision("decision-66")
+@pytest.mark.parametrize(
+    ("body", "shown"),
+    [
+        ("to https://user:pw@h", "to https://h"),
+        ({"webhook": "https://user:pw@h"}, {"webhook": "https://h"}),
+        (
+            {"webhook": [{"x": {"url": "https://user:pw@h"}}]},
+            {"webhook": [{"x": {"url": "https://h"}}]},
+        ),
+        (
+            {
+                "result_data": {
+                    "error_message": "to https://user:pw@h",
+                    "n": [1, "at https://u:pw@i"],
+                }
+            },
+            {"result_data": {"error_message": "to https://h", "n": [1, "at https://i"]}},
+        ),
+        ({"redis_error": "no https://user:pw@h"}, {"redis_error": "no https://h"}),
+        ({"database": {"error": "https://user:pw@h"}}, {"database": {"error": "https://h"}}),
+        ({"last_error": {"m": "https://user:pw@h"}}, {"last_error": {"m": "https://h"}}),
+        ({"title": "https://user:pw@h", "n": None}, {"title": "https://user:pw@h", "n": None}),
+    ],
+)
+async def test_urls_in_webhooks_and_errors_lose_their_credentials(
+    body: JsonValue, shown: JsonValue
+) -> None:
+    path = "/api/logs/x/" if isinstance(body, str) else "/api/tasks/"
+
+    result = await RawApiService(Recording(json_reply(body))).get(path, {})
+
+    assert result.data == shown
+    assert (result.redacted > 0) == (body != shown)
 
 
 @pytest.mark.decision("decision-66")

@@ -2,7 +2,7 @@
 
 import json
 from http import HTTPStatus
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import httpx2
 
@@ -21,6 +21,9 @@ from mcp_server_paperless.domain.errors import (
 )
 from mcp_server_paperless.domain.instance import MINIMUM
 from mcp_server_paperless.domain.urls import text_without_credentials
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 MAX_MESSAGES = 10
 MAX_MESSAGE_LENGTH = 200
@@ -41,34 +44,28 @@ def _clean(text: str) -> str:
     return line
 
 
-def _messages(body: object, path: str = "") -> list[str]:
-    """Flatten a DRF error body into "field.path: message" lines."""
+def _messages(body: object, shown: Callable[[str], str], path: str = "") -> list[str]:
+    """Flatten a DRF error body into "field.path: message" lines, all of it as ``shown``."""
     if isinstance(body, dict):
         items = cast("dict[str, object]", body).items()
         return [
             line
             for key, value in items
-            for line in _messages(value, path if key in GENERAL_KEYS else f"{path}{key}.")
+            for line in _messages(
+                value, shown, path if key in GENERAL_KEYS else f"{path}{shown(key)}."
+            )
         ]
     if isinstance(body, list):
         values = cast("list[object]", body)
         return [
             line
             for index, value in enumerate(values)
-            for line in _messages(value, path if isinstance(value, str) else f"{path}{index}.")
+            for line in _messages(
+                value, shown, path if isinstance(value, str) else f"{path}{index}."
+            )
         ]
     prefix = f"{path.removesuffix('.')}: " if path else ""
-    return [prefix + _clean(str(body))]
-
-
-def _without_credentials(body: object) -> object:
-    """A DRF error body without the credentials of the URLs in its messages."""
-    if isinstance(body, dict):
-        items = cast("dict[str, object]", body).items()
-        return {key: _without_credentials(value) for key, value in items}
-    if isinstance(body, list):
-        return [_without_credentials(value) for value in cast("list[object]", body)]
-    return text_without_credentials(body) if isinstance(body, str) else body
+    return [prefix + _clean(shown(str(body)))]
 
 
 def _details(response: httpx2.Response) -> str:
@@ -77,9 +74,9 @@ def _details(response: httpx2.Response) -> str:
     except ValueError:
         return ""
     # Paperless repeats a webhook URL it refuses; a stored one is not the caller's to see.
-    shown = _without_credentials(body)
-    note = "" if shown == body else " Credentials in URLs are not shown."
-    return "; ".join(_messages(shown)[:MAX_MESSAGES]) + note
+    shown = _messages(body, text_without_credentials)[:MAX_MESSAGES]
+    hidden = shown != _messages(body, str)[:MAX_MESSAGES]
+    return "; ".join(shown) + (" Credentials in URLs are not shown." if hidden else "")
 
 
 # What a 400 without a JSON body (Paperless's plain-text refusals) says: no details to add.

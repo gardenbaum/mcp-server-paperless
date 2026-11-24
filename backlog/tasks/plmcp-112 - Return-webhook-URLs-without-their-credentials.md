@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T11:11:57Z'
-updated_date: '2026-11-24T12:24:50Z'
+updated_date: '2026-11-24T13:08:20Z'
 labels:
   - safety
 dependencies: []
@@ -55,4 +55,8 @@ Targeted tests only, diff coverage 100 %; no full suite, E2E or mutation run loc
 
 After the security review of 4934902: one function for values and text (shown_url inside text_without_credentials); loose URL forms, full-width and encoded @, spaces, quotes and several URLs; uncertain text goes from the first URL to the last word with an @; linear (tested); said once per answer (note of get_log, new field, snapshot). Red first: 20 rows of test_urls. Two own test rows with an e-mail address after a URL changed to the ruling to prefer removing more.
 PENDING, the owner decides: a webhook URL with an @ after its host is returned as "a URL that is not shown".
+
+Second independent review (of 89deffd): I1, I2, M2 to M10 fixed, M1 (copies) taken in. Red first: 65 failing rows before the fix (plus test_urls, which failed to import lines_without_credentials), 9 for M1, then green. The old without_credentials of domain/errors.py is gone: one stricter function in domain/urls.py for results, confirmations, refusals and text. Also found: a refusal of a webhook repeated an encoded @ host (https://s3cret%40h). Own tests changed deliberately: log lines of two tests carry the time Paperless writes; note of an empty user name without an id and of replaced credentials; id 99 moved. Snapshot: one sentence in create_workflow (test_surface); docs/tools.md unchanged after just docs-tools. No limit, budget or gate changed.
+Owner rulings of 2026-11-24 (no longer pending): a webhook URL with an @ after its host is not shown; the stricter rule also applies to service URLs with a full-width @ or %40; in log lines/errors the text between a URL and a later e-mail address may go. M1: option A approved ("Wie von dir empfohlen."): a copy is announced, never copied, the other workflow is not named, no further read.
+Targeted tests only: 2417 passed, diff coverage 100 %, ruff, basedpyright of the changed files, hygiene, import contracts. tests/quality/test_backlog_instructions.py::test_the_menu_driver_reports_a_failing_cli failed locally with EIO on a pseudo-terminal (code untouched).
 <!-- SECTION:NOTES:END -->

@@ -159,3 +159,28 @@ def test_a_message_of_paperless_holds_no_credentials_of_a_url(padding: str) -> N
     assert "user" not in error.message
     assert error.message.endswith(" Credentials in URLs are not shown.")
     assert error.message.count("not shown") == 1
+
+
+@pytest.mark.decision("decision-66")
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"https://user:pw@h.example/x": ["bad"]},
+        {"actions": {"https://user:pw@h.example/x": {"url": ["bad"]}}},
+        ["to //pw@h/x"],
+    ],
+)
+def test_no_part_of_an_error_body_holds_credentials(body: object) -> None:
+    error = error_for_status(httpx2.Response(400, json=body))
+
+    assert "pw" not in error.message
+    assert error.message.endswith(" Credentials in URLs are not shown.")
+
+
+@pytest.mark.decision("decision-66")
+def test_two_keys_that_look_the_same_without_credentials_both_stay() -> None:
+    body = {"https://a:b@h": ["one"], "https://c:d@h": ["two"]}
+
+    message = error_for_status(httpx2.Response(400, json=body)).message
+
+    assert "https://h: one; https://h: two" in message

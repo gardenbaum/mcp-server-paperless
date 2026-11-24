@@ -13,7 +13,11 @@ from urllib.parse import parse_qs, urlsplit
 
 from mcp_server_paperless.domain.errors import PaperlessMcpError, Validation
 from mcp_server_paperless.domain.raw import RawApiResult
-from mcp_server_paperless.domain.urls import shown_url, text_without_credentials
+from mcp_server_paperless.domain.urls import (
+    lines_without_credentials,
+    shown_url,
+    text_without_credentials,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -85,6 +89,8 @@ _SECRET_KEY_PARTS: Final = (
 _SECRET_KEYS: Final = frozenset({"headers", "params", "body"})
 # Names that contain a secret word but are flags or dates.
 _NOT_SECRET_KEYS: Final = frozenset({"is_token", "has_usable_password", "token_expires"})
+# Keys of texts that may repeat a URL: errors and what a task left behind.
+_ERROR_KEYS: Final = frozenset({"error", "result_data"})
 _PAGE_LINKS: Final = frozenset({"next", "previous"})
 
 
@@ -200,31 +206,41 @@ def redact(value: JsonValue) -> tuple[JsonValue, int]:
     return value, 0
 
 
-def _url_hidden(value: JsonValue, *, in_webhook: bool = False) -> tuple[JsonValue, int]:
-    """``value`` with the URLs of webhooks without credentials, and how many had some."""
+def _is_error(key: str) -> bool:
+    return key in _ERROR_KEYS or key.endswith("_error")
+
+
+def _url_hidden(
+    value: JsonValue, *, in_webhook: bool = False, in_error: bool = False
+) -> tuple[JsonValue, int]:
+    """``value`` without the credentials in webhook URLs and error texts, and how many had some."""
     if isinstance(value, dict):
         cleaned: dict[str, JsonValue] = {}
         count = 0
         for key, item in value.items():
-            if in_webhook and key == "url" and isinstance(item, str):
+            webhook = in_webhook or key == "webhook"
+            if webhook and key in {"webhook", "url"} and isinstance(item, str):
                 cleaned[key] = shown_url(item)
                 count += cleaned[key] != item
             else:
-                cleaned[key], inner = _url_hidden(item, in_webhook=key == "webhook")
+                error = in_error or _is_error(key)
+                cleaned[key], inner = _url_hidden(item, in_webhook=webhook, in_error=error)
                 count += inner
         return cleaned, count
     if isinstance(value, list):
-        rows = [_url_hidden(item, in_webhook=in_webhook) for item in value]
+        rows = [_url_hidden(item, in_webhook=in_webhook, in_error=in_error) for item in value]
         return [row for row, _ in rows], sum(count for _, count in rows)
+    if in_error and isinstance(value, str):
+        text = text_without_credentials(value)
+        return text, int(text != value)
     return value, 0
 
 
 def _lines_hidden(value: JsonValue) -> tuple[JsonValue, int]:
     """The lines of a log without the credentials of URLs, and how many had some."""
     lines = value if isinstance(value, list) else [value]
-    cleaned: list[JsonValue] = [
-        text_without_credentials(li) if isinstance(li, str) else li for li in lines
-    ]
+    shown = iter(lines_without_credentials([line for line in lines if isinstance(line, str)]))
+    cleaned = [next(shown) if isinstance(line, str) else line for line in lines]
     count = sum(new != old for new, old in zip(cleaned, lines, strict=True))
     return (cleaned if isinstance(value, list) else cleaned[0]), count
 
