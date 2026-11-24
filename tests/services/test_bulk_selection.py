@@ -869,16 +869,22 @@ async def test_what_reprocessing_did_is_unknown_and_not_read() -> None:
 OCR_TWICE = "Reading the documents does not show it; repeating may run OCR twice."
 
 
-@pytest.mark.parametrize("error", [TaskFailed(FAILED, hint="Read."), UpstreamTimeout("Lost.")])
+@pytest.mark.parametrize(
+    ("error", "logs"),
+    [
+        (TaskFailed(FAILED, hint="Read."), " Check the Paperless logs for the reason."),
+        (UpstreamTimeout("Lost."), ""),
+    ],
+)
 async def test_a_failed_reprocessing_does_not_send_to_the_documents(
-    error: PaperlessMcpError,
+    error: PaperlessMcpError, logs: str
 ) -> None:
     setup = Setup()
     setup.fake.ends = error
 
     raised = await seen(setup, ReprocessDocuments(op="reprocess"))
 
-    assert raised.hint == OCR_TWICE
+    assert raised.hint == f"{OCR_TWICE}{logs}"
 
 
 async def test_an_unconfirmed_reprocessing_does_not_either() -> None:

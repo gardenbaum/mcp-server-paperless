@@ -87,6 +87,7 @@ NEXT_CALL: Final = (
     "filters or saved_view alone, confirm=true is not enough."
 )
 OCR_TWICE: Final = "Reading the documents does not show it; repeating may run OCR twice."
+LOGS: Final = "Check the Paperless logs for the reason."
 READ_AGAIN: Final = "Read the documents again before repeating the call."
 STILL_RUNNING: Final = " Paperless may still be working on it, and they can change after that."
 # What Paperless answers before it starts anything: nothing was changed.
@@ -294,7 +295,7 @@ class BulkDocumentEditor:
             seen = await self._seen(resolved, changing)
             error.message = f"{error.message} {_told(seen, running=not failed)}"
             if isinstance(resolved.change, ReprocessChange):
-                error.hint = OCR_TWICE
+                error.hint = f"{OCR_TWICE} {LOGS}" if failed else OCR_TWICE
             elif not failed:
                 error.hint = READ_AGAIN
             raise
