@@ -293,8 +293,11 @@ class VersionService:
         if nouns:
             top = f"WARNING: document {newest} becomes the newest version of document {root_id}"
             shown = f"a missing {' and '.join(nouns)}"
-            until = "until that version is deleted"
-            notes.insert(0, f"{top}, which then shows {shown} {until}")
+            # Deleting it helps only if the version below has its file.
+            below = (root, *sources)[-2]
+            whole = not files.lost_nouns(below.id, below.versions[0].id)
+            until = " until that version is deleted" if whole else ""
+            notes.insert(0, f"{top}, which then shows {shown}{until}")
         lost = {s.id for s in sources if files.lacks_original(s.id)}
         missing = "".join(f" {note}." for note in notes)
         if not confirm:

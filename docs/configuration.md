@@ -198,8 +198,9 @@ Only documents that Paperless takes for duplicates of the kept one at that momen
 none. From the trash they can be restored; a merge is final and drops their metadata and notes.
 Documents the user cannot see are never compared (decision-51 in `backlog/decisions/`). Keeping a
 document whose file Paperless cannot find is refused while a duplicate still has it, otherwise a
-missing file is named; a merge is refused if a duplicate lacks its file or a file cannot be checked.
-The check takes at most 30 seconds (decision-63).
+missing file is named; a merge is refused if a duplicate lacks its file or a file cannot be checked,
+the trash if the kept document lacks its original and a duplicate cannot be checked. The check takes
+at most 30 seconds (decision-63).
 
 ### `versions`
 

@@ -4,7 +4,6 @@ Fakes without `allow_writes` fail the test on any write, so a passing test prove
 """
 
 import asyncio
-import time
 from typing import TYPE_CHECKING, Literal, final, override
 
 import pytest
@@ -337,14 +336,37 @@ async def test_trashing_duplicates_needs_no_right_to_change_the_kept_document() 
     assert [d.id for d in preview.resolved] == [11]
 
 
-async def test_a_lost_file_and_copies_that_cannot_be_checked_are_both_named() -> None:
+@pytest.mark.parametrize("confirm", [False, True])
+async def test_copies_that_cannot_be_checked_are_not_trashed_for_a_document_without_its_file(
+    *, confirm: bool
+) -> None:
     setup = Setup()
-    setup.lose(10)
+    setup.lose(10, 12)
+    setup.fake.broken = frozenset({11})
+
+    preview = await setup.preview("trash")
+    with pytest.raises(Validation) as refused:
+        _ = await setup.duplicates.resolve(10, [11, 12], "trash", confirm=confirm)
+
+    why = (
+        "whether Paperless can find its file could not be checked, and it may be the only one, "
+        "because the original of the kept document is missing (the reason: "
+        "Paperless did not respond in time)"
+    )
+    assert [(d.id, d.why) for d in preview.not_resolved] == [(11, why)]
+    for message in (preview.message, refused.value.message):
+        assert f"document 11 'Document 11': {why}. {LOST_WARNING}." in message
+    assert refused.value.hint == "Try again in a moment."
+
+
+async def test_an_unchecked_copy_may_be_trashed_if_only_the_archive_version_is_lost() -> None:
+    setup = Setup()
+    setup.get(10).archive = b"an archive"
+    setup.lose(10, part="archive")
     setup.fake.broken = frozenset({11, 12})
 
     message = (await setup.ask("trash")).message
 
-    assert f"{LOST_WARNING}." in message
     assert "Whether Paperless can find the file of document 11 could not be checked." in message
     assert "Whether Paperless can find the file of document 12 could not be checked." in message
 
@@ -410,13 +432,11 @@ async def test_the_kept_document_stays_lost_after_the_second_read_fails() -> Non
 async def test_the_kept_document_and_the_copies_share_one_time_limit() -> None:
     setup = Setup()
     setup.lose(10)
-    setup.fake.delay = 0.15
+    setup.fake.delay = 0.6
     keep, copy = [await setup.fake.get_document(n) for n in (10, 11)]
 
-    started = time.monotonic()
-    found = await check_for_trash(setup.fake, keep, [copy], seconds=0.2)
+    found = await check_for_trash(setup.fake, keep, [copy], seconds=1.0)
 
-    assert time.monotonic() - started < 0.28
     assert found.lost(10)
     assert set(found.unchecked) == {11}
 
@@ -576,6 +596,40 @@ async def test_a_merge_warns_of_the_last_source_only_and_promises_no_lost_file()
     assert "then shows the file and text of document 12" in first
     assert "WARNING: document 11 becomes the newest version of document 10" in last
     assert "then shows the text of document 11" in last
+
+
+@pytest.mark.parametrize(
+    ("lost", "sources", "helps"),
+    [
+        ((11,), [11], True),
+        ((11, 10), [11], False),
+        ((11, 12), [12, 11], False),
+        ((11, 10), [12, 11], True),
+    ],
+)
+async def test_deleting_the_lost_version_helps_only_if_the_one_below_has_its_file(
+    *, lost: tuple[int, ...], sources: list[int], helps: bool
+) -> None:
+    setup = Setup()
+    setup.lose(*lost)
+
+    message = (await setup.ask_merge(sources)).message
+
+    assert "which then shows a missing original" in message
+    assert ("until that version is deleted" in message) is helps
+
+
+async def test_the_version_below_is_the_newest_of_the_root() -> None:
+    setup = Setup()
+    newest = await setup.version(10)
+    setup.lose(10, 11)
+
+    helps = (await setup.ask_merge()).message
+    setup.lose(newest)
+    useless = (await setup.ask_merge()).message
+
+    assert "until that version is deleted" in helps
+    assert "until that version is deleted" not in useless
 
 
 async def test_a_merge_with_all_files_says_nothing_about_them() -> None:

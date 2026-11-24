@@ -57,6 +57,11 @@ NOT_MERGED: Final = (
     "Paperless cannot find its original, so a version of it would hold a missing file"
 )
 NOT_MERGED_HINT: Final = "Use action trash for a duplicate whose file is missing, or leave it out."
+MAYBE_ONLY: Final = (
+    "whether Paperless can find its file could not be checked, and it may be the only one, because "
+    "the original of the kept document is missing (the reason: {reason})"
+)
+MAYBE_ONLY_HINT: Final = "Try again in a moment."
 UNCHECKED: Final = "whether Paperless can find its file could not be checked (the reason: {reason})"
 NOT_READ: Final = "what became of it could not be read"
 REPORTED: Final = (
@@ -169,9 +174,8 @@ class DuplicateResolver:
         Raises:
             ConfirmationRequired: ``confirm`` is false. Nothing was changed.
             Validation: The selection is empty, too large or repeated, a document is no duplicate
-                of the kept one outside the trash, it cannot be merged, its file cannot be checked
-                before a merge or is missing, or Paperless cannot find the file of the kept one
-                while a duplicate has it. Nothing was changed.
+                of the kept one outside the trash, it cannot be merged, or files that are missing
+                or cannot be checked are in the way. Nothing was changed.
             NotFound: The kept document does not exist, or the user may not see it.
             PermissionDenied: The user may not change the documents. Nothing was changed.
             PaperlessMcpError: The change failed; the message names what was seen afterwards.
@@ -414,13 +418,32 @@ def _sentences(notes: Sequence[str]) -> list[str]:
     return [f"{note}." for note in notes]
 
 
+def _file_blocks(
+    group: _Group, document: DocumentRecord, *, merging: bool
+) -> tuple[str, str] | None:
+    """Why the files of a document are in the way, and what would help."""
+    keep, files = group.keep, group.files
+    reason = files.unchecked.get(document.id, "").removesuffix(".")
+    unchecked = document.id in files.unchecked
+    if merging and unchecked:
+        return UNCHECKED.format(reason=reason), UNCHECKED_HINT
+    if document is keep:
+        outdone = files.outdone(keep.id, [d.id for d in group.duplicates])
+        return (outdone, NO_FILE_HINT) if outdone else None
+    # One that is known to have the file despite that is named with the kept document.
+    if unchecked and files.lacks_original(keep.id) and not files.outdone(keep.id, [document.id]):
+        return MAYBE_ONLY.format(reason=reason), MAYBE_ONLY_HINT
+    if merging and files.lacks_original(document.id):
+        return NOT_MERGED, NOT_MERGED_HINT
+    return None
+
+
 def _blocked(group: _Group, action: ResolveAction) -> tuple[tuple[UnresolvedDuplicate, ...], str]:
     """What is refused, all of it together, and what would help.
 
     That is what Paperless would refuse, as far as it can be seen, and what would cost a file.
     """
-    merging, keep, files = action == "merge_as_versions", group.keep, group.files
-    outdone = files.outdone(keep.id, [d.id for d in group.duplicates])
+    merging, keep = action == "merge_as_versions", group.keep
 
     def why(document: DocumentRecord) -> tuple[str, str] | None:
         # Trashing the duplicates does not touch the kept document.
@@ -428,14 +451,7 @@ def _blocked(group: _Group, action: ResolveAction) -> tuple[tuple[UnresolvedDupl
             return MAY_NOT, OWNERS[action]
         if merging and document is not keep and len(document.versions) > 1:
             return HAS_VERSIONS.format(count=len(document.versions)), HAS_VERSIONS_HINT
-        if merging and document.id in files.unchecked:
-            reason = files.unchecked[document.id].removesuffix(".")
-            return UNCHECKED.format(reason=reason), UNCHECKED_HINT
-        if outdone and document is keep:
-            return outdone, NO_FILE_HINT
-        if merging and document is not keep and files.lacks_original(document.id):
-            return NOT_MERGED, NOT_MERGED_HINT
-        return None
+        return _file_blocks(group, document, merging=merging)
 
     found = [(d, reason) for d in (keep, *group.duplicates) if (reason := why(d))]
     hints = dict.fromkeys(hint for _, (_, hint) in found)
