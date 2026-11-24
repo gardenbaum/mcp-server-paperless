@@ -445,7 +445,7 @@ async def test_every_writing_pdf_tool_has_a_preview() -> None:
         if "pdf" in t.tags and not (t.annotations and t.annotations.read_only_hint)
     ]
 
-    assert len(tools) == 8
+    assert len(tools) == 9
     for tool in tools:
         properties = cast("dict[str, dict[str, object]]", tool.parameters["properties"])
         assert properties["dry_run"]["default"] is False

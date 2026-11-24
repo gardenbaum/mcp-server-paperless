@@ -91,8 +91,11 @@ to reach it (`webserver` above), or Paperless answers the server with 400.
 ## Memory
 
 `get_document_pages` and `inspect_pdf` draw pages in a child process of up to 1 GiB, one at a time, and the server
-holds the file (at most 100 MiB) while it does. Give the container that much above its usual
-memory, or switch the tools off with `PAPERLESS_MCP_DISABLED_TOOLS=get_document_pages,inspect_pdf`.
+holds the file (at most 100 MiB) while it does. `insert_pages` uses the same process; there the server
+holds both files and the result, about 300 MiB for the largest. The upload that follows no longer
+waits for a turn: calls that upload at the same time hold up to 100 MiB each. Give the container that much above its usual
+memory, or switch the tools off with
+`PAPERLESS_MCP_DISABLED_TOOLS=get_document_pages,inspect_pdf,insert_pages`.
 
 ## Reverse proxy, health and building it yourself
 

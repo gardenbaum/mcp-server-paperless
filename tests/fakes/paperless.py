@@ -420,6 +420,11 @@ CHAT_NO_CONTENT = "Sorry, I couldn't find any content to answer your question."
 CHUNK = 5
 
 
+def counted_pages(content: bytes) -> int:
+    """The pages of a PDF whose objects are not packed, as the tests and PDFium write them."""
+    return len(re.findall(rb"/Type\s*/Page\b", content))
+
+
 @dataclass(frozen=True)
 class FakeFile:
     """The file of one version of a document, and the text Paperless read from it."""
@@ -1291,6 +1296,7 @@ class FakePaperless:
                 storage_path=upload.storage_path,
                 custom_fields=values,
                 mime_type=upload.mime_type,
+                page_count=counted_pages(upload.content) or 1,
                 file_name=upload.filename,
                 original=upload.content,
                 archive=upload.content + b"\n%archive"
@@ -1863,7 +1869,7 @@ class FakePaperless:
             return task.task_id
         version_id = self._next_id()
         # The fake reads no PDF: one whose pages cannot be counted is taken to have as many.
-        pages = upload.content.count(b"/Type /Page /") or document.page_count
+        pages = counted_pages(upload.content) or document.page_count
         file = FakeFile(upload.content, archive, text, upload.mime_type, pages)
         self._push(document, version_id, file, upload.label or None, now)
         task.status, task.document_ids = "success", (version_id,)

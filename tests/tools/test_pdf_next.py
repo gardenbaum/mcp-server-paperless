@@ -8,6 +8,8 @@ import pytest
 from fastmcp import Client
 from harness import admin, pdf_service, serve
 from jsonschema import validate
+from services.test_pdf_insert import Paperless as Inserting
+from services.test_pdf_insert import insert, inserter, state_of
 from services.test_pdf_parts import YES, extract, split
 from services.test_pdf_replacing import NUMBER, dated, merge, paperless, shorten
 
@@ -19,7 +21,7 @@ if TYPE_CHECKING:
 
     from services.test_pdf_replacing import Paperless
 
-    from mcp_server_paperless.domain.pdf import PdfResult
+    from mcp_server_paperless.domain.pdf import FileOutput, PdfResult
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-67")]
 
@@ -212,6 +214,28 @@ async def test_the_next_calls_of_a_stopped_rotation_exist() -> None:
     given = {k.arg: cast("object", ast.literal_eval(k.value)) for k in call.keywords}
     validate(given, tools[call.func.id])
     assert given == {"document_id": 50, "include": ["versions"]}
+
+
+@pytest.mark.decision("decision-68")
+@pytest.mark.parametrize("output", ["new_version", "new_document"])
+@pytest.mark.parametrize("way", ["running", "no tasks", "empty"])
+async def test_the_next_calls_of_an_insertion_exist(way: str, output: FileOutput) -> None:
+    async with Client(serve(admin(), toolsets=["all"])) as client:
+        tools = {tool.name: tool.input_schema for tool in await client.list_tools()}
+    fake = Inserting(state_of())
+    fake.running, fake.no_tasks, fake.empty = (
+        *(way == "running", way == "no tasks", way == "empty"),
+    )
+
+    result = await insert(inserter(fake), output=output, wait=0)
+
+    assert result.next
+    found = calls(result.next)
+    assert len(found) == (way == "running" or output == "new_version")
+    for call in found:
+        assert isinstance(call.func, ast.Name)
+        given = {k.arg: cast("object", ast.literal_eval(k.value)) for k in call.keywords}
+        validate(given, tools[call.func.id])
 
 
 def test_calls_are_found_with_parentheses_in_their_texts() -> None:

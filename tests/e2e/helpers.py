@@ -8,6 +8,7 @@ import base64
 import os
 import subprocess
 import time
+import zlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal, cast
@@ -173,6 +174,27 @@ _ENCRYPTED_BASE64 = (
     "Rgo="
 )
 ENCRYPTED_PDF = base64.b64decode(_ENCRYPTED_BASE64)
+
+# Two pages that open without a password, encrypted with an owner password (AES-256, no printing;
+# made once with qpdf and compressed with zlib).
+_RESTRICTED_BASE64 = (
+    "eNq9VEtoXFUY1oUgQ2npRhduzsIUEdI574cMoU0zQWlL4sREShE5j/+kEyYz4c5NmpaKpUIRi1hooFRxU1Tw1YUb"
+    "60IrKO600AqlWkoFES0WdNMS0eK5N6+RKQguvPdyzzn/4/v/7z//OQPjI6ODZLuqDFy4c/ZuhSCMOm6mUquhan0x"
+    "h3a32Wl3UbHcOTJcLyfDtgtTkBUaVE2uPZZ7YAFaSKOhoeKrjttp6CKaMBuo+syhOUDVXTa3rc50UlegHYpQtCfk"
+    "rs58O08O1d3N0EX7EStdefl/bg1iBXUDgP0DoJ1SybtIrATdC6FphzuLCQunVxKKlKEF1rjNoIxV2jWg25nPPKxQ"
+    "HU0oKxOCZGmwSmgjgZ74/F7x1f8XX/TE3wPt6fwA0jj5Nls5ZGls2RxGwHdC6dTNM7CzlcHj2879/PLVxhfXvzpx"
+    "+ZEjcz99t3WmvS17/we8fcux1+tXZr69yXa8++vXX356emH5o+OvPP/Jlu8/PPPYg5effm9satOJ2quP7jj18c3B"
+    "ly6dunLrHD/bSLmsIq9mJXuyKjqm5FR9EloLkDe9RdWJeZeXdApSZI1babbBTf0Xbvy1hy4unf/94L4bd8+YN/6g"
+    "S0eP7r76QOW+g/TtGo7v3Pn8idvnb29efvHw+MVnP5i6/60Lx3584eFNvyyf/OsbfOvxa39OLm02+s2TN478xrd+"
+    "Rk/v6+Ome3d8tNypiTysznbO5wfqC8XeVkc6fmwO2oXR3qSoT0yxdRqMrm3qGpmJ3LaDzcK6CRUSVcdQjQTrpPOA"
+    "MQEFUdCoAhXKKcUlcEJFNMph7iwHIcHIgBUED5Sp9DkuXfQqOoFBBau84ZRHQ72QItggTBQph7F0tB2YqIGQII2R"
+    "OhosOWXUO8CCugAKc2UkgxioVN5rYcDoKH0JSoXRxYFHgxQXWY9DNpt6OToeozZBiGQvpYDgFFaRUAYGrA/JpZE6"
+    "PFGfHV2rYRqyjcUkqnFvMMcOXBScKkMCNppGVuQkbFI6rUgkjhCLlbeYBpM4eUMcS4w0pzEoicEzzlRw1BjmYrRR"
+    "M61DoET7lMRkoi8l1UITbGgqFE+15kRYGsE7ncrqwWlHmKNWUUGZCdgba6iBaAKTNHKcYKbStbPRu4sZxApGpoLX"
+    "HySFYAJFtC4j6fSWmva6jDDcLzP9doyyPhkXpE8m8T1kql+maY8sz2yzlbqy6OhGp5MjsnJRTTQPAzKo+tQI2l+L"
+    "DBOplHdWa+KdV4IQZxVmUYkocRj6d4t0E9bbPjs0lyO9etOlY2yzvKweYYpUBgbqY6OVvwHu9PXb"
+)
+RESTRICTED_PDF = zlib.decompress(base64.b64decode(_RESTRICTED_BASE64))
 
 
 def client(token: str) -> httpx2.Client:

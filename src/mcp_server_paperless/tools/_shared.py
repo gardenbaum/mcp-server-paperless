@@ -58,6 +58,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.notes import NoteService
     from mcp_server_paperless.services.pages import PageService
     from mcp_server_paperless.services.pdf import PdfService
+    from mcp_server_paperless.services.pdf_insert import PageInserter
     from mcp_server_paperless.services.permissions import PermissionService
     from mcp_server_paperless.services.raw import RawApiService
     from mcp_server_paperless.services.read_documents import ReadDocuments
@@ -177,6 +178,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "restore_from_trash": "trash",
     "empty_trash": "trash",
     "inspect_pdf": "pdf",
+    "insert_pages": "pdf",
     "rotate_documents": "pdf",
     "merge_documents": "pdf",
     "split_document": "pdf",
@@ -413,6 +415,15 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         title="Inspect PDF",
         read_only_hint=True,
         idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Not destructive: a version with every page, or a new document. Not idempotent: every call
+    # inserts the pages again.
+    "insert_pages": ToolAnnotations(
+        title="Insert pages",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
         open_world_hint=False,
     ),
     "split_document": ToolAnnotations(
@@ -1093,6 +1104,7 @@ class Services:
     trashed: TrashedDocuments
     permissions: PermissionService
     pdf: PdfService
+    insertion: PageInserter
     sharing: SharingService
     mail: MailService
     accounts: AccountAdmin

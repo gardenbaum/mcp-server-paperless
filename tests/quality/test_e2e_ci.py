@@ -343,8 +343,9 @@ def test_the_scope_command_prints_the_job_outputs_for_a_toolset_change() -> None
     assert code == 0
     lines = out.splitlines()
     assert lines[0] == "mode=fast"
-    live = f"{contract('test_pdf')} {e2e('test_pages')} {e2e('test_pdf')}"
-    assert lines[1] == f"targets={STDIO} {live}"
+    names = [contract("test_pdf"), contract("test_pdf_insert")]
+    names += [e2e("test_pages"), e2e("test_pdf"), e2e("test_pdf_insert")]
+    assert lines[1] == f"targets={STDIO} {' '.join(names)}"
 
 
 def test_the_scope_command_gives_each_part_its_group_and_skips_the_parts_without_work() -> None:
@@ -769,4 +770,15 @@ def test_a_changed_pdf_tool_runs_the_live_tests_of_inspect_pdf() -> None:
 
     targets = e2e_ci.select(["src/mcp_server_paperless/tools/pdf.py"], live_modules=live).targets
 
-    assert {e2e("test_pages"), e2e("test_pdf")} <= set(targets)
+    assert {e2e("test_pages"), e2e("test_pdf"), e2e("test_pdf_insert")} <= set(targets)
+
+
+@pytest.mark.parametrize(
+    "path", ["rendering/worker.py", "rendering/fields.py", "services/pdf_insert.py"]
+)
+def test_what_inserts_pages_runs_the_live_tests_of_insert_pages(path: str) -> None:
+    live = {path.relative_to(ROOT).as_posix() for path in (ROOT / "tests").glob("e2e/test_*.py")}
+
+    targets = e2e_ci.select([f"src/mcp_server_paperless/{path}"], live_modules=live).targets
+
+    assert e2e("test_pdf_insert") in targets
