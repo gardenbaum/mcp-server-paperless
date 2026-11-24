@@ -25,10 +25,9 @@ from mcp_server_paperless.domain.documents import (
     SuggestionNames,
 )
 from mcp_server_paperless.domain.errors import (
-    AnswerCompressed,
-    AnswerTooLarge,
     FeatureUnavailable,
     NotFound,
+    PaperlessMcpError,
     PermissionDenied,
     Validation,
 )
@@ -92,7 +91,7 @@ TRASH_DETAILS = "In the trash Paperless tells no notes, custom fields, page coun
 NOT_LISTED = "Only the first {shown} of {total} duplicates are listed."
 UNREAD_DETAILS = (
     "Only the title could be read of: {ids} (in the trash and not owned, beyond the first 500 "
-    "entries, a trash over 64 MiB, or changed meanwhile)."
+    "entries, a trash over 64 MiB or that could not be read, or changed meanwhile)."
 )
 MONETARY = re.compile(r"([A-Z]{3})(-?\d+(?:\.\d+)?)")
 
@@ -441,7 +440,7 @@ class DocumentService:
             return await self._trash.find_in_trash(
                 ids, entries=TRASH_ENTRIES, max_bytes=TRASH_BYTES
             )
-        except AnswerTooLarge, AnswerCompressed, PermissionDenied:
+        except PaperlessMcpError:  # named as a gap; the live ones stay
             return {}
 
     def _duplicate(

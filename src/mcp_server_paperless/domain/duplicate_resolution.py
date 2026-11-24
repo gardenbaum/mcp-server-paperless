@@ -41,12 +41,16 @@ class DuplicateResolution(BaseModel):
     dry_run: Annotated[bool, Field(description="true: a preview, nothing was changed.")]
     applied: Annotated[bool, Field(description="Paperless accepted the change.")]
     kept: NamedDocument
+    kept_seen: Annotated[
+        bool | None,
+        Field(description="false: the kept document was gone afterwards; null: not read."),
+    ]
     resolved: Annotated[
         tuple[NamedDocument, ...],
         Field(
             description=(
-                "Seen to be in the trash, or a version of the kept document; with dry_run those "
-                "that would be."
+                "Seen in the trash, or as a version of the kept document; with dry_run those that "
+                "would be (none if it would be refused)."
             )
         ),
     ]

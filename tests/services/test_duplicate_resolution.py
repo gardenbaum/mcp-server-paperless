@@ -3,7 +3,7 @@
 Fakes without `allow_writes` fail the test on any write, so a passing test proves none was made.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, final, override
 
 import pytest
@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.bulk import DocumentChange
     from mcp_server_paperless.domain.documents import DocumentRecord
     from mcp_server_paperless.domain.duplicate_resolution import ResolveAction
+    from mcp_server_paperless.domain.duplicates import DuplicateRecord
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-51")]
 
@@ -57,12 +58,16 @@ class Acting(FakePaperless):
     # What happens instead of the write, and what it then returns or raises.
     instead: Callable[[], None] | None = None
     outcome: Unconfirmed | Exception | None = None
+    # What happens after the write.
+    then: Callable[[], None] | None = None
     unreadable: bool = False
     gone: frozenset[int] = frozenset()
     written: bool = False
 
     def _ended(self) -> Unconfirmed | None:
         self.written = True
+        if self.then is not None:
+            self.then()
         if isinstance(self.outcome, Exception):
             raise self.outcome
         return self.outcome
@@ -93,6 +98,13 @@ class Acting(FakePaperless):
             message = "gone"
             raise NotFound(message)
         return await super().get_document(document_id)
+
+    @override
+    async def get_duplicates(self, document_id: int) -> tuple[DuplicateRecord, ...]:
+        if self.written and self.unreadable:
+            message = "Paperless did not respond in time."
+            raise UpstreamTimeout(message)
+        return await super().get_duplicates(document_id)
 
     @override
     async def get_document_titles(self, document_ids: Collection[int]) -> dict[int, str]:
@@ -191,7 +203,7 @@ async def test_the_duplicates_become_versions_for_good() -> None:
     assert [v.id for v in done.versions] == [12, 11, 10]
     assert [d.id for d in done.resolved] == [11, 12]
     assert done.message == (
-        "No documents of their own any more: document 11 'Document 11', document 12 'Document 12'."
+        "Versions of document 10 now: document 11 'Document 11', document 12 'Document 12'."
     )
 
 
@@ -276,10 +288,10 @@ async def test_the_preview_says_what_is_final_and_what_can_be_restored() -> None
     trash = (await setup.ask("trash")).message
     merge = (await setup.ask("merge_as_versions")).message
 
-    assert "They can be restored until the trash is emptied" in trash
+    assert "It can be restored until the trash is emptied" in trash
     assert "vanishes for good, not even into the trash" in merge
     assert "notes and other metadata are lost" in merge
-    assert "With action trash they could be restored instead" in merge
+    assert "With action trash it could be restored instead" in merge
 
 
 async def test_many_other_duplicates_are_cut_and_counted_and_all_of_them_confirmed() -> None:
@@ -437,11 +449,11 @@ async def test_documents_the_user_may_not_change_are_named_and_nothing_is_sent(
         keep if action == "merge_as_versions" else ""
     ) + "document 11 'Document 11': this user may not change it."
     assert raised.value.message == f"Nothing was changed: {named}"
-    assert raised.value.hint == OWNERS
+    assert raised.value.hint == OWNERS[action]
     assert preview.message == (
         f"Dry run, nothing was changed. It would be refused as a whole: {named}"
     )
-    assert [d.id for d in preview.resolved] == [12]
+    assert preview.resolved == ()
     expected = [10, 11] if action == "merge_as_versions" else [11]
     assert [(d.id, d.why) for d in preview.not_resolved] == [(n, MAY_NOT) for n in expected]
 
@@ -459,7 +471,7 @@ async def test_a_refusal_by_paperless_changes_nothing_and_says_so(action: Resolv
     assert raised.value.message == (
         "Paperless refused it; it checks every document first, so nothing was changed."
     )
-    assert raised.value.hint == OWNERS
+    assert raised.value.hint == OWNERS[action]
     assert setup.live() >= {10, 11}
 
 
@@ -510,7 +522,7 @@ async def test_a_failed_change_names_what_is_gone_and_what_is_still_there(
         _ = await setup.service.resolve(10, [11, 12], action, confirm=True)
 
     gone = (
-        "No documents of their own any more: document 11 'Document 11'. Not known to be resolved: "
+        "In the trash now: document 11 'Document 11'. Not known to be resolved: "
         if action == "trash"
         else (
             "Not known to be resolved: document 11 'Document 11': it was neither a document of "
@@ -579,7 +591,179 @@ async def test_a_confirmed_trash_says_where_the_documents_are() -> None:
     done = await Setup().service.resolve(10, [11], "trash", confirm=True)
 
     assert done.message == (
-        "No documents of their own any more: document 11 'Document 11'. They can be restored "
+        "In the trash now: document 11 'Document 11'. It can be restored "
         "until the trash is emptied (by default after 30 days), in the Paperless web UI or with "
         "restore_from_trash (toolset trash)."
     )
+
+
+# --- what is seen afterwards --------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("action", ACTIONS)
+async def test_a_kept_document_that_is_gone_afterwards_is_said_loudly(
+    action: ResolveAction,
+) -> None:
+    setup = Setup()
+
+    def crossed() -> None:
+        kept = setup.get(10)
+        setup.state.documents.remove(kept)
+        kept.deleted_at = datetime.now(UTC)
+        setup.state.trash.append(kept)
+
+    setup.fake.then = crossed
+    done = await setup.service.resolve(10, [11], action, confirm=True)
+
+    assert done.kept_seen is False
+    assert done.resolved == ()
+    assert [d.why for d in done.not_resolved] == ["what became of it could not be seen"]
+    assert done.message.startswith(
+        "WARNING: the kept document 10 'Document 10' was gone when read again (deleted, merged or "
+        "hidden meanwhile). Look for both in the trash with list_trash, and restore one if none "
+        "is left. Not known to be resolved: document 11 'Document 11'"
+    )
+
+
+async def test_a_kept_document_that_is_gone_leaves_a_duplicate_that_is_still_there() -> None:
+    setup = Setup()
+    setup.fake.instead = lambda: setup.state.documents.remove(setup.get(10))
+
+    done = await setup.service.resolve(10, [11], "trash", confirm=True)
+
+    assert [d.why for d in done.not_resolved] == ["it was still there when read again"]
+    assert done.kept_seen is False
+
+
+@pytest.mark.parametrize("action", ACTIONS)
+async def test_a_duplicate_that_was_only_hidden_is_not_called_resolved(
+    action: ResolveAction,
+) -> None:
+    setup = Setup()
+    _ = setup.user("view_document", "change_document", "delete_document")
+    setup.get(10).owner = setup.get(11).owner = 9
+
+    def hide() -> None:
+        setup.get(11).owner = 2
+
+    setup.fake.instead = hide
+    done = await setup.service.resolve(10, [11], action, confirm=True)
+
+    assert (done.resolved, done.kept_seen) == ((), True)
+    assert [d.id for d in done.not_resolved] == [11]
+    assert "could be restored" not in done.message
+    assert "can be restored" not in done.message
+
+
+async def test_the_kept_document_is_seen_or_unknown() -> None:
+    seen = await Setup().service.resolve(10, [11], "trash", confirm=True)
+    setup = Setup()
+    setup.fake.unreadable = True
+    unknown = await setup.service.resolve(10, [11], "trash", confirm=True)
+    preview = await Setup().service.resolve(10, [11], "trash", dry_run=True)
+
+    assert (seen.kept_seen, unknown.kept_seen, preview.kept_seen) == (True, None, True)
+
+
+# --- what an acceptance binds -------------------------------------------------------------------
+
+
+def _modified(document: FakeDocument) -> None:
+    document.modified = datetime(2027, 1, 1, tzinfo=UTC)  # a note's text shows only here
+
+
+def _checksum(document: FakeDocument) -> None:
+    newest = document.versions[0]
+    document.versions[0] = newest.model_copy(update={"checksum": "f" * 64})
+
+
+CHANGES: dict[str, Callable[[FakeDocument], None]] = {
+    "tags": lambda d: d.tags.__setitem__(0, 2),
+    "custom field": lambda d: d.custom_fields.__setitem__(1, "other"),
+    "correspondent": lambda d: setattr(d, "correspondent", 1),
+    "created": lambda d: setattr(d, "created", date(2020, 1, 1)),
+    "end of the title": lambda d: setattr(d, "title", d.title[:-1] + "!"),
+    "modified": _modified,
+    "version checksum": _checksum,
+}
+
+
+@pytest.mark.parametrize(
+    ("action", "changed", "change"),
+    [
+        (action, changed, change)
+        for action in ACTIONS
+        for changed in (10, 11)
+        for change in CHANGES
+        # A duplicate with versions is not merged.
+        if (action, changed, change) != ("merge_as_versions", 11, "version checksum")
+    ],
+)
+async def test_an_acceptance_does_not_cover_changed_metadata(
+    action: ResolveAction, changed: int, change: str
+) -> None:
+    setup = Setup(writes=False)
+    document = setup.get(changed)
+    document.title, document.tags, document.custom_fields = "T" * 100, [1], {1: "x"}
+    if change == "version checksum":
+        _ = await setup.version(changed)
+    first = await setup.ask(action)
+    CHANGES[change](document)
+    second = await setup.ask(action)
+
+    assert second.message == first.message
+    assert second.fingerprint != first.fingerprint
+    with accepting(first.fingerprint):
+        _ = await setup.ask(action)
+
+
+async def test_an_acceptance_covers_the_same_documents_whatever_the_order_of_their_tags() -> None:
+    setup = Setup(writes=False)
+    document = setup.get(11)
+    document.tags, document.custom_fields = [1, 2], {1: "x", 2: "https://y"}
+    first = await setup.ask("trash")
+    document.tags, document.custom_fields = [2, 1], {2: "https://y", 1: "x"}
+
+    assert (await setup.ask("trash")).fingerprint == first.fingerprint
+
+
+async def test_an_acceptance_binds_where_the_unnamed_other_duplicates_are() -> None:
+    setup = Setup(writes=False)
+    for number in range(100, 111):
+        _ = setup.document(number)
+    first = await setup.ask("trash")
+    # Behind "and 2 more": the last one goes to the trash, the text stays.
+    await setup.delete(110)
+    second = await setup.ask("trash")
+
+    assert second.message == first.message
+    assert second.fingerprint != first.fingerprint
+
+
+async def test_the_case_of_a_checksum_is_no_difference() -> None:
+    setup = Setup(writes=False)
+    version = await setup.version(10, FILE)
+    kept = setup.get(10)
+    kept.versions = [
+        v.model_copy(update={"checksum": (v.checksum or "").upper()}) if v.id == version else v
+        for v in kept.versions
+    ]
+
+    assert "newest file" not in (await setup.ask("trash")).message
+
+
+# --- one and many -------------------------------------------------------------------------------
+
+
+async def test_the_texts_are_singular_for_one_and_plural_for_two() -> None:
+    setup = Setup(writes=False)
+    one, two = await setup.ask("trash", [11]), await setup.ask("trash", [11, 12])
+    merged = await setup.ask("merge_as_versions", [11, 12])
+    _ = setup.document(13)
+    both = await setup.ask("trash", [11])
+
+    assert "It can be restored" in one.message
+    assert "Another duplicate of document 10 stays: document 12 'Document 12'." in one.message
+    assert "They can be restored" in two.message
+    assert "With action trash they could be restored instead" in merged.message
+    assert "Other duplicates of document 10 stay: " in both.message

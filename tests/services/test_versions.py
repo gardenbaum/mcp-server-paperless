@@ -4,6 +4,7 @@ The fakes of the "unconfirmed" cases are created without `allow_writes`: the fak
 raises `WriteNotAllowedError` on any write, so a passing test proves nothing was written.
 """
 
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, final, override
 
 import pytest
@@ -629,3 +630,25 @@ async def test_a_merge_whose_queued_task_cannot_be_followed_is_not_reported_as_m
         "be read. Read it with get_task, then list the versions with list_document_versions, "
         "before repeating the call."
     )
+
+
+@pytest.mark.decision("decision-51")
+@pytest.mark.parametrize("changed", [0, 1])
+@pytest.mark.parametrize("field", ["modified", "correspondent", "created"])
+async def test_an_accepted_merge_does_not_cover_changed_metadata(changed: int, field: str) -> None:
+    setup = Setup(writes=False)
+    other = setup.document()
+    document = setup.state.documents[0 if changed == 0 else -1]
+    values = {
+        "modified": datetime(2027, 1, 1, tzinfo=UTC),
+        "correspondent": 99,
+        "created": date(2020, 1, 1),
+    }
+    with pytest.raises(ConfirmationRequired) as first:
+        _ = await setup.service.merge(PUBLIC, [other], None)
+    setattr(document, field, values[field])
+    with pytest.raises(ConfirmationRequired) as second:
+        _ = await setup.service.merge(PUBLIC, [other], None)
+
+    assert second.value.message == first.value.message
+    assert second.value.fingerprint != first.value.fingerprint

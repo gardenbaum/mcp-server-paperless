@@ -32,7 +32,7 @@ from mcp_server_paperless.services.bulk_documents import DRY_RUN, TO_GO_AHEAD
 from mcp_server_paperless.services.document_edits import COUNTED
 from mcp_server_paperless.services.documents import document_link, match_of, root_checksum
 from mcp_server_paperless.services.duplicates import SHOWN, describe
-from mcp_server_paperless.services.versions import merge_effect
+from mcp_server_paperless.services.versions import bound, merge_effect
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -50,21 +50,30 @@ MAY_NOT: Final = "this user may not change it"
 HAS_VERSIONS: Final = "it has {count} versions, so it cannot be merged"
 STILL_THERE: Final = "it was still there when read again"
 NOT_READ: Final = "what became of it could not be read"
+NOT_SEEN: Final = "what became of it could not be seen"
 NEITHER: Final = "it was neither a document of its own nor a version when read again"
+KEEP_GONE: Final = (
+    "WARNING: the kept {keep} was gone when read again (deleted, merged or hidden meanwhile). "
+    "Look for both in the trash with list_trash, and restore one if none is left."
+)
 CHOOSE: Final = (
     "Read the duplicates with get_document(include=['duplicates']) and pass only those outside "
     "the trash."
 )
-OWNERS: Final = (
-    "Every document needs change permission for this user; both ways also need the permission to "
-    "delete documents and ownership of every document (or no owner)."
+_OWN: Final = (
+    "This user needs the permissions to change and delete documents, and has to own every "
+    "duplicate{} (or they have no owner)."
 )
+OWNERS: Final[dict[ResolveAction, str]] = {
+    "trash": _OWN.format(""),
+    "merge_as_versions": _OWN.format(" and the kept document"),
+}
 HAS_VERSIONS_HINT: Final = "Use action trash for it, or keep that document instead."
 RESTORABLE: Final = (
-    "They can be restored until the trash is emptied (by default after 30 days), in the Paperless "
+    "{it} can be restored until the trash is emptied (by default after 30 days), in the Paperless "
     "web UI or with restore_from_trash (toolset trash)"
 )
-FINAL: Final = "With action trash they could be restored instead"
+FINAL: Final = "With action trash {it} could be restored instead"
 HIDDEN: Final = "Documents this user cannot see are not compared"
 
 
@@ -79,8 +88,9 @@ class _Group:
 
 @dataclass(frozen=True, slots=True)
 class _After:
-    """What was seen after the change."""
+    """What was seen after the change; ``kept`` is None if that could not be read."""
 
+    kept: bool | None
     resolved: tuple[NamedDocument, ...]
     not_resolved: tuple[UnresolvedDuplicate, ...]
     versions: tuple[DocumentVersion, ...] | None = None
@@ -149,17 +159,14 @@ class DuplicateResolver:
         if blocked:
             message = f"Nothing was changed: {_listed(blocked)}."
             if any(b.why == MAY_NOT for b in blocked):
-                raise PermissionDenied(message, hint=OWNERS)
+                raise PermissionDenied(message, hint=OWNERS[action])
             raise Validation(message, hint=HAS_VERSIONS_HINT)
         if not confirm:
             ConfirmationRequired.require(
                 effect,
                 scope=(
                     action,
-                    [
-                        (d.id, root_checksum(d), [(v.id, v.checksum) for v in d.versions])
-                        for d in (group.keep, *group.duplicates)
-                    ],
+                    [bound(d) for d in (group.keep, *group.duplicates)],
                     [(o.document_id, o.in_trash) for o in group.others],
                 ),
             )
@@ -169,9 +176,9 @@ class DuplicateResolver:
             message = (
                 "Paperless refused it; it checks every document first, so nothing was changed."
             )
-            raise PermissionDenied(message, hint=OWNERS) from None
+            raise PermissionDenied(message, hint=OWNERS[action]) from None
         except PaperlessMcpError as error:
-            seen = _seen(await self._after(group, action))
+            seen = _seen(group, action, await self._after(group, action))
             message = f"{error.message} {seen}"
             raise PaperlessMcpError(message, hint=error.hint) from error
         return self._report(group, action, await self._after(group, action), unconfirmed)
@@ -220,30 +227,42 @@ class DuplicateResolver:
         return _Group(keep=keep, duplicates=tuple(duplicates), others=tuple(ordered))
 
     async def _after(self, group: _Group, action: ResolveAction) -> _After:
-        """What became of the duplicates; never raises, because the change may be made."""
+        """What became of the duplicates; never raises, because the change may be made.
+
+        Only what was seen counts: a document that is not found may be hidden, not in the trash.
+        """
         documents, keep = group.duplicates, group.keep.id
-        merging = action == "merge_as_versions"
+        kept, versions = True, None
+        proven: set[int] = set()
         try:
-            versions = (await self._reader.get_document(keep)).versions if merging else None
+            try:
+                if action == "trash":
+                    found = await self._reader.get_duplicates(keep)
+                    proven = {d.id for d in found if d.deleted_at is not None}
+                else:
+                    versions = (await self._reader.get_document(keep)).versions
+                    proven = {v.id for v in versions}
+            except NotFound:
+                kept = False
             there = await self._reader.get_document_titles([d.id for d in documents])
         except PaperlessMcpError:
             unknown = tuple(
                 UnresolvedDuplicate(id=d.id, title=d.title, why=NOT_READ) for d in documents
             )
-            return _After(resolved=(), not_resolved=unknown)
-        merged = {v.id for v in versions or ()}
-        resolved: list[NamedDocument] = []
-        left: list[UnresolvedDuplicate] = []
-        for document in documents:
-            if document.id in there:
-                why = STILL_THERE
-            elif merging and document.id not in merged:
-                why = NEITHER
-            else:
-                resolved.append(_named(document))
-                continue
-            left.append(UnresolvedDuplicate(id=document.id, title=document.title, why=why))
-        return _After(resolved=tuple(resolved), not_resolved=tuple(left), versions=versions)
+            return _After(kept=None, resolved=(), not_resolved=unknown)
+        unseen = NEITHER if kept and action == "merge_as_versions" else NOT_SEEN
+        return _After(
+            kept=kept,
+            resolved=tuple(_named(d) for d in documents if d.id in proven),
+            not_resolved=tuple(
+                UnresolvedDuplicate(
+                    id=d.id, title=d.title, why=STILL_THERE if d.id in there else unseen
+                )
+                for d in documents
+                if d.id not in proven
+            ),
+            versions=versions,
+        )
 
     # --- writing ---------------------------------------------------------------------------------
 
@@ -266,7 +285,6 @@ class DuplicateResolver:
         effect: str,
         blocked: tuple[UnresolvedDuplicate, ...],
     ) -> DuplicateResolution:
-        held = {b.id for b in blocked}
         message = f"{DRY_RUN} Confirming would {effect}. {TO_GO_AHEAD}"
         if blocked:
             message = f"{DRY_RUN} It would be refused as a whole: {_listed(blocked)}."
@@ -274,7 +292,8 @@ class DuplicateResolver:
             group,
             action,
             _After(
-                resolved=tuple(_named(d) for d in group.duplicates if d.id not in held),
+                kept=True,
+                resolved=() if blocked else tuple(_named(d) for d in group.duplicates),
                 not_resolved=blocked,
             ),
             message,
@@ -284,15 +303,15 @@ class DuplicateResolver:
     def _report(
         self, group: _Group, action: ResolveAction, after: _After, unconfirmed: Unconfirmed | None
     ) -> DuplicateResolution:
-        message = _seen(after)
+        message = _seen(group, action, after)
         if unconfirmed is not None:
             message = (
                 f"Not confirmed: Paperless queued task {unconfirmed.task_id}, but "
                 f"{unconfirmed.reason}. {message} Read the task with get_task and the documents "
                 "again before repeating the call."
             )
-        elif action == "trash":
-            message += f" {RESTORABLE}."
+        elif action == "trash" and after.resolved:
+            message += f" {RESTORABLE.format(it=_it(after.resolved).capitalize())}."
         return self._resolution(
             group,
             action,
@@ -316,6 +335,7 @@ class DuplicateResolver:
             dry_run=dry_run,
             applied=not dry_run,
             kept=_named(group.keep),
+            kept_seen=after.kept,
             resolved=after.resolved,
             not_resolved=after.not_resolved,
             other_duplicates=group.others[:SHOWN],
@@ -360,12 +380,17 @@ def _blocked(group: _Group, action: ResolveAction) -> tuple[UnresolvedDuplicate,
     )
 
 
-def _seen(after: _After) -> str:
+def _it(documents: Sequence[object]) -> str:
+    return "it" if len(documents) == 1 else "they"
+
+
+def _seen(group: _Group, action: ResolveAction, after: _After) -> str:
     """What was seen after the change, every document named."""
-    parts: list[str] = []
+    parts = [KEEP_GONE.format(keep=_title(group.keep))] if after.kept is False else []
     if after.resolved:
         named = ", ".join(f"document {d.id} {quoted(d.title)}" for d in after.resolved)
-        parts.append(f"No documents of their own any more: {named}.")
+        where = "In the trash" if action == "trash" else f"Versions of document {group.keep.id}"
+        parts.append(f"{where} now: {named}.")
     if after.not_resolved:
         parts.append(f"Not known to be resolved: {_listed(after.not_resolved)}.")
     return " ".join(parts)
@@ -378,16 +403,22 @@ def _effect(group: _Group, action: ResolveAction) -> str:
     if action == "trash":
         lead = (
             f"keep {_title(keep)} and move {_counted(len(duplicates), 'duplicate')} to the "
-            f"Paperless trash: {names}. {RESTORABLE}"
+            f"Paperless trash: {names}. "
+            f"{RESTORABLE.format(it=_it(duplicates).capitalize())}"
         )
     else:
-        lead = f"{merge_effect(keep, duplicates, None)}. {FINAL}"
+        lead = f"{merge_effect(keep, duplicates, None)}. {FINAL.format(it=_it(duplicates))}"
     parts = [lead, *(_details(d, group) for d in (keep, *duplicates))]
     if group.others:
         more = len(group.others) - SHOWN
         rest = f" and {more} more" if more > 0 else ""
         listed = ", ".join(describe(o) for o in group.others[:SHOWN])
-        parts.append(f"Other duplicates of document {keep.id} stay: {listed}{rest}")
+        stay = (
+            f"Another duplicate of document {keep.id} stays"
+            if len(group.others) == 1
+            else f"Other duplicates of document {keep.id} stay"
+        )
+        parts.append(f"{stay}: {listed}{rest}")
     return ". ".join([*parts, HIDDEN])
 
 

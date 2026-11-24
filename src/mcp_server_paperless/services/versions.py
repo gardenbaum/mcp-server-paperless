@@ -67,6 +67,18 @@ def require_change(document: DocumentRecord | DocumentText) -> None:
         raise PermissionDenied(message, hint="Ask the owner of the document, or use another user.")
 
 
+def bound(document: DocumentRecord) -> object:
+    """What the confirmation of a merge binds of a document: everything but the order of lists.
+
+    ``modified`` alone is not enough: the bulk edits of Paperless leave it as it is.
+    """
+    lists = {
+        "tags": tuple(sorted(document.tags)),
+        "custom_fields": tuple(sorted(document.custom_fields, key=lambda f: f.field)),
+    }
+    return document.model_copy(update=lists)
+
+
 def merge_effect(root: DocumentRecord, sources: Sequence[DocumentRecord], label: str | None) -> str:
     """What merging would do, for a confirmation: the sources vanish for good."""
 
@@ -249,7 +261,7 @@ class VersionService:
         if not confirm:
             ConfirmationRequired.require(
                 merge_effect(root, sources, text),
-                scope=[d.newest_file for d in (root, *sources)],
+                scope=[bound(d) for d in (root, *sources)],
             )
         try:
             unconfirmed = await self._writer.merge_as_versions(root_id, tuple(source_ids), text)

@@ -13,6 +13,7 @@ from mcp_server_paperless.domain.errors import (
     AnswerTooLarge,
     NotFound,
     PermissionDenied,
+    UpstreamTimeout,
 )
 from mcp_server_paperless.domain.versions import VersionUpload
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
@@ -248,11 +249,12 @@ async def test_a_trashed_duplicate_that_is_only_shared_has_its_title_and_date_on
     assert (shared.match, shared.tags, shared.created, shared.differs) == (None, None, None, ())
     assert (found.total, found.truncated) == (1, False)
     assert found.not_compared == (NOT_COMPARED, TRASH_DETAILS, UNREAD_DETAILS.format(ids="11"))
-    assert "12" not in str(found)
+    assert "Document 12" not in str(found)
 
 
 @pytest.mark.parametrize(
-    "error", [AnswerTooLarge("x"), AnswerCompressed("x"), PermissionDenied("x")]
+    "error",
+    [AnswerTooLarge("x"), AnswerCompressed("x"), PermissionDenied("x"), UpstreamTimeout("x")],
 )
 async def test_a_trash_that_cannot_be_read_leaves_its_details_out(error: Exception) -> None:
     setup = Setup()
@@ -325,5 +327,5 @@ def test_the_texts_about_what_was_not_compared() -> None:
     )
     assert UNREAD_DETAILS == (
         "Only the title could be read of: {ids} (in the trash and not owned, beyond the first 500 "
-        "entries, a trash over 64 MiB, or changed meanwhile)."
+        "entries, a trash over 64 MiB or that could not be read, or changed meanwhile)."
     )

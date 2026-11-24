@@ -14413,9 +14413,9 @@
         without confirm a dialog, or an error for you to show the user, first describes the effect
         (see confirm). Every document has to be a duplicate of the kept one now, outside the trash:
         otherwise nothing changes and each one that is not is named. Documents you cannot see are never
-        compared. Needs change permission on the duplicates (for a merge on the kept document too),
-        ownership of them and the delete permission. resolved and not_resolved say what was seen
-        afterwards.
+        compared. Needs the permissions to change and delete documents and ownership of the duplicates,
+        for a merge of the kept document too (or no owner). resolved, not_resolved and kept_seen say
+        what was seen afterwards.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -14439,7 +14439,7 @@
             'type': 'boolean',
           }),
           'duplicate_ids': dict({
-            'description': 'Ids of its duplicates to resolve, at most 20, from get_document with include duplicates; not those in the trash.',
+            'description': 'Ids of its duplicates to resolve, at most 20, from get_document with include duplicates; not those in the trash. After a merge the document shows the file of the last one.',
             'items': dict({
               'type': 'integer',
             }),
@@ -14493,6 +14493,17 @@
               'title',
             ]),
             'type': 'object',
+          }),
+          'kept_seen': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'false: the kept document was gone afterwards; null: not read.',
           }),
           'message': dict({
             'type': 'string',
@@ -14592,7 +14603,7 @@
             'type': 'integer',
           }),
           'resolved': dict({
-            'description': 'Seen to be in the trash, or a version of the kept document; with dry_run those that would be.',
+            'description': 'Seen in the trash, or as a version of the kept document; with dry_run those that would be (none if it would be refused).',
             'items': dict({
               'description': 'A document by its id and the title it has or had.',
               'properties': dict({
@@ -14690,6 +14701,7 @@
           'dry_run',
           'applied',
           'kept',
+          'kept_seen',
           'resolved',
           'not_resolved',
           'other_duplicates',

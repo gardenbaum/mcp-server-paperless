@@ -136,7 +136,8 @@ async def resolve_duplicates(  # noqa: PLR0913 -- one parameter per concept, des
             max_length=MAX_DUPLICATES,
             description=(
                 f"Ids of its duplicates to resolve, at most {MAX_DUPLICATES}, from get_document "
-                "with include duplicates; not those in the trash."
+                "with include duplicates; not those in the trash. After a merge the document "
+                "shows the file of the last one."
             ),
         ),
     ],
@@ -162,9 +163,9 @@ async def resolve_duplicates(  # noqa: PLR0913 -- one parameter per concept, des
     without confirm a dialog, or an error for you to show the user, first describes the effect
     (see confirm). Every document has to be a duplicate of the kept one now, outside the trash:
     otherwise nothing changes and each one that is not is named. Documents you cannot see are never
-    compared. Needs change permission on the duplicates (for a merge on the kept document too),
-    ownership of them and the delete permission. resolved and not_resolved say what was seen
-    afterwards.
+    compared. Needs the permissions to change and delete documents and ownership of the duplicates,
+    for a merge of the kept document too (or no owner). resolved, not_resolved and kept_seen say
+    what was seen afterwards.
     """
     return await services(ctx).duplicate_resolver.resolve(
         keep_document_id, duplicate_ids, action, dry_run=dry_run, confirm=confirm

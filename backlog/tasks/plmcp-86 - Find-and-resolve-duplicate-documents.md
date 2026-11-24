@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:21:59Z'
-updated_date: '2026-11-24T03:04:40Z'
+updated_date: '2026-11-24T03:10:43Z'
 labels: []
 dependencies:
   - PLMCP-77
@@ -57,4 +57,6 @@ Deviations: notes, custom fields, page count and versions of a duplicate in the 
 just check: green except the macOS-only test_the_menu_driver_reports_a_failing_cli (7243 passed); diff-cover 100 %. E2E and live contract: hosted, pending (criteria 1, 2, 4, 6 wait for it).
 
 Hosted full E2E of 4997a1c is green (run 45312691330, reported by the main agent): the live proof of criteria 1, 2, 4 and 6. Since then: a79b3be changed schema descriptions only, and PLMCP-85 was merged (24cfbd2, 14b9e41, 8fd02dc), which does not touch the code of this task except registration. OVERVIEW_GUIDE_LIMIT with both tools: 2800 (measured 2798).
+
+Review of a79b3be (5 Important, 8 Minor) fixed, tests first (47 red before the code). The confirmation binds every document as read; decision-44's rule is unchanged, merge_documents_as_versions binds the same. modified alone (as the review asked) is not enough: bulk edits of 3.5.1 bypass it. Only what is seen in the trash or as a version counts as resolved (kept_seen says if the kept one is gone). M6: only services/trash maps to test_duplicates; with documents and versions the cross-cutting tier example passes its 450 s per group, so those run in the full suite. DoD 1 stays open: the section, the resolution service and the E2E tests of the first commit were not run red before the code.
 <!-- SECTION:NOTES:END -->
