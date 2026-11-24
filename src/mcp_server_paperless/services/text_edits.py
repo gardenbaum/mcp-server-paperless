@@ -7,6 +7,7 @@ left in which another writer can be overwritten; the text is read again afterwar
 
 import json
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.errors import (
@@ -68,7 +69,9 @@ def _shown(text: str, start: int, end: int) -> str:
         half = SHOWN // 2
         left_out = end - start - SHOWN
         shown = (
-            f"{excerpt(text[first : start + half])} ({left_out} more "
+            # A letter before the number: after right-to-left text it would be shown on its
+            # other side.
+            f"{excerpt(text[first : start + half])} (left out: {left_out} "
             f"character{'' if left_out == 1 else 's'}) {excerpt(text[end - half : last])}"
         )
     return f"{'…' if first else ''}{shown}{'…' if last < len(text) else ''}"
@@ -118,8 +121,8 @@ def _replaced(found: DocumentText, edit: TextEdit) -> str:
     return f"{content[:first]}{edit.replacement}{content[first + len(passage) :]}"
 
 
-def _check_storable(old: str, new: str) -> None:
-    if new == old:
+def _check_storable(old: str, asked: str, new: str) -> None:
+    if old in {asked, new}:
         message = "The text already reads like that. Nothing was changed."
         raise Validation(message, hint="Read it again with get_document_content.")
     if _UNSTORABLE.search(new):
@@ -137,8 +140,61 @@ def _check_storable(old: str, new: str) -> None:
         raise Validation(message, hint="This text cannot be corrected over the API.")
 
 
+@dataclass(frozen=True, slots=True)
+class _Change:
+    """Where the text that is stored differs from the one there is, and where that starts in it."""
+
+    old: str
+    new: str
+    start: int
+    end_old: int
+    end_new: int
+    position: int
+
+
+def _stored_change(old: str, new: str, *, strips: bool) -> _Change:
+    """What storing ``new`` changes in ``old``.
+
+    Where Paperless strips, whitespace around ``old`` goes with any correction. It is left out of
+    the change unless it is all that changes: the change would reach from it to the correction.
+    """
+    core = old.strip() if strips else old
+    base = old if core == new else core
+    start, end_old, end_new = changed_region(base, new)
+    ahead = len(old) - len(old.lstrip()) if base != old else 0
+    return _Change(base, new, start, end_old, end_new, ahead + start)
+
+
 def _newest(text: DocumentText) -> bool:
     return not text.versions or text.versions[0].id == text.version_id
+
+
+def _effect(found: DocumentText, change: _Change, length: int, *, dropped: bool) -> str:
+    """What a confirmation says: the consequences first, the pieces of text last.
+
+    What it says about workflows, the audit log and reprocessing is read in the 3.5.1 source.
+    """
+    newest = _newest(found)
+    first = (
+        f"replace the text of version {found.version_id}{' (the newest)' if newest else ''} of "
+        f"document {found.id} {quoted(found.title)} from character {change.position} on (its "
+        f"{len(found.content)} characters become {length})"
+    )
+    parts = [first]
+    if max(change.end_old, change.end_new) - change.start > SHOWN:
+        parts.append("the change is longer than shown here, dry_run=true returns all of it")
+    if not change.new:
+        parts.append("the text becomes empty")
+    if dropped:
+        parts.append("leading and trailing whitespace is dropped")
+    if not newest:
+        parts.append("search does not find it, because it is not the newest version")
+    return (
+        f"{'; '.join(parts)}. Paperless then runs the workflows for updated documents and keeps "
+        "the old text only in its audit log, if that is on; reprocessing overwrites the "
+        f"correction. The text {_shown(change.old, change.start, change.end_old)} becomes "
+        f"{_shown(change.new, change.start, change.end_new)}"
+    )
 
 
 class TextEditor:
@@ -173,6 +229,9 @@ class TextEditor:
             PermissionDenied: The user may not change the document.
         """
         _check(edit)
+        if offset and not dry_run:
+            message = "offset is only for dry_run. Nothing was changed."
+            raise Validation(message, hint="Leave it out, or pass dry_run=true.")
         found = await self._reader.get_document_content(document_id, version_id=edit.version_id)
         require_change(found)
         version, old = found.version_id, found.content
@@ -189,10 +248,12 @@ class TextEditor:
         asked = _replaced(found, edit)
         # Paperless strips the text of the root version, and only that.
         new = asked.strip() if version == document_id else asked
-        _check_storable(old, new)
-        effect = self._effect(found, asked, new)
+        _check_storable(old, asked, new)
+        change = _stored_change(old, new, strips=version == document_id)
+        dropped = new != asked or change.old != old
+        effect = _effect(found, change, len(new), dropped=dropped)
         if dry_run:
-            return self._previewed(found, asked, new, effect, offset)
+            return self._previewed(found, change, len(new), effect, offset)
         if not confirm:
             ConfirmationRequired.require(
                 effect, scope=(version, state, text_state(document_id, version, new))
@@ -201,10 +262,10 @@ class TextEditor:
         return await self._result(found, new, stored)
 
     def _previewed(
-        self, found: DocumentText, asked: str, new: str, effect: str, offset: int
+        self, found: DocumentText, change: _Change, length: int, effect: str, offset: int
     ) -> TextCorrected:
-        start, end_old, end_new = changed_region(found.content, asked)
-        before, after = found.content[start:end_old], asked[start:end_new]
+        before = change.old[change.start : change.end_old]
+        after = change.new[change.start : change.end_new]
         end = offset + PART
         return TextCorrected(
             document_id=found.id,
@@ -212,10 +273,10 @@ class TextEditor:
             is_newest=_newest(found),
             dry_run=True,
             chars_before=len(found.content),
-            chars_after=len(new),
+            chars_after=length,
             text_state=text_state(found.id, found.version_id, found.content),
             change=TextChange(
-                position=start,
+                position=change.position,
                 offset=offset,
                 before=before[offset:end],
                 after=after[offset:end],
@@ -257,31 +318,4 @@ class TextEditor:
             change=None,
             message=" ".join(parts),
             web_url=document_link(self._web_url, found.id),
-        )
-
-    @staticmethod
-    def _effect(found: DocumentText, asked: str, new: str) -> str:
-        """What a confirmation says; ``asked`` becomes ``new`` when Paperless stores it."""
-        old = found.content
-        start, end_old, end_new = changed_region(old, asked)
-        newest = _newest(found)
-        change = (
-            f"replace the text of version {found.version_id}{' (the newest)' if newest else ''} of "
-            f"document {found.id} {quoted(found.title)}: at character {start}, "
-            f"{_shown(old, start, end_old)} becomes {_shown(asked, start, end_new)} "
-            f"({len(old)} characters become {len(new)})"
-        )
-        parts = [change]
-        if max(end_old, end_new) - start > SHOWN:
-            parts.append("the change is longer than shown here, dry_run=true returns all of it")
-        if not new:
-            parts.append("the text becomes empty")
-        if new != asked:
-            parts.append("leading and trailing whitespace is dropped")
-        if not newest:
-            parts.append("search does not find it, because it is not the newest version")
-        return (
-            f"{'; '.join(parts)}. Paperless then runs the workflows for updated documents and "
-            "keeps the old text only in its audit log, if that is on; reprocessing overwrites the "
-            "correction"
         )

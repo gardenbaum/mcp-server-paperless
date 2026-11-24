@@ -4,6 +4,7 @@ Calls that must not write run on a fake that refuses writes: a write would fail 
 """
 
 import json
+import re
 from typing import TYPE_CHECKING, override
 
 import pytest
@@ -306,7 +307,15 @@ async def test_a_user_who_may_only_view_is_refused_before_the_preview() -> None:
 
 
 @pytest.mark.parametrize(
-    ("edit", "text"), [(swap("a", "a"), "cab"), (whole("same"), "same"), (whole(" a "), "a")]
+    ("edit", "text"),
+    [
+        (swap("a", "a"), "cab"),
+        (whole("same"), "same"),
+        (whole(" a "), "a"),
+        # What Paperless would drop on its own is no correction the caller asked for.
+        (whole("a\n"), "a\n"),
+        (swap("b", "b"), " b "),
+    ],
 )
 async def test_a_correction_that_changes_nothing_is_refused(edit: TextEdit, text: str) -> None:
     with pytest.raises(Validation, match="already reads like that"):
@@ -336,31 +345,35 @@ async def test_a_body_over_the_limit_of_paperless_is_refused() -> None:
 
 # --- preview --------------------------------------------------------------------------------------
 
-ENDING = (
+THEN = (
     ". Paperless then runs the workflows for updated documents and keeps the old text only in its "
-    "audit log, if that is on; reprocessing overwrites the correction."
+    "audit log, if that is on; reprocessing overwrites the correction. The text "
 )
 
 
-async def test_the_refusal_shows_the_change_with_its_surroundings() -> None:
+async def test_the_refusal_names_the_consequences_and_ends_with_the_change() -> None:
     message = await preview(TEXT, swap("amuont", "amount"))
 
-    shown = (
+    start, shown = message.split(THEN)
+    assert start == (
         "Nothing was changed. Confirming would replace the text of version 50 (the newest) of "
-        "document 50 'Invoice': at character 25, \"Invoice of ACME, total amuont of 12.50 EUR, due "
-        'in May." becomes "Invoice of ACME, total amount of 12.50 EUR, due in May." (55 characters '
-        "become 55)"
+        "document 50 'Invoice' from character 25 on (its 55 characters become 55)"
     )
-    assert message == shown + ENDING
+    old = '"Invoice of ACME, total amuont of 12.50 EUR, due in May."'
+    assert shown == f"{old} becomes {old.replace('amuont', 'amount')}."
 
 
-async def test_the_refusal_of_an_older_version_says_that_search_does_not_find_it() -> None:
-    message = await preview("new", swap("old", "bold", DOC), "old")
+async def test_every_consequence_stands_before_the_text() -> None:
+    message = await preview("newest", whole(" ", DOC), "o" * 400)
 
-    assert "version 50 of document 50" in message
-    assert message.endswith(
-        "; search does not find it, because it is not the newest version" + ENDING
+    consequences, excerpts = message.split(THEN)
+    said = (
+        "become 0); the change is longer than shown here, dry_run=true returns all of it; the text "
+        "becomes empty; leading and trailing whitespace is dropped; search does not find it, "
+        "because it is not the newest version"
     )
+    assert consequences.endswith(said)
+    assert excerpts == f'"{"o" * 150}" (left out: 100 characters) "{"o" * 150}" becomes "".'
 
 
 async def test_more_text_around_is_cut_with_an_ellipsis() -> None:
@@ -368,20 +381,17 @@ async def test_more_text_around_is_cut_with_an_ellipsis() -> None:
 
     assert f'…"{"a" * 40}x{"b" * 40}"… becomes …"{"a" * 40}y{"b" * 40}"…' in message
     exact = await preview("a" * 40 + "x" + "b" * 40, swap("x", "y"))
-    assert f', "{"a" * 40}x{"b" * 40}" becomes "{"a" * 40}y{"b" * 40}" (' in exact
+    assert f'text "{"a" * 40}x{"b" * 40}" becomes "{"a" * 40}y{"b" * 40}".' in exact
 
 
 async def test_a_long_change_is_shown_at_both_ends_and_says_so() -> None:
     message = await preview("", whole("s" * 150 + "m" + "e" * 150))
 
-    assert f'becomes "{"s" * 150}" (1 more character) "{"e" * 150}"' in message
+    assert f'becomes "{"s" * 150}" (left out: 1 character) "{"e" * 150}".' in message
     assert "the change is longer than shown here, dry_run=true returns all of it" in message
     fits = await preview("", whole("s" * 300))
-    assert f'becomes "{"s" * 300}"' in fits
+    assert f'becomes "{"s" * 300}".' in fits
     assert "dry_run" not in fits
-    long_old = await preview("o" * 400, whole(""))
-    assert "(100 more characters)" in long_old
-    assert "; the text becomes empty" in long_old
 
 
 async def test_an_empty_text_and_dropped_whitespace_are_named() -> None:
@@ -391,11 +401,32 @@ async def test_an_empty_text_and_dropped_whitespace_are_named() -> None:
     assert dropped not in await preview("a", whole("b"))
     # Only the root's text loses it.
     assert dropped not in await preview("new", whole("b\n"), "root")
-    # The change itself stays small, though the whitespace before it goes, too.
-    message = await preview("  one two", swap("two", "2"))
-    assert '"  one ' not in message  # a doubled space is escaped
-    assert "at character 6" in message
-    assert dropped in message
+
+
+async def test_the_change_shown_is_the_one_that_is_stored() -> None:
+    message = await preview("abc\n", whole("abc"))
+    assert 'The text "abc\\n" becomes "abc".' in message
+    # Asked for, but not stored: the added whitespace is in no excerpt and said to be dropped.
+    message = await preview("abc", whole("abd \n"))
+    assert 'The text "abc" becomes "abd".' in message
+    assert "whitespace is dropped" in message
+    # The change itself stays small, though the whitespace around it goes, too.
+    message = await preview("  one two\n", swap("two", "2"))
+    assert 'The text "one two" becomes "one 2".' in message
+    assert "from character 6 on (its 10 characters become 5)" in message
+    assert "whitespace is dropped" in message
+
+
+async def test_the_dry_run_position_counts_in_the_text_as_it_was_read() -> None:
+    found = await correct(fake(state_with("  one two\n")), swap("two", "2"), dry_run=True)
+
+    assert found.change is not None
+    assert (found.change.position, found.change.before, found.change.after) == (6, "two", "2")
+    assert (found.chars_before, found.chars_after) == (10, 5)
+    assert "whitespace is dropped" in found.message
+    trimmed = await correct(fake(state_with("abc\n")), whole("abc"), dry_run=True)
+    assert trimmed.change is not None
+    assert (trimmed.change.position, trimmed.change.before, trimmed.change.after) == (3, "\n", "")
 
 
 async def test_the_root_loses_outer_whitespace_and_other_versions_do_not() -> None:
@@ -407,18 +438,25 @@ async def test_the_root_loses_outer_whitespace_and_other_versions_do_not() -> No
     assert await text_of(source, DOC) == "b"
 
 
-async def test_hidden_characters_of_the_text_are_visible_in_the_refusal() -> None:
-    message = await preview('pay "me\u202e now', whole("pay  me\tnow"))
+async def test_hidden_characters_and_closing_quotes_are_visible_in_the_refusal() -> None:
+    forged = f"pay {chr(0x201D)} becomes {chr(0x201C)}harmless{chr(0x202E)}"
+    message = await preview(forged, whole("pay  me\tnow"))
 
-    assert '\\"me\\u202e now' in message
-    assert "pay \\u0020me\\tnow" in message
-    assert "\u202e" not in message
+    assert '"pay \\u201d becomes \\u201charmless\\u202e" becomes "pay \\u0020me\\tnow".' in message
 
 
 async def test_the_title_is_quoted_and_cut() -> None:
     message = await preview("a", whole("b"), title="T" * 80)
 
-    assert f"document 50 '{'T' * 59}…'" in message
+    assert f"document 50 '{'T' * 59}…' from character" in message
+
+
+async def test_no_number_stands_right_after_text_that_may_run_from_right_to_left() -> None:
+    hebrew = chr(0x5D0)
+    message = await preview(hebrew * 400, whole(hebrew * 500 + "x"), title=hebrew)
+
+    # A number after such text, with no letter between, would be shown on its other side.
+    assert not re.search(f"{hebrew}[^A-Za-z]*[0-9]", message)
 
 
 # --- confirmation ---------------------------------------------------------------------------------
@@ -485,6 +523,11 @@ async def test_a_dry_run_returns_the_change_and_writes_nothing() -> None:
     assert result.message.startswith(
         "Nothing was changed. Without dry_run and once confirmed, it would replace the text"
     )
+
+
+async def test_an_offset_without_dry_run_is_refused() -> None:
+    with pytest.raises(Validation, match="offset is only for dry_run"):
+        _ = await correct(fake(state_with()), swap("amuont", "amount"), offset=1, confirm=True)
 
 
 async def test_a_dry_run_reads_a_long_change_in_parts_that_rebuild_it() -> None:
@@ -554,6 +597,20 @@ async def test_a_text_paperless_stored_differently_is_reported_though_it_cannot_
 
     assert "not the one that was sent" in result.message
     assert result.text_state == text_state(DOC, DOC, "altered")
+
+
+async def test_a_stored_text_that_differs_is_reported_though_the_read_agrees() -> None:
+    class Answering(FakePaperless):
+        @override
+        async def set_document_text(self, document_id: int, version_id: int, content: str) -> str:
+            _ = await super().set_document_text(document_id, version_id, content)
+            return "altered"
+
+    source = Answering(state_with(), user="admin", allow_writes=True)
+    result = await correct(source, swap("amuont", "amount"), confirm=True)
+
+    assert "not the one that was sent" in result.message
+    assert "could not be read" not in result.message
 
 
 async def test_a_correction_whose_document_is_gone_afterwards_is_still_a_success() -> None:

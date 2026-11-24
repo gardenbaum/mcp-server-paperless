@@ -210,6 +210,17 @@ async def test_an_older_version_is_corrected_and_search_does_not_find_it(
     assert await text_of(stack, document, version_id=document) == old
     assert await text_of(stack, document) == shown
     assert (await read(stack, document))["version_id"] == newest
+    # Written after it: once search finds this, it has seen the older version's text, too.
+    later = word()
+    _ = await run(
+        stack,
+        TOOL,
+        document_id=document,
+        text_state=await state_of(stack, document),
+        text=later,
+        confirm=True,
+    )
+    assert await finds(stack, later, [document])
     assert found(stack, old) == []
 
 

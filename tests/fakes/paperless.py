@@ -1097,7 +1097,8 @@ class FakePaperless:
 
         Order: the global `change_document` permission (403), the document among those the user
         may see (404), the object (403), the version (404; one in the trash is written, too).
-        The text of the root passes the serializer, which rejects NUL characters and strips.
+        The text of the root passes the serializer, which rejects NUL characters and lone
+        surrogates and strips. (The adapter cannot send a surrogate: its body is UTF-8.)
         """
         if not self.user.has("change_document"):
             raise self._denied()
@@ -1111,6 +1112,10 @@ class FakePaperless:
         if version_id == document_id:
             if "\x00" in content:
                 reject("content", "Null characters are not allowed.")
+            surrogates = [c for c in content if "\ud800" <= c <= "\udfff"]
+            if surrogates:
+                points = ", ".join(f"U+{ord(c):X}" for c in surrogates)
+                reject("content", f"Surrogate characters are not allowed: {points}.")
             content = content.strip()
         for stub in stubs:
             stub.content = content

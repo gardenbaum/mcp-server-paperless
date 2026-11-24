@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:46Z'
-updated_date: '2026-11-24T01:22:54Z'
+updated_date: '2026-11-24T01:35:21Z'
 labels: []
 dependencies:
   - PLMCP-74
@@ -27,7 +27,7 @@ Once a page can be read as an image, a wrong or missing OCR passage should be co
 - [x] #3 A passage that is missing or not unique changes nothing and says so; if the text changed since the preview, nothing is written
 - [x] #4 A decision supplements decision-12: content changes need confirm
 - [ ] #5 The tool says that reprocessing overwrites the correction, and full-text search finds the new text (live test)
-- [x] #6 If a tool joins the default profile, a decision weighs it against decision-34: 19 of 20 tools are used, so one slot is free
+- [x] #6 No tool joins the default profile: a decision weighs the tool against decision-34 and decision-42 (20 of 20 tools are used, no slot is free)
 - [ ] #7 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover whole and passage replacement, a version, a missing or ambiguous passage, a change in between and a restricted user
 <!-- AC:END -->
 
@@ -68,4 +68,6 @@ Deviations and facts (2026-11-24):
 
 Correction (2026-11-24): INSTRUCTIONS_LIMIT and OVERVIEW_GUIDE_LIMIT stay at 1450 and 2760 (measured 1423 and 2758). Shortened instead: 'HTTP and image: environment, restart ...' (28 bytes, its three exact-text tests follow or keep matching), summaries of versions ('text fixes') and bulk ('change many documents').
 Hosted E2E on 2bcdbc6: two live contract tests failed because the fixture's grants (PATCH set_permissions) replace those of an earlier user on the same document, while the fake added them. Neither the product code nor fields/version was the cause. The fake now replaces them as well and failed the same two tests; the tests use one user after the other and now also assert that the refused users see the document.
+
+Review through b38f545 handled: look-alike quotes, blank signs and stray combining marks are escaped in the excerpt; the confirmation has consequences and numbers first and the excerpts last; the change is computed against the stored text; offset without dry_run is refused; criterion 6 reworded to decision-42.
 <!-- SECTION:NOTES:END -->

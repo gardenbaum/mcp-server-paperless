@@ -83,7 +83,7 @@ async def test_a_passage_is_corrected_after_the_refusal_showed_it() -> None:
 
     refused = await call(source, TOOL, **SWAP, text_state=state)
     assert refused.is_error
-    assert '"total amuont of 12.50" becomes "total amount of 12.50"' in str(refused.content)
+    assert '"total amuont of 12.50" becomes "total amount of 12.50".' in str(refused.content)
     assert source.state.documents[0].content == TEXT
 
     done = output(await call(source, TOOL, **SWAP, text_state=state, confirm=True))

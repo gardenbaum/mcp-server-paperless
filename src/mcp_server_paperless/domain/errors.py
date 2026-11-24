@@ -198,24 +198,53 @@ _IGNORABLE: Final = frozenset(
     | {*range(0x180B, 0x1810), *range(0xFE00, 0xFE10), *range(0xE0000, 0xE1000)}
 )
 
+# What can be read as a double quote, and so as the end of an excerpt, beside the double quote and
+# the backslash. Guillemets stay: nothing this server writes looks like one.
+_DOUBLE_QUOTES: Final = frozenset(
+    {0x22, 0x5C, 0x02BA, 0x02DD, 0x02EE, 0x02F5, 0x02F6, 0x05F2, 0x05F4, 0x2033, 0x2034, 0x2036}
+    | {0x2037, 0x2057, 0x275D, 0x275E, 0x2760, 0x2E42, 0x3003, 0xFF02}
+    | {*range(0x201C, 0x2020), *range(0x301D, 0x3020), *range(0x1F676, 0x1F679)}
+)
+# Two of these side by side can be, too.
+_SINGLE_QUOTES: Final = frozenset(
+    {0x27, 0x60, 0xB4, 0x02B9, 0x02BB, 0x02BC, 0x02BD, 0x02C8, 0x02CA, 0x02CB, 0x0384, 0x055A}
+    | {0x05F3, 0x1FBF, 0x1FFD, 0x1FFE, 0x2032, 0x2035, 0x275B, 0x275C, 0xFF07, 0xFF40}
+    | {*range(0x2018, 0x201C)}
+)
+# Signs and letters that show as nothing: a musical null notehead and hieroglyphic blanks.
+_BLANK: Final = frozenset({0x1D159, 0x13441, 0x13442})
+_NOT_IN_EXCERPT: Final = _IGNORABLE | _BLANK | _DOUBLE_QUOTES
+
+
+def _escape(character: str) -> str:
+    escape = json.dumps(character)[1:-1]
+    return f"\\u{ord(character):04x}" if escape == character else escape
+
 
 def _escaped(text: str) -> Iterator[str]:
     """The characters of ``text`` as ``excerpt`` shows them."""
-    before = ""
+    before, carries = "", False  # the character before, and whether a mark can stand on it
     for character in text:
-        hides = unicodedata.category(character) in _NOT_SHOWN or ord(character) in _IGNORABLE
+        code, category = ord(character), unicodedata.category(character)
         if character == " ":  # a refusal folds doubled spaces into one
-            yield r"\u0020" if before == " " else " "
+            hides = before == " "
+        elif code in _SINGLE_QUOTES:
+            hides = before != "" and ord(before) in _SINGLE_QUOTES
         else:
-            yield json.dumps(character)[1:-1] if hides or character in '"\\' else character
-        before = character
+            hides = (
+                category in _NOT_SHOWN
+                or code in _NOT_IN_EXCERPT
+                or (category[0] == "M" and not carries)
+            )
+        yield _escape(character) if hides else character
+        before, carries = character, not hides and category[0] in "LMN"
 
 
 def excerpt(text: str) -> str:
     """``text`` in full in double quotes, as JSON, with everything that may not show escaped.
 
-    For showing a piece of document text whose whitespace and hidden characters matter
-    (decision-48); ``quoted`` folds and drops those.
+    So is everything that can be read as the closing quote. For showing a piece of document text
+    whose whitespace and hidden characters matter (decision-48); ``quoted`` folds and drops those.
     """
     return f'"{"".join(_escaped(text))}"'
 

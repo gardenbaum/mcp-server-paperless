@@ -181,8 +181,8 @@ newest or of a named version. The file stays as it is.
   writing can still be overwritten. The text is read again afterwards, and the result says so if it
   is not the one that was sent.
 - Reprocessing a document overwrites the correction. Search finds the text of the newest version
-  only. Paperless keeps the old text only in its audit log, if that is on, and runs the workflows
-  for updated documents.
+  only. According to the 3.5.1 source, Paperless keeps the old text only in its audit log, if that
+  is on, and runs the workflows for updated documents.
 
 ### `views`
 
