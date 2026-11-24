@@ -23,7 +23,7 @@ publishes port 8000 itself, so the server is published on 8001:
 ```yaml
 services:
   mcp-server-paperless:
-    image: ghcr.io/gardenbaum/mcp-server-paperless:0.3.0   # a published version tag; pin the digest too
+    image: ghcr.io/gardenbaum/mcp-server-paperless:0.4.0   # a published version tag; pin the digest too
     restart: unless-stopped
     depends_on:
       - webserver                                      # the paperless-ngx service
