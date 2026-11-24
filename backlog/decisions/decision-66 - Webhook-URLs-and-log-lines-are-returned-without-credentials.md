@@ -31,7 +31,8 @@ Supplements decision-64 (its forms apply to webhook URLs), decision-25 (what the
 - `x@h`, `x@h/path`, `x@h?a` and `x@h.` stay: they look like e-mail addresses, mail folders and file paths. A URL whose : / and @ are all encoded or escaped stays as well.
 - A file path with a : or // (`C:\x\a@b.pdf`, `\\server\a@b`) before an @ is taken for credentials.
 - Stay shown: an encoded @ after an unescaped / or ? (`https://u:SE/CRET%40h`), which is in many ordinary URLs, and one encoded twice (`%2540`).
-- The head of a log that is cut (undated lines before its first record, or a log without dates) loses every line up to the last one with an @, also if that is an e-mail address: the URL it ends can stand before the cut. `get_log` reads the 1000 lines it may read, so this is only what such a long record leaves; `/api/logs/` applies it unless fewer lines than `limit` come.
+- The head of a log that is cut (undated lines before its first record, or a log without dates) loses every line up to the last one with an @, also if that is an e-mail address: the URL it ends can stand before the cut. It always applies, also where the log starts there: whether Paperless caps `limit` is not known. `get_log` reads the 1000 lines it may read, so a cut is rare.
+- A `*_url` is treated so in every raw answer, not only in `/api/status/`; `redis_url` is the only one the vendored docs know.
 - A record or error that holds a URL without credentials and after it an e-mail address or a URL with credentials loses what is between them.
 - A secret in the path or query of a URL is returned and shown (decision-64).
 

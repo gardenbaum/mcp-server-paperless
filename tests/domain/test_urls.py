@@ -239,7 +239,9 @@ def test_a_hostile_text_is_read_in_linear_time(part: str) -> None:
 def test_a_url_split_over_lines_of_a_record_loses_its_credentials(
     lines: list[str], shown: list[str]
 ) -> None:
-    assert lines_without_credentials(lines, from_start=True) == shown
+    start = "[2026-11-24 09:00:00,123] [INFO] the first line of the record"
+
+    assert lines_without_credentials([start, *lines]) == [start, *shown]
 
 
 @pytest.mark.parametrize("line", ["https://u:p", "q@h", "[2026-11-24 1:0:0] https://u", "\n", ""])

@@ -376,7 +376,7 @@ class SystemAdmin:
             raise Validation(message, hint="Ask for fewer lines, or read the log in the web UI.")
         read = await self._reader.get_log(name, limit=MAX_LOG_LINES)
         # Read all, show the last: the record a shown line belongs to can start before it.
-        shown = lines_without_credentials(read, from_start=len(read) < MAX_LOG_LINES)
+        shown = lines_without_credentials(read)
         found, read = shown[-lines:], read[-lines:]
         kept: list[str] = []
         used = 0

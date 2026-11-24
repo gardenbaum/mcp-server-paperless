@@ -382,6 +382,22 @@ def _past(fate: str) -> str:
     return f"{done.capitalize()} of"
 
 
+def _check_ids(specs: Sequence[ActionInput], found: Workflow) -> None:
+    """Refuse a webhook with an id that is not in the workflow."""
+    known = {action.id for action in found.actions}
+    for place, spec in enumerate(specs, start=1):
+        if spec.webhook is not None and spec.id is not None and spec.id not in known:
+            message = (
+                f"Nothing was changed: action {place} is a webhook with the id {spec.id}, which is "
+                "not (or no longer) in the workflow."
+            )
+            hint = (
+                "Send the id the action has in get_workflow now, or leave the id out for a new "
+                "webhook."
+            )
+            raise Validation(message, hint=hint)
+
+
 def _credentials(
     specs: Sequence[ActionInput], actions: Sequence[WorkflowAction], found: Workflow
 ) -> tuple[list[int], dict[int, str], str]:
@@ -391,8 +407,7 @@ def _credentials(
     the ones that no action claims although a webhook could be meant to hold them ("" if none).
 
     Raises:
-        Validation: Two actions would keep the credentials of one stored action, or an action has
-            an id that is not in the workflow.
+        Validation: Two actions would keep the credentials of one stored action.
     """
     stored = {a.id: _url(a) for a in found.actions if a.id is not None}
     holders: dict[int, int] = {}
@@ -403,18 +418,6 @@ def _credentials(
     for place, (spec, action) in enumerate(zip(specs, actions, strict=True), start=1):
         if spec.webhook is None:
             continue
-        if spec.id is not None and spec.id not in stored:
-            message = (
-                f"Nothing was changed: action {place} is a webhook with the id {spec.id}, which is "
-                "not (or no longer) in the workflow."
-            )
-            raise Validation(
-                message,
-                hint=(
-                    "Send the id the action has in get_workflow now, or leave the id out for a new "
-                    "webhook."
-                ),
-            )
         new = _url(action)
         old = stored[spec.id] if spec.id is not None else None
         if spec.id is None or old is None:
@@ -708,6 +711,7 @@ class WorkflowService:
             changes["triggers"] = tuple([await self._trigger(t) for t in edit.triggers])
         if edit.actions is not None:
             self._keeps_unwritable(found)
+            _check_ids(edit.actions, found)
             written = tuple(
                 [
                     await self._action(a, found.actions, n)

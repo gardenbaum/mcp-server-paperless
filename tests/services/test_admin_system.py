@@ -503,6 +503,16 @@ async def test_a_record_longer_than_all_that_is_read_shows_no_rest_of_a_password
     assert found.lines == ("a URL that is not shown", "a URL that is not shown", "end")
 
 
+@pytest.mark.decision("decision-66")
+async def test_the_undated_head_of_a_short_log_is_not_shown_either() -> None:
+    setup = Setup()
+    setup.state.logs["paperless"] = ["et@h", "end"]
+
+    found = await setup.service.get_log("paperless", lines=50)
+
+    assert found.lines == ("a URL that is not shown", "end")
+
+
 async def test_a_log_without_credentials_has_no_note() -> None:
     assert (await Setup().service.get_log("paperless", lines=3)).note is None
 

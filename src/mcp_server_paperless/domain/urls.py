@@ -110,20 +110,18 @@ def text_without_credentials(text: str) -> str:
     return "".join([*words[:first], *part, *words[end:]])
 
 
-def lines_without_credentials(lines: Sequence[str], *, from_start: bool = False) -> list[str]:
+def lines_without_credentials(lines: Sequence[str]) -> list[str]:
     """The lines of a log without the credentials of URLs, also of those split over lines.
 
     A URL is looked for in all lines of a record, but no further: what stands between it and an
     e-mail address of another record is not lost. The lines before the first record can be the rest
-    of one whose URL is not among them: unless the log starts here (``from_start``), all up to the
-    last of them with an @ are not shown.
+    of one whose URL is not among them: all up to the last of them with an @ are
+    not shown.
     """
     record = 0
-    shown: list[str] = []
-    if not from_start:
-        head = list(takewhile(lambda line: _RECORD.match(line) is None, lines))
-        end = max((n for n, line in enumerate(head, start=1) if _AT.search(line)), default=0)
-        shown = ["\n".join(URL_NOT_SHOWN for _ in line.split("\n")) for line in head[:end]]
+    head = list(takewhile(lambda line: _RECORD.match(line) is None, lines))
+    end = max((n for n, line in enumerate(head, start=1) if _AT.search(line)), default=0)
+    shown = ["\n".join(URL_NOT_SHOWN for _ in line.split("\n")) for line in head[:end]]
 
     def number(line: str) -> int:
         nonlocal record

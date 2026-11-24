@@ -368,10 +368,9 @@ async def test_a_webhook_with_an_id_that_is_not_in_the_workflow_is_refused(
         _ = await write(service, given(written, 99), confirm=True)
 
     assert "action 1" in raised.value.message
-    if written not in {SHOWN, URL_NOT_SHOWN} or (written == SHOWN and not stored):
-        assert raised.value.hint == (
-            "Send the id the action has in get_workflow now, or leave the id out for a new webhook."
-        )
+    assert raised.value.hint == (
+        "Send the id the action has in get_workflow now, or leave the id out for a new webhook."
+    )
     assert "pw" not in f"{raised.value.message}{raised.value.hint}"
     assert state.workflows[0] == before
 
