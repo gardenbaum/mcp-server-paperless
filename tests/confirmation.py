@@ -4,6 +4,7 @@
 state `world()` makes.
 """
 
+import base64
 from typing import TYPE_CHECKING, Final
 
 from fakes.mail import FakeMailAccount, FakeMailRule
@@ -23,6 +24,7 @@ type Handler = Callable[[str, object, object, object], Awaitable[ElicitResult[ob
 NOTE: Final[Json] = {"document_id": 1, "note_id": 1}
 YES: Final[dict[str, bool]] = {"confirm": True}
 NOT_AGAIN: Final = "Do not call the tool again on your own; ask the user what they want."
+KNOWN: Final = b"%PDF-1.4 a file Paperless holds"
 PASSWORD: Final = "S3cret-Passw0rd!x"
 
 
@@ -38,13 +40,17 @@ def world() -> FakeState:
         ]
     )
     [root] = state.documents[0].versions
-    newer = DocumentVersion(id=20, added=root.added, version_label=None, is_root=False)
+    newer = DocumentVersion(
+        id=20, added=root.added, version_label=None, is_root=False, checksum="20"
+    )
     state.documents[0].versions.insert(0, newer)
     for version in (root, newer):
         state.documents[0].version_files[version.id] = FakeFile(
             b"%PDF-1.4", None, "text", "application/pdf"
         )
     state.trash = [FakeDocument(id=30, title="Old")]
+    state.documents.append(FakeDocument(id=13, title="Known", owner=2, original=KNOWN))
+    state.documents.append(FakeDocument(id=14, title="Versions", owner=2))
     state.share_links = [FakeShareLink(id=1, document=1, owner=2)]
     state.share_bundles = [FakeShareBundle(id=1, documents=(1,), owner=2)]
     state.mail_accounts = [
@@ -141,6 +147,15 @@ CALLS: Final[dict[str, Json]] = {
     },
     "update_workflow": {"workflow": "Filing", "enabled": True},
     "delete_workflow": {"workflow": "Filing"},
+    "upload_document": {
+        "content_base64": base64.b64encode(KNOWN).decode(),
+        "filename": "x.pdf",
+    },
+    "upload_document_version": {
+        "document_id": 14,
+        "content_base64": base64.b64encode(KNOWN).decode(),
+        "filename": "x.pdf",
+    },
 }
 
 

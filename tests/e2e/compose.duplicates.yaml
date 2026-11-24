@@ -1,0 +1,6 @@
+# Overlay of `just e2e-duplicates`: the E2E stack with a Paperless that rejects files it already
+# holds, which changes every upload of the stack.
+services:
+  paperless:
+    environment:
+      PAPERLESS_CONSUMER_DELETE_DUPLICATES: "true"

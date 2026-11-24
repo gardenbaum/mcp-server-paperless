@@ -192,6 +192,8 @@ HOSTILE: Final[dict[str, Json]] = {
     },
     "update_workflow": {"workflow": 1, "enabled": True},
     "delete_workflow": {"workflow": 1},
+    "upload_document": {**CALLS["upload_document"], "filename": EVIL},
+    "upload_document_version": {**CALLS["upload_document_version"], "filename": EVIL},
 }
 
 

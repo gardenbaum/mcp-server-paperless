@@ -8,6 +8,8 @@ from typing import Annotated, ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from mcp_server_paperless.domain.duplicates import DuplicateReport
+
 type TaskState = Literal["pending", "started", "success", "failure", "revoked"]
 
 # The states a task never leaves.
@@ -31,8 +33,13 @@ class Unconfirmed(BaseModel):
     reason: str
 
 
-class TaskStatus(BaseModel):
-    """A Paperless task as it stands."""
+# What a task says that Paperless ended because it already holds the file; which document that is
+# is told only to a user who may see it.
+REJECTED: Final = "Paperless rejected the file: it already holds the same file."
+
+
+class _Task(BaseModel):
+    """What the port and the tool both say of a task."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
@@ -53,11 +60,27 @@ class TaskStatus(BaseModel):
         return self.state in FINAL_STATES
 
 
+class TaskStatus(_Task):
+    """A Paperless task as the port reads it.
+
+    Attributes:
+        duplicate_of: The document or version Paperless rejected the file for; the user may not be
+            allowed to know it.
+    """
+
+    duplicate_of: int | None = None
+
+
 type Wait = Literal["not_requested", "finished", "timed_out"]
 
 
-class TaskReport(TaskStatus):
+class TaskReport(_Task):
     """A task, and what waiting for it did."""
+
+    duplicates: Annotated[
+        DuplicateReport | None,
+        Field(description="For a finished upload: the same file elsewhere; null otherwise."),
+    ] = None
 
     wait: Annotated[
         Wait,

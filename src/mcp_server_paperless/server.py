@@ -54,6 +54,7 @@ from mcp_server_paperless.services.bulk_documents import BulkDocumentEditor
 from mcp_server_paperless.services.bulk_taxonomy import BulkTaxonomyEditor
 from mcp_server_paperless.services.document_edits import DocumentEditor
 from mcp_server_paperless.services.documents import DocumentService
+from mcp_server_paperless.services.duplicates import DuplicateFinder
 from mcp_server_paperless.services.file_sink import NO_SINK, FileSink
 from mcp_server_paperless.services.files import FileService
 from mcp_server_paperless.services.instance import InstanceService
@@ -117,6 +118,7 @@ from mcp_server_paperless.tools.selection import (
     unchecked_toolsets,
     visible_tools,
 )
+from mcp_server_paperless.tools.upload_hint import PATH_OFF, UPLOAD_TOOLS, PathRefusal
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
@@ -186,10 +188,11 @@ class Catalogue:
 
     Attributes:
         providers: One FastMCP provider per toolset module.
-        remote_providers: Providers added when the server offers no uploads by path: the upload
-            tools in their form for HTTP (and for stdio without an allowlist).
+        remote_providers: Providers added over HTTP: the upload tools in their form without a path.
         local_providers: Providers added instead of ``remote_providers`` when the server runs
             over stdio with an upload allowlist: the same tools in their form with a path.
+        stdio_providers: Providers added instead when it runs over stdio without an allowlist:
+            the form for HTTP, with the hint how a path is enabled.
         plain_downloads: Providers of the download tools when the server saves nothing.
         saving_downloads: Providers added instead of ``plain_downloads`` when the server runs over
             stdio with download directories and without read-only mode (decision-45).
@@ -211,6 +214,7 @@ class Catalogue:
     requires: Mapping[str, str]
     remote_providers: Sequence[Provider] = ()
     local_providers: Sequence[Provider] = ()
+    stdio_providers: Sequence[Provider] = ()
     plain_downloads: Sequence[Provider] = ()
     saving_downloads: Sequence[Provider] = ()
     prompt_specs: Mapping[str, prompts.PromptSpec] = field(
@@ -242,6 +246,7 @@ CATALOGUE: Final = Catalogue(
     requires=TOOLSET_REQUIRES,
     remote_providers=(upload.remote, versions.remote),
     local_providers=(upload_stdio.local, versions_stdio.local),
+    stdio_providers=(upload.hinted, versions.hinted),
     plain_downloads=(downloads.remote,),
     saving_downloads=(downloads_stdio.local,),
     prompt_specs=prompts.SPECS,
@@ -387,9 +392,13 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     credentials = StaticTokenProvider(paperless.token.get_secret_value())
     web_url = str(paperless.public_url or paperless.url)
     by_path = stdio and bool(settings.upload_dirs)
+    uploads = catalogue.remote_providers
+    if stdio:
+        uploads = catalogue.local_providers if by_path else catalogue.stdio_providers
+    path_hint = PATH_OFF if stdio and not by_path else ""
     saving = stdio and bool(settings.download_dirs) and not settings.read_only
     variants = [
-        *(catalogue.local_providers if by_path else catalogue.remote_providers),
+        *uploads,
         *(catalogue.saving_downloads if saving else catalogue.plain_downloads),
     ]
     sink = FileSink(settings.download_dirs) if saving else NO_SINK
@@ -420,7 +429,8 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
             adapters = ports(client)
             taxonomy = TaxonomyResolver(adapters.taxonomy, credentials, ttl=TAXONOMY_TTL)
             documents = DocumentService(adapters.documents, taxonomy, web_url=web_url)
-            tasks = TaskService(adapters.tasks, sleep=sleep, clock=clock)
+            duplicates = DuplicateFinder(adapters.documents, adapters.trash, web_url=web_url)
+            tasks = TaskService(adapters.tasks, sleep=sleep, clock=clock, duplicates=duplicates)
             services = Services(
                 instance=InstanceService(adapters.instance),
                 taxonomy=taxonomy,
@@ -466,9 +476,11 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.document_writes,
                     taxonomy,
                     tasks,
+                    duplicates,
                     web_url=web_url,
                     max_bytes=settings.max_upload_bytes,
                     upload_dirs=settings.upload_dirs if by_path else (),
+                    path_hint=path_hint,
                 ),
                 versions=VersionService(
                     adapters.documents, adapters.document_writes, taxonomy, web_url=web_url
@@ -477,9 +489,11 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.documents,
                     adapters.document_writes,
                     tasks,
+                    duplicates,
                     web_url=web_url,
                     max_bytes=settings.max_upload_bytes,
                     upload_dirs=settings.upload_dirs if by_path else (),
+                    path_hint=path_hint,
                 ),
                 bulk_documents=BulkDocumentEditor(
                     adapters.documents, adapters.bulk_writes, taxonomy, web_url=web_url
@@ -523,7 +537,10 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
         instructions=instructions,
         version=__version__,
         providers=[*catalogue.providers, *variants],
-        middleware=[CallLogging()],
+        middleware=[
+            CallLogging(),
+            *([PathRefusal(UPLOAD_TOOLS & selected)] if path_hint else []),
+        ],
         lifespan=start,
         auth=auth,
         # Longer than a dialog: one that expired is told so, instead of a refused state.

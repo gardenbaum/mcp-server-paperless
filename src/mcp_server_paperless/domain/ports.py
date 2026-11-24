@@ -46,6 +46,7 @@ if TYPE_CHECKING:
         Note,
         Suggestions,
     )
+    from mcp_server_paperless.domain.duplicates import DuplicateRecord
     from mcp_server_paperless.domain.files import OpenedFile
     from mcp_server_paperless.domain.instance import InstanceOverview
     from mcp_server_paperless.domain.mail import (
@@ -76,7 +77,7 @@ if TYPE_CHECKING:
         WritableKind,
     )
     from mcp_server_paperless.domain.trash import TrashPage
-    from mcp_server_paperless.domain.versions import VersionUpload
+    from mcp_server_paperless.domain.versions import VersionPage, VersionUpload
     from mcp_server_paperless.domain.views import SavedView, ViewValues
     from mcp_server_paperless.domain.workflows import Workflow, WorkflowValues
 
@@ -239,6 +240,48 @@ class DocumentReader(Protocol):
         """
         ...
 
+    async def get_root(self, document_id: int) -> int:
+        """The document a version belongs to; a document's own id. Also in the trash.
+
+        Raises:
+            NotFound: No such document or version, or the user may not see its document.
+        """
+        ...
+
+    async def get_duplicates(self, document_id: int) -> tuple[DuplicateRecord, ...]:
+        """The documents Paperless takes for duplicates of this one, in the trash too.
+
+        It compares the original uploads and their archives, not versions, and names only what
+        the user may see.
+
+        Raises:
+            NotFound: No such document (a version is none), or the user may not see it.
+            PermissionDenied: The user lacks the global ``view_document`` permission.
+        """
+        ...
+
+    async def get_version_checksum(self, document_id: int, version_id: int) -> str | None:
+        """The SHA-256 of a version's file, also of a deleted one, whether the file is there or not.
+
+        Raises:
+            NotFound: No such document outside the trash, or no such version of it.
+            PermissionDenied: The user may not see the document.
+        """
+        ...
+
+    async def list_versions(
+        self, *, page: int, page_size: int, recent: bool = False
+    ) -> VersionPage:
+        """One page of the documents the user may see with their versions.
+
+        Highest id first, an order that edits do not move; with ``recent`` last changed first.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the global ``view_document`` permission.
+        """
+        ...
+
 
 class TaskReader(Protocol):
     """Background tasks (uploads, PDF operations) the current user may see."""
@@ -308,7 +351,8 @@ class DocumentWriter(Protocol):
         Paperless checks the form, not the file: it answers at once with the task's UUID, and
         consumption happens later. A clash it only sees then (an archive serial number that is
         taken) fails the task, not this call. Uploading the same content twice creates two
-        documents on 3.4.2. A busy Paperless is not retried: a retry could upload twice.
+        documents, unless Paperless is configured to reject duplicates, which fails the task. A
+        busy Paperless is not retried: a retry could upload twice.
 
         Raises:
             PermissionDenied: The user may not add documents.
@@ -596,6 +640,19 @@ class TrashReader(Protocol):
 
         Raises:
             NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the global ``view_document`` permission.
+        """
+        ...
+
+    async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
+        """The first ``entries`` entries in one request, like a page of ``list_trash``.
+
+        Paperless orders the trash by a date only, so pages of it can overlap; one request cannot.
+        The rows carry the whole text of the documents, so at most ``max_bytes`` are read.
+
+        Raises:
+            AnswerCompressed: The answer is compressed, so its size is not known.
+            AnswerTooLarge: The answer is larger than ``max_bytes``.
             PermissionDenied: The user lacks the global ``view_document`` permission.
         """
         ...

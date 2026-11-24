@@ -31,6 +31,10 @@ class TrashedDocument(BaseModel):
             )
         ),
     ]
+    checksum: Annotated[
+        str | None,
+        Field(description="SHA-256 of a deleted document's original upload; null for a version."),
+    ] = None
 
 
 class TrashPage(BaseModel):

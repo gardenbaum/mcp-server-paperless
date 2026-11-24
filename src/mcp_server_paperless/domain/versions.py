@@ -11,6 +11,7 @@ from typing import Annotated, ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 
 from mcp_server_paperless.domain.documents import DocumentVersion, UploadState
+from mcp_server_paperless.domain.duplicates import DuplicateCheck
 from mcp_server_paperless.domain.tasks import Wait
 
 
@@ -29,6 +30,26 @@ class VersionUpload(BaseModel):
     mime_type: str
     content: bytes = Field(repr=False)
     label: str | None = None
+
+
+class VersionRow(BaseModel):
+    """The versions of one document in a listing, newest first, as the port reads them."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    title: str
+    versions: tuple[DocumentVersion, ...]
+
+
+class VersionPage(BaseModel):
+    """One page of the versions of all documents."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    count: int
+    next_page: int | None
+    rows: tuple[VersionRow, ...]
 
 
 # Output models are tool output schemas: a one-line class docstring each, and field descriptions
@@ -86,6 +107,9 @@ class VersionUploadResult(BaseModel):
     filename: Annotated[str, Field(description="The name the file was uploaded under.")]
     mime_type: Annotated[str, Field(description="The type found in the content.")]
     size_bytes: int
+    duplicates: Annotated[
+        DuplicateCheck, Field(description="Where Paperless already holds the same file.")
+    ]
 
 
 class VersionLabelSet(BaseModel):

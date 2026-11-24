@@ -49,8 +49,6 @@ class Doc(Protocol):
     @property
     def mime_type(self) -> str: ...
     @property
-    def original(self) -> bytes: ...
-    @property
     def custom_fields(self) -> dict[int, JsonValue]: ...
 
 
@@ -110,16 +108,6 @@ def _values(document: Doc, state: State) -> list[str]:
         labels = {option.id: option.label for option in field.select_options}
         found.append(labels.get(value, str(value)) if isinstance(value, str) else str(value))
     return found
-
-
-def _has_duplicate(document: Doc, state: State) -> bool:
-    """Another document with the same file and text (Paperless compares checksums)."""
-    return any(
-        other is not document
-        and other.original == document.original
-        and other.content == document.content
-        for other in state.documents
-    )
 
 
 def _by_id(
@@ -221,14 +209,12 @@ def _owners(query: DocumentQuery) -> list[Match]:
 
 
 def _files_and_fields(query: DocumentQuery, state: State) -> list[Match]:
-    """Content, file type, duplicates and custom fields."""
+    """Content, file type and custom fields."""
     checks: list[Match] = []
     if query.content_contains is not None:
         checks.append(lambda d: (query.content_contains or "").lower() in d.content.lower())
     if query.mime_type is not None:
         checks.append(lambda d: (query.mime_type or "").lower() in d.mime_type.lower())
-    if query.has_duplicates is not None:
-        checks.append(lambda d: _has_duplicate(d, state) == query.has_duplicates)
     if query.custom_fields_icontains is not None:
         needle = query.custom_fields_icontains.lower()
         checks.append(lambda d: any(needle in text.lower() for text in _values(d, state)))

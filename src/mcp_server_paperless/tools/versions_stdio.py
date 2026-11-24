@@ -16,7 +16,13 @@ from pydantic import Field
 
 from mcp_server_paperless.domain.errors import Validation
 from mcp_server_paperless.domain.versions import VersionUploadResult
-from mcp_server_paperless.tools._shared import ANNOTATIONS, boundary, check_transport, services
+from mcp_server_paperless.tools._shared import (
+    ANNOTATIONS,
+    Confirm,
+    boundary,
+    check_transport,
+    services,
+)
 from mcp_server_paperless.tools.versions import COMMON, TOOLSET, DocumentId, Label, Wait
 
 local = LocalProvider()
@@ -67,6 +73,7 @@ async def upload_document_version(  # noqa: PLR0913 -- the document, the file an
     ] = None,
     label: Label = None,
     wait_seconds: Wait = 0,
+    confirm: Confirm = False,
 ) -> VersionUploadResult:
     """Upload a file by path or as base64 content as a new version; see DESCRIPTION."""
     if (path is None) == (content_base64 is None):
@@ -76,11 +83,16 @@ async def upload_document_version(  # noqa: PLR0913 -- the document, the file an
     if path is not None:
         check_transport(ctx.transport)
         return await uploads.from_path(
-            document_id, str(path), filename, label, wait_seconds=wait_seconds
+            document_id, str(path), filename, label, wait_seconds=wait_seconds, confirm=confirm
         )
     if filename is None:
         message = "filename is required with content_base64."
         raise Validation(message, hint="Name the file, e.g. 'invoice.pdf'.")
     return await uploads.from_content(
-        document_id, content_base64 or "", filename, label, wait_seconds=wait_seconds
+        document_id,
+        content_base64 or "",
+        filename,
+        label,
+        wait_seconds=wait_seconds,
+        confirm=confirm,
     )

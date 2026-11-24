@@ -29,7 +29,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | `add_note` | write | Add a note to a document, as the current Paperless user. |
 | `delete_note` | destructive, confirm | Delete a note from a document for good; notes have no trash. |
 | `delete_document` | destructive, confirm | Delete a document by moving it to the Paperless trash, from where it can be restored. |
-| `upload_document` | write | Upload a file, sent as base64 content, to Paperless as a new document. |
+| `upload_document` | write, confirm | Upload a file, sent as base64 content, to Paperless as a new document. |
 | `create_taxonomy_item` | write | Create a tag, correspondent, document type, storage path or custom field. |
 | `update_taxonomy_item` | write, confirm | Change a tag, correspondent, document type, storage path or custom field. |
 | `delete_taxonomy_item` | destructive, confirm | Delete a tag, correspondent, document type, storage path or custom field for good. |
@@ -140,7 +140,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | Tool | Kind | What it does |
 |---|---|---|
 | `list_document_versions` | read | List the file versions of a document, newest first. |
-| `upload_document_version` | write | Upload a file, sent as base64 content, to a document as a new version. |
+| `upload_document_version` | write, confirm | Upload a file, sent as base64 content, to a document as a new version. |
 | `set_document_version_label` | write | Set or clear the label of one version of a document, the root version's too. |
 | `delete_document_version` | destructive, confirm | Delete one version of a document by moving it to the Paperless trash. |
 | `merge_documents_as_versions` | destructive, confirm | Merge documents into another document as its newest versions. |

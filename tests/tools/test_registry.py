@@ -176,6 +176,8 @@ MAIL_CONFIRMING = frozenset({"update_mail_account", "create_mail_rule", "update_
 # Admin tools that are not destructive but need an optional confirm for the cases decision-26
 # names: a superuser or staff user, and the tasks that retrain or re-index.
 ADMIN_CONFIRMING = frozenset({"create_user", "create_group", "run_task"})
+# Upload tools, which are not destructive: they need confirm for a file Paperless already holds.
+UPLOAD_CONFIRMING = frozenset({"upload_document", "upload_document_version"})
 # Names that hold a secret. Nothing of the sort may be in a tool's output (decision-18), and an
 # input that takes one must be write-only.
 CREDENTIAL_WORDS = (
@@ -388,6 +390,15 @@ async def test_the_mail_tools_with_conditional_confirmations_take_confirm() -> N
 
     assert {t.name for t in tools} >= MAIL_CONFIRMING
     assert unconfirmed(tools, MAIL_CONFIRMING) == []
+
+
+@pytest.mark.decision("decision-47")
+async def test_the_upload_tools_take_confirm_and_are_not_destructive() -> None:
+    tools = await server_tools()
+
+    assert {t.name for t in tools} >= UPLOAD_CONFIRMING
+    assert unconfirmed(tools, UPLOAD_CONFIRMING) == []
+    assert {t.name for t in tools if destructive(t)}.isdisjoint(UPLOAD_CONFIRMING)
 
 
 @pytest.mark.decision("decision-26")

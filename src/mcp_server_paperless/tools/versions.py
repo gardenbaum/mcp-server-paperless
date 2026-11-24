@@ -25,12 +25,15 @@ from mcp_server_paperless.domain.versions import (
 from mcp_server_paperless.services.tasks import MAX_WAIT_SECONDS
 from mcp_server_paperless.services.versions import MAX_LABEL, MAX_SOURCES
 from mcp_server_paperless.tools._shared import ANNOTATIONS, Confirm, boundary, services
+from mcp_server_paperless.tools.upload_hint import PATH_OFF
 
 TOOLSET = "versions"
 
 provider = LocalProvider()
-# The tool's name is the same in both variants; the server registers exactly one of them.
+# The tool's name is the same in every variant; the server registers exactly one of them.
 remote = LocalProvider()
+# The remote form with the hint at paths, for stdio without an allowlist.
+hinted = LocalProvider()
 
 type DocumentId = Annotated[int, Field(description="Document id, from search_documents.")]
 type VersionId = Annotated[
@@ -59,8 +62,12 @@ COMMON = (
     "are kept. The type comes from the content, not the name: PDF, images, plain text and CSV "
     "(Office, OpenDocument and RTF only if Paperless runs Tika). Paperless consumes the file "
     "later: the result holds the task_id and, with wait_seconds, the version_id; a problem found "
-    "only then shows as state failure. Each call adds a version, also for content Paperless "
-    "already holds (no duplicate check). Needs the permissions to add and change documents, and "
+    "only then shows as state failure. A file "
+    "Paperless already holds (same bytes) is not sent without confirm: first a dialog, or an error "
+    "for you to show the user, names where it is (see confirm). Checked are the originals of "
+    "documents, the versions of the 5,000 last changed and 500 trash entries; not archive files "
+    "and what this user cannot see (duplicates.not_checked says more). "
+    "Needs the permissions to add and change documents, and "
     "the user must own the document, hold a change grant on it, or be a superuser, or the "
     "document must be unowned."
 )
@@ -79,6 +86,11 @@ async def list_document_versions(ctx: Context, document_id: DocumentId) -> Docum
     return await services(ctx).versions.list_versions(document_id)
 
 
+@hinted.tool(
+    tags={TOOLSET},
+    annotations=ANNOTATIONS["upload_document_version"],
+    description=f"{DESCRIPTION} {PATH_OFF}",
+)
 @remote.tool(
     tags={TOOLSET}, annotations=ANNOTATIONS["upload_document_version"], description=DESCRIPTION
 )
@@ -109,10 +121,11 @@ async def upload_document_version(  # noqa: PLR0913 -- the document, the file an
     *,
     label: Label = None,
     wait_seconds: Wait = 0,
+    confirm: Confirm = False,
 ) -> VersionUploadResult:
     """Upload a file as base64 content as a new version; the tool description is DESCRIPTION."""
     return await services(ctx).version_uploads.from_content(
-        document_id, content_base64, filename, label, wait_seconds=wait_seconds
+        document_id, content_base64, filename, label, wait_seconds=wait_seconds, confirm=confirm
     )
 
 

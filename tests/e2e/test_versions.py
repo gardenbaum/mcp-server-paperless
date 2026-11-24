@@ -91,7 +91,7 @@ async def test_a_version_is_uploaded_listed_labelled_and_deleted_only_with_confi
         stack,
         "upload_document_version",
         document_id=document,
-        content_base64=text("plmcp24 second version"),
+        content_base64=text(f"plmcp24 second version {uuid.uuid4().hex}"),
         filename="second.txt",
         label="second",
         wait_seconds=30,
@@ -182,7 +182,7 @@ async def test_a_read_only_user_may_list_but_not_change_versions(
                 stack,
                 "upload_document_version",
                 document_id=document,
-                content_base64=text("plmcp24 shared version"),
+                content_base64=text(f"plmcp24 shared version {uuid.uuid4().hex}"),
                 filename="shared.txt",
                 wait_seconds=30,
             )
@@ -233,7 +233,9 @@ async def test_the_console_script_uploads_a_version_by_path_over_stdio(
     document = scope.document()
     folder = tmp_path / "inbox"
     folder.mkdir()
-    _ = (folder / "plmcp24 März.txt").write_bytes(b"plmcp24 version from disk")
+    _ = (folder / "plmcp24 März.txt").write_bytes(
+        f"plmcp24 version from disk {uuid.uuid4().hex}".encode()
+    )
     _ = (tmp_path / "outside.txt").write_bytes(b"outside")
     script = shutil.which("mcp-server-paperless")
     assert script, "the mcp-server-paperless console script is not installed (uv sync)"
