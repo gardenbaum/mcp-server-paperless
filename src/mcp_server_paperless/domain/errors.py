@@ -50,6 +50,10 @@ class Validation(PaperlessMcpError):
     """Paperless rejected the input."""
 
 
+class TaskFailed(Validation):
+    """Paperless accepted the request, but its queued task failed: part of it may be done."""
+
+
 # What every refusal for a missing confirmation tells the caller to do.
 CONFIRM_HINT = (
     "Describe the effect to the user and call the tool again with the same arguments and "

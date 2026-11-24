@@ -571,7 +571,11 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     path_hint=path_hint,
                 ),
                 bulk_documents=BulkDocumentEditor(
-                    adapters.documents, adapters.bulk_writes, taxonomy, web_url=web_url
+                    adapters.documents,
+                    adapters.bulk_writes,
+                    DocumentSelector(adapters.documents, documents, views, taxonomy),
+                    taxonomy,
+                    web_url=web_url,
                 ),
                 bulk_taxonomy=BulkTaxonomyEditor(adapters.taxonomy, adapters.bulk_writes, taxonomy),
                 duplicate_resolver=DuplicateResolver(

@@ -366,6 +366,27 @@ async def test_an_unknown_or_repeated_document_rejects_the_whole_batch(backend: 
     assert tag not in (await read(ports, document)).tags
 
 
+@pytest.mark.parametrize("change", [TrashDocuments(), ReprocessChange()])
+@pytest.mark.contract(DOCUMENTS)
+async def test_the_endpoints_of_their_own_refuse_a_whole_batch_too(
+    backend: Backend, change: TrashDocuments | ReprocessChange
+) -> None:
+    # P5: documents/delete and documents/reprocess check like bulk_edit does.
+    mine, hidden = backend.new_documents(2)
+    allowed = frozenset({"view_document", "change_document", "delete_document"})
+    user = backend.restricted(allowed, change=[mine])
+    _ = backend.restricted(allowed, view=[hidden])  # somebody else's alone
+
+    for selection in ((mine, MISSING), (mine, mine)):
+        with pytest.raises(Validation, match=r"(?i)don't exist or were specified twice"):
+            _ = await backend.admin.bulk_writes.bulk_edit_documents(selection, change)
+    with pytest.raises(PermissionDenied):
+        _ = await user.bulk_writes.bulk_edit_documents((mine, hidden), change)
+
+    assert not backend.in_trash(mine)
+    assert not backend.in_trash(hidden)
+
+
 @pytest.mark.contract(DOCUMENTS)
 async def test_an_empty_selection_is_accepted_and_changes_nothing(backend: Backend) -> None:
     # Pinned because the service must refuse it itself: Paperless answers OK.

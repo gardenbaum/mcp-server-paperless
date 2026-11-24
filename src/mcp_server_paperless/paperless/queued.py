@@ -28,6 +28,7 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
+    TaskFailed,
     Validation,
 )
 from mcp_server_paperless.domain.tasks import TaskState, Unconfirmed
@@ -63,14 +64,14 @@ INVISIBLE_REASON: Final = "it did not show up in the task list"
 UNREADABLE_REASON: Final = "the task list could not be read"
 
 
-def not_applied(what: str) -> Validation:
+def not_applied(what: str) -> TaskFailed:
     """The error for a queued ``what`` whose task failed."""
-    return Validation(f"Paperless could not apply the {what}: its task failed.", hint=FAILED_HINT)
+    return TaskFailed(f"Paperless could not apply the {what}: its task failed.", hint=FAILED_HINT)
 
 
-def task_failed(task_id: str, causes: str) -> Validation:
+def task_failed(task_id: str, causes: str) -> TaskFailed:
     """The error for a failed task whose cause Paperless does not name; ``causes`` are likely."""
-    return Validation(
+    return TaskFailed(
         f"Paperless reported task {task_id} as failed; the likely causes are {causes}.",
         hint=FAILED_HINT,
     )

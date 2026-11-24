@@ -268,6 +268,23 @@ class DocumentSample(BaseModel):
     web_url: Annotated[str, Field(description="Link to the document in the Paperless web UI.")]
 
 
+class BulkOutcomes(BaseModel):
+    """What was seen of the documents when they were read again after the change."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    changed: Annotated[
+        tuple[int, ...], Field(description="As asked now; after delete: no longer listed.")
+    ] = ()
+    not_changed: Annotated[
+        tuple[int, ...],
+        Field(description="As before, when read; a task that still runs may change them."),
+    ] = ()
+    unknown: Annotated[
+        tuple[int, ...], Field(description="Something else, or it could not be read.")
+    ] = ()
+
+
 class DocumentBulkReport(BaseModel):
     """A bulk edit of documents: the preview of a dry run, or what was done."""
 
@@ -287,7 +304,37 @@ class DocumentBulkReport(BaseModel):
             )
         ),
     ] = None
+    outcomes: Annotated[
+        BulkOutcomes | None,
+        Field(description="Set with unconfirmed_task_id: the documents as read again afterwards."),
+    ] = None
+    matched: Annotated[
+        int,
+        Field(description="How many documents the ids, filters or view match, exclude_ids too."),
+    ]
     requested: Annotated[int, Field(description="How many documents were selected.")]
+    selected_ids: Annotated[
+        tuple[int, ...],
+        Field(
+            description=(
+                "The documents that change (a preview) or changed in this call; with the same "
+                "filters or saved_view they are the document_ids of the next call."
+            )
+        ),
+    ]
+    remaining: Annotated[
+        int,
+        Field(description="Matching documents that also need the change and are not touched."),
+    ]
+    also_matching: Annotated[
+        tuple[int, ...],
+        Field(
+            description=(
+                "With document_ids and filters or saved_view: the remaining ones, which were not "
+                "named."
+            )
+        ),
+    ] = ()
     affected_count: Annotated[
         int, Field(description="Documents that change (a preview) or changed (applied).")
     ]
@@ -302,8 +349,8 @@ class DocumentBulkReport(BaseModel):
         tuple[DocumentSample, ...],
         Field(
             description=(
-                "Documents that are not selected but change because document links are "
-                f"mirrored on them (at most {SAMPLE_SIZE}); title '#id' if you cannot see it."
+                "Other documents that change because document links are mirrored on them (at "
+                f"most {SAMPLE_SIZE}); title '#id' if you cannot see it."
             )
         ),
     ]

@@ -303,6 +303,25 @@ async def test_a_missing_document_and_a_restricted_user_change_nothing(
     assert tags_of(stack, public) == seeded_tags
 
 
+@pytest.mark.decision("decision-69")
+async def test_paperless_takes_a_filter_it_does_not_understand_as_none(stack: Stack) -> None:
+    """P2, why Paperless's own filters are never sent. Only read: nothing is changed."""
+    inbox = stack.seeded.inbox_tag
+
+    def tagged(**filters: object) -> int:
+        body = {"all": True, "filters": filters}
+        answer = stack.admin.post("/api/documents/selection_data/", json=body).raise_for_status()
+        rows = [obj(row) for row in seq(obj(parse(answer))["selected_tags"])]
+        return next(num(row["document_count"]) for row in rows if row["id"] == inbox)
+
+    everything = tagged()
+    assert everything > 0
+    assert tagged(title__istartswith="no document has this title") == 0
+    assert tagged(tags__id__all="abc") == everything
+    assert tagged(tags__id__all="") == everything
+    assert tagged(titel__istartswith="no document has this title") == everything
+
+
 async def test_taxonomy_permissions_are_set_and_the_objects_deleted_with_confirm(
     stack: Stack, scratch: str
 ) -> None:
