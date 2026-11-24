@@ -62,7 +62,7 @@ Limits.
 | `GET /api/document_types/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/document_types/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/document_types/{id}/` |  | PLMCP-83 |
-| `GET /api/documents/` | `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents`, `get_document` and 8 more |  |
+| `GET /api/documents/` | `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents`, `empty_trash` and 10 more |  |
 | `POST /api/documents/bulk_download/` | `bulk_download` |  |
 | `POST /api/documents/bulk_edit/` | `bulk_edit_documents`, `resolve_duplicates` |  |
 | `POST /api/documents/chat/` | `ask_paperless_ai` |  |
@@ -97,7 +97,7 @@ Limits.
 | `POST /api/documents/{id}/update_version/` | `upload_document_version` |  |
 | `DELETE /api/documents/{id}/versions/{version_id}/` | `delete_document_version` |  |
 | `PATCH /api/documents/{id}/versions/{version_id}/` | `set_document_version_label` |  |
-| `GET /api/groups/` | `create_user`, `create_workflow`, `delete_group`, `get_user`, `list_groups` and 4 more |  |
+| `GET /api/groups/` | `create_user`, `create_workflow`, `delete_group`, `get_trash_entry`, `get_user` and 5 more |  |
 | `POST /api/groups/` | `create_group` |  |
 | `DELETE /api/groups/{id}/` | `delete_group` |  |
 | `GET /api/groups/{id}/` | `delete_group`, `get_group`, `update_group` |  |
