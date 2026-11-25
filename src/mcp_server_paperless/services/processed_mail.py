@@ -65,11 +65,17 @@ NEXT: Final = "the next fetch (every 10 minutes by default, or process_mail_acco
 AGAIN: Final = "a second time, unless Paperless rejects duplicates"
 CAVEAT: Final = (
     "The rule's settings of now count, not those of then; whether the mail still exists on the "
-    "server is not known here."
+    "server, and records you may not see, are not known here."
 )
 BOUNDED: Final = (
     f"Only the newest {MAX_RECORDS:,} records of the rule were looked at for others of the same "
     "mail."
+)
+OTHERS: Final = (
+    "Other records with the folder and uid of this mail keep it out until they are deleted too"
+)
+ANEW: Final = (
+    "(unless the folder was made anew on the server since: then a uid can mean another mail)"
 )
 NO_RULE: Final = (
     "Not known: you may not see the rule of this mail, which decides whether it is fetched again "
@@ -173,9 +179,7 @@ class _Plan:
         kept = ""
         if stay:
             more = f" and {len(stay) - NAMED} more" if len(stay) > NAMED else ""
-            kept = (
-                f"; kept out by the records {_ids(stay[:NAMED])}{more} of the same mail, which stay"
-            )
+            kept = f"; kept out by the records {_ids(stay[:NAMED])}{more} with its uid, which stay"
         received = f"{mail.received.astimezone(UTC):%Y-%m-%d %H:%M} UTC"
         return f"{mail.id} {quoted(mail.subject)} (received {received}, {name}{kept})"
 
@@ -198,6 +202,8 @@ class _Plan:
             items = ", ".join(map(self._item, mails))
             which = "it" if len(mails) == 1 else "each"
             parts.append(f"{len(mails)} with status {status}: {items}. For {which}: {follows}.")
+        if self.staying:
+            parts.append(f"A record with the same uid keeps a mail out {ANEW}.")
         for number in self.bounded:
             rule = self.rules[number]
             name = f" {quoted(rule.name)} (id {number})" if rule else ""
@@ -268,14 +274,15 @@ class ProcessedMailService:
     async def _refetch(self, mail: ProcessedMail, rule: MailRule) -> str:
         """Whether and when the mail is fetched again without its record, and what follows."""
         first, last = _obstacles(mail, rule), CAVEAT
-        rows, complete = await self._records(rule)
-        if others := _others(mail, rows):
-            first += (
-                "Other records of the same mail keep it out until they are deleted too: "
-                f"{_ids(others)}. "
-            )
-        if not complete:
-            last += f" {BOUNDED}"
+        try:
+            rows, complete = await self._records(rule)
+        except PaperlessMcpError:
+            last += " Other records of the same mail could not be looked for."
+        else:
+            if others := _others(mail, rows):
+                first += f"{OTHERS}: {_ids(others)} {ANEW}. "
+            if not complete:
+                last += f" {BOUNDED}"
         outcome = _outcome(mail.status, rule)
         said = f"Otherwise: {outcome}" if first else outcome[0].upper() + outcome[1:]
         return f"{first}{said} {last}"
@@ -283,13 +290,8 @@ class ProcessedMailService:
     async def _records(
         self, rule: MailRule, until: float = math.inf
     ) -> tuple[list[ProcessedMail], bool]:
-        """The records of the rule among which others of one mail can be, and whether all are.
-
-        Only a rule that takes the mail and its attachments writes several records of one mail.
-        """
+        """The newest records of the rule, and whether these are all."""
         rows: list[ProcessedMail] = []
-        if rule.consumption_scope != "eml_and_attachments":
-            return rows, True
         for page in range(1, MAX_RECORDS // PAGE + 1):
             self._in_time(until)
             found = await self._reader.list_processed_mail(

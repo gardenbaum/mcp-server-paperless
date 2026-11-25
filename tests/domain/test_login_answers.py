@@ -143,12 +143,62 @@ def test_an_error_of_a_login_that_is_no_answer_stays() -> None:
         ),
         (f"{START}Error while authenticating account Work", None),
         (f"{START}Error while processing mail account Work", None),
-        (f"{START}Error while retrieving mailbox Work: [Errno 111] refused", None),
+        (
+            f"{START}Error while retrieving mailbox Work: NO {PASSWORD}",
+            f"{START}Error while retrieving mailbox Work: {ANSWER_NOT_SHOWN}",
+        ),
+        (
+            f"Error while authenticating account Work: {PASSWORD}",
+            f"Error while authenticating account Work: {ANSWER_NOT_SHOWN}",
+        ),
     ],
 )
 def test_a_line_of_the_log_holds_no_answer(line: str, shown: str | None) -> None:
     assert text_without_credentials(line) == (shown or line)
-    assert lines_without_credentials(line.split("\n")) == (shown or line).split("\n")
+    if line.startswith(START):  # a line without its date is none of a record
+        assert lines_without_credentials(line.split("\n")) == (shown or line).split("\n")
+
+
+@pytest.mark.parametrize("phrase", ["authenticating account", "retrieving mailbox"])
+def test_an_answer_that_starts_with_a_carriage_return_is_hidden(phrase: str) -> None:
+    """The log is read with universal newlines and its lines lose what is blank at their end."""
+    start = f"{START}Error while {phrase} Work:"
+
+    assert PASSWORD not in "\n".join(lines_without_credentials([start, PASSWORD]))
+    assert PASSWORD not in text_without_credentials(f"{start}\n{PASSWORD}")
+    assert PASSWORD not in text_without_credentials(f"{start}\r{PASSWORD}")
+    assert lines_without_credentials([start]) == [start + ANSWER_NOT_SHOWN]
+
+
+@pytest.mark.parametrize("kind", [LOGIN_ERROR, "imaplib.IMAP4.abort: "])
+def test_an_error_whose_answer_starts_on_the_next_line_is_hidden(kind: str) -> None:
+    record = f"{START}Error while processing mail account Work"
+    lines = [record, *FIRST.rstrip().split("\n"), kind.rstrip(), PASSWORD, *CAUSE.split("\n")]
+
+    shown = lines_without_credentials(lines)
+
+    assert PASSWORD not in "\n".join(shown)
+    assert len(shown) == len(lines)
+
+
+def test_a_url_before_the_error_does_not_hide_where_the_answer_starts() -> None:
+    text = f'  File "https://h/mail.py"\n{FIRST}{LOGIN_ERROR}me@mail.example {PASSWORD}'
+
+    assert PASSWORD not in text_without_credentials(text)
+
+
+@pytest.mark.parametrize("first", ["logged", "error"])
+def test_the_first_of_two_answers_counts(first: str) -> None:
+    logged, error = f"{LOGGED}{PASSWORD}1\n", f"{FIRST}{LOGIN_ERROR}{PASSWORD}2\n"
+    text = logged + error if first == "logged" else error + logged
+
+    assert PASSWORD not in text_without_credentials(text)
+
+
+def test_an_indented_error_is_one_too() -> None:
+    text = f"{FIRST}  {LOGIN_ERROR}{PASSWORD}"
+
+    assert text_without_credentials(text) == f"{FIRST}  {LOGIN_ERROR}{ANSWER_NOT_SHOWN}"
 
 
 def test_the_lines_of_a_record_keep_their_number_and_the_next_record_stays() -> None:

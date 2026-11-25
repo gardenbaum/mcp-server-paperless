@@ -35,7 +35,7 @@ Supplements decision-6, decision-18 and decision-44.
 <!-- SECTION:CONSEQUENCES:BEGIN -->
 - The fetch that follows happens without another question and can delete mail on the server: the confirmation says so.
 - The tool needs `view_processedmail` as well, though Paperless does not.
-- Between the last read and the deletion, and until the next fetch, the rule or the mail can change. Only the newest 1,000 records of a rule are searched for others of the same mail, and that is said.
+- Between the last read and the deletion, and until the next fetch, the rule or the mail can change. Only the newest 1,000 records of a rule are searched for others of the same mail, and that is said. Others are found by folder and uid: a record of a folder that was made anew since, or one the user may not see, is not told apart or not counted; the texts say so.
 - A grant to delete set in the Django admin does not count: the record of another user is refused beforehand.
 <!-- SECTION:CONSEQUENCES:END -->
 

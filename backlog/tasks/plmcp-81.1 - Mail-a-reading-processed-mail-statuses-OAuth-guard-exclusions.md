@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:53Z'
-updated_date: '2026-11-25T07:15:18Z'
+updated_date: '2026-11-25T07:31:55Z'
 labels:
   - mail
 dependencies: []
@@ -52,4 +52,6 @@ Owner approval (2026-11-24): designs 81, 87, 88, 89, 90, 83, 100 all as recommen
 Login answers (decision-80) are hidden to the end of a text, and the undated head of a log in full, after an automated security review found that an answer can forge the end of its error and that a cut head hid nothing (main agent, 2026-11-24: fail closed, tests first). Order differs from the design: answers before URLs, because a URL before could swallow where the answer starts.
 
 Owner's words (2026-11-24): 'Alle wie empfohlen' in the question 'Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?'. Coverage rows and decisions 79 and 80 quote exactly that now.
+
+Review round 1 (independent), tests first: M1 an answer that starts with a carriage return was shown in get_log and raw logs (confirmed leak, fixed); M2 'Error while retrieving mailbox NAME:' hidden as well, with what useful text is lost, and the residuals, in decision-80; M3 tests for the surviving mutants; L1 is_token is bound in confirmations; L2 other records are always looked for, caveats named; L3 a failing list does not fail get_processed_mail; L4 (real order) with the mail server in 81.2.
 <!-- SECTION:NOTES:END -->

@@ -40,12 +40,12 @@ def wait[T](what: str, look: Callable[[], T | None]) -> T:
     pytest.fail(f"Timed out waiting for {what}")
 
 
-def mail(subject: str, files: dict[str, bytes] | None = None) -> bytes:
+def mail(subject: str, files: dict[str, bytes] | None = None, *, age: int = 0) -> bytes:
     message = EmailMessage()
     message["From"] = "Sender <sender@example.org>"
     message["To"] = "me@example.org"
     message["Subject"] = subject
-    message["Date"] = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
+    message["Date"] = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime(time.time() - age))
     message["Message-ID"] = f"<{uuid.uuid4().hex}@example.org>"
     message.set_content("The body of the mail.")
     for name, content in (files or {}).items():
@@ -99,9 +99,10 @@ class Mailbox:
 
     # --- the mail server
 
-    def put(self, subject: str, files: dict[str, bytes] | None = None) -> str:
-        """Append an unread mail to the inbox; its uid."""
-        status, said = self.imap.append("INBOX", "", "", mail(f"{self.name} {subject}", files))
+    def put(self, subject: str, files: dict[str, bytes] | None = None, *, age: int = 0) -> str:
+        """Append an unread mail, sent `age` seconds ago, to the inbox; its uid."""
+        content = mail(f"{self.name} {subject}", files, age=age)
+        status, said = self.imap.append("INBOX", "", "", content)
         assert status == "OK", said
         return self.uids()[-1]
 
@@ -143,6 +144,10 @@ class Mailbox:
         assert made.is_success, made.text
         self.rules.append(num(obj(parse(made))["id"]))
         return self.rules[-1]
+
+    def change_account(self, **fields: object) -> None:
+        changed = self.stack.admin.patch(f"/api/mail_accounts/{self.account}/", json=fields)
+        assert changed.is_success, changed.text
 
     def change_rule(self, rule: int, **fields: object) -> None:
         changed = self.stack.admin.patch(f"/api/mail_rules/{rule}/", json=fields)

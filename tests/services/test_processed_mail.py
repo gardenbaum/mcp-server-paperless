@@ -38,6 +38,7 @@ if TYPE_CHECKING:
         ProcessedMail,
         ProcessedMailDeletion,
         ProcessedMailDetail,
+        ProcessedMailPage,
     )
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-80")]
@@ -47,7 +48,7 @@ NEXT: Final = "the next fetch (every 10 minutes by default, or process_mail_acco
 MATCHING: Final = "if it still matches the rule's folder, age and filters"
 NOT_KNOWN: Final = (
     "The rule's settings of now count, not those of then; whether the mail still exists on the "
-    "server is not known here."
+    "server, and records you may not see, are not known here."
 )
 
 
@@ -308,19 +309,43 @@ async def test_other_records_of_the_same_mail_that_keep_it_out_are_named() -> No
     text = await setup.refetch()
 
     start = (
-        "Other records of the same mail keep it out until they are deleted too: 2, 6. "
+        "Other records with the folder and uid of this mail keep it out until they are deleted "
+        "too: 2, 6 (unless the folder was made anew on the server since: then a uid can mean "
+        "another mail). "
         "Otherwise: without this record the next fetch"
     )
     assert text.startswith(start)
 
 
-async def test_only_a_rule_that_can_write_several_records_is_searched() -> None:
+async def test_other_records_are_looked_for_whatever_the_rule_takes_now() -> None:
+    """The rule may have taken the mail and its attachments when the records were written."""
     setup = Setup()
     setup.rule(consumption_scope="eml")
     setup.mail(status="FAILED")
     setup.mail()
 
-    assert (await setup.refetch()).startswith("Without this record")
+    assert (await setup.refetch()).startswith("Other records with the folder and uid of this mail")
+
+
+async def test_a_failure_to_look_for_other_records_does_not_fail_the_read() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.mail(status="FAILED", error="boom")
+
+    @final
+    class Unlisted(FakePaperless):
+        @override
+        async def list_processed_mail(self, **_: object) -> ProcessedMailPage:
+            message = "Paperless did not respond in time."
+            raise UpstreamTimeout(message)
+
+    fake = Unlisted(setup.state, user=ADMIN[0])
+    service = ProcessedMailService(fake, fake, fake)
+    found = await service.get(1, error_from=0)
+
+    assert found.error == "boom"
+    assert found.refetch.startswith("Without this record")
+    assert found.refetch.endswith("Other records of the same mail could not be looked for.")
 
 
 async def test_the_search_for_other_records_is_bounded_and_says_so() -> None:
@@ -472,8 +497,9 @@ async def test_other_records_that_stay_are_named_and_those_that_go_are_not() -> 
         _ = await setup.delete(1, 2, 8, confirm=False)
 
     text = raised.value.message
-    kept = "kept out by the records 3, 4, 5 and 2 more of the same mail, which stay"
+    kept = "kept out by the records 3, 4, 5 and 2 more with its uid, which stay"
     assert f"1 'Invoice' (received 2026-11-10 08:00 UTC, rule 'Bills', id 1; {kept})" in text
+    assert "A record with the same uid keeps a mail out (unless the folder was made anew" in text
     assert "8 'Invoice' (received 2026-11-10 08:00 UTC, rule 'Bills', id 1)." in text
 
 
