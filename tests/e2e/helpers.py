@@ -39,6 +39,8 @@ EXPECTED_VERSION = os.environ.get("PAPERLESS_E2E_VERSION", "3.5.1")
 
 READY_TIMEOUT = 300.0
 CONSUME_TIMEOUT = 180.0
+# A text file is consumed in about a second: a longer step would double its time.
+CONSUME_POLL = 0.2
 # Every custom field data type of 3.5.1 except `select`, which needs options (see seed()).
 DATA_TYPES = (
     *("string", "url", "date", "boolean", "integer", "float", "monetary"),
@@ -311,7 +313,7 @@ def settled(api: httpx2.Client, task_id: str, title: str) -> int | None:
         if tasks and tasks[0]["status"] in {"success", "failure", "revoked"}:
             related = seq(tasks[0]["related_document_ids"])
             return num(related[0]) if related else None
-        time.sleep(1)
+        time.sleep(CONSUME_POLL)
     pytest.fail(f"Consuming {title!r} timed out after {CONSUME_TIMEOUT:.0f}s. Logs: `{LOGS_HINT}`")
 
 
