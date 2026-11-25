@@ -27,9 +27,10 @@ from mcp_server_paperless.domain.instance import (
     SystemStatus,
     TaskTotals,
     TimedStatus,
+    UpdateCheck,
 )
 from mcp_server_paperless.paperless.client import RetryPolicy
-from mcp_server_paperless.paperless.instance import PaperlessInstanceReader
+from mcp_server_paperless.paperless.instance import UPDATE_SECONDS, PaperlessInstanceReader
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory
@@ -489,3 +490,52 @@ def test_the_planted_texts_are_those_of_every_part() -> None:
         "database",
         "tasks",
     }
+
+
+@pytest.mark.decision("decision-105")
+@pytest.mark.parametrize(
+    ("body", "found"),
+    [
+        (
+            {"version": "v3.6.0", "update_available": True},
+            UpdateCheck(newest_release="v3.6.0", update_available=True),
+        ),
+        (
+            {"version": "v3.5.1", "update_available": False},
+            UpdateCheck(newest_release="v3.5.1", update_available=False),
+        ),
+        # What Paperless says when GitHub did not answer it.
+        (
+            {"version": "0.0.0", "update_available": False},
+            UpdateCheck(newest_release=None, update_available=None),
+        ),
+    ],
+)
+async def test_the_newest_release_is_what_paperless_found(
+    make_client: ClientFactory, body: Json, found: UpdateCheck
+) -> None:
+    sent: list[str] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        sent.append(request.url.path)
+        return httpx2.Response(200, json=body)
+
+    assert await PaperlessInstanceReader(make_client(handler)).check_for_update() == found
+    assert sent == ["/api/remote_version/"]
+
+
+@pytest.mark.decision("decision-105")
+async def test_the_check_for_an_update_is_bounded_and_not_repeated(
+    make_client: ClientFactory,
+) -> None:
+    timeouts: list[object] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        timeouts.append(cast("object", request.extensions["timeout"]))
+        return httpx2.Response(503, text="x")
+
+    with pytest.raises(UpstreamUnavailable):
+        _ = await PaperlessInstanceReader(make_client(handler)).check_for_update()
+
+    [timeout] = timeouts
+    assert set(cast("dict[str, float]", timeout).values()) == {UPDATE_SECONDS}

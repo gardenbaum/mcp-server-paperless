@@ -238,6 +238,16 @@ async def test_the_system_report_follows_the_rights_of_the_user(stack: Stack) ->
     assert restricted["status"] is None
 
 
+@pytest.mark.decision("decision-105")
+async def test_the_system_report_asks_paperless_for_an_update(stack: Stack) -> None:
+    report = await run(stack, "get_system_report", check_for_update=True)
+    plain = await run(stack, "get_system_report")
+
+    update = cast("Json", report["update"])
+    assert (update["newest_release"] is None) is (update["update_available"] is None)
+    assert plain["update"] is None
+
+
 @pytest.mark.decision("decision-95")
 async def test_a_history_of_sixty_changes_is_read_page_by_page(stack: Stack) -> None:
     document = consume_text(stack.admin, f"{PREFIX}{uuid.uuid4().hex}")

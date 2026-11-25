@@ -1,9 +1,11 @@
 ---
 id: PLMCP-83.4
 title: 'Rest of the API d: get_permissions, second factor, update check'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-25T14:42:19Z'
+updated_date: '2026-11-25T15:40:47Z'
 labels: []
 dependencies:
   - PLMCP-83.3
@@ -35,3 +37,9 @@ Last part of PLMCP-83; needs PLMCP-89.3 (get_system_report). Design approved by 
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. PLMCP-89 is merged. Tests first per level. 2. get_permissions in PermissionService (reader of set_permissions, 40 s for what is read one by one, 100,000 characters, what is left named). 3. AdminWriter.remove_second_factor behind update_user, in a call of its own, always confirmed, own account refused. 4. SystemReportReader.check_for_update behind get_system_report, 10 s, unknown where it cannot. 5. Decisions, guide limit +18, coverage rows, README sentence, docs, snapshots.
+<!-- SECTION:PLAN:END -->

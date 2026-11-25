@@ -1145,7 +1145,14 @@ async def test_documents_are_read_with_every_section_and_slice() -> None:
         (),
     )
     await sweep("get_document", {"document_id": 1, "include": ["history"], "history_page": 1}, ())
-    await sweep("get_system_report", {}, ())
+    await sweep("get_system_report", {"check_for_update": True}, ())
+    await sweep("get_permissions", {"kind": "document", "items": [1]}, ())
+    await sweep(
+        "update_user",
+        {"user": "e2e-reader", "remove_second_factor": True},
+        (),
+        prepare=with_second_factor,
+    )
     await sweep(
         "get_document_content",
         {"document_id": 1, "offset": 1, "max_chars": 10, "version_id": 1},
@@ -1438,6 +1445,10 @@ async def test_the_pdf_tools_take_every_option() -> None:
 def flags_on(state: FakeState) -> None:
     """Every on/off setting of the configuration is on: switching it off is a change."""
     state.config.update(dict.fromkeys(BOOLEANS, True))
+
+
+def with_second_factor(state: FakeState) -> None:
+    state.users[:] = [replace(user, mfa=True) for user in state.users]
 
 
 def reader_off(state: FakeState) -> None:

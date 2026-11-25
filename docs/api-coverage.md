@@ -65,7 +65,7 @@ Limits.
 | `GET /api/document_types/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/document_types/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/document_types/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
-| `GET /api/documents/` | `add_notes`, `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents` and 16 more |  |
+| `GET /api/documents/` | `add_notes`, `bulk_edit_documents`, `create_share_bundle`, `create_share_link`, `email_documents` and 17 more |  |
 | `POST /api/documents/bulk_download/` | `bulk_download` |  |
 | `POST /api/documents/bulk_edit/` | `bulk_edit_documents`, `run_workflow` |  |
 | `POST /api/documents/chat/` | `ask_paperless_ai` |  |
@@ -100,7 +100,7 @@ Limits.
 | `POST /api/documents/{id}/update_version/` | `insert_pages`, `upload_document_version` |  |
 | `DELETE /api/documents/{id}/versions/{version_id}/` | `delete_document_version` |  |
 | `PATCH /api/documents/{id}/versions/{version_id}/` | `set_document_version_label` |  |
-| `GET /api/groups/` | `create_user`, `create_workflow`, `delete_group`, `get_trash_entry`, `get_user` and 5 more |  |
+| `GET /api/groups/` | `create_user`, `create_workflow`, `delete_group`, `get_permissions`, `get_user` and 5 more |  |
 | `POST /api/groups/` | `create_group` |  |
 | `DELETE /api/groups/{id}/` | `delete_group` |  |
 | `GET /api/groups/{id}/` | `delete_group`, `get_group`, `update_group` |  |
@@ -134,7 +134,7 @@ Limits.
 | `DELETE /api/profile/totp/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `GET /api/profile/totp/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `POST /api/profile/totp/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
-| `GET /api/remote_version/` |  | PLMCP-83 |
+| `GET /api/remote_version/` | `get_system_report` |  |
 | `GET /api/saved_views/` | `add_notes`, `bulk_edit_documents`, `create_saved_view`, `delete_saved_view`, `get_saved_view` and 8 more |  |
 | `POST /api/saved_views/` | `create_saved_view` |  |
 | `DELETE /api/saved_views/{id}/` | `delete_saved_view` |  |
@@ -185,7 +185,7 @@ Limits.
 | `GET /api/users/{id}/` | `delete_user`, `get_user`, `update_user` |  |
 | `PATCH /api/users/{id}/` | `update_user` |  |
 | `PUT /api/users/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
-| `POST /api/users/{id}/deactivate_totp/` |  | PLMCP-83 |
+| `POST /api/users/{id}/deactivate_totp/` | `update_user` |  |
 | `GET /api/workflow_actions/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
 | `POST /api/workflow_actions/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
 | `DELETE /api/workflow_actions/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |

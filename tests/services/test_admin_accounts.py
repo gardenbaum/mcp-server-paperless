@@ -6,7 +6,7 @@ group 1 `e2e-group`.
 """
 
 from dataclasses import replace
-from typing import final
+from typing import final, override
 
 import pytest
 from fakes.accounts import ADMIN
@@ -19,11 +19,12 @@ from mcp_server_paperless.domain.errors import (
     Ambiguous,
     ConfirmationRequired,
     NotFound,
+    PaperlessMcpError,
     PermissionDenied,
     Validation,
 )
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
-from mcp_server_paperless.services.admin_accounts import AccountAdmin
+from mcp_server_paperless.services.admin_accounts import CANNOT_TELL, AccountAdmin
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 pytestmark = [
@@ -349,6 +350,116 @@ async def test_a_clerk_cannot_make_superusers_and_hears_why() -> None:
         _ = await setup.service.update_user("e2e-blind", is_superuser=True, confirm=True)
 
     assert "superuser" in (raised.value.hint or "")
+
+
+# --- the second factor
+
+
+@pytest.mark.decision("decision-103")
+async def test_a_second_factor_is_removed_only_with_a_yes_that_names_the_user() -> None:
+    setup = Setup()
+    setup.put(READER_ID, mfa=True)
+
+    message = await refusal(setup.service.update_user("e2e-reader", remove_second_factor=True))
+    assert setup.user(READER_ID).mfa is True
+    done = await setup.service.update_user("e2e-reader", remove_second_factor=True, confirm=True)
+
+    assert "remove the second factor of 'e2e-reader'" in message
+    assert "the password alone" in message
+    assert (done.changed, done.user.mfa_enabled, setup.user(READER_ID).mfa) == (True, False, False)
+    assert "Removed the second factor of 'e2e-reader'" in done.message
+
+
+@pytest.mark.decision("decision-103")
+async def test_without_a_second_factor_that_is_said_and_nothing_is_sent() -> None:
+    done = await Setup(writes=False).service.update_user("e2e-reader", remove_second_factor=True)
+
+    assert done.changed is False
+    assert "has no second factor" in done.message
+
+
+@pytest.mark.decision("decision-103")
+async def test_the_second_factor_of_the_server_account_is_never_removed() -> None:
+    setup = Setup(writes=False)
+    setup.put(ADMIN_ID, mfa=True)
+
+    with pytest.raises(Validation, match="account this server signs in with"):
+        _ = await setup.service.update_user(ADMIN_ID, remove_second_factor=True, confirm=True)
+
+
+@pytest.mark.decision("decision-103")
+async def test_where_the_account_is_not_known_no_second_factor_is_removed() -> None:
+    @final
+    class Nameless(FakePaperless):
+        @override
+        async def get_current_user_id(self) -> int:
+            message = "down"
+            raise PaperlessMcpError(message)
+
+    setup = Setup()
+    setup.put(READER_ID, mfa=True)
+    fake = Nameless(setup.state, user=ADMIN[0])
+    service = AccountAdmin(fake, fake, setup.taxonomy)
+
+    with pytest.raises(Validation) as raised:
+        _ = await service.update_user("e2e-reader", remove_second_factor=True, confirm=True)
+
+    assert raised.value.message == CANNOT_TELL
+
+
+@pytest.mark.decision("decision-103")
+async def test_the_second_factor_is_removed_in_a_call_of_its_own() -> None:
+    setup = Setup(writes=False)
+    setup.put(READER_ID, mfa=True)
+
+    others: list[dict[str, object]] = [
+        {"first_name": "Rita"},
+        {"password": SecretStr(PASSWORD)},
+        {"groups": []},
+    ]
+    for other in others:
+        with pytest.raises(Validation, match="in a call of its own"):
+            _ = await setup.service.update_user(
+                "e2e-reader",
+                remove_second_factor=True,
+                confirm=True,
+                **other,  # pyright: ignore[reportArgumentType] -- test data built from dicts
+            )
+
+
+@pytest.mark.decision("decision-103")
+async def test_a_second_factor_that_is_gone_meanwhile_is_no_error() -> None:
+    class Gone(FakePaperless):
+        @override
+        async def remove_second_factor(self, user_id: int) -> None:
+            self.state.users[:] = [replace(u, mfa=False) for u in self.state.users]
+            message = "gone"
+            raise NotFound(message)
+
+    setup = Setup()
+    setup.put(READER_ID, mfa=True)
+    fake = Gone(setup.state, user=ADMIN[0], allow_writes=True)
+    service = AccountAdmin(fake, fake, setup.taxonomy)
+
+    done = await service.update_user("e2e-reader", remove_second_factor=True, confirm=True)
+
+    assert (done.changed, done.user.mfa_enabled) == (False, False)
+
+
+@pytest.mark.decision("decision-103")
+async def test_a_second_factor_that_is_still_there_is_an_error() -> None:
+    class Kept(FakePaperless):
+        @override
+        async def remove_second_factor(self, user_id: int) -> None:
+            return None
+
+    setup = Setup()
+    setup.put(READER_ID, mfa=True)
+    fake = Kept(setup.state, user=ADMIN[0], allow_writes=True)
+    service = AccountAdmin(fake, fake, setup.taxonomy)
+
+    with pytest.raises(PaperlessMcpError, match="still has a second factor"):
+        _ = await service.update_user("e2e-reader", remove_second_factor=True, confirm=True)
 
 
 # --- deleting users

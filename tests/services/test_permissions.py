@@ -12,7 +12,14 @@ from typing import TYPE_CHECKING, ClassVar, final, override
 import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.mail import FakeMailAccount, FakeMailRule
-from fakes.paperless import FakeDocument, FakePaperless, FakeSavedView, FakeState, seeded
+from fakes.paperless import (
+    FakeDocument,
+    FakePaperless,
+    FakeSavedView,
+    FakeState,
+    FakeUser,
+    seeded,
+)
 
 from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
@@ -30,8 +37,10 @@ from mcp_server_paperless.domain.permissions import (
     AccessChange,
     PermissionsRequest,
 )
+from mcp_server_paperless.domain.selection import MAX_ANSWER
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.access import read_access
+from mcp_server_paperless.services.document_runner import RUN_SECONDS
 from mcp_server_paperless.services.permissions import PermissionService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
@@ -1608,3 +1617,167 @@ async def test_access_is_shown_with_names_and_none_where_the_object_is_gone() ->
     assert names(access.change_users) == ["e2e-blind"]
     assert names(access.view_groups) == ["e2e-group"]
     assert await read_access(setup.fake, setup.taxonomy, "saved_view", 99) is None
+
+
+# --- reading
+
+
+@pytest.mark.decision("decision-104")
+async def test_owner_and_grants_are_read_by_name_and_nothing_is_written() -> None:
+    setup = Setup(writes=False)
+    document = setup.document(PUBLIC)
+    document.owner, document.viewers, document.editors = 2, {READER_ID}, set()
+    document.change_groups = {1}
+
+    found = await setup.service.get_permissions("document", [PUBLIC, "2", PUBLIC])
+
+    assert [row.id for row in found.objects] == [PUBLIC, 2]
+    first = found.objects[0]
+    assert (first.name, first.web_url) == ("e2e-public-invoice", f"{WEB}/documents/1/details")
+    assert first.access.owner is not None
+    assert first.access.owner.name == "admin"
+    assert names(first.access.view_users) == ["e2e-reader"]
+    assert names(first.access.change_groups) == ["e2e-group"]
+    assert (found.kind, found.missing, found.left) == ("document", (), ())
+
+
+@pytest.mark.decision("decision-104")
+async def test_taxonomy_is_read_by_name_and_has_no_link() -> None:
+    found = await Setup(writes=False).service.get_permissions("tag", ["e2e-private"])
+
+    [row] = found.objects
+    assert (row.name, row.web_url) == ("e2e-private", None)
+
+
+@pytest.mark.decision("decision-104")
+async def test_what_is_missing_or_hidden_is_named_and_the_rest_is_read() -> None:
+    setup = Setup(READER[0], writes=False)
+
+    found = await setup.service.get_permissions("document", [PUBLIC, PRIVATE, 99])
+
+    assert [row.id for row in found.objects] == [PUBLIC]
+    assert found.missing == (PRIVATE, 99)
+
+
+@pytest.mark.decision("decision-104")
+async def test_users_the_caller_may_not_list_are_numbers() -> None:
+    setup = Setup(READER[0], writes=False)
+    setup.document(PUBLIC).editors = {2}
+
+    [row] = (await setup.service.get_permissions("document", [PUBLIC])).objects
+
+    assert names(row.access.change_users) == ["#2"]
+
+
+@pytest.mark.decision("decision-104")
+@pytest.mark.parametrize("items", [[], list(range(1, 102))], ids=["none", "101"])
+async def test_one_to_one_hundred_objects_are_read(items: list[NameOrId]) -> None:
+    with pytest.raises(Validation, match="between 1 and 100"):
+        _ = await Setup(writes=False).service.get_permissions("document", items)
+
+
+@pytest.mark.decision("decision-104")
+async def test_documents_are_read_by_id_only_and_unknown_names_fail() -> None:
+    service = Setup(writes=False).service
+    with pytest.raises(Validation, match="by id, not by title"):
+        _ = await service.get_permissions("document", ["invoice"])
+    with pytest.raises(NotFound):
+        _ = await service.get_permissions("tag", ["nope"])
+
+
+@final
+class Timed(FakePaperless):
+    """Every read takes its time; what was asked is kept in order."""
+
+    now: float = 0.0
+    names_take: float = 0.0
+    object_takes: float = 0.0
+
+    def __init__(self, state: FakeState) -> None:
+        super().__init__(state, user=ADMIN[0])
+        self.asked: list[str] = []
+        self.service: PermissionService = PermissionService(
+            self,
+            self,
+            TaxonomyResolver(self, StaticTokenProvider("t"), ttl=3600.0),
+            self,
+            web_url=WEB,
+            clock=lambda: self.now,
+        )
+
+    @override
+    async def get_permissions(
+        self, kind: PermissionKind, object_ids: Sequence[int]
+    ) -> list[ObjectAccess]:
+        self.asked.append(f"object {list(object_ids)}")
+        self.now += self.object_takes
+        return await super().get_permissions(kind, object_ids)
+
+    @override
+    async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
+        self.asked.append(kind)
+        self.now += self.names_take
+        return await super().list_taxonomy(kind)
+
+
+def three_views() -> FakeState:
+    state = seeded()
+    state.saved_views[:] = [
+        replace(state.saved_views[0], id=n, name=f"view {n}") for n in (1, 2, 3)
+    ]
+    return state
+
+
+@pytest.mark.decision("decision-104")
+async def test_nothing_is_asked_for_after_forty_seconds_and_what_is_left_is_named() -> None:
+    timed = Timed(three_views())
+    timed.object_takes = RUN_SECONDS / 2
+
+    found = await timed.service.get_permissions("saved_view", [1, 2, 3])
+
+    assert [row.id for row in found.objects] == [1, 2]
+    assert (found.left, found.missing) == ((3,), ())
+    # The names come before the objects, so none is asked for after the time is over.
+    assert timed.asked == ["saved_view", "user", "group", "object [1]", "object [2]"]
+
+
+@pytest.mark.decision("decision-104")
+async def test_names_that_take_the_whole_time_leave_every_object() -> None:
+    timed = Timed(three_views())
+    timed.names_take = RUN_SECONDS
+
+    found = await timed.service.get_permissions("saved_view", ["view 2"])
+
+    assert (found.objects, found.left) == ((), (2,))
+    assert not [call for call in timed.asked if call.startswith("object")]
+
+
+@pytest.mark.decision("decision-104")
+async def test_an_answer_holds_at_most_one_hundred_thousand_characters() -> None:
+    setup = Setup(writes=False)
+    everyone = set(range(100, 400))
+    setup.state.users += [FakeUser(id=n, username="u" * 60 + str(n)) for n in everyone]
+    setup.state.documents += [
+        FakeDocument(id=n, title=f"d {n}", owner=2, viewers=everyone) for n in range(10, 30)
+    ]
+
+    found = await setup.service.get_permissions("document", list(range(10, 30)))
+
+    assert len(found.model_dump_json()) <= MAX_ANSWER
+    shown = tuple(row.id for row in found.objects)
+    assert shown
+    assert (*shown, *found.left) == tuple(range(10, 30))
+    assert found.left
+
+
+@pytest.mark.decision("decision-104")
+async def test_one_object_is_shown_even_if_it_alone_is_too_large() -> None:
+    setup = Setup(writes=False)
+    everyone = set(range(100, 1500))
+    setup.state.users += [FakeUser(id=n, username="u" * 100 + str(n)) for n in everyone]
+    setup.document(PUBLIC).viewers = everyone
+
+    found = await setup.service.get_permissions("document", [PUBLIC, PRIVATE])
+
+    assert [row.id for row in found.objects] == [PUBLIC]
+    assert found.left == (PRIVATE,)

@@ -1,8 +1,11 @@
 """InstanceService: the overview use case and the startup probe."""
 
+import asyncio
 import time
+from typing import override
 
 import pytest
+from fakes.paperless import FakePaperless, seeded
 from harness import FailingReader, HangingReader, admin
 
 from mcp_server_paperless.domain.errors import (
@@ -11,9 +14,11 @@ from mcp_server_paperless.domain.errors import (
     PaperlessMcpError,
     UnsupportedVersion,
     UpstreamTimeout,
+    UpstreamUnavailable,
     UpstreamUnreachable,
 )
-from mcp_server_paperless.services.instance import InstanceService
+from mcp_server_paperless.domain.instance import UpdateCheck
+from mcp_server_paperless.services.instance import InstanceService, SystemReportService
 
 pytestmark = pytest.mark.anyio
 
@@ -61,3 +66,55 @@ async def test_the_probe_gives_up_after_its_timeout() -> None:
 
     assert await InstanceService(HangingReader()).probe(timeout=0.05) is None
     assert time.monotonic() - started < 1.0
+
+
+@pytest.mark.decision("decision-105")
+async def test_the_report_asks_for_an_update_only_when_it_is_told_to() -> None:
+    class Asked(FakePaperless):
+        asked: int = 0
+
+        @override
+        async def check_for_update(self) -> UpdateCheck:
+            self.asked += 1
+            return await super().check_for_update()
+
+    fake = Asked(seeded(), user="admin")
+    service = SystemReportService(fake)
+
+    plain = await service.report()
+    checked = await service.report(check_for_update=True)
+
+    assert (plain.update, fake.asked) == (None, 1)
+    assert checked.update == UpdateCheck(newest_release="v3.5.1", update_available=False)
+    assert checked.statistics == plain.statistics
+
+
+@pytest.mark.decision("decision-105")
+@pytest.mark.parametrize("error", [UpstreamTimeout("slow"), UpstreamUnavailable("down")], ids=type)
+async def test_a_check_that_fails_is_unknown_and_the_report_stays(error: PaperlessMcpError) -> None:
+    class Failing(FakePaperless):
+        @override
+        async def check_for_update(self) -> UpdateCheck:
+            raise error
+
+    report = await SystemReportService(Failing(seeded(), user="admin")).report(
+        check_for_update=True
+    )
+
+    assert report.update == UpdateCheck(newest_release=None, update_available=None)
+    assert report.statistics.documents == 2
+
+
+@pytest.mark.decision("decision-105")
+async def test_a_check_is_given_up_after_its_own_bound() -> None:
+    class Hanging(FakePaperless):
+        @override
+        async def check_for_update(self) -> UpdateCheck:
+            _ = await asyncio.Event().wait()
+            raise AssertionError
+
+    service = SystemReportService(Hanging(seeded(), user="admin"), update_seconds=0.01)
+
+    report = await service.report(check_for_update=True)
+
+    assert report.update == UpdateCheck(newest_release=None, update_available=None)

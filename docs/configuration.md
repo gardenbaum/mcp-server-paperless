@@ -341,7 +341,9 @@ documents in its refusal. E-mail needs a mail server set up in Paperless
 
 ### `permissions`
 
-Off by default: `set_permissions`, `list_users`, `list_groups`. Shares documents, tags,
+Off by default: `set_permissions`, `get_permissions`, `list_users`, `list_groups`. `get_permissions`
+shows the owner and grants of up to 100 objects and changes nothing (decision-104). The toolset
+shares documents, tags,
 correspondents, document types, storage paths, saved views, mail accounts and mail rules (the last
 two by id),
 and hands them over: `set_permissions` sets the owner and the users and groups who may view or
@@ -455,7 +457,8 @@ attached within the download limit, in parts, or saved (see
 
 - Anything that gives or takes away access needs `confirm`, and the refusal names who is
   affected: creating a superuser or staff user or a user with a password, groups or permissions;
-  changing a user's e-mail address, status, password, groups or permissions; deleting a user or a
+  changing a user's e-mail address, status, password, groups or permissions, or removing a user's
+  second factor (decision-103); deleting a user or a
   group; changing what a group grants.
 - Every `update_app_config` needs `confirm` and lists each setting with its old and new value,
   because it applies to every user and the AI settings decide which service gets document text.
@@ -477,7 +480,8 @@ source, seen or not, ended or not, owner, file name, result, time) and in any of
 `get_task_overview` counts them, shows what runs and how each type did, `acknowledge_tasks` marks
 them as seen, and `run_task` starts one. `get_task` of `core` follows one task by its `task_id`.
 `get_system_report` returns all of Paperless's statistics and system status, more than
-`get_instance_overview` of `core`.
+`get_instance_overview` of `core`; with `check_for_update=true` Paperless also asks GitHub for its
+newest release (decision-105).
 
 - `list_tasks`, `acknowledge_tasks` and `run_task` were in `admin` up to version 0.4: an operator
   who offered `admin` for them adds `tasks` (decision-93). User administration is not needed for

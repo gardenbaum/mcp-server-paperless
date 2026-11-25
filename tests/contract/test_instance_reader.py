@@ -201,3 +201,13 @@ async def test_the_report_follows_the_rights_of_the_user(backend: Backend) -> No
     assert restricted.status is None
     assert restricted.statistics.documents < everything.statistics.documents
     assert seen.statistics.documents < everything.statistics.documents
+
+
+@pytest.mark.contract("SystemReportReader.check_for_update")
+@pytest.mark.decision("decision-105")
+async def test_the_check_for_an_update_says_both_or_neither(backend: Backend) -> None:
+    # Paperless asks GitHub, which may not answer it.
+    for ports in (backend.admin, backend.blind):
+        found = await ports.reports.check_for_update()
+        assert (found.newest_release is None) is (found.update_available is None)
+        assert found.newest_release is None or found.newest_release.startswith("v3.")

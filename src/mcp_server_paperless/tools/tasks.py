@@ -159,7 +159,19 @@ async def get_task_overview(  # noqa: PLR0913 -- one filter each, described for 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["get_system_report"])
 @boundary
-async def get_system_report(ctx: Context) -> SystemReport:
+async def get_system_report(
+    ctx: Context,
+    *,
+    check_for_update: Annotated[
+        bool,
+        Field(
+            description=(
+                "Also let Paperless ask GitHub for its newest release, for at most 10 seconds; "
+                "update is null inside where that failed."
+            )
+        ),
+    ] = False,
+) -> SystemReport:
     """Read all of Paperless's statistics and system status, to find out why something is wrong.
 
     More than get_instance_overview: file types, characters, highest serial number, inbox tags;
@@ -168,7 +180,7 @@ async def get_system_report(ctx: Context) -> SystemReport:
     name and password. status is null without the view_system_monitoring permission (staff and
     superusers have it). Takes a few seconds while no worker answers.
     """
-    return await services(ctx).reports.report()
+    return await services(ctx).reports.report(check_for_update=check_for_update)
 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["acknowledge_tasks"])

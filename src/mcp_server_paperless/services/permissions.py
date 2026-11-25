@@ -38,10 +38,13 @@ from mcp_server_paperless.domain.permissions import (
     MAX_OBJECTS,
     AccessChange,
     GroupList,
+    ObjectGrants,
     ObjectResult,
+    PermissionsRead,
     PermissionsResult,
     UserList,
 )
+from mcp_server_paperless.domain.selection import MAX_ANSWER
 from mcp_server_paperless.services.access import access_view, groups_of, owner_ids, users_of
 from mcp_server_paperless.services.document_runner import OUT_OF_TIME, RUN_SECONDS
 from mcp_server_paperless.services.documents import document_link
@@ -288,6 +291,71 @@ class PermissionService:
         except PermissionDenied as error:
             raise PermissionDenied(error.message, hint=LISTING_HINT.format("groups")) from None
         return GroupList(count=found.count, page=page, next_page=found.next_page, groups=found.rows)
+
+    async def get_permissions(
+        self, kind: PermissionKind, items: Sequence[NameOrId]
+    ) -> PermissionsRead:
+        """Owner and grants of the objects ``items`` name, by name; nothing is changed.
+
+        Raises:
+            Validation: None or more than ``MAX_OBJECTS`` objects, or a title instead of an id.
+            NotFound: A name matches nothing.
+            Ambiguous: A name matches more than one.
+            PermissionDenied: The user may not view the kind.
+        """
+        until = self._clock() + RUN_SECONDS if kind in TIMED else math.inf
+        ids = await self._select(kind, items)
+        if kind in TIMED:  # read now, the names are there when the time is over
+            for principals in ("user", "group"):
+                _ = await names_of(self._taxonomy, principals, ())
+        found: list[ObjectAccess] = []
+        asked = len(ids)
+        if kind not in TIMED:
+            found = await self._reader.get_permissions(kind, ids)
+        else:
+            for at, number in enumerate(ids):
+                if self._clock() >= until:
+                    asked = at
+                    break
+                found += await self._reader.get_permissions(kind, [number])
+        names: dict[PrincipalKind, dict[int, str]] = {
+            "user": await names_of(
+                self._taxonomy,
+                "user",
+                sorted({n for row in found for n in users_of(row.permissions) | owner_ids(row)}),
+            ),
+            "group": await names_of(
+                self._taxonomy,
+                "group",
+                sorted({n for row in found for n in groups_of(row.permissions)}),
+            ),
+        }
+        rows = [
+            ObjectGrants(
+                id=row.id,
+                name=row.name,
+                web_url=document_link(self._web_url, row.id) if kind == "document" else None,
+                access=access_view(row, names),
+            )
+            for row in found
+        ]
+        seen = {row.id for row in rows}
+        answer = PermissionsRead(
+            kind=kind,
+            objects=(),
+            missing=tuple(n for n in ids[:asked] if n not in seen),
+            left=(),
+        )
+        # As if every object were left out: what is named instead of one is smaller than it.
+        room = MAX_ANSWER - len(answer.model_copy(update={"left": tuple(ids)}).model_dump_json())
+        shown: list[ObjectGrants] = []
+        for row in rows:
+            room -= len(row.model_dump_json()) + 1  # its comma
+            if room < 0 and shown:
+                break
+            shown.append(row)
+        left = (*(row.id for row in rows[len(shown) :]), *ids[asked:])
+        return answer.model_copy(update={"objects": tuple(shown), "left": left})
 
     async def set_permissions(
         self,

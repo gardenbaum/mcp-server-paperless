@@ -1014,3 +1014,40 @@ async def test_a_refusal_of_whoever_reads_an_opened_archive_stays_as_it_is() -> 
             [1], content="archive", compression="none", follow_formatting=False, wait_seconds=1
         ):
             raise error
+
+
+async def test_the_second_factor_is_removed_once(make_client: ClientFactory) -> None:
+    server = Recording(
+        httpx2.Response(200, json=True)
+    )
+
+    await PaperlessAdminWriter(make_client(server)).remove_second_factor(5)
+
+    assert server.sent == [("POST", "/api/users/5/deactivate_totp/", None, {})]
+
+
+async def test_a_failed_removal_of_the_second_factor_is_not_repeated(
+    make_client: ClientFactory,
+) -> None:
+    server = Recording(httpx2.Response(503, text="x"))
+
+    with pytest.raises(UpstreamUnavailable):
+        await PaperlessAdminWriter(make_client(server)).remove_second_factor(5)
+
+    assert len(server.sent) == 1
+
+
+async def test_a_user_without_a_second_factor_is_not_found(make_client: ClientFactory) -> None:
+    server = Recording(httpx2.Response(404, html="TOTP not found"))
+
+    with pytest.raises(NotFound, match="no second factor"):
+        await PaperlessAdminWriter(make_client(server)).remove_second_factor(5)
+
+
+async def test_only_a_superuser_removes_a_second_factor(make_client: ClientFactory) -> None:
+    server = Recording(forbidden())
+
+    with pytest.raises(PermissionDenied) as raised:
+        await PaperlessAdminWriter(make_client(server)).remove_second_factor(5)
+
+    assert "superuser" in (raised.value.hint or "")

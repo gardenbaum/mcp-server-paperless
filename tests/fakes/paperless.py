@@ -129,6 +129,7 @@ from mcp_server_paperless.domain.instance import (
     SystemStatus,
     TaskTotals,
     TimedStatus,
+    UpdateCheck,
 )
 from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, RotationSearch, StartedTasks
 from mcp_server_paperless.domain.permissions import (
@@ -176,6 +177,7 @@ from mcp_server_paperless.paperless.admin import (
     DOWNLOAD,
     READ_CONFIG,
     READ_LOGS,
+    REMOVE_FACTOR,
     VIEW_GROUP,
     VIEW_USER,
     denied,
@@ -323,6 +325,8 @@ class FakeUser:
     # Whether the user has a password; the fake keeps no password, so it cannot sign in.
     has_password: bool = False
     date_joined: datetime = datetime(2026, 11, 11, 19, 0, tzinfo=UTC)
+    # Whether the user has a second factor (TOTP).
+    mfa: bool = False
 
     def has(self, permission: str) -> bool:
         """Django's `has_perm`: superusers have every permission."""
@@ -969,6 +973,10 @@ class FakePaperless:
             ),
             status=self._status_report() if self._task_viewer().summary_of_all else None,
         )
+
+    async def check_for_update(self) -> UpdateCheck:
+        """`SystemReportReader.check_for_update` (RemoteVersionView, open to every user)."""
+        return UpdateCheck(newest_release=f"v{VERSION}", update_available=False)
 
     def _status_report(self) -> StatusReport:
         health = self.state.system_status
@@ -3967,7 +3975,7 @@ class FakePaperless:
             permissions=tuple(sorted(user.permissions)),
             inherited_permissions=tuple(sorted(inherited)),
             date_joined=user.date_joined,
-            mfa_enabled=False,
+            mfa_enabled=user.mfa,
         )
 
     async def get_user(self, user_id: int) -> UserRecord:
@@ -4268,6 +4276,17 @@ class FakePaperless:
             ):
                 raise denied(CHANGE_USER)
         return self._user_record(self._apply_user(target, values))
+
+    @write
+    async def remove_second_factor(self, user_id: int) -> None:
+        """`AdminWriter.remove_second_factor` (`deactivate_totp`: superusers only)."""
+        if not self.user.is_superuser:
+            raise denied(REMOVE_FACTOR)
+        if not self._find_user(user_id).mfa:
+            message = f"User {user_id} has no second factor."
+            raise NotFound(message)
+        users = self.state.users
+        users[:] = [replace(u, mfa=False) if u.id == user_id else u for u in users]
 
     def _forget(self, *, user: int | None = None, group: int | None = None) -> None:
         """Take a deleted user or group out of owners and grants, like Paperless."""

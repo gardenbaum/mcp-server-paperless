@@ -193,6 +193,13 @@ class StatusReport(_Frozen):
     tasks: TaskTotals
 
 
+class UpdateCheck(_Frozen):
+    """The newest release of Paperless, as Paperless learns it from GitHub; null: unknown."""
+
+    newest_release: str | None
+    update_available: bool | None
+
+
 class SystemReport(_Frozen):
     """All that Paperless's statistics and system status tell this user."""
 
@@ -200,6 +207,7 @@ class SystemReport(_Frozen):
     status: Annotated[
         StatusReport | None, Field(description="Null if the user may not view the system status.")
     ]
+    update: Annotated[UpdateCheck | None, Field(description="Null: not asked for.")] = None
 
 
 class OffToolset(_Frozen):

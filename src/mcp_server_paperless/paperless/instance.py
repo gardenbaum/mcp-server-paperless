@@ -2,12 +2,12 @@
 
 Versions come from the ``X-Version`` and ``X-Api-Version`` headers Paperless sends on every
 response, so every user gets them. A missing ``X-Version`` is an unknown release, no
-error. ``/api/remote_version/`` (an update check) and ``/api/profile/`` (it returns the user's API
-token) are deliberately not used.
+error. ``/api/remote_version/`` (Paperless asks GitHub) is read only by ``check_for_update``;
+``/api/profile/`` (it returns the user's API token) is deliberately not used.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from pydantic import BaseModel, RootModel
 
@@ -26,6 +26,7 @@ from mcp_server_paperless.domain.instance import (
     SystemStatus,
     TaskTotals,
     TimedStatus,
+    UpdateCheck,
 )
 from mcp_server_paperless.domain.urls import text_without_credentials
 from mcp_server_paperless.paperless.client import parse, unexpected
@@ -37,6 +38,12 @@ if TYPE_CHECKING:
 class _FileType(BaseModel):
     mime_type: str
     mime_type_count: int
+
+
+# Seconds the check for an update may take.
+UPDATE_SECONDS: Final = 10.0
+# The release Paperless names when it could not ask for the newest one.
+NO_VERSION: Final = "0.0.0"
 
 
 class _Statistics(BaseModel):
@@ -138,6 +145,11 @@ class _Settings(BaseModel):
 class _UiSettings(BaseModel):
     user: _User
     settings: _Settings
+
+
+class _RemoteVersion(BaseModel):
+    version: str
+    update_available: bool
 
 
 class _Number(RootModel[int]):
@@ -277,6 +289,15 @@ class PaperlessInstanceReader:
             ),
             status=_status_report(status) if status else None,
         )
+
+    async def check_for_update(self) -> UpdateCheck:
+        """See ``SystemReportReader.check_for_update``; 0.0.0 says that GitHub did not answer."""
+        found = await self._client.get(
+            "/api/remote_version/", _RemoteVersion, timeout=UPDATE_SECONDS, retry=False
+        )
+        if found.version == NO_VERSION:
+            return UpdateCheck(newest_release=None, update_available=None)
+        return UpdateCheck(newest_release=found.version, update_available=found.update_available)
 
     async def _unless_forbidden[M: BaseModel](self, path: str, model: type[M]) -> M | None:
         """GET ``path``, or None if the user may not see it (HTTP 403)."""

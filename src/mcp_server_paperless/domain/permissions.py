@@ -215,3 +215,35 @@ class PermissionsResult(BaseModel):
     ]
     objects: tuple[ObjectResult, ...]
     message: str
+
+
+# What comes back from get_permissions.
+
+
+class ObjectGrants(BaseModel):
+    """One object with its access."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    name: Annotated[str, Field(description="The title of a document, else the name.")]
+    web_url: Annotated[
+        str | None, Field(description="Documents: link in the Paperless web UI; else null.")
+    ]
+    access: AccessView
+
+
+class PermissionsRead(BaseModel):
+    """Who owns the objects and who may view or change them."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    kind: PermissionKind
+    objects: tuple[ObjectGrants, ...]
+    missing: Annotated[
+        tuple[int, ...], Field(description="Ids that do not exist or are hidden from the user.")
+    ]
+    left: Annotated[
+        tuple[int, ...],
+        Field(description="Not read or not shown (time or size): pass these ids again."),
+    ]

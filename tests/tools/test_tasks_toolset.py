@@ -312,3 +312,17 @@ async def test_the_system_report_shows_everything_to_who_may_see_it() -> None:
     assert cast("Json", status["tasks"])["days"] == 30
     assert restricted["status"] is None
     assert cast("Json", restricted["statistics"])["documents"] == 1
+
+
+@pytest.mark.decision("decision-105")
+async def test_the_system_report_checks_for_an_update_on_request() -> None:
+    plain = await call(fake(writes=False), "get_system_report")
+    checked = await call(fake(writes=False), "get_system_report", check_for_update=True)
+    async with Client(serve(fake(writes=False), toolsets=["tasks"])) as client:
+        [tool] = [t for t in await client.list_tools() if t.name == "get_system_report"]
+
+    assert plain["update"] is None
+    assert checked["update"] == {"newest_release": "v3.5.1", "update_available": False}
+    assert tool.annotations is not None
+    assert (tool.annotations.open_world_hint, tool.annotations.read_only_hint) == (True, True)
+    assert "GitHub" in str(tool.input_schema)

@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     )
     from mcp_server_paperless.domain.duplicates import DuplicateRecord
     from mcp_server_paperless.domain.files import OpenedFile
-    from mcp_server_paperless.domain.instance import InstanceOverview, SystemReport
+    from mcp_server_paperless.domain.instance import InstanceOverview, SystemReport, UpdateCheck
     from mcp_server_paperless.domain.mail import (
         MailAccount,
         MailAccountTestResult,
@@ -142,6 +142,10 @@ class SystemReportReader(Protocol):
 
         Paperless asks its workers for a sign of life, which can take seconds.
         """
+        ...
+
+    async def check_for_update(self) -> UpdateCheck:
+        """The newest release; Paperless asks GitHub, which can take seconds or fail (unknown)."""
         ...
 
 
@@ -1718,6 +1722,17 @@ class AdminWriter(Protocol):
         Raises:
             NotFound: No such user.
             PermissionDenied: The user may not delete users.
+        """
+        ...
+
+    async def remove_second_factor(self, user_id: int) -> None:
+        """Remove the TOTP of an existing user, who then signs in with the password alone.
+
+        Never repeated.
+
+        Raises:
+            NotFound: The user has none.
+            PermissionDenied: The caller is no superuser.
         """
         ...
 
