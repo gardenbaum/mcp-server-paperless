@@ -10,6 +10,8 @@ status: accepted
 PLMCP-90: read-only mode (decision-4, decision-6) holds for the whole server, so reading mail rules or workflows meant offering their writing tools too, or giving up every write.
 
 On 2026-11-24 the owner approved the design: asked in a question dialog "Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?" (do you approve the drafts with all recommended options, with the guide limit 2943 to 3229, the instructions limit 1465 and the definition limit 1010), the owner chose "Alle wie empfohlen" (all as recommended). That covers the suffix instead of a variable, the refusal of `all` with exceptions, downloads that only attach, the Cursor plugin left as it is, the limits and two parts.
+
+The worst case of the instructions is longer than the design counted (1440): core, views, pdf and workflows all read-only give 1451. On 2026-11-25 the owner answered "Alles wie empfohlen" (all as recommended) to "Anweisungsgrenze 1451 jetzt, nach 89 auf den gemessenen Wert, höchstens 1474" (instructions limit 1451 now, after 89 the measured value, at most 1474). The wording stays.
 <!-- SECTION:CONTEXT:END -->
 
 ## Decision

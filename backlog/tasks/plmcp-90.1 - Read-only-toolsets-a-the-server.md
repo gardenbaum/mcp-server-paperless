@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T12:22:10Z'
-updated_date: '2026-11-25T12:52:07Z'
+updated_date: '2026-11-25T13:25:14Z'
 labels: []
 dependencies: []
 parent_task_id: PLMCP-90
@@ -58,4 +58,6 @@ Deliberate: no test or snapshot weakened; in the budget test tools of the select
 Part b (PLMCP-90.2) waits for a release that contains this and a pin of it; nothing is prepared.
 
 30 hand mutants: 28 killed at once, 1 survivor killed by a new case (bulk-ro), 1 equivalent (another reading of the suffix: anything but :read was refused before).
+
+Owner, 2026-11-25 (relayed by the main agent): 'Alles wie empfohlen' (all as recommended), to 'Anweisungsgrenze 1451 jetzt, nach 89 auf den gemessenen Wert, höchstens 1474' (instructions limit 1451 now, after 89 the measured value, at most 1474); the wording stays.
 <!-- SECTION:NOTES:END -->

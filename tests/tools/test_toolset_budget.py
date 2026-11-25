@@ -49,7 +49,8 @@ BASE_OVERVIEW_DEFINITION = 4442
 #
 # Measured 1423 at most before PLMCP-90 (core alone, AI unknown, cut down), 1440 with core:read, and
 # 1451 with core, views, pdf and workflows all read-only, whose lines among those that are off are
-# shorter. The owner approved up to 1465 on 2026-11-24 (PLMCP-89 and 90); this is what was measured.
+# shorter. The owner approved 1451 on 2026-11-25 ("Alles wie empfohlen", all as recommended) and,
+# once PLMCP-89 is in, what is measured then, at most 1474.
 INSTRUCTIONS_LIMIT = 1451
 # Measured 2943 (core alone, nothing cut, stdio with upload directories): 19 bytes of
 # upload_documents (PLMCP-85) and 21 of resolve_duplicates (PLMCP-86) over the 2758 of HTTP before,
