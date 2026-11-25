@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from contextlib import AbstractAsyncContextManager
     from datetime import datetime
 
+    from pydantic import JsonValue
+
     from mcp_server_paperless.domain.admin import (
         AppConfigRecord,
         ArchiveContent,
@@ -58,6 +60,7 @@ if TYPE_CHECKING:
         MailAccountTestResult,
         MailAccountValues,
         MailRule,
+        MailRulePage,
         MailRuleValues,
         ProcessedMail,
         ProcessedMailPage,
@@ -229,7 +232,7 @@ class DocumentReader(Protocol):
         ...
 
     async def list_document_history(self, document_id: int) -> tuple[HistoryEntry, ...]:
-        """The audit log of a document, newest first, without the OCR text.
+        """The audit log of a document, newest first; ``content`` is only ``TEXT_CHANGED``.
 
         Raises:
             NotFound: No such document.
@@ -728,6 +731,31 @@ class ViewWriter(Protocol):
         ...
 
 
+class UiSettingsReader(Protocol):
+    """The settings the web UI stores for the current user."""
+
+    async def get_ui_settings(self) -> dict[str, JsonValue]:
+        """What is stored, without what Paperless computes for every answer.
+
+        Raises:
+            PermissionDenied: The user lacks ``view_uisettings``.
+            AnswerTooLarge: More than 1 MiB.
+        """
+        ...
+
+
+class UiSettingsWriter(Protocol):
+    """Changes to the settings of the web UI of the current user."""
+
+    async def replace_ui_settings(self, settings: Mapping[str, JsonValue]) -> None:
+        """Store exactly ``settings``: whatever they leave out is lost. Sent once.
+
+        Raises:
+            PermissionDenied: The user lacks ``add_uisettings``.
+        """
+        ...
+
+
 class TrashReader(Protocol):
     """The Paperless trash: deleted documents and versions the current user may see."""
 
@@ -829,7 +857,7 @@ class TrashWriter(Protocol):
 
 
 class PermissionReader(Protocol):
-    """Owners and grants of documents, taxonomy and mail objects, and the users and groups."""
+    """Owners and grants of documents, taxonomy, mail objects, saved views; users and groups."""
 
     async def get_permissions(
         self, kind: PermissionKind, object_ids: Sequence[int]
@@ -1200,6 +1228,15 @@ class MailReader(Protocol):
         Raises:
             PermissionDenied: The user lacks the global ``view_mailrule`` permission.
             PaperlessMcpError: More rules than this server reads at most.
+        """
+        ...
+
+    async def list_mail_rule_page(self, *, page: int, page_size: int) -> MailRulePage:
+        """One page of the mail rules the user may see, in Paperless order (by ``order``).
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the global ``view_mailrule`` permission.
         """
         ...
 

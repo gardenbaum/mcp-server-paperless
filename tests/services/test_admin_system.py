@@ -26,9 +26,9 @@ from mcp_server_paperless.services.admin_system import (
     ARCHIVE_NAME,
     MAX_DOCUMENTS,
     MAX_LOG_CHARS,
-    MAX_LOG_LINES,
     SystemAdmin,
 )
+from mcp_server_paperless.services.log_records import MAX_LOG_LINES
 
 pytestmark = [
     pytest.mark.anyio,

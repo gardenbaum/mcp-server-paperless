@@ -20,6 +20,8 @@ Documents, tags, correspondents, document types and storage paths take ``owner``
 - Mail accounts and rules (3.5.1, PLMCP-81.5) answer their grants with ``full_perms=true`` as well,
   though the schema does not say so; nothing but owner and grants is sent, so the saved password
   stays, and the mask of it that Paperless answers is not read.
+- Saved views (3.5.1, PLMCP-88.1) ignore ``id__in`` (the list answers its first rows), and set the
+  grants before they refuse an owner who has a view of that name.
 - The users and groups lists are sent in Paperless's own order (case-insensitive by name).
 """
 
@@ -54,9 +56,12 @@ PATHS: Final[dict[PermissionKind, str]] = {
     "storage_path": "/api/storage_paths/",
     "mail_account": "/api/mail_accounts/",
     "mail_rule": "/api/mail_rules/",
+    "saved_view": "/api/saved_views/",
 }
 # Their lists have no `id__in`: the objects are read one by one.
-MAIL_KINDS: Final[frozenset[PermissionKind]] = frozenset({"mail_account", "mail_rule"})
+ONE_BY_ONE: Final[frozenset[PermissionKind]] = frozenset(
+    {"mail_account", "mail_rule", "saved_view"}
+)
 USERS = "/api/users/"
 GROUPS = "/api/groups/"
 USERS_LABEL = "users"
@@ -160,7 +165,7 @@ class PaperlessPermissionReader:
         wanted = list(dict.fromkeys(object_ids))
         if not wanted:
             return []
-        if kind in MAIL_KINDS:
+        if kind in ONE_BY_ONE:
             return [row for number in wanted if (row := await self._one(kind, number)) is not None]
         params: dict[str, str | int] = {
             "id__in": ",".join(map(str, wanted)),

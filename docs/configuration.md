@@ -258,10 +258,18 @@ newest or of a named version. The file stays as it is.
 
 ### `views`
 
-Off by default: `list_saved_views`, `get_saved_view`, `create_saved_view`, `update_saved_view`
-and `delete_saved_view`, to read and maintain saved views: name, filter rules, sort order, page
-size, and how the web UI shows them (icon, display mode, display fields; the last two can be put
-back to its default). Running a view is `run_saved_view` in `core`.
+Off by default: `list_saved_views`, `get_saved_view`, `create_saved_view`, `update_saved_view`,
+`pin_saved_view` and `delete_saved_view`, to read and maintain saved views: name, filter rules,
+sort order, page size, and how the web UI shows them (icon, display mode, display fields; the last
+two can be put back to its default). `get_saved_view` also shows the owner and who may view or
+change the view (`set_permissions` in `permissions` changes them). Running a view is
+`run_saved_view` in `core`.
+
+`pin_saved_view` shows a view on the dashboard or in the sidebar of the web UI, or takes it away,
+for the Paperless user the server signs in as only (it needs the permissions to view and to add UI
+settings). Paperless writes these settings only as a whole: the server sends back what it read and
+compares afterwards. An open Paperless tab has to be reloaded; with its next save it can undo the
+change.
 
 ### `trash`
 
@@ -324,7 +332,8 @@ documents in its refusal. E-mail needs a mail server set up in Paperless
 ### `permissions`
 
 Off by default: `set_permissions`, `list_users`, `list_groups`. Shares documents, tags,
-correspondents, document types, storage paths, mail accounts and mail rules (the last two by id),
+correspondents, document types, storage paths, saved views, mail accounts and mail rules (the last
+two by id),
 and hands them over: `set_permissions` sets the owner and the users and groups who may view or
 change, by name or id. Its default mode `merge` only adds to the grants and mode `replace` makes
 each list you give exactly that list. Granting access cannot be taken back, so every call that
@@ -345,7 +354,7 @@ Off by default. Manages the mail import: `list_mail_accounts`, `get_mail_account
 `process_mail_account`, `list_mail_rules`, `get_mail_rule`, `create_mail_rule`,
 `update_mail_rule`, `delete_mail_rule`, `list_processed_mail` (compact rows), `get_processed_mail`
 (one mail with its whole error, in parts of 20,000 characters, and whether it would be fetched again
-without its record) and `delete_processed_mail`.
+without its record), `delete_processed_mail` and `explain_mail_import`.
 
 - Passwords are write-only: they are accepted when an account is created or changed and are
   never returned, quoted or logged, nor is any OAuth token. Gmail and Outlook accounts are set up
@@ -369,13 +378,16 @@ without its record) and `delete_processed_mail`.
   again, import it a second time, and run the rule's action on it, which can delete it on the mail
   server. Each record is read again afterwards. It needs `view_processedmail` and
   `delete_processedmail`.
+- `explain_mail_import` says why a mail may not have been imported, from the settings of the rules,
+  processed mail, tasks and logs, and what you know of the mail. It is no dry run: it contacts no
+  mail server. Log lines need a staff user; without them a fetch that was skipped is not known.
 - `process_mail_account` only queues the fetch: follow it with `list_processed_mail` and the
   Paperless task list. While another fetch runs, Paperless skips it without an error.
 
 ### `workflows`
 
 Off by default: `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow`,
-`update_workflow_part`, `delete_workflow`, `run_workflow`. Manages the workflows Paperless runs by itself, with triggers and actions as
+`update_workflow_part`, `delete_workflow`, `run_workflow`, `explain_workflow`. Manages the workflows Paperless runs by itself, with triggers and actions as
 nested objects and tags, correspondents, document types, storage paths, custom fields, users and
 groups given by name. An enabled workflow keeps acting on every matching document, so
 `create_workflow`, `update_workflow` and `update_workflow_part` need `confirm` when it moves documents to the trash,
@@ -401,6 +413,13 @@ does not belong to its trigger or action type is an error.
   so. Written back as returned, on an action with the id it has now, the URL keeps what is stored;
   with an empty user name (`https://@host/path`) it loses them. Without the id, it is refused.
   A copy of it in another workflow is written without them, and the result says so.
+
+- `explain_workflow` compares a workflow with a document, filter by filter, and says what the document's
+  history, its consume task and (for staff users) the log tell. Paperless keeps no readable record of
+  runs: the answer is an inference from the state of today and says so; `did_run` is `likely` only with
+  a log record of the document's own consume task (people who may upload or change documents can influence the log),
+  otherwise `unknown`. Log lines are told in the
+  server's words, without names and text of other documents.
 
 `run_workflow` runs an enabled workflow with a manual trigger on up to 100 documents, chosen like those
 of `bulk_edit_documents`; see `create_workflow` for manual triggers. Every run is confirmed:

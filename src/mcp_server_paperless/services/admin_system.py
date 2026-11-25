@@ -42,6 +42,7 @@ from mcp_server_paperless.domain.urls import (
     without_empty_user,
 )
 from mcp_server_paperless.services.file_sink import NO_SINK, Expected, file_name
+from mcp_server_paperless.services.log_records import MAX_LOG_LINES
 from mcp_server_paperless.services.transfer import (
     APPEND,
     HEAD_BYTES,
@@ -73,7 +74,6 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.file_sink import FileSink
 
 DEFAULT_LOG_LINES: Final = 100
-MAX_LOG_LINES: Final = 1000
 MAX_LOG_CHARS: Final = 20_000
 MAX_DOCUMENTS: Final = 100
 ARCHIVE_NAME: Final = "paperless-documents.zip"

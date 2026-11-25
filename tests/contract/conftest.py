@@ -75,6 +75,8 @@ from mcp_server_paperless.domain.ports import (  # noqa: TC001 -- Ports' annotat
     TaxonomyWriter,
     TrashReader,
     TrashWriter,
+    UiSettingsReader,
+    UiSettingsWriter,
     ViewReader,
     ViewWriter,
     WorkflowReader,
@@ -105,6 +107,10 @@ from mcp_server_paperless.paperless.task_lists import (
 from mcp_server_paperless.paperless.tasks import PaperlessTaskReader
 from mcp_server_paperless.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
 from mcp_server_paperless.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
+from mcp_server_paperless.paperless.ui_settings import (
+    PaperlessUiSettingsReader,
+    PaperlessUiSettingsWriter,
+)
 from mcp_server_paperless.paperless.views import PaperlessViewReader, PaperlessViewWriter
 from mcp_server_paperless.paperless.workflows import (
     PaperlessWorkflowReader,
@@ -154,6 +160,8 @@ class Ports:
     ai: AiReader
     views: ViewReader
     view_writes: ViewWriter
+    ui_settings: UiSettingsReader
+    ui_setting_writes: UiSettingsWriter
     trash: TrashReader
     trash_writes: TrashWriter
     permissions: PermissionReader
@@ -187,6 +195,8 @@ def fake_ports(state: FakeState, user: str) -> Ports:
         ai=fake,
         views=fake,
         view_writes=writer,
+        ui_settings=fake,
+        ui_setting_writes=writer,
         trash=fake,
         trash_writes=writer,
         permissions=fake,
@@ -219,6 +229,8 @@ def live_ports(client: PaperlessClient) -> Ports:
         ai=PaperlessAiReader(client),
         views=PaperlessViewReader(client),
         view_writes=PaperlessViewWriter(client),
+        ui_settings=PaperlessUiSettingsReader(client),
+        ui_setting_writes=PaperlessUiSettingsWriter(client),
         trash=PaperlessTrashReader(client),
         trash_writes=PaperlessTrashWriter(client),
         permissions=PaperlessPermissionReader(client),

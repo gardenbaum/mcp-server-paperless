@@ -23,6 +23,7 @@ On 2026-11-24 the owner approved the design with its recommended options: "Alle 
 - **Queued documents**: Paperless queues the action per document and reads its settings when the task runs. A changed action counts for documents already queued, a removed one drops them; the tool texts say so.
 - A matching algorithm without a match, which matches nothing, is refused on manual triggers.
 - Replacing the triggers is refused only where that would drop an unknown type, replacing the actions where it would drop password removal or an unknown type.
+- On 2026-11-25, in a question dialog, the owner chose "Beides ja" (yes to both): the file name filter stays refused on triggers other than consumption and manual, and AI suggestions without a backend stay a documented limit.
 - Supersedes the list of writable types in decision-21 and the sentence of decision-75 that manual triggers are not written; everything else in both stands.
 <!-- SECTION:DECISION:END -->
 

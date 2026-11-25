@@ -20,6 +20,7 @@ from mcp_server_paperless.domain.mail import (
     MailAccount,
     MailAccountValues,
     MailRule,
+    MailRulePage,
     MailRuleValues,
     ProcessedMail,
 )
@@ -273,6 +274,23 @@ async def test_the_rules_are_listed_with_blank_filters_as_none(make_client: Clie
 
     assert found == (RULE,)
     assert server.sent == [("GET", "/api/mail_rules/", None, {"page": "1", "page_size": "100"})]
+
+
+async def test_one_page_of_rules_is_one_request(make_client: ClientFactory) -> None:
+    body = {"count": 5, "next": "http://h/api/mail_rules/?page=3", "previous": None}
+    server = Recording(ok({**body, "results": [RULE_WIRE]}))
+
+    found = await PaperlessMailReader(make_client(server)).list_mail_rule_page(page=2, page_size=2)
+
+    assert found == MailRulePage(count=5, next_page=3, rules=(RULE,))
+    assert server.sent == [("GET", "/api/mail_rules/", None, {"page": "2", "page_size": "2"})]
+
+
+async def test_a_page_of_rules_beyond_the_last_is_not_found(make_client: ClientFactory) -> None:
+    server = Recording(httpx2.Response(404, json={"detail": "Invalid page."}))
+
+    with pytest.raises(NotFound, match="Page 9 of the mail rules does not exist"):
+        _ = await PaperlessMailReader(make_client(server)).list_mail_rule_page(page=9, page_size=2)
 
 
 async def test_a_rule_with_a_default_action_has_no_parameter_and_no_tags(

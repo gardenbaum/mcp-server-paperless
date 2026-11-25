@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:06Z'
-updated_date: '2026-11-25T09:32:36Z'
+updated_date: '2026-11-25T11:07:58Z'
 labels:
   - workflows
 dependencies:
@@ -53,4 +53,6 @@ Owner approval (2026-11-24): 'Alle wie empfohlen' (question quoted in decision-8
 Full hosted E2E 45578885550 on f238efc green (contract 35, e2e 10, parts 6 of the workflow modules). After it only README numbers, the backlog archive of main and this note changed.
 
 First review of #160 (F1 to F8) fixed; run_workflow's AI wording is truer too, its measured confirmations grow by 56 characters. The AI backend is not checked when writing (not cheap: three requests and a right of its own); documented in decision-86.
+
+Owner, 2026-11-25, question dialog: 'Beides ja' (yes to both): filename on other triggers stays refused, AI without a backend stays a documented limit (decision-86).
 <!-- SECTION:NOTES:END -->

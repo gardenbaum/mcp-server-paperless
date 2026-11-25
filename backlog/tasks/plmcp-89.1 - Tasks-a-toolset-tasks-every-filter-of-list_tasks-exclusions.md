@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:38Z'
-updated_date: '2026-11-25T14:04:04Z'
+updated_date: '2026-11-25T14:13:49Z'
 labels:
   - admin
 dependencies: []
@@ -56,4 +56,6 @@ Probes P1 to P6: CI run 45604535090, job 139171854815 (e2e 1/6), all as the desi
 Release notes draft: BREAKING: list_tasks, acknowledge_tasks and run_task moved from the toolset admin to the new toolset tasks. If PAPERLESS_MCP_TOOLSETS names admin, add tasks (all needs no change). list_tasks takes every filter and ordering of Paperless.
 
 Review fixes: the pointers to list_tasks name the toolset (upload_documents and its unknown outcome; snapshot of upload_documents changed), superuser without staff pinned on fake and 3.5.1, every ordering in the adapter test, hashes of the two moved equivalent mutants recomputed with mutmut's own functions in-process (no run), line breaks in configuration.md.
+
+Merged main 1efb5cd (106 tools, guide 3069). explain_mail_import and explain_workflow read TaskListReader; AdminReader.list_tasks and the created= window with its tests are gone. Output change of explain_mail_import: failed files are counted exactly by trigger source, the text 'only the newest 25 of N were looked at' is gone. Guide 3069 + 49 = 3118.
 <!-- SECTION:NOTES:END -->

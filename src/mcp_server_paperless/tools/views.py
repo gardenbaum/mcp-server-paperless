@@ -16,7 +16,9 @@ from pydantic import Field
 from mcp_server_paperless.domain.documents import DocumentSearchResult, NameOrId
 from mcp_server_paperless.domain.views import (
     DisplayMode,
+    PinnedView,
     RuleInput,
+    SavedViewDetail,
     SavedViewInfo,
     SavedViewListing,
     ViewCreate,
@@ -135,8 +137,8 @@ async def list_saved_views(ctx: Context) -> SavedViewListing:
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["get_saved_view"])
 @boundary
-async def get_saved_view(ctx: Context, view: View) -> SavedViewInfo:
-    """Read one saved view with its filter rules, sort order and display settings.
+async def get_saved_view(ctx: Context, view: View) -> SavedViewDetail:
+    """Read one saved view with its filter rules, sort order, display settings, owner and grants.
 
     The view matches by exact name, then ignoring case and accents, or by id; an unknown or
     ambiguous name is an error that lists the closest names or candidates.
@@ -215,6 +217,29 @@ async def update_saved_view(  # noqa: PLR0913 -- one parameter per setting of a 
         clear_display_fields=clear_display_fields,
     )
     return await services(ctx).views.update(view, edit)
+
+
+@provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["pin_saved_view"])
+@boundary
+async def pin_saved_view(
+    ctx: Context,
+    view: View,
+    *,
+    dashboard: Annotated[
+        bool | None, Field(description="true: show it on the dashboard; false: take it away.")
+    ] = None,
+    sidebar: Annotated[
+        bool | None, Field(description="true: show it in the sidebar; false: take it away.")
+    ] = None,
+) -> PinnedView:
+    """Show a saved view on the dashboard or in the sidebar of the web UI, or take it away.
+
+    Applies only to the Paperless user this server signs in as. Works for every view that user
+    sees; the view itself does not change. What is left out stays. An open Paperless tab shows it
+    only after a reload and can undo it with its next save: tell the user to reload. The other
+    settings of the user are written back as they were and compared; a difference is an error.
+    """
+    return await services(ctx).views.pin(view, dashboard=dashboard, sidebar=sidebar)
 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["delete_saved_view"])

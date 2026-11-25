@@ -171,7 +171,8 @@ async def test_the_display_settings_are_set_shown_changed_and_cleared(
         clear_display_fields=True,
     )
     assert cleared == {**changed, "display_mode": None, "display_fields": None}
-    assert await call(client, "get_saved_view", view=name) == cleared
+    read = await call(client, "get_saved_view", view=name)
+    assert {k: v for k, v in read.items() if k != "access"} == cleared
 
     refused = await client.call_tool(
         "update_saved_view",
@@ -180,3 +181,39 @@ async def test_the_display_settings_are_set_shown_changed_and_cleared(
     )
     assert refused.is_error
     assert "'xcustom_field_1'" in str(refused.content)
+
+
+async def test_a_view_is_shared_handed_over_and_its_access_shown(stack: Stack) -> None:
+    name = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
+    server = create_server(
+        paperless_settings(stack.base_url, stack.admin_token),
+        server_settings(toolsets=["core", "views", "permissions"]),
+    )
+    async with Client(server) as client:
+        made = await call(client, "create_saved_view", name=name)
+        share: Json = {"kind": "saved_view", "items": [name], "view_users": ["e2e-reader"]}
+        refused = await client.call_tool("set_permissions", share, raise_on_error=False)
+        _ = await call(client, "set_permissions", **share, confirm=True)
+        shared = await call(client, "get_saved_view", view=name)
+        _ = await call(
+            client,
+            "set_permissions",
+            kind="saved_view",
+            items=[made["id"]],
+            owner="e2e-reader",
+            mode="replace",
+            view_users=[],
+            confirm=True,
+        )
+        handed = await call(client, "get_saved_view", view=made["id"])
+        deleted = await call(client, "delete_saved_view", view=made["id"], confirm=True)
+
+    assert refused.is_error
+    assert "gains view: user 'e2e-reader'" in str(refused.content)
+    access = cast("Json", shared["access"])
+    assert cast("Json", access["owner"])["name"] == "admin"
+    assert [w["name"] for w in cast("list[Json]", access["view_users"])] == ["e2e-reader"]
+    after = cast("Json", handed["access"])
+    assert cast("Json", after["owner"])["name"] == "e2e-reader"
+    assert after["view_users"] == []
+    assert deleted["name"] == name

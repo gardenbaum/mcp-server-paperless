@@ -58,6 +58,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.files import FileService
     from mcp_server_paperless.services.instance import InstanceService
     from mcp_server_paperless.services.mail import MailService
+    from mcp_server_paperless.services.mail_explanation import MailExplanations
     from mcp_server_paperless.services.notes import NoteService
     from mcp_server_paperless.services.pages import PageService
     from mcp_server_paperless.services.pdf import PdfService
@@ -79,6 +80,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.version_uploads import VersionUploadService
     from mcp_server_paperless.services.versions import VersionService
     from mcp_server_paperless.services.views import ViewService
+    from mcp_server_paperless.services.workflow_explanation import WorkflowExplanations
     from mcp_server_paperless.services.workflow_parts import WorkflowParts
     from mcp_server_paperless.services.workflow_runs import WorkflowRuns
     from mcp_server_paperless.services.workflows import WorkflowService
@@ -179,6 +181,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "get_saved_view": "views",
     "create_saved_view": "views",
     "update_saved_view": "views",
+    "pin_saved_view": "views",
     "delete_saved_view": "views",
     "run_saved_view": "core",  # decision-34: the default profile runs saved views
     "list_trash": "trash",
@@ -221,12 +224,14 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "delete_mail_rule": "mail",
     "list_processed_mail": "mail",
     "get_processed_mail": "mail",
+    "explain_mail_import": "mail",
     "delete_processed_mail": "mail",
     "paperless_api_get": "raw",
     "list_workflows": "workflows",
     "get_workflow": "workflows",
     "create_workflow": "workflows",
     "update_workflow": "workflows",
+    "explain_workflow": "workflows",
     "update_workflow_part": "workflows",
     "delete_workflow": "workflows",
     "run_workflow": "workflows",
@@ -502,6 +507,14 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    # Only the own dashboard and sidebar change, and back again (decision-92): no confirm.
+    "pin_saved_view": ToolAnnotations(
+        title="Pin saved view",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     # Destructive (decision-6): a view has no trash. No document is touched. Deleting again
     # leaves the state as it is (idempotent), though the second call fails.
     "delete_saved_view": ToolAnnotations(
@@ -618,6 +631,13 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
     ),
     "list_processed_mail": ToolAnnotations(
         title="List processed mail",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Compares stored settings and reads what Paperless stored; contacts no mail server.
+    "explain_mail_import": ToolAnnotations(
+        title="Explain mail import",
         read_only_hint=True,
         idempotent_hint=True,
         open_world_hint=False,
@@ -984,6 +1004,12 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    "explain_workflow": ToolAnnotations(
+        title="Explain workflow",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     # A workflow runs unattended on every matching document and can send documents out (e-mail,
     # webhook): open world. Not destructive in itself (decision-21): trashing, removing and the
     # outward actions need confirm while the workflow is enabled, plain filing does not. Creating
@@ -1178,6 +1204,7 @@ class Services:
 
     workflows: WorkflowService
     workflow_parts: WorkflowParts
+    workflow_explanations: WorkflowExplanations
     workflow_runs: WorkflowRuns
 
     instance: InstanceService
@@ -1211,6 +1238,7 @@ class Services:
     sharing: SharingService
     mail: MailService
     processed_mail: ProcessedMailService
+    mail_explanations: MailExplanations
     accounts: AccountAdmin
     system: SystemAdmin
     task_lists: TaskListService
