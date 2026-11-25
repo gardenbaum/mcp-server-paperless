@@ -162,7 +162,8 @@ async def test_a_bulk_edit_whose_task_cannot_be_followed_is_unconfirmed_and_asks
     answer: Json = result.structured_content
     task_id = str(answer["unconfirmed_task_id"])
     assert "Paperless limits the rate of requests (HTTP 429)" in str(answer["message"])
-    assert limit.asked == ["GET /api/tasks/"]
+    # The client itself tries a read again (decision-71), nothing else is asked.
+    assert set(limit.asked) == {"GET /api/tasks/"}
     outcomes = cast("Json", answer["outcomes"])
     assert set(cast("list[int]", outcomes["unknown"])) == set(documents)
     _ = settled(stack.admin, task_id, "the bulk edit")  # it was accepted, and runs on
