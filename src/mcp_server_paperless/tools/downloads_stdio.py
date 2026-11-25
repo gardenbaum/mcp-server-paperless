@@ -1,10 +1,10 @@
 """download_document and bulk_download for stdio with download directories: attached or saved.
 
 Registered instead of the plain variant (``downloads``) only when the server runs over stdio, the
-operator named directories in ``PAPERLESS_MCP_DOWNLOAD_DIRS`` and read-only mode is off
-(decision-45); over HTTP these tools do not exist, so their ``save_dir`` is in no schema a remote
-caller sees. The service writes one new file inside an allowed directory, or replaces one after
-``confirm``, and answers every other directory the same way.
+operator named directories in ``PAPERLESS_MCP_DOWNLOAD_DIRS`` and neither read-only mode is on nor
+the tool's toolset read-only (decision-45, decision-97); over HTTP these tools do not exist, so
+their ``save_dir`` is in no schema a remote caller sees. The service writes one new file inside an
+allowed directory, or replaces one after ``confirm``, and answers every other directory alike.
 """
 
 from pathlib import Path
@@ -46,7 +46,7 @@ from mcp_server_paperless.tools.downloads import (
     read_file,
 )
 
-local = LocalProvider()
+document, archive = LocalProvider(), LocalProvider()
 
 type SaveDir = Annotated[
     Path | None,
@@ -101,7 +101,7 @@ def check_saving(
     return str(save_dir)
 
 
-@local.tool(
+@document.tool(
     tags={CORE},
     annotations=SAVING_ANNOTATIONS["download_document"],
     description=FILE_LEAD + SAVED + FILE_PARTS,
@@ -136,7 +136,7 @@ async def download_document(  # noqa: PLR0913 -- the file, the part of it and wh
     return ToolResult(content=[report_text(report)])
 
 
-@local.tool(
+@archive.tool(
     tags={ADMIN},
     annotations=SAVING_ANNOTATIONS["bulk_download"],
     description=ARCHIVE_LEAD + SAVED + ARCHIVE_PARTS,

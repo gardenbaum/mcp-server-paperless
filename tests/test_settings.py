@@ -185,6 +185,8 @@ def test_the_core_and_ai_toolsets_are_on_by_default() -> None:
         ("CORE,core", ("core",)),
         ("all", ("all",)),
         ('["core","pdf"]', ("core", "pdf")),
+        ("core, Mail:READ ,mail:read", ("core", "mail:read")),
+        ('["core:read"]', ("core:read",)),
     ],
 )
 def test_toolsets_are_a_comma_separated_list_or_all(
@@ -202,6 +204,17 @@ def test_toolsets_must_name_something_and_all_stands_alone(
     monkeypatch.setenv("PAPERLESS_MCP_TOOLSETS", value)
 
     assert invalid_fields(ServerSettings) == [("toolsets",)]
+
+
+@pytest.mark.decision("decision-97")
+@pytest.mark.parametrize("value", ["all,mail:read", "mail:read,all"])
+def test_all_with_an_exception_is_refused_and_says_what_to_write(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("PAPERLESS_MCP_TOOLSETS", value)
+
+    with pytest.raises(ValidationError, match="list every toolset"):
+        _ = ServerSettings.model_validate({})
 
 
 def test_disabled_tools_are_a_comma_separated_list(monkeypatch: pytest.MonkeyPatch) -> None:
