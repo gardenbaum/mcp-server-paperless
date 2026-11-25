@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING, Final, cast
 from mcp_server_paperless.domain.documents import DocumentQuery
 from mcp_server_paperless.domain.errors import (
     PaperlessMcpError,
-    PermissionDenied,
     Validation,
     quoted,
 )
@@ -61,8 +60,11 @@ NOTE: Final = (
 SECONDS: Final = 40.0
 MAX_CHARS: Final = 50_000
 MAX_HISTORY, MAX_NAMES, MAX_FINDINGS, MAX_TASKS = 50, 10, 20, 100
+YEAR: Final = timedelta(days=365)  # a date in a custom field counts that long
 NEAR: Final = timedelta(minutes=2)
 LOG: Final = "paperless"
+# How the refusal of a query begins; another refusal says nothing of the document.
+REJECTED_QUERY: Final = "rejected the request: custom_field_query"
 MATCHING, HANDLERS = "paperless.matching", "paperless.handlers"
 FIRES: Final[Mapping[int, str]] = {
     1: "once, before the document was stored",
@@ -72,26 +74,41 @@ FIRES: Final[Mapping[int, str]] = {
     5: "only when a user runs it by hand",
 }
 # What Paperless says why a document does not match, and how it is told here: never with names.
+# Names may hold any text: a reason is told only as far as its beginning and form make it certain.
+_LIST: Final = r"\[.*\]"
 REASONS: Final[tuple[tuple[re.Pattern[str], str], ...]] = tuple(
     (re.compile(pattern, re.DOTALL), said)
     for pattern, said in (
-        (r"Document source .* not in ", "the source is not among those of the trigger"),
-        (r"Document mail rule .* != ", "another mail rule"),
-        (r"Document filename .* does not match ", "the file name does not match"),
-        (r"Document path .* does not match ", "the path does not match"),
-        (r"Document content matching settings ", "the content does not match"),
-        (r"Document tags .* do not include ", "none of the tags is there"),
-        (r"Document tags .* do not contain all of ", "not all of the tags are there"),
-        (r"Document tags .* include excluded tags ", "an excluded tag is there"),
-        (r"Document correspondent .* is excluded by ", "the correspondent is excluded"),
-        (r"Document correspondent ", "another correspondent"),
-        (r"Document doc type .* is excluded by ", "the document type is excluded"),
-        (r"Document doc type ", "another document type"),
-        (r"Document storage path .* is excluded by ", "the storage path is excluded"),
-        (r"Document storage path ", "another storage path"),
-        (r"Document custom fields do not match ", "the custom field query does not match"),
-        (r"Invalid custom field query ", "the custom field query is not valid"),
-        (r"No matching triggers with type ", "it has no trigger for this event"),
+        (rf"Document source .* not in {_LIST}", "the source does not fit"),
+        (r"Document mail rule .* != \d+", "the mail rule does not fit"),
+        (r"Document filename .* does not match .*", "the file name does not match"),
+        (r"Document path .* does not match .*", "the path does not match"),
+        (
+            r"Document content matching settings for algorithm '\d+' did not match",
+            "the content does not match",
+        ),
+        (
+            r"Document tags \[.*\] (do not include|do not contain all of|include excluded tags) .*",
+            "the tags do not fit",
+        ),
+        (
+            r"Document correspondent .* (is not one of|is excluded by|does not match) .*",
+            "the correspondent does not fit",
+        ),
+        (
+            r"Document doc type .* (is not one of|is excluded by|does not match) .*",
+            "the document type does not fit",
+        ),
+        (
+            r"Document storage path .* (is not one of|is excluded by|does not match) .*",
+            "the storage path does not fit",
+        ),
+        (
+            r"Document custom fields do not match the configured custom field query",
+            "the custom field query does not match",
+        ),
+        (r"Invalid custom field query configuration", "the custom field query is not valid"),
+        (r"No matching triggers with type \d+ found", "it has no trigger for this event"),
     )
 )
 # The attribute of the history a filter depends on.
@@ -108,11 +125,12 @@ class _Facts:
     """What is known of the document, and what could not be looked at."""
 
     document: DocumentRecord
-    names: Mapping[str, Mapping[int, str]]
+    now: datetime
+    names: dict[str, Mapping[int, str]]
     history: Sequence[HistoryEntry] = ()
     text: str | None = None
     queries: dict[str, bool | None] = field(default_factory=dict[str, "bool | None"])
-    task: TaskRow | None = None
+    tasks: Sequence[TaskRow] = ()
     records: Sequence[LogRecord] = ()
     missing: list[str] = field(default_factory=list[str])
 
@@ -139,6 +157,38 @@ def content_matches(text: str, match: str, algorithm: int, *, ignore_case: bool)
     words = [re.escape(term).replace(r"\ ", r"\s+") for term in terms]
     hits = (re.search(rf"\b{word}\b", text, flags) is not None for word in words)
     return any(hits) if algorithm == 1 else all(hits)
+
+
+def _closest(stamps: Sequence[datetime], moment: datetime | None) -> timedelta:
+    """The offset of the stamp that is closest to ``moment``."""
+    at = moment or stamps[0]
+    return min(stamps, key=lambda stamp: abs(stamp - at)).utcoffset() or timedelta()
+
+
+def _offsets(facts: _Facts, moment: datetime | None = None) -> set[timedelta]:
+    """The offsets from UTC Paperless may have at ``moment`` (default: at any time).
+
+    The log has local times and the history UTC; a document's own timestamps have the offset that
+    Paperless had then. Where none of them is within a day of the moment, an hour of summer time is
+    allowed for.
+    """
+    stamps = [facts.document.added, facts.document.modified]
+    stamps += [task.started for task in facts.tasks if task.started is not None]
+    known = {stamp.utcoffset() or timedelta() for stamp in stamps}
+    close = [s for s in stamps if moment is not None and abs(s - moment) <= timedelta(days=1)]
+    if close:
+        return {_closest(close, moment)}
+    hour = timedelta(hours=1)
+    return {offset + step for offset in known for step in (-hour, timedelta(), hour)}
+
+
+def _days(facts: _Facts, moment: datetime) -> set[date]:
+    """The days it may be in Paperless at ``moment``: near midnight there are two."""
+    return {(moment + offset).date() for offset in _offsets(facts)}
+
+
+def _utc(record: LogRecord, offset: timedelta) -> datetime:
+    return (record.time - offset).replace(tzinfo=UTC)
 
 
 class _Checks:
@@ -182,13 +232,33 @@ class _Checks:
         sources = _ids(self._value("sources"))
         if sources:
             wanted = ", ".join(SOURCES.get(n, str(n)) for n in sources)
-            known = f"it came by {facts.task.trigger_source}" if facts.task else "not known"
+            came = sorted({task.trigger_source for task in facts.tasks})
+            known = f"it came by {', '.join(came)}" if came else "not known"
             self._add("sources", "unknown", f"where it came from ({known}) has to be {wanted}")
         if self._value("mailrule") is not None:
             self._add("mailrule", "unknown", "which mail rule fetched it cannot be read")
-        self._filename(scheduled=False)
+        self._consumed_name()
         if not is_empty(self._value("path")):
             self._add("path", "unknown", "the path it was consumed from is not kept")
+
+    def _consumed_name(self) -> None:
+        """The name a file was consumed under is not kept: parts and e-mails get another one."""
+        pattern = self._value("filename")
+        if is_empty(pattern):
+            return
+        name = self._facts.document.original_file_name
+        why = "the name it was consumed under is not kept"
+        if name is not None:
+            verb = "matches" if self._fits(name, pattern) else "does not match"
+            why = (
+                f"the stored file name {quoted(name)} {verb} {quoted(str(pattern))}, but the name "
+                "it was consumed under may have been another one"
+            )
+        self._add("filename", "unknown", why)
+
+    @staticmethod
+    def _fits(name: str, pattern: JsonValue) -> bool:
+        return fnmatchcase(name.lower(), str(pattern).lower())
 
     def _filename(self, *, scheduled: bool) -> None:
         pattern = self._value("filename")
@@ -199,17 +269,30 @@ class _Checks:
             result, why = ("no" if scheduled else "ok"), "it has no original file name"
             self._add("filename", cast("CheckResult", result), why)
             return
-        fits = fnmatchcase(name.lower(), str(pattern).lower())
+        fits = self._fits(name, pattern)
         verb = "matches" if fits else "does not match"
         why = f"the file name {quoted(name)} {verb} {quoted(str(pattern))}"
         self._add("filename", "ok" if fits else "no", why, "original_filename")
 
     def existing(self) -> None:
         """The filters of every other trigger, in the order of Paperless."""
-        document = self._facts.document
-        if self._trigger.type == SCHEDULED:
-            self._schedule()
+        if self._trigger.type != SCHEDULED:
+            self._content()
+            self._references()
+            return
+        # A schedule looks for documents first, and reads the text of those it found.
+        self._schedule()
+        self._references()
+        if self._value("schedule_is_recurring"):
+            why = "when it last ran on the document is not readable"
+            self._add("schedule_recurring_interval_days", "unknown", why)
+        else:
+            why = "it runs once per document; whether it has is not readable"
+            self._add("schedule_is_recurring", "unknown", why)
         self._content()
+
+    def _references(self) -> None:
+        document = self._facts.document
         self._sets("has_tags", lambda here, there: bool(here & there), "one of")
         self._sets("has_all_tags", lambda here, there: there <= here, "all of")
         self._sets("has_not_tags", lambda here, there: not here & there, "none of")
@@ -294,45 +377,52 @@ class _Checks:
 
     def _schedule(self) -> None:
         offset = self._value("schedule_offset_days")
-        days = timedelta(days=offset if isinstance(offset, int) else 0)
         name = str(self._value("schedule_date_field") or "added")
-        base = self._base(name)
-        if base is None:
-            self._add("schedule_date_field", "no", "the document has no such date")
-            return
-        now = datetime.now(UTC)
-        due = base + days
-        if name == "custom_field" and base < now - timedelta(days=365):
-            why = f"its date {base.date()} is more than 365 days ago: Paperless does not look"
-            self._add("schedule_date_field", "no", why)
-        else:
-            reached = due <= now
-            state = "reached" if reached else "not yet"
-            why = f"due on {due.date()} ({name} {days.days:+d} days), {state}"
-            self._add("schedule_date_field", "ok" if reached else "no", why)
-        if not self._value("schedule_is_recurring"):
-            why = "it runs once per document; whether it has is not readable"
-            self._add("schedule_is_recurring", "unknown", why)
+        try:
+            days = timedelta(days=offset if isinstance(offset, int) else 0)
+            result, why = self._due(name, days)
+        except OverflowError:
+            result, why = "unknown", "the offset is too large"
+            said = f"the schedule of trigger {self._trigger.id}: its offset is too large"
+            self._facts.missing.append(said)
+        self._add("schedule_date_field", result, why)
 
-    def _base(self, name: str) -> datetime | None:
-        document = self._facts.document
-        if name == "added":
-            return document.added
-        if name == "modified":
-            return document.modified
-        day: date | None = document.created if name == "created" else None
+    def _due(self, name: str, days: timedelta) -> tuple[CheckResult, str]:
+        """Whether the date of the document plus ``days`` is reached."""
+        facts, told = self._facts, f"{name} {days.days:+d} days"
+        stamp = {"added": facts.document.added, "modified": facts.document.modified}.get(name)
+        if stamp is not None:
+            due = stamp + days
+            return _result({due <= facts.now}), f"due at {due.isoformat()} ({told})"
+        day = facts.document.created if name == "created" else self._field_day()
+        if day is None:
+            return "no", "the document has no such date"
+        due_day = day + days
+        reached = {day <= today for today in _days(facts, facts.now - days)}
         if name == "custom_field":
-            number = self._value("schedule_date_custom_field")
-            values = [v.value for v in document.custom_fields if v.field == number]
-            try:
-                day = date.fromisoformat(str(values[0])) if values else None
-            except ValueError:
-                day = None
-        return None if day is None else datetime(day.year, day.month, day.day, tzinfo=UTC)
+            early = _days(facts, facts.now - YEAR)
+            reached = {ok and day >= first for ok in reached for first in early}
+            told += f"; Paperless looks at dates of the last {YEAR.days} days"
+        return _result(reached), f"due on {due_day.isoformat()} ({told})"
+
+    def _field_day(self) -> date | None:
+        number = self._value("schedule_date_custom_field")
+        values = [v.value for v in self._facts.document.custom_fields if v.field == number]
+        try:
+            return date.fromisoformat(str(values[0])) if values else None
+        except ValueError:
+            return None
+
+
+def _result(found: set[bool]) -> CheckResult:
+    """Yes or no where every possibility says so, else unknown."""
+    if len(found) > 1:
+        return "unknown"
+    return "ok" if True in found else "no"
 
 
 def _verdict(rows: Sequence[FilterCheck]) -> Verdict:
-    results = {row.result for row in rows if row.filter != "schedule_is_recurring"}
+    results = {row.result for row in rows}
     if "no" in results:
         return "no"
     return "unknown" if "unknown" in results else "yes"
@@ -354,15 +444,29 @@ def _explained(trigger: WorkflowTrigger, facts: _Facts) -> TriggerExplanation:
     )
 
 
-def _near(record: LogRecord, moments: Sequence[datetime]) -> bool:
-    """Whether a record is close to a moment; the log has the time zone of Paperless."""
-    return any(abs(record.time.replace(tzinfo=m.tzinfo) - m) <= NEAR for m in moments)
+def _near(record: LogRecord, facts: _Facts) -> bool:
+    """Whether a record is close to the arrival or a change of the document."""
+    added = facts.document.added
+    if abs(_utc(record, added.utcoffset() or timedelta()) - added) <= NEAR:
+        return True
+    return any(
+        abs(_utc(record, offset) - entry.timestamp) <= NEAR
+        for entry in facts.history
+        for offset in _offsets(facts, entry.timestamp)
+    )
+
+
+def _inside(record: LogRecord, task: TaskRow, facts: _Facts) -> bool:
+    """Whether a record has the prefix of the consume task and was written while it ran."""
+    if record.task != task.task_id[:8] or task.started is None:
+        return False
+    at = _utc(record, task.started.utcoffset() or timedelta())
+    start = task.started.replace(microsecond=0)
+    return start <= at <= (task.finished or facts.now)
 
 
 def _findings(workflow: Workflow, facts: _Facts) -> list[LogFinding]:
     """What the log says of the workflow, where it is about this document or may be."""
-    mine = facts.task.task_id[:8] if facts.task else None
-    moments = [facts.document.added, *(entry.timestamp for entry in facts.history)]
     triggers = {
         f"Document matched WorkflowTrigger {t.id} from Workflow: {workflow.name}": t.id
         for t in workflow.triggers
@@ -387,21 +491,21 @@ def _findings(workflow: Workflow, facts: _Facts) -> list[LogFinding]:
             said = f"action {actions[record.message]} was applied"
         if said is None:
             continue
-        if mine is not None and record.task == mine:
-            whose = "this document"
-        elif record.task is None and _near(record, moments):
+        if any(_inside(record, task, facts) for task in facts.tasks):
+            whose = "likely this document"
+        elif record.task is None and _near(record, facts):
             whose = "perhaps this document"
         else:
             continue
         found.append(LogFinding(time=record.time.isoformat(sep=" "), said=said, whose=whose))
-    return found[-MAX_FINDINGS:]
+    return found
 
 
 def _reason(following: Sequence[LogRecord], record: LogRecord) -> str:
     for after in following:
         if after.task == record.task and after.logger == record.logger:
             for pattern, said in REASONS:
-                if pattern.match(after.message):
+                if pattern.fullmatch(after.message):
                     return f": {said}"
     return ""
 
@@ -409,7 +513,7 @@ def _reason(following: Sequence[LogRecord], record: LogRecord) -> str:
 class WorkflowExplanations:
     """Explains why a workflow ran on a document or did not."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 -- what it reads, and two clocks
         self,
         documents: DocumentReader,
         management: AdminReader,
@@ -417,6 +521,7 @@ class WorkflowExplanations:
         taxonomy: TaxonomyResolver,
         *,
         clock: Callable[[], float] = time.monotonic,
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         """Read through the ports; ``workflows`` finds the workflow, ``taxonomy`` knows names."""
         self._documents: DocumentReader = documents
@@ -424,6 +529,7 @@ class WorkflowExplanations:
         self._workflows: WorkflowService = workflows
         self._taxonomy: TaxonomyResolver = taxonomy
         self._clock: Callable[[], float] = clock
+        self._now: Callable[[], datetime] = now
 
     async def explain(self, workflow: NameOrId, document_id: int) -> WorkflowExplanation:
         """Compare a workflow with a document.
@@ -436,11 +542,18 @@ class WorkflowExplanations:
         until = self._clock() + SECONDS
         found = await self._workflows.find(workflow)
         document = await self._documents.get_document(document_id)
-        facts = _Facts(document=document, names=await self._names(found))
+        facts = _Facts(document=document, names={}, now=self._now())
         await self._read(found, facts, until)
         triggers = [_explained(trigger, facts) for trigger in found.triggers]
         findings = _findings(found, facts)
-        ran = any(f.whose == "this document" and "not match" not in f.said for f in findings)
+        ran = any(f.whose.startswith("likely") and "not match" not in f.said for f in findings)
+        if len(findings) > MAX_FINDINGS:
+            left = len(findings) - MAX_FINDINGS
+            facts.missing.append(f"{left} findings of the log are left out")
+            likely = [f for f in findings if f.whose.startswith("likely")]
+            perhaps = [f for f in findings if not f.whose.startswith("likely")]
+            shown = likely[-MAX_FINDINGS:]
+            findings = [*shown, *perhaps[len(perhaps) - (MAX_FINDINGS - len(shown)) :]]
         answer = WorkflowExplanation(
             note=NOTE,
             workflow_id=found.id,
@@ -449,7 +562,7 @@ class WorkflowExplanations:
             order=found.order,
             document_id=document.id,
             would_match_now=_overall(found, triggers),
-            did_run="yes" if ran else "unknown",
+            did_run="likely" if ran else "unknown",
             message=_message(found, triggers, ran=ran),
             triggers=tuple(triggers),
             log=tuple(findings),
@@ -458,18 +571,10 @@ class WorkflowExplanations:
         )
         return _bounded(answer)
 
-    async def _names(self, workflow: Workflow) -> dict[str, dict[int, str]]:
-        kinds: list[TaxonomyKind] = []
-        for name, setting in TRIGGER_FIELDS.items():
-            used = any(not is_empty(t.settings.get(setting.wire)) for t in workflow.triggers)
-            if name.startswith("has_") and setting.kind and used and setting.kind not in kinds:
-                kinds.append(setting.kind)
-        names: dict[str, dict[int, str]] = {}
-        for kind in kinds:
-            try:
-                names[kind] = {item.id: item.name for item in await self._taxonomy.items(kind)}
-            except PermissionDenied:
-                names[kind] = {}
+    def _naming(self, kind: TaxonomyKind, facts: _Facts) -> Callable[[], Awaitable[None]]:
+        async def names() -> None:
+            facts.names[kind] = {item.id: item.name for item in await self._taxonomy.items(kind)}
+
         return names
 
     async def _read(self, workflow: Workflow, facts: _Facts, until: float) -> None:
@@ -493,12 +598,26 @@ class WorkflowExplanations:
             facts.text = (await self._documents.get_document_content(number)).content
 
         async def history() -> None:
-            facts.history = (await self._documents.list_document_history(number))[:MAX_HISTORY]
+            entries = await self._documents.list_document_history(number)
+            facts.history = entries[:MAX_HISTORY]
+            if len(entries) > MAX_HISTORY:
+                older = len(entries) - MAX_HISTORY
+                facts.missing.append(f"{older} older entries of the history are not looked at")
 
         async def log() -> None:
             facts.records = await read_log_records(self._management, LOG)
 
-        found: list[tuple[str, Callable[[], Awaitable[None]]]] = []
+        kinds: set[TaxonomyKind] = {
+            setting.kind
+            for name, setting in TRIGGER_FIELDS.items()
+            if name.startswith("has_")
+            and setting.kind is not None
+            and any(not is_empty(t.settings.get(setting.wire)) for t in workflow.triggers)
+        }
+        found: list[tuple[str, Callable[[], Awaitable[None]]]] = [
+            (f"the names of {kind.replace('_', ' ')}s", self._naming(kind, facts))
+            for kind in sorted(kinds)
+        ]
         later = [t.settings for t in workflow.triggers if t.type != CONSUMPTION]
         if any(settings.get("matching_algorithm") in {1, 2, 3} for settings in later):
             found.append(("the text", text))
@@ -522,8 +641,11 @@ class WorkflowExplanations:
                 page_size=MAX_TASKS,
                 created=(added - timedelta(days=1), added),
             )
-            facts.task = next((t for t in page.rows if facts.document.id in t.document_ids), None)
-            if facts.task is None:
+            facts.tasks = [t for t in page.rows if facts.document.id in t.document_ids]
+            if page.next_page is not None:
+                said = f"only the newest {MAX_TASKS} consume tasks of that day were looked at"
+                facts.missing.append(said)
+            if not facts.tasks:
                 facts.missing.append("the consume task of the document was not found")
 
         return task
@@ -532,9 +654,17 @@ class WorkflowExplanations:
         async def ask() -> None:
             try:
                 expression = cast("JsonValue", json.loads(query))
+                if not isinstance(expression, list) or not expression:
+                    facts.queries[query] = False  # Paperless takes what is none as no match
+                    return
                 wanted = DocumentQuery(ids=(facts.document.id,), custom_field_query=expression)
                 page = await self._documents.search_documents(wanted, page=1, page_size=1)
-            except Validation, ValueError, RecursionError:
+            except ValueError, RecursionError:
+                facts.queries[query] = False
+                return
+            except Validation as error:
+                if False:
+                    raise
                 facts.queries[query] = False  # Paperless takes a query it rejects as no match
                 return
             facts.queries[query] = page.count > 0
@@ -568,20 +698,33 @@ def _message(workflow: Workflow, triggers: Sequence[TriggerExplanation], *, ran:
     if workflow.enabled and all(t.type == MANUAL for t in workflow.triggers) and triggers:
         told += " It runs only when a user runs it by hand."
     if ran:
-        told += " The log says that it ran on this document."
+        told += (
+            " It likely ran on this document: the log says so, which people who may upload can "
+            "influence."
+        )
     else:
         told += " Whether it ran is not known."
     return f"{subject} {told}"
 
 
 def _bounded(answer: WorkflowExplanation) -> WorkflowExplanation:
-    """``answer`` within ``MAX_CHARS`` characters: the last triggers go first, and that is said."""
-    left = answer
-    while len(json.dumps(left.model_dump(mode="json"))) > MAX_CHARS and left.triggers:
-        kept = left.triggers[:-1]
-        gone = len(answer.triggers) - len(kept)
-        said = f"{gone} of the triggers are left out: the answer would be too long"
-        left = left.model_copy(
-            update={"triggers": kept, "not_checked": (*answer.not_checked, said)}
-        )
-    return left
+    """``answer`` within ``MAX_CHARS`` characters: the last triggers go, and that is said."""
+
+    def size(value: object) -> int:
+        return len(json.dumps(value))
+
+    if size(answer.model_dump(mode="json")) <= MAX_CHARS:
+        return answer
+    said = f"{len(answer.triggers)} of the triggers are left out: the answer would be too long"
+    bare = answer.model_copy(update={"triggers": (), "not_checked": (*answer.not_checked, said)})
+    room = MAX_CHARS - size(bare.model_dump(mode="json"))
+    kept = 0
+    for trigger in answer.triggers:
+        room -= size(trigger.model_dump(mode="json")) + 2
+        if room < 0:
+            break
+        kept += 1
+    gone = len(answer.triggers) - kept
+    said = f"{gone} of the triggers are left out: the answer would be too long"
+    missing = (*answer.not_checked, said)
+    return answer.model_copy(update={"triggers": answer.triggers[:kept], "not_checked": missing})

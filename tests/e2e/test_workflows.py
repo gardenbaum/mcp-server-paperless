@@ -543,15 +543,15 @@ async def test_a_workflow_is_explained_for_a_consumed_document(
     finally:
         delete_and_empty_trash(stack, [document])
 
-    assert (ran["would_match_now"], ran["did_run"]) == ("yes", "yes"), ran
-    certain = [f["said"] for f in cast("list[Json]", ran["log"]) if f["whose"] == "this document"]
+    assert (ran["would_match_now"], ran["did_run"]) == ("yes", "likely"), ran
+    certain = [
+        f["said"] for f in cast("list[Json]", ran["log"]) if f["whose"] == "likely this document"
+    ]
     assert any("matched trigger" in str(said) for said in certain), ran
     assert any("was applied" in str(said) for said in certain), ran
     assert (missed["would_match_now"], missed["did_run"]) == ("no", "unknown"), missed
-    said = [f for f in cast("list[Json]", missed["log"]) if f["whose"] == "this document"]
-    assert [f["said"] for f in said] == ["the document did not match: none of the tags is there"], (
-        missed
-    )
+    said = [f for f in cast("list[Json]", missed["log"]) if f["whose"] == "likely this document"]
+    assert [f["said"] for f in said] == ["the document did not match: the tags do not fit"], missed
     [check] = cast("list[Json]", cast("list[Json]", later["triggers"])[0]["checks"])
     assert (check["filter"], check["result"]) == ("match", "no")
     assert limited["did_run"] == "unknown"

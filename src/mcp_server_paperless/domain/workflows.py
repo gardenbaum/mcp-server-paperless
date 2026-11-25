@@ -821,8 +821,8 @@ class LogFinding(BaseModel):
     time: Annotated[str, Field(description="As the log has it, in the time zone of Paperless.")]
     said: str
     whose: Annotated[
-        Literal["this document", "perhaps this document"],
-        Field(description="Certain by the consume task only; perhaps: by the time."),
+        Literal["likely this document", "perhaps this document"],
+        Field(description="likely: by its consume task and while that ran; perhaps: by the time."),
     ]
 
 
@@ -839,7 +839,13 @@ class WorkflowExplanation(BaseModel):
     document_id: int
     would_match_now: Verdict
     did_run: Annotated[
-        Literal["yes", "unknown"], Field(description="yes only with a log record of this document.")
+        Literal["likely", "unknown"],
+        Field(
+            description=(
+                "likely: a log record of the document's consume task says so; people who may "
+                "upload can influence the log. Never certain, never no."
+            )
+        ),
     ]
     message: str
     triggers: tuple[TriggerExplanation, ...]

@@ -395,8 +395,9 @@ does not belong to its trigger or action type is an error.
 
 - `explain_workflow` compares a workflow with a document, filter by filter, and says what the document's
   history, its consume task and (for staff users) the log tell. Paperless keeps no readable record of
-  runs: the answer is an inference from the state of today and says so; `did_run` is `yes` only with
-  a log record of the document's own consume task, otherwise `unknown`. Log lines are told in the
+  runs: the answer is an inference from the state of today and says so; `did_run` is `likely` only with
+  a log record of the document's own consume task (people who may upload can influence the log),
+  otherwise `unknown`. Log lines are told in the
   server's words, without names and text of other documents.
 
 `run_workflow` runs an enabled workflow with a manual trigger on up to 100 documents, chosen like those
