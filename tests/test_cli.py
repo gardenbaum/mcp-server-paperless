@@ -1,7 +1,6 @@
 """The stdio entrypoint: configuration and startup failures end with a clear message on stderr."""
 
 import contextlib
-import io
 import os
 import runpy
 import socket
@@ -17,7 +16,7 @@ from harness import TOKEN, paperless_answering, refused_url
 from oidc_issuer import CLIENT_ID, CLIENT_SECRET, stub_issuer
 
 from mcp_server_paperless.app import run_server
-from mcp_server_paperless.cli import Messages, main, main_http
+from mcp_server_paperless.cli import main, main_http
 from mcp_server_paperless.domain.errors import AuthenticationFailed
 from mcp_server_paperless.tools._shared import ANNOTATIONS
 
@@ -467,38 +466,3 @@ def test_the_real_process_serves_http_with_bearer_authentication() -> None:
     assert [r.status_code for r in (anonymous, wrong, served, foreign)] == [401, 401, 200, 421]
     assert all(r.headers["x-request-id"] for r in (anonymous, wrong, served, foreign))
     assert "server" not in served.headers
-
-
-STDIN = """
-import os, sys
-from mcp_server_paperless.cli import parseable_stdin
-given, pipe, null = sys.stdin, os.fstat(0), os.stat(os.devnull)
-with parseable_stdin():
-    print(ascii([line.decode() for line in sys.stdin.buffer]))
-    print(os.path.samestat(os.fstat(0), null))
-print(sys.stdin is given, os.path.samestat(os.fstat(0), pipe))
-"""
-
-
-def test_standard_input_is_read_to_its_end_and_kept_from_child_processes() -> None:
-    """Long lines, lines of several messages in one read, and a last one without an end."""
-    long = '{"note": "' + "x" * 300_000 + "\\\\ud800" + '"}'
-    sent = f"{long}\n\n{{}}\n" + '{"a": "\\ud83e\\uddfe"}\nlast \\udc00'
-
-    done = subprocess.run(  # noqa: S603 -- this interpreter and a script of this file
-        [sys.executable, "-c", STDIN], input=sent, capture_output=True, text=True, check=True
-    )
-
-    lines = [line + "\n" for line in sent.split("\n")[:-1]] + ["last " + "\\ufffd"]
-    assert done.stdout.splitlines() == [ascii(lines), "True", "True True"]
-
-
-@pytest.mark.parametrize("size", [1, 2, 7, 8192])
-def test_messages_are_handed_on_in_pieces_of_any_size(size: int) -> None:
-    lines = [b'{"a": "x"}\n', b"\n", b'{"a": "\\ud800"}\n', b"last"]
-    reader = io.BufferedReader(Messages(io.BytesIO(b"".join(lines))), size)
-
-    found = reader.readlines()
-
-    assert found == [*lines[:2], b'{"a": "' + b"\\" + b'ufffd"}\n', b"last"]
-    assert reader.read() == b""

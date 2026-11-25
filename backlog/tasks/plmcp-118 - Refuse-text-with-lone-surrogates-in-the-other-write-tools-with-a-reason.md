@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T21:58:48Z'
-updated_date: '2026-11-25T18:10:08Z'
+updated_date: '2026-11-25T18:22:46Z'
 labels:
   - tools
 dependencies: []
@@ -50,4 +50,6 @@ One middleware (tools/text_refusal.py) refuses a lone surrogate anywhere in the 
 Found: a real stdio client that sends a lone surrogate as a JSON escape (JSON.stringify does) got no answer at all, pydantic's JSON parser refuses the line and the SDK drops it. run_stdio now hands the SDK lines without such escapes; a call with one in its arguments becomes one that says only where it was, elsewhere U+FFFD stands there. The sweep runs on that wire, too. Over HTTP the 2026-07-28 protocol reaches the middleware, the older ones answer 400 with the parser's reason.
 
 Deliberate: the messages of PLMCP-108 for a file name and a version label over the tools are now the common one (3 tool tests reworded; the service messages and tests stay); paths with lone surrogates are refused, too (no wire could carry them). Checked by hand: exit codes on SIGINT, SIGTERM and end of input are the same as before; a line of 100 MB takes 3 s through the pipe. 25 hand mutants, 24 killed (4 after better tests), one is the shortcut that returns an unchanged line. Not in an E2E test (no client library sends such a line).
+
+decision-110 (proposed) records the filter of standard input. Its tests moved to tests/test_stdin.py (line ends, partial reads, end of input, long lines, child processes) and run in the hosted Windows job with the stdio sweep; no behaviour changed.
 <!-- SECTION:NOTES:END -->

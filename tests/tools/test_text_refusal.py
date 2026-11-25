@@ -270,6 +270,7 @@ START: Json = {
 }
 
 
+@pytest.mark.decision("decision-110")
 def test_every_text_is_refused_on_the_wire_of_stdio_too(tmp_path: Path) -> None:
     """JSON.stringify sends a lone surrogate as an escape, which the SDK drops without an answer."""
     tests = str(Path(__file__).parents[1])
