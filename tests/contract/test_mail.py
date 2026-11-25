@@ -10,8 +10,10 @@ mail is written only by a real mail fetch, so its rows are listed on the fake on
 """
 
 import uuid
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
+import anyio
 import pytest
 from pydantic import SecretStr
 
@@ -20,11 +22,14 @@ from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Valid
 from mcp_server_paperless.domain.mail import (
     MailAccount,
     MailAccountValues,
+    MailFacts,
     MailRule,
     MailRuleValues,
     ProcessedMail,
 )
 from mcp_server_paperless.paperless.mail import unreachable_server
+from mcp_server_paperless.services.log_records import read_log_records
+from mcp_server_paperless.services.mail_log_lines import about_mail, about_run
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -39,6 +44,7 @@ pytestmark = [
 ]
 LIST_ACCOUNTS, GET_ACCOUNT = "MailReader.list_mail_accounts", "MailReader.get_mail_account"
 LIST_RULES, GET_RULE = "MailReader.list_mail_rules", "MailReader.get_mail_rule"
+PAGE_RULES = "MailReader.list_mail_rule_page"
 LIST_PROCESSED = "MailReader.list_processed_mail"
 DELETE_PROCESSED = "MailWriter.delete_processed_mail"
 GET_PROCESSED = "MailReader.get_processed_mail"
@@ -227,6 +233,33 @@ async def test_a_deleted_account_takes_its_rules_with_it(backend: Backend, mail:
         await backend.admin.mail_writes.delete_mail_account(made.id)
 
 
+@pytest.mark.decision("decision-90")
+@pytest.mark.contract(PROCESS_ACCOUNT)
+async def test_the_log_lines_of_a_fetch_have_the_known_forms(backend: Backend, mail: Mail) -> None:
+    idle, refused = await mail.account(), await mail.account()
+    _ = await mail.rule(refused.id)
+    nothing = MailFacts()
+    told: set[str] = set()
+
+    for _ in range(60):  # another fetch can make one skip, so it is asked for again
+        for account in (idle, refused):
+            await backend.admin.mail_writes.process_mail_account(account.id)
+        runs = await read_log_records(backend.admin.management, "paperless")
+        told |= {r.message for r in runs if about_run(r, idle.name)}
+        with suppress(NotFound):  # not yet: the first fetch of all makes this log
+            mails = await read_log_records(backend.admin.management, "mail")
+            told |= {r.message[:40] for r in mails if about_mail(r, refused.name, (), nothing)}
+        if len(told) >= 3:
+            break
+        await anyio.sleep(1)
+
+    assert told == {
+        f"No rules enabled for account {idle.name}. Skipping.",
+        f"Processing mail account {refused.name}"[:40],
+        f"Error while retrieving mailbox {refused.name}: "[:40],
+    }
+
+
 @pytest.mark.contract(TEST_ACCOUNT)
 @pytest.mark.parametrize("host", [REFUSING, "no-such-host.invalid"])
 async def test_a_connection_that_fails_is_a_result_not_an_error(
@@ -302,6 +335,8 @@ async def test_a_user_without_mail_permissions_is_denied_everywhere(backend: Bac
         _ = await blind.mail.get_mail_account(1)
     with pytest.raises(PermissionDenied):
         _ = await blind.mail.list_mail_rules()
+    with pytest.raises(PermissionDenied):
+        _ = await blind.mail.list_mail_rule_page(page=1, page_size=1)
     with pytest.raises(PermissionDenied):
         _ = await blind.mail.get_mail_rule(1)
     with pytest.raises(PermissionDenied):
@@ -475,6 +510,26 @@ async def test_rules_are_listed_by_their_order(backend: Backend, mail: Mail) -> 
     ]
 
     assert listed == [early.id, late.id]
+
+
+@pytest.mark.contract(PAGE_RULES)
+async def test_rules_are_listed_page_by_page_by_their_order(backend: Backend, mail: Mail) -> None:
+    account = await mail.account()
+    late = await mail.rule(account.id, order=900_002)
+    early = await mail.rule(account.id, order=900_001)
+    reader = backend.admin.mail
+
+    first = await reader.list_mail_rule_page(page=1, page_size=1)
+    assert (len(first.rules), first.next_page) == (1, 2)
+    # The two have the highest numbers, so they are on the last pages.
+    ours: list[int] = []
+    for page in (first.count - 1, first.count):
+        found = await reader.list_mail_rule_page(page=page, page_size=1)
+        ours += [rule.id for rule in found.rules]
+    assert found.next_page is None
+    assert ours == [early.id, late.id]
+    with pytest.raises(NotFound, match="does not exist"):
+        _ = await reader.list_mail_rule_page(page=9999, page_size=100)
 
 
 @pytest.mark.contract(GET_RULE)

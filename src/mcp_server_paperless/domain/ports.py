@@ -63,6 +63,7 @@ if TYPE_CHECKING:
         MailAccountTestResult,
         MailAccountValues,
         MailRule,
+        MailRulePage,
         MailRuleValues,
         ProcessedMail,
         ProcessedMailPage,
@@ -1224,6 +1225,15 @@ class MailReader(Protocol):
         Raises:
             PermissionDenied: The user lacks the global ``view_mailrule`` permission.
             PaperlessMcpError: More rules than this server reads at most.
+        """
+        ...
+
+    async def list_mail_rule_page(self, *, page: int, page_size: int) -> MailRulePage:
+        """One page of the mail rules the user may see, in Paperless order (by ``order``).
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the global ``view_mailrule`` permission.
         """
         ...
 

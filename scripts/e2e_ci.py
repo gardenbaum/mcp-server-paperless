@@ -242,6 +242,8 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "instance": ("test_instance_reader", "test_minimum_release", "test_toolset_guide"),
     "ai": ("test_ai_reader",),
     "mail": ("test_mail_import",),
+    "mail_explanation": ("test_mail", "test_mail_import"),
+    "log_records": ("test_mail_import",),
     "processed_mail": ("test_mail", "test_mail_import"),
     "principals": ("test_admin", "test_permissions"),
     "admin_accounts": ("test_admin", "test_permissions"),

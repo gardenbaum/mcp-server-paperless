@@ -43,6 +43,7 @@ from mcp_server_paperless.domain.mail import (
     MailAccountTestResult,
     MailAccountValues,
     MailRule,
+    MailRulePage,
     MailRuleValues,
     MailScope,
     PdfLayout,
@@ -207,6 +208,11 @@ def beyond_last_page(page: int) -> NotFound:
         f"Page {page} of the processed mail does not exist.",
         hint="List it with page=1; count and next_page tell how far it goes.",
     )
+
+
+def beyond_last_rule_page(page: int) -> NotFound:
+    """The error for a page past the end of the mail rules."""
+    return NotFound(f"Page {page} of the mail rules does not exist.", hint="List from page 1.")
 
 
 def failed_login() -> MailAccountTestResult:
@@ -401,6 +407,20 @@ class PaperlessMailReader:
             )
             raise PaperlessMcpError(message)
         return tuple(_rule(row) for row in collected.items)
+
+    async def list_mail_rule_page(self, *, page: int, page_size: int) -> MailRulePage:
+        """See ``MailReader.list_mail_rule_page``."""
+        try:
+            found = await self._client.get(
+                RULES, Page[_RuleRow], params={"page": page, "page_size": page_size}
+            )
+        except NotFound:
+            raise beyond_last_rule_page(page) from None
+        return MailRulePage(
+            count=found.count,
+            next_page=found.next_page,
+            rules=tuple(_rule(row) for row in found.results),
+        )
 
     async def get_mail_rule(self, rule_id: int) -> MailRule:
         """See ``MailReader.get_mail_rule``."""

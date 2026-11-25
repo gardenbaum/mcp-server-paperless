@@ -756,6 +756,23 @@ async def test_mail_takes_every_argument() -> None:
     await sweep("process_mail_account", {"account_id": 1}, (), prepare=with_mail)
     await sweep("list_processed_mail", {}, ("ordering",))
     await sweep(
+        "explain_mail_import",
+        {
+            "account_id": 1,
+            "rule_id": 1,
+            "sender": "a",
+            "recipient": "b",
+            "subject": "Invoice",
+            "received": "2026-11-25T10:00:00Z",
+            "folder": "INBOX",
+            "attachment_names": ["a.pdf"],
+            "is_read": True,
+            "is_flagged": False,
+        },
+        (),
+        prepare=with_processed_mail,
+    )
+    await sweep(
         "get_processed_mail", {"mail_id": 1, "error_from": 0}, (), prepare=with_processed_mail
     )
     assert not FAILED, "\n".join(FAILED)

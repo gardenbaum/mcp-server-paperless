@@ -1,0 +1,1303 @@
+"""MailExplanations: why a mail was not imported, from what Paperless has stored (PLMCP-81.4).
+
+Every check in its three results, records, tasks and logs, what could not be read, and the bounds.
+"""
+
+import asyncio
+import base64
+from datetime import UTC, datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Final, final, override
+
+import pytest
+from fakes.accounts import ADMIN
+from fakes.mail import FakeMailAccount, FakeMailRule, FakeProcessedMail
+from fakes.paperless import FakePaperless, FakeState, FakeTask, FakeUser, seeded
+from hypothesis import given
+from hypothesis import strategies as st
+
+from mcp_server_paperless.domain.errors import (
+    AuthenticationFailed,
+    NotFound,
+    PermissionDenied,
+    UpstreamTimeout,
+    UpstreamUnavailable,
+    Validation,
+)
+from mcp_server_paperless.domain.mail import MailFacts
+from mcp_server_paperless.services.mail_explanation import (
+    CLOSEST,
+    LOG_CHARS,
+    MAX_ANSWER,
+    MAX_LOGS,
+    MAX_PROCESSED,
+    NO_DRY_RUN,
+    MailExplanations,
+)
+
+if TYPE_CHECKING:
+    from mcp_server_paperless.domain.errors import PaperlessMcpError
+    from mcp_server_paperless.domain.mail import (
+        MailExplanation,
+        MailRulePage,
+        ProcessedMailPage,
+    )
+
+pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-90")]
+
+NOW: Final = datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
+LOG: Final = "[2026-11-25 10:00:0{},123] [DEBUG] [paperless_mail] {}"
+RUN: Final = "[2026-11-25 10:00:0{},123] [INFO] [paperless.mail.tasks] {}"
+SKIP: Final = "Mail account processing is already running; skipping this run."
+OTHERS: Final = "records and tasks of others that you may not see are not looked at"
+
+
+@final
+class Setup:
+    def __init__(
+        self,
+        user: str = ADMIN[0],
+        *,
+        permissions: set[str] | None = None,
+        make: type[FakePaperless] = FakePaperless,
+    ) -> None:
+        self.state: FakeState = seeded()
+        if permissions is not None:
+            self.state.users.append(
+                FakeUser(id=77, username=user, permissions=frozenset(permissions))
+            )
+        self.state.mail_accounts.append(
+            FakeMailAccount(
+                id=1, name="Work", imap_server="h", imap_port=1, username="u", password="p"
+            )
+        )
+        self.fake: FakePaperless = make(self.state, user=user)
+        self.now: float = 0.0
+        self.service: MailExplanations = MailExplanations(
+            self.fake, self.fake, clock=lambda: self.now, now=lambda: NOW
+        )
+
+    def rule(self, **fields: object) -> None:
+        number = len(self.state.mail_rules) + 1
+        values: dict[str, object] = {"id": number, "name": f"R{number}", "account": 1}
+        self.state.mail_rules.append(FakeMailRule(**(values | fields)))  # pyright: ignore[reportArgumentType] -- test data
+
+    def record(self, subject: str, **fields: object) -> None:
+        number = len(self.state.processed_mail) + 1
+        values: dict[str, object] = {"id": number, "rule": 1, "subject": subject}
+        self.state.processed_mail.append(FakeProcessedMail(**(values | fields)))  # pyright: ignore[reportArgumentType] -- test data
+
+    async def explain(self, rule_id: int | None = None, **facts: object) -> MailExplanation:
+        return await self.service.explain(1, MailFacts.model_validate(facts), rule_id=rule_id)
+
+    async def check(self, what: str, **facts: object) -> tuple[str, str]:
+        found = await self.service.explain(1, MailFacts.model_validate(facts), rule_id=None)
+        [rule] = found.rules
+        [check] = [check for check in rule.checks if check.what == what]
+        return check.result, check.why
+
+
+# --- the answer as a whole
+
+
+async def test_the_answer_says_first_that_it_is_no_dry_run_and_last_what_comes_closest() -> None:
+    setup = Setup()
+    setup.rule()
+
+    found = await setup.explain()
+
+    assert found.message.startswith(NO_DRY_RUN)
+    assert found.closest_way == CLOSEST
+    assert "A check that says no most likely keeps the mail out; ok is no promise." in found.message
+    assert "Rules of other users that you may not see" in found.message
+
+
+async def test_no_rule_and_no_enabled_rule_are_said() -> None:
+    setup = Setup()
+    assert "You see no rule of this account" in (await setup.explain()).message
+    setup.rule(enabled=False)
+    found = await setup.explain()
+
+    assert "None of these rules is enabled" in found.message
+    [rule] = found.rules
+    assert (rule.result, [c.what for c in rule.checks]) == ("no", ["enabled"])
+
+
+async def test_rules_that_may_not_be_read_are_not_called_none() -> None:
+    setup = Setup("mailman", permissions={"view_mailaccount"})
+
+    found = await setup.explain()
+
+    assert "The rules could not be read" in found.message
+    assert "see no rule" not in found.message
+    assert any(gap.startswith("the rules: ") for gap in found.not_checked)
+    assert not found.complete
+
+
+async def test_a_rule_is_chosen_and_has_to_be_one_of_the_account() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.rule()
+    setup.rule(account=2)
+
+    assert [r.rule_id for r in (await setup.explain()).rules] == [1, 2]
+    assert [r.rule_id for r in (await setup.explain(rule_id=2)).rules] == [2]
+    with pytest.raises(Validation) as raised:
+        _ = await setup.explain(rule_id=3)
+    assert raised.value.describe() == (
+        "Account 1 has no rule 3 that you may see. Hint: list_mail_rules shows the rules of the "
+        "account."
+    )
+
+
+async def test_an_account_that_is_hidden_is_an_error() -> None:
+    with pytest.raises(NotFound):
+        _ = await Setup().service.explain(9, MailFacts(), rule_id=None)
+    with pytest.raises(PermissionDenied):
+        _ = await Setup("e2e-blind").explain()
+
+
+async def test_an_expired_token_and_a_missing_username_are_said() -> None:
+    setup = Setup()
+    [account] = setup.state.mail_accounts
+    assert (await setup.explain()).account == ()
+    account.username, account.is_token = "", True
+    account.expiration = NOW - timedelta(seconds=1)
+
+    expired, unnamed = (await setup.explain()).account
+    account.expiration = NOW + timedelta(seconds=1)
+
+    assert "The access token has expired" in expired
+    assert "has no username" in unnamed
+    assert len((await setup.explain()).account) == 1
+
+
+# --- the checks
+
+
+@pytest.mark.parametrize(
+    ("folder", "result"), [("INBOX", "ok"), ("inbox", "ok"), ("Bills", "no"), (None, "unknown")]
+)
+async def test_the_folder(folder: str | None, result: str) -> None:
+    setup = Setup()
+    setup.rule()
+
+    assert (await setup.check("folder", folder=folder))[0] == result
+
+
+@pytest.mark.parametrize(
+    ("days", "result"),
+    [(0, "ok"), (7, "ok"), (8, "unknown"), (10, "unknown"), (12, "unknown"), (13, "no")],
+)
+async def test_the_age_is_unsure_for_two_days_at_the_edge(days: int, result: str) -> None:
+    setup = Setup()
+    setup.rule(maximum_age=10)
+
+    assert (await setup.check("age", received=NOW - timedelta(days=days)))[0] == result
+
+
+async def test_the_age_without_a_limit_a_date_or_a_time_zone() -> None:
+    setup = Setup()
+    setup.rule(maximum_age=10)
+
+    assert (await setup.check("age"))[0] == "unknown"
+    naive = (NOW - timedelta(days=99)).replace(tzinfo=None)
+    assert (await setup.check("age", received=naive))[0] == "no"
+    setup.state.mail_rules[0].maximum_age = 0
+    assert (await setup.check("age"))[0] == "ok"
+    setup.state.mail_rules[0].maximum_age = 10
+    ahead = timezone(timedelta(hours=14))
+    behind = timezone(timedelta(hours=-12))
+    assert (await setup.check("age", received=datetime(1, 1, 1, tzinfo=ahead)))[0] == "no"
+    assert (await setup.check("age", received=datetime(9999, 12, 31, 23, tzinfo=behind)))[0] == "ok"
+    assert "most likely" in (await setup.check("age", received=NOW - timedelta(days=99)))[1]
+
+
+@pytest.mark.parametrize(
+    ("what", "field"), [("sender", "from"), ("recipient", "to"), ("subject", "subject")]
+)
+async def test_the_filters_are_contained_without_case(what: str, field: str) -> None:
+    setup = Setup()
+    setup.rule()
+    [rule] = (await setup.explain()).rules
+    assert what not in {check.what for check in rule.checks}
+    setup.state.mail_rules.clear()
+    setup.rule(**{f"filter_{field}": "ACME"})
+
+    assert (await setup.check(what, **{what: "x acme y"}))[0] == "ok"
+    result, why = await setup.check(what, **{what: "other"})
+    assert result == "no"
+    assert "most likely" in why
+    assert (await setup.check(what))[0] == "unknown"
+
+
+async def test_the_body_is_never_known() -> None:
+    setup = Setup()
+    setup.rule(filter_body="x")
+
+    assert (await setup.check("body"))[0] == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("include", "exclude", "names", "result"),
+    [
+        (None, None, ["a.pdf"], "unknown"),
+        (None, None, [], "no"),
+        (None, None, None, "unknown"),
+        ("*.pdf", None, ["A.PDF"], "unknown"),
+        ("*.PDF", None, ["a.pdf"], "unknown"),
+        ("*.pdf,*.txt", None, ["a.txt"], "unknown"),
+        ("*.pdf, *.txt", None, ["a.txt"], "no"),  # Paperless does not strip the pattern
+        ("pdf", None, ["a.pdf"], "no"),  # the whole name
+        (",", None, ["a.pdf"], "no"),
+        (",", None, [""], "no"),  # an empty pattern is none
+        (None, "*.txt", ["a.txt"], "no"),
+        (None, "*.txt", ["a.txt", "b.pdf"], "unknown"),
+        ("*.pdf", "b*", ["b.pdf"], "no"),
+    ],
+)
+async def test_the_attachment_names_as_paperless_compares_them(
+    include: str | None, exclude: str | None, names: list[str] | None, result: str
+) -> None:
+    setup = Setup()
+    setup.rule(
+        filter_attachment_filename_include=include, filter_attachment_filename_exclude=exclude
+    )
+
+    found, why = await setup.check("attachments", attachment_names=names)
+
+    assert found == result
+    if result == "unknown" and names:
+        assert "passes the file name filters" in why
+
+
+async def test_a_rule_that_imports_the_mail_itself_needs_no_attachment() -> None:
+    setup = Setup()
+    setup.rule(consumption_scope="eml_and_attachments")
+
+    assert (await setup.check("attachments", attachment_names=[]))[0] == "ok"
+
+
+async def test_inline_attachments_are_only_unsure_where_the_rule_leaves_them_out() -> None:
+    setup = Setup()
+    setup.rule()
+    assert "inline" in (await setup.check("attachments", attachment_names=["a.pdf"]))[1]
+    setup.state.mail_rules[0].attachment_type = "all_files"
+    assert "inline" not in (await setup.check("attachments", attachment_names=["a.pdf"]))[1]
+
+
+@pytest.mark.parametrize(
+    ("action", "parameter", "field"),
+    [
+        ("mark_read", None, "is_read"),
+        ("flag", None, "is_flagged"),
+        ("tag", "Apple:red", "is_flagged"),
+    ],
+)
+async def test_a_marked_mail_is_left_out(action: str, parameter: str | None, field: str) -> None:
+    setup = Setup()
+    setup.rule(action=action, action_parameter=parameter)
+
+    assert (await setup.check("mark", **{field: True}))[0] == "no"
+    assert (await setup.check("mark", **{field: False}))[0] == "ok"
+    assert (await setup.check("mark"))[0] == "unknown"
+
+
+async def test_a_keyword_is_not_known_and_other_actions_leave_nothing_out() -> None:
+    setup = Setup()
+    setup.rule(action="tag", action_parameter="done")
+    assert (await setup.check("mark"))[0] == "unknown"
+    setup.state.mail_rules[0].action = "delete"
+    [rule] = (await setup.explain()).rules
+    assert "mark" not in {check.what for check in rule.checks}
+
+
+async def test_earlier_rules_of_the_run_are_named() -> None:
+    setup = Setup()
+    setup.rule(order=1, stop_processing=True)
+    setup.rule(order=2, folder="Other")
+    setup.rule(order=2)
+    setup.rule(order=0, enabled=False, stop_processing=True)
+
+    found = {rule.rule_id: rule for rule in (await setup.explain()).rules}
+
+    def earlier(rule_id: int) -> list[str]:
+        return [c.why for c in found[rule_id].checks if c.what == "earlier rules"]
+
+    assert earlier(1) == []
+    assert earlier(2) == ["rule 'R1' (id 1) ends the run once any document was queued in it"]
+    stops, takes = earlier(3)
+    assert "ends the run" in stops
+    assert takes == (
+        "rule 'R1' (id 1) reads the same folder first; what it queues is left out in that run"
+    )
+
+
+async def test_the_result_of_a_rule_is_no_before_unknown_before_ok() -> None:
+    setup = Setup()
+    setup.rule(action="delete", maximum_age=0)
+
+    async def result(folder: str, names: list[str] | None = None) -> str:
+        found = await setup.explain(folder=folder, attachment_names=names)
+        return found.rules[0].result
+
+    assert await result("INBOX", ["a.pdf"]) == "unknown"
+    setup.state.mail_rules[0].consumption_scope = "eml"
+    assert await result("INBOX") == "ok"
+    assert await result("Other") == "no"
+
+
+# --- records
+
+
+async def test_records_with_the_subject_are_shown_with_their_status() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.rule()
+    setup.record(" Your INVOICE ", status="FAILED", error="a\nb")
+    setup.record("Other")
+    setup.record("your invoice", rule=2)
+    setup.record("your invoice", rule=9)
+
+    found = await setup.explain(subject="Your invoice")
+
+    assert [(r.id, r.rule_id, r.status, r.error) for r in found.processed] == [
+        (1, 1, "FAILED", "a b"),
+        (3, 2, "SUCCESS", None),
+    ]
+    assert not any(gap.startswith("processed mail") for gap in found.not_checked)
+
+
+async def test_a_long_subject_is_compared_as_paperless_cuts_it() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.record("s" * 256)
+
+    assert len((await setup.explain(subject="s" * 300)).processed) == 1
+
+
+async def test_without_a_subject_no_record_is_looked_for_and_that_is_said() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.record("")
+
+    found = await setup.explain()
+
+    assert found.processed == ()
+    assert "processed mail: pass the subject of the mail" in found.not_checked
+
+
+async def test_records_are_bounded_and_the_rest_is_said() -> None:
+    setup = Setup()
+    setup.rule()
+    for _ in range(1001):
+        setup.record("Hi")
+
+    found = await setup.explain(subject="Hi")
+
+    assert len(found.processed) == MAX_PROCESSED
+    assert f"{1000 - MAX_PROCESSED} more records with this subject" in found.not_checked
+    assert "processed mail of rule 'R1' (id 1): only the newest 1,000 were looked at" in (
+        found.not_checked
+    )
+
+
+# --- tasks
+
+
+async def test_the_newest_fetches_and_failed_files_from_mail_are_shown() -> None:
+    setup = Setup()
+    setup.rule()
+    for number in range(1, 8):
+        created = NOW + timedelta(minutes=number)
+        setup.state.tasks += [
+            FakeTask(id=number, task_id=f"f{number}", task_type="mail_fetch", created=created),
+            FakeTask(
+                id=number + 10,
+                task_id=f"c{number}",
+                status="failure",
+                created=created,
+                message="bad\nfile",
+                trigger_source="email_consume",
+            ),
+        ]
+    setup.state.tasks.append(
+        FakeTask(
+            id=99,
+            task_id="x",
+            status="failure",
+            message="an upload",
+            created=NOW + timedelta(days=1),
+        )
+    )
+
+    tasks = (await setup.explain()).tasks
+
+    assert [t.task_type for t in tasks] == ["mail_fetch"] * 5 + ["consume_file"] * 5
+    assert tasks[0].created == NOW + timedelta(minutes=7)
+    assert {t.message for t in tasks[5:]} == {"bad file"}
+
+
+async def test_tasks_that_may_not_be_seen_are_said() -> None:
+    setup = Setup("mailman", permissions={"view_mailaccount", "view_mailrule"})
+
+    found = await setup.explain()
+
+    assert found.tasks == ()
+    assert any(gap.startswith("fetches: ") for gap in found.not_checked)
+
+
+# --- logs
+
+
+def account_lines(name: str) -> list[str]:
+    """What Paperless writes about an account and a rule R1 of it."""
+    return [
+        f"Processing mail account {name}",
+        f"Account {name}: Processing 2 rule(s)",
+        f"Error while retrieving mailbox {name}: [Errno 111] refused",
+        f"Error while authenticating account {name}: NO",
+        f"Rule {name}.R1: Skipping disabled rule",
+        f"Rule {name}.R1: Stopping processing rules due to stop_processing flag",
+        f"Rule {name}.R1: Error while processing rule: x",
+        f"Rule {name}.R1: Selecting folder INBOX",
+        f"Rule {name}.R1: Searching folder with criteria (ALL)",
+        f"Rule {name}.R1: No new mail matching criteria (ALL)",
+        f"Rule {name}.R1: Processed 1 matching mail(s)",
+        f"Rule {name}.R1: Error while processing mail 7: x",
+    ]
+
+
+@pytest.mark.parametrize("index", range(12))
+@pytest.mark.parametrize("logger", ["paperless_mail", "paperless.other"])
+async def test_each_line_about_the_account_is_taken_whole_and_from_its_logger(
+    index: int, logger: str
+) -> None:
+    setup = Setup()
+    setup.rule()
+    start = f"[2026-11-25 10:00:00,1] [DEBUG] [{logger}] "
+    names = ("Work", "Work Private", "Work2", "My Work", "Work.R1")
+    setup.state.logs["mail"] = [start + account_lines(name)[index] for name in names]
+
+    found = await setup.explain()
+
+    [line] = found.logs if logger == "paperless_mail" else ["2026-11-25 10:00:00 none"]
+    if logger == "paperless_mail":
+        told = account_lines("Work")[index].removesuffix("NO").removesuffix("[Errno 111] refused")
+        assert line.startswith(f"2026-11-25 10:00:00 {told}".rstrip())
+    else:
+        assert found.logs == ()
+
+
+@pytest.mark.parametrize("logger", ["paperless.mail.tasks", "paperless_mail", "paperless.x"])
+async def test_runs_are_told_by_the_task_only(logger: str) -> None:
+    setup = Setup()
+    start = f"[2026-11-25 10:00:00,1] [INFO] [{logger}] "
+    setup.state.logs["paperless"] = [
+        start + SKIP,
+        start + SKIP + " more",
+        start + "No rules enabled for account Work. Skipping.",
+        start + "No rules enabled for account Work2. Skipping.",
+        start + "Error while processing mail account Work",
+        "Traceback (most recent call last):",
+        start + "Error while processing mail account Work Private",
+    ]
+
+    found = await setup.explain()
+
+    if logger != "paperless.mail.tasks":
+        assert found.logs == ()
+        return
+    assert [line[20:] for line in found.logs] == [
+        SKIP,
+        "No rules enabled for account Work. Skipping.",
+        "Error while processing mail account Work Traceback (most recent call last):",
+    ]
+    assert (
+        "1 fetch was skipped because another one was running: what it would have fetched was not "
+        "fetched by it; it may have been for other accounts."
+    ) in found.message
+
+
+async def test_a_skipped_fetch_in_the_log_of_mails_is_none() -> None:
+    setup = Setup()
+    setup.state.logs["mail"] = [RUN.format(0, SKIP)]
+
+    found = await setup.explain()
+
+    assert found.logs == ()
+    assert "was skipped because" not in found.message
+
+
+async def test_only_the_chosen_rule_is_told() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.rule()
+    setup.state.logs["mail"] = [
+        LOG.format(0, "Rule Work.R1: Skipping disabled rule"),
+        LOG.format(1, "Rule Work.R2: Skipping disabled rule"),
+    ]
+
+    assert [line[20:] for line in (await setup.explain(rule_id=2)).logs] == [
+        "Rule Work.R2: Skipping disabled rule"
+    ]
+
+
+MAIL_LINES: Final = [
+    "Rule Work.R1: Processing mail {} from a@b with 1 attachment(s)",
+    "Rule Work.R1: Consuming attachment x.pdf from mail {} from a@b",
+    "Rule Work.R1: Consuming eml from mail {} from a@b",
+    "Skipping mail '7' subject '{}' from 'a@b', already processed.",
+    "Skipping mail '7' subject '{}' from 'a@b', already queued by a previous rule in this run.",
+    "Skipping duplicate fetched mail '7' subject '{}' from 'a@b'.",
+]
+
+
+@pytest.mark.parametrize("line", MAIL_LINES)
+async def test_lines_about_a_mail_are_those_with_its_subject(line: str) -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [
+        LOG.format(n, line.format(subject))
+        for n, subject in enumerate(("INVOICE  straße", "Invoice", "My Invoice strasse x", "Other"))
+    ]
+
+    found = await setup.explain(subject="Invoice STRASSE")
+
+    assert len(found.logs) == 1
+    assert "INVOICE" in found.logs[0]
+
+
+@pytest.mark.parametrize("line", MAIL_LINES)
+@pytest.mark.parametrize("subject", [None, "", "   "])
+async def test_without_a_subject_lines_of_a_rule_are_shown_and_others_are_not(
+    line: str, subject: str | None
+) -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [LOG.format(0, line.format("Private"))]
+
+    found = await setup.explain(subject=subject)
+
+    assert len(found.logs) == (1 if line.startswith("Rule") else 0)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Rule Work.R1: Skipping attachment a.pdf with content disposition inline",
+        "Rule Work.R1: Skipping attachment a.pdf does not match pattern x",
+        "Rule Work.R1: Skipping attachment a.pdf does match pattern x",
+        "Rule Work.R1: Skipping attachment a.pdf since guessed mime type x is not supported",
+    ],
+)
+async def test_lines_about_an_attachment_are_those_with_its_name(line: str) -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [LOG.format(0, line)]
+
+    async def shown(*names: str) -> int:
+        return len((await setup.explain(subject="S", attachment_names=list(names))).logs)
+
+    assert await shown("A.PDF") == 1
+    assert await shown("a") == 0
+    assert await shown("xa.pdf", "a.pdf x") == 0
+    assert await shown("", " ") == 0
+    assert len((await setup.explain(subject="S")).logs) == 0
+    assert len((await setup.explain()).logs) == 1
+
+
+async def test_a_file_of_the_same_name_in_another_mail_is_not_shown() -> None:
+    setup = Setup()
+    setup.rule()
+    line = "Rule Work.R1: Consuming attachment a.pdf from mail Other from a@b"
+    setup.state.logs["mail"] = [LOG.format(0, line)]
+
+    assert (await setup.explain(subject="S", attachment_names=["a.pdf"])).logs == ()
+    assert len((await setup.explain(subject="Other")).logs) == 1
+
+
+async def test_a_line_of_a_rule_with_an_unknown_form_is_left_out() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [LOG.format(0, "Rule Work.R1: Something new about Invoice")]
+
+    assert (await setup.explain(subject="Invoice")).logs == ()
+
+
+async def test_a_name_inside_a_subject_names_nothing() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [
+        LOG.format(0, "Rule Else.X: Processing mail Rule Work.R1: Skipping disabled rule from a"),
+        LOG.format(1, "Rule Else.X: Consuming eml from mail Processing mail account Work from a"),
+    ]
+
+    assert (await setup.explain(subject="none")).logs == ()
+
+
+async def test_the_rest_of_a_record_whose_start_was_not_read_is_left_out() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [
+        "Rule Work.R1: Skipping disabled rule",
+        LOG.format(1, "Rule Work.R1: Error while processing rule: x"),
+        "with a second line",
+    ]
+
+    found = await setup.explain()
+
+    [line] = found.logs
+    assert line.endswith("10:00:01 Rule Work.R1: Error while processing rule: x with a second line")
+
+
+async def test_a_user_who_is_no_staff_is_told_that_a_skipped_fetch_is_not_known() -> None:
+    setup = Setup("mailman", permissions={"view_mailaccount", "view_mailrule"})
+    setup.state.logs["mail"] = [LOG.format(0, "Processing mail account Work")]
+
+    found = await setup.explain()
+
+    assert (found.logs, found.logs_from) == ((), ())
+    assert "the log paperless: Logs need a staff user." in found.not_checked
+    assert "whether a fetch was skipped is not known" in found.not_checked
+
+
+async def test_each_log_says_how_far_back_it_reaches() -> None:
+    setup = Setup()
+    setup.state.logs["mail"] = [LOG.format(3, "Something"), LOG.format(4, "Something")]
+    setup.state.logs["paperless"] = [RUN.format(5, "Something"), RUN.format(6, "Something")]
+
+    found = await setup.explain(subject="x")
+
+    assert found.logs_from == ("mail: 2026-11-25 10:00:03", "paperless: 2026-11-25 10:00:05")
+    assert "whether a fetch was skipped before 2026-11-25 10:00:05 is not known" in (
+        found.not_checked
+    )
+    assert found.complete
+
+
+async def test_an_empty_log_is_said() -> None:
+    setup = Setup()
+    setup.state.logs["mail"], setup.state.logs["paperless"] = [], []
+
+    found = await setup.explain(subject="x")
+
+    assert "the log mail is empty" in found.not_checked
+    assert "the log paperless is empty" in found.not_checked
+    assert "whether a fetch was skipped is not known" in found.not_checked
+    assert not found.complete
+
+
+async def test_logs_are_bounded_newest_first() -> None:
+    setup = Setup()
+    setup.rule()
+    line = "Rule Work.R1: Searching folder with criteria "
+    setup.state.logs["mail"] = [
+        f"[2026-11-25 10:{n:02}:00,1] [DEBUG] [paperless_mail] {line}{n} " + "x" * 300
+        for n in range(30)
+    ]
+
+    found = await setup.explain()
+
+    assert found.logs[-1].startswith("2026-11-25 10:29:00")
+    assert len(found.logs) == min(MAX_LOGS, LOG_CHARS // len(found.logs[0]))
+    assert f"{30 - len(found.logs)} older log lines" in found.not_checked
+
+
+@pytest.mark.decision("decision-80")
+async def test_no_answer_to_a_login_and_no_credentials_are_shown() -> None:
+    setup = Setup()
+    setup.rule()
+    secret = "pa55w0rd-4711"
+    setup.state.logs["mail"] = [
+        LOG.format(0, f"Error while authenticating account Work: Data: [b'{secret}']"),
+        LOG.format(1, f"Rule Work.R1: Error while processing rule: https://u:{secret}@h/x"),
+    ]
+    setup.state.logs["paperless"] = [
+        RUN.format(2, "Error while processing mail account Work"),
+        '  File "mail.py", line 1, in mailbox_login',
+        f"imaplib.IMAP4.error: {secret}",
+    ]
+
+    found = await setup.explain()
+
+    assert len(found.logs) == 3
+    assert secret not in found.model_dump_json()
+
+
+# --- bounds and failures
+
+
+@final
+class Slow(FakePaperless):
+    """Every page of rules takes a time, by default the whole one of a call."""
+
+    owner: Setup | None = None
+    takes: float = 40
+
+    @override
+    async def list_mail_rule_page(self, *, page: int, page_size: int) -> MailRulePage:
+        assert self.owner is not None
+        self.owner.now += self.takes
+        return await super().list_mail_rule_page(page=page, page_size=page_size)
+
+
+async def test_after_forty_seconds_nothing_is_asked_and_all_of_it_is_named() -> None:
+    setup = Setup(make=Slow)
+    assert isinstance(setup.fake, Slow)
+    setup.fake.owner = setup
+    setup.rule()
+
+    found = await setup.explain(subject="x")
+
+    assert len(found.rules) == 1
+    assert not found.complete
+    late = [gap for gap in found.not_checked if gap.endswith("40 seconds have passed")]
+    assert [gap.split(":")[0] for gap in late] == [
+        "processed mail of rule 'R1' (id 1)",
+        "fetches",
+        "files that could not be consumed",
+        "the log mail",
+        "the log paperless",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("error", "ends"),
+    [
+        (UpstreamTimeout("silent"), False),
+        (UpstreamUnavailable("slow down", status=429), True),
+        (AuthenticationFailed("no"), True),
+    ],
+)
+async def test_a_failed_read_is_named_and_a_rate_limit_ends_the_call(
+    error: PaperlessMcpError,
+    ends: bool,  # noqa: FBT001 -- the case
+) -> None:
+    @final
+    class Failing(FakePaperless):
+        @override
+        async def list_mail_rule_page(self, **_: object) -> MailRulePage:
+            raise error
+
+    setup = Setup(make=Failing)
+    if ends:
+        with pytest.raises(type(error)):
+            _ = await setup.explain()
+        return
+    found = await setup.explain()
+    assert "the rules: silent" in found.not_checked
+    assert "The rules could not be read" in found.message
+    assert "Not all rules" not in found.message
+
+
+async def test_a_long_answer_leaves_rules_out_and_counts_them() -> None:
+    setup = Setup()
+    for _ in range(200):
+        setup.rule(filter_from="x" * 60, filter_to="y" * 60, filter_subject="z" * 60)
+
+    found = await setup.explain(subject="s")
+
+    assert len(found.model_dump_json()) <= MAX_ANSWER
+    assert 0 < len(found.rules) < 200
+    assert f"{200 - len(found.rules)} of 200 rules: the answer would be too long; pass rule_id" in (
+        found.not_checked
+    )
+    assert not found.complete
+
+
+async def test_an_answer_with_everything_read_is_complete_and_names_what_is_never_known() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [LOG.format(0, "x")]
+    setup.state.logs["paperless"] = [RUN.format(0, "x")]
+
+    found = await setup.explain(subject="x")
+
+    assert found.complete
+    assert OTHERS in found.not_checked
+
+
+async def test_a_rule_of_the_same_number_and_one_that_stops_nothing_before_it() -> None:
+    setup = Setup()
+    setup.rule(order=1, folder="Other")
+    setup.rule(order=1, folder="Same")
+    setup.rule(order=1, folder="Same")
+
+    found = {rule.rule_id: rule for rule in (await setup.explain()).rules}
+
+    [tied] = [c.why for c in found[2].checks if c.what == "earlier rules"]
+    assert "rule 'R3' (id 3) reads the same folder first" in tied
+    assert [c for c in found[1].checks if c.what == "earlier rules"] == []
+
+
+async def test_at_most_twenty_lines_in_the_order_of_time() -> None:
+    setup = Setup()
+    setup.rule()
+    line = "Rule Work.R1: Error while processing mail {}: x"
+    setup.state.logs["mail"] = [LOG.format(5, line.format(n)) for n in range(MAX_LOGS)]
+    setup.state.logs["paperless"] = [
+        RUN.format(1, "No rules enabled for account Work. Skipping."),
+        RUN.format(9, "Error while processing mail account Work"),
+    ]
+
+    found = await setup.explain()
+
+    assert len(found.logs) == MAX_LOGS
+    assert found.logs[-1] == "2026-11-25 10:00:09 Error while processing mail account Work"
+    assert "2 older log lines" in found.not_checked
+
+
+async def test_only_the_log_paperless_tells_of_skipped_fetches() -> None:
+    @final
+    class Half(FakePaperless):
+        @override
+        async def get_log(self, name: str, *, limit: int) -> tuple[str, ...]:
+            if name == "mail":
+                message = "silent"
+                raise UpstreamTimeout(message)
+            return await super().get_log(name, limit=limit)
+
+    found = await Setup(make=Half).explain()
+
+    assert "the log mail: silent" in found.not_checked
+    assert "whether a fetch was skipped is not known" not in found.not_checked
+
+
+async def test_exactly_as_many_records_as_are_shown_leave_none_out() -> None:
+    setup = Setup()
+    setup.rule()
+    for _ in range(MAX_PROCESSED):
+        setup.record("Hi")
+
+    found = await setup.explain(subject="Hi")
+
+    assert len(found.processed) == MAX_PROCESSED
+    assert not any("more records" in gap for gap in found.not_checked)
+
+
+async def test_only_failed_files_of_mails_count_and_what_is_left_out_is_said() -> None:
+    setup = Setup()
+    for number in range(1, 8):
+        for task_type, status, source in (
+            ("consume_file", "failure", "email_consume"),
+            ("consume_file", "success", "email_consume"),
+            ("mail_fetch", "failure", "email_consume"),
+        ):
+            setup.state.tasks.append(
+                FakeTask(
+                    id=len(setup.state.tasks) + 1,
+                    task_id=f"{task_type}{status}{number}",
+                    task_type=task_type,
+                    status=status,  # pyright: ignore[reportArgumentType] -- the states above
+                    trigger_source=source,
+                )
+            )
+
+    found = await setup.explain()
+
+    assert [(t.task_type, t.state) for t in found.tasks] == [
+        *[("mail_fetch", "failure")] * 5,
+        *[("consume_file", "failure")] * 5,
+    ]
+    assert "2 more files from mails that could not be consumed" in found.not_checked
+    assert not found.complete
+
+
+async def test_more_failed_tasks_than_are_read_are_said() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [LOG.format(0, "x")]
+    setup.state.logs["paperless"] = [RUN.format(0, "x")]
+    for number in range(26):
+        setup.state.tasks.append(FakeTask(id=number, task_id=f"t{number}", status="failure"))
+
+    found = await setup.explain(subject="x")
+
+    assert "files that could not be consumed: only the newest 25 of 26 were looked at" in (
+        found.not_checked
+    )
+    assert not found.complete
+
+
+async def test_a_record_with_the_subject_may_keep_the_mail_out() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.rule(folder="inbox")
+    setup.record("Invoice")
+    setup.record("Invoice", status="FAILED")
+    setup.record("Invoice", rule=2)
+    setup.record("Invoice", rule=2, folder="inbox")
+
+    found = await setup.explain(subject="invoice")
+
+    first, second = ([c for c in rule.checks if c.what == "record"] for rule in found.rules)
+    [check] = first
+    assert check.result == "unknown"
+    assert check.why == (
+        "records 1, 2 have this subject: if one is of this mail, it keeps it out; "
+        "get_processed_mail says what follows, delete_processed_mail deletes them"
+    )
+    assert "records 4 have" in second[0].why  # Paperless compares the folder exactly
+
+
+async def test_at_most_three_records_are_named_in_a_check() -> None:
+    setup = Setup()
+    setup.rule()
+    for _ in range(5):
+        setup.record("Hi")
+
+    [rule] = (await setup.explain(subject="hi")).rules
+    [check] = [c for c in rule.checks if c.what == "record"]
+
+    assert check.why.startswith("records 1, 2, 3 and 2 more have") or check.why.startswith(
+        "records 5, 4, 3 and 2 more have"
+    )
+
+
+async def test_a_blank_subject_is_none() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.record("")
+    setup.record("  ")
+
+    for blank in ("", "  "):
+        found = await setup.explain(subject=blank)
+        assert found.processed == ()
+        assert "processed mail: pass the subject of the mail" in found.not_checked
+
+
+@pytest.mark.parametrize(
+    ("parameter", "result", "said"),
+    [
+        ("apple:red", "no", "flagged"),
+        ("APPLE: Grey", "no", "flagged"),
+        ("my apple:violet", "no", "flagged"),
+        ("apple:pink", "no", "no colour Paperless knows, so the rule fails"),
+        ("apple:red:blue", "no", "no colour Paperless knows, so the rule fails"),
+        ("pineapple", "unknown", "tagged 'pineapple'"),
+    ],
+)
+async def test_colours_are_read_as_paperless_reads_them(
+    parameter: str, result: str, said: str
+) -> None:
+    setup = Setup()
+    setup.rule(action="tag", action_parameter=parameter)
+
+    found, why = await setup.check("mark", is_flagged=True)
+
+    assert found == result
+    assert said in why
+    if "fails" in said:
+        assert (await setup.check("mark", is_flagged=False))[0] == "no"
+
+
+async def test_a_folder_to_move_to_may_be_missing() -> None:
+    setup = Setup()
+    setup.rule(action="move", action_parameter="Done")
+
+    assert await setup.check("target") == (
+        "unknown",
+        "the rule fails if the folder 'Done' does not exist on the mail server",
+    )
+
+
+async def test_an_account_without_a_token_is_not_expired() -> None:
+    setup = Setup()
+    setup.state.mail_accounts[0].expiration = NOW - timedelta(days=1)
+
+    assert (await setup.explain()).account == ()
+
+
+async def test_many_gaps_are_counted_and_the_answer_stays_short() -> None:
+    @final
+    class Silent(FakePaperless):
+        @override
+        async def list_processed_mail(self, **_: object) -> ProcessedMailPage:
+            raise UpstreamTimeout("x" * 400)
+
+    setup = Setup(make=Silent)
+    for number in range(300):
+        setup.rule(name=f"{number}" + "n" * 200)
+
+    found = await setup.explain(subject="s")
+
+    assert len(found.not_checked) <= 22
+    assert all(len(gap) <= 300 for gap in found.not_checked)
+    assert any(gap.endswith("more things") for gap in found.not_checked)
+    assert len(found.model_dump_json()) <= MAX_ANSWER
+    assert not found.complete
+
+
+SECRET: Final = "pa55w0rd-4711"
+LOGIN: Final = (
+    "Error while processing mail account Work\n"
+    '  File "m.py", line 1, in mailbox_login\nimaplib.IMAP4.error: {}'
+)
+FORMS: Final = [
+    SECRET,
+    base64.b64encode(f"\0me\0{SECRET}".encode()).decode(),
+    base64.b64encode(f"user=me\1auth=Bearer {SECRET}\1\1".encode()).decode(),
+]
+
+
+@pytest.mark.decision("decision-80")
+@given(
+    form=st.sampled_from(FORMS),
+    before=st.text(max_size=20),
+    after=st.text(max_size=20),
+    shape=st.sampled_from(
+        [
+            "Error while authenticating account Work: {}",
+            "Error while retrieving mailbox Work: {}",
+            "Error while authenticating account Work:\n{}",
+            LOGIN,
+        ]
+    ),
+)
+def test_no_form_of_a_password_in_a_login_is_shown(
+    form: str, before: str, after: str, shape: str
+) -> None:
+    text = shape.format(before + form + after)
+    runs = shape.startswith("Error while processing")
+    lines = (RUN if runs else LOG).format(0, text).split("\n")
+
+    async def shown() -> str:
+        setup = Setup()
+        setup.rule()
+        setup.state.logs["paperless" if runs else "mail"] = lines
+        return (await setup.explain(subject="s")).model_dump_json()
+
+    assert form not in asyncio.run(shown())
+
+
+@pytest.mark.parametrize(("folder", "said"), [("INBOX", 1), ("inbox", 0)])
+async def test_paperless_keeps_queued_mail_by_the_folder_as_written(folder: str, said: int) -> None:
+    setup = Setup()
+    setup.rule(folder=folder)
+    setup.rule(folder="INBOX")
+
+    found = await setup.explain()
+
+    assert sum("same folder" in check.why for check in found.rules[1].checks) == said
+
+
+async def test_a_no_outweighs_what_is_unknown() -> None:
+    setup = Setup()
+    setup.rule()
+
+    [rule] = (await setup.explain(folder="Other")).rules
+
+    assert {"no", "unknown"} <= {check.result for check in rule.checks}
+    assert rule.result == "no"
+
+
+async def test_lines_of_both_logs_are_in_the_order_of_time() -> None:
+    setup = Setup()
+    setup.state.logs["mail"] = [LOG.format(n, "Processing mail account Work") for n in (2, 6)]
+    setup.state.logs["paperless"] = [RUN.format(n, SKIP) for n in (1, 4)]
+
+    found = await setup.explain()
+
+    assert [line[18:19] for line in found.logs] == ["1", "2", "4", "6"]
+    assert "2 fetches were skipped" in found.message
+
+
+async def test_a_subject_cut_at_a_space_is_found() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.record("a" * 255 + " ")
+
+    assert len((await setup.explain(subject="a" * 255 + " more")).processed) == 1
+
+
+@pytest.mark.parametrize(
+    ("line", "subject"),
+    [
+        ("Account Work: Processing 2 rule(s) and more", "S"),
+        ("Rule Work.R1: Processing mail Skipping disabled rule from a with 1 attachment(s)", "S"),
+        ("Rule Work.R1: Processing mail Fwd from mail S from a with 1 attachment(s)", "S"),
+        ("Rule Work.R1: Processing mail S 2 from a with 1 attachment(s)", "S"),
+        ("Rule Work.R1: Something new", None),
+        ("Skipping mail '7' subject '' from 'a', already processed.", None),
+        ("Skipping mail '7' subject 'aab' from 'a', already processed.", "a+b"),
+    ],
+)
+async def test_lines_that_only_resemble_one_about_it_are_left_out(
+    line: str, subject: str | None
+) -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [LOG.format(0, line)]
+
+    assert (await setup.explain(subject=subject)).logs == ()
+
+
+async def test_the_name_of_an_account_is_no_pattern() -> None:
+    setup = Setup()
+    setup.state.mail_accounts[0].name = "W.rk"
+    setup.state.logs["mail"] = [LOG.format(0, "Account Work: Processing 2 rule(s)")]
+
+    assert (await setup.explain()).logs == ()
+
+
+@pytest.mark.parametrize(("files", "more"), [(5, False), (6, True)])
+async def test_exactly_five_failed_files_are_all_of_them(*, files: int, more: bool) -> None:
+    setup = Setup()
+    for number in range(files):
+        setup.state.tasks.append(
+            FakeTask(
+                id=number + 1,
+                task_id=f"t{number}",
+                status="failure",
+                trigger_source="email_consume",
+            )
+        )
+
+    found = await setup.explain()
+
+    assert len(found.tasks) == 5
+    assert any("more files from mails" in gap for gap in found.not_checked) is more
+
+
+@pytest.mark.parametrize(("rules", "counted"), [(15, False), (16, True)])
+async def test_exactly_eighteen_gaps_are_all_shown(*, rules: int, counted: bool) -> None:
+    @final
+    class Silent(FakePaperless):
+        @override
+        async def list_processed_mail(self, **_: object) -> ProcessedMailPage:
+            raise UpstreamTimeout("s" * 4)
+
+    setup = Setup(make=Silent)
+    setup.state.logs["mail"], setup.state.logs["paperless"] = [], []
+    for _ in range(rules):
+        setup.rule()
+
+    found = await setup.explain(subject="s")
+
+    assert any("more things" in gap for gap in found.not_checked) is counted
+    assert len(found.not_checked) == (18 + 1 + counted)  # and the note about others
+
+
+@pytest.mark.parametrize(("fetches", "more"), [(5, False), (6, True)])
+async def test_more_fetches_than_are_read_are_said(*, fetches: int, more: bool) -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [LOG.format(0, "x")]
+    setup.state.logs["paperless"] = [RUN.format(0, "x")]
+    for number in range(fetches):
+        setup.state.tasks.append(
+            FakeTask(id=number + 1, task_id=f"t{number}", task_type="mail_fetch", status="success")
+        )
+
+    found = await setup.explain(subject="x")
+
+    gap = "fetches: only the newest 5 of 6 were looked at"
+    assert len(found.tasks) == 5
+    assert (gap in found.not_checked) is more
+    assert found.complete  # reading the newest is the purpose
+
+
+def slow(takes: float) -> Setup:
+    """An instance that needs ``takes`` seconds for each page of rules, with 250 of them."""
+    setup = Setup(make=Slow)
+    assert isinstance(setup.fake, Slow)
+    setup.fake.owner, setup.fake.takes = setup, takes
+    for number in range(250):
+        setup.rule(order=number, enabled=False)
+    return setup
+
+
+async def test_no_page_of_rules_is_asked_for_after_forty_seconds() -> None:
+    setup = slow(20)
+
+    found = await setup.explain(subject="x")
+
+    assert setup.now == 40
+    assert "the rules after the first 200: 40 seconds have passed" in found.not_checked
+    assert found.message.count("Not all rules could be read.") == 1
+    assert not found.complete
+
+
+async def test_all_pages_of_rules_are_read_in_time() -> None:
+    setup = slow(13)
+
+    found = await setup.explain(rule_id=250)
+
+    assert setup.now == 39
+    assert [rule.rule_id for rule in found.rules] == [250]
+    assert not any("the rules" in gap for gap in found.not_checked)
+    assert "Not all rules" not in found.message
+
+
+async def test_a_rule_among_the_unread_ones_is_not_said_to_be_missing() -> None:
+    found = await slow(20).explain(rule_id=250)
+
+    assert found.rules == ()
+    assert "Not all rules could be read." in found.message
+    assert "You see no rule" not in found.message
+    assert not found.complete
+
+
+async def test_an_account_whose_rules_are_unread_is_not_said_to_have_none() -> None:
+    setup = slow(20)
+    for rule in setup.state.mail_rules:
+        rule.account = 2 if rule.id <= 200 else 1
+
+    found = await setup.explain()
+
+    assert "Not all rules could be read." in found.message
+    assert "You see no rule" not in found.message
+
+
+@pytest.mark.parametrize("failure", [UpstreamTimeout("silent"), NotFound("gone", hint="h")])
+async def test_rules_read_before_a_failed_page_are_kept(failure: PaperlessMcpError) -> None:
+    @final
+    class Second(FakePaperless):
+        @override
+        async def list_mail_rule_page(self, *, page: int, page_size: int) -> MailRulePage:
+            if page == 2:
+                raise failure
+            return await super().list_mail_rule_page(page=page, page_size=page_size)
+
+    setup = Setup(make=Second)
+    for _ in range(101):
+        setup.rule(enabled=False)
+
+    found = await setup.explain(rule_id=100)
+
+    assert [rule.rule_id for rule in found.rules] == [100]
+    assert f"the rules after the first 100: {failure.message}" in found.not_checked
+
+
+async def test_at_most_two_thousand_rules_are_read() -> None:
+    setup = Setup()
+    for _ in range(2001):
+        setup.rule(enabled=False)
+
+    found = await setup.explain(rule_id=2000)
+
+    assert [rule.rule_id for rule in found.rules] == [2000]
+    assert "the rules: only 2000 of 2001 were read" in found.not_checked
+    assert "Not all rules could be read." in found.message
+    assert not found.complete
+
+
+async def test_rules_that_moved_between_pages_are_not_passed_over_in_silence() -> None:
+    @final
+    class Moving(FakePaperless):
+        @override
+        async def list_mail_rule_page(self, *, page: int, page_size: int) -> MailRulePage:
+            found = await super().list_mail_rule_page(page=page, page_size=page_size)
+            if page == 1:
+                return found
+            again = await super().list_mail_rule_page(page=1, page_size=page_size)
+            return found.model_copy(update={"rules": again.rules[:1]})
+
+    setup = Setup(make=Moving)
+    for _ in range(101):
+        setup.rule(enabled=False)
+
+    found = await setup.explain(rule_id=1)
+
+    assert len(found.rules) == 1
+    assert "the rules: only 100 of 101 were read" in found.not_checked

@@ -228,6 +228,7 @@ if TYPE_CHECKING:
         MailAccountTestResult,
         MailAccountValues,
         MailRule,
+        MailRulePage,
         MailRuleValues,
         ProcessedMail,
         ProcessedMailPage,
@@ -3506,6 +3507,7 @@ class FakePaperless:
             state.mail_hosts,
             state.mail_silent_hosts,
             state.mail_fetches,
+            state.logs,
         )
 
     def _mail_viewer(self) -> MailViewer:
@@ -3531,6 +3533,10 @@ class FakePaperless:
     async def list_mail_rules(self) -> tuple[MailRule, ...]:
         """`MailReader.list_mail_rules`."""
         return mail.list_rules(self._mail(), self._mail_viewer())
+
+    async def list_mail_rule_page(self, *, page: int, page_size: int) -> MailRulePage:
+        """`MailReader.list_mail_rule_page`."""
+        return mail.rule_page(self._mail(), self._mail_viewer(), page, page_size)
 
     async def get_mail_rule(self, rule_id: int) -> MailRule:
         """`MailReader.get_mail_rule`."""

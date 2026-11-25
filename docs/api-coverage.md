@@ -107,23 +107,23 @@ Limits.
 | `PATCH /api/groups/{id}/` | `update_group` |  |
 | `PUT /api/groups/{id}/` |  | PLMCP-83 |
 | `GET /api/logs/` | `list_logs` |  |
-| `GET /api/logs/{id}/` | `get_log` |  |
+| `GET /api/logs/{id}/` | `explain_mail_import`, `get_log` |  |
 | `GET /api/mail_accounts/` | `list_mail_accounts` |  |
 | `POST /api/mail_accounts/` | `create_mail_account` |  |
 | `POST /api/mail_accounts/test/` | `test_mail_account` |  |
 | `DELETE /api/mail_accounts/{id}/` | `delete_mail_account` |  |
-| `GET /api/mail_accounts/{id}/` | `create_mail_rule`, `delete_mail_account`, `delete_processed_mail`, `get_mail_account`, `process_mail_account` and 4 more |  |
+| `GET /api/mail_accounts/{id}/` | `create_mail_rule`, `delete_mail_account`, `delete_processed_mail`, `explain_mail_import`, `get_mail_account` and 5 more |  |
 | `PATCH /api/mail_accounts/{id}/` | `set_permissions`, `update_mail_account` |  |
 | `PUT /api/mail_accounts/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `POST /api/mail_accounts/{id}/process/` | `process_mail_account` |  |
-| `GET /api/mail_rules/` | `delete_mail_account`, `list_mail_rules` |  |
+| `GET /api/mail_rules/` | `delete_mail_account`, `explain_mail_import`, `list_mail_rules` |  |
 | `POST /api/mail_rules/` | `create_mail_rule` |  |
 | `DELETE /api/mail_rules/{id}/` | `delete_mail_rule` |  |
 | `GET /api/mail_rules/{id}/` | `delete_mail_rule`, `delete_processed_mail`, `get_mail_rule`, `get_processed_mail`, `set_permissions` and 1 more |  |
 | `PATCH /api/mail_rules/{id}/` | `set_permissions`, `update_mail_rule` |  |
 | `PUT /api/mail_rules/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `GET /api/oauth/callback/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
-| `GET /api/processed_mail/` | `delete_processed_mail`, `get_processed_mail`, `list_processed_mail` |  |
+| `GET /api/processed_mail/` | `delete_processed_mail`, `explain_mail_import`, `get_processed_mail`, `list_processed_mail` |  |
 | `POST /api/processed_mail/bulk_delete/` | `delete_processed_mail` |  |
 | `GET /api/processed_mail/{id}/` | `delete_processed_mail`, `get_processed_mail` |  |
 | `GET /api/profile/` |  | PLMCP-83 |
@@ -167,7 +167,7 @@ Limits.
 | `GET /api/tags/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/tags/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/tags/{id}/` |  | PLMCP-83 |
-| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `extract_pages`, `get_task` and 13 more |  |
+| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `explain_mail_import`, `extract_pages` and 14 more |  |
 | `POST /api/tasks/acknowledge/` | `acknowledge_tasks` |  |
 | `GET /api/tasks/active/` |  | PLMCP-89 |
 | `POST /api/tasks/run/` | `run_task` |  |
