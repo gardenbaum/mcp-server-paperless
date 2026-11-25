@@ -33,6 +33,7 @@ SHARDS = 6
 # 30 s of stack seeding taken off the first module of a shard. The Celery-bound modules (bulk,
 # writer, pdf, sharing, versions, duplicates) vary 1.5 to 2x between runs (the median ignores one
 # fast or slow runner).
+# test_*_steps, test_bulk_limits and test_left_out_operations: one run of 2026-11-25, 45656414763.
 # The weight the split balances; a module not listed counts as the average of the listed ones, so a
 # new module lands in some shard without anyone editing this table; refresh the numbers when the
 # balance drifts (a test checks the split of the current table against the measured seconds). Keys
@@ -54,11 +55,13 @@ MODULE_SECONDS: dict[str, float] = {
     "tests/e2e/test_confirmation.py": 113,
     "tests/e2e/test_pdf_insert.py": 113,
     "tests/e2e/test_pages.py": 109,
+    "tests/contract/test_pdf_steps.py": 106,
     "tests/e2e/test_versions.py": 102,
     "tests/contract/test_bulk_items.py": 83,
     "tests/contract/test_document_reader.py": 72,
     "tests/contract/test_trash.py": 67,
     "tests/contract/test_admin.py": 64,
+    "tests/e2e/test_pdf_steps.py": 62,
     "tests/e2e/test_text_edits.py": 61,
     "tests/contract/test_document_upload.py": 60,
     "tests/e2e/test_upload_duplicates.py": 60,
@@ -96,6 +99,7 @@ MODULE_SECONDS: dict[str, float] = {
     "tests/contract/test_mail.py": 6,
     "tests/e2e/test_views.py": 6,
     "tests/e2e/test_workflows.py": 6,
+    "tests/e2e/test_left_out_operations.py": 4,
     "tests/e2e/test_tasks.py": 4,
     "tests/contract/test_taxonomy_reader.py": 2,
     "tests/contract/test_view_filters.py": 2,
