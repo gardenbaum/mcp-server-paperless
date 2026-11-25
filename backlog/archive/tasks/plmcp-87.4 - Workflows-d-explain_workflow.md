@@ -1,11 +1,11 @@
 ---
 id: PLMCP-87.4
 title: 'Workflows d: explain_workflow'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:07Z'
-updated_date: '2026-11-25T14:05:25Z'
+updated_date: '2026-11-25T14:46:42Z'
 labels:
   - workflows
 dependencies:
@@ -34,7 +34,7 @@ Fourth part of PLMCP-87: why a workflow did not run on a document can only be gu
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -63,3 +63,9 @@ Owner, 2026-11-25: 'Alles wie empfohlen' (everything as recommended), answering 
 
 Codex threads on 2cb483c: (1) did_run from the cut list was already fixed in 32efef25. (2) True: the adapter dropped content, so last_change of the text was always null. The history now keeps a marker (TEXT_CHANGED, time and actor of the entry) in place of the text, in adapter and fake; get_document include=history shows it, too (deliberate change; the contract assertion that content is absent became: only the marker, never the text). An added version counts as a change of the text. Not checked live: whether an edit of the text of a newer version is in the history. Tests red first (8), 8 mutants by hand in a copy, all killed. No snapshot changed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+explain_workflow compares settings, document, history, consume task and logs; did_run is likely, never yes, and the answer says what is inferred and what cannot be known; lines about other documents lose names and text (decision-88). Matching, not matching and a restricted user run live in tests/e2e/test_workflows.py; tool test: not matching and denied; what it reads is under contract. Merged as 1efb5cd (#161). Full E2E of that commit: 45630847369, all ten jobs green. DoD 1 stays open: the code was written before its tests. DoD 2 stays open: just check was not run as a whole locally. On GitHub the check jobs run its recipes one by one: 45630847344 (main 1efb5cd) is green; the check jobs of the last head of #161 were cancelled by its merge.
+<!-- SECTION:FINAL_SUMMARY:END -->

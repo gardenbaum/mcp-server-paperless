@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:56Z'
-updated_date: '2026-11-25T10:59:37Z'
+updated_date: '2026-11-25T14:46:40Z'
 labels:
   - mail
 dependencies:
@@ -25,8 +25,8 @@ Third part of PLMCP-81: records of processed mail cannot be deleted, so a failed
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 delete_processed_mail deletes 1 to 100 records after a preview and a confirmation that names each mail, what is fetched again and when, and what the rule then does
-- [ ] #2 Only a second read says a record is deleted; a missing id refuses the call
+- [x] #1 delete_processed_mail deletes 1 to 100 records after a preview and a confirmation that names each mail, what is fetched again and when, and what the rule then does
+- [x] #2 Only a second read says a record is deleted; a missing id refuses the call
 - [ ] #3 Contract, tool and E2E tests with the IMAP server cover the refetch, partial and unknown outcomes and a restricted user
 <!-- AC:END -->
 
@@ -34,8 +34,8 @@ Third part of PLMCP-81: records of processed mail cannot be deleted, so a failed
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -56,4 +56,6 @@ Review round 1 (independent), tests first: the sentence for PROCESSED_WO_CONSUMP
 Review round 2, tests first: when the rule acts follows from what it takes (eml_and_attachments: one half is enough), other records by the rule's folder, UIDVALIDITY of a server that names none. Dialog of 100 measured: 11,341 ordinary, 17,920 with a staying record each, 20,128 long subjects; not hostile 130,252 and 170,052; hostile 305,452. No bound built (with the owner).
 
 Confirmations above 100,000 characters (whole text with its hint) are refused, also with confirm=true, never cut; the preview stays whole and says so (owner, 2026-11-25, question dialog: "Ja, ablehnen (Recommended)", yes, refuse). Tests first. MAX_CONFIRMATION moved to domain/errors.py. Snapshot and tool text adapted.
+
+Cleanup 2026-11-25, merged as b0ca817 (#158). AC 3 stays open. Proven: the refetch (E2E with the mail server), a restricted user (contract, E2E), an id that is none (contract on fake and 3.5.1), all records refused (contract, E2E). Missing: partial outcomes of delete_processed_mail (some records deleted, some still there) and unknown outcomes (lost answer, records that cannot be read again) in a tool or E2E test; they are tested on service level only (tests/services/test_processed_mail.py), no contract, tool or E2E test has an unknown outcome. CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 1 stays open: the PR records red runs for adapter to tool level, not for the live contract and E2E tests. DoD 2 stays open: no local run of the whole just check is recorded. On GitHub the check jobs run its recipes one by one: 45602324190 (4816fe3).
 <!-- SECTION:NOTES:END -->

@@ -1,11 +1,11 @@
 ---
 id: PLMCP-81.4
 title: 'Mail d: explain_mail_import'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:57Z'
-updated_date: '2026-11-25T14:37:38Z'
+updated_date: '2026-11-25T14:46:40Z'
 labels:
   - mail
 dependencies:
@@ -33,8 +33,8 @@ Fourth part of PLMCP-81: why a mail was not imported must be gathered by hand fr
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -62,3 +62,9 @@ Codex P2 on #163, test first: the rules are read page by page (MailReader.list_m
 
 AC 3: every check of a rule (enabled, folder, age, sender, recipient, subject, body, attachments, mark, target, record, earlier rules) in tool and contract tests (tests/explained.py) and in E2E with the mail server, where Paperless then does what was said; hidden rules, no staff and credentials too. Full E2E 45632136477 on 27cf967 green in all ten jobs (60 mail tests in 415 s, before 39 in 328 s). Notes about the account are no check of a rule: service and E2E.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+explain_mail_import (read-only) explains from settings, processed mail, tasks and logs why a mail was not imported, without a connection of this server; each check says ok, no or unknown, bounds and what could not be read are named (decision-90). Merged as 094970f (#163); every check in E2E, tool and contract tests as 760d3e9 (#171). Full E2E 45632136477 on 27cf967 green in all ten jobs. DoD 1 stays open: the service was written before its tests. DoD 2 stays open: no local run of the whole just check is recorded. On GitHub the check jobs run its recipes one by one: 45632143936 (27cf967, #171) and 45630847344 (main 1efb5cd, with #163) are green; the check jobs of the last heads of #163 and #171 were cancelled by their merges.
+<!-- SECTION:FINAL_SUMMARY:END -->

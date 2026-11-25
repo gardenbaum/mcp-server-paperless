@@ -1,11 +1,11 @@
 ---
 id: PLMCP-81.5
 title: 'Mail e: owner and grants of mail accounts and rules'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:58Z'
-updated_date: '2026-11-25T11:00:29Z'
+updated_date: '2026-11-25T14:46:40Z'
 labels:
   - mail
 dependencies: []
@@ -23,17 +23,17 @@ Fifth part of PLMCP-81: owner and grants of mail accounts and rules cannot be re
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 set_permissions takes mail accounts and mail rules by id with the confirmation of decision-19 and says what a grant on an account gives
-- [ ] #2 The remaining rows of mail_accounts and mail_rules in docs/api-coverage.toml are covered
-- [ ] #3 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover owner, non-owner with a change grant and superuser
+- [x] #1 set_permissions takes mail accounts and mail rules by id with the confirmation of decision-19 and says what a grant on an account gives
+- [x] #2 The remaining rows of mail_accounts and mail_rules in docs/api-coverage.toml are covered
+- [x] #3 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover owner, non-owner with a change grant and superuser
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -51,3 +51,9 @@ Review round 2, tests first: a refused named owner sets no grants (DRF's unique-
 
 The rule note and the partial stop after 40 seconds are approved by the owner (2026-11-25, question dialog: "Ja, alles", yes, all of it).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+set_permissions takes mail accounts and rules by id with the confirmation of decision-19 and says what a change grant gives (decision-87). No row of mail_accounts or mail_rules is open in docs/api-coverage.toml. Owner, non-owner with a change grant, superuser and unowned objects: contract tests on the fake and 3.5.1 (tests/contract/test_permissions.py); the confirmation, sharing and handing over: tool tests and tests/e2e/test_mail.py (as superuser); what a grantee can do: tests/e2e/test_mail_import.py. Merged as f1c2cf2 (#162). CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 1 stays open: the PR records red runs for adapter to tool level, not for the live contract and E2E tests. DoD 2 stays open: no local run of the whole just check is recorded. On GitHub the check jobs run its recipes one by one: 45609771854 (80c28a1).
+<!-- SECTION:FINAL_SUMMARY:END -->

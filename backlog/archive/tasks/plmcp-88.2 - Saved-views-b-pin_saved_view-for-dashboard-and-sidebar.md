@@ -1,11 +1,11 @@
 ---
 id: PLMCP-88.2
 title: 'Saved views b: pin_saved_view for dashboard and sidebar'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T10:18:27Z'
-updated_date: '2026-11-25T11:26:17Z'
+updated_date: '2026-11-25T14:46:42Z'
 labels:
   - views
 dependencies:
@@ -35,7 +35,7 @@ Second part of PLMCP-88: in API 10 the dashboard and the sidebar of a user live 
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -58,3 +58,9 @@ CI run 45598528336 on 7061254: e2e parts green on Paperless 3.5.1 (contract of u
 
 Review: a refused second read, the texts and foreign answers (redirect, login page) tested and named truly; what a late POST would do is said (NOT_THERE, decision-92); a call waits at most 40 s for another; configuration.md wrapped. Tests first (7 red); 44 mutants, none survives.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+pin_saved_view puts a view on the dashboard or in the sidebar of the current user and takes it off; every other UI setting is sent back and compared, nothing is repeated (decision-92). Merged as 769fea7 (#165). Live over memory, stdio and HTTP: 45598528336 (7061254); CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 2 stays open: just check was not run as a whole locally. On GitHub the check jobs run its recipes one by one: 45616084339 (6193c23).
+<!-- SECTION:FINAL_SUMMARY:END -->

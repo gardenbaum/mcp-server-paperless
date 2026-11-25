@@ -1,11 +1,11 @@
 ---
 id: PLMCP-87.1
 title: 'Workflows a: probes, reading filters, usage and single parts, exclusions'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:04Z'
-updated_date: '2026-11-25T07:30:55Z'
+updated_date: '2026-11-25T14:46:41Z'
 labels:
   - workflows
 dependencies:
@@ -37,7 +37,7 @@ First part of PLMCP-87. How Paperless 3.5.1 treats parts sent with ids decides h
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -64,3 +64,9 @@ Probe log: https://github.com/gardenbaum/mcp-server-paperless/actions/runs/45503
 
 Review of #154: M1 (digits as a name, note for every kind), L1 (the live P1 test proves what was sent is stored), L2 (WorkflowRead.note removed), L3 (ids from 1, too many workflows leave the holders unknown) fixed, tests first. Surface snapshot: get_workflow only.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+list_workflows filters by enabled, trigger type and a used object and names the place; get_workflow reads one trigger or action and the workflows that hold it, hidden values stay hidden (decision-81). Probes P1 to P5: run 45503786740. Merged as 738ee5a (#154). Full E2E 45507183680 (6d12e49); CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 2 stays open: just check was not run as a whole locally. On GitHub the check jobs run its recipes one by one: 45568792562 (efaadb0).
+<!-- SECTION:FINAL_SUMMARY:END -->

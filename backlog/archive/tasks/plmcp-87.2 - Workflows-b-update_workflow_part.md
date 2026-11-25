@@ -1,11 +1,11 @@
 ---
 id: PLMCP-87.2
 title: 'Workflows b: update_workflow_part'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:05Z'
-updated_date: '2026-11-25T09:30:05Z'
+updated_date: '2026-11-25T14:46:41Z'
 labels:
   - workflows
 dependencies:
@@ -35,7 +35,7 @@ Second part of PLMCP-87: one trigger or action cannot be changed without resendi
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -62,3 +62,9 @@ Independent review of #159 (efaadb0..bb58f15): H1, M1 to M5, L1, L3 to L6 and th
 
 Second review of #159 (N1 to N3, L2, L6 to L8, survivors) fixed, tests first. N1: values of fields no longer assigned are dropped from what is written.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+update_workflow_part adds, changes, moves or removes one trigger or action; the others keep ids, settings and hidden values, every write is compared with a fresh read and never repeated (decision-82). Merged as 15b5f4c (#159). Full E2E 45578660467 (ddd2d72); CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 2 stays open: just check was not run as a whole locally. On GitHub the check jobs run its recipes one by one: 45586010679 (055e4a8).
+<!-- SECTION:FINAL_SUMMARY:END -->
