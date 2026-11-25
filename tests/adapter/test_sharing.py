@@ -631,3 +631,21 @@ async def test_an_odd_build_error_is_shown_as_json_text(make_client: ClientFacto
     found = await PaperlessSharingReader(make_client(server)).get_share_bundle(3)
 
     assert found.last_error == '[1, "a"]'
+
+
+async def test_bundles_are_filtered_by_paperless(make_client: ClientFactory) -> None:
+    server = Recording(page(BUNDLE_WIRE))
+
+    found = await PaperlessSharingReader(make_client(server)).list_share_bundles(
+        status="ready", document_id=7
+    )
+
+    assert len(found) == 1
+    assert server.sent == [
+        (
+            "GET",
+            "/api/share_link_bundles/",
+            None,
+            {"page": "1", "page_size": "100", "status": "ready", "documents": "7"},
+        )
+    ]

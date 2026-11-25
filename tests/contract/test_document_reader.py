@@ -117,6 +117,33 @@ async def test_date_ranges_include_both_ends(backend: Backend) -> None:
 
 
 @pytest.mark.contract(CONTRACT)
+async def test_the_day_of_the_change_the_serial_number_and_the_file_name_are_filtered(
+    backend: Backend,
+) -> None:
+    ports = backend.admin
+    hit = await document(ports, PUBLIC)
+    modified = (await ports.documents.get_document(hit.id)).modified.date()
+    day = timedelta(days=1)
+
+    assert PUBLIC in await titles(ports, modified_from=modified, modified_to=modified)
+    assert PUBLIC not in await titles(ports, modified_from=modified + day)
+    assert PUBLIC not in await titles(ports, modified_to=modified - day)
+    assert await titles(ports, asn_from=PUBLIC_ASN, asn_to=PUBLIC_ASN) == {PUBLIC}
+    assert await titles(ports, asn_from=PUBLIC_ASN + 1) == {PRIVATE}
+    assert await titles(ports, asn_to=PUBLIC_ASN - 1) == set()
+    assert await titles(ports, file_name_contains="PUBLIC-INVOICE.p") == {PUBLIC}
+
+
+@pytest.mark.contract(CONTRACT)
+async def test_the_new_filters_work_with_a_full_text_query(backend: Backend) -> None:
+    ports = backend.admin
+
+    assert await titles(ports, query="acme", asn_to=PUBLIC_ASN) == {PUBLIC}
+    assert await titles(ports, query="acme", asn_from=PUBLIC_ASN + 1) == set()
+    assert await titles(ports, query="acme", file_name_contains="invoice") == {PUBLIC}
+
+
+@pytest.mark.contract(CONTRACT)
 async def test_owner_and_inbox_filters(backend: Backend) -> None:
     ports = backend.admin
     admin = (await ids(ports, "user"))["admin"]

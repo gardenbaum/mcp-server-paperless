@@ -112,6 +112,16 @@ async def test_a_version_is_uploaded_listed_labelled_and_deleted_only_with_confi
     ]
     assert found[0]["checksum"] != found[1]["checksum"]
 
+    server = create_server(paperless_settings(stack.base_url, stack.admin_token), server_settings())
+    async with Client(server) as client:
+        images = [
+            (await client.call_tool("get_document_thumbnail", {"document_id": document, **asked}))
+            .content[1]
+            .model_dump()["data"]
+            for asked in ({}, {"version_id": version}, {"version_id": document})
+        ]
+    assert images[0] == images[1] != images[2]
+
     labelled = await run(
         stack,
         "set_document_version_label",

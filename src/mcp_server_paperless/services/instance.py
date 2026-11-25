@@ -1,25 +1,43 @@
 """Instance-wide use cases: the overview tool and the startup probe."""
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
-from mcp_server_paperless.domain.errors import UpstreamUnavailable
+from mcp_server_paperless.domain.errors import PaperlessMcpError, UpstreamUnavailable
+from mcp_server_paperless.domain.instance import TOO_SLOW, UpdateCheck
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.instance import InstanceOverview, SystemReport
     from mcp_server_paperless.domain.ports import InstanceReader, SystemReportReader
 
 
+# Seconds the check for an update may take in all.
+UPDATE_SECONDS: Final = 10.0
+
+
 class SystemReportService:
     """What Paperless's statistics and system status tell."""
 
-    def __init__(self, reader: SystemReportReader) -> None:
-        """Read through ``reader``."""
+    def __init__(
+        self, reader: SystemReportReader, *, update_seconds: float = UPDATE_SECONDS
+    ) -> None:
+        """Read through ``reader``; ``update_seconds`` bounds the check for an update."""
         self._reader: SystemReportReader = reader
+        self._update_seconds: float = update_seconds
 
-    async def report(self) -> SystemReport:
-        """Both in full, as far as the user may see them."""
-        return await self._reader.get_system_report()
+    async def report(self, *, check_for_update: bool = False) -> SystemReport:
+        """Both in full, as far as the user may see them, and the newest release on request."""
+        report = await self._reader.get_system_report()
+        if not check_for_update:
+            return report
+        try:
+            async with asyncio.timeout(self._update_seconds):
+                update = await self._reader.check_for_update()
+        except TimeoutError:
+            update = UpdateCheck.unknown(TOO_SLOW)
+        except PaperlessMcpError as error:  # whatever it is, the report is not lost
+            update = UpdateCheck.unknown(f"unknown: {error.message}")
+        return report.model_copy(update={"update": update})
 
 
 class InstanceService:

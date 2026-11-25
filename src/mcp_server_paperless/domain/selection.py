@@ -100,6 +100,11 @@ class SelectionFilters(BaseModel):
     created_to: Annotated[date, CALENDAR] | None = None
     added_from: Annotated[date, CALENDAR] | None = None
     added_to: Annotated[date, CALENDAR] | None = None
+    modified_from: Annotated[date, CALENDAR] | None = None
+    modified_to: Annotated[date, CALENDAR] | None = None
+    asn_from: Annotated[int, Field(ge=0), NO_FLAG] | None = None
+    asn_to: Annotated[int, Field(ge=0), NO_FLAG] | None = None
+    file_name_contains: str | None = None
     owner: Annotated[NameOrId, NO_FLAG] | None = None
     inbox: bool | None = None
     custom_field_query: list[JsonValue] | None = None
@@ -124,6 +129,11 @@ class SelectionFilters(BaseModel):
             created_to=self.created_to,
             added_from=self.added_from,
             added_to=self.added_to,
+            modified_from=self.modified_from,
+            modified_to=self.modified_to,
+            asn_from=self.asn_from,
+            asn_to=self.asn_to,
+            file_name_contains=self.file_name_contains,
             inbox=self.inbox,
             correspondent_isnull=_absent(self.has_correspondent),
             document_type_isnull=_absent(self.has_document_type),
@@ -222,6 +232,42 @@ class ReadRow(BaseModel):
     ] = None
 
 
+# The kinds of objects a selection is counted by.
+type CountedKind = Literal["tag", "correspondent", "document_type", "storage_path", "custom_field"]
+
+
+class Counted(BaseModel):
+    """An object and how many of the chosen documents have it."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    name: str
+    documents: int
+
+
+class KindCounts(BaseModel):
+    """The objects of one kind the chosen documents have, most frequent first."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    items: tuple[Counted, ...] = ()
+    more: Annotated[int, Field(description="Objects left out: no room.")] = 0
+    hidden: Annotated[int, Field(description="Objects the user may not see.")] = 0
+
+
+class SelectionCounts(BaseModel):
+    """What the chosen documents have, counted."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    tags: KindCounts = KindCounts()
+    correspondents: KindCounts = KindCounts()
+    document_types: KindCounts = KindCounts()
+    storage_paths: KindCounts = KindCounts()
+    custom_fields: KindCounts = KindCounts()
+
+
 class DocumentsRead(BaseModel):
     """Many documents read at once, and what of the selection is not in the answer."""
 
@@ -268,4 +314,8 @@ class DocumentsRead(BaseModel):
         tuple[int, ...],
         Field(description="Shown without text: it could not be read in this call, see notices."),
     ] = ()
+    counts: Annotated[
+        SelectionCounts | None,
+        Field(exclude_if=_nothing, description="With counts: of the whole selection."),
+    ] = None
     notices: tuple[str, ...] = ()

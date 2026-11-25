@@ -166,3 +166,18 @@ async def test_the_note_length_is_bounded_with_a_message_that_says_how() -> None
 
     assert "A note cannot be empty." in empty
     assert "at most 10000 characters" in long
+
+
+async def test_a_note_is_plain_or_markdown_and_read_back_so() -> None:
+    state = seeded()
+
+    added = cast(
+        "Json", (await call(fake(state), "add_note", note="**x**", format="markdown"))["note"]
+    )
+    plain = cast("Json", (await call(fake(state), "add_note", note="**x**"))["note"])
+    read = await call(fake(state), "get_document", include=["notes"])
+    refused = await refusal(fake(writes=False), "add_note", note="x", format="html")
+
+    assert (added["format"], plain["format"]) == ("markdown", "plain")
+    assert [n["format"] for n in cast("list[Json]", read["notes"])][-2:] == ["markdown", "plain"]
+    assert "format" in refused

@@ -476,3 +476,27 @@ async def test_the_mail_setting_is_off_on_the_test_stack_and_unknown_without_ui_
     assert await backend.blind.sharing.get_email_enabled() is False
     nobody = backend.restricted(frozenset({"view_document"}))
     assert await nobody.sharing.get_email_enabled() is None
+
+
+@pytest.mark.contract(LIST_BUNDLES)
+async def test_bundles_are_filtered_by_status_and_document(
+    backend: Backend, shares: Shares
+) -> None:
+    first, second, other = backend.new_documents(3)
+    one = await shares.bundle([first, second])
+    two = await shares.bundle([second])
+    for made in (one, two):
+        _ = await built(backend.admin, made.id)
+    mine = {one.id, two.id}
+
+    async def listed(**filters: object) -> set[int]:
+        found = await backend.admin.sharing.list_share_bundles(**filters)  # pyright: ignore[reportArgumentType] -- the filters of the cases below
+        return {bundle.id for bundle in found} & mine
+
+    assert await listed() == mine
+    assert await listed(status="ready") == mine
+    assert await listed(status="failed") == set()
+    assert await listed(document_id=first) == {one.id}
+    assert await listed(document_id=second) == mine
+    assert await listed(document_id=other) == set()
+    assert await listed(document_id=second, status="pending") == set()

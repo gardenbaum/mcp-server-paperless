@@ -58,14 +58,14 @@ def ids(output: Json) -> list[object]:
     return [row["id"] for row in rows(output)]
 
 
-async def test_read_only_mode_leaves_exactly_this_tool_of_the_bulk_toolset() -> None:
+async def test_read_only_mode_leaves_exactly_the_reading_tools_of_the_bulk_toolset() -> None:
     async with Client(serve(fake(), toolsets=["bulk"], read_only=True)) as client:
         names = {tool.name for tool in await client.list_tools()}
     async with Client(serve(fake())) as client:
         default = {tool.name for tool in await client.list_tools()}
 
-    assert names == {NAME}
-    assert NAME not in default
+    assert names == {NAME, "suggest_words", "test_storage_path"}
+    assert not names & default
 
 
 async def test_documents_are_chosen_by_ids_filters_or_view() -> None:
@@ -223,3 +223,31 @@ async def test_a_text_dropped_for_its_size_is_told_apart_from_left() -> None:
 
     described = str(cast("Json", (tool.output_schema or {})["properties"])["left"])
     assert "dropped for its size is in too_large, not here" in described
+
+
+@pytest.mark.decision("decision-100")
+async def test_counts_of_a_filter_come_without_rows() -> None:
+    output = await call(fake(), filters={"tags_all": ["e2e-finance"]}, counts=True)
+
+    counts = cast("dict[str, Json]", output["counts"])
+    assert counts["correspondents"] == {
+        "items": [{"id": 1, "name": "e2e-acme", "documents": 1}],
+        "more": 0,
+        "hidden": 0,
+    }
+    assert set(counts) == {
+        *("tags", "correspondents", "document_types", "storage_paths", "custom_fields"),
+    }
+    assert (rows(output), output["next_page"], output["selected_ids"]) == ([], None, [1])
+
+
+async def test_without_counts_the_answer_has_none() -> None:
+    assert "counts" not in await call(fake(), document_ids=[1])
+
+
+@pytest.mark.decision("decision-100")
+async def test_counts_and_rows_come_together_when_fields_are_named() -> None:
+    output = await call(fake(), document_ids=[1], counts=True, fields=["title"])
+
+    assert ids(output) == [1]
+    assert output["counts"]

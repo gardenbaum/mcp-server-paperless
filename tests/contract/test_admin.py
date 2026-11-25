@@ -31,6 +31,7 @@ OPEN = "AdminReader.open_archive"
 CURRENT = "AdminReader.get_current_user_id"
 CREATE_USER, UPDATE_USER = "AdminWriter.create_user", "AdminWriter.update_user"
 DELETE_USER = "AdminWriter.delete_user"
+REMOVE_FACTOR = "AdminWriter.remove_second_factor"
 CREATE_GROUP, UPDATE_GROUP = "AdminWriter.create_group", "AdminWriter.update_group"
 DELETE_GROUP, UPDATE_CONFIG = "AdminWriter.delete_group", "AdminWriter.update_config"
 UNKNOWN = 999_999
@@ -171,6 +172,29 @@ async def test_an_update_can_move_a_user_between_groups_and_rename_it(
     assert (moved.group_ids, moved.username) == ((second,), new_name)
     emptied = await writes.update_user(number, UserValues(group_ids=()))
     assert emptied.group_ids == ()
+
+
+@pytest.mark.decision("decision-103")
+@pytest.mark.contract(REMOVE_FACTOR)
+async def test_a_second_factor_is_removed_by_a_superuser_only(
+    backend: Backend, people: People
+) -> None:
+    number, plain = await people.user(), await people.user()
+    backend.add_second_factor(number)
+    clerk = backend.restricted(frozenset({"view_user", "add_user", "change_user"}))
+    reading, writes = backend.admin.management, backend.admin.management_writes
+    assert (await reading.get_user(number)).mfa_enabled is True
+
+    with pytest.raises(PermissionDenied):
+        await clerk.management_writes.remove_second_factor(number)
+    with pytest.raises(NotFound, match="no second factor"):
+        await writes.remove_second_factor(plain)
+    assert (await reading.get_user(number)).mfa_enabled is True
+    await writes.remove_second_factor(number)
+
+    assert (await reading.get_user(number)).mfa_enabled is False
+    with pytest.raises(NotFound, match="no second factor"):
+        await writes.remove_second_factor(number)
 
 
 @pytest.mark.contract(UPDATE_USER)

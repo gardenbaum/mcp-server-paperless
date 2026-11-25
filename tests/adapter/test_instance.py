@@ -14,6 +14,9 @@ from mcp_server_paperless.domain.errors import (
     UpstreamUnavailable,
 )
 from mcp_server_paperless.domain.instance import (
+    NO_ANSWER,
+    NOT_READ,
+    SWITCHED_OFF,
     ComponentStatus,
     CurrentUser,
     DatabaseStatus,
@@ -27,11 +30,14 @@ from mcp_server_paperless.domain.instance import (
     SystemStatus,
     TaskTotals,
     TimedStatus,
+    UpdateCheck,
 )
 from mcp_server_paperless.paperless.client import RetryPolicy
-from mcp_server_paperless.paperless.instance import PaperlessInstanceReader
+from mcp_server_paperless.paperless.instance import UPDATE_SECONDS, PaperlessInstanceReader
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from adapter.conftest import ClientFactory
 
 pytestmark = pytest.mark.anyio
@@ -128,6 +134,7 @@ def instance(**overrides: httpx2.Response) -> dict[str, httpx2.Response]:
         "/api/statistics/": httpx2.Response(200, json=STATISTICS),
         "/api/status/": httpx2.Response(200, json=STATUS),
         "/api/ui_settings/": httpx2.Response(200, json=UI_SETTINGS),
+        "/api/documents/next_asn/": httpx2.Response(200, json=11),
     }
     responses.update({f"/api/{name}/": response for name, response in overrides.items()})
     return responses
@@ -177,7 +184,21 @@ async def test_maps_the_overview_of_a_superuser(make_client: ClientFactory) -> N
         ),
         current_user=CurrentUser(id=2, username="admin", is_superuser=True),
         ai_enabled=False,
+        next_asn=11,
     )
+
+
+@pytest.mark.decision("decision-101")
+async def test_a_user_who_may_not_view_documents_gets_no_next_number(
+    make_client: ClientFactory,
+) -> None:
+    responses = instance()
+    responses["/api/documents/next_asn/"] = UI_SETTINGS_FORBIDDEN
+
+    overview = await reader(make_client, responses).get_overview()
+
+    assert overview.next_asn is None
+    assert overview.current_user is not None
 
 
 async def test_a_user_without_status_permission_gets_no_system_status(
@@ -474,3 +495,109 @@ def test_the_planted_texts_are_those_of_every_part() -> None:
         "database",
         "tasks",
     }
+
+
+def update_server(
+    version: httpx2.Response, settings: httpx2.Response | None = None
+) -> tuple[Callable[[httpx2.Request], httpx2.Response], list[str]]:
+    """Answers the UI settings (the recorded ones: not set) and the version; keeps what is asked."""
+    answers = {
+        "/api/ui_settings/": settings or httpx2.Response(200, json=UI_SETTINGS),
+        "/api/remote_version/": version,
+    }
+    sent: list[str] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        sent.append(request.url.path)
+        return answers[request.url.path]
+
+    return handler, sent
+
+
+def checking(setting: object) -> httpx2.Response:
+    settings = {**SETTINGS, "update_checking": {"backend_setting": setting}}
+    return httpx2.Response(200, json={**UI_SETTINGS, "settings": settings})
+
+
+ASKED = ["/api/ui_settings/", "/api/remote_version/"]
+V360 = httpx2.Response(200, json={"version": "v3.6.0", "update_available": True})
+
+
+@pytest.mark.decision("decision-105")
+@pytest.mark.parametrize("setting", [True, "default"])
+@pytest.mark.parametrize(
+    ("body", "found"),
+    [
+        (
+            {"version": "v3.6.0", "update_available": True},
+            UpdateCheck(newest_release="v3.6.0", update_available=True, note=None),
+        ),
+        (
+            {"version": "v3.5.1", "update_available": False},
+            UpdateCheck(newest_release="v3.5.1", update_available=False, note=None),
+        ),
+        # What Paperless says when GitHub did not answer it.
+        ({"version": "0.0.0", "update_available": False}, UpdateCheck.unknown(NO_ANSWER)),
+    ],
+)
+async def test_the_newest_release_is_what_paperless_found(
+    make_client: ClientFactory, setting: object, body: Json, found: UpdateCheck
+) -> None:
+    handler, sent = update_server(httpx2.Response(200, json=body), checking(setting))
+
+    assert await PaperlessInstanceReader(make_client(handler)).check_for_update() == found
+    assert sent == ASKED
+
+
+@pytest.mark.decision("decision-105")
+@pytest.mark.parametrize(
+    ("settings", "note"),
+    [
+        (checking(False), SWITCHED_OFF),  # noqa: FBT003 -- the value of the setting
+        (checking("no"), SWITCHED_OFF),
+        (checking(None), SWITCHED_OFF),
+        (
+            httpx2.Response(
+                200,
+                json={
+                    **UI_SETTINGS,
+                    "settings": {k: v for k, v in SETTINGS.items() if k != "update_checking"},
+                },
+            ),
+            NOT_READ,
+        ),
+        (UI_SETTINGS_FORBIDDEN, NOT_READ),
+        (httpx2.Response(500, text="x"), NOT_READ),
+        (httpx2.Response(200, json=[]), NOT_READ),
+    ],
+    ids=["off", "odd", "null", "missing", "forbidden", "failed", "no object"],
+)
+async def test_nothing_outside_is_asked_where_the_check_is_off_or_its_setting_cannot_be_read(
+    make_client: ClientFactory, settings: httpx2.Response, note: str
+) -> None:
+    handler, sent = update_server(V360, settings)
+
+    found = await PaperlessInstanceReader(make_client(handler)).check_for_update()
+
+    assert found == UpdateCheck.unknown(note)
+    assert sent == ["/api/ui_settings/"]
+
+
+@pytest.mark.decision("decision-105")
+async def test_the_check_for_an_update_is_bounded_and_not_repeated(
+    make_client: ClientFactory,
+) -> None:
+    timeouts: list[object] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        timeouts.append(cast("object", request.extensions["timeout"]))
+        if request.url.path == "/api/ui_settings/":
+            return httpx2.Response(200, json=UI_SETTINGS)
+        return httpx2.Response(503, text="x")
+
+    with pytest.raises(UpstreamUnavailable):
+        _ = await PaperlessInstanceReader(make_client(handler)).check_for_update()
+
+    assert len(timeouts) == 2
+    for timeout in timeouts:
+        assert set(cast("dict[str, float]", timeout).values()) == {UPDATE_SECONDS}
