@@ -4,6 +4,7 @@ title: 'Read-only toolsets c: reading tools do not name tools that are hidden'
 status: To Do
 assignee: []
 created_date: '2026-11-25T14:52:30Z'
+updated_date: '2026-11-25T15:11:27Z'
 labels: []
 dependencies:
   - PLMCP-90.1
@@ -27,7 +28,7 @@ Owner, 2026-11-25 (relayed by the main agent): 'alles wie von dir empfohlen' (al
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 With a toolset selected read-only, the description and the schemas of its reading tools name no hidden tool: run_saved_view, get_saved_view, list_users, list_groups, list_trash, get_trash_entry, get_trashed_file, list_share_links, list_share_bundles, list_workflows, get_app_config, list_tasks and explain_workflow
+- [ ] #1 With a toolset selected read-only, the description and the schemas of its reading tools name no hidden tool: run_saved_view, get_saved_view, list_users, list_groups, list_trash, get_trash_entry, get_trashed_file, list_share_links, list_share_bundles, list_workflows, get_app_config, list_tasks, explain_workflow and get_task_overview
 - [ ] #2 The passages that depend on another tool are marked as such; what else a description says stays, and with every tool offered the texts are as before
 - [ ] #3 A test over every toolset fails when a reading tool names a hidden tool, so that a new tool cannot be missed; stdio, HTTP and both protocol eras are covered
 - [ ] #4 The rest (writing tools that name tools of another toolset, and results, hints and confirmation texts) is costed and put to the owner, who decides; criterion 3 of PLMCP-90.1 is ticked only when the owner says it is met
@@ -40,3 +41,9 @@ Owner, 2026-11-25 (relayed by the main agent): 'alles wie von dir empfohlen' (al
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+get_task_overview (PLMCP-89.2) is the 14th reading tool; the owner's 12 were counted before PLMCP-87.4 and 89.2.
+<!-- SECTION:NOTES:END -->

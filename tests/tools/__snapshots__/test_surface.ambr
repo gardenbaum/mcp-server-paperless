@@ -879,26 +879,62 @@
       'description': '''
         Mark tasks as seen, e.g. failed ones after you looked at them.
         
-        They no longer show as new in the web UI; nothing is deleted and nothing needs confirm. Needs
+        They no longer show as new in the web UI; nothing is deleted, and there is no way back. Ids
+        need no confirm. all_unacknowledged does: without it a dialog, or an error for you to show the
+        user, first says how many, the newest failures and whose they are (see confirm); without a
+        dialog confirm counts only with the expected value this names. Staff users mark every user's
+        tasks, others their own and those without an owner, also tasks that come in meanwhile. Needs
         the change_paperlesstask permission.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
         'properties': dict({
+          'all_unacknowledged': dict({
+            'default': False,
+            'description': 'Instead of ids: every task nobody acknowledged yet.',
+            'type': 'boolean',
+          }),
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'dry_run': dict({
+            'default': False,
+            'description': 'Only say what would be marked; change nothing.',
+            'type': 'boolean',
+          }),
+          'expected': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': "With all_unacknowledged and confirm: the preview's expected value.",
+          }),
           'task_ids': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'minimum': 1,
+                  'type': 'integer',
+                }),
+                'maxItems': 100,
+                'minItems': 1,
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
             'description': 'Database ids from list_tasks (the id field, not task_id); each once.',
-            'items': dict({
-              'minimum': 1,
-              'type': 'integer',
-            }),
-            'maxItems': 100,
-            'minItems': 1,
-            'type': 'array',
           }),
         }),
-        'required': list([
-          'task_ids',
-        ]),
         'type': 'object',
       }),
       'name': 'acknowledge_tasks',
@@ -906,7 +942,18 @@
         'description': 'How many tasks were acknowledged.',
         'properties': dict({
           'acknowledged': dict({
-            'type': 'integer',
+            'anyOf': list([
+              dict({
+                'type': 'integer',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': "Null: Paperless's answer was lost (see message).",
+          }),
+          'dry_run': dict({
+            'type': 'boolean',
           }),
           'message': dict({
             'type': 'string',
@@ -914,6 +961,7 @@
         }),
         'required': list([
           'acknowledged',
+          'dry_run',
           'message',
         ]),
         'type': 'object',
@@ -10893,6 +10941,12 @@
             'description': 'Document id, from search_documents.',
             'type': 'integer',
           }),
+          'history_page': dict({
+            'default': 1,
+            'description': '50 changes a page, newest first; new ones shift pages (ids are unique).',
+            'minimum': 1,
+            'type': 'integer',
+          }),
           'include': dict({
             'anyOf': list([
               dict({
@@ -10914,7 +10968,7 @@
               }),
             ]),
             'default': None,
-            'description': "Extra sections: notes (their text), history (the newest 50 changes, no OCR text), metadata (file names, sizes, checksums), versions (file versions), suggestions (the classifier's correspondents, tags, types, paths, dates), duplicates (documents with the same file, also in the trash, and what differs).",
+            'description': "Extra sections: notes (their text), history (changes, no OCR text), metadata (file names, sizes, checksums), versions (file versions), suggestions (the classifier's correspondents, tags, types, paths, dates), duplicates (documents with the same file, also in the trash, and what differs).",
           }),
         }),
         'required': list([
@@ -11535,7 +11589,7 @@
           'history': dict({
             'anyOf': list([
               dict({
-                'description': 'The newest changes of a document, newest first.',
+                'description': 'A page of the changes of a document, newest first.',
                 'properties': dict({
                   'entries': dict({
                     'items': dict({
@@ -11580,6 +11634,20 @@
                     }),
                     'type': 'array',
                   }),
+                  'next_page': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'integer',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'history_page of older ones.',
+                  }),
+                  'page': dict({
+                    'type': 'integer',
+                  }),
                   'total': dict({
                     'description': 'How many changes the document has in total.',
                     'type': 'integer',
@@ -11592,6 +11660,8 @@
                 'required': list([
                   'total',
                   'truncated',
+                  'page',
+                  'next_page',
                   'entries',
                 ]),
                 'type': 'object',
@@ -13807,6 +13877,464 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'tasks',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get system report',
+      }),
+      'description': '''
+        Read all of Paperless's statistics and system status, to find out why something is wrong.
+        
+        More than get_instance_overview: file types, characters, highest serial number, inbox tags;
+        host, database and its migrations, Redis and worker addresses, when the search index, the
+        classifier, the sanity check and the AI index last ran, and task totals. URLs come without user
+        name and password. status is null without the view_system_monitoring permission (staff and
+        superusers have it). Takes a few seconds while no worker answers.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+        }),
+        'type': 'object',
+      }),
+      'name': 'get_system_report',
+      'outputSchema': dict({
+        'description': "All that Paperless's statistics and system status tell this user.",
+        'properties': dict({
+          'statistics': dict({
+            'description': 'Counts of the objects the user may see, or of all with the right to global statistics.',
+            'properties': dict({
+              'characters': dict({
+                'description': 'Of the text of all documents.',
+                'type': 'integer',
+              }),
+              'correspondents': dict({
+                'type': 'integer',
+              }),
+              'document_types': dict({
+                'type': 'integer',
+              }),
+              'documents': dict({
+                'type': 'integer',
+              }),
+              'file_types': dict({
+                'items': dict({
+                  'description': 'How many documents have files of this type.',
+                  'properties': dict({
+                    'documents': dict({
+                      'type': 'integer',
+                    }),
+                    'mime_type': dict({
+                      'type': 'string',
+                    }),
+                  }),
+                  'required': list([
+                    'mime_type',
+                    'documents',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              'highest_serial_number': dict({
+                'description': 'Highest archive serial number outside the trash; 0: none.',
+                'type': 'integer',
+              }),
+              'inbox_documents': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'integer',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'description': 'Null: no inbox tag is visible.',
+              }),
+              'inbox_tags': dict({
+                'description': 'Ids of the inbox tags.',
+                'items': dict({
+                  'type': 'integer',
+                }),
+                'type': 'array',
+              }),
+              'storage_paths': dict({
+                'type': 'integer',
+              }),
+              'tags': dict({
+                'type': 'integer',
+              }),
+            }),
+            'required': list([
+              'documents',
+              'inbox_documents',
+              'inbox_tags',
+              'file_types',
+              'characters',
+              'tags',
+              'correspondents',
+              'document_types',
+              'storage_paths',
+              'highest_serial_number',
+            ]),
+            'type': 'object',
+          }),
+          'status': dict({
+            'anyOf': list([
+              dict({
+                'description': 'Version, host, storage and every component of the instance.',
+                'properties': dict({
+                  'celery': dict({
+                    'description': 'The task workers.',
+                    'properties': dict({
+                      'address': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                        'description': 'Without credentials.',
+                      }),
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'address',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'classifier': dict({
+                    'description': 'last: when it was trained.',
+                    'properties': dict({
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'last': dict({
+                        'anyOf': list([
+                          dict({
+                            'format': 'date-time',
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'last',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'database': dict({
+                    'description': 'The database.',
+                    'properties': dict({
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'latest_migration': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'name': dict({
+                        'type': 'string',
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                      'type': dict({
+                        'type': 'string',
+                      }),
+                      'unapplied_migrations': dict({
+                        'items': dict({
+                          'type': 'string',
+                        }),
+                        'type': 'array',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'type',
+                      'name',
+                      'latest_migration',
+                      'unapplied_migrations',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'install_type': dict({
+                    'type': 'string',
+                  }),
+                  'llm_index': dict({
+                    'description': 'last: when it was updated.',
+                    'properties': dict({
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'last': dict({
+                        'anyOf': list([
+                          dict({
+                            'format': 'date-time',
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'last',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'paperless_version': dict({
+                    'type': 'string',
+                  }),
+                  'redis': dict({
+                    'description': 'A service Paperless talks to.',
+                    'properties': dict({
+                      'address': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                        'description': 'Without credentials.',
+                      }),
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'address',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'sanity_check': dict({
+                    'description': 'last: when it ran.',
+                    'properties': dict({
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'last': dict({
+                        'anyOf': list([
+                          dict({
+                            'format': 'date-time',
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'last',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'search_index': dict({
+                    'description': 'last: when the index was written.',
+                    'properties': dict({
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'last': dict({
+                        'anyOf': list([
+                          dict({
+                            'format': 'date-time',
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'last',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'server_os': dict({
+                    'type': 'string',
+                  }),
+                  'storage_available_bytes': dict({
+                    'type': 'integer',
+                  }),
+                  'storage_total_bytes': dict({
+                    'type': 'integer',
+                  }),
+                  'tasks': dict({
+                    'description': "Every user's tasks of the last days.",
+                    'properties': dict({
+                      'days': dict({
+                        'type': 'integer',
+                      }),
+                      'failure': dict({
+                        'type': 'integer',
+                      }),
+                      'pending': dict({
+                        'type': 'integer',
+                      }),
+                      'success': dict({
+                        'type': 'integer',
+                      }),
+                      'total': dict({
+                        'type': 'integer',
+                      }),
+                    }),
+                    'required': list([
+                      'days',
+                      'total',
+                      'pending',
+                      'success',
+                      'failure',
+                    ]),
+                    'type': 'object',
+                  }),
+                }),
+                'required': list([
+                  'paperless_version',
+                  'server_os',
+                  'install_type',
+                  'storage_total_bytes',
+                  'storage_available_bytes',
+                  'database',
+                  'redis',
+                  'celery',
+                  'search_index',
+                  'classifier',
+                  'sanity_check',
+                  'llm_index',
+                  'tasks',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Null if the user may not view the system status.',
+          }),
+        }),
+        'required': list([
+          'statistics',
+          'status',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get system report',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'core',
           ]),
         }),
@@ -14104,6 +14632,531 @@
         'type': 'object',
       }),
       'title': 'Get task',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'tasks',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get task overview',
+      }),
+      'description': '''
+        How the background tasks stand: how many need attention, what runs, each type's record.
+        
+        counts follows the filters; active and by_type do not (Paperless offers no filter there).
+        What the user may not see is null and named in unavailable. Needs the view_paperlesstask
+        permission; by_type needs that or view_system_monitoring. List tasks with list_tasks.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'acknowledged': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'false: count only tasks nobody acknowledged yet.',
+          }),
+          'created_from': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'ISO time with zone, included.',
+          }),
+          'created_to': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'ISO time with zone, included.',
+          }),
+          'days': dict({
+            'default': 30,
+            'description': 'What by_type covers.',
+            'maximum': 365,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'name': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'As in list_tasks.',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Username or id of the owner.',
+          }),
+          'result': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'As in list_tasks.',
+          }),
+          'task_type': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'consume_file',
+                  'train_classifier',
+                  'sanity_check',
+                  'index_optimize',
+                  'mail_fetch',
+                  'llm_index',
+                  'empty_trash',
+                  'check_workflows',
+                  'bulk_update',
+                  'reprocess_document',
+                  'build_share_link',
+                  'bulk_delete',
+                  'apply_ai_suggestions',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'items': dict({
+                  'enum': list([
+                    'consume_file',
+                    'train_classifier',
+                    'sanity_check',
+                    'index_optimize',
+                    'mail_fetch',
+                    'llm_index',
+                    'empty_trash',
+                    'check_workflows',
+                    'bulk_update',
+                    'reprocess_document',
+                    'build_share_link',
+                    'bulk_delete',
+                    'apply_ai_suggestions',
+                  ]),
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Count only this kind or these.',
+          }),
+          'trigger_source': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'scheduled',
+                  'web_ui',
+                  'api_upload',
+                  'folder_consume',
+                  'email_consume',
+                  'system',
+                  'manual',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'items': dict({
+                  'enum': list([
+                    'scheduled',
+                    'web_ui',
+                    'api_upload',
+                    'folder_consume',
+                    'email_consume',
+                    'system',
+                    'manual',
+                  ]),
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Count only what this, or one of these, started.',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'get_task_overview',
+      'outputSchema': dict({
+        'description': 'How the background tasks stand.',
+        'properties': dict({
+          'active': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'description': 'A background task with the database id that acknowledging needs.',
+                  'properties': dict({
+                    'acknowledged': dict({
+                      'type': 'boolean',
+                    }),
+                    'created': dict({
+                      'format': 'date-time',
+                      'type': 'string',
+                    }),
+                    'document_ids': dict({
+                      'description': 'Documents the task touched.',
+                      'items': dict({
+                        'type': 'integer',
+                      }),
+                      'type': 'array',
+                    }),
+                    'duration_seconds': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'number',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'file_name': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'The uploaded file; null for other types.',
+                    }),
+                    'finished': dict({
+                      'anyOf': list([
+                        dict({
+                          'format': 'date-time',
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'Null while the task is running.',
+                    }),
+                    'id': dict({
+                      'description': 'Database id: what acknowledge_tasks takes.',
+                      'type': 'integer',
+                    }),
+                    'message': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'Why the task failed; null otherwise.',
+                    }),
+                    'owner': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'User id; null: visible to all.',
+                    }),
+                    'started': dict({
+                      'anyOf': list([
+                        dict({
+                          'format': 'date-time',
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'state': dict({
+                      'description': 'pending, started, success, failure or revoked.',
+                      'enum': list([
+                        'pending',
+                        'started',
+                        'success',
+                        'failure',
+                        'revoked',
+                      ]),
+                      'type': 'string',
+                    }),
+                    'task_id': dict({
+                      'description': 'Celery UUID: what get_task takes.',
+                      'type': 'string',
+                    }),
+                    'task_type': dict({
+                      'type': 'string',
+                    }),
+                    'trigger_source': dict({
+                      'description': 'What started it: the values of the argument of the same name.',
+                      'type': 'string',
+                    }),
+                    'wait_time_seconds': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'number',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'From creation to start.',
+                    }),
+                  }),
+                  'required': list([
+                    'id',
+                    'task_id',
+                    'task_type',
+                    'trigger_source',
+                    'file_name',
+                    'owner',
+                    'state',
+                    'created',
+                    'started',
+                    'finished',
+                    'wait_time_seconds',
+                    'duration_seconds',
+                    'document_ids',
+                    'acknowledged',
+                    'message',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The newest 50 waiting or running, whatever the filters.',
+          }),
+          'active_truncated': dict({
+            'description': 'true: there may be more, Paperless sends 50 at most.',
+            'type': 'boolean',
+          }),
+          'by_type': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'description': 'What became of the tasks of one type.',
+                  'properties': dict({
+                    'avg_duration_seconds': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'number',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'avg_wait_time_seconds': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'number',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'failure': dict({
+                      'type': 'integer',
+                    }),
+                    'last_failure': dict({
+                      'anyOf': list([
+                        dict({
+                          'format': 'date-time',
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'last_run': dict({
+                      'anyOf': list([
+                        dict({
+                          'format': 'date-time',
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'last_success': dict({
+                      'anyOf': list([
+                        dict({
+                          'format': 'date-time',
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'pending': dict({
+                      'description': 'Waiting.',
+                      'type': 'integer',
+                    }),
+                    'success': dict({
+                      'type': 'integer',
+                    }),
+                    'task_type': dict({
+                      'type': 'string',
+                    }),
+                    'total': dict({
+                      'description': 'Also running and cancelled ones, which no other count holds.',
+                      'type': 'integer',
+                    }),
+                  }),
+                  'required': list([
+                    'task_type',
+                    'total',
+                    'pending',
+                    'success',
+                    'failure',
+                    'avg_duration_seconds',
+                    'avg_wait_time_seconds',
+                    'last_run',
+                    'last_success',
+                    'last_failure',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the last days by type, whatever the filters.',
+          }),
+          'by_type_of': dict({
+            'description': 'Whose tasks by_type counts; every_user may be more than the others.',
+            'enum': list([
+              'every_user',
+              'own_and_unowned',
+              'unknown',
+            ]),
+            'type': 'string',
+          }),
+          'counts': dict({
+            'anyOf': list([
+              dict({
+                'description': 'How many tasks there are, by how they stand.',
+                'properties': dict({
+                  'completed': dict({
+                    'type': 'integer',
+                  }),
+                  'in_progress': dict({
+                    'description': 'Waiting or running.',
+                    'type': 'integer',
+                  }),
+                  'needs_attention': dict({
+                    'description': 'Failed or cancelled.',
+                    'type': 'integer',
+                  }),
+                  'total': dict({
+                    'type': 'integer',
+                  }),
+                }),
+                'required': list([
+                  'total',
+                  'needs_attention',
+                  'in_progress',
+                  'completed',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the tasks you may see that match every filter; null: unavailable.',
+          }),
+          'days': dict({
+            'description': 'What by_type covers.',
+            'type': 'integer',
+          }),
+          'unavailable': dict({
+            'description': 'Parts this user may not see; they are null.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'counts',
+          'active',
+          'active_truncated',
+          'by_type',
+          'days',
+          'by_type_of',
+          'unavailable',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get task overview',
     }),
     dict({
       '_meta': dict({
@@ -23161,10 +24214,13 @@
       'description': '''
         Start a background task by hand and return its task_id; follow it with get_task.
         
-        A sanity check only reads and needs no confirm. Training the classifier replaces the model
-        that tags new documents automatically, and rebuilding the AI index sends the text of every
-        document to the configured AI service at its cost, so both need confirm: without it a dialog,
-        or an error for you to show the user, first says what happens (see confirm). Superusers only.
+        Paperless starts only these three by hand and one per call; call once per type. A sanity check
+        only reads and needs no confirm. Training the classifier replaces the model that tags new
+        documents automatically. Updating the AI index sends the text of every document that is new or
+        changed since the last time (the first time, or with another embedding model, of every
+        document) to the configured service at its cost; with the index off it does nothing. Both need
+        confirm: without it a dialog, or an error for you to show the user, first says what happens
+        (see confirm). Superusers only.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -23175,7 +24231,7 @@
             'type': 'boolean',
           }),
           'task_type': dict({
-            'description': 'sanity_check: check the archive for problems, changes nothing. train_classifier: retrain automatic matching. llm_index: rebuild the AI index.',
+            'description': 'sanity_check: check the archive for problems, changes nothing. train_classifier: retrain automatic matching. llm_index: update the AI index.',
             'enum': list([
               'train_classifier',
               'sanity_check',
@@ -26224,7 +27280,7 @@
           'history': dict({
             'anyOf': list([
               dict({
-                'description': 'The newest changes of a document, newest first.',
+                'description': 'A page of the changes of a document, newest first.',
                 'properties': dict({
                   'entries': dict({
                     'items': dict({
@@ -26269,6 +27325,20 @@
                     }),
                     'type': 'array',
                   }),
+                  'next_page': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'integer',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'history_page of older ones.',
+                  }),
+                  'page': dict({
+                    'type': 'integer',
+                  }),
                   'total': dict({
                     'description': 'How many changes the document has in total.',
                     'type': 'integer',
@@ -26281,6 +27351,8 @@
                 'required': list([
                   'total',
                   'truncated',
+                  'page',
+                  'next_page',
                   'entries',
                 ]),
                 'type': 'object',
@@ -34475,6 +35547,12 @@
             'description': 'Document id, from search_documents.',
             'type': 'integer',
           }),
+          'history_page': dict({
+            'default': 1,
+            'description': '50 changes a page, newest first; new ones shift pages (ids are unique).',
+            'minimum': 1,
+            'type': 'integer',
+          }),
           'include': dict({
             'anyOf': list([
               dict({
@@ -34496,7 +35574,7 @@
               }),
             ]),
             'default': None,
-            'description': "Extra sections: notes (their text), history (the newest 50 changes, no OCR text), metadata (file names, sizes, checksums), versions (file versions), suggestions (the classifier's correspondents, tags, types, paths, dates), duplicates (documents with the same file, also in the trash, and what differs).",
+            'description': "Extra sections: notes (their text), history (changes, no OCR text), metadata (file names, sizes, checksums), versions (file versions), suggestions (the classifier's correspondents, tags, types, paths, dates), duplicates (documents with the same file, also in the trash, and what differs).",
           }),
         }),
         'required': list([
@@ -35117,7 +36195,7 @@
           'history': dict({
             'anyOf': list([
               dict({
-                'description': 'The newest changes of a document, newest first.',
+                'description': 'A page of the changes of a document, newest first.',
                 'properties': dict({
                   'entries': dict({
                     'items': dict({
@@ -35162,6 +36240,20 @@
                     }),
                     'type': 'array',
                   }),
+                  'next_page': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'integer',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'history_page of older ones.',
+                  }),
+                  'page': dict({
+                    'type': 'integer',
+                  }),
                   'total': dict({
                     'description': 'How many changes the document has in total.',
                     'type': 'integer',
@@ -35174,6 +36266,8 @@
                 'required': list([
                   'total',
                   'truncated',
+                  'page',
+                  'next_page',
                   'entries',
                 ]),
                 'type': 'object',
@@ -38185,7 +39279,7 @@
           'history': dict({
             'anyOf': list([
               dict({
-                'description': 'The newest changes of a document, newest first.',
+                'description': 'A page of the changes of a document, newest first.',
                 'properties': dict({
                   'entries': dict({
                     'items': dict({
@@ -38230,6 +39324,20 @@
                     }),
                     'type': 'array',
                   }),
+                  'next_page': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'integer',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'history_page of older ones.',
+                  }),
+                  'page': dict({
+                    'type': 'integer',
+                  }),
                   'total': dict({
                     'description': 'How many changes the document has in total.',
                     'type': 'integer',
@@ -38242,6 +39350,8 @@
                 'required': list([
                   'total',
                   'truncated',
+                  'page',
+                  'next_page',
                   'entries',
                 ]),
                 'type': 'object',
@@ -40807,6 +41917,12 @@
             'description': 'Document id, from search_documents.',
             'type': 'integer',
           }),
+          'history_page': dict({
+            'default': 1,
+            'description': '50 changes a page, newest first; new ones shift pages (ids are unique).',
+            'minimum': 1,
+            'type': 'integer',
+          }),
           'include': dict({
             'anyOf': list([
               dict({
@@ -40828,7 +41944,7 @@
               }),
             ]),
             'default': None,
-            'description': "Extra sections: notes (their text), history (the newest 50 changes, no OCR text), metadata (file names, sizes, checksums), versions (file versions), suggestions (the classifier's correspondents, tags, types, paths, dates), duplicates (documents with the same file, also in the trash, and what differs).",
+            'description': "Extra sections: notes (their text), history (changes, no OCR text), metadata (file names, sizes, checksums), versions (file versions), suggestions (the classifier's correspondents, tags, types, paths, dates), duplicates (documents with the same file, also in the trash, and what differs).",
           }),
         }),
         'required': list([
@@ -41449,7 +42565,7 @@
           'history': dict({
             'anyOf': list([
               dict({
-                'description': 'The newest changes of a document, newest first.',
+                'description': 'A page of the changes of a document, newest first.',
                 'properties': dict({
                   'entries': dict({
                     'items': dict({
@@ -41494,6 +42610,20 @@
                     }),
                     'type': 'array',
                   }),
+                  'next_page': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'integer',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'history_page of older ones.',
+                  }),
+                  'page': dict({
+                    'type': 'integer',
+                  }),
                   'total': dict({
                     'description': 'How many changes the document has in total.',
                     'type': 'integer',
@@ -41506,6 +42636,8 @@
                 'required': list([
                   'total',
                   'truncated',
+                  'page',
+                  'next_page',
                   'entries',
                 ]),
                 'type': 'object',
@@ -43721,6 +44853,464 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'tasks',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get system report',
+      }),
+      'description': '''
+        Read all of Paperless's statistics and system status, to find out why something is wrong.
+        
+        More than get_instance_overview: file types, characters, highest serial number, inbox tags;
+        host, database and its migrations, Redis and worker addresses, when the search index, the
+        classifier, the sanity check and the AI index last ran, and task totals. URLs come without user
+        name and password. status is null without the view_system_monitoring permission (staff and
+        superusers have it). Takes a few seconds while no worker answers.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+        }),
+        'type': 'object',
+      }),
+      'name': 'get_system_report',
+      'outputSchema': dict({
+        'description': "All that Paperless's statistics and system status tell this user.",
+        'properties': dict({
+          'statistics': dict({
+            'description': 'Counts of the objects the user may see, or of all with the right to global statistics.',
+            'properties': dict({
+              'characters': dict({
+                'description': 'Of the text of all documents.',
+                'type': 'integer',
+              }),
+              'correspondents': dict({
+                'type': 'integer',
+              }),
+              'document_types': dict({
+                'type': 'integer',
+              }),
+              'documents': dict({
+                'type': 'integer',
+              }),
+              'file_types': dict({
+                'items': dict({
+                  'description': 'How many documents have files of this type.',
+                  'properties': dict({
+                    'documents': dict({
+                      'type': 'integer',
+                    }),
+                    'mime_type': dict({
+                      'type': 'string',
+                    }),
+                  }),
+                  'required': list([
+                    'mime_type',
+                    'documents',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              'highest_serial_number': dict({
+                'description': 'Highest archive serial number outside the trash; 0: none.',
+                'type': 'integer',
+              }),
+              'inbox_documents': dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'integer',
+                  }),
+                  dict({
+                    'type': 'null',
+                  }),
+                ]),
+                'description': 'Null: no inbox tag is visible.',
+              }),
+              'inbox_tags': dict({
+                'description': 'Ids of the inbox tags.',
+                'items': dict({
+                  'type': 'integer',
+                }),
+                'type': 'array',
+              }),
+              'storage_paths': dict({
+                'type': 'integer',
+              }),
+              'tags': dict({
+                'type': 'integer',
+              }),
+            }),
+            'required': list([
+              'documents',
+              'inbox_documents',
+              'inbox_tags',
+              'file_types',
+              'characters',
+              'tags',
+              'correspondents',
+              'document_types',
+              'storage_paths',
+              'highest_serial_number',
+            ]),
+            'type': 'object',
+          }),
+          'status': dict({
+            'anyOf': list([
+              dict({
+                'description': 'Version, host, storage and every component of the instance.',
+                'properties': dict({
+                  'celery': dict({
+                    'description': 'The task workers.',
+                    'properties': dict({
+                      'address': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                        'description': 'Without credentials.',
+                      }),
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'address',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'classifier': dict({
+                    'description': 'last: when it was trained.',
+                    'properties': dict({
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'last': dict({
+                        'anyOf': list([
+                          dict({
+                            'format': 'date-time',
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'last',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'database': dict({
+                    'description': 'The database.',
+                    'properties': dict({
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'latest_migration': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'name': dict({
+                        'type': 'string',
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                      'type': dict({
+                        'type': 'string',
+                      }),
+                      'unapplied_migrations': dict({
+                        'items': dict({
+                          'type': 'string',
+                        }),
+                        'type': 'array',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'type',
+                      'name',
+                      'latest_migration',
+                      'unapplied_migrations',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'install_type': dict({
+                    'type': 'string',
+                  }),
+                  'llm_index': dict({
+                    'description': 'last: when it was updated.',
+                    'properties': dict({
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'last': dict({
+                        'anyOf': list([
+                          dict({
+                            'format': 'date-time',
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'last',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'paperless_version': dict({
+                    'type': 'string',
+                  }),
+                  'redis': dict({
+                    'description': 'A service Paperless talks to.',
+                    'properties': dict({
+                      'address': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                        'description': 'Without credentials.',
+                      }),
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'address',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'sanity_check': dict({
+                    'description': 'last: when it ran.',
+                    'properties': dict({
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'last': dict({
+                        'anyOf': list([
+                          dict({
+                            'format': 'date-time',
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'last',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'search_index': dict({
+                    'description': 'last: when the index was written.',
+                    'properties': dict({
+                      'error': dict({
+                        'anyOf': list([
+                          dict({
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'last': dict({
+                        'anyOf': list([
+                          dict({
+                            'format': 'date-time',
+                            'type': 'string',
+                          }),
+                          dict({
+                            'type': 'null',
+                          }),
+                        ]),
+                      }),
+                      'status': dict({
+                        'description': 'OK, WARNING, ERROR or DISABLED.',
+                        'type': 'string',
+                      }),
+                    }),
+                    'required': list([
+                      'status',
+                      'error',
+                      'last',
+                    ]),
+                    'type': 'object',
+                  }),
+                  'server_os': dict({
+                    'type': 'string',
+                  }),
+                  'storage_available_bytes': dict({
+                    'type': 'integer',
+                  }),
+                  'storage_total_bytes': dict({
+                    'type': 'integer',
+                  }),
+                  'tasks': dict({
+                    'description': "Every user's tasks of the last days.",
+                    'properties': dict({
+                      'days': dict({
+                        'type': 'integer',
+                      }),
+                      'failure': dict({
+                        'type': 'integer',
+                      }),
+                      'pending': dict({
+                        'type': 'integer',
+                      }),
+                      'success': dict({
+                        'type': 'integer',
+                      }),
+                      'total': dict({
+                        'type': 'integer',
+                      }),
+                    }),
+                    'required': list([
+                      'days',
+                      'total',
+                      'pending',
+                      'success',
+                      'failure',
+                    ]),
+                    'type': 'object',
+                  }),
+                }),
+                'required': list([
+                  'paperless_version',
+                  'server_os',
+                  'install_type',
+                  'storage_total_bytes',
+                  'storage_available_bytes',
+                  'database',
+                  'redis',
+                  'celery',
+                  'search_index',
+                  'classifier',
+                  'sanity_check',
+                  'llm_index',
+                  'tasks',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Null if the user may not view the system status.',
+          }),
+        }),
+        'required': list([
+          'statistics',
+          'status',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get system report',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'core',
           ]),
         }),
@@ -44018,6 +45608,531 @@
         'type': 'object',
       }),
       'title': 'Get task',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'tasks',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': True,
+        'title': 'Get task overview',
+      }),
+      'description': '''
+        How the background tasks stand: how many need attention, what runs, each type's record.
+        
+        counts follows the filters; active and by_type do not (Paperless offers no filter there).
+        What the user may not see is null and named in unavailable. Needs the view_paperlesstask
+        permission; by_type needs that or view_system_monitoring. List tasks with list_tasks.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'acknowledged': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'false: count only tasks nobody acknowledged yet.',
+          }),
+          'created_from': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'ISO time with zone, included.',
+          }),
+          'created_to': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'ISO time with zone, included.',
+          }),
+          'days': dict({
+            'default': 30,
+            'description': 'What by_type covers.',
+            'maximum': 365,
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          'name': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'As in list_tasks.',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Username or id of the owner.',
+          }),
+          'result': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'As in list_tasks.',
+          }),
+          'task_type': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'consume_file',
+                  'train_classifier',
+                  'sanity_check',
+                  'index_optimize',
+                  'mail_fetch',
+                  'llm_index',
+                  'empty_trash',
+                  'check_workflows',
+                  'bulk_update',
+                  'reprocess_document',
+                  'build_share_link',
+                  'bulk_delete',
+                  'apply_ai_suggestions',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'items': dict({
+                  'enum': list([
+                    'consume_file',
+                    'train_classifier',
+                    'sanity_check',
+                    'index_optimize',
+                    'mail_fetch',
+                    'llm_index',
+                    'empty_trash',
+                    'check_workflows',
+                    'bulk_update',
+                    'reprocess_document',
+                    'build_share_link',
+                    'bulk_delete',
+                    'apply_ai_suggestions',
+                  ]),
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Count only this kind or these.',
+          }),
+          'trigger_source': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'scheduled',
+                  'web_ui',
+                  'api_upload',
+                  'folder_consume',
+                  'email_consume',
+                  'system',
+                  'manual',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'items': dict({
+                  'enum': list([
+                    'scheduled',
+                    'web_ui',
+                    'api_upload',
+                    'folder_consume',
+                    'email_consume',
+                    'system',
+                    'manual',
+                  ]),
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Count only what this, or one of these, started.',
+          }),
+        }),
+        'type': 'object',
+      }),
+      'name': 'get_task_overview',
+      'outputSchema': dict({
+        'description': 'How the background tasks stand.',
+        'properties': dict({
+          'active': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'description': 'A background task with the database id that acknowledging needs.',
+                  'properties': dict({
+                    'acknowledged': dict({
+                      'type': 'boolean',
+                    }),
+                    'created': dict({
+                      'format': 'date-time',
+                      'type': 'string',
+                    }),
+                    'document_ids': dict({
+                      'description': 'Documents the task touched.',
+                      'items': dict({
+                        'type': 'integer',
+                      }),
+                      'type': 'array',
+                    }),
+                    'duration_seconds': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'number',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'file_name': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'The uploaded file; null for other types.',
+                    }),
+                    'finished': dict({
+                      'anyOf': list([
+                        dict({
+                          'format': 'date-time',
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'Null while the task is running.',
+                    }),
+                    'id': dict({
+                      'description': 'Database id: what acknowledge_tasks takes.',
+                      'type': 'integer',
+                    }),
+                    'message': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'Why the task failed; null otherwise.',
+                    }),
+                    'owner': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'integer',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'User id; null: visible to all.',
+                    }),
+                    'started': dict({
+                      'anyOf': list([
+                        dict({
+                          'format': 'date-time',
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'state': dict({
+                      'description': 'pending, started, success, failure or revoked.',
+                      'enum': list([
+                        'pending',
+                        'started',
+                        'success',
+                        'failure',
+                        'revoked',
+                      ]),
+                      'type': 'string',
+                    }),
+                    'task_id': dict({
+                      'description': 'Celery UUID: what get_task takes.',
+                      'type': 'string',
+                    }),
+                    'task_type': dict({
+                      'type': 'string',
+                    }),
+                    'trigger_source': dict({
+                      'description': 'What started it: the values of the argument of the same name.',
+                      'type': 'string',
+                    }),
+                    'wait_time_seconds': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'number',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                      'description': 'From creation to start.',
+                    }),
+                  }),
+                  'required': list([
+                    'id',
+                    'task_id',
+                    'task_type',
+                    'trigger_source',
+                    'file_name',
+                    'owner',
+                    'state',
+                    'created',
+                    'started',
+                    'finished',
+                    'wait_time_seconds',
+                    'duration_seconds',
+                    'document_ids',
+                    'acknowledged',
+                    'message',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'The newest 50 waiting or running, whatever the filters.',
+          }),
+          'active_truncated': dict({
+            'description': 'true: there may be more, Paperless sends 50 at most.',
+            'type': 'boolean',
+          }),
+          'by_type': dict({
+            'anyOf': list([
+              dict({
+                'items': dict({
+                  'description': 'What became of the tasks of one type.',
+                  'properties': dict({
+                    'avg_duration_seconds': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'number',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'avg_wait_time_seconds': dict({
+                      'anyOf': list([
+                        dict({
+                          'type': 'number',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'failure': dict({
+                      'type': 'integer',
+                    }),
+                    'last_failure': dict({
+                      'anyOf': list([
+                        dict({
+                          'format': 'date-time',
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'last_run': dict({
+                      'anyOf': list([
+                        dict({
+                          'format': 'date-time',
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'last_success': dict({
+                      'anyOf': list([
+                        dict({
+                          'format': 'date-time',
+                          'type': 'string',
+                        }),
+                        dict({
+                          'type': 'null',
+                        }),
+                      ]),
+                    }),
+                    'pending': dict({
+                      'description': 'Waiting.',
+                      'type': 'integer',
+                    }),
+                    'success': dict({
+                      'type': 'integer',
+                    }),
+                    'task_type': dict({
+                      'type': 'string',
+                    }),
+                    'total': dict({
+                      'description': 'Also running and cancelled ones, which no other count holds.',
+                      'type': 'integer',
+                    }),
+                  }),
+                  'required': list([
+                    'task_type',
+                    'total',
+                    'pending',
+                    'success',
+                    'failure',
+                    'avg_duration_seconds',
+                    'avg_wait_time_seconds',
+                    'last_run',
+                    'last_success',
+                    'last_failure',
+                  ]),
+                  'type': 'object',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the last days by type, whatever the filters.',
+          }),
+          'by_type_of': dict({
+            'description': 'Whose tasks by_type counts; every_user may be more than the others.',
+            'enum': list([
+              'every_user',
+              'own_and_unowned',
+              'unknown',
+            ]),
+            'type': 'string',
+          }),
+          'counts': dict({
+            'anyOf': list([
+              dict({
+                'description': 'How many tasks there are, by how they stand.',
+                'properties': dict({
+                  'completed': dict({
+                    'type': 'integer',
+                  }),
+                  'in_progress': dict({
+                    'description': 'Waiting or running.',
+                    'type': 'integer',
+                  }),
+                  'needs_attention': dict({
+                    'description': 'Failed or cancelled.',
+                    'type': 'integer',
+                  }),
+                  'total': dict({
+                    'type': 'integer',
+                  }),
+                }),
+                'required': list([
+                  'total',
+                  'needs_attention',
+                  'in_progress',
+                  'completed',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the tasks you may see that match every filter; null: unavailable.',
+          }),
+          'days': dict({
+            'description': 'What by_type covers.',
+            'type': 'integer',
+          }),
+          'unavailable': dict({
+            'description': 'Parts this user may not see; they are null.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'counts',
+          'active',
+          'active_truncated',
+          'by_type',
+          'days',
+          'by_type_of',
+          'unavailable',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Get task overview',
     }),
     dict({
       '_meta': dict({

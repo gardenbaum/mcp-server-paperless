@@ -66,9 +66,10 @@ INSTRUCTIONS_LIMIT = 1474
 # of explain_mail_import (PLMCP-81.4). And 23 of update_workflow_part (PLMCP-87.2) and 19 of
 # explain_workflow (PLMCP-87.4), the 42 of PLMCP-87 (3010 to 3052), and 17 of pin_saved_view
 # (PLMCP-88.2, 3052 to 3069), in the steps up to 3229 the owner approved on 2026-11-24. And 49 of
-# the toolset tasks (PLMCP-89.1), of the 89 of PLMCP-89 (3069 to 3158) in the same steps. And
-# 17 of the mark and the suffix of core:read (PLMCP-90), also one of them.
-OVERVIEW_GUIDE_LIMIT = 3135
+# the toolset tasks (PLMCP-89.1), 20 of get_task_overview (PLMCP-89.2) and 20 of get_system_report
+# (PLMCP-89.3), the 89 of PLMCP-89 (3069 to 3158) in the same steps. And
+# 17 of the mark and the suffix of core:read (PLMCP-90, 3158 to 3175), also one of them.
+OVERVIEW_GUIDE_LIMIT = 3175
 # Measured 879: 747 before, plus 132 of too_old (PLMCP-101); the rise from 750 was approved by the
 # owner on 2026-11-24.
 DEFINITION_ADDED_LIMIT = 879

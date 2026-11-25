@@ -68,6 +68,7 @@ from mcp_server_paperless.domain.ports import (  # noqa: TC001 -- Ports' annotat
     RawReader,
     SharingReader,
     SharingWriter,
+    SystemReportReader,
     TaskListReader,
     TaskListWriter,
     TaskReader,
@@ -176,6 +177,7 @@ class Ports:
     workflow_writes: WorkflowWriter
     management: AdminReader
     management_writes: AdminWriter
+    reports: SystemReportReader
     task_lists: TaskListReader
     task_list_writes: TaskListWriter
 
@@ -211,6 +213,7 @@ def fake_ports(state: FakeState, user: str) -> Ports:
         workflow_writes=writer,
         management=fake,
         management_writes=writer,
+        reports=fake,
         task_lists=fake,
         task_list_writes=writer,
     )
@@ -245,6 +248,7 @@ def live_ports(client: PaperlessClient) -> Ports:
         workflow_writes=PaperlessWorkflowWriter(client),
         management=PaperlessAdminReader(client),
         management_writes=PaperlessAdminWriter(client),
+        reports=PaperlessInstanceReader(client),
         task_lists=PaperlessTaskListReader(client),
         task_list_writes=PaperlessTaskListWriter(client),
     )

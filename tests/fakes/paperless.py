@@ -25,6 +25,7 @@ import functools
 import re
 import sys
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from itertools import dropwhile, takewhile
@@ -116,9 +117,17 @@ from mcp_server_paperless.domain.files import OpenedFile, missing_file, missing_
 from mcp_server_paperless.domain.instance import (
     ComponentStatus,
     CurrentUser,
+    DatabaseStatus,
+    FileTypeCount,
     InstanceOverview,
     InstanceStatistics,
+    ServiceStatus,
+    StatisticsReport,
+    StatusReport,
+    SystemReport,
     SystemStatus,
+    TaskTotals,
+    TimedStatus,
 )
 from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, RotationSearch, StartedTasks
 from mcp_server_paperless.domain.permissions import (
@@ -129,7 +138,13 @@ from mcp_server_paperless.domain.permissions import (
     UserRow,
 )
 from mcp_server_paperless.domain.selection import DocumentRow
-from mcp_server_paperless.domain.task_lists import TaskRow, TaskRowPage
+from mcp_server_paperless.domain.task_lists import (
+    TaskCounts,
+    TaskRow,
+    TaskRowPage,
+    TaskTypeSummary,
+    TaskViewer,
+)
 from mcp_server_paperless.domain.tasks import REJECTED, TaskState, TaskStatus, Unconfirmed
 from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyDetail, TaxonomyItem
 from mcp_server_paperless.domain.trash import (
@@ -917,12 +932,78 @@ class FakePaperless:
             ai_enabled=self.state.ai_enabled if may_view_settings else None,
         )
 
-    def _statistics(self) -> InstanceStatistics:
+    async def get_system_report(self) -> SystemReport:
+        """`SystemReportReader.get_system_report` (StatisticsView, SystemStatusView)."""
+        counts = self._statistics()
+        documents = self._counted(self.state.documents)
+        kinds = Counter(d.mime_type for d in documents)
+        return SystemReport(
+            statistics=StatisticsReport(
+                documents=counts.documents,
+                inbox_documents=counts.inbox_documents,
+                inbox_tags=tuple(t.id for t in self._counted(self.state.tags) if t.is_inbox),
+                file_types=tuple(
+                    FileTypeCount(mime_type=kind, documents=number)
+                    for kind, number in kinds.most_common()
+                ),
+                characters=sum(len(d.content) for d in documents),
+                tags=counts.tags,
+                correspondents=counts.correspondents,
+                document_types=counts.document_types,
+                storage_paths=counts.storage_paths,
+                highest_serial_number=max(
+                    (d.archive_serial_number or 0 for d in documents), default=0
+                ),
+            ),
+            status=self._status_report() if self._task_viewer().summary_of_all else None,
+        )
+
+    def _status_report(self) -> StatusReport:
+        health = self.state.system_status
+        states = [t.status for t in self.state.tasks]
+
+        def timed(component: ComponentStatus) -> TimedStatus:
+            return TimedStatus(status=component.status, error=component.error, last=None)
+
+        return StatusReport(
+            paperless_version=VERSION,
+            server_os="Linux-6.0-x86_64-with-glibc2.41",
+            install_type=health.install_type,
+            storage_total_bytes=health.storage_total_bytes,
+            storage_available_bytes=health.storage_available_bytes,
+            database=DatabaseStatus(
+                status=health.database.status,
+                error=health.database.error,
+                type="sqlite",
+                name="/usr/src/paperless/data/db.sqlite3",
+                latest_migration="paperless_mail.0001_squashed",
+                unapplied_migrations=(),
+            ),
+            redis=ServiceStatus(
+                status=health.redis.status, error=health.redis.error, address="redis://broker:6379"
+            ),
+            celery=ServiceStatus(
+                status=health.celery.status, error=health.celery.error, address="celery@fake"
+            ),
+            search_index=timed(health.search_index),
+            classifier=timed(health.classifier),
+            sanity_check=timed(health.sanity_check),
+            llm_index=timed(health.llm_index),
+            tasks=TaskTotals(
+                days=30,
+                total=len(states),
+                pending=states.count("pending"),
+                success=states.count("success"),
+                failure=states.count("failure"),
+            ),
+        )
+
+    def _counted[O: Owned](self, objects: list[O]) -> list[O]:
         everything = self.user.has("view_global_statistics")
+        return [o for o in objects if everything or o.visible_to(self.user)]
 
-        def visible[O: Owned](objects: list[O]) -> list[O]:
-            return [o for o in objects if everything or o.visible_to(self.user)]
-
+    def _statistics(self) -> InstanceStatistics:
+        visible = self._counted
         documents = visible(self.state.documents)
         inbox = {tag.id for tag in visible(self.state.tags) if tag.is_inbox}
         return InstanceStatistics(
@@ -3849,6 +3930,97 @@ class FakePaperless:
         """What the list answers the owner filter (tasks made here without an owner included)."""
         return [t for t in self.state.tasks if t.owner in {None, self.user.id}]
 
+    def _filtered(self, filters: TaskFilters) -> list[FakeTask]:
+        if filters.owner is not None and filters.owner not in {u.id for u in self.state.users}:
+            reject("owner", "Select a valid choice. That choice is not one of the available ones.")
+        return [t for t in self._tasks() if task_matches(t, filters)]
+
+    @staticmethod
+    def _task_row(task: FakeTask) -> TaskRow:
+        return TaskRow(
+            id=task.id,
+            task_id=task.task_id,
+            task_type=task.task_type,
+            trigger_source=task.trigger_source,
+            file_name=task.file_name or None,
+            owner=task.owner,
+            state=task.status,
+            created=task.created,
+            started=task.started,
+            finished=task.finished,
+            wait_time_seconds=task.wait_time_seconds,
+            duration_seconds=task.duration_seconds,
+            document_ids=task.document_ids,
+            acknowledged=task.acknowledged,
+            message=task.message if task.duplicate_of is None else REJECTED,
+        )
+
+    async def count_tasks(self, filters: TaskFilters) -> TaskCounts:
+        """`TaskListReader.count_tasks` (status_counts: all filters but status, is_complete)."""
+        self._need("view_paperlesstask", VIEW_TASKS)
+        rest = filters.model_copy(update={"states": (), "is_complete": None})
+        states = [t.status for t in self._filtered(rest)]
+        ended = states.count("failure") + states.count("revoked")
+        done = states.count("success")
+        return TaskCounts(
+            total=len(states),
+            needs_attention=ended,
+            in_progress=len(states) - ended - done,
+            completed=done,
+        )
+
+    async def list_active_tasks(self) -> tuple[TaskRow, ...]:
+        """`TaskListReader.list_active_tasks` (active: newest 50, no filter applies)."""
+        self._need("view_paperlesstask", VIEW_TASKS)
+        active = [t for t in self._tasks() if t.status in {"pending", "started"}]
+        newest = sorted(active, key=lambda t: (t.created, t.id), reverse=True)
+        return tuple(self._task_row(t) for t in newest[:50])
+
+    async def summarize_tasks(self, *, days: int) -> tuple[TaskTypeSummary, ...]:
+        """`TaskListReader.summarize_tasks`: all tasks for who may view the system status."""
+        of_all = self._task_viewer().summary_of_all
+        if not of_all:
+            self._need("view_paperlesstask", VIEW_TASKS)
+        since = datetime.now(UTC) - timedelta(days=min(365, max(1, days)))
+        tasks = [t for t in (self.state.tasks if of_all else self._tasks()) if t.created >= since]
+
+        def last(kind: list[FakeTask], state: str) -> datetime | None:
+            return max((t.finished for t in kind if t.status == state and t.finished), default=None)
+
+        def average(values: list[float | None]) -> float | None:
+            known = [v for v in values if v is not None]
+            return sum(known) / len(known) if known else None
+
+        found: list[TaskTypeSummary] = []
+        for name in sorted({t.task_type for t in tasks}):
+            kind = [t for t in tasks if t.task_type == name]
+            states = [t.status for t in kind]
+            found.append(
+                TaskTypeSummary(
+                    task_type=name,
+                    total=len(kind),
+                    pending=states.count("pending"),
+                    success=states.count("success"),
+                    failure=states.count("failure"),
+                    avg_duration_seconds=average([t.duration_seconds for t in kind]),
+                    avg_wait_time_seconds=average([t.wait_time_seconds for t in kind]),
+                    last_run=max(t.created for t in kind),
+                    last_success=last(kind, "success"),
+                    last_failure=last(kind, "failure"),
+                )
+            )
+        return tuple(found)
+
+    def _task_viewer(self) -> TaskViewer:
+        user = self.user
+        status = user.is_staff or user.has("view_system_monitoring")
+        return TaskViewer(id=user.id, sees_all=user.is_staff, summary_of_all=status)
+
+    async def get_viewer(self) -> TaskViewer:
+        """`TaskListReader.get_viewer` (UiSettingsView: needs `view_uisettings`)."""
+        _ = await self.get_current_user_id()
+        return self._task_viewer()
+
     async def list_tasks(
         self,
         filters: TaskFilters,
@@ -3859,28 +4031,9 @@ class FakePaperless:
     ) -> TaskRowPage:
         """`TaskListReader.list_tasks` (TasksViewSet list)."""
         self._need("view_paperlesstask", VIEW_TASKS)
-        if filters.owner is not None and filters.owner not in {u.id for u in self.state.users}:
-            reject("owner", "Select a valid choice. That choice is not one of the available ones.")
-        kept = [t for t in self._tasks() if task_matches(t, filters)]
+        kept = self._filtered(filters)
         rows = [
-            TaskRow(
-                id=t.id,
-                task_id=t.task_id,
-                task_type=t.task_type,
-                trigger_source=t.trigger_source,
-                file_name=t.file_name or None,
-                owner=t.owner,
-                state=t.status,
-                created=t.created,
-                started=t.started,
-                finished=t.finished,
-                wait_time_seconds=t.wait_time_seconds,
-                duration_seconds=t.duration_seconds,
-                document_ids=t.document_ids,
-                acknowledged=t.acknowledged,
-                message=t.message if t.duplicate_of is None else REJECTED,
-            )
-            for t in sorted(kept, key=lambda t: (t.created, t.id), reverse=True)
+            self._task_row(t) for t in sorted(kept, key=lambda t: (t.created, t.id), reverse=True)
         ]
         field = ordering.removeprefix("-")
         with_value = [r for r in rows if getattr(r, field) is not None]
@@ -4125,6 +4278,15 @@ class FakePaperless:
         for number in task_ids:
             known[number].acknowledged = True
         return len(task_ids)
+
+    @write
+    async def acknowledge_all_tasks(self) -> int:
+        """`TaskListWriter.acknowledge_all_tasks`: the new tasks this user may see."""
+        self._need("change_paperlesstask", ACK_TASKS)
+        new = [t for t in self._tasks() if not t.acknowledged]
+        for task in new:
+            task.acknowledged = True
+        return len(new)
 
     @write
     async def run_task(self, task_type: RunnableTask) -> str:

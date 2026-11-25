@@ -1,9 +1,10 @@
 """The tasks toolset through the in-memory client on the seeded fake (PLMCP-89)."""
 
 from datetime import UTC, datetime
-from typing import cast
+from typing import Literal, cast
 
 import pytest
+from confirmation import YES, answering
 from fakes.paperless import FakePaperless, FakeState, FakeTask, seeded
 from fastmcp import Client
 from harness import serve
@@ -17,11 +18,13 @@ pytestmark = [
     pytest.mark.decision("decision-4"),
     pytest.mark.decision("decision-26"),
     pytest.mark.decision("decision-93"),
+    pytest.mark.decision("decision-94"),
 ]
 
 type Json = dict[str, object]
 
-TOOLS = {"list_tasks", "acknowledge_tasks", "run_task"}
+READS = {"list_tasks", "get_task_overview", "get_system_report"}
+TOOLS = READS | {"acknowledge_tasks", "run_task"}
 
 
 def fake(
@@ -51,7 +54,7 @@ async def offered(*toolsets: str, read_only: bool = False) -> set[str]:
 
 async def test_the_toolset_offers_the_task_tools_and_admin_no_longer_does() -> None:
     assert await offered("tasks") == TOOLS
-    assert await offered("tasks", read_only=True) == {"list_tasks"}
+    assert await offered("tasks", read_only=True) == READS
     assert TOOLS.isdisjoint(await offered("admin"))
 
 
@@ -139,3 +142,173 @@ async def test_a_user_without_the_permission_gets_a_hint() -> None:
 @pytest.mark.parametrize("told", [UNKNOWN, (stdio.upload_documents.__doc__ or "")])
 def test_what_points_to_the_task_list_names_its_toolset(told: str) -> None:
     assert "list_tasks (tasks toolset)" in " ".join(told.split())
+
+
+# --- the overview and acknowledging all (PLMCP-89.2)
+
+
+async def test_the_overview_is_read_only_and_takes_its_filters() -> None:
+    state = seeded()
+    at = datetime.now(UTC)
+    state.tasks = [
+        FakeTask(id=1, task_id="u1", created=at, status="failure", file_name="a.pdf", owner=2),
+        FakeTask(
+            id=2, task_id="u2", created=at, task_type="mail_fetch", trigger_source="scheduled"
+        ),
+    ]
+
+    plain = await call(fake(state, writes=False), "get_task_overview")
+    for arguments, total in (
+        ({"task_type": "mail_fetch"}, 1),
+        ({"trigger_source": ["scheduled", "manual"]}, 1),
+        ({"owner": "admin", "acknowledged": False}, 1),
+        ({"name": "a.pdf", "days": 7}, 1),
+        ({"result": "nothing like it"}, 0),
+        ({"created_from": "2126-01-01T00:00:00Z"}, 0),
+        ({"created_to": "2020-01-01T00:00:00+01:00"}, 0),
+    ):
+        found = await call(fake(state), "get_task_overview", **arguments)
+        assert cast("Json", found["counts"])["total"] == total, arguments
+
+    assert cast("Json", plain["counts"]) == {
+        "total": 2,
+        "needs_attention": 1,
+        "in_progress": 1,
+        "completed": 0,
+    }
+    assert [row["id"] for row in cast("list[Json]", plain["active"])] == [2]
+    assert plain["active_truncated"] is False
+    assert plain["by_type_of"] == "every_user"
+    for days in (0, 366):
+        _ = await refusal(fake(state), "get_task_overview", days=days)
+
+
+async def test_acknowledging_all_is_refused_until_confirmed_and_can_be_previewed() -> None:
+    state = seeded()
+    state.tasks = [FakeTask(id=1, task_id="u1", status="failure", file_name="a.pdf")]
+
+    text = await refusal(fake(state, writes=False), "acknowledge_tasks", all_unacknowledged=True)
+    shown = await call(
+        fake(state, writes=False), "acknowledge_tasks", all_unacknowledged=True, dry_run=True
+    )
+    alone = await refusal(
+        fake(state, writes=False), "acknowledge_tasks", all_unacknowledged=True, confirm=True
+    )
+    done = await call(
+        fake(state),
+        "acknowledge_tasks",
+        all_unacknowledged=True,
+        confirm=True,
+        expected="1-1-0-0-1",
+    )
+
+    assert alone == text
+    assert "confirm=true and expected=1-1-0-0-1 only once they agree" in text
+    assert str(shown["message"]).endswith("Pass confirm=true and expected=1-1-0-0-1 to go ahead.")
+    assert "cannot be taken back" in text
+    assert "'a.pdf'" in text
+    assert shown["dry_run"] is True
+    assert done["acknowledged"] == 1
+    assert state.tasks[0].acknowledged
+
+
+async def test_ids_need_no_confirmation() -> None:
+    state = seeded()
+    state.tasks = [FakeTask(id=1, task_id="u1")]
+
+    assert (await call(fake(state), "acknowledge_tasks", task_ids=[1]))["acknowledged"] == 1
+
+
+async def test_run_task_says_what_paperless_starts_and_what_the_index_sends() -> None:
+    async with Client(serve(fake(), toolsets=["tasks"])) as client:
+        [tool] = [t for t in await client.list_tools() if t.name == "run_task"]
+    text = " ".join((tool.description or "").split())
+
+    assert "Paperless starts only these three by hand and one per call; call once per type" in text
+    assert "new or changed" in text
+    assert "rebuild" not in text
+
+
+ALL: Json = {"all_unacknowledged": True}
+WRONG: Json = {**ALL, "confirm": True, "expected": "9-9-9-9-9"}
+RIGHT: Json = {**ALL, "confirm": True, "expected": "1-1-0-0-1"}
+
+
+def one_failure() -> FakeState:
+    state = seeded()
+    state.tasks = [FakeTask(id=1, task_id="u1", status="failure", file_name="a.pdf")]
+    return state
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("arguments", [ALL, {**ALL, "confirm": True}, WRONG])
+async def test_a_client_with_dialogs_asks_where_the_value_does_not_confirm(
+    mode: Literal["auto", "legacy"], arguments: Json
+) -> None:
+    state, seen = one_failure(), list[str]()
+    served = serve(fake(state), toolsets=["tasks"])
+
+    async with Client(
+        served, mode=mode, elicitation_handler=answering("accept", YES, seen=seen)
+    ) as client:
+        done = await client.call_tool("acknowledge_tasks", arguments)
+
+    assert done.structured_content is not None
+    assert done.structured_content["acknowledged"] == 1
+    assert len(seen) == 1
+    assert "expected" not in seen[0]
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_a_client_with_dialogs_is_not_asked_where_the_value_confirms(
+    mode: Literal["auto", "legacy"],
+) -> None:
+    state, seen = one_failure(), list[str]()
+    served = serve(fake(state), toolsets=["tasks"])
+
+    async with Client(served, mode=mode, elicitation_handler=answering("decline", seen=seen)) as c:
+        done = await c.call_tool("acknowledge_tasks", RIGHT)
+
+    assert done.structured_content is not None
+    assert (done.structured_content["acknowledged"], seen) == (1, [])
+
+
+@pytest.mark.decision("decision-53")
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_where_the_operator_requires_the_dialog_the_value_confirms_nothing(
+    mode: Literal["auto", "legacy"],
+) -> None:
+    served = serve(fake(one_failure(), writes=False), toolsets=["tasks"], require_dialog=True)
+    async with Client(served, mode=mode) as client:
+        no = await client.call_tool("acknowledge_tasks", RIGHT, raise_on_error=False)
+    state, seen = one_failure(), list[str]()
+    served = serve(fake(state), toolsets=["tasks"], require_dialog=True)
+    async with Client(
+        served, mode=mode, elicitation_handler=answering("accept", YES, seen=seen)
+    ) as client:
+        _ = await client.call_tool("acknowledge_tasks", RIGHT)
+
+    assert no.is_error
+    assert "the operator requires the user's answer" in str(no.content)
+    assert len(seen) == 1
+    assert state.tasks[0].acknowledged
+
+
+# --- the system report (PLMCP-89.3)
+
+
+@pytest.mark.decision("decision-95")
+async def test_the_system_report_shows_everything_to_who_may_see_it() -> None:
+    report = await call(fake(writes=False), "get_system_report")
+    restricted = await call(fake(user="e2e-reader"), "get_system_report")
+
+    statistics = cast("Json", report["statistics"])
+    status = cast("Json", report["status"])
+    assert statistics["documents"] == 2
+    assert statistics["file_types"] == [{"mime_type": "application/pdf", "documents": 2}]
+    assert cast("Json", status["database"])["type"] == "sqlite"
+    assert cast("Json", status["tasks"])["days"] == 30
+    assert restricted["status"] is None
+    assert cast("Json", restricted["statistics"])["documents"] == 1
