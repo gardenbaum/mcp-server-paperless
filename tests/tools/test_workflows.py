@@ -553,3 +553,11 @@ async def test_replacing_a_list_without_its_hidden_values_is_confirmed_while_dis
     assert "change the workflow 'Filing' (id 1) and lose for good what is stored hidden" in text
     assert "of the webhook action 8 the value of 'X-Token', the credentials of its URL" in text
     assert "planted" not in text
+
+
+@pytest.mark.decision("decision-81")
+@pytest.mark.parametrize("given", [{"trigger_id": 0}, {"action_id": -1}], ids=["trigger", "action"])
+async def test_an_id_of_a_part_is_positive(given: Json) -> None:
+    assert "greater than or equal to 1" in await refusal(
+        fake(with_workflow()), "get_workflow", **given
+    )

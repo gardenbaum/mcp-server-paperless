@@ -195,11 +195,11 @@ Limits.
 | `GET /api/workflow_triggers/{id}/` | `get_workflow` |  |
 | `PATCH /api/workflow_triggers/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
 | `PUT /api/workflow_triggers/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
-| `GET /api/workflows/` | `create_workflow`, `delete_workflow`, `get_workflow`, `list_workflows`, `run_workflow` and 1 more |  |
+| `GET /api/workflows/` | `create_workflow`, `delete_workflow`, `get_workflow`, `list_workflows`, `run_workflow` and 2 more |  |
 | `POST /api/workflows/` | `create_workflow` |  |
 | `DELETE /api/workflows/{id}/` | `delete_workflow` |  |
-| `GET /api/workflows/{id}/` | `get_workflow` |  |
-| `PATCH /api/workflows/{id}/` | `update_workflow` |  |
+| `GET /api/workflows/{id}/` | `get_workflow`, `update_workflow_part` |  |
+| `PATCH /api/workflows/{id}/` | `update_workflow`, `update_workflow_part` |  |
 | `PUT /api/workflows/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
 
 ## Query parameters, body fields and enum values no tool sends
@@ -280,7 +280,7 @@ TOML file.
 | `POST /api/workflows/` | `body:actions[].ai_create_missing`, `body:actions[].ai_overwrite_existing`, `body:actions[].ai_suggestion_fields`, `body:actions[].passwords` | PLMCP-87 |
 | `POST /api/workflows/` | `body:actions[].type=5`, `body:actions[].type=8`, `body:triggers[].type=5` | PLMCP-87 |
 | `POST /api/workflows/` | `body:actions[].email.id`, `body:actions[].id`, `body:actions[].webhook.id`, `body:triggers[].id` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
-| `PATCH /api/workflows/{id}/` | `body:actions[].ai_create_missing`, `body:actions[].ai_overwrite_existing`, `body:actions[].ai_suggestion_fields`, `body:actions[].id`, `body:actions[].passwords`, `body:triggers[].id` | PLMCP-87 |
+| `PATCH /api/workflows/{id}/` | `body:actions[].ai_create_missing`, `body:actions[].ai_overwrite_existing`, `body:actions[].ai_suggestion_fields`, `body:actions[].passwords` | PLMCP-87 |
 | `PATCH /api/workflows/{id}/` | `body:actions[].type=5`, `body:actions[].type=8`, `body:triggers[].type=5` | PLMCP-87 |
 | `PATCH /api/workflows/{id}/` | `body:actions[].email.id`, `body:actions[].webhook.id` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
 

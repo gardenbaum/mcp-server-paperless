@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, ClassVar, Final, Literal
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
@@ -171,7 +172,7 @@ class PaperlessWorkflowReader:
         """See ``WorkflowReader.list_workflows``.
 
         Raises:
-            PaperlessMcpError: More than ``MAX_ITEMS`` workflows; resolving names on a part of
+            AnswerTooLarge: More than ``MAX_ITEMS`` workflows; resolving names on a part of
                 them could pick the wrong one.
         """
         params: dict[str, int] = {}
@@ -184,7 +185,7 @@ class PaperlessWorkflowReader:
             message = (
                 f"Paperless has more than {MAX_ITEMS} workflows; this server reads up to that."
             )
-            raise PaperlessMcpError(message)
+            raise AnswerTooLarge(message)
         return tuple(_workflow(row) for row in collected.items)
 
     async def get_workflow(self, workflow_id: int) -> Workflow:

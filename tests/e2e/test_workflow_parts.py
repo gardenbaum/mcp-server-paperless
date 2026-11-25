@@ -72,7 +72,11 @@ def new(stack: Stack, **given: object) -> Json:
 
 
 def everything(stack: Stack) -> Json:
-    """A disabled workflow with every trigger type and all 8 action types, none at its default."""
+    """A disabled workflow with every trigger type and all 8 action types, none at its default.
+
+    What was sent is stored, so a test that finds it unchanged has found it. Type 8 (AI suggestions)
+    is written by this server from PLMCP-87.3 on; here it is one whose settings have to stay.
+    """
     one, two = tag(stack), tag(stack)
     seeded = stack.seeded
     field = seeded.custom_fields["string"]
@@ -142,7 +146,27 @@ def everything(stack: Stack) -> Json:
             "ai_overwrite_existing": True,
         },
     ]
-    return new(stack, triggers=triggers, actions=actions)
+    made = new(stack, triggers=triggers, actions=actions)
+    plain = new(stack, triggers=[{**TRIGGER, "type": 2}], actions=[{"type": 6}])
+    for name, given in (("triggers", triggers), ("actions", actions)):
+        default = parts(plain, name)[0]
+        for sent, stored in zip(given, parts(made, name), strict=True):
+            assert_stored(sent, stored)
+            for setting in sent.keys() - {"type", "sources", "filter_filename"}:
+                assert stored[setting] != default[setting], setting
+    return made
+
+
+def assert_stored(sent: Json, stored: Json) -> None:
+    """Every setting in `sent` is stored as it was sent (the order of ids aside)."""
+    for setting, value in sent.items():
+        there = stored[setting]
+        if setting in {"email", "webhook"}:
+            assert_stored(obj(value), obj(there))
+        elif isinstance(value, list) and all(isinstance(v, int) for v in seq(there)):
+            assert sorted(cast("list[int]", value)) == sorted(cast("list[int]", there)), setting
+        else:
+            assert there == value, setting
 
 
 def patch(stack: Stack, row: Json, **given: object) -> Json:

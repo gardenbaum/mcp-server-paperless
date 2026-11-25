@@ -46,6 +46,7 @@ TOOLSET = "workflows"
 
 provider = LocalProvider()
 
+type PositiveId = Annotated[int, Field(ge=1)]
 type Workflow = Annotated[NameOrId, Field(description="The workflow: its name or id.")]
 type Triggers = Annotated[
     list[TriggerInput] | None,
@@ -156,8 +157,12 @@ async def get_workflow(
     ctx: Context,
     workflow: Annotated[NameOrId | None, Field(description="The workflow: its name or id.")] = None,
     *,
-    trigger_id: Annotated[int | None, Field(description="Instead: one trigger, by its id.")] = None,
-    action_id: Annotated[int | None, Field(description="Instead: one action, by its id.")] = None,
+    trigger_id: Annotated[
+        PositiveId | None, Field(description="Instead: one trigger, by its id.")
+    ] = None,
+    action_id: Annotated[
+        PositiveId | None, Field(description="Instead: one action, by its id.")
+    ] = None,
 ) -> WorkflowRead:
     """Read one workflow with its triggers and actions, as list_workflows shows it.
 
@@ -226,13 +231,13 @@ async def update_workflow(  # noqa: PLR0913 -- one parameter per setting of a wo
 async def update_workflow_part(  # noqa: PLR0913 -- one parameter per concept, described for the LLM
     ctx: Context,
     workflow: Workflow,
-    operation: PartOperation,
+    operation: Annotated[PartOperation, Field(description="What to do with the one part.")],
     *,
     trigger_id: Annotated[
-        int | None, Field(description="The trigger to change or remove, by its id.")
+        PositiveId | None, Field(description="The trigger to change or remove, by its id.")
     ] = None,
     action_id: Annotated[
-        int | None, Field(description="The action to change, move or remove, by its id.")
+        PositiveId | None, Field(description="The action to change, move or remove, by its id.")
     ] = None,
     trigger: Annotated[
         TriggerInput | None,

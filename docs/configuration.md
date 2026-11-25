@@ -359,7 +359,7 @@ Off by default. Manages the mail import: `list_mail_accounts`, `get_mail_account
 ### `workflows`
 
 Off by default: `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow`,
-`delete_workflow`, `run_workflow`. Manages the workflows Paperless runs by itself, with triggers and actions as
+`update_workflow_part`, `delete_workflow`, `run_workflow`. Manages the workflows Paperless runs by itself, with triggers and actions as
 nested objects and tags, correspondents, document types, storage paths, custom fields, users and
 groups given by name. An enabled workflow keeps acting on every matching document, so
 `create_workflow` and `update_workflow` need `confirm` when it moves documents to the trash,
@@ -374,6 +374,11 @@ does not belong to its trigger or action type is an error.
   names the trigger or action and the setting. Names inside templates are not searched, nor parent
   and child tags that come along. `get_workflow` also reads one trigger or action by its id, with
   the workflows that hold it.
+- `update_workflow_part` adds, changes, moves or removes one trigger or action and leaves the others
+  as they are, hidden values and types this server does not write included. It reads the workflow
+  again and reports a difference instead of repeating anything. Losing webhook header values, URL
+  credentials or passwords needs `confirm` even while the workflow is disabled, with
+  `update_workflow` too.
 - Webhook URLs are returned without the user name and password in them (a query string is
   returned; a URL in which they cannot be told apart is not); `shown_in_part` of the action says
   so. Written back as returned, on an action with the id it has now, the URL keeps what is stored;

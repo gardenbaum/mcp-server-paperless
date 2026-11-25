@@ -10,7 +10,12 @@ from fakes.paperless import FakePaperless, seeded
 from hypothesis import given
 from hypothesis import strategies as st
 
-from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
+    NotFound,
+    PermissionDenied,
+    Validation,
+)
 from mcp_server_paperless.domain.workflows import (
     ACTION_FIELDS,
     ACTION_TYPES,
@@ -227,12 +232,54 @@ async def test_a_field_that_cannot_be_seen_is_found_by_id_only_and_the_answer_sa
 
     assert [w.name for w in listing.workflows] == ["By id"]
     assert listing.note == (
-        "You see no custom field 77: it was searched by its id only, so a custom field query that "
-        "names it is not found."
+        "You see no custom field with the id 77: it was searched by its id only, so a custom field "
+        "query that names it is not found."
     )
-    assert (await setup.workflows.list(uses=Usage(kind="tag", value=77))).note is None
     assert (await setup.workflows.list(uses=Usage(kind="custom_field", value=1))).note is None
     assert (await setup.workflows.list()).note is None
+
+
+@pytest.mark.parametrize(
+    "kind", ["tag", "correspondent", "document_type", "storage_path", "user", "group"]
+)
+async def test_an_id_no_visible_object_has_is_said_whatever_the_kind(kind: UsedKind) -> None:
+    for setup in (Setup(), Setup(READER[0], grant=("view_workflow",))):
+        listing = await setup.workflows.list(uses=Usage(kind=kind, value=77))
+
+        assert listing.workflows == ()
+        assert listing.note == (
+            f"You see no {kind.replace('_', ' ')} with the id 77: it was searched by its id only."
+        )
+
+
+@pytest.mark.parametrize("value", ["2024", 2024, " 2024 "], ids=["text", "number", "spaces"])
+async def test_a_name_made_of_digits_is_not_taken_for_an_id(value: str | int) -> None:
+    setup = Setup()
+    setup.state.tags[0].name = "2024"
+    _ = setup.seed("Uses it", [trigger(1, filter_has_tags=[1])])
+
+    with pytest.raises(NotFound, match="No tag has id 2024") as raised:
+        _ = await setup.using("tag", value)
+
+    assert raised.value.hint == "A tag is named '2024'; pass its id 1 instead."
+    assert list(await setup.using("tag", 1)) == ["Uses it"]
+
+
+async def test_the_search_of_a_mail_rule_says_nothing_of_visibility() -> None:
+    assert (await Setup().workflows.list(uses=Usage(kind="mail_rule", value=7))).note is None
+
+
+async def test_a_part_is_read_although_there_are_too_many_workflows_to_list() -> None:
+    setup = Setup()
+    _ = setup.seed("W", [trigger(1)], [action(2)])
+    fake = TooMany(setup.state, user=ADMIN[0])
+    service = WorkflowService(
+        fake, fake, TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
+    )
+
+    for shown in (await service.read(trigger_id=1), await service.read(action_id=2)):
+        assert shown.part is not None
+        assert shown.part.workflows is None
 
 
 async def test_the_list_is_filtered_by_enabled_and_trigger_type() -> None:
@@ -376,7 +423,17 @@ async def test_exactly_one_of_workflow_trigger_and_action_is_read() -> None:
             _ = await setup.workflows.read(**chosen)
     read = await setup.workflows.read(workflow="w")
     assert read.part is None
-    assert read.model_dump(exclude={"part"}) == (await setup.workflows.get("W")).model_dump()
+    whole = await setup.workflows.get("W")
+    assert read.model_dump(exclude={"part"}) == whole.model_dump(exclude={"note"})
+
+
+class TooMany(FakePaperless):
+    @override
+    async def list_workflows(
+        self, *, enabled: bool | None = None, trigger_type: int | None = None
+    ) -> tuple[Workflow, ...]:
+        message = "Paperless has more than 2000 workflows."
+        raise AnswerTooLarge(message)
 
 
 class Counting(FakePaperless):

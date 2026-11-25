@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:04Z'
-updated_date: '2026-11-25T07:14:23Z'
+updated_date: '2026-11-25T07:30:55Z'
 labels:
   - workflows
 dependencies:
@@ -59,4 +59,8 @@ Probes on Paperless 3.5.1, CI run 45503786740, job e2e (1/6), head 54845e1 (temp
 Owner's words (2026-11-24, question dialog 'Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?'): 'Alle wie empfohlen'.
 
 Full hosted E2E 45507183680 on 6d12e49 green: tests/e2e/test_workflow_parts.py 6 passed (P1 with move, add, remove against a fresh read), tests/contract/test_workflows.py 25 and tests/e2e/test_workflows.py 6 passed. Then only main was merged and the quote set.
+
+Probe log: https://github.com/gardenbaum/mcp-server-paperless/actions/runs/45503786740/job/138833596559 (raw log of the job): P2 from line 2469 ('patch email': 500, 'post webhook': 500, 'patch consumption sources': 400, 'delete held': 204, rights per permission), P3 from line 2562 (orphans true until 'after another update'), P4 from line 2592 ('vanished trigger id-only' sources 1 to 4 without a filter, 'victim after': thief, 'post trigger id' 47/47, 'post action id' 63/62, rules 400/400/200), P5 from line 2799 ('ai enabled' 201, 'ai consumption' 400, list counts).
+
+Review of #154: M1 (digits as a name, note for every kind), L1 (the live P1 test proves what was sent is stored), L2 (WorkflowRead.note removed), L3 (ids from 1, too many workflows leave the holders unknown) fixed, tests first. Surface snapshot: get_workflow only.
 <!-- SECTION:NOTES:END -->

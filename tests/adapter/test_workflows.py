@@ -7,6 +7,7 @@ import httpx2
 import pytest
 
 from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
@@ -171,7 +172,7 @@ async def test_more_workflows_than_the_cap_fail_instead_of_resolving_on_a_part(
 ) -> None:
     server = Recording(page(WIRE, count=MAX_ITEMS + 1))
 
-    with pytest.raises(PaperlessMcpError, match=f"more than {MAX_ITEMS} workflows"):
+    with pytest.raises(AnswerTooLarge, match=f"more than {MAX_ITEMS} workflows"):
         _ = await PaperlessWorkflowReader(make_client(server)).list_workflows()
 
 

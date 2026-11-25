@@ -1336,6 +1336,7 @@ class WorkflowReader(Protocol):
 
         Raises:
             PermissionDenied: The user lacks the global ``view_workflow`` permission.
+            AnswerTooLarge: There are more than can be read.
         """
         ...
 
