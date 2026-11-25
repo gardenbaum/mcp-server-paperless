@@ -10,6 +10,7 @@ mail is written only by a real mail fetch, so its rows are listed on the fake on
 """
 
 import uuid
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
 import anyio
@@ -244,8 +245,9 @@ async def test_the_log_lines_of_a_fetch_have_the_known_forms(backend: Backend, m
             await backend.admin.mail_writes.process_mail_account(account.id)
         runs = await read_log_records(backend.admin.management, "paperless")
         told |= {r.message for r in runs if about_run(r, idle.name)}
-        mails = await read_log_records(backend.admin.management, "mail")
-        told |= {r.message[:40] for r in mails if about_mail(r, refused.name, (), nothing)}
+        with suppress(NotFound):  # not yet: the first fetch of all makes this log
+            mails = await read_log_records(backend.admin.management, "mail")
+            told |= {r.message[:40] for r in mails if about_mail(r, refused.name, (), nothing)}
         if len(told) >= 3:
             break
         await anyio.sleep(1)
