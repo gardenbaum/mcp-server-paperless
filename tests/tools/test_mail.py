@@ -40,6 +40,7 @@ TOOLS = {
     "list_processed_mail",
     "get_processed_mail",
     "delete_processed_mail",
+    "explain_mail_import",
 }
 READ_ONLY = {
     "list_mail_accounts",
@@ -48,6 +49,7 @@ READ_ONLY = {
     "get_mail_rule",
     "list_processed_mail",
     "get_processed_mail",
+    "explain_mail_import",
 }
 PASSWORD = "S3cret-Passw0rd!x"
 HOST = "imap.example.com"
@@ -110,7 +112,7 @@ async def test_mail_is_not_in_the_default_profile() -> None:
     assert names.isdisjoint(TOOLS)
 
 
-async def test_the_mail_toolset_offers_fifteen_tools_and_read_only_mode_keeps_the_reads() -> None:
+async def test_the_mail_toolset_offers_sixteen_tools_and_read_only_mode_keeps_the_reads() -> None:
     async with Client(serve(fake(), toolsets=["mail"])) as client:
         names = {tool.name for tool in await client.list_tools()}
     async with Client(serve(fake(), toolsets=["mail"], read_only=True)) as client:
@@ -511,6 +513,41 @@ async def test_the_tool_says_what_it_needs_and_that_it_is_final() -> None:
     text = " ".join((tool.description or "").split())
     for said in ("cannot be brought back", "view_processedmail", "delete_processedmail"):
         assert said in text
+
+
+@pytest.mark.decision("decision-90")
+async def test_why_a_mail_was_not_imported_is_explained_also_read_only() -> None:
+    source = fake(writes=False)
+    account = with_account(source.state)
+    _ = with_rule(source.state, account, filter_subject="Invoice")
+    async with Client(serve(source, toolsets=["mail"], read_only=True)) as client:
+        [tool] = [t for t in await client.list_tools() if t.name == "explain_mail_import"]
+        result = await client.call_tool(
+            "explain_mail_import",
+            {
+                "account_id": account,
+                "subject": "Reminder",
+                "sender": "a@b",
+                "recipient": "c@d",
+                "received": "2026-11-25T10:00:00Z",
+                "folder": "INBOX",
+                "attachment_names": ["a.pdf"],
+                "is_read": False,
+                "is_flagged": False,
+            },
+        )
+
+    found = cast("Json", result.structured_content)
+    [rule] = cast("list[Json]", found["rules"])
+    checks = {c["what"]: c["result"] for c in cast("list[Json]", rule["checks"])}
+    assert (checks["subject"], checks["folder"], rule["result"]) == ("no", "ok", "no")
+    assert str(found["message"]).startswith("This is not a dry run")
+    assert "process_mail_account" in str(found["closest_way"])
+    assert PASSWORD not in repr(result)
+    description = " ".join((tool.description or "").split())
+    assert "NOT a dry run: no mail server is contacted" in description
+    assert tool.annotations is not None
+    assert (tool.annotations.read_only_hint, tool.annotations.open_world_hint) == (True, False)
 
 
 @pytest.mark.decision("decision-79")

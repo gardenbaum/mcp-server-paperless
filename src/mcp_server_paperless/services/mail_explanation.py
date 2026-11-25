@@ -163,8 +163,8 @@ def _earlier(rule: MailRule, rules: Sequence[MailRule]) -> list[MailCheck]:
     stopping = [r for r in before if r.stop_processing]
     if stopping:
         why = (
-            f"rule {quoted(stopping[0].name)} (id {stopping[0].id}) ends the run before it once any "
-            "document was queued in it"
+            f"rule {quoted(stopping[0].name)} (id {stopping[0].id}) ends the run once any document "
+            "was queued in it"
         )
         found.append(_check("earlier rules", "unknown", why))
     taking = [r for r in before if same_folder(r.folder, rule.folder)]

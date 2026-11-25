@@ -344,7 +344,7 @@ Off by default. Manages the mail import: `list_mail_accounts`, `get_mail_account
 `process_mail_account`, `list_mail_rules`, `get_mail_rule`, `create_mail_rule`,
 `update_mail_rule`, `delete_mail_rule`, `list_processed_mail` (compact rows), `get_processed_mail`
 (one mail with its whole error, in parts of 20,000 characters, and whether it would be fetched again
-without its record) and `delete_processed_mail`.
+without its record), `delete_processed_mail` and `explain_mail_import`.
 
 - Passwords are write-only: they are accepted when an account is created or changed and are
   never returned, quoted or logged, nor is any OAuth token. Gmail and Outlook accounts are set up
@@ -368,6 +368,9 @@ without its record) and `delete_processed_mail`.
   again, import it a second time, and run the rule's action on it, which can delete it on the mail
   server. Each record is read again afterwards. It needs `view_processedmail` and
   `delete_processedmail`.
+- `explain_mail_import` says why a mail may not have been imported, from the settings of the rules,
+  processed mail, tasks and logs, and what you know of the mail. It is no dry run: it contacts no
+  mail server. Log lines need a staff user; without them a fetch that was skipped is not known.
 - `process_mail_account` only queues the fetch: follow it with `list_processed_mail` and the
   Paperless task list. While another fetch runs, Paperless skips it without an error.
 

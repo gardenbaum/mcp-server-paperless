@@ -93,6 +93,7 @@ READ_MAIL = {
     *("list_mail_accounts", "get_mail_account", "list_mail_rules", "get_mail_rule"),
     "list_processed_mail",
     "get_processed_mail",
+    "explain_mail_import",
 }
 WORKFLOWS = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "workflows"}
 READ_WORKFLOWS = {"list_workflows", "get_workflow"}

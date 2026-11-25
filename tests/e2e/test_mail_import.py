@@ -301,6 +301,91 @@ async def test_every_rule_has_a_record_of_its_own_and_skips_what_another_took_in
     assert len(box.records(second, 1)) == 1
 
 
+# --- why a mail was not imported
+
+
+@pytest.mark.decision("decision-90")
+async def test_an_import_that_did_not_happen_is_explained(box: Mailbox, client: Connected) -> None:
+    rule = box.rule(filter_attachment_filename_include="*.pdf")
+    _ = box.put("Excluded", {"a.txt": note()})
+    assert box.fetch() == 0
+    _ = box.records(rule, 1)
+
+    found = await call(
+        client,
+        "explain_mail_import",
+        account_id=box.account,
+        subject=f"{box.name} Excluded",
+        folder="inbox",
+        attachment_names=["a.txt"],
+        is_read=False,
+    )
+
+    [checked] = cast("list[Json]", found["rules"])
+    results = {c["what"]: c["result"] for c in cast("list[Json]", checked["checks"])}
+    assert (results["folder"], results["attachments"], results["mark"]) == ("ok", "no", "ok")
+    assert checked["result"] == "no"
+    [row] = cast("list[Json]", found["processed"])
+    assert row["status"] == "PROCESSED_WO_CONSUMPTION"
+    logs = "\n".join(cast("list[str]", found["logs"]))
+    assert "does not match pattern *.pdf" in logs
+    assert found["logs_from"]
+    assert "mail_fetch" in {t["task_type"] for t in cast("list[Json]", found["tasks"])}
+
+
+@pytest.mark.decision("decision-90")
+async def test_a_skipped_fetch_and_a_failed_login_are_in_the_explanation(
+    box: Mailbox, client: Connected
+) -> None:
+    _ = box.rule()
+    box.change_account(password="wr0ng-Passw0rd")
+    assert box.fetch() == 0
+    lock("add('paperless_mail_fetch_lock', 'e2e', timeout=300)")
+    try:
+        assert box.fetch() == 0
+    finally:
+        lock("delete('paperless_mail_fetch_lock')")
+
+    found = await call(client, "explain_mail_import", account_id=box.account, subject="x")
+
+    logs = "\n".join(cast("list[str]", found["logs"]))
+    assert "Mail account processing is already running; skipping this run." in logs
+    assert f"Error while authenticating account {box.name}: {ANSWER_NOT_SHOWN}" in logs
+    assert "AUTHENTICATIONFAILED" not in str(found)
+
+
+@pytest.mark.decision("decision-90")
+async def test_a_user_who_is_no_staff_is_told_what_is_not_known(box: Mailbox, stack: Stack) -> None:
+    body = {
+        "username": f"{box.name}-user",
+        "password": "pw-e2e-imap-4711",
+        "user_permissions": ["view_mailaccount"],
+    }
+    user = num(obj(parse(stack.admin.post("/api/users/", json=body).raise_for_status()))["id"])
+    box.change_account(owner=user)
+    try:
+        with httpx2.Client(
+            base_url=stack.base_url,
+            auth=(f"{box.name}-user", "pw-e2e-imap-4711"),
+            headers={"Accept": f"application/json; version={API_VERSION}"},
+        ) as other:
+            token = str(parse(other.post("/api/profile/generate_auth_token/")))
+        server = create_server(
+            paperless_settings(stack.base_url, token), server_settings(toolsets=["core", "mail"])
+        )
+        async with Client(server) as limited:
+            found = await call(limited, "explain_mail_import", account_id=box.account)
+    finally:
+        box.change_account(owner=None)
+        _ = stack.admin.delete(f"/api/users/{user}/")
+
+    assert "The rules could not be read" in str(found["message"])
+    gaps = cast("list[str]", found["not_checked"])
+    assert "whether a fetch was skipped is not known" in gaps
+    assert found["complete"] is False
+    assert found["logs"] == []
+
+
 # --- logins that fail
 
 

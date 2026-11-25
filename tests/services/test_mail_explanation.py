@@ -324,12 +324,13 @@ async def test_the_result_of_a_rule_is_no_before_unknown_before_ok() -> None:
     setup = Setup()
     setup.rule(action="delete", maximum_age=0)
 
-    async def result(**facts: object) -> str:
-        return (await setup.explain(**facts)).rules[0].result
+    async def result(folder: str, names: list[str] | None = None) -> str:
+        found = await setup.explain(folder=folder, attachment_names=names)
+        return found.rules[0].result
 
-    assert await result(folder="INBOX", attachment_names=["a.pdf"]) == "ok"
-    assert await result(folder="INBOX") == "unknown"
-    assert await result(folder="Other") == "no"
+    assert await result("INBOX", ["a.pdf"]) == "ok"
+    assert await result("INBOX") == "unknown"
+    assert await result("Other") == "no"
 
 
 # --- records
@@ -532,10 +533,11 @@ async def test_no_answer_to_a_login_and_no_credentials_are_shown() -> None:
 class Slow(FakePaperless):
     """Every list of rules takes the whole time of a call."""
 
-    owner: Setup
+    owner: Setup | None = None
 
     @override
     async def list_mail_rules(self) -> tuple[MailRule, ...]:
+        assert self.owner is not None
         self.owner.now += 40
         return await super().list_mail_rules()
 
