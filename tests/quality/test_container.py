@@ -29,7 +29,7 @@ FROM = re.compile(
 ANY_FROM = re.compile(r"^\s*FROM\b", re.MULTILINE | re.IGNORECASE)
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
 SHA_PIN = re.compile(r"^[\w./-]+@[0-9a-f]{40}$")
-JOBS = ("build", "publish", "tag")
+JOBS = ("build", "e2e", "publish", "tag")
 TAG_GATE = "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')"
 COPY_SOURCES = {
     "pyproject.toml",
@@ -244,6 +244,14 @@ def test_the_workflow_never_runs_untrusted_code_with_privileges() -> None:
         assert mapping(checkout["with"])["persist-credentials"] is False
 
 
+@pytest.mark.decision("decision-112")
+def test_the_image_has_the_same_live_suite_gate_as_the_package() -> None:
+    text = (ROOT / ".github/workflows/pypi.yml").read_text(encoding="utf-8")
+    package = mapping(cast("object", yaml.safe_load(text)))
+
+    assert job("e2e") == mapping(mapping(package["jobs"])["e2e"])
+
+
 @pytest.mark.decision("decision-28")
 def test_only_the_tag_gated_jobs_may_write_packages_or_push() -> None:
     flow = workflow()
@@ -253,7 +261,7 @@ def test_only_the_tag_gated_jobs_may_write_packages_or_push() -> None:
     assert "permissions" not in job("build")  # inherits contents: read
     assert job("publish")["permissions"] == {"contents": "read", "packages": "write"}
     assert job("tag")["permissions"] == {"packages": "write"}
-    assert job("publish")["needs"] == "build"
+    assert job("publish")["needs"] == ["build", "e2e"]
     assert job("tag")["needs"] == "publish"
     assert job("publish")["if"] == job("tag")["if"] == TAG_GATE
     build_text = yaml.safe_dump(job("build"))

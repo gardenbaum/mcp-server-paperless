@@ -42,6 +42,7 @@ from e2e.helpers import (
 from fakes.accounts import ADMIN, BLIND, READER
 from fakes.mail import FakeMailAccount, FakeProcessedMail
 from fakes.paperless import (
+    BROKEN_PDF,
     VERSION,
     FakeDocument,
     FakePaperless,
@@ -51,6 +52,7 @@ from fakes.paperless import (
     counted_pages,
     seeded,
 )
+from ratelimit import LimitingTransport, RateLimit, limited_ports
 
 from mcp_server_paperless.domain.bulk import ObjectPermissions
 from mcp_server_paperless.domain.ports import (  # noqa: TC001 -- Ports' annotations are introspected
@@ -274,10 +276,11 @@ class Restricted(Protocol):
     every other document of the admin stays hidden from it. Grants replace those a document had, so
     a second user on the same document takes it from the first: use it before making the next. The
     live one deletes the user again
-    when the test ends. A `superuser` is made without the staff flag.
+    when the test ends. A `superuser` is made without the staff flag. A
+    `limited` one is behind `Backend.rate_limit`.
     """
 
-    def __call__(
+    def __call__(  # noqa: PLR0913 -- one keyword per thing tests vary
         self,
         permissions: frozenset[str],
         *,
@@ -285,6 +288,7 @@ class Restricted(Protocol):
         change: Sequence[int] = (),
         name: str | None = None,
         superuser: bool = False,
+        limited: bool = False,
     ) -> Ports: ...
 
 
@@ -374,6 +378,11 @@ class Backend:
     lose_file: Callable[[int, FilePart], None]
     # Gives a user a second factor (TOTP), which only a browser could set up.
     add_second_factor: Callable[[int], None]
+    # Writes an error into the mail log, as Paperless itself does.
+    log_mail_error: Callable[[str], None]
+    # The admin behind something that limits the rate of requests, once `rate_limit` begins.
+    limited: Ports
+    rate_limit: RateLimit
 
 
 def fake_consume(state: FakeState) -> Consume:
@@ -442,14 +451,15 @@ def fake_share(state: FakeState) -> Share:
     return share_fake
 
 
-def fake_restricted(state: FakeState) -> Restricted:
-    def restricted(
+def fake_restricted(state: FakeState, rate_limit: RateLimit) -> Restricted:
+    def restricted(  # noqa: PLR0913 -- one keyword per thing tests vary
         permissions: frozenset[str],
         *,
         view: Sequence[int] = (),
         change: Sequence[int] = (),
         name: str | None = None,
         superuser: bool = False,
+        limited: bool = False,
     ) -> Ports:
         user = FakeUser(
             id=max(u.id for u in state.users) + 1,
@@ -465,7 +475,8 @@ def fake_restricted(state: FakeState) -> Restricted:
                 document.owner = admin.id
                 document.viewers = {user.id}
                 document.editors = {user.id} if document.id in change else set()
-        return fake_ports(state, user.username)
+        ports = fake_ports(state, user.username)
+        return limited_ports(ports, rate_limit) if limited else ports
 
     return restricted
 
@@ -498,6 +509,19 @@ def live_processed(rule_id: int, rows: Sequence[Processed], *, owner: int | None
         f"    ProcessedMail.objects.create(rule_id={rule_id}, owner_id={owner}, folder='INBOX', "
         "subject=subject, uid=uid, status=status, error=error, received=now())\n"
     )
+    in_container("python", "manage.py", "shell", "-c", code)
+
+
+def fake_log_mail_error(state: FakeState) -> Callable[[str], None]:
+    def log(message: str) -> None:
+        line = f"[2026-11-25 10:00:00,001] [ERROR] [paperless_mail] {message}"
+        state.logs["mail"] = [*state.logs["mail"], line]
+
+    return log
+
+
+def live_log_mail_error(message: str) -> None:
+    code = f"import logging; logging.getLogger('paperless_mail').error({message!r})"
     in_container("python", "manage.py", "shell", "-c", code)
 
 
@@ -629,6 +653,7 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
     """The fake's backend; the E2E stack of `just e2e` has AI off, so that is the default."""
     state = seeded()
     state.ai_enabled = ai_enabled
+    rate_limit = RateLimit()
     return Backend(
         admin=fake_ports(state, ADMIN[0]),
         reader=fake_ports(state, READER[0]),
@@ -640,7 +665,7 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
         new_pdf=fake_new_pdf(state),
         new_encrypted=fake_new_encrypted(state),
         share_read_only=fake_share(state),
-        restricted=fake_restricted(state),
+        restricted=fake_restricted(state, rate_limit),
         grants=fake_grants(state),
         in_trash=fake_in_trash(state),
         track_document=lambda _document: None,
@@ -650,6 +675,9 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
         new_token_account=fake_token_account(state),
         lose_file=fake_lose_file(state),
         add_second_factor=fake_add_second_factor(state),
+        log_mail_error=fake_log_mail_error(state),
+        limited=limited_ports(fake_ports(state, ADMIN[0]), rate_limit),
+        rate_limit=rate_limit,
     )
 
 
@@ -717,7 +745,7 @@ def live_task(stack: Stack, *, succeed: bool) -> tuple[str, int | None]:
     """
     title = f"contract-task-{uuid.uuid4().hex}"
     if not succeed:
-        return consume(stack.admin, title, b"%PDF-1.4 broken")
+        return consume(stack.admin, title, BROKEN_PDF)
     return consume(
         stack.admin, title, title.encode(), filename=f"{title}.txt", mime_type="text/plain"
     )
@@ -748,17 +776,18 @@ def delete_and_empty_trash(stack: Stack, documents: list[int]) -> None:
 
 
 def live_restricted(
-    stack: Stack, ports_for: Callable[[str], Ports], users: list[int]
+    stack: Stack, ports_for: Callable[[str, bool], Ports], users: list[int]
 ) -> Restricted:
     """Live `Restricted`: a temporary user whose id goes on `users` for the finaliser."""
 
-    def restricted(
+    def restricted(  # noqa: PLR0913 -- one keyword per thing tests vary
         permissions: frozenset[str],
         *,
         view: Sequence[int] = (),
         change: Sequence[int] = (),
         name: str | None = None,
         superuser: bool = False,
+        limited: bool = False,
     ) -> Ports:
         name = name or f"contract-user-{uuid.uuid4().hex[:12]}"
         password = f"pw-{uuid.uuid4().hex}"
@@ -787,7 +816,7 @@ def live_restricted(
             headers={"Accept": "application/json; version=10"},
         ) as signed_in:
             issued = signed_in.post("/api/profile/generate_auth_token/").raise_for_status()
-        return ports_for(str(cast("object", issued.json())))
+        return ports_for(str(cast("object", issued.json())), limited)
 
     return restricted
 
@@ -886,13 +915,20 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
             json={"owner": user_id(stack.admin), "set_permissions": permissions},
         ).raise_for_status()
 
+    rate_limit = RateLimit()
     try:
-        async with httpx2.AsyncClient(base_url=stack.base_url, timeout=30.0) as http:
+        async with (
+            httpx2.AsyncClient(base_url=stack.base_url, timeout=30.0) as http,
+            httpx2.AsyncClient(
+                base_url=stack.base_url, timeout=30.0, transport=LimitingTransport(rate_limit)
+            ) as limited_http,
+        ):
 
-            def ports(token: str) -> Ports:
+            def ports(token: str, limited: bool = False) -> Ports:  # noqa: FBT001, FBT002 -- of a callable
+                way = limited_http if limited else http
                 credentials = StaticTokenProvider(token)
                 return live_ports(
-                    PaperlessClient(http, credentials, retry=RetryPolicy(), upload_timeout=60.0)
+                    PaperlessClient(way, credentials, retry=RetryPolicy(), upload_timeout=60.0)
                 )
 
             yield Backend(
@@ -916,6 +952,9 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
                 new_token_account=lambda: live_token_account(stack),
                 lose_file=lambda document, part: lose_file(stack.admin, document, part),
                 add_second_factor=add_second_factor,
+                log_mail_error=live_log_mail_error,
+                limited=ports(stack.admin_token, limited=True),
+                rate_limit=rate_limit,
             )
     finally:
         cleanup(stack, created, users)

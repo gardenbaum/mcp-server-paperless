@@ -1,11 +1,14 @@
 """The views toolset through the in-memory client on the seeded fake."""
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from fakes.paperless import FakePaperless, FakeSavedView, FakeState, seeded
 from fastmcp import Client
 from harness import serve
+
+if TYPE_CHECKING:
+    from pydantic import JsonValue
 
 pytestmark = [
     pytest.mark.anyio,
@@ -267,6 +270,39 @@ async def test_a_view_is_pinned_for_the_current_user_and_shown_so() -> None:
     assert state.ui_settings[source.user.id] == {
         "theme": 1,
         "saved_views": {"dashboard_views_visible_ids": [1]},
+    }
+
+
+@pytest.mark.decision("decision-92")
+async def test_a_view_is_unpinned_and_everything_else_stays() -> None:
+    state = seeded()
+    source = fake(state)
+    other: Json = {"theme": 1, "nested": {"a": [1, None]}}
+    views: Json = {
+        "dashboard_views_visible_ids": [9, 1, "1"],
+        "sidebar_views_visible_ids": [1],
+        "dashboard_views_sort_order": [1, 9],
+    }
+    state.ui_settings[source.user.id] = cast(
+        "dict[str, JsonValue]", {**other, "saved_views": views}
+    )
+
+    one = await call(source, "pin_saved_view", view="e2e-view", dashboard=False)
+    half = state.ui_settings[source.user.id]
+    both = await call(source, "pin_saved_view", view=1, dashboard=False, sidebar=False)
+    shown = await call(source, "get_saved_view", view=1)
+
+    assert (one["on_dashboard"], one["in_sidebar"], one["changed"]) == (False, True, True)
+    assert half == {**other, "saved_views": {**views, "dashboard_views_visible_ids": [9, "1"]}}
+    assert (both["on_dashboard"], both["in_sidebar"], both["changed"]) == (False, False, True)
+    assert (shown["on_dashboard"], shown["in_sidebar"]) == (False, False)
+    assert state.ui_settings[source.user.id] == {
+        **other,
+        "saved_views": {
+            **views,
+            "dashboard_views_visible_ids": [9, "1"],
+            "sidebar_views_visible_ids": [],
+        },
     }
 
 

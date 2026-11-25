@@ -281,6 +281,9 @@ MAX_LABEL = 64
 VERSION = "3.5.1"
 API_VERSION = 10
 
+# A PDF that is taken but cannot be consumed (the live tests fail their tasks with it too).
+BROKEN_PDF = b"%PDF-1.4 broken"
+
 # The types 3.4.2 consumes without Tika or Gotenberg; `post_document` answers 400 for any other.
 CONSUMABLE = frozenset(
     {
@@ -1533,7 +1536,7 @@ class FakePaperless:
             finished=now,
         )
         state.tasks.append(task)
-        if self._rejected(upload.content, task):
+        if self._rejected(upload.content, task) or _broken(upload.content, task):
             return task.task_id
         taken = upload.archive_serial_number is not None and any(
             d.archive_serial_number == upload.archive_serial_number for d in state.documents
@@ -2143,7 +2146,7 @@ class FakePaperless:
             finished=now,
         )
         self.state.tasks.append(task)
-        if self._rejected(upload.content, task):
+        if self._rejected(upload.content, task) or _broken(upload.content, task):
             return task.task_id
         version_id = self._next_id()
         # The fake reads no PDF: one whose pages cannot be counted is taken to have as many.
@@ -4711,6 +4714,15 @@ class FakePaperless:
 
 
 type _Match = Callable[[FakeDocument], bool]
+
+
+def _broken(content: bytes, task: FakeTask) -> bool:
+    """Fail the task of the one broken PDF the fake knows (live: no PDF of this kind is read)."""
+    if content != BROKEN_PDF:
+        return False
+    task.status = "failure"
+    task.message = f"{task.file_name}: Error occurred while consuming document"
+    return True
 
 
 def _check_edit(file: FakeFile, count: int | None, pages: Sequence[PageSlot]) -> list[int]:

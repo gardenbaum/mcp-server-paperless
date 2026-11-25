@@ -18,6 +18,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from guide_oracle import Seen, look
+from hidden_names import READING, named
 
 from e2e.helpers import EXPECTED_VERSION
 from mcp_server_paperless.tools._shared import ANNOTATIONS, TOOL_TOOLSETS
@@ -133,6 +134,7 @@ async def test_a_mixed_selection_over_http(stack: Stack, mode: str) -> None:
         transport = StreamableHttpTransport(url, headers={"Authorization": f"Bearer {MCP_TOKEN}"})
         async with Client(transport, mode=mode) as client:
             seen = await look(client)
+            tools = await client.list_tools()
             prompts = {prompt.name for prompt in await client.list_prompts()}
             refused = await client.call_tool(
                 "delete_document", {"document_id": 1, "confirm": True}, raise_on_error=False
@@ -145,6 +147,14 @@ async def test_a_mixed_selection_over_http(stack: Stack, mode: str) -> None:
         or (toolset in {"core", "mail", "tasks"} and ANNOTATIONS[tool].read_only_hint)
     }
     assert prompts == {"find_document"}
+    hidden = {
+        name
+        for name, toolset in TOOL_TOOLSETS.items()
+        if toolset in {"core", "mail", "tasks"} and name not in READING
+    }
+    for tool in tools:  # nothing hidden is named (decision-111)
+        if tool.name in READING:
+            assert named(tool, hidden) == set(), tool.name
     assert f"PAPERLESS_MCP_TOOLSETS={selection},<name>" in seen.instructions
     assert refused.is_error
     assert "Unknown tool" in str(refused.content)

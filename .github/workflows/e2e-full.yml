@@ -1,14 +1,10 @@
 name: E2E full suite
 
-# The whole live suite on the pinned paperless-ngx image, after every merge to main and nightly
-# (decision-23). Pull requests run only a fast tier (ci.yml, job `e2e`), so this is where a
-# regression it could not see turns up: a red shard fails the run, which GitHub reports on main.
+# The whole live suite on the pinned paperless-ngx image, before a release (decision-112): dispatched
+# by hand on the commit that is going to be tagged. pypi.yml and image.yml publish a tag only when a
+# run of this workflow has passed on exactly that commit.
 # The suite is split in shards, each on its own stack (`just e2e-shard K/N`, scripts/e2e_ci.py).
 on:
-  push:
-    branches: [main]
-  schedule:
-    - cron: "23 2 * * *"
   workflow_dispatch:
 
 permissions:
