@@ -374,6 +374,12 @@ def _rule_body(values: MailRuleValues) -> dict[str, object]:
     return body
 
 
+class _Deleted(BaseModel):
+    """The answer to a deletion; the ids it lists are only those that were sent (decision-83)."""
+
+    result: Literal["OK"]
+
+
 class PaperlessMailReader:
     """``MailReader`` over the Paperless REST API."""
 
@@ -507,8 +513,12 @@ class PaperlessMailWriter:
     async def delete_processed_mail(self, mail_ids: Sequence[int]) -> None:
         """See ``MailWriter.delete_processed_mail``."""
         try:
-            _ = await self._client.request(
-                "POST", f"{PROCESSED}bulk_delete/", json={"mail_ids": list(mail_ids)}, retry=False
+            _ = await self._client.call(
+                "POST",
+                f"{PROCESSED}bulk_delete/",
+                _Deleted,
+                json={"mail_ids": list(mail_ids)},
+                retry=False,
             )
         except PermissionDenied:
             raise undeletable_processed() from None
