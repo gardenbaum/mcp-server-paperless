@@ -1,13 +1,16 @@
 """The workflows toolset through the in-memory client on the seeded fake."""
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
-from fakes.paperless import FakePaperless, FakeState, seeded
+from fakes.paperless import FakePaperless, FakeState, FakeUser, seeded
 from fastmcp import Client
 from harness import serve
 
 from mcp_server_paperless.domain.workflows import Workflow, WorkflowAction, WorkflowTrigger
+
+if TYPE_CHECKING:
+    from pydantic import JsonValue
 
 pytestmark = [
     pytest.mark.anyio,
@@ -622,3 +625,170 @@ async def test_a_workflow_is_explained_for_a_document() -> None:
     assert "wanted is one of 'e2e-finance'" in str(check["why"])
     assert "999" in missing
     assert "may not perform this action" in denied
+
+
+USED: list[tuple[str, str, int, str, str, JsonValue]] = [
+    ("correspondent", "e2e-acme", 1, "action", "assign_correspondent", 1),
+    ("correspondent", "e2e-acme", 1, "trigger", "has_correspondent", 1),
+    ("correspondent", "e2e-acme", 1, "action", "remove_correspondents", [1]),
+    ("document_type", "e2e-invoice", 1, "action", "assign_document_type", 1),
+    ("document_type", "e2e-invoice", 1, "trigger", "has_any_document_types", [1]),
+    ("storage_path", "e2e-archive", 1, "action", "assign_storage_path", 1),
+    ("storage_path", "e2e-archive", 1, "trigger", "has_not_storage_paths", [1]),
+    ("custom_field", "e2e-string", 1, "action", "assign_custom_fields", [1]),
+    ("custom_field", "e2e-string", 1, "trigger", "custom_field_query", '["e2e-string","exists",1]'),
+    ("user", "e2e-reader", 3, "action", "assign_owner", 3),
+    ("user", "e2e-reader", 3, "action", "remove_change_users", [3]),
+    ("group", "e2e-group", 1, "action", "assign_view_groups", [1]),
+    ("group", "e2e-group", 1, "action", "remove_change_groups", [1]),
+]
+
+
+@pytest.mark.decision("decision-81")
+@pytest.mark.parametrize(("kind", "name", "number", "part", "setting", "value"), USED)
+async def test_a_used_object_of_every_kind_is_found_with_its_place(  # noqa: PLR0913, PLR0917 -- the cases
+    kind: str, name: str, number: int, part: str, setting: str, value: JsonValue
+) -> None:
+    state = with_workflow()
+    wire = f"filter_{setting}" if part == "trigger" else setting
+    settings = {wire: value}
+    filters = settings if part == "trigger" else {}
+    state.workflows.append(
+        Workflow(
+            id=2,
+            name="Uses",
+            order=1,
+            enabled=False,
+            triggers=(WorkflowTrigger(id=7, type=2, settings=filters),),
+            actions=(
+                WorkflowAction(
+                    id=8,
+                    type=2 if setting.startswith("remove") else 1,
+                    settings=settings if part == "action" else {},
+                ),
+            ),
+        )
+    )
+    source = fake(state, writes=False)
+
+    for wanted in (name, number):
+        output = await call(source, "list_workflows", uses_kind=kind, uses=wanted)
+
+        [found] = cast("list[Json]", output["workflows"])
+        assert (found["name"], output["count"]) == ("Uses", 1)
+        assert found["used_in"] == [
+            {"part": part, "id": 7 if part == "trigger" else 8, "setting": setting}
+        ]
+
+
+@pytest.mark.decision("decision-82")
+async def test_a_trigger_is_added_and_removed_and_has_no_order() -> None:
+    state = with_workflow()
+    state.workflow_object_id[0] = 20
+    part = "update_workflow_part"
+    before = state.workflows[0]
+
+    added = await call(
+        fake(state),
+        part,
+        workflow="Filing",
+        operation="add",
+        trigger={"type": "updated", "has_tags": ["e2e-inbox"]},
+    )
+    moved = await refusal(
+        fake(state, writes=False),
+        part,
+        workflow="Filing",
+        operation="change",
+        trigger_id=1,
+        position=1,
+    )
+    placed = await refusal(
+        fake(state, writes=False),
+        part,
+        workflow="Filing",
+        operation="add",
+        trigger={"type": "updated", "has_tags": ["e2e-inbox"]},
+        position=1,
+    )
+    removed = await call(
+        fake(state), part, workflow="Filing", operation="remove", trigger_id=before.triggers[0].id
+    )
+
+    new = cast("list[Json]", added["triggers"])[1]
+    assert (new["type"], new["settings"]) == (3, {"has_tags": ["e2e-inbox"]})
+    for text in (moved, placed):
+        assert "triggers have no order." in text
+    assert [t["id"] for t in cast("list[Json]", removed["triggers"])] == [new["id"]]
+    assert state.workflows[0].actions == before.actions
+
+
+@pytest.mark.decision("decision-82")
+async def test_an_action_is_moved_and_everything_else_stays() -> None:
+    state = with_workflow()
+    actions = (
+        WorkflowAction(id=2, type=1, settings={"assign_tags": [4]}),
+        WorkflowAction(id=9, type=5, settings={"passwords": ["planted"]}),
+        WorkflowAction(id=8, type=1, settings={"assign_title": "x"}),
+    )
+    state.workflows[0] = state.workflows[0].model_copy(
+        update={"enabled": False, "actions": actions}
+    )
+    before = state.workflows[0]
+
+    output = await call(
+        fake(state),
+        "update_workflow_part",
+        workflow="Filing",
+        operation="change",
+        action_id=8,
+        position=1,
+    )
+
+    assert [a["id"] for a in cast("list[Json]", output["actions"])] == [8, 2, 9]
+    assert state.workflows[0].actions == (actions[2], actions[0], actions[1])
+    assert state.workflows[0].triggers == before.triggers
+    assert "planted" not in str(output)
+
+
+@pytest.mark.decision("decision-88")
+async def test_a_workflow_that_matches_is_explained() -> None:
+    state = with_workflow()
+    state.documents[0].tags = [1]
+
+    output = await call(
+        fake(state, writes=False), "explain_workflow", workflow="Filing", document_id=1
+    )
+
+    assert output["would_match_now"] == "yes"
+    assert "matches the document as both are now." in str(output["message"])
+    [trigger] = cast("list[Json]", output["triggers"])
+    [check] = cast("list[Json]", trigger["checks"])
+    assert (trigger["matches"], check["filter"], check["result"]) == ("yes", "has_tags", "ok")
+
+
+@pytest.mark.decision("decision-88")
+async def test_a_restricted_user_gets_an_explanation_with_gaps() -> None:
+    state = with_workflow()
+    state.users.append(
+        FakeUser(
+            id=77,
+            username="looker",
+            permissions=frozenset({"view_workflow", "view_document", "view_uisettings"}),
+        )
+    )
+    state.documents[0].tags = [1]
+
+    output = await call(
+        fake(state, writes=False, user="looker"),
+        "explain_workflow",
+        workflow="Filing",
+        document_id=1,
+    )
+
+    gaps = cast("list[str]", output["not_checked"])
+    assert [gap.split(" (")[0].split(":")[0] for gap in gaps] == [
+        *("the names of tags", "the history", "the consume task", "the log"),
+    ]
+    assert (output["would_match_now"], output["did_run"], output["log"]) == ("yes", "unknown", [])
+    assert "e2e-finance" not in str(output)
