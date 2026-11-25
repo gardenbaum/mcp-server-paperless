@@ -50,7 +50,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
     from mcp_server_paperless.domain.documents import SignedIn
-    from mcp_server_paperless.domain.mail import MailRule, ProcessedMail, RecordOutcome
+    from mcp_server_paperless.domain.mail import (
+        MailRule,
+        MailScope,
+        ProcessedMail,
+        RecordOutcome,
+    )
     from mcp_server_paperless.domain.ports import DocumentReader, MailReader, MailWriter
 
 # Characters of an error in one answer (the size of a content slice).
@@ -70,12 +75,12 @@ NEXT: Final = (
     "the next fetch (every 10 minutes by default, or process_mail_account; an earlier rule of the "
     "account can stop it or take the mail first)"
 )
-AGAIN: Final = "a second time, unless Paperless rejects duplicates"
+AGAIN: Final = "again, if {} before, unless Paperless rejects duplicates"
 CAVEAT: Final = (
     "The rule's settings of now count, not those of then; whether the mail still exists on the "
     "server, and records you may not see, are not known here. A record keeps out the mail with its "
     "folder and uid: one stored without the folder's UIDVALIDITY any such mail, one with an older "
-    "UIDVALIDITY none; which it is is not shown."
+    "UIDVALIDITY none, unless the server names none; which it is is not shown."
 )
 BOUNDED: Final = (
     f"Only the newest {MAX_RECORDS:,} records of the rule were looked at for others of the same "
@@ -85,10 +90,20 @@ OTHERS: Final = (
     "Other records with the folder and uid of this mail keep it out until they are deleted too"
 )
 NO_LONGER: Final = "Once that no longer holds: "
-TAKEN: Final = (
-    f"the files the rule takes from it are imported, also those imported before ({AGAIN}), and if "
-    "every one of them is consumed"
-)
+# What a rule imports of a mail, and when its action runs. The mail itself and its attachments are
+# queued apart, each with the action behind it.
+IMPORTED: Final[Mapping[MailScope, str]] = {
+    "attachments": (
+        f"the files the rule takes from it are imported ({AGAIN.format('they were')}); if every "
+        "one of them is consumed"
+    ),
+    "eml": f"the mail itself is imported ({AGAIN.format('it was')}); if it is consumed",
+    "eml_and_attachments": (
+        "the mail itself and the files the rule takes from it are imported "
+        f"({AGAIN.format('they were')}); as soon as the mail itself, or every one of the files, is "
+        "consumed, even if the other fails"
+    ),
+}
 HIDDEN: Final = (
     "you may not see the rule of this mail: without this record it may be imported again and then "
     "deleted or moved on the mail server"
@@ -118,21 +133,15 @@ def _outcome(status: str, rule: MailRule) -> str:
     marked = _marked(rule)
     matching = "if it still matches the rule's folder, age and filters"
     unmarked = matching + (f" and is not {marked}" if marked else "")
-    taken = f"{TAKEN}, the rule then {_then(rule)}"
-    if status == "FAILED":
+    taken = f"{IMPORTED[rule.consumption_scope]}, the rule then {_then(rule)}"
+    nothing = status == "PROCESSED_WO_CONSUMPTION" and rule.consumption_scope == "attachments"
+    if status in {"FAILED", "PROCESSED_WO_CONSUMPTION"} and not nothing:
         return f"without this record {NEXT} takes the mail again {unmarked}: {taken}"
-    if status == "PROCESSED_WO_CONSUMPTION" and rule.consumption_scope == "attachments":
+    if nothing:
         return (
             f"without this record {NEXT} looks at the mail again {unmarked}. Nothing happens to "
-            "it unless the rule or the mail now gives a file: then that is imported and the rule "
-            f"{_then(rule)}"
-        )
-    if status == "PROCESSED_WO_CONSUMPTION":
-        # The mail itself is queued before its attachments are looked at.
-        return (
-            f"without this record {NEXT} takes the mail again {unmarked}: the mail itself is "
-            f"imported ({AGAIN}) with the files the rule takes from it, and if every one of them "
-            f"is consumed, the rule then {_then(rule)}"
+            "it unless the rule or the mail now gives a file: then that is imported and, if it is "
+            f"consumed, the rule {_then(rule)}"
         )
     if status != "SUCCESS":
         return f"not known for the status {_status(status)}"
@@ -165,13 +174,17 @@ def _obstacles(mail: ProcessedMail, rule: MailRule) -> str:
     return said
 
 
-def _others(mail: ProcessedMail, rows: Sequence[ProcessedMail]) -> list[int]:
-    """Ids of the other records of the same mail among the records of its rule."""
+def _others(mail: ProcessedMail, rule: MailRule | None, rows: Sequence[ProcessedMail]) -> list[int]:
+    """Ids of the other records of the same mail among the records of its rule.
+
+    Paperless compares their folder exactly with the one of the rule.
+    """
+    folder = rule.folder if rule and _same_folder(rule.folder, mail.folder) else mail.folder
     return sorted(
         {
             row.id
             for row in rows
-            if row.id != mail.id and (row.folder, row.uid) == (mail.folder, mail.uid)
+            if row.id != mail.id and (row.folder, row.uid) == (folder, mail.uid)
         }
     )
 
@@ -298,7 +311,7 @@ class ProcessedMailService:
         except PaperlessMcpError:
             last += " Other records of the same mail could not be looked for."
         else:
-            if others := _others(mail, rows):
+            if others := _others(mail, rule, rows):
                 first += f"{OTHERS}: {_ids(others)}. "
             if not complete:
                 last += f" {BOUNDED}"
@@ -391,7 +404,7 @@ class ProcessedMailService:
             if not complete:
                 bounded.append(number)
             for mail in mails:
-                others = _others(mail, rows) if mail.rule_id == number else []
+                others = _others(mail, rule, rows) if mail.rule_id == number else []
                 stay = [other for other in others if other not in mail_ids]
                 if stay:
                     staying[mail.id] = stay

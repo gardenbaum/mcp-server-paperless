@@ -261,13 +261,30 @@ async def test_a_mail_without_attachments_is_imported_itself_again(
     assert {row["status"] for row in rows} == {"SUCCESS", "PROCESSED_WO_CONSUMPTION"}
     assert FLAGGED in box.flags(uid)
     [empty] = [row for row in rows if row["status"] == "PROCESSED_WO_CONSUMPTION"]
-    assert "the mail itself is imported" in str((await record(client, empty))["refetch"])
+    assert "the mail itself and the files the rule takes from it are imported" in str(
+        (await record(client, empty))["refetch"]
+    )
     box.unflag(uid, FLAGGED)
     box.forget(*(num(row["id"]) for row in rows))
     assert box.fetch() == 1
     _ = box.records(rule, 2)
     assert FLAGGED in box.flags(uid)
     assert len(box.documents("Alone")) == 2
+
+
+async def test_the_rule_acts_when_the_mail_is_imported_although_its_file_fails(
+    box: Mailbox, client: Connected
+) -> None:
+    """The mail itself and its attachments are queued apart, each with the action behind it."""
+    rule = box.rule("flag", consumption_scope=3)
+    uid = box.put("Half", {"broken.pdf": BROKEN})
+
+    assert box.fetch() == 2
+    [row, *_] = box.records(rule, count=None)
+    assert FLAGGED in box.flags(uid)
+    said = str((await record(client, row))["refetch"])
+    assert "as soon as the mail itself, or every one of the files, is consumed" in said
+    assert len(box.documents("Half")) == 1
 
 
 async def test_every_rule_has_a_record_of_its_own_and_skips_what_another_took_in_the_run(
