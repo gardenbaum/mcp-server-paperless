@@ -70,7 +70,12 @@ class Setup:
         taxonomy = TaxonomyResolver(self.fake, StaticTokenProvider("t"), ttl=3600.0)
         documents = DocumentService(self.fake, self.fake, taxonomy, web_url="https://p.example")
         views = ViewService(
-            self.fake, self.fake, taxonomy, documents, ViewPins(self.fake, self.fake)
+            self.fake,
+            self.fake,
+            taxonomy,
+            documents,
+            ViewPins(self.fake, self.fake),
+            permissions=self.fake,
         )
         self.selector: DocumentSelector = DocumentSelector(self.fake, documents, views, taxonomy)
 

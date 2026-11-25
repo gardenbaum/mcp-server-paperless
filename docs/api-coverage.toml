@@ -59,12 +59,6 @@ operations = [
 ]
 
 [[open]]
-task = "PLMCP-88"
-operations = [
-  "GET /api/saved_views/{id}/",
-]
-
-[[open]]
 task = "PLMCP-89"
 operations = [
   "GET /api/tasks/active/",
@@ -101,6 +95,11 @@ params = ["version"]
 operation = "POST /api/mail_accounts/{id}/process/"
 fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security", "body:username", "body:password", "body:character_set", "body:is_token", "body:imap_security=2", "body:imap_security=3", "body:is_token=true"]
 reason = "the stored account is sent back; the tool takes only its id. The values the scenario account does not hold are named: the other security modes and a token account"
+
+[[plumbing]]
+operation = "GET /api/saved_views/{id}/"
+fields = ["query:full_perms", "query:full_perms=false"]
+reason = "reads the grants: sent as true, no tool argument sets it"
 
 [[plumbing]]
 operation = "GET /api/tags/"
@@ -297,11 +296,6 @@ task = "PLMCP-83"
 operation = "PATCH /api/documents/{id}/"
 fields = ["body:created_date", "body:remove_inbox_tags"]
 task = "PLMCP-83"
-
-[[open_fields]]
-operation = "PATCH /api/saved_views/{id}/"
-fields = ["body:owner", "body:set_permissions"]
-task = "PLMCP-88"
 
 [[open_fields]]
 operation = "PATCH /api/users/{id}/"

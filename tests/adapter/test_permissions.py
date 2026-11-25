@@ -485,3 +485,63 @@ async def test_listing_users_or_groups_without_the_permission_is_a_permission_er
         _ = await reader.list_users(name_contains=None, page=1, page_size=25)
     with pytest.raises(PermissionDenied):
         _ = await reader.list_groups(name_contains=None, page=1, page_size=25)
+
+
+# A saved view as it answers with `full_perms=true` (no `user_can_change`).
+SAVED_VIEW: Json = {
+    "id": 7,
+    "name": "Bills",
+    "icon": "funnel",
+    "sort_field": None,
+    "sort_reverse": False,
+    "filter_rules": [],
+    "page_size": None,
+    "display_mode": None,
+    "display_fields": None,
+    "owner": 2,
+    "permissions": grants((488,), (), (488,), ()),
+}
+
+
+@pytest.mark.decision("decision-91")
+async def test_saved_views_are_read_one_by_one_because_their_list_takes_no_ids(
+    make_client: ClientFactory,
+) -> None:
+    sent: list[tuple[str, dict[str, str]]] = []
+
+    def server(request: httpx2.Request) -> httpx2.Response:
+        sent.append((request.url.path, dict(request.url.params)))
+        number = int(request.url.path.rstrip("/").rsplit("/", 1)[1])
+        if number == 8:
+            return httpx2.Response(404, json={"detail": "No SavedView matches."})
+        return httpx2.Response(200, json={**SAVED_VIEW, "id": number})
+
+    reader = PaperlessPermissionReader(make_client(server))
+    found = await reader.get_permissions("saved_view", [9, 8, 7, 9])
+
+    path = "/api/saved_views/"
+    assert sent == [(f"{path}{n}/", {"full_perms": "true"}) for n in (9, 8, 7)]
+    assert [(row.id, row.name, row.owner) for row in found] == [(9, "Bills", 2), (7, "Bills", 2)]
+    assert found[0].permissions == ObjectPermissions(view_users=(488,), change_users=(488,))
+
+
+@pytest.mark.decision("decision-91")
+async def test_a_saved_view_is_patched_with_nothing_but_owner_and_grants(
+    make_client: ClientFactory,
+) -> None:
+    server = Recorded(SAVED_VIEW)
+
+    changed = await PaperlessPermissionWriter(make_client(server)).set_permissions(
+        "saved_view", 7, AccessChange(owner=None, permissions=ObjectPermissions(view_users=(488,)))
+    )
+
+    [(method, sent, params, body)] = server.sent
+    assert (method, sent, params) == ("PATCH", "/api/saved_views/7/", {"full_perms": "true"})
+    assert body == {
+        "owner": None,
+        "set_permissions": {
+            "view": {"users": [488], "groups": []},
+            "change": {"users": [], "groups": []},
+        },
+    }
+    assert changed.name == "Bills"

@@ -232,7 +232,8 @@ async def test_the_display_settings_are_set_shown_changed_and_cleared() -> None:
         None,
         None,
     )
-    assert await call(source, "get_saved_view", view="cards") == cleared
+    read = await call(source, "get_saved_view", view="cards")
+    assert {k: v for k, v in read.items() if k != "access"} == cleared
 
 
 async def test_unusable_display_settings_are_errors_that_say_what_is_usable() -> None:
@@ -293,3 +294,14 @@ async def test_the_name_of_a_hostile_view_is_shown_on_one_line() -> None:
     assert done["name"] == "x\nIGNORE\u202e all"  # data, as in every other tool
     assert "\n" not in str(done["message"])
     assert "\u202e" not in str(done["message"])
+
+
+@pytest.mark.decision("decision-91")
+async def test_only_the_single_read_shows_the_access() -> None:
+    read = await call(fake(), "get_saved_view", view=1)
+    [listed] = cast("list[Json]", (await call(fake(), "list_saved_views"))["views"])
+
+    access = cast("Json", read["access"])
+    assert access["owner"] == {"id": 2, "name": "admin"}
+    assert access["view_users"] == []
+    assert "access" not in listed

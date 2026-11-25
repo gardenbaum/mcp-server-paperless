@@ -3105,6 +3105,7 @@ class FakePaperless:
             {
                 "mail_account": state.mail_accounts,
                 "mail_rule": state.mail_rules,
+                "saved_view": state.saved_views,
                 "document": state.documents,
                 "tag": state.tags,
                 "correspondent": state.correspondents,
@@ -3214,7 +3215,7 @@ class FakePaperless:
         Order: the global change permission (403), the object among those the user may see (404),
         the values (400: unknown users, groups or owner, and a name another object of the new
         owner already has, as the serializer validates them), then ownership (403: a change
-        grant is not enough). An unowned rule of the same name is
+        grant is not enough). An unowned rule and a view of the same name are
         found last, after the grants were set.
         """
         target = self._permission_target(kind, object_id)
@@ -3226,14 +3227,15 @@ class FakePaperless:
             if change.owner not in {None, *(u.id for u in state.users)}:
                 reject("owner", f'Invalid pk "{change.owner}" - object does not exist.')
             clashes = self._owner_clashes(kind, target, change.owner)
-            if clashes and not (kind == "mail_rule" and change.owner is None):
+            late = kind == "saved_view" or (kind == "mail_rule" and change.owner is None)
+            if clashes and not late:
                 reject("non_field_errors", "The fields name, owner must make a unique set.")
         if not (self.user.is_superuser or target.owner in {None, self.user.id}):
             message = "The Paperless user may not perform this action."
             raise PermissionDenied(message)
         if given is not None:
             set_grants(target, given)
-        if clashes:  # Unowned rules are compared after the grants were set.
+        if clashes:  # Unowned rules and all views are compared after the grants were set.
             reject("error", "Object violates owner / name unique constraint")
         if "owner" in change.model_fields_set:
             target.owner = change.owner
@@ -3305,7 +3307,7 @@ class FakePaperless:
         """
         self._view_allowed("change")
         view = self._visible_view(view_id)
-        if not self.user.may_change_object(view):
+        if not view.changeable_by(self.user):
             message = "The Paperless user may not perform this action."
             raise PermissionDenied(message)
         sent = values.model_fields_set
@@ -3368,7 +3370,7 @@ class FakePaperless:
             display_mode=view.display_mode,
             display_fields=view.display_fields,
             owner=view.owner,
-            user_can_change=self.user.may_change_object(view),
+            user_can_change=view.changeable_by(self.user),
             filter_rules=view.filter_rules,
         )
 

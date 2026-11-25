@@ -13233,7 +13233,7 @@
         'title': 'Get saved view',
       }),
       'description': '''
-        Read one saved view with its filter rules, sort order and display settings.
+        Read one saved view with its filter rules, sort order, display settings, owner and grants.
         
         The view matches by exact name, then ignoring case and accents, or by id; an unknown or
         ambiguous name is an error that lists the closest names or candidates.
@@ -13260,8 +13260,133 @@
       }),
       'name': 'get_saved_view',
       'outputSchema': dict({
-        'description': 'A saved view as tools show it.',
+        'description': 'One saved view with its owner and grants.',
         'properties': dict({
+          'access': dict({
+            'anyOf': list([
+              dict({
+                'description': 'Who owns an object and who may view or change it, by name.',
+                'properties': dict({
+                  'change_groups': dict({
+                    'description': 'Groups who may view and change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'change_users': dict({
+                    'description': 'Users who may view and change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'owner': dict({
+                    'anyOf': list([
+                      dict({
+                        'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                        'properties': dict({
+                          'id': dict({
+                            'type': 'integer',
+                          }),
+                          'name': dict({
+                            'type': 'string',
+                          }),
+                        }),
+                        'required': list([
+                          'id',
+                          'name',
+                        ]),
+                        'type': 'object',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null: no owner, every user may use it.',
+                  }),
+                  'view_groups': dict({
+                    'description': 'Groups who may view it but not change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'view_users': dict({
+                    'description': 'Users who may view it but not change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                }),
+                'required': list([
+                  'owner',
+                  'view_users',
+                  'view_groups',
+                  'change_users',
+                  'change_groups',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Null: not readable now. Change it with set_permissions (kind saved_view).',
+          }),
           'can_change': dict({
             'description': 'Whether the current user may change it.',
             'type': 'boolean',
@@ -13428,6 +13553,7 @@
           'owner',
           'can_change',
           'rules',
+          'access',
         ]),
         'type': 'object',
       }),
@@ -23924,7 +24050,7 @@
         'title': 'Set permissions',
       }),
       'description': '''
-        Share documents, taxonomy objects, mail accounts or mail rules, or hand them over.
+        Share documents, taxonomy objects, saved views, mail accounts or rules, or hand them over.
         
         Sets who owns the objects and which users and groups may view or change them, by name or id.
         A change grant includes view. Lists you leave out are never touched in either mode, so a
@@ -24018,7 +24144,7 @@
             'type': 'array',
           }),
           'kind': dict({
-            'description': 'What the objects are: document, tag, correspondent, document_type, storage_path, mail_account or mail_rule.',
+            'description': 'What the objects are: document, tag, correspondent, document_type, storage_path, mail_account, mail_rule or saved_view.',
             'enum': list([
               'document',
               'tag',
@@ -24027,6 +24153,7 @@
               'storage_path',
               'mail_account',
               'mail_rule',
+              'saved_view',
             ]),
             'type': 'string',
           }),
@@ -24125,6 +24252,7 @@
               'storage_path',
               'mail_account',
               'mail_rule',
+              'saved_view',
             ]),
             'type': 'string',
           }),
@@ -42567,7 +42695,7 @@
         'title': 'Get saved view',
       }),
       'description': '''
-        Read one saved view with its filter rules, sort order and display settings.
+        Read one saved view with its filter rules, sort order, display settings, owner and grants.
         
         The view matches by exact name, then ignoring case and accents, or by id; an unknown or
         ambiguous name is an error that lists the closest names or candidates.
@@ -42594,8 +42722,133 @@
       }),
       'name': 'get_saved_view',
       'outputSchema': dict({
-        'description': 'A saved view as tools show it.',
+        'description': 'One saved view with its owner and grants.',
         'properties': dict({
+          'access': dict({
+            'anyOf': list([
+              dict({
+                'description': 'Who owns an object and who may view or change it, by name.',
+                'properties': dict({
+                  'change_groups': dict({
+                    'description': 'Groups who may view and change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'change_users': dict({
+                    'description': 'Users who may view and change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'owner': dict({
+                    'anyOf': list([
+                      dict({
+                        'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                        'properties': dict({
+                          'id': dict({
+                            'type': 'integer',
+                          }),
+                          'name': dict({
+                            'type': 'string',
+                          }),
+                        }),
+                        'required': list([
+                          'id',
+                          'name',
+                        ]),
+                        'type': 'object',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null: no owner, every user may use it.',
+                  }),
+                  'view_groups': dict({
+                    'description': 'Groups who may view it but not change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'view_users': dict({
+                    'description': 'Users who may view it but not change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                }),
+                'required': list([
+                  'owner',
+                  'view_users',
+                  'view_groups',
+                  'change_users',
+                  'change_groups',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Null: not readable now. Change it with set_permissions (kind saved_view).',
+          }),
           'can_change': dict({
             'description': 'Whether the current user may change it.',
             'type': 'boolean',
@@ -42762,6 +43015,7 @@
           'owner',
           'can_change',
           'rules',
+          'access',
         ]),
         'type': 'object',
       }),

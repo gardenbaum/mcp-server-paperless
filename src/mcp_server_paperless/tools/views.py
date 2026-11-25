@@ -18,6 +18,7 @@ from mcp_server_paperless.domain.views import (
     DisplayMode,
     PinnedView,
     RuleInput,
+    SavedViewDetail,
     SavedViewInfo,
     SavedViewListing,
     ViewCreate,
@@ -136,8 +137,8 @@ async def list_saved_views(ctx: Context) -> SavedViewListing:
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["get_saved_view"])
 @boundary
-async def get_saved_view(ctx: Context, view: View) -> SavedViewInfo:
-    """Read one saved view with its filter rules, sort order and display settings.
+async def get_saved_view(ctx: Context, view: View) -> SavedViewDetail:
+    """Read one saved view with its filter rules, sort order, display settings, owner and grants.
 
     The view matches by exact name, then ignoring case and accents, or by id; an unknown or
     ambiguous name is an error that lists the closest names or candidates.

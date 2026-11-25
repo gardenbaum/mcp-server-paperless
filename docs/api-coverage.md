@@ -135,11 +135,11 @@ Limits.
 | `GET /api/profile/totp/` |  | PLMCP-83 |
 | `POST /api/profile/totp/` |  | PLMCP-83 |
 | `GET /api/remote_version/` |  | PLMCP-83 |
-| `GET /api/saved_views/` | `add_notes`, `bulk_edit_documents`, `create_saved_view`, `delete_saved_view`, `get_saved_view` and 7 more |  |
+| `GET /api/saved_views/` | `add_notes`, `bulk_edit_documents`, `create_saved_view`, `delete_saved_view`, `get_saved_view` and 8 more |  |
 | `POST /api/saved_views/` | `create_saved_view` |  |
 | `DELETE /api/saved_views/{id}/` | `delete_saved_view` |  |
-| `GET /api/saved_views/{id}/` |  | PLMCP-88 |
-| `PATCH /api/saved_views/{id}/` | `update_saved_view` |  |
+| `GET /api/saved_views/{id}/` | `get_saved_view`, `set_permissions` |  |
+| `PATCH /api/saved_views/{id}/` | `set_permissions`, `update_saved_view` |  |
 | `PUT /api/saved_views/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-91 - Saved-views-display-settings-are-checked-here-grants-go-through-set_permissions-PUT-and-list-options-stay-out.md) |
 | `GET /api/search/` |  | PLMCP-83 |
 | `GET /api/search/autocomplete/` |  | PLMCP-83 |
@@ -179,7 +179,7 @@ Limits.
 | `POST /api/trash/` | `empty_trash`, `restore_from_trash` |  |
 | `GET /api/ui_settings/` | `create_saved_view`, `delete_pages`, `delete_processed_mail`, `delete_user`, `edit_pdf` and 15 more |  |
 | `POST /api/ui_settings/` | `pin_saved_view` |  |
-| `GET /api/users/` | `create_mail_rule`, `create_workflow`, `delete_user`, `get_document`, `get_user` and 10 more |  |
+| `GET /api/users/` | `create_mail_rule`, `create_workflow`, `delete_user`, `get_document`, `get_saved_view` and 11 more |  |
 | `POST /api/users/` | `create_user` |  |
 | `DELETE /api/users/{id}/` | `delete_user` |  |
 | `GET /api/users/{id}/` | `delete_user`, `get_user`, `update_user` |  |
@@ -261,7 +261,6 @@ TOML file.
 | `POST /api/mail_rules/` | `body:set_permissions` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `GET /api/saved_views/` | `query:full_perms`, `query:ordering` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-91 - Saved-views-display-settings-are-checked-here-grants-go-through-set_permissions-PUT-and-list-options-stay-out.md) |
 | `POST /api/saved_views/` | `body:owner`, `body:set_permissions` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-91 - Saved-views-display-settings-are-checked-here-grants-go-through-set_permissions-PUT-and-list-options-stay-out.md) |
-| `PATCH /api/saved_views/{id}/` | `body:owner`, `body:set_permissions` | PLMCP-88 |
 | `GET /api/share_link_bundles/` | `query:created__date__gt`, `query:created__date__gte`, `query:created__date__lt`, `query:created__date__lte`, `query:created__day`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:created__month`, `query:created__year`, `query:documents`, `query:expiration__date__gt`, `query:expiration__date__gte`, `query:expiration__date__lt`, `query:expiration__date__lte`, `query:expiration__day`, `query:expiration__gt`, `query:expiration__gte`, `query:expiration__lt`, `query:expiration__lte`, `query:expiration__month`, `query:expiration__year`, `query:ordering`, `query:status` | PLMCP-83 |
 | `POST /api/share_link_bundles/{id}/rebuild/` | `body:document_ids`, `body:expiration_days`, `body:file_version` | PLMCP-83 |
 | `GET /api/share_links/` | `query:created__date__gt`, `query:created__date__gte`, `query:created__date__lt`, `query:created__date__lte`, `query:created__day`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:created__month`, `query:created__year`, `query:expiration__date__gt`, `query:expiration__date__gte`, `query:expiration__date__lt`, `query:expiration__date__lte`, `query:expiration__day`, `query:expiration__gt`, `query:expiration__gte`, `query:expiration__lt`, `query:expiration__lte`, `query:expiration__month`, `query:expiration__year`, `query:ordering` | PLMCP-83 |
@@ -317,6 +316,7 @@ no plumbing.
 | `GET /api/documents/{id}/` | `query:fields` | a projection that keeps the OCR text out of the answer; no tool argument sets it |
 | `PATCH /api/documents/{id}/` | `query:fields`, `query:full_perms` | full_perms reads the grants back and fields is a projection; no tool argument sets them |
 | `POST /api/mail_accounts/{id}/process/` | `body:character_set`, `body:imap_port`, `body:imap_security`, `body:imap_security=2`, `body:imap_security=3`, `body:imap_server`, `body:is_token`, `body:is_token=true`, `body:name`, `body:password`, `body:username` | the stored account is sent back; the tool takes only its id. The values the scenario account does not hold are named: the other security modes and a token account |
+| `GET /api/saved_views/{id}/` | `query:full_perms`, `query:full_perms=false` | reads the grants: sent as true, no tool argument sets it |
 | `GET /api/storage_paths/` | `query:full_perms`, `query:full_perms=false` | reads the grants: sent as true whenever the adapter needs them, no tool argument sets it |
 | `PATCH /api/storage_paths/{id}/` | `query:full_perms` | reads the grants back: sent as true, no tool argument sets it |
 | `GET /api/tags/` | `query:full_perms`, `query:full_perms=false` | reads the grants: sent as true whenever the adapter needs them, no tool argument sets it |

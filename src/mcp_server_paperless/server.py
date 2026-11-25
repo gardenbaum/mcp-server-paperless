@@ -479,6 +479,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 taxonomy,
                 documents,
                 ViewPins(adapters.ui_settings, adapters.ui_setting_writes),
+                permissions=adapters.permissions,
             )
             trash_scan = TrashScan(adapters.trash, adapters.documents, taxonomy)
             duplicates = DuplicateFinder(adapters.documents, adapters.trash, web_url=web_url)
