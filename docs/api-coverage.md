@@ -167,7 +167,7 @@ Limits.
 | `GET /api/tags/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/tags/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/tags/{id}/` |  | PLMCP-83 |
-| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `explain_mail_import`, `explain_workflow` and 15 more |  |
+| `GET /api/tasks/` | `acknowledge_tasks`, `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `explain_mail_import` and 16 more |  |
 | `POST /api/tasks/acknowledge/` | `acknowledge_tasks` |  |
 | `GET /api/tasks/active/` | `get_task_overview` |  |
 | `POST /api/tasks/run/` | `run_task` |  |
