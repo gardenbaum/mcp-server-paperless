@@ -545,7 +545,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 documents=documents,
             )
             replacing = Replacing(
-                adapters.documents, adapters.document_writes, removal, clock=clock
+                adapters.documents, adapters.document_writes, removal, trash_scan, clock=clock
             )
             services = Services(
                 instance=InstanceService(adapters.instance),

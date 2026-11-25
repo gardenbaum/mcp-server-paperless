@@ -32,6 +32,7 @@ from mcp_server_paperless.services.removal import DocumentRemoval
 from mcp_server_paperless.services.selection import DocumentSelector
 from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.trash_scan import TrashScan
 from mcp_server_paperless.services.view_pins import ViewPins
 from mcp_server_paperless.services.views import ViewService
 from mcp_server_paperless.services.workflow_runs import WorkflowRuns
@@ -133,7 +134,14 @@ def pdf_service(
     taxonomy = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
     documents = DocumentService(fake, fake, taxonomy, web_url=web)
     editor = DocumentEditor(fake, fake, fake, taxonomy, documents=documents)
-    replacing = Replacing(fake, fake, DocumentRemoval(fake, fake, taxonomy), clock=clock)
+    replacing = Replacing(
+        fake,
+        fake,
+        DocumentRemoval(fake, fake, taxonomy),
+        TrashScan(fake, fake, taxonomy),
+        clock=clock,
+        trash_seconds=last_look,
+    )
     return PdfService(
         fake,
         fake,
