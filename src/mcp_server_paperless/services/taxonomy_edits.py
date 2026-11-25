@@ -15,6 +15,7 @@ whether it happened).
 import re
 from typing import TYPE_CHECKING, Final
 
+from mcp_server_paperless.domain.choices import Question
 from mcp_server_paperless.domain.documents import DocumentQuery
 from mcp_server_paperless.domain.errors import (
     Ambiguous,
@@ -32,7 +33,7 @@ from mcp_server_paperless.domain.taxonomy import (
     TaxonomyValues,
 )
 from mcp_server_paperless.services.tag_hierarchy import descendants
-from mcp_server_paperless.services.taxonomy import fold, pick
+from mcp_server_paperless.services.taxonomy import fold, pick, pick_option
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
@@ -144,17 +145,18 @@ def _unique(labels: Sequence[tuple[str, bool]], field: str) -> None:
 
 def _find(options: Sequence[SelectOption], ref: str, field: str) -> SelectOption:
     """The option ``ref`` names: its label, its id, or its label ignoring case and accents."""
-    for found in (
+    for matches in (
         [o for o in options if o.label == ref],
         [o for o in options if o.id == ref],
         [o for o in options if fold(o.label) == fold(ref)],
     ):
-        if len(found) == 1:
-            return found[0]
-        if found:
+        if matches:
+            found = pick_option(field, options, ref, matches)
+            if not isinstance(found, Question):
+                return found
             message = f"Several options of {field!r} match {ref!r}."
             hint = "Pass the id of the option; list_taxonomy(kind='custom_field') shows the ids."
-            raise Ambiguous(message, hint=hint)
+            raise Ambiguous(message, hint=hint, question=found)
     message = f"{field!r} has no option {ref!r}."
     listing = ", ".join(repr(o.label) for o in options)
     raise Validation(message, hint=f"Options: {listing}.")

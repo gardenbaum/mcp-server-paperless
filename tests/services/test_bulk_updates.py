@@ -15,7 +15,9 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from mcp_server_paperless.domain.bulk_items import DocumentValues
+from mcp_server_paperless.domain.choices import picking
 from mcp_server_paperless.domain.errors import (
+    Ambiguous,
     AnswerTooLarge,
     AuthenticationFailed,
     ConfirmationRequired,
@@ -29,7 +31,7 @@ from mcp_server_paperless.domain.errors import (
     accepting,
 )
 from mcp_server_paperless.domain.selection import MAX_ANSWER
-from mcp_server_paperless.services.bulk_updates import MAX_VALUE, NOT_YET
+from mcp_server_paperless.services.bulk_updates import CORRECT, MAX_VALUE, NOT_YET
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -369,6 +371,70 @@ async def test_a_preview_of_nothing_to_change_says_so() -> None:
 async def test_a_preview_is_refused_like_the_call_itself() -> None:
     with pytest.raises(Validation, match="document 999"):
         _ = await Setup(writes=False).run(named(101), named(999), dry_run=True)
+
+
+def doubles(setup: Setup) -> None:
+    setup.state.tags += [FakeTag(id=200, name="Twin"), FakeTag(id=201, name="twin")]
+
+
+AMBIGUOUS = "2 tags match 'TWIN': 'Twin' (id 200), 'twin' (id 201)."
+
+
+@pytest.mark.decision("decision-109")
+async def test_when_every_refused_item_is_ambiguous_the_first_question_is_asked() -> None:
+    setup = Setup(writes=False)
+    doubles(setup)
+    items = [
+        item(101, tags_add=["TWIN"]),
+        item(102, tags_add=["TWin"]),
+        item(103, title="Neu"),
+    ]
+
+    with pytest.raises(Ambiguous) as raised:
+        _ = await setup.run(*items)
+
+    assert raised.value.message.startswith("Nothing was changed: 2 of 3 documents are refused. ")
+    assert f"document 101: {AMBIGUOUS}" in raised.value.message
+    assert "document 102: 2 tags match 'TWin'" in raised.value.message
+    assert raised.value.hint == CORRECT
+    assert raised.value.question is not None
+    assert (raised.value.question.word, raised.value.question.what) == ("TWIN", "tags")
+
+    with picking([raised.value.question.picking("201")]), pytest.raises(Ambiguous) as second:
+        _ = await setup.run(*items)
+    assert second.value.question is not None
+    assert second.value.question.word == "TWin"
+    assert "document 101" not in second.value.message
+
+
+@pytest.mark.decision("decision-109")
+async def test_picks_for_the_items_go_on_to_the_confirmation_and_write_what_was_picked() -> None:
+    setup = Setup()
+    doubles(setup)
+    items = [item(101, tags_add=["TWIN"]), item(102, tags_remove=["TWIN"], title="Neu")]
+    with pytest.raises(Ambiguous) as raised:
+        _ = await setup.run(*items)
+    assert raised.value.question is not None
+
+    with picking([raised.value.question.picking("201")]):
+        with pytest.raises(ConfirmationRequired, match="'twin'"):
+            _ = await setup.run(*items, confirm=False)
+        _ = await setup.run(*items)
+
+    assert setup.document(101).tags == [201]
+
+
+@pytest.mark.decision("decision-109")
+async def test_one_item_that_is_wrong_otherwise_keeps_the_collected_error() -> None:
+    setup = Setup(writes=False)
+    doubles(setup)
+
+    with pytest.raises(Validation) as raised:
+        _ = await setup.run(item(101, tags_add=["TWIN"]), named(999))
+
+    assert f"document 101: {AMBIGUOUS}" in raised.value.message
+    assert "document 999: It does not exist" in raised.value.message
+    assert raised.value.hint == CORRECT
 
 
 async def test_an_answer_that_is_too_large_is_cut_and_says_so() -> None:

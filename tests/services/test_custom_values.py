@@ -9,7 +9,8 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from mcp_server_paperless.domain.errors import Ambiguous, Validation
+from mcp_server_paperless.domain.choices import Choice, Question, picking
+from mcp_server_paperless.domain.errors import Ambiguous, Conflict, Validation
 from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyItem
 from mcp_server_paperless.services.custom_values import normalise
 
@@ -193,3 +194,55 @@ def test_document_links_lose_only_duplicates(links: list[int]) -> None:
 def test_a_date_is_stored_as_its_iso_form(day: date) -> None:
     assert normalise(field("date"), day) == day.isoformat()
     assert normalise(field("date"), day.isoformat()) == day.isoformat()
+
+
+# --- the user's pick (decision-109) ---------------------------------------------------------------
+
+DOUBLES = field("select", ("o1", "Paid"), ("o2", "paid"), ("o3", "Open"), ("o4", "Open"))
+
+
+def asked(word: str, of: TaxonomyItem = DOUBLES) -> Question:
+    with pytest.raises(Ambiguous) as raised:
+        _ = normalise(of, word)
+    assert raised.value.question is not None
+    return raised.value.question
+
+
+@pytest.mark.decision("decision-109")
+def test_an_ambiguous_label_asks_with_label_and_position() -> None:
+    question = asked("PAID")
+
+    assert (question.what, question.word) == ("options of 'my-select'", "PAID")
+    assert question.choices == (
+        Choice("o1", "'Paid' (option 1 of 4)"),
+        Choice("o2", "'paid' (option 2 of 4)"),
+    )
+    assert [c.title for c in asked("Open").choices] == [
+        "'Open' (option 3 of 4)",
+        "'Open' (option 4 of 4)",
+    ]
+
+
+@pytest.mark.decision("decision-109")
+@pytest.mark.parametrize(("word", "option"), [("PAID", "o2"), ("Open", "o3"), ("Open", "o4")])
+def test_the_picked_option_is_stored_also_of_two_with_one_label(word: str, option: str) -> None:
+    with picking([asked(word).picking(option)]):
+        assert normalise(DOUBLES, word) == option
+        assert normalise(DOUBLES, "Paid") == "o1"
+
+
+@pytest.mark.decision("decision-109")
+def test_a_pick_of_another_field_or_of_no_match_does_nothing() -> None:
+    other = DOUBLES.model_copy(update={"name": "other"})
+    for pick in (asked("Open", other).picking("o3"), asked("Open").picking("o1")):
+        with picking([pick]), pytest.raises(Ambiguous):
+            _ = normalise(DOUBLES, "Open")
+
+
+@pytest.mark.decision("decision-109")
+def test_a_picked_option_that_is_gone_is_never_replaced_by_the_other_one() -> None:
+    left = field("select", ("o3", "Open"))
+    with picking([asked("Open").picking("o4")]):
+        with pytest.raises(Conflict, match="The option the user picked does not match 'Open' any"):
+            _ = normalise(left, "Open")
+        assert normalise(field("select", ("o4", "Open")), "Open") == "o4"

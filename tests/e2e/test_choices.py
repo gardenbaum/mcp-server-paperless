@@ -29,17 +29,23 @@ if TYPE_CHECKING:
 
 pytestmark = [pytest.mark.e2e, pytest.mark.anyio, pytest.mark.decision("decision-109")]
 
+TOOLSETS = "core,bulk"
+
 
 @pytest.fixture(scope="module")
 def url(stack: Stack) -> Generator[str]:
-    with running(stack) as endpoint:
+    with running(stack, PAPERLESS_MCP_TOOLSETS=TOOLSETS) as endpoint:
         yield endpoint
 
 
 def transport(stack: Stack, url: str, entry: Entry) -> ClientTransport:
     if entry == "http":
         return StreamableHttpTransport(url, headers={"Authorization": f"Bearer {MCP_TOKEN}"})
-    env = {"PAPERLESS_URL": stack.base_url, "PAPERLESS_TOKEN": stack.admin_token}
+    env = {
+        "PAPERLESS_URL": stack.base_url,
+        "PAPERLESS_TOKEN": stack.admin_token,
+        "PAPERLESS_MCP_TOOLSETS": TOOLSETS,
+    }
     return StdioTransport(console_script(), [], env=env, keep_alive=False)
 
 
@@ -139,3 +145,44 @@ async def test_without_a_pick_nothing_changes(
             assert "Pass the id of the one you mean." in text
             assert (NOT_PICKED in text) is (shown is not None)
             assert name_of(stack, unowned) == name_of(stack, readers) == name
+
+
+@contextlib.asynccontextmanager
+async def double_options(stack: Stack) -> AsyncGenerator[tuple[str, int, list[str]]]:
+    """The name and id of a select field with two options of one label, and their ids."""
+    name = f"e2e-double-{uuid.uuid4().hex[:8]}"
+    extra = {"select_options": [{"label": "Open"}, {"label": "Open"}, {"label": "Paid"}]}
+    body = {"name": name, "data_type": "select", "extra_data": extra}
+    made = stack.admin.post("/api/custom_fields/", json=body)
+    _ = made.raise_for_status()
+    field = cast("Json", made.json())
+    number = cast("int", field["id"])
+    options = cast("dict[str, list[dict[str, str]]]", field["extra_data"])["select_options"]
+    try:
+        yield name, number, [option["id"] for option in options]
+    finally:
+        _ = stack.admin.delete(f"/api/custom_fields/{number}/")
+
+
+@every_connection
+async def test_one_of_two_options_with_one_label_is_set_in_a_batch(
+    stack: Stack, url: str, entry: Entry, mode: Mode
+) -> None:
+    document = stack.seeded.private_document
+    async with double_options(stack) as (name, number, options):
+        shown = picks(options[1])
+        items = [{"document_id": document, "custom_fields": {name: "Open"}}]
+        handler = shown.handler
+        async with Client(
+            transport(stack, url, entry), mode=mode, elicitation_handler=handler
+        ) as client:
+            result = await client.call_tool(
+                "update_documents", {"documents": items}, raise_on_error=False
+            )
+
+        assert not result.is_error, result.content
+        assert len(shown.questions) == 1
+        assert "'Open' (option 2 of 3)" in str(shown.schemas)
+        stored = cast("Json", stack.admin.get(f"/api/documents/{document}/").json())
+        values = cast("list[Json]", stored["custom_fields"])
+        assert [v["value"] for v in values if v["field"] == number] == [options[1]]

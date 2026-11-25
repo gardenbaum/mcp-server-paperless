@@ -75,6 +75,7 @@ if TYPE_CHECKING:
     from pydantic import JsonValue
 
     from mcp_server_paperless.domain.bulk_items import DocumentValues
+    from mcp_server_paperless.domain.choices import Question
     from mcp_server_paperless.domain.ports import DocumentReader, DocumentWriter
     from mcp_server_paperless.domain.selection import DocumentRow, ReadField
     from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
@@ -338,6 +339,7 @@ class BulkUpdates:
             raise Validation(message, hint="Put all values of a document into one item.")
         rows = await self._rows(ids, FIELDS, until)
         wrong: dict[int, list[str]] = {}
+        questions: list[Question] = []
         items: list[_Item] = []
         for value in values:
             row = rows.get(value.document_id)
@@ -353,6 +355,8 @@ class BulkUpdates:
                 items.append(_Item(state, await self._editor.plan(edit, state)))
             except ABOUT_ITEM as error:
                 wrong[state.id] = [error.describe()]
+                if isinstance(error, Ambiguous) and error.question is not None:
+                    questions.append(error.question)
         call = await self._call(items)
         for number, text in [
             *_number_conflicts(items),
@@ -361,12 +365,7 @@ class BulkUpdates:
         ]:
             wrong.setdefault(number, []).append(text)
         if wrong:
-            verb = "is" if len(wrong) == 1 else "are"
-            message = (
-                f"Nothing was changed: {len(wrong)} of {count_documents(len(ids))} {verb} "
-                f"refused. {_all({n: ' '.join(wrong[n]) for n in ids if n in wrong})}"
-            )
-            raise Validation(message, hint=CORRECT)
+            raise _refused(ids, wrong, questions)
         return call
 
     async def _rows(
@@ -784,6 +783,20 @@ def _scalar(state: DocumentState, name: str) -> object:
 def _json(value: object) -> JsonValue:
     """A plain field as JSON; dates in ISO form."""
     return value.isoformat() if isinstance(value, date) else cast("JsonValue", value)
+
+
+def _refused(
+    ids: Sequence[int], wrong: Mapping[int, Sequence[str]], questions: Sequence[Question]
+) -> Ambiguous | Validation:
+    """What is wrong with the items; with the first question if nothing but questions is."""
+    verb = "is" if len(wrong) == 1 else "are"
+    message = (
+        f"Nothing was changed: {len(wrong)} of {count_documents(len(ids))} {verb} "
+        f"refused. {_all({n: ' '.join(wrong[n]) for n in ids if n in wrong})}"
+    )
+    if len(questions) == sum(map(len, wrong.values())):
+        return Ambiguous(message, hint=CORRECT, question=questions[0])
+    return Validation(message, hint=CORRECT)
 
 
 def _all(wrong: Mapping[int, str]) -> str:

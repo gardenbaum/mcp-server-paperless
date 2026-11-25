@@ -20,6 +20,7 @@ from fakes.paperless import (
 )
 from fastmcp.client.elicitation import ElicitResult
 
+from mcp_server_paperless.domain.taxonomy import SelectOption
 from mcp_server_paperless.domain.views import FilterRule
 from mcp_server_paperless.domain.workflows import Workflow, WorkflowAction, WorkflowTrigger
 
@@ -34,6 +35,9 @@ TWIN: Final = "TWIN"
 NAMES: Final = ("Twin", "twin")
 FIRST: Final = 50
 SECOND: Final = 51
+# The label of two options of the field "Choice", and the ids of these options.
+OPTION: Final = "Open"
+OPTIONS: Final = ("opt-one", "opt-two")
 NOT_PICKED: Final = (
     "The user was asked which one is meant and picked none: do not pick one yourself, ask them."
 )
@@ -86,6 +90,18 @@ def doubled() -> FakeState:
                 page_count=2,
             )
         )
+    state.custom_fields.append(
+        FakeCustomField(
+            id=70,
+            name="Choice",
+            data_type="select",
+            select_options=(
+                SelectOption(id="opt-one", label=OPTION),
+                SelectOption(id="opt-two", label=OPTION),
+                SelectOption(id="opt-three", label="Paid"),
+            ),
+        )
+    )
     state.workflows.append(
         Workflow(
             id=60,
@@ -142,23 +158,23 @@ class Dialogs:
         return answer
 
 
-def picks(*values: int | None, confirm: bool = True) -> Dialogs:
+def picks(*values: int | str | None, confirm: bool = True) -> Dialogs:
     """A client that answers the pick dialogs in turn (the last for all that follow)."""
     return Dialogs([None if v is None else str(v) for v in values], confirm)
 
 
-def _filled(value: object, name: object) -> object:
+def _filled(value: object, word: str, name: object) -> object:
     if isinstance(value, dict):
         entries = cast("dict[str, object]", value).items()
-        return {str(name) if k == TWIN else k: _filled(v, name) for k, v in entries}
+        return {str(name) if k == word else k: _filled(v, word, name) for k, v in entries}
     if isinstance(value, list):
-        return [_filled(v, name) for v in cast("list[object]", value)]
-    return name if value == TWIN else value
+        return [_filled(v, word, name) for v in cast("list[object]", value)]
+    return name if value == word else value
 
 
-def by_id(arguments: Json, number: int = SECOND) -> Json:
+def by_id(arguments: Json, number: int | str = SECOND, word: str = TWIN) -> Json:
     """The same call with an id instead of the name."""
-    return cast("Json", _filled(arguments, number))
+    return cast("Json", _filled(arguments, word, number))
 
 
 ONE: Final = ("correspondent", "document_type", "storage_path", "owner")
@@ -234,6 +250,14 @@ def _documents() -> Iterator[tuple[str, str, Json]]:
         yield "update_document", f".{name}", {**document, name: [TWIN]}
     for name in ("tags_remove", "remove_custom_fields"):
         yield "update_document", f".{name}", {"document_id": SECOND, name: [TWIN]}
+    for name in ONE:
+        yield "update_documents", f".documents.{name}", {"documents": [{**document, name: TWIN}]}
+    for name in ("tags_add", "tags_set", "tags_remove", "remove_custom_fields"):
+        number = SECOND if name.endswith(("remove", "fields")) else 10
+        item: Json = {"document_id": number, name: [TWIN]}
+        yield "update_documents", f".documents.{name}", {"documents": [item]}
+    item = {**document, "custom_fields": {TWIN: "2026-01-01"}}
+    yield "update_documents", ".documents.custom_fields", {"documents": [item]}
     yield "update_document", ".custom_fields", {**document, "custom_fields": {TWIN: "2026-01-01"}}
 
     upload: Json = {"content_base64": "JVBERi0xLjQgbmV3", "filename": "x.pdf"}
@@ -389,6 +413,30 @@ CASES: Final[tuple[tuple[str, str, Json], ...]] = (
     *_workflows(),
     *_pages(),
 )
+
+
+def _options() -> Iterator[tuple[str, Json]]:
+    """Calls that name an option by a label two of them have."""
+    value: Json = {"custom_fields": {"Choice": OPTION}}
+    yield "update_document", {"document_id": 10, **value}
+    yield (
+        "update_documents",
+        {"documents": [{"document_id": 10, **value}, {"document_id": 11, **value}]},
+    )
+    yield "upload_document", {"content_base64": "JVBERi0xLjQgbmV3", "filename": "x.pdf", **value}
+    operation: Json = {"op": "modify_custom_fields", "values": {"Choice": OPTION}}
+    yield "bulk_edit_documents", {"document_ids": [10, 11], "operation": operation}
+    field: Json = {"kind": "custom_field", "item": "Choice"}
+    yield "update_taxonomy_item", {**field, "select_options_rename": {OPTION: "Done"}}
+    yield "update_taxonomy_item", {**field, "select_options_remove": [OPTION]}
+    action: Json = {"type": "assignment", "assign_custom_fields_values": {"Choice": OPTION}}
+    parts: Json = {"triggers": [TRIGGER], "actions": [action]}
+    yield "create_workflow", {"name": "New", **parts}
+    yield "update_workflow", {"workflow": "Plain", **parts}
+    yield "update_workflow_part", {"workflow": "Plain", "operation": "add", "action": action}
+
+
+OPTION_CASES: Final[tuple[tuple[str, Json], ...]] = tuple(_options())
 
 # The read tools that take a name, with every place for one.
 READS: Final[tuple[tuple[str, str, Json], ...]] = (

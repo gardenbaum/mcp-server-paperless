@@ -18,6 +18,9 @@ from choices import (
     FIRST,
     NO_NAMES,
     NOT_PICKED,
+    OPTION,
+    OPTION_CASES,
+    OPTIONS,
     READS,
     SECOND,
     TWIN,
@@ -974,13 +977,9 @@ async def places(*, read_only: bool) -> set[tuple[str, str]]:
     return {(tool, place) for tool, place in found if place not in NO_NAMES}
 
 
-# Their items are collected into one error (PLMCP-100.2).
-LATER = {"update_documents"}
-
-
 async def test_every_place_of_a_write_tool_that_takes_a_name_has_a_case() -> None:
     covered = {(tool, place) for tool, place, _ in CASES}
-    wanted = {(tool, place) for tool, place in await places(read_only=False) if tool not in LATER}
+    wanted = await places(read_only=False)
 
     assert wanted - covered == set()
     # Beside them only keys of objects, which a schema does not show.
@@ -1048,12 +1047,29 @@ async def test_a_write_tool_asks_and_writes_what_the_call_with_the_id_writes(
 ) -> None:
     """On both eras: what is written is compared with the call that names the id."""
     del place
-    by_number = picks(SECOND)
-    expected = await shared.call("auto", by_number.handler, tool, by_id(arguments))
+    await writes_the_same(shared, tool, arguments, by_id(arguments), SECOND)
+
+
+@pytest.mark.parametrize("option", OPTIONS)
+@pytest.mark.parametrize(
+    ("tool", "arguments"), OPTION_CASES, ids=[f"{t}-{n}" for n, (t, _) in enumerate(OPTION_CASES)]
+)
+async def test_the_picked_of_two_options_with_one_label_is_written(
+    shared: Shared, tool: str, arguments: Json, option: str
+) -> None:
+    await writes_the_same(shared, tool, arguments, by_id(arguments, option, OPTION), option)
+
+
+async def writes_the_same(
+    shared: Shared, tool: str, arguments: Json, with_id: Json, pick: int | str
+) -> None:
+    """On both eras the call asks once, and writes after `pick` what `with_id` writes."""
+    by_number = picks(pick)
+    expected = await shared.call("auto", by_number.handler, tool, with_id)
     assert by_number.questions == []
 
     for mode in MODES:
-        shown = picks(SECOND)
+        shown = picks(pick)
         done = await shared.call(mode, shown.handler, tool, arguments)
 
         assert len(shown.questions) == 1, text(done.result)
@@ -1068,9 +1084,60 @@ async def test_a_write_tool_asks_and_writes_what_the_call_with_the_id_writes(
         plain = await shared.call(mode, None, tool, arguments)
         declined = await shared.call(mode, picks(None).handler, tool, arguments)
 
+        assert plain.result.is_error
         assert plain.writes == declined.writes == []
-        assert text(plain.result).startswith("2 ")
+        assert re.search("match '(TWIN|Open)'", text(plain.result))
         assert text(declined.result) == f"{text(plain.result)} {NOT_PICKED}"
+
+
+BATCH: Json = {
+    "documents": [
+        {"document_id": 10, "tags_add": [TWIN]},
+        {"document_id": 11, "correspondent": TWIN, "title": "New"},
+        {"document_id": 13, "title": "Other"},
+    ]
+}
+
+
+@both_eras
+async def test_the_names_of_a_batch_are_asked_one_after_the_other_and_written_once(
+    mode: Mode,
+) -> None:
+    fake, shown = source(doubled()), picks(SECOND)
+
+    result = await call(server(fake), mode, shown.handler, "update_documents", BATCH)
+
+    assert not result.is_error, text(result)
+    assert (len(shown.questions), len(shown.confirmations)) == (2, 1)
+    changed = {d.id: d for d in fake.state.documents}
+    assert (SECOND in changed[10].tags, changed[11].correspondent) == (True, SECOND)
+    assert [name for name, _, _ in fake.sent_writes] == ["update_document"] * 3
+
+
+@both_eras
+async def test_a_batch_with_another_mistake_is_not_asked(mode: Mode) -> None:
+    shown = picks(SECOND)
+    documents = cast("list[Json]", BATCH["documents"])
+    arguments: Json = {"documents": [*documents, {"document_id": 999, "title": "x"}]}
+
+    result = await call(server(reading()), mode, shown.handler, "update_documents", arguments)
+
+    assert result.is_error
+    assert shown.questions == []
+    assert "2 tags match 'TWIN'" in text(result)
+    assert "document 999: It does not exist" in text(result)
+
+
+@both_eras
+async def test_a_dry_run_of_a_batch_is_not_asked(mode: Mode) -> None:
+    shown = picks(SECOND)
+
+    result = await call(
+        server(reading()), mode, shown.handler, "update_documents", {**BATCH, "dry_run": True}
+    )
+
+    assert result.is_error
+    assert shown.questions == []
 
 
 @both_eras

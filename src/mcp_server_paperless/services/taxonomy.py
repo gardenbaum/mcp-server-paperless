@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
     from mcp_server_paperless.domain.credentials import CredentialProvider
     from mcp_server_paperless.domain.ports import TaxonomyReader
-    from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
+    from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyItem, TaxonomyKind
 
 SUGGESTIONS = 5
 
@@ -93,6 +93,29 @@ def pick(
             raise Ambiguous(message, hint="Pass the id of the one you mean.", question=question)
     message = f"No {label} is named {text!r}."
     raise NotFound(message, hint=_suggest(items, text, call))
+
+
+def pick_option(
+    field: str, options: Sequence[SelectOption], word: str, matches: Sequence[SelectOption]
+) -> SelectOption | Question:
+    """The one match, or the one the user picked; else the question which of them is meant.
+
+    Raises:
+        Conflict: The user picked an option that does not match any more.
+    """
+    places = {option.id: place for place, option in enumerate(options, start=1)}
+    choices = tuple(
+        Choice(o.id, f"{quoted(o.label)} (option {places[o.id]} of {len(options)})")
+        for o in matches
+    )
+    question = Question(f"options of {quoted(field)}", word, choices)
+    if len(matches) == 1:
+        if contradicts(question) is not None:
+            message = f"The option the user picked does not match {word!r} any more."
+            raise Conflict(message, hint="Nothing was changed. Read the names again and ask.")
+        return matches[0]
+    answer = picked(question)
+    return next((option for option in matches if option.id == answer), question)
 
 
 def _choice(item: TaxonomyItem) -> Choice:
