@@ -73,6 +73,12 @@ UNDECLARED_QUERY_PARAMETERS: Mapping[tuple[str, str], Mapping[str, str]] = {
     ("PATCH", "/api/correspondents/{id}/"): {"full_perms": FULL_PERMS_REASON},
     ("PATCH", "/api/document_types/{id}/"): {"full_perms": FULL_PERMS_REASON},
     ("PATCH", "/api/storage_paths/{id}/"): {"full_perms": FULL_PERMS_REASON},
+    # Read in the source and proven live: the views are served like the others (PassUserMixin).
+    **{
+        (method, f"{path}{{id}}/"): {"full_perms": FULL_PERMS_REASON}
+        for method in ("GET", "PATCH")
+        for path in ("/api/mail_accounts/", "/api/mail_rules/")
+    },
 }
 # Query parameters the schema declares with the wrong type: (method, path template) ->
 # {parameter: reason}. Their value is not type-checked (the name must still be declared).
@@ -288,6 +294,12 @@ _PERMISSION_PATHS = (
 FULL_PERMS_RESPONSES: frozenset[tuple[str, str, int]] = frozenset(
     {("GET", path, 200) for path in _PERMISSION_PATHS}
     | {("PATCH", f"{path}{{id}}/", 200) for path in _PERMISSION_PATHS}
+    # Mail objects are read one by one: their lists take no ids (PLMCP-81.5).
+    | {
+        (method, f"{path}{{id}}/", 200)
+        for method in ("GET", "PATCH")
+        for path in ("/api/mail_accounts/", "/api/mail_rules/")
+    }
 )
 # Responses with a property that is null although the schema allows only an object there: the
 # schema writes a nullable object as `allOf` plus `nullable`, which openapi-core cannot validate.
@@ -685,6 +697,8 @@ def _keep(request: httpx2.Request, response: httpx2.Response) -> None:
     if operation is None or response.status_code >= HTTPStatus.MULTIPLE_CHOICES:
         return
     with contextlib.suppress(httpx2.ResponseNotRead):  # a streamed answer is no model
+        # Another adapter may read the same operation without full_perms.
+        response = _with_full_perms(request, operation[1], response)
         kept = RESPONSES.get(operation)
         if kept is None or len(response.content) > len(
             kept[2]
