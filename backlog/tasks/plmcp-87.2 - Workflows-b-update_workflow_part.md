@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:05Z'
-updated_date: '2026-11-25T14:53:14Z'
+updated_date: '2026-11-25T17:35:43Z'
 labels:
   - workflows
 dependencies:
@@ -63,4 +63,6 @@ Independent review of #159 (efaadb0..bb58f15): H1, M1 to M5, L1, L3 to L6 and th
 Second review of #159 (N1 to N3, L2, L6 to L8, survivors) fixed, tests first. N1: values of fields no longer assigned are dropped from what is written.
 
 Reopened 2026-11-25: a criterion that names several test levels is read literally, every item at every named level. Merged as 15b5f4c (#159). AC 4, missing: contract tests of removing one trigger by the write of parts and of the decision-21 and decision-66 refusals of the part operations; tool tests of adding, removing and moving triggers and of moving an action; E2E of changing a trigger with update_workflow_part (only its refusal is there). Hidden values are covered. CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 2 stays open: just check was not run as a whole locally; check jobs green: 45586010679 (055e4a8).
+
+Owner, 2026-11-26, verbatim: "Bitte alles wie von dir empfohlen." (translation: "Please everything as you recommend."). Question (AC 18 of PLMCP-119): triggers have no order, so is the tool test of moving a trigger, which proves the refusal, what the criterion asks? Recommended and decided: yes. The answer was given to and relayed by the main agent; the quote is as relayed.
 <!-- SECTION:NOTES:END -->
