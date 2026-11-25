@@ -3489,6 +3489,11 @@ class FakePaperless:
         mail.delete_account(self._mail(), self._mail_viewer(), account_id)
 
     @write
+    async def delete_processed_mail(self, mail_ids: Sequence[int]) -> None:
+        """`MailWriter.delete_processed_mail`."""
+        mail.delete_processed(self._mail(), self._mail_viewer(), mail_ids)
+
+    @write
     async def test_mail_account(self, account_id: int) -> MailAccountTestResult:
         """`MailWriter.test_mail_account`."""
         return mail.test_account(self._mail(), self._mail_viewer(), account_id)

@@ -143,7 +143,7 @@ def _connection(server: str, port: int, security: ImapSecurity) -> str:
     return f"{server} port {port} ({SECURITY_LABEL[security]})"
 
 
-def _mailbox(account: MailAccount) -> object:
+def mailbox(account: MailAccount) -> object:
     """Where an account reads and as whom; not its token's expiry, which renews by itself."""
     place = (account.imap_server, account.imap_port, account.imap_security)
     return (account.id, *place, account.username, account.account_type, account.is_token)
@@ -333,7 +333,7 @@ class MailService:
             return self._account(current)
         effect = self._connection_effect(current, changes, new_password=password is not None)
         if effect and not confirm:
-            ConfirmationRequired.require(effect, scope=_mailbox(current))
+            ConfirmationRequired.require(effect, scope=mailbox(current))
         values = MailAccountValues.model_validate(changes)
         if password is not None:
             values = values.model_copy(update={"password": password})
@@ -413,7 +413,7 @@ class MailService:
                 f"delete {label}{with_rules}; Paperless stops fetching from it, the mail on the "
                 "server stays"
             )
-            ConfirmationRequired.require(effect, scope=(_mailbox(account), rules))
+            ConfirmationRequired.require(effect, scope=(mailbox(account), rules))
         await self._writer.delete_mail_account(account_id)
         message = (
             f"{label[0].upper()}{label[1:]} was deleted{done}; Paperless no longer fetches from it."
@@ -452,7 +452,7 @@ class MailService:
             _, superuser = await self._caller()
             if not superuser:
                 effect += ". Rules of other users on this account that you cannot see run too"
-            ConfirmationRequired.require(effect, scope=(_mailbox(account), rules))
+            ConfirmationRequired.require(effect, scope=(mailbox(account), rules))
         await self._writer.process_mail_account(account_id)
         message = (
             f"Paperless queued a fetch of the mail of account {label}. It runs in the "
@@ -619,7 +619,7 @@ class MailService:
     async def _mailbox(self, account_id: int) -> object:
         """The mailbox of a rule's account; None if the caller, who may own the rule, sees none."""
         try:
-            return _mailbox(await self._reader.get_mail_account(account_id))
+            return mailbox(await self._reader.get_mail_account(account_id))
         except NotFound, PermissionDenied:
             return None
 
@@ -694,7 +694,7 @@ class MailService:
             effects = await self._create_effects(settings.name, account.name, written, values)
             if effects:
                 ConfirmationRequired.require(
-                    "; and ".join(effects), scope=(written, _mailbox(account))
+                    "; and ".join(effects), scope=(written, mailbox(account))
                 )
         [info] = await self._rule_infos([await self._writer.create_mail_rule(written)])
         return info

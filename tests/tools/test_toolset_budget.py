@@ -54,8 +54,8 @@ INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut 
 # (PLMCP-80.1), 31 of update_documents and add_notes (PLMCP-80.3) and 15 of run_workflow
 # (PLMCP-80.4): the 63 bytes for the four names of PLMCP-80 (2880 to 2943) the owner approved on
 # 2026-11-24. And 21 of get_processed_mail (PLMCP-81.1), of the 67 for the three names of PLMCP-81
-# (2943 to 3010) the owner approved on 2026-11-24.
-OVERVIEW_GUIDE_LIMIT = 2964
+# (2943 to 3010) the owner approved on 2026-11-24; and 24 of delete_processed_mail (PLMCP-81.3).
+OVERVIEW_GUIDE_LIMIT = 2988
 # Measured 879: 747 before, plus 132 of too_old (PLMCP-101); the rise from 750 was approved by the
 # owner on 2026-11-24.
 DEFINITION_ADDED_LIMIT = 879

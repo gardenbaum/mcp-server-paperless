@@ -24,12 +24,6 @@
 # [[undeclared]]  query parameters the generated schema omits (listed by hand)
 
 [[open]]
-task = "PLMCP-81.3"
-operations = [
-  "POST /api/processed_mail/bulk_delete/",
-]
-
-[[open]]
 task = "PLMCP-83"
 operations = [
   "DELETE /api/config/{id}/",

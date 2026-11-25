@@ -1259,6 +1259,17 @@ class MailWriter(Protocol):
         """
         ...
 
+    async def delete_processed_mail(self, mail_ids: Sequence[int]) -> None:
+        """Delete records of processed mail: all of them, or none.
+
+        An id that does not exist is skipped without a word, and Paperless says it was deleted:
+        only another read tells what became of a record. The request is never repeated.
+
+        Raises:
+            PermissionDenied: The user may not delete one of the records; nothing was deleted.
+        """
+        ...
+
     async def test_mail_account(self, account_id: int) -> MailAccountTestResult:
         """Connect to the account's mail server and log in with its saved password.
 

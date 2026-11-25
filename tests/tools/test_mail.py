@@ -39,6 +39,7 @@ TOOLS = {
     "delete_mail_rule",
     "list_processed_mail",
     "get_processed_mail",
+    "delete_processed_mail",
 }
 READ_ONLY = {
     "list_mail_accounts",
@@ -109,7 +110,7 @@ async def test_mail_is_not_in_the_default_profile() -> None:
     assert names.isdisjoint(TOOLS)
 
 
-async def test_the_mail_toolset_offers_fourteen_tools_and_read_only_mode_keeps_the_reads() -> None:
+async def test_the_mail_toolset_offers_fifteen_tools_and_read_only_mode_keeps_the_reads() -> None:
     async with Client(serve(fake(), toolsets=["mail"])) as client:
         names = {tool.name for tool in await client.list_tools()}
     async with Client(serve(fake(), toolsets=["mail"], read_only=True)) as client:
@@ -458,6 +459,57 @@ async def test_one_processed_mail_is_read_and_its_error_continued() -> None:
 
 async def test_a_processed_mail_that_does_not_exist_is_an_error() -> None:
     assert "No processed mail 9 exists" in await refusal(fake(), "get_processed_mail", mail_id=9)
+
+
+def with_records(source: FakePaperless, count: int = 2) -> None:
+    rule = with_rule(source.state, with_account(source.state), action="delete")
+    for number in range(1, count + 1):
+        source.state.processed_mail.append(
+            FakeProcessedMail(id=number, rule=rule, subject=f"Mail {number}", status="FAILED")
+        )
+
+
+@pytest.mark.decision("decision-83")
+async def test_deleting_records_is_shown_first_and_done_once_confirmed() -> None:
+    source = fake()
+    with_records(source)
+
+    preview = await call(source, "delete_processed_mail", mail_ids=[1, 2], dry_run=True)
+    text = await refusal(source, "delete_processed_mail", mail_ids=[1, 2])
+    assert len(source.state.processed_mail) == 2
+    done = await call(source, "delete_processed_mail", mail_ids=[2], confirm=True)
+
+    assert preview["dry_run"] is True
+    assert str(preview["message"]) in text
+    assert "DELETES the mail on the mail server" in text
+    assert "1 'Mail 1'" in text
+    assert done["mails"] == [
+        {"id": 2, "rule_id": 1, "subject": "Mail 2", "status": "FAILED", "outcome": "deleted"}
+    ]
+    assert [row.id for row in source.state.processed_mail] == [1]
+
+
+@pytest.mark.decision("decision-83")
+@pytest.mark.parametrize("ids", [[], list(range(1, 102)), [True], [0], ["x"]])
+async def test_wrong_lists_of_records_are_refused(ids: list[object]) -> None:
+    _ = await refusal(fake(writes=False), "delete_processed_mail", mail_ids=ids, confirm=True)
+
+
+@pytest.mark.decision("decision-83")
+async def test_the_tool_says_what_it_needs_and_that_it_is_final() -> None:
+    async with Client(server(fake())) as client:
+        [tool] = [t for t in await client.list_tools() if t.name == "delete_processed_mail"]
+
+    assert tool.annotations is not None
+    assert (
+        tool.annotations.read_only_hint,
+        tool.annotations.destructive_hint,
+        tool.annotations.idempotent_hint,
+        tool.annotations.open_world_hint,
+    ) == (False, True, False, False)
+    text = " ".join((tool.description or "").split())
+    for said in ("cannot be brought back", "view_processedmail", "delete_processedmail"):
+        assert said in text
 
 
 @pytest.mark.decision("decision-79")

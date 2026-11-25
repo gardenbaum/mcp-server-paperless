@@ -339,8 +339,8 @@ users or groups needs the `view_user` or `view_group` permission in Paperless.
 Off by default. Manages the mail import: `list_mail_accounts`, `get_mail_account`,
 `create_mail_account`, `update_mail_account`, `delete_mail_account`, `test_mail_account`,
 `process_mail_account`, `list_mail_rules`, `get_mail_rule`, `create_mail_rule`,
-`update_mail_rule`, `delete_mail_rule`, `list_processed_mail` (compact rows) and
-`get_processed_mail` (one mail with its whole error, in parts of 20,000 characters, and whether it
+`update_mail_rule`, `delete_mail_rule`, `list_processed_mail` (compact rows),
+`delete_processed_mail` and `get_processed_mail` (one mail with its whole error, in parts of 20,000 characters, and whether it
 would be fetched again without its record).
 
 - Passwords are write-only: they are accepted when an account is created or changed and are
@@ -360,6 +360,11 @@ would be fetched again without its record).
   off, and to hand a rule to another owner.
 - `test_mail_account` logs in with the saved password and changes nothing; a failed login is a
   result, not an error.
+- `delete_processed_mail` deletes 1 to 100 records, always behind `confirm` (`dry_run` shows the
+  same): the confirmation names each mail and what follows, since Paperless can then fetch it
+  again, import it a second time, and run the rule's action on it, which can delete it on the mail
+  server. Each record is read again afterwards. It needs `view_processedmail` and
+  `delete_processedmail`.
 - `process_mail_account` only queues the fetch: follow it with `list_processed_mail` and the
   Paperless task list. While another fetch runs, Paperless skips it without an error.
 

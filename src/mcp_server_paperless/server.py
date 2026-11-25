@@ -551,7 +551,9 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.sharing, adapters.sharing_writes, adapters.documents, web_url=web_url
                 ),
                 mail=MailService(adapters.mail, adapters.mail_writes, taxonomy, adapters.instance),
-                processed_mail=ProcessedMailService(adapters.mail),
+                processed_mail=ProcessedMailService(
+                    adapters.mail, adapters.mail_writes, adapters.documents
+                ),
                 raw=RawApiService(adapters.raw),
                 workflows=WorkflowService(adapters.workflows, adapters.workflow_writes, taxonomy),
                 workflow_runs=WorkflowRuns(

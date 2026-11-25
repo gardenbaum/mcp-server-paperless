@@ -1,9 +1,11 @@
 ---
 id: PLMCP-81.3
 title: 'Mail c: delete_processed_mail'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T22:44:56Z'
+updated_date: '2026-11-25T07:28:43Z'
 labels:
   - mail
 dependencies:
@@ -35,3 +37,15 @@ Third part of PLMCP-81: records of processed mail cannot be deleted, so a failed
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Port MailWriter.delete_processed_mail: adapter (one POST, not repeated, its echo not believed), fake (T1, 403 for all); adapter tests, contract on fake and live with rows made in Paperless itself. 2. services/processed_mail.py: read each id, rules, accounts, siblings; refusals; effect grouped by what follows; scope; read back one by one (one_by_one of decision-73, 40 s). 3. Tool with dry_run and confirm; tables of confirmation, destinations, registry, arguments, budgets. 4. Live tests with the mail server: partial, foreign, refetch after the tool. 5. decision-83, coverage row, docs, guide 2964 to 2988, measured dialog of 100.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner's words (2026-11-24): 'Alle wie empfohlen' in the question 'Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?' (here decisions 9a, 10, 11a). Dialog of 100 records measured, with its hint: 11,023 characters ordinary (one rule), 17,123 with a staying record each, 19,810 with long subjects and rule name, 81,027 with 100 rules that move to a 250-character folder each, hostile 54,195 (one rule) to 220,327 (100 rules, every text 250 escapes). What follows is said once per kind of outcome. WORST (5,388, one record) holds. No cap built: put to the owner. A security review asked whether bulk_delete deletes before it meets a forbidden record; it checks all first (source, and a live contract test with an older permitted record).
+<!-- SECTION:NOTES:END -->

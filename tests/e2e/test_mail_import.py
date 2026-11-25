@@ -409,6 +409,102 @@ async def test_one_record_the_caller_may_not_delete_refuses_all(box: Mailbox, st
     assert len(results(stack.admin.get("/api/processed_mail/", params={"rule": owned_rule}))) == 1
 
 
+async def error(client: Connected, tool: str, **arguments: object) -> str:
+    result = await client.call_tool(tool, arguments, raise_on_error=False)
+    assert result.is_error
+    assert PASSWORD not in str(result)
+    return str(result.content)
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_failed_mail_is_taken_again_after_the_tool_deleted_its_record(
+    box: Mailbox, client: Connected
+) -> None:
+    """The whole way: failed, deleted after a confirmation, fetched again, and the rule deletes."""
+    rule = box.rule("delete")
+    _ = box.put("Again", {"good.txt": note(), "broken.pdf": BROKEN})
+    assert box.fetch() == 2
+    [failed] = box.records(rule, 1)
+    box.change_rule(rule, filter_attachment_filename_exclude="broken*")
+
+    preview = await call(client, "delete_processed_mail", mail_ids=[failed["id"]], dry_run=True)
+    asked = await error(client, "delete_processed_mail", mail_ids=[failed["id"]])
+    missing = await error(
+        client, "delete_processed_mail", mail_ids=[failed["id"], 999_999], confirm=True
+    )
+    assert box.records(rule, 1) == [failed]
+    done = await call(client, "delete_processed_mail", mail_ids=[failed["id"]], confirm=True)
+
+    for text in (str(preview["message"]), asked):
+        assert f"{failed['id']} '{box.name} Again'" in text
+        assert "takes the mail again" in text
+        assert "then the rule DELETES the mail on the mail server" in text
+    assert "No processed mail 999999 exists" in missing
+    assert [row["outcome"] for row in cast("list[Json]", done["mails"])] == ["deleted"]
+    assert box.records(rule, 0) == []
+    assert box.fetch() == 1
+    [taken] = box.records(rule, 1)
+    assert taken["status"] == "SUCCESS"
+    assert len(box.documents("Again")) == 2
+    assert box.uids() == []
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_record_of_a_pair_names_the_one_that_keeps_the_mail_out(
+    box: Mailbox, client: Connected
+) -> None:
+    rule = box.rule("flag", consumption_scope=3)
+    _ = box.put("Pair", {"a.txt": note()})
+    assert box.fetch() == 2
+    first, second = box.records(rule, 2)
+
+    one = await call(client, "delete_processed_mail", mail_ids=[first["id"]], dry_run=True)
+    both = await call(
+        client, "delete_processed_mail", mail_ids=[first["id"], second["id"]], confirm=True
+    )
+
+    assert f"kept out by the records {second['id']} of the same mail" in str(one["message"])
+    assert both["message"] == "2 of 2 records were deleted."
+    assert box.records(rule, 0) == []
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_restricted_user_is_told_what_is_missing_and_deletes_unowned_records(
+    box: Mailbox, stack: Stack
+) -> None:
+    rule, ids = recorded(box, 1, owner=None)
+    name, password = f"{box.name}-user", "pw-e2e-imap-4711"
+    body = {
+        "username": name,
+        "password": password,
+        "user_permissions": ["view_processedmail", "view_uisettings"],
+    }
+    user = num(obj(parse(stack.admin.post("/api/users/", json=body).raise_for_status()))["id"])
+    try:
+        with httpx2.Client(
+            base_url=stack.base_url,
+            auth=(name, password),
+            headers={"Accept": f"application/json; version={API_VERSION}"},
+        ) as other:
+            token = str(parse(other.post("/api/profile/generate_auth_token/")))
+        server = create_server(
+            paperless_settings(stack.base_url, token), server_settings(toolsets=["core", "mail"])
+        )
+        async with Client(server) as limited:
+            lacking = await error(limited, "delete_processed_mail", mail_ids=ids, confirm=True)
+            rights = [*body["user_permissions"], "delete_processedmail"]
+            _ = stack.admin.patch(
+                f"/api/users/{user}/", json={"user_permissions": rights}
+            ).raise_for_status()
+            done = await call(limited, "delete_processed_mail", mail_ids=ids, confirm=True)
+    finally:
+        _ = stack.admin.delete(f"/api/users/{user}/")
+
+    assert "You lack the permission delete_processedmail. Nothing was deleted." in lacking
+    assert done["message"] == "1 of 1 record was deleted."
+    assert box.records(rule, 0) == []
+
+
 # --- the mail server itself (P4)
 
 

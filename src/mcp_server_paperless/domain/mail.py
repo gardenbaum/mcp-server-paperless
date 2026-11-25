@@ -463,3 +463,33 @@ class ProcessedMailDetail(BaseModel):
     refetch: Annotated[
         str, Field(description="Whether and when the mail is fetched again without this record.")
     ]
+
+
+type RecordOutcome = Literal["would_delete", "deleted", "still_there", "unknown"]
+
+
+class DeletedRecord(BaseModel):
+    """A record of processed mail that was to be deleted."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    rule_id: int
+    subject: Annotated[str, Field(description="Cut to 60 characters.")]
+    status: str
+    outcome: Annotated[
+        RecordOutcome,
+        Field(description="unknown: what happened to it could not be read afterwards."),
+    ]
+
+
+class ProcessedMailDeletion(BaseModel):
+    """What became of records of processed mail, or what would."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    dry_run: bool
+    mails: tuple[DeletedRecord, ...]
+    message: Annotated[
+        str, Field(description="What was deleted; in a preview each mail and what follows.")
+    ]
