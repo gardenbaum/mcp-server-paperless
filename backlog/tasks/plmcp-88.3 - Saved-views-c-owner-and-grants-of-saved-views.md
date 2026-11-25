@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T10:18:28Z'
-updated_date: '2026-11-25T14:53:17Z'
+updated_date: '2026-11-25T16:27:19Z'
 labels:
   - views
 dependencies:
@@ -64,10 +64,6 @@ decision-96 accepted: the owner approved the note on 2026-11-25 with 'Alles wie 
 Cleanup 2026-11-25: merged as d0aa3ea (#166); full E2E 45623896927 of that commit green. Check jobs: 45606858696 (89cc4bf) and 45630847344 (main 1efb5cd) are green; those of the last head of #166 were cancelled by its merge. DoD 2 stays open: just check was not run as a whole locally.
 
 Reopened 2026-11-25: a criterion that names several test levels is read literally, every item at every named level. AC 4, missing: contract tests with and without confirm (the port has no confirmation, so through the service); tool tests and E2E of set_permissions on views as an owner who is no superuser, a non-owner, and on an unowned view. Proven: the four users in contract tests (fake and 3.5.1), with and without confirm as superuser in tool tests and E2E. The final summary above is the implementer's and did not note this.
+
+Final summary of the implementer, moved here because the task is open: set_permissions takes saved views by name or id with the confirmation of decisions 12 and 19, reads them one by one within 40 seconds, and says what a change grant gives (decision-96). get_saved_view shows owner and grants by name, null where they cannot be read. The last rows of saved_views are covered. Full hosted E2E 45606044346 on Paperless 3.5.1 green; tests red first, 15 hand mutants, none survives. Not proven: whether the holder of a change grant may delete a view.
 <!-- SECTION:NOTES:END -->
-
-## Final Summary
-
-<!-- SECTION:FINAL_SUMMARY:BEGIN -->
-set_permissions takes saved views by name or id with the confirmation of decisions 12 and 19, reads them one by one within 40 seconds, and says what a change grant gives (decision-96). get_saved_view shows owner and grants by name, null where they cannot be read. The last rows of saved_views are covered. Full hosted E2E 45606044346 on Paperless 3.5.1 green; tests red first, 15 hand mutants, none survives. Not proven: whether the holder of a change grant may delete a view.
-<!-- SECTION:FINAL_SUMMARY:END -->
