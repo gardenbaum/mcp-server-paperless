@@ -19,7 +19,8 @@ pytestmark = [
 
 type Json = dict[str, object]
 
-TOOLS = {"list_tasks", "acknowledge_tasks", "run_task"}
+TOOLS = {"list_tasks", "get_task_overview", "acknowledge_tasks", "run_task"}
+READS = {"list_tasks", "get_task_overview"}
 
 
 def fake(
@@ -49,7 +50,7 @@ async def offered(*toolsets: str, read_only: bool = False) -> set[str]:
 
 async def test_the_toolset_offers_the_task_tools_and_admin_no_longer_does() -> None:
     assert await offered("tasks") == TOOLS
-    assert await offered("tasks", read_only=True) == {"list_tasks"}
+    assert await offered("tasks", read_only=True) == READS
     assert TOOLS.isdisjoint(await offered("admin"))
 
 
@@ -132,3 +133,75 @@ async def test_a_user_without_the_permission_gets_a_hint() -> None:
 
     assert "view_paperlesstask" in await refusal(reader, "list_tasks")
     assert "Only a superuser" in await refusal(reader, "run_task", task_type="sanity_check")
+
+
+# --- the overview and acknowledging all (PLMCP-89.2)
+
+
+async def test_the_overview_is_read_only_and_takes_its_filters() -> None:
+    state = seeded()
+    at = datetime.now(UTC)
+    state.tasks = [
+        FakeTask(id=1, task_id="u1", created=at, status="failure", file_name="a.pdf", owner=2),
+        FakeTask(
+            id=2, task_id="u2", created=at, task_type="mail_fetch", trigger_source="scheduled"
+        ),
+    ]
+
+    plain = await call(fake(state, writes=False), "get_task_overview")
+    for arguments, total in (
+        ({"task_type": "mail_fetch"}, 1),
+        ({"trigger_source": ["scheduled", "manual"]}, 1),
+        ({"owner": "admin", "acknowledged": False}, 1),
+        ({"name": "a.pdf", "days": 7}, 1),
+        ({"result": "nothing like it"}, 0),
+        ({"created_from": "2126-01-01T00:00:00Z"}, 0),
+        ({"created_to": "2020-01-01T00:00:00+01:00"}, 0),
+    ):
+        found = await call(fake(state), "get_task_overview", **arguments)
+        assert cast("Json", found["counts"])["total"] == total, arguments
+
+    assert cast("Json", plain["counts"]) == {
+        "total": 2,
+        "needs_attention": 1,
+        "in_progress": 1,
+        "completed": 0,
+    }
+    assert [row["id"] for row in cast("list[Json]", plain["active"])] == [2]
+    assert plain["by_type_of"] == "every_user"
+    for days in (0, 366):
+        _ = await refusal(fake(state), "get_task_overview", days=days)
+
+
+async def test_acknowledging_all_is_refused_until_confirmed_and_can_be_previewed() -> None:
+    state = seeded()
+    state.tasks = [FakeTask(id=1, task_id="u1", status="failure", file_name="a.pdf")]
+
+    text = await refusal(fake(state, writes=False), "acknowledge_tasks", all_unacknowledged=True)
+    shown = await call(
+        fake(state, writes=False), "acknowledge_tasks", all_unacknowledged=True, dry_run=True
+    )
+    done = await call(fake(state), "acknowledge_tasks", all_unacknowledged=True, confirm=True)
+
+    assert "cannot be taken back" in text
+    assert "'a.pdf'" in text
+    assert shown["dry_run"] is True
+    assert done["acknowledged"] == 1
+    assert state.tasks[0].acknowledged
+
+
+async def test_ids_need_no_confirmation() -> None:
+    state = seeded()
+    state.tasks = [FakeTask(id=1, task_id="u1")]
+
+    assert (await call(fake(state), "acknowledge_tasks", task_ids=[1]))["acknowledged"] == 1
+
+
+async def test_run_task_says_what_paperless_starts_and_what_the_index_sends() -> None:
+    async with Client(serve(fake(), toolsets=["tasks"])) as client:
+        [tool] = [t for t in await client.list_tools() if t.name == "run_task"]
+    text = " ".join((tool.description or "").split())
+
+    assert "Paperless starts only these three by hand and one per call; call once per type" in text
+    assert "new or changed" in text
+    assert "rebuild" not in text

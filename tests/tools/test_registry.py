@@ -179,7 +179,7 @@ def unconfirmed(tools: list[Tool], publishing: frozenset[str] = PUBLISHING | ACT
 MAIL_CONFIRMING = frozenset({"update_mail_account", "create_mail_rule", "update_mail_rule"})
 # Admin tools that are not destructive but need an optional confirm for the cases decision-26
 # names: a superuser or staff user, and the tasks that retrain or re-index.
-ADMIN_CONFIRMING = frozenset({"create_user", "create_group", "run_task"})
+ADMIN_CONFIRMING = frozenset({"create_user", "create_group", "run_task", "acknowledge_tasks"})
 # Upload tools, which are not destructive: they need confirm for a file Paperless already holds.
 UPLOAD_CONFIRMING = frozenset({"upload_document", "upload_document_version"})
 # A pdf tool that is not destructive but needs confirm for showing an older file again (PLMCP-79).

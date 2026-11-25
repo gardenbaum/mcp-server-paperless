@@ -1579,6 +1579,22 @@ async def test_the_remaining_tools_have_a_scenario_with_all_their_arguments() ->
     )
     await sweep("search_documents", {"custom_field_query": ["e2e-string", "exact", "x"]}, ())
     await sweep("acknowledge_tasks", {"task_ids": [1]}, (), prepare=with_pages)
+    await sweep("acknowledge_tasks", {"all_unacknowledged": True}, (), prepare=with_pages)
+    await sweep("acknowledge_tasks", {"task_ids": [1], "dry_run": True}, (), prepare=with_pages)
+    await sweep(
+        "get_task_overview",
+        {
+            "days": 7,
+            "acknowledged": False,
+            "task_type": ["mail_fetch", "consume_file"],
+            "trigger_source": ["scheduled"],
+            "owner": "admin",
+            "name": "scan",
+            "result": "error",
+            "created_from": "2026-11-01T00:00:00Z",
+            "created_to": "2026-11-30T00:00:00+01:00",
+        },
+    )
     await sweep("delete_group", {"group": "e2e-group"}, ())
     await sweep("delete_user", {"user": "e2e-reader"}, ())
     await sweep("get_user", {"user": "e2e-reader"}, ())

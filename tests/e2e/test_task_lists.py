@@ -141,3 +141,49 @@ async def test_a_user_without_the_permissions_gets_hints(stack: Stack) -> None:
 
     assert "view_paperlesstask" in listing
     assert "Only a superuser may start tasks." in starting
+
+
+async def test_the_overview_counts_a_failed_upload(stack: Stack) -> None:
+    title = f"{PREFIX}{uuid.uuid4().hex}"
+    task_id, _ = consume(stack.admin, title, b"%PDF-1.4 broken")
+
+    mine = await run(stack, "get_task_overview", None, name=title, days=1)
+    everything = await run(stack, "get_task_overview")
+
+    assert cast("Json", mine["counts"]) == {
+        "total": 1,
+        "needs_attention": 1,
+        "in_progress": 0,
+        "completed": 0,
+    }
+    assert (mine["days"], mine["by_type_of"], mine["unavailable"]) == (1, "every_user", [])
+    by_type = {str(s["task_type"]): s for s in cast("list[Json]", everything["by_type"])}
+    assert num(by_type["consume_file"]["failure"]) >= 1
+    assert task_id not in {row["task_id"] for row in cast("list[Json]", everything["active"])}
+    assert num(cast("Json", everything["counts"])["total"]) >= 1
+
+
+async def test_all_tasks_are_acknowledged_after_a_preview(stack: Stack) -> None:
+    title = f"{PREFIX}{uuid.uuid4().hex}"
+    _ = consume(stack.admin, title, b"%PDF-1.4 broken")
+
+    text = await refused(stack, "acknowledge_tasks", all_unacknowledged=True)
+    shown = await run(stack, "acknowledge_tasks", all_unacknowledged=True, dry_run=True)
+    before = await run(stack, "list_tasks", None, name=title, acknowledged=False)
+    done = await run(stack, "acknowledge_tasks", all_unacknowledged=True, confirm=True)
+    after = await run(stack, "list_tasks", None, name=title, acknowledged=True)
+
+    assert f"{title}.pdf"[:40] in text
+    assert "cannot be taken back" in text
+    assert (shown["dry_run"], before["count"]) == (True, 1)
+    assert num(done["acknowledged"]) >= 1
+    assert after["count"] == 1
+
+
+@pytest.mark.parametrize("kind", ["sanity_check", "train_classifier", "llm_index"])
+async def test_every_type_paperless_starts_by_hand_is_started(stack: Stack, kind: str) -> None:
+    started = await run(stack, "run_task", task_type=kind, confirm=True)
+
+    ended = await run(stack, "get_task", task_id=started["task_id"], wait_seconds=60)
+
+    assert (ended["task_type"], ended["state"]) == (kind, "success")

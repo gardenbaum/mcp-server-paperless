@@ -61,6 +61,14 @@ UNDECLARED_QUERY_PARAMETERS: Mapping[tuple[str, str], Mapping[str, str]] = {
     },
     # The view serves it like the others (PassUserMixin); its schema has no body (PLMCP-78).
     ("GET", "/api/trash/"): {"full_perms": FULL_PERMS_REASON},
+    # It uses the filter set of the list, its schema declares none (PLMCP-89).
+    ("GET", "/api/tasks/status_counts/"): dict.fromkeys(
+        (
+            *("acknowledged", "date_created_after", "date_created_before", "name", "owner"),
+            *("result", "task_type", "trigger_source"),
+        ),
+        "the view applies PaperlessTaskFilterSet but status and is_complete (PLMCP-89)",
+    ),
     ("PATCH", "/api/tags/{id}/"): {"full_perms": FULL_PERMS_REASON},
     ("PATCH", "/api/correspondents/{id}/"): {"full_perms": FULL_PERMS_REASON},
     ("PATCH", "/api/document_types/{id}/"): {"full_perms": FULL_PERMS_REASON},
