@@ -1,4 +1,4 @@
-"""Administration: users, groups, the application configuration, logs, tasks, bulk download.
+"""Administration: users, groups, the application configuration, logs, bulk download.
 
 Credentials never flow back (decision-18, decision-26): a user here has no password field and the
 configuration has no API key, only the names of the keys that hold a value. A password or a key
@@ -16,25 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
 from mcp_server_paperless.domain.errors import Validation
 from mcp_server_paperless.domain.permissions import Principal
-from mcp_server_paperless.domain.tasks import TaskState
 
-type TaskType = Literal[
-    "consume_file",
-    "train_classifier",
-    "sanity_check",
-    "index_optimize",
-    "mail_fetch",
-    "llm_index",
-    "empty_trash",
-    "check_workflows",
-    "bulk_update",
-    "reprocess_document",
-    "build_share_link",
-    "bulk_delete",
-    "apply_ai_suggestions",
-]
-# The tasks Paperless 3.4 lets a superuser start by hand (TasksViewSet._RUNNABLE_TASKS).
-type RunnableTask = Literal["train_classifier", "sanity_check", "llm_index"]
 type ArchiveContent = Literal["archive", "originals", "both"]
 type Compression = Literal["none", "deflated", "bzip2", "lzma"]
 
@@ -209,42 +191,6 @@ class ConfigValues(BaseModel):
     secrets: dict[str, SecretStr] = Field(default_factory=dict[str, SecretStr])
 
 
-class TaskRow(BaseModel):
-    """A background task with the database id that acknowledging needs."""
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
-
-    id: Annotated[int, Field(description="Database id: what acknowledge_tasks takes.")]
-    task_id: Annotated[str, Field(description="Celery UUID: what get_task takes.")]
-    task_type: str
-    trigger_source: Annotated[
-        str,
-        Field(
-            description=(
-                "scheduled, web_ui, api_upload, folder_consume, email_consume, system or manual."
-            )
-        ),
-    ]
-    state: Annotated[TaskState, Field(description="pending, started, success, failure or revoked.")]
-    created: datetime
-    started: datetime | None
-    finished: Annotated[datetime | None, Field(description="Null while the task is running.")]
-    duration_seconds: float | None
-    document_ids: Annotated[tuple[int, ...], Field(description="Documents the task touched.")]
-    acknowledged: bool
-    message: Annotated[str | None, Field(description="Why the task failed; null otherwise.")]
-
-
-class TaskRowPage(BaseModel):
-    """One page of tasks as the port reads it."""
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
-
-    count: int
-    next_page: int | None
-    rows: tuple[TaskRow, ...]
-
-
 class ArchiveFile(BaseModel):
     """A ZIP archive as the port reads it: empty and ``truncated`` if it is over the limit.
 
@@ -397,36 +343,6 @@ class LogExcerpt(BaseModel):
     ]
     returned_lines: int
     note: Annotated[str | None, Field(description="Whether lines are not shown in full.")] = None
-
-
-class TaskList(BaseModel):
-    """One page of tasks, newest first."""
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
-
-    count: Annotated[int, Field(description="How many tasks match in total.")]
-    page: int
-    next_page: Annotated[int | None, Field(description="The next page, null on the last one.")]
-    tasks: tuple[TaskRow, ...]
-
-
-class Acknowledged(BaseModel):
-    """How many tasks were acknowledged."""
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
-
-    acknowledged: int
-    message: str
-
-
-class StartedTask(BaseModel):
-    """A task that was started by hand."""
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
-
-    task_id: Annotated[str, Field(description="Follow it with get_task.")]
-    task_type: RunnableTask
-    message: str
 
 
 class ArchiveReport(BaseModel):

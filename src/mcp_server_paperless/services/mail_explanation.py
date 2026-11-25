@@ -28,6 +28,7 @@ from mcp_server_paperless.domain.mail import (
     MailExplanation,
     RuleChecks,
 )
+from mcp_server_paperless.domain.task_lists import TaskFilters
 from mcp_server_paperless.services.document_runner import RUN_SECONDS, cut, stopped_by
 from mcp_server_paperless.services.log_records import read_log_records
 from mcp_server_paperless.services.mail import one_line
@@ -44,7 +45,7 @@ if TYPE_CHECKING:
         MailRule,
         ProcessedMail,
     )
-    from mcp_server_paperless.domain.ports import AdminReader, MailReader
+    from mcp_server_paperless.domain.ports import AdminReader, MailReader, TaskListReader
     from mcp_server_paperless.services.log_records import LogRecord
 
 NO_DRY_RUN: Final = (
@@ -64,7 +65,6 @@ MAX_RULES: Final = 2000
 # Rows of each kind in one answer, and its length.
 MAX_PROCESSED: Final = 20
 MAX_TASKS: Final = 5
-FAILED_READ: Final = 25
 MAX_LOGS: Final = 20
 LOG_CHARS: Final = 4000
 MAX_ANSWER: Final = 50_000
@@ -352,13 +352,15 @@ class MailExplanations:
         self,
         reader: MailReader,
         management: AdminReader,
+        task_lists: TaskListReader,
         *,
         clock: Callable[[], float] = time.monotonic,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
-        """Read accounts, rules and records through ``reader``, tasks and logs through the other."""
+        """Read mail through ``reader``, logs through ``management``, tasks through the last."""
         self._reader: MailReader = reader
         self._management: AdminReader = management
+        self._task_lists: TaskListReader = task_lists
         self._clock: Callable[[], float] = clock
         self._now: Callable[[], datetime] = now
 
@@ -454,34 +456,29 @@ class MailExplanations:
         """The newest fetches, and the newest files from mails that could not be consumed."""
         fetches = await asking.ask(
             "fetches",
-            lambda: self._management.list_tasks(
-                state=None, task_type="mail_fetch", acknowledged=None, page=1, page_size=MAX_TASKS
+            lambda: self._task_lists.list_tasks(
+                TaskFilters(task_types=("mail_fetch",)), page=1, page_size=MAX_TASKS
             ),
         )
         failed = await asking.ask(
             "files that could not be consumed",
-            lambda: self._management.list_tasks(
-                state="failure",
-                task_type="consume_file",
-                acknowledged=None,
+            lambda: self._task_lists.list_tasks(
+                TaskFilters(
+                    states=("failure",),
+                    task_types=("consume_file",),
+                    trigger_sources=("email_consume",),
+                ),
                 page=1,
-                page_size=FAILED_READ,
+                page_size=MAX_TASKS,
             ),
         )
         # Paperless fetches every ten minutes: older fetches alone leave the answer complete.
-        for what, found, said in (
-            ("fetches", fetches, asking.notes),
-            ("files that could not be consumed", failed, asking.gaps),
-        ):
-            if found and found.count > len(found.rows):
-                read = f"only the newest {len(found.rows)} of {found.count} were looked at"
-                said.append(f"{what}: {read}")
-        rows = failed.rows if failed else ()
-        files = [row for row in rows if row.trigger_source == "email_consume"]
-        if len(files) > MAX_TASKS:
-            asking.gaps.append(
-                f"{len(files) - MAX_TASKS} more files from mails that could not be consumed"
-            )
+        if fetches and fetches.count > len(fetches.rows):
+            read = f"only the newest {len(fetches.rows)} of {fetches.count} were looked at"
+            asking.notes.append(f"fetches: {read}")
+        if failed and failed.count > len(failed.rows):
+            more = failed.count - len(failed.rows)
+            asking.gaps.append(f"{more} more files from mails that could not be consumed")
         return tuple(
             ExplainedTask(
                 task_type=row.task_type,
@@ -489,7 +486,8 @@ class MailExplanations:
                 created=row.created,
                 message=one_line(row.message),
             )
-            for row in [*(fetches.rows if fetches else ()), *files[:MAX_TASKS]]
+            for found in (fetches, failed)
+            for row in (found.rows if found else ())
         )
 
     async def _logs(

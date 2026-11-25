@@ -68,6 +68,8 @@ from mcp_server_paperless.domain.ports import (  # noqa: TC001 -- Ports' annotat
     RawReader,
     SharingReader,
     SharingWriter,
+    TaskListReader,
+    TaskListWriter,
     TaskReader,
     TaxonomyReader,
     TaxonomyWriter,
@@ -98,6 +100,10 @@ from mcp_server_paperless.paperless.permissions import (
 )
 from mcp_server_paperless.paperless.raw import PaperlessRawReader
 from mcp_server_paperless.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
+from mcp_server_paperless.paperless.task_lists import (
+    PaperlessTaskListReader,
+    PaperlessTaskListWriter,
+)
 from mcp_server_paperless.paperless.tasks import PaperlessTaskReader
 from mcp_server_paperless.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
 from mcp_server_paperless.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
@@ -170,6 +176,8 @@ class Ports:
     workflow_writes: WorkflowWriter
     management: AdminReader
     management_writes: AdminWriter
+    task_lists: TaskListReader
+    task_list_writes: TaskListWriter
 
 
 def fake_ports(state: FakeState, user: str) -> Ports:
@@ -203,6 +211,8 @@ def fake_ports(state: FakeState, user: str) -> Ports:
         workflow_writes=writer,
         management=fake,
         management_writes=writer,
+        task_lists=fake,
+        task_list_writes=writer,
     )
 
 
@@ -235,6 +245,8 @@ def live_ports(client: PaperlessClient) -> Ports:
         workflow_writes=PaperlessWorkflowWriter(client),
         management=PaperlessAdminReader(client),
         management_writes=PaperlessAdminWriter(client),
+        task_lists=PaperlessTaskListReader(client),
+        task_list_writes=PaperlessTaskListWriter(client),
     )
 
 
@@ -257,7 +269,7 @@ class Restricted(Protocol):
     every other document of the admin stays hidden from it. Grants replace those a document had, so
     a second user on the same document takes it from the first: use it before making the next. The
     live one deletes the user again
-    when the test ends.
+    when the test ends. A `superuser` is made without the staff flag.
     """
 
     def __call__(
@@ -267,6 +279,7 @@ class Restricted(Protocol):
         view: Sequence[int] = (),
         change: Sequence[int] = (),
         name: str | None = None,
+        superuser: bool = False,
     ) -> Ports: ...
 
 
@@ -359,13 +372,18 @@ class Backend:
 def fake_consume(state: FakeState) -> Consume:
     def consume_fake(*, succeed: bool) -> str:
         now = datetime.now(UTC)
+        [owner] = [user.id for user in state.users if user.username == ADMIN[0]]
         task = FakeTask(
             id=len(state.tasks) + 1,
             task_id=str(uuid.uuid4()),
             task_type="consume_file",
             status="success" if succeed else "failure",
+            owner=owner,
+            file_name=f"contract-task-{uuid.uuid4().hex}.pdf",
             created=now,
             finished=now,
+            wait_time_seconds=0.5,
+            duration_seconds=1.0,
             document_ids=(len(state.documents) + 1,) if succeed else (),
             message=None if succeed else "broken.pdf: Error occurred while consuming document",
         )
@@ -424,11 +442,13 @@ def fake_restricted(state: FakeState) -> Restricted:
         view: Sequence[int] = (),
         change: Sequence[int] = (),
         name: str | None = None,
+        superuser: bool = False,
     ) -> Ports:
         user = FakeUser(
             id=max(u.id for u in state.users) + 1,
             username=name or f"contract-user-{uuid.uuid4().hex[:12]}",
             permissions=permissions,
+            is_superuser=superuser,
         )
         state.users.append(user)
         [admin] = [u for u in state.users if u.username == ADMIN[0]]
@@ -723,10 +743,16 @@ def live_restricted(
         view: Sequence[int] = (),
         change: Sequence[int] = (),
         name: str | None = None,
+        superuser: bool = False,
     ) -> Ports:
         name = name or f"contract-user-{uuid.uuid4().hex[:12]}"
         password = f"pw-{uuid.uuid4().hex}"
-        body = {"username": name, "password": password, "user_permissions": sorted(permissions)}
+        body = {
+            "username": name,
+            "password": password,
+            "user_permissions": sorted(permissions),
+            "is_superuser": superuser,
+        }
         created = stack.admin.post("/api/users/", json=body).raise_for_status()
         user = int(cast("int", cast("dict[str, object]", created.json())["id"]))
         users.append(user)

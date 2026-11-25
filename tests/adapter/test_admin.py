@@ -15,7 +15,6 @@ from mcp_server_paperless.domain.admin import (
     ConfigValues,
     GroupRecord,
     GroupValues,
-    TaskRow,
     UserRecord,
     UserValues,
 )
@@ -116,40 +115,6 @@ CONFIG = AppConfigRecord(
         "app_logo": "http://paperless.test/media/logo/logo.png",
     },
     keys_configured=("llm_api_key",),
-)
-TASK_WIRE: Json = {
-    "id": 41,
-    "task_id": "8c6f5f2e-6e4d-4a1a-9d45-0a8c0b2f3c11",
-    "task_type": "consume_file",
-    "task_type_display": "Consume File",
-    "trigger_source": "api_upload",
-    "trigger_source_display": "API Upload",
-    "status": "failure",
-    "status_display": "Failure",
-    "date_created": "2026-11-17T08:00:00Z",
-    "date_started": "2026-11-17T08:00:01Z",
-    "date_done": "2026-11-17T08:00:05.5Z",
-    "duration_seconds": 4.5,
-    "wait_time_seconds": 1.0,
-    "input_data": {"filename": "scan.pdf"},
-    "result_data": {"error_message": "scan.pdf: not a PDF\nTraceback: secret path"},
-    "related_document_ids": [],
-    "acknowledged": False,
-    "owner": 2,
-}
-TASK = TaskRow(
-    id=41,
-    task_id="8c6f5f2e-6e4d-4a1a-9d45-0a8c0b2f3c11",
-    task_type="consume_file",
-    trigger_source="api_upload",
-    state="failure",
-    created=datetime(2026, 11, 17, 8, tzinfo=UTC),
-    started=datetime(2026, 11, 17, 8, 0, 1, tzinfo=UTC),
-    finished=datetime(2026, 11, 17, 8, 0, 5, 500000, tzinfo=UTC),
-    duration_seconds=4.5,
-    document_ids=(),
-    acknowledged=False,
-    message="scan.pdf: not a PDF",
 )
 
 
@@ -690,151 +655,6 @@ async def test_reading_a_log_without_staff_status_says_what_is_needed(
         _ = await PaperlessAdminReader(make_client(Recording(forbidden()))).get_log("mail", limit=5)
 
 
-# --- tasks
-
-
-async def test_tasks_are_listed_newest_first_with_their_database_id(
-    make_client: ClientFactory,
-) -> None:
-    link = "http://paperless.test/api/tasks/?page=3"
-    server = Recording(page(TASK_WIRE, count=40, next_link=link))
-
-    found = await PaperlessAdminReader(make_client(server)).list_tasks(
-        state=None, task_type=None, acknowledged=None, page=2, page_size=10
-    )
-
-    assert (found.count, found.next_page, found.rows) == (40, 3, (TASK,))
-    assert server.sent == [
-        ("GET", "/api/tasks/", None, {"page": "2", "page_size": "10", "ordering": "-date_created"})
-    ]
-
-
-async def test_tasks_are_filtered_by_state_type_and_acknowledgement(
-    make_client: ClientFactory,
-) -> None:
-    server = Recording(page())
-
-    _ = await PaperlessAdminReader(make_client(server)).list_tasks(
-        state="failure", task_type="sanity_check", acknowledged=False, page=1, page_size=25
-    )
-
-    assert server.sent[0][3] == {
-        "page": "1",
-        "page_size": "25",
-        "ordering": "-date_created",
-        "status": "failure",
-        "task_type": "sanity_check",
-        "acknowledged": "false",
-    }
-
-
-async def test_a_task_without_an_error_message_has_none(make_client: ClientFactory) -> None:
-    wire = {**TASK_WIRE, "status": "success", "result_data": {"document_id": 7}}
-    wire = {**wire, "related_document_ids": [7], "date_done": None, "duration_seconds": None}
-    server = Recording(page(wire))
-
-    found = await PaperlessAdminReader(make_client(server)).list_tasks(
-        state=None, task_type=None, acknowledged=None, page=1, page_size=25
-    )
-
-    [row] = found.rows
-    assert (row.message, row.document_ids, row.finished, row.duration_seconds) == (
-        None,
-        (7,),
-        None,
-        None,
-    )
-
-
-async def test_a_task_page_past_the_end_is_not_found(make_client: ClientFactory) -> None:
-    with pytest.raises(NotFound) as raised:
-        _ = await PaperlessAdminReader(make_client(Recording(not_found()))).list_tasks(
-            state=None, task_type=None, acknowledged=None, page=9, page_size=25
-        )
-
-    assert raised.value.describe() == (
-        "Page 9 of the tasks does not exist. "
-        "Hint: List the tasks with page=1; count and next_page tell how far it goes."
-    )
-
-
-async def test_listing_tasks_without_the_permission_says_what_is_needed(
-    make_client: ClientFactory,
-) -> None:
-    with pytest.raises(PermissionDenied) as raised:
-        _ = await PaperlessAdminReader(make_client(Recording(forbidden()))).list_tasks(
-            state=None, task_type=None, acknowledged=None, page=1, page_size=25
-        )
-
-    assert (
-        raised.value.hint == "It needs the view_paperlesstask permission, or must be a superuser."
-    )
-
-
-async def test_tasks_are_acknowledged_by_id(make_client: ClientFactory) -> None:
-    server = Recording(ok({"result": 2}))
-
-    count = await PaperlessAdminWriter(make_client(server)).acknowledge_tasks([41, 42])
-
-    assert count == 2
-    assert server.sent == [("POST", "/api/tasks/acknowledge/", {"tasks": [41, 42]}, {})]
-
-
-async def test_acknowledging_unknown_tasks_is_a_validation_error(
-    make_client: ClientFactory,
-) -> None:
-    server = Recording(
-        ok({"tasks": ["Some tasks in tasks don't exist or were specified twice."]}, 400)
-    )
-
-    with pytest.raises(Validation) as raised:
-        _ = await PaperlessAdminWriter(make_client(server)).acknowledge_tasks([999])
-
-    assert "don't exist or were specified twice" in raised.value.message
-
-
-async def test_acknowledging_without_the_permission_says_what_is_needed(
-    make_client: ClientFactory,
-) -> None:
-    with pytest.raises(PermissionDenied) as raised:
-        _ = await PaperlessAdminWriter(make_client(Recording(forbidden()))).acknowledge_tasks([1])
-
-    assert raised.value.hint == (
-        "It needs the change_paperlesstask permission, or must be a superuser."
-    )
-
-
-async def test_a_task_is_started_and_its_id_returned_without_a_retry(
-    make_client: ClientFactory,
-) -> None:
-    server = Recording(ok({"task_id": "abc-123"}))
-
-    started = await PaperlessAdminWriter(make_client(server)).run_task("sanity_check")
-
-    assert started == "abc-123"
-    assert server.sent == [("POST", "/api/tasks/run/", {"task_type": "sanity_check"}, {})]
-
-
-async def test_starting_a_task_without_the_permission_says_what_is_needed(
-    make_client: ClientFactory,
-) -> None:
-    with pytest.raises(PermissionDenied) as raised:
-        _ = await PaperlessAdminWriter(make_client(Recording(forbidden()))).run_task("llm_index")
-
-    assert raised.value.describe() == (
-        "The Paperless user may not start tasks. Hint: Only a superuser may start tasks."
-    )
-
-
-async def test_a_task_paperless_refuses_to_start_is_a_validation_error(
-    make_client: ClientFactory,
-) -> None:
-    server = Recording(ok({"error": "Task type 'x' cannot be manually triggered"}, 400))
-
-    with pytest.raises(Validation):
-        _ = await PaperlessAdminWriter(make_client(server)).run_task("sanity_check")
-
-
 # --- bulk download
 
 
@@ -919,35 +739,6 @@ async def test_an_archive_that_takes_too_long_is_a_timeout() -> None:
         _ = await PaperlessAdminReader(client).download_documents(
             [1], content="archive", compression="none", follow_formatting=False, max_bytes=10
         )
-
-
-@pytest.mark.parametrize(
-    "result", [None, {"error_message": None}, {"error_message": " \n "}, "text"]
-)
-async def test_a_task_whose_result_has_no_error_text_has_no_message(
-    make_client: ClientFactory, result: object
-) -> None:
-    server = Recording(page({**TASK_WIRE, "result_data": result}))
-
-    found = await PaperlessAdminReader(make_client(server)).list_tasks(
-        state=None, task_type=None, acknowledged=None, page=1, page_size=25
-    )
-
-    assert found.rows[0].message is None
-
-
-@pytest.mark.decision("decision-66")
-async def test_a_listed_task_holds_no_credentials_of_a_url_even_where_it_is_cut(
-    make_client: ClientFactory,
-) -> None:
-    said = {"error_message": "to https://user:p\nw@h.example"}
-    server = Recording(page({**TASK_WIRE, "result_data": said}))
-
-    found = await PaperlessAdminReader(make_client(server)).list_tasks(
-        state=None, task_type=None, acknowledged=None, page=1, page_size=25
-    )
-
-    assert found.rows[0].message == "to a URL that is not shown"
 
 
 # --- exact bodies, texts and request options (mutation tests)
@@ -1039,20 +830,6 @@ async def test_a_deletion_is_never_retried(make_client: ClientFactory, kind: str
         await (writer.delete_user(7) if kind == "user" else writer.delete_group(7))
 
     assert len(server.sent) == 1
-
-
-async def test_the_acknowledged_filter_is_sent_as_true_or_false(
-    make_client: ClientFactory,
-) -> None:
-    server = Recording(page(), page())
-    reader = PaperlessAdminReader(make_client(server))
-
-    for flag in (True, False):
-        _ = await reader.list_tasks(
-            state=None, task_type=None, acknowledged=flag, page=1, page_size=5
-        )
-
-    assert [sent[3]["acknowledged"] for sent in server.sent] == ["true", "false"]
 
 
 class Spy(PaperlessClient):
@@ -1237,21 +1014,3 @@ async def test_a_refusal_of_whoever_reads_an_opened_archive_stays_as_it_is() -> 
             [1], content="archive", compression="none", follow_formatting=False, wait_seconds=1
         ):
             raise error
-
-
-@pytest.mark.decision("decision-88")
-async def test_tasks_are_limited_to_a_time(make_client: ClientFactory) -> None:
-    server = Recording(page())
-    created = datetime(2026, 11, 10, 8, tzinfo=UTC), datetime(2026, 11, 11, 9, 30, tzinfo=UTC)
-
-    _ = await PaperlessAdminReader(make_client(server)).list_tasks(
-        state=None, task_type=None, acknowledged=None, page=1, page_size=5, created=created
-    )
-
-    assert server.sent[0][3] == {
-        "page": "1",
-        "page_size": "5",
-        "ordering": "-date_created",
-        "date_created_after": "2026-11-10T08:00:00+00:00",
-        "date_created_before": "2026-11-11T09:30:00+00:00",
-    }

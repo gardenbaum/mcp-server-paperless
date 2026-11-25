@@ -1,12 +1,10 @@
-"""The application configuration, the logs, background tasks and bulk download (decision-26).
+"""The application configuration, the logs and bulk download (decision-26).
 
 Every change of the configuration needs ``confirm``: it changes how every user's documents are
 read, which AI service sees their text and where, and the refusal lists each setting with its old
 and new value (decision-15). API keys are write-only (decision-18): they go in as ``SecretStr``
-and nothing returned says more than that one is saved. Starting a task needs ``confirm`` when it
-retrains what automatic matching uses or sends every document to an AI service; a sanity check
-only reads. Acknowledging a task hides it from the list of new ones and needs none. A bulk
-download is a read: the archive is attached only within the download limit.
+and nothing returned says more than that one is saved. A bulk download is a read: the archive is
+attached only within the download limit.
 """
 
 import hashlib
@@ -18,7 +16,6 @@ from mcp_server_paperless.domain.admin import (
     CONFIG_READ_ONLY,
     CONFIG_SECRETS,
     CONFIG_SETTINGS,
-    Acknowledged,
     AppConfig,
     ArchiveDelivery,
     ArchiveReport,
@@ -27,8 +24,6 @@ from mcp_server_paperless.domain.admin import (
     LogExcerpt,
     LogList,
     NotText,
-    StartedTask,
-    TaskList,
     check_secret,
 )
 from mcp_server_paperless.domain.errors import (
@@ -73,18 +68,14 @@ if TYPE_CHECKING:
         AppConfigRecord,
         ArchiveContent,
         Compression,
-        RunnableTask,
-        TaskType,
     )
     from mcp_server_paperless.domain.errors import DestinationKind
     from mcp_server_paperless.domain.ports import AdminReader, AdminWriter
-    from mcp_server_paperless.domain.tasks import TaskState
     from mcp_server_paperless.services.file_sink import FileSink
 
 DEFAULT_LOG_LINES: Final = 100
 MAX_LOG_CHARS: Final = 20_000
 MAX_DOCUMENTS: Final = 100
-MAX_TASKS: Final = 100
 ARCHIVE_NAME: Final = "paperless-documents.zip"
 ZIP: Final = "application/zip"
 # The name Paperless gives the archive, for one that is read in parts or saved.
@@ -97,16 +88,6 @@ SHOWN_IDS: Final = 10
 ENDPOINTS: Final = frozenset({"llm_endpoint", "llm_embedding_endpoint", "remote_ocr_endpoint"})
 # Settings a confirmation names in full; the rest are counted.
 SHOWN: Final = 5
-TASK_EFFECTS: Final[dict[str, str]] = {
-    "train_classifier": (
-        "train the classifier again: it learns from the documents' current tags and metadata "
-        "and replaces the model that automatic matching uses for new documents"
-    ),
-    "llm_index": (
-        "rebuild the AI index, which sends the text of every document to the embedding service "
-        "Paperless is configured with, at that service's cost and for a long time"
-    ),
-}
 
 
 def _text(value: JsonValue) -> str:
@@ -205,7 +186,7 @@ def _check_ids(document_ids: Sequence[int]) -> None:
 
 
 class SystemAdmin:
-    """Configuration, logs, tasks and bulk download."""
+    """Configuration, logs and bulk download."""
 
     def __init__(
         self,
@@ -401,63 +382,6 @@ class SystemAdmin:
             truncated=truncated,
             returned_lines=len(kept),
             note=note if hidden else None,
-        )
-
-    async def list_tasks(
-        self,
-        *,
-        state: TaskState | None = None,
-        task_type: TaskType | None = None,
-        acknowledged: bool | None = None,
-        page: int = 1,
-        page_size: int = 25,
-    ) -> TaskList:
-        """One page of tasks, newest first.
-
-        Raises:
-            NotFound: ``page`` is past the last page.
-            PermissionDenied: The user may not view tasks.
-        """
-        found = await self._reader.list_tasks(
-            state=state,
-            task_type=task_type,
-            acknowledged=acknowledged,
-            page=page,
-            page_size=page_size,
-        )
-        return TaskList(count=found.count, page=page, next_page=found.next_page, tasks=found.rows)
-
-    async def acknowledge_tasks(self, task_ids: Sequence[int]) -> Acknowledged:
-        """Mark tasks (database ids from list_tasks) as seen.
-
-        Raises:
-            Validation: An id is listed twice or does not exist.
-            PermissionDenied: The user may not change tasks.
-        """
-        if len(set(task_ids)) != len(task_ids):
-            message = "A task id is listed twice."
-            raise Validation(message, hint="List every id once.")
-        count = await self._writer.acknowledge_tasks(task_ids)
-        return Acknowledged(
-            acknowledged=count,
-            message=f"Acknowledged {_plural(count, 'task')} (they no longer show as new).",
-        )
-
-    async def run_task(self, task_type: RunnableTask, *, confirm: bool = False) -> StartedTask:
-        """Start a task by hand; training the classifier and the AI index need ``confirm``.
-
-        Raises:
-            ConfirmationRequired: The task needs ``confirm`` and it is not set.
-            PermissionDenied: Only a superuser may start tasks.
-        """
-        if task_type in TASK_EFFECTS and not confirm:
-            # scope: the task is the argument; it has no other target.
-            ConfirmationRequired.require(TASK_EFFECTS[task_type], scope=None)
-        task_id = await self._writer.run_task(task_type)
-        return StartedTask(
-            task_id=task_id,
-            task_type=task_type,
-            message=f"Started {task_type}; follow it with get_task(task_id).",
         )
 
     def _note(self, *, timed_out: bool) -> str:

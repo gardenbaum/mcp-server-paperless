@@ -144,7 +144,13 @@ class Setup:
         workflows = WorkflowService(self.fake, self.fake, resolver)
         self.times: list[float] = []
         self.service = WorkflowExplanations(
-            self.fake, self.fake, workflows, resolver, clock=self._clock, now=lambda: now or NOW
+            self.fake,
+            self.fake,
+            self.fake,
+            workflows,
+            resolver,
+            clock=self._clock,
+            now=lambda: now or NOW,
         )
 
     def _clock(self) -> float:

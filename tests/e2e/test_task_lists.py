@@ -1,0 +1,143 @@
+"""The tasks toolset through the assembled server on the E2E Paperless.
+
+The only task run is the sanity check, which changes nothing, and its row is acknowledged.
+"""
+
+import uuid
+from datetime import datetime
+from typing import TYPE_CHECKING, cast
+
+import pytest
+from fastmcp import Client
+from harness import paperless_settings, server_settings
+
+from e2e.helpers import consume, num, obj, parse, results
+from mcp_server_paperless.server import create_server
+
+if TYPE_CHECKING:
+    from fastmcp import FastMCP
+
+    from e2e.helpers import Json, Stack
+
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.anyio,
+    pytest.mark.decision("decision-26"),
+    pytest.mark.decision("decision-93"),
+]
+
+PREFIX = "plmcp89-"
+
+
+def server(stack: Stack, token: str | None = None, *toolsets: str) -> FastMCP:
+    settings = server_settings(toolsets=list(toolsets or ("core", "tasks")))
+    return create_server(paperless_settings(stack.base_url, token or stack.admin_token), settings)
+
+
+async def run(stack: Stack, tool: str, token: str | None = None, **arguments: object) -> Json:
+    async with Client(server(stack, token)) as client:
+        result = await client.call_tool(tool, arguments)
+    assert result.structured_content is not None
+    return result.structured_content
+
+
+async def refused(stack: Stack, tool: str, token: str | None = None, **arguments: object) -> str:
+    async with Client(server(stack, token)) as client:
+        result = await client.call_tool(tool, arguments, raise_on_error=False)
+    assert result.is_error
+    return str(result.content)
+
+
+def tasks(listed: Json) -> dict[str, Json]:
+    return {str(row["task_id"]): row for row in cast("list[Json]", listed["tasks"])}
+
+
+async def test_admin_has_no_task_tools_and_tasks_has_no_user_tools(stack: Stack) -> None:
+    names = {"list_tasks", "acknowledge_tasks", "run_task"}
+    async with Client(server(stack, None, "admin")) as client:
+        administration = {tool.name for tool in await client.list_tools()}
+    async with Client(server(stack, None, "tasks")) as client:
+        offered = {tool.name for tool in await client.list_tools()}
+
+    assert names.isdisjoint(administration)
+    assert "get_user" in administration
+    assert names <= offered
+    assert "get_user" not in offered
+
+
+async def test_a_failed_upload_is_found_by_every_filter(stack: Stack) -> None:
+    title = f"{PREFIX}{uuid.uuid4().hex}"
+    task_id, document = consume(stack.admin, title, b"%PDF-1.4 broken")
+    assert document is None
+    [wire] = results(stack.admin.get("/api/tasks/", params={"task_id": task_id}))
+    me = obj(obj(parse(stack.admin.get("/api/ui_settings/")))["user"])
+    created = datetime.fromisoformat(str(wire["date_created"])).isoformat()
+    mine: Json = {"name": title}
+
+    matching: list[Json] = [
+        {"state": "failure"},
+        {"state": ["failure", "revoked"], "is_complete": True},
+        {"task_type": "consume_file", "trigger_source": ["api_upload", "web_ui"]},
+        {"acknowledged": False, "owner": me["username"]},
+        {"owner": me["id"], "result": f"{title}.pdf"},
+        {"created_from": created, "created_to": created},
+        {"ordering": "-finished"},
+    ]
+    for arguments in matching:
+        found = tasks(await run(stack, "list_tasks", None, **mine, **arguments))
+        assert set(found) == {task_id}, arguments
+        assert (found[task_id]["file_name"], found[task_id]["owner"]) == (f"{title}.pdf", me["id"])
+    others: list[Json] = [
+        {"state": "success"},
+        {"is_complete": False},
+        {"trigger_source": "scheduled"},
+        {"acknowledged": True},
+    ]
+    for arguments in others:
+        assert (await run(stack, "list_tasks", None, **mine, **arguments))["count"] == 0, arguments
+
+
+async def test_a_sanity_check_is_run_listed_and_acknowledged(stack: Stack) -> None:
+    started = await run(stack, "run_task", task_type="sanity_check")
+
+    found = None
+    for page in range(1, 6):
+        listed = await run(
+            stack,
+            "list_tasks",
+            task_type="sanity_check",
+            acknowledged=False,
+            page=page,
+            page_size=100,
+        )
+        found = next(
+            (t for t in cast("list[Json]", listed["tasks"]) if t["task_id"] == started["task_id"]),
+            None,
+        )
+        if found or listed["next_page"] is None:
+            break
+    assert found is not None
+    acknowledged = await run(stack, "acknowledge_tasks", task_ids=[found["id"]])
+    assert acknowledged["acknowledged"] == 1
+
+
+async def test_retraining_is_refused_without_confirm_and_nothing_starts(stack: Stack) -> None:
+    before = num(
+        (await run(stack, "list_tasks", task_type="train_classifier", page_size=1))["count"]
+    )
+
+    text = await refused(stack, "run_task", task_type="train_classifier")
+
+    assert "train the classifier again" in text
+    after = num(
+        (await run(stack, "list_tasks", task_type="train_classifier", page_size=1))["count"]
+    )
+    assert after == before
+
+
+async def test_a_user_without_the_permissions_gets_hints(stack: Stack) -> None:
+    listing = await refused(stack, "list_tasks", token=stack.reader_token)
+    starting = await refused(stack, "run_task", token=stack.reader_token, task_type="sanity_check")
+
+    assert "view_paperlesstask" in listing
+    assert "Only a superuser may start tasks." in starting
