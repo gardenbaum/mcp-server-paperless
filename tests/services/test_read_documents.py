@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, cast, final, override
 
 import pytest
 from fakes.accounts import ADMIN, PUBLIC_NOTE, READER
-from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
+from fakes.paperless import FakeDocument, FakePaperless, FakeState, FakeTag, seeded
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -20,11 +20,17 @@ from mcp_server_paperless.domain.errors import (
     UpstreamTimeout,
     UpstreamUnavailable,
     UpstreamUnreachable,
+    Validation,
 )
 from mcp_server_paperless.domain.selection import MAX_ANSWER, MAX_TEXT, Selection
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.documents import DocumentService
-from mcp_server_paperless.services.read_documents import DEFAULT_FIELDS, ReadDocuments
+from mcp_server_paperless.services.read_documents import (
+    COUNT_CHARS,
+    DEFAULT_FIELDS,
+    TEXT_SECONDS,
+    ReadDocuments,
+)
 from mcp_server_paperless.services.selection import SELECT_BYTES, DocumentSelector
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.view_pins import ViewPins
@@ -34,7 +40,13 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from mcp_server_paperless.domain.documents import DocumentText, Ordering
-    from mcp_server_paperless.domain.selection import DocumentRow, DocumentsRead, ReadField
+    from mcp_server_paperless.domain.selection import (
+        CountedKind,
+        DocumentRow,
+        DocumentsRead,
+        ReadField,
+        SelectionCounts,
+    )
     from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-70")]
@@ -58,10 +70,23 @@ class Reading(FakePaperless):
         self.vanished: set[int] = set()
         self.row_error: PaperlessMcpError | None = None
         self.listed: list[TaxonomyKind] = []
+        self.counted: list[list[int]] = []
+        self.count_error: PaperlessMcpError | None = None
+        self.list_seconds: float = 0.0
+
+    @override
+    async def count_selection(
+        self, document_ids: Sequence[int]
+    ) -> dict[CountedKind, dict[int, int]]:
+        self.counted.append(list(document_ids))
+        if self.count_error is not None:
+            raise self.count_error
+        return await super().count_selection(document_ids)
 
     @override
     async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
         self.listed.append(kind)
+        self.now += self.list_seconds
         return await super().list_taxonomy(kind)
 
     @override
@@ -98,6 +123,9 @@ class Setup:
     def __init__(self, user: str = ADMIN[0]) -> None:
         self.state: FakeState = seeded()
         self.fake: Reading = Reading(self.state, user=user)
+        self.build()
+
+    def build(self) -> None:
         taxonomy = TaxonomyResolver(self.fake, StaticTokenProvider("t"), ttl=3600.0)
         documents = DocumentService(self.fake, self.fake, taxonomy, web_url=WEB)
         views = ViewService(
@@ -120,11 +148,12 @@ class Setup:
         document = FakeDocument(id=number, title=f"scratch {number}")
         self.state.documents.append(replace(document, **values))
 
-    async def read(
+    async def read(  # noqa: PLR0913 -- the arguments of the service, all but one defaulted
         self,
         fields: tuple[ReadField, ...] | None = None,
         *,
         content_chars: int = 2000,
+        counts: bool = False,
         ordering: Ordering | None = None,
         page: int = 1,
         page_size: int = 25,
@@ -134,6 +163,7 @@ class Setup:
             Selection.model_validate(selection),
             fields,
             content_chars=content_chars,
+            counts=counts,
             ordering=ordering,
             page=page,
             page_size=page_size,
@@ -741,3 +771,179 @@ async def test_why_a_text_is_missing_is_told_before_the_notices_of_a_query() -> 
 
     assert found.notices[0] == "The text of document 1 could not be read in this call: Broken."
     assert len(found.notices) == 2
+
+
+def counts_of(found: DocumentsRead) -> SelectionCounts:
+    assert found.counts is not None
+    return found.counts
+
+
+@pytest.mark.decision("decision-100")
+async def test_counts_name_what_every_chosen_document_has_and_read_no_row() -> None:
+    setup = Setup()
+
+    found = await setup.read(counts=True, document_ids=(PUBLIC, PRIVATE, 99))
+
+    assert counts_of(found).model_dump(mode="json")["correspondents"] == {
+        "items": [{"id": 1, "name": "e2e-acme", "documents": 1}],
+        "more": 0,
+        "hidden": 0,
+    }
+    assert ("e2e-private", 1) in [(i.name, i.documents) for i in counts_of(found).tags.items]
+    assert [i.name for i in counts_of(found).storage_paths.items] == ["e2e-archive"]
+    assert [i.name for i in counts_of(found).document_types.items] == ["e2e-invoice"]
+    assert "e2e-string" in {i.name for i in counts_of(found).custom_fields.items}
+    assert (found.documents, found.matched, found.missing, found.next_page) == ((), 2, (99,), None)
+    assert setup.fake.rows == []
+    assert setup.fake.counted == [[PUBLIC, PRIVATE]]
+
+
+@pytest.mark.decision("decision-100")
+async def test_counts_cover_the_whole_selection_and_rows_come_only_when_asked_for() -> None:
+    setup = Setup()
+    for number in (10, 11, 12):
+        setup.add(number, tags=[1])
+
+    found = await setup.read(
+        ("title",), counts=True, page=2, page_size=1, document_ids=(10, 11, 12)
+    )
+
+    assert [(i.id, i.documents) for i in counts_of(found).tags.items] == [(1, 3)]
+    assert (ids(found), found.next_page) == ([11], 3)
+    assert setup.fake.counted == [[10, 11, 12]]
+
+
+async def test_without_counts_nothing_is_counted() -> None:
+    setup = Setup()
+
+    found = await setup.read(document_ids=(PUBLIC,))
+
+    assert (found.counts, setup.fake.counted) == (None, [])
+    assert "counts" not in found.model_dump()
+
+
+@pytest.mark.decision("decision-100")
+async def test_an_empty_selection_is_counted_without_a_request() -> None:
+    setup = Setup()
+
+    found = await setup.read(counts=True, filters={"title_contains": "no such title"})
+
+    assert counts_of(found).model_dump(mode="json") == {
+        kind: {"items": [], "more": 0, "hidden": 0}
+        for kind in (
+            *("tags", "correspondents", "document_types", "storage_paths", "custom_fields"),
+        )
+    }
+    assert (setup.fake.counted, setup.fake.listed) == ([], [])
+
+
+@pytest.mark.decision("decision-100")
+async def test_hidden_objects_are_a_number_and_no_name() -> None:
+    setup = Setup(READER[0])
+    private = next(tag.id for tag in setup.state.tags if tag.name == "e2e-private")
+    setup.add(10, tags=[1, private])
+
+    found = await setup.read(counts=True, document_ids=(10,))
+
+    assert [i.id for i in counts_of(found).tags.items] == [1]
+    assert counts_of(found).tags.hidden == 1
+    assert "e2e-private" not in found.model_dump_json()
+
+
+@pytest.mark.decision("decision-100")
+async def test_a_kind_the_user_may_not_list_is_hidden_as_a_whole() -> None:
+    setup = Setup(READER[0])
+    setup.state.users[:] = [
+        replace(user, permissions=user.permissions - {"view_tag"}) for user in setup.state.users
+    ]
+    setup.fake = Reading(setup.state, user=READER[0])
+    setup.build()
+
+    found = await setup.read(counts=True, document_ids=(PUBLIC,))
+
+    assert (counts_of(found).tags.items, counts_of(found).tags.hidden > 0) == ((), True)
+    assert counts_of(found).correspondents.items
+
+
+@pytest.mark.decision("decision-100")
+async def test_an_object_made_since_the_lists_were_read_is_named() -> None:
+    setup = Setup()
+    _ = await setup.read(document_ids=(PUBLIC,))  # fills the cache of names
+    setup.state.tags.append(FakeTag(id=77, name="new"))
+    setup.add(10, tags=[77])
+
+    found = await setup.read(counts=True, document_ids=(10,))
+
+    assert [i.name for i in counts_of(found).tags.items] == ["new"]
+
+
+@pytest.mark.decision("decision-100")
+async def test_the_most_frequent_come_first_and_what_does_not_fit_is_counted() -> None:
+    setup = Setup()
+    setup.state.tags += [FakeTag(id=n, name=f"{n}" + "n" * 121) for n in range(1000, 1100)]
+    setup.add(10, tags=list(range(1000, 1100)))
+    setup.add(11, tags=[1099])
+
+    tags = counts_of(await setup.read(counts=True, document_ids=(10, 11))).tags
+
+    assert tags.items[0].id == 1099
+    assert [i.id for i in tags.items[1:]] == list(range(1000, 1000 + len(tags.items) - 1))
+    assert len(tags.items) + tags.more == 100
+    sizes = [len(i.model_dump_json()) + 1 for i in tags.items]
+    assert sum(sizes) <= COUNT_CHARS < sum(sizes) + max(sizes)
+
+
+@pytest.mark.decision("decision-100")
+@pytest.mark.parametrize("error", [Validation("gone"), PermissionDenied("hidden")])
+async def test_a_document_that_went_away_meanwhile_is_said(error: PaperlessMcpError) -> None:
+    setup = Setup()
+    setup.fake.count_error = error
+
+    with pytest.raises(PaperlessMcpError, match="changed while they were counted") as caught:
+        _ = await setup.read(counts=True, document_ids=(PUBLIC,))
+
+    assert "again" in (caught.value.hint or "")
+
+
+@pytest.mark.decision("decision-100")
+@pytest.mark.parametrize(
+    ("seconds", "counted"), [(TEXT_SECONDS / 3, False), (TEXT_SECONDS / 10, True)]
+)
+async def test_no_name_is_looked_up_after_the_time_of_the_call(
+    seconds: float, *, counted: bool
+) -> None:
+    setup = Setup()
+    setup.fake.list_seconds = seconds
+
+    found = await setup.read(counts=True, document_ids=(PUBLIC,))
+
+    assert (found.counts is not None) is counted
+    assert len(setup.fake.listed) == (5 if counted else 3)
+    assert any("counts" in notice for notice in found.notices) is not counted
+
+
+@pytest.mark.decision("decision-100")
+async def test_nothing_is_counted_when_choosing_took_the_whole_time() -> None:
+    setup = Setup()
+    setup.fake.list_seconds = TEXT_SECONDS
+
+    found = await setup.read(counts=True, filters={"tags_all": ["e2e-finance"]})
+
+    assert (found.counts, setup.fake.counted) == (None, [])
+    assert found.matched == 1
+
+
+@pytest.mark.decision("decision-100")
+async def test_counts_leave_room_for_rows_and_the_answer_stays_within_its_limit() -> None:
+    setup = Setup()
+    setup.state.tags += [FakeTag(id=n, name=f"{n}" + "n" * 121) for n in range(1000, 1100)]
+    for number in range(10, 110):
+        setup.add(number, tags=list(range(1000, 1100)))
+
+    found = await setup.read(
+        ("tags",), counts=True, page_size=100, document_ids=tuple(range(10, 110))
+    )
+
+    assert size(found) <= MAX_ANSWER
+    assert found.truncated
+    assert counts_of(found).tags.items

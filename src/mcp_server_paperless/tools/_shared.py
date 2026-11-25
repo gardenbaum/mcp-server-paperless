@@ -57,6 +57,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.duplicate_resolution import DuplicateResolver
     from mcp_server_paperless.services.files import FileService
     from mcp_server_paperless.services.instance import InstanceService
+    from mcp_server_paperless.services.lookups import Lookups
     from mcp_server_paperless.services.mail import MailService
     from mcp_server_paperless.services.mail_explanation import MailExplanations
     from mcp_server_paperless.services.notes import NoteService
@@ -166,6 +167,8 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "update_taxonomy_item": "core",
     "delete_taxonomy_item": "core",
     "read_documents": "bulk",
+    "suggest_words": "bulk",
+    "test_storage_path": "bulk",
     "bulk_edit_documents": "bulk",
     "update_documents": "bulk",
     "add_notes": "bulk",
@@ -778,6 +781,19 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    "suggest_words": ToolAnnotations(
+        title="Suggest words",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # A POST in Paperless that only renders the template.
+    "test_storage_path": ToolAnnotations(
+        title="Test storage path",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     # Destructive (decision-6): it can trash documents and overwrite what many of them hold, so
     # every execution needs confirm, and dry_run previews it. Not idempotent: a repeated trashing
     # or reprocessing is another action (a repeated tag change leaves the state as it is).
@@ -1223,6 +1239,7 @@ class Services:
     versions: VersionService
     version_uploads: VersionUploadService
     text_edits: TextEditor
+    lookups: Lookups
     read_documents: ReadDocuments
     bulk_documents: BulkDocumentEditor
     bulk_updates: BulkUpdates

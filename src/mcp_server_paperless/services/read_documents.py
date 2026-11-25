@@ -17,15 +17,20 @@ from mcp_server_paperless.domain.errors import (
     UpstreamTimeout,
     UpstreamUnavailable,
     UpstreamUnreachable,
+    Validation,
 )
 from mcp_server_paperless.domain.files import joined
 from mcp_server_paperless.domain.selection import (
     MAX_ANSWER,
     MAX_TEXT,
+    Counted,
+    CountedKind,
     DocumentRow,
     DocumentsRead,
+    KindCounts,
     ReadField,
     ReadRow,
+    SelectionCounts,
 )
 from mcp_server_paperless.services.documents import (
     document_link,
@@ -64,6 +69,19 @@ KINDS: Final[Mapping[ReadField, TaxonomyKind]] = {
     "custom_fields": "custom_field",
     "owner": "user",
 }
+# The field of SelectionCounts for each kind.
+COUNTED: Final[Mapping[CountedKind, str]] = {
+    "tag": "tags",
+    "correspondent": "correspondents",
+    "document_type": "document_types",
+    "storage_path": "storage_paths",
+    "custom_field": "custom_fields",
+}
+# Characters of the counts of one kind: the five together leave half of an answer to the rows.
+COUNT_CHARS: Final = 10_000
+NOT_COUNTED: Final = (
+    f"The counts were left out: {TEXT_SECONDS:g} seconds had passed. Try again, or choose less."
+)
 # Characters of notices in an answer.
 NOTICE_CHARS: Final = 5000
 # The fields of a row whose size nothing bounds, and the text (as JSON up to six times as long).
@@ -139,11 +157,14 @@ class ReadDocuments:
         fields: Sequence[ReadField] | None,
         *,
         content_chars: int,
+        counts: bool = False,
         ordering: Ordering | None,
         page: int,
         page_size: int,
     ) -> DocumentsRead:
         """One page of the documents of ``selection`` with ``fields`` (None: the usual ones).
+
+        With ``counts`` also what all of them have, and no rows unless ``fields`` is given.
 
         Raises:
             Validation: The selection is refused (see ``DocumentSelector.select``).
@@ -161,11 +182,15 @@ class ReadDocuments:
             message = f"Page {page} is beyond the last page of the selection."
             hint = "Start with page=1; next_page tells how far it goes."
             raise NotFound(message, hint=hint)
-        ids = every[start : start + page_size]
+        with_rows = fields is not None or not counts
+        ids = every[start : start + page_size] if with_rows else ()
         if "notes" in wanted:
             await require_notes(self._reader, ids, hint=NO_NOTES, gone=GONE)
-        rows = await self._rows(ids, wanted)
         notices = chosen.notices
+        counted = await self._counts(every, until) if counts else None
+        if counts and counted is None:
+            notices = (NOT_COUNTED, *notices)
+        rows = await self._rows(ids, wanted) if ids else []
         left: tuple[int, ...] = ()
         failed: tuple[int, ...] = ()
         if "content" in wanted:
@@ -177,15 +202,38 @@ class ReadDocuments:
             matched=chosen.matched,
             selected_ids=every if page == 1 else (),
             page=page,
-            next_page=page + 1 if start + page_size < len(every) else None,
+            next_page=page + 1 if with_rows and start + page_size < len(every) else None,
             documents=(),
             missing=(*chosen.missing, *(number for number in ids if number not in shown)),
             also_matching=chosen.also_matching if page == 1 else (),
             left=left,
             failed=failed,
+            counts=counted,
             notices=_short(notices),
         )
         return _bounded(answer, rows)
+
+    async def _counts(self, ids: Sequence[int], until: float) -> SelectionCounts | None:
+        """What the documents have; None when the time of the call is over.
+
+        The names are read anew: from an older list a new object would count as hidden.
+        """
+        if not ids:
+            return SelectionCounts()
+        if self._clock() >= until:
+            return None
+        try:
+            totals = await self._reader.count_selection(ids)
+        except Validation, PermissionDenied:
+            message = "The documents of the selection changed while they were counted."
+            raise PaperlessMcpError(message, hint="Try again.") from None
+        counts: dict[str, KindCounts] = {}
+        for kind, name in COUNTED.items():
+            if self._clock() >= until:
+                return None
+            self._taxonomy.invalidate(kind)
+            counts[name] = _named(totals[kind], await known_items(self._taxonomy, kind))
+        return SelectionCounts.model_validate(counts)
 
     async def _rows(self, ids: Sequence[int], fields: Sequence[ReadField]) -> list[ReadRow]:
         asked: list[ReadField] = [name for name in fields if name != "content"]
@@ -278,6 +326,26 @@ class ReadDocuments:
         ]
         ids = tuple(number for group in failed.values() for number in group)
         return done, ids, (*told, *end)
+
+
+def _named(totals: Mapping[int, int], known: Mapping[int, TaxonomyItem]) -> KindCounts:
+    """The objects with their names, as many as have room; hidden ones are only a number."""
+    seen = [
+        Counted(id=number, name=known[number].name, documents=count)
+        for number, count in totals.items()
+        if number in known
+    ]
+    seen.sort(key=lambda item: (-item.documents, item.name, item.id))
+    room = COUNT_CHARS
+    items: list[Counted] = []
+    for item in seen:
+        room -= len(item.model_dump_json()) + 1  # its comma
+        if room < 0:
+            break
+        items.append(item)
+    return KindCounts(
+        items=tuple(items), more=len(seen) - len(items), hidden=len(totals) - len(seen)
+    )
 
 
 def _short(notices: Sequence[str]) -> tuple[str, ...]:

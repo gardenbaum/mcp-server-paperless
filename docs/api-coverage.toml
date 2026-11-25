@@ -26,11 +26,7 @@
 [[open]]
 task = "PLMCP-83"
 operations = [
-  "GET /api/documents/next_asn/",
   "GET /api/remote_version/",
-  "GET /api/search/autocomplete/",
-  "POST /api/documents/selection_data/",
-  "POST /api/storage_paths/test/",
   "POST /api/users/{id}/deactivate_totp/",
 ]
 
@@ -874,6 +870,13 @@ source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-
 [[exclusion]]
 operation = "POST /api/users/"
 fields = ["body:date_joined"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/documents/selection_data/"
+fields = ["body:all", "body:excluded_documents", "body:filters"]
 quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"

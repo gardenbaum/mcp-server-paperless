@@ -1266,6 +1266,10 @@ async def test_many_documents_are_read_by_ids_filters_and_view() -> None:
         "has_duplicates": False,
     }
     paging: Json = {"page": 1, "page_size": 10}
+    await sweep("read_documents", {"document_ids": [1, 2], "counts": True, **paging}, ())
+    await sweep("suggest_words", {"term": "invo", "limit": 5}, ())
+    await sweep("test_storage_path", {"document_id": 1, "storage_path": 1}, ())
+    await sweep("test_storage_path", {"document_id": 1, "template": "{{ title }}"}, ())
     await sweep("read_documents", {"document_ids": [1, 2], **paging}, ("fields", "ordering"))
     await sweep("read_documents", {"filters": every, **paging}, (), prepare=owned)
     await sweep("read_documents", {"filters": {"more_like_id": 1}, **paging}, ())

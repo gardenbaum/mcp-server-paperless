@@ -172,6 +172,10 @@ accepted wherever an id is: an unknown or ambiguous name is an error that lists 
 `update_document` and `update_taxonomy_item` that cannot be taken back (handing a document to
 another owner, removing options of a select field).
 
+`get_instance_overview` also shows the next archive serial number (`next_asn`): the highest of all
+documents plus 1, of those hidden from you too. Nothing is reserved, and Paperless refuses a number
+that another document has, also one in the trash.
+
 ### `ai`
 
 On by default, and offered only while Paperless AI is enabled: `ask_paperless_ai` and
@@ -189,6 +193,11 @@ them still matches. Text comes only when asked for, at most 20,000 characters a 
 after the other for at most 40 seconds; an answer has at most 100,000 characters, and what does not
 fit, or whose text cannot be read, is named. Notes are refused to a user who may not view notes. `read_documents` only reads, so
 read-only mode keeps it (decision-69 and decision-70 in `backlog/decisions/`).
+
+With `counts=true` it counts the whole selection by tag, correspondent, type, storage path and
+custom field; objects the user may not see are only a number. `suggest_words` lists words of the
+search index that begin with a term, and `test_storage_path` shows the file path a storage path or a
+new template would give a document, without changing anything (decision-100).
 
 Over stdio with upload directories the toolset also has `upload_documents`, see
 [Uploads and downloads](#uploads-and-downloads). `bulk_edit_documents` changes many documents in one step (tags, correspondent,

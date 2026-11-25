@@ -4,14 +4,17 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 from e2e.helpers import SEEDED_OBJECTS
+from fakes.accounts import PRIVATE_ASN
 from fastmcp import Client
 from guide_oracle import COMBINATIONS, Seen, check
 from harness import Recorded, serve
 
+from mcp_server_paperless.domain.documents import DocumentPatch
+from mcp_server_paperless.domain.errors import Validation
 from mcp_server_paperless.domain.instance import MINIMUM
 
 if TYPE_CHECKING:
-    from contract.conftest import Backend
+    from contract.conftest import Backend, Ports
     from mcp_server_paperless.domain.instance import InstanceStatistics
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
@@ -73,6 +76,35 @@ async def test_a_restricted_user_sees_shared_objects_and_no_system_status(
         False,
     )
     assert overview.paperless_version == backend.expected_version
+
+
+@pytest.mark.decision("decision-101")
+@pytest.mark.contract("InstanceReader.get_overview")
+async def test_the_next_number_counts_hidden_documents_but_not_the_trash(backend: Backend) -> None:
+    async def following(ports: Ports) -> int | None:
+        return (await ports.instance.get_overview()).next_asn
+
+    admin = backend.admin
+    document = backend.new_document()
+    before = await following(admin)
+    assert before is not None
+    assert before > PRIVATE_ASN
+    # A document of another user is as good as any other: the number is one for the instance.
+    _ = await admin.document_writes.update_document(
+        document, DocumentPatch(archive_serial_number=before + 5)
+    )
+    seen = [await following(ports) for ports in (admin, backend.reader)]
+    await admin.document_writes.delete_document(document)
+    after = await following(admin)
+    blind = await following(backend.blind)
+    other = backend.new_document()
+    with pytest.raises(Validation, match="Archive Serial Number already exists in the trash"):
+        _ = await admin.document_writes.update_document(
+            other, DocumentPatch(archive_serial_number=before + 5)
+        )
+
+    assert seen == [before + 6, before + 6]
+    assert (after, blind) == (before, None)
 
 
 @pytest.mark.contract("InstanceReader.get_overview")

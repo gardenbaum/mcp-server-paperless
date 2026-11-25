@@ -25,6 +25,7 @@ import functools
 import re
 import sys
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from itertools import dropwhile, takewhile
@@ -33,7 +34,7 @@ from typing import TYPE_CHECKING, Concatenate, Literal, cast
 
 from pydantic import JsonValue
 
-from fakes import mail, raw, sharing, workflow_runs, workflows
+from fakes import lookups, mail, raw, sharing, workflow_runs, workflows
 from fakes.accounts import (
     ADMIN,
     BLIND,
@@ -234,7 +235,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.pdf import FileOutput, PageSlot
     from mcp_server_paperless.domain.permissions import AccessChange, PermissionKind
     from mcp_server_paperless.domain.raw import RawReply
-    from mcp_server_paperless.domain.selection import ReadField
+    from mcp_server_paperless.domain.selection import CountedKind, ReadField
     from mcp_server_paperless.domain.sharing import FileVersionKind, ShareBundle, ShareLink
     from mcp_server_paperless.domain.task_lists import RunnableTask, TaskFilters, TaskOrdering
     from mcp_server_paperless.domain.taxonomy import (
@@ -915,7 +916,12 @@ class FakePaperless:
                 else None
             ),
             ai_enabled=self.state.ai_enabled if may_view_settings else None,
+            next_asn=self._next_number() if user.has("view_document") else None,
         )
+
+    def _next_number(self) -> int:
+        """`next_asn`: over every document, hidden ones too, but not those in the trash."""
+        return max((d.archive_serial_number or 0 for d in self.state.documents), default=0) + 1
 
     def _statistics(self) -> InstanceStatistics:
         everything = self.user.has("view_global_statistics")
@@ -946,6 +952,78 @@ class FakePaperless:
             raise PermissionDenied(message)
         rows = self._rows(kind)
         return sorted(rows, key=lambda row: (row.name.lower(), row.id))
+
+    async def get_storage_path_template(self, item_id: int) -> str:
+        """`TaxonomyReader.get_storage_path_template` (the retrieve view)."""
+        self._require("view_storagepath")
+        for path in self.state.storage_paths:
+            if path.id == item_id and path.visible_to(self.user):
+                return path.path
+        message = f"No storage path {item_id} exists, or the user may not see it."
+        raise NotFound(message)
+
+    async def render_storage_path(self, document_id: int, template: str) -> str | None:
+        """`TaxonomyReader.render_storage_path` (the `test` action)."""
+        self._require("view_document")
+        found = [d for d in self.state.documents if d.id == document_id]
+        if not found or not found[0].visible_to(self.user):
+            reject("document", f'Invalid pk "{document_id}" - object does not exist.')
+        if not template.strip():
+            reject("path", "This field may not be blank.")
+        names = {c.id: c.name for c in self.state.correspondents}
+        values = {
+            "title": found[0].title,
+            "created_year": f"{found[0].created.year}",
+            "correspondent": names.get(found[0].correspondent or 0, "none"),
+            "''": "",
+        }
+        return lookups.rendered(template, values)
+
+    async def count_selection(
+        self, document_ids: Sequence[int]
+    ) -> dict[CountedKind, dict[int, int]]:
+        """`DocumentReader.count_selection` (SelectionDataView).
+
+        The ids must exist and be named once (400), and all be visible (403); what the documents
+        have is counted whether the user may see it or not.
+        """
+        self._require("view_document")
+        chosen = [d for d in self.state.documents if d.id in document_ids]
+        if len(chosen) != len(document_ids):
+            reject("documents", "Some documents in documents don't exist or were specified twice.")
+        if not all(d.visible_to(self.user) for d in chosen):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
+
+        def counted(ids: Iterable[int | None]) -> dict[int, int]:
+            return dict(Counter(number for number in ids if number is not None))
+
+        return {
+            "tag": counted(number for d in chosen for number in d.tags),
+            "correspondent": counted(d.correspondent for d in chosen),
+            "document_type": counted(d.document_type for d in chosen),
+            "storage_path": counted(d.storage_path for d in chosen),
+            "custom_field": counted(number for d in chosen for number in d.custom_fields),
+        }
+
+    async def suggest_words(self, term: str, limit: int) -> tuple[str, ...]:
+        """`DocumentReader.suggest_words` (SearchAutoCompleteView)."""
+        self._require("view_document")
+        state = self.state
+
+        def text(document: FakeDocument) -> str:
+            names = [t.name for t in state.tags if t.id in document.tags]
+            names += [c.name for c in state.correspondents if c.id == document.correspondent]
+            names += [t.name for t in state.document_types if t.id == document.document_type]
+            return " ".join([document.title, document.content, *names])
+
+        visible = [d for d in state.documents if d.visible_to(self.user)]
+        return lookups.suggested(map(text, visible), term, limit)
+
+    def _require(self, permission: str) -> None:
+        if not self.user.has(permission):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
 
     def _rows(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
         state, user = self.state, self.user

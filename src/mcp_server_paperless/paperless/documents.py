@@ -50,7 +50,7 @@ if TYPE_CHECKING:
 
     from mcp_server_paperless.domain.documents import DocumentQuery, FileVersion
     from mcp_server_paperless.domain.files import OpenedFile
-    from mcp_server_paperless.domain.selection import ReadField
+    from mcp_server_paperless.domain.selection import CountedKind, ReadField
     from mcp_server_paperless.domain.tasks import Unconfirmed
     from mcp_server_paperless.domain.versions import VersionUpload
     from mcp_server_paperless.paperless.client import PaperlessClient, Params
@@ -129,6 +129,25 @@ class _Note(BaseModel):
     note: str
     created: datetime | None = None
     user: _User | None = None
+
+
+class _Count(BaseModel):
+    id: int
+    document_count: int
+
+
+class _SelectionData(BaseModel):
+    """Every object of the instance with how many of the documents have it."""
+
+    selected_tags: list[_Count]
+    selected_correspondents: list[_Count]
+    selected_document_types: list[_Count]
+    selected_storage_paths: list[_Count]
+    selected_custom_fields: list[_Count]
+
+
+class _Words(RootModel[tuple[str, ...]]):
+    """A bare list of words."""
 
 
 class _Chosen(BaseModel):
@@ -532,6 +551,36 @@ class PaperlessDocumentReader:
                 raise
             raise unseen_document(query.more_like) from None
         return _page(found)
+
+    async def count_selection(
+        self, document_ids: Sequence[int]
+    ) -> dict[CountedKind, dict[int, int]]:
+        """See ``DocumentReader.count_selection``."""
+        row = await self._client.call(
+            "POST",
+            f"{PATH}selection_data/",
+            _SelectionData,
+            json={"documents": list(document_ids)},
+            timeout=MANY_TIMEOUT,
+        )
+        kinds: dict[CountedKind, list[_Count]] = {
+            "tag": row.selected_tags,
+            "correspondent": row.selected_correspondents,
+            "document_type": row.selected_document_types,
+            "storage_path": row.selected_storage_paths,
+            "custom_field": row.selected_custom_fields,
+        }
+        return {
+            kind: {c.id: c.document_count for c in counts if c.document_count}
+            for kind, counts in kinds.items()
+        }
+
+    async def suggest_words(self, term: str, limit: int) -> tuple[str, ...]:
+        """See ``DocumentReader.suggest_words``."""
+        found = await self._client.get(
+            "/api/search/autocomplete/", _Words, params={"term": term, "limit": limit}
+        )
+        return found.root
 
     async def read_rows(
         self, document_ids: Sequence[int], fields: Sequence[ReadField], *, max_bytes: int

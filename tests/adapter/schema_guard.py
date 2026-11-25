@@ -252,6 +252,9 @@ WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
         "SystemStatusView answers HttpResponseForbidden('Insufficient permissions'), text/html "
         "(PLMCP-7)"
     ),
+    ("POST", "/api/storage_paths/test/", 200): (
+        "3.5.1 answers null with an empty body; the schema has a string (PLMCP-83.2)"
+    ),
     ("GET", "/api/ui_settings/", 200): (
         "3.5.1 answers {user, settings, permissions}; the schema has {id, settings} (PLMCP-7)"
     ),

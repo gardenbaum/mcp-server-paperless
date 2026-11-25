@@ -1,4 +1,4 @@
-"""InstanceReader on /api/statistics/, /api/status/ and /api/ui_settings/.
+"""InstanceReader on /api/statistics/, /api/status/, /api/ui_settings/ and next_asn of documents.
 
 Versions come from the ``X-Version`` and ``X-Api-Version`` headers Paperless sends on every
 response, so every user gets them. A missing ``X-Version`` is an unknown release, no
@@ -8,7 +8,7 @@ token) are deliberately not used.
 
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, RootModel
 
 from mcp_server_paperless.domain.errors import PermissionDenied
 from mcp_server_paperless.domain.instance import (
@@ -81,6 +81,10 @@ class _UiSettings(BaseModel):
     settings: _Settings
 
 
+class _Number(RootModel[int]):
+    """The next archive serial number, a bare integer."""
+
+
 def _component(status: str, error: str | None) -> ComponentStatus:
     shown = None if error is None else text_without_credentials(error)
     return ComponentStatus(status=status, error=shown)
@@ -117,6 +121,7 @@ class PaperlessInstanceReader:
             api_version = int(response.headers["X-Api-Version"])
         except (KeyError, ValueError) as error:
             raise unexpected(response) from error
+        following = await self._unless_forbidden("/api/documents/next_asn/", _Number)
         status = await self._unless_forbidden("/api/status/", _Status)
         ui_settings = await self._unless_forbidden("/api/ui_settings/", _UiSettings)
         user = ui_settings.user if ui_settings else None
@@ -138,6 +143,7 @@ class PaperlessInstanceReader:
                 else None
             ),
             ai_enabled=ui_settings.settings.ai_enabled if ui_settings else None,
+            next_asn=following.root if following else None,
         )
 
     async def _unless_forbidden[M: BaseModel](self, path: str, model: type[M]) -> M | None:
