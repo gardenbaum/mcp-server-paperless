@@ -51,6 +51,8 @@ class Issuer:
     kid: str | None = None
     left_out: set[str] = field(default_factory=set)
     extra: dict[str, object] = field(default_factory=dict)
+    # What the token endpoint refuses every request with, if set.
+    refusal: dict[str, str] | None = None
 
     def discovery(self) -> dict[str, object]:
         document: dict[str, object] = {
@@ -125,6 +127,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.issuer.token_requests.append(form)
         if urlsplit(self.path).path != f"{urlsplit(self.issuer.url).path}/token":
             self._send(404, {"error": "not_found"})
+            return
+        if self.issuer.refusal is not None:
+            self._send(400, self.issuer.refusal)
             return
         expected = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
         if self.headers.get("Authorization") != f"Basic {expected}":

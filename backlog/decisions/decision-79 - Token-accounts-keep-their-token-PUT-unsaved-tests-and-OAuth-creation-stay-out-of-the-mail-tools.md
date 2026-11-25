@@ -17,7 +17,7 @@ AC 4 and 6 of PLMCP-81 want every endpoint of `mail_accounts`, `mail_rules`, `pr
 - The test of an unsaved account makes Paperless connect to any host and port. Saving the account and testing it reaches the same hosts.
 - The view of `process` ignores its body. PATCH does all that PUT does.
 
-On 2026-11-24 the owner approved decisions 1 to 12 of the design of PLMCP-81: "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended" (the recommended option of a question dialog, as the main agent recorded it).
+On 2026-11-24 the owner approved decisions 1 to 12 of the design of PLMCP-81: "Alle wie empfohlen" (all as recommended), in the question "Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?".
 <!-- SECTION:CONTEXT:END -->
 
 ## Decision

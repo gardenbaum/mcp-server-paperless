@@ -17,6 +17,7 @@ from oidc_issuer import CLIENT_ID, CLIENT_SECRET, stub_issuer
 
 from mcp_server_paperless.app import run_server
 from mcp_server_paperless.cli import main, main_http
+from mcp_server_paperless.domain.errors import AuthenticationFailed
 from mcp_server_paperless.tools._shared import ANNOTATIONS
 
 if TYPE_CHECKING:
@@ -154,6 +155,24 @@ def test_the_transport_is_stdio_whatever_the_environment_says(
     assert finished.returncode == 0
     assert "uvicorn" not in finished.stderr.lower()
     assert "http://" not in finished.stderr.replace(env["PAPERLESS_URL"], "")
+
+
+@pytest.mark.usefixtures("isolated_logging")
+def test_a_failure_out_of_a_task_group_stops_the_start_with_its_fixed_text(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("PAPERLESS_URL", "http://paperless.test")
+    monkeypatch.setenv("PAPERLESS_TOKEN", TOKEN)
+    error = AuthenticationFailed("Rejected.")
+
+    def fails(_server: object) -> None:
+        raise ExceptionGroup("group", [error])  # noqa: EM101 -- what anyio raises
+
+    with pytest.raises(SystemExit) as caught:
+        main(lambda: None, fails)
+
+    assert caught.value.code == 1
+    assert "mcp-server-paperless: Rejected." in capsys.readouterr().err
 
 
 # --- HTTP entrypoint (PLMCP-34) ------------------------------------------------------------------

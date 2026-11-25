@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING, cast, override
 
 import pytest
-from fakes.accounts import READER
+from fakes.accounts import ADMIN, READER
 from fakes.paperless import THUMBNAIL, FakeDocument, FakePaperless, seeded
 from fastmcp import Client
 from harness import admin, serve
@@ -161,6 +161,26 @@ async def test_bad_requests_are_tool_errors(name: str, arguments: Json, message:
 
     assert result.is_error
     assert message in str(result.content)
+
+
+@pytest.mark.parametrize("user", [ADMIN[0], READER[0]])
+async def test_a_thumbnail_in_the_trash_is_an_error_of_the_tool_and_of_the_resource(
+    user: str,
+) -> None:
+    state = seeded()
+    await FakePaperless(state, user=ADMIN[0], allow_writes=True).delete_document(1)
+    message = "1 is in the trash: it is a deleted document or version"
+
+    async with Client(serve(FakePaperless(state, user=user))) as client:
+        result = await client.call_tool(
+            "get_document_thumbnail", {"document_id": 1}, raise_on_error=False
+        )
+        with pytest.raises(MCPError, match=message):
+            _ = await client.read_resource("paperless://documents/1/thumbnail")
+
+    assert result.is_error
+    assert message in str(result.content)
+    assert not any(isinstance(block, ImageContent) for block in result.content)
 
 
 async def test_a_document_without_archive_version_is_an_error_with_a_hint() -> None:

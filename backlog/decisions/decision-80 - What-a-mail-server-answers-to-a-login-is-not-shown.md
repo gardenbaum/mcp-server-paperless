@@ -7,7 +7,7 @@ status: proposed
 ## Context
 
 <!-- SECTION:CONTEXT:BEGIN -->
-The `error` of a processed mail is a whole Python traceback, and `mail.log` has the same texts. For a login that failed they hold what the mail server answered. A broken or hostile server may repeat what it was sent: the password or access token, also in base64. decision-66 knows credentials in URLs only. The owner approved decision 5a of the design of PLMCP-81 on 2026-11-24 ("Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"): hide the answer in the mail tools, in `get_log` and in the raw tool. An automated review of the first version found that an answer can forge the end of its error and that a cut log can lack the part that tells of a login; the main agent asked to fail closed (2026-11-24).
+The `error` of a processed mail is a whole Python traceback, and `mail.log` has the same texts. For a login that failed they hold what the mail server answered. A broken or hostile server may repeat what it was sent: the password or access token, also in base64. decision-66 knows credentials in URLs only. The owner approved decision 5a of the design of PLMCP-81 on 2026-11-24 ("Alle wie empfohlen", all as recommended, in the question "Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?"): hide the answer in the mail tools, in `get_log` and in the raw tool. An automated review of the first version found that an answer can forge the end of its error and that a cut log can lack the part that tells of a login; the main agent asked to fail closed (2026-11-24).
 <!-- SECTION:CONTEXT:END -->
 
 ## Decision
