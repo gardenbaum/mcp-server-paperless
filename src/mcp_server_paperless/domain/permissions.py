@@ -21,8 +21,16 @@ from mcp_server_paperless.domain.documents import NameOrId
 MAX_OBJECTS = 100
 
 type SharedKind = Literal["tag", "correspondent", "document_type", "storage_path"]
-type MailKind = Literal["mail_account", "mail_rule"]
-type PermissionKind = Literal["document"] | SharedKind | MailKind
+# One flat list, so that the schema of the tool is one enum.
+type PermissionKind = Literal[
+    "document",
+    "tag",
+    "correspondent",
+    "document_type",
+    "storage_path",
+    "mail_account",
+    "mail_rule",
+]
 type Mode = Literal["merge", "replace"]
 
 

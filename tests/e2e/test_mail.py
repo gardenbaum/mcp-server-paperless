@@ -388,7 +388,7 @@ async def test_an_account_and_its_rule_are_shared_one_by_one(
             confirm=True,
         )
 
-    assert "point it at another server" in asked
+    assert "send its saved password or token to a server of their choice" in asked
     assert (shared["changed_count"], ruled["changed_count"]) == (1, 1)
     wire = obj(
         parse(stack.admin.get(f"/api/mail_accounts/{made['id']}/", params={"full_perms": "true"}))

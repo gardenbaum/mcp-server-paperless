@@ -3161,6 +3161,30 @@ class FakePaperless:
         more = page + 1 if first + page_size < len(rows) else None
         return rows[first : first + page_size], more
 
+    def _owner_clashes(
+        self,
+        kind: PermissionKind,
+        target: FakeDocument | FakeTaxonomy | FakeMailAccount | FakeMailRule,
+        owner: int | None,
+    ) -> bool:
+        """Whether the new owner has another object of the same name."""
+        return kind != "document" and any(
+            o is not target and o.owner == owner and _label(o) == _label(target)
+            for o in self._permission_objects(kind)
+        )
+
+    def _permission_target(
+        self, kind: PermissionKind, object_id: int
+    ) -> FakeDocument | FakeTaxonomy | FakeMailAccount | FakeMailRule:
+        if not self.user.has(f"change_{kind.replace('_', '')}"):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
+        found = [o for o in self._permission_objects(kind) if o.id == object_id]
+        if not found or not found[0].visible_to(self.user):
+            message = "The Paperless object does not exist or is not visible to this user."
+            raise NotFound(message)
+        return found[0]
+
     @write
     async def set_permissions(
         self, kind: PermissionKind, object_id: int, change: AccessChange
@@ -3170,37 +3194,28 @@ class FakePaperless:
         Order: the global change permission (403), the object among those the user may see (404),
         the values (400: unknown users, groups or owner, and a name another object of the new
         owner already has, as the serializer validates them), then ownership (403: a change
-        grant is not enough).
+        grant is not enough). The name of a rule is checked last, after its grants were set.
         """
-        if not self.user.has(f"change_{kind.replace('_', '')}"):
-            message = "The Paperless user may not perform this action."
-            raise PermissionDenied(message)
-        found = [o for o in self._permission_objects(kind) if o.id == object_id]
-        if not found or not found[0].visible_to(self.user):
-            message = "The Paperless object does not exist or is not visible to this user."
-            raise NotFound(message)
-        target = found[0]
+        target = self._permission_target(kind, object_id)
         state = self.state
-        given = change.permissions
+        given, clashes = change.permissions, False
         if given is not None:
             check_principals(given, state.users, state.groups)
         if "owner" in change.model_fields_set:
             if change.owner not in {None, *(u.id for u in state.users)}:
                 reject("owner", f'Invalid pk "{change.owner}" - object does not exist.')
-            clash = (
-                o
-                for o in self._permission_objects(kind)
-                if o is not target and o.owner == change.owner and _label(o) == _label(target)
-            )
-            if kind != "document" and any(clash):
+            clashes = self._owner_clashes(kind, target, change.owner)
+            if clashes and kind != "mail_rule":
                 reject("non_field_errors", "The fields name, owner must make a unique set.")
         if not (self.user.is_superuser or target.owner in {None, self.user.id}):
             message = "The Paperless user may not perform this action."
             raise PermissionDenied(message)
-        if "owner" in change.model_fields_set:
-            target.owner = change.owner
         if given is not None:
             set_grants(target, given)
+        if clashes:  # a rule's name is checked after its grants were set
+            reject("error", "Object violates owner / name unique constraint")
+        if "owner" in change.model_fields_set:
+            target.owner = change.owner
         return access_of(target, _label(target))
 
     # --- ViewReader and ViewWriter

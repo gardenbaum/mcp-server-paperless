@@ -261,13 +261,29 @@ async def test_a_mail_without_attachments_is_imported_itself_again(
     assert {row["status"] for row in rows} == {"SUCCESS", "PROCESSED_WO_CONSUMPTION"}
     assert FLAGGED in box.flags(uid)
     [empty] = [row for row in rows if row["status"] == "PROCESSED_WO_CONSUMPTION"]
-    assert "the mail itself is imported" in str((await record(client, empty))["refetch"])
+    said = str((await record(client, empty))["refetch"])
+    assert "the mail itself and the files the rule takes from it are imported" in said
     box.unflag(uid, FLAGGED)
     box.forget(*(num(row["id"]) for row in rows))
     assert box.fetch() == 1
     _ = box.records(rule, 2)
     assert FLAGGED in box.flags(uid)
     assert len(box.documents("Alone")) == 2
+
+
+async def test_the_rule_acts_when_the_mail_is_imported_although_its_file_fails(
+    box: Mailbox, client: Connected
+) -> None:
+    """The mail itself and its attachments are queued apart, each with the action behind it."""
+    rule = box.rule("flag", consumption_scope=3)
+    uid = box.put("Half", {"broken.pdf": BROKEN})
+
+    assert box.fetch() == 2
+    [row, *_] = box.records(rule, count=None)
+    assert FLAGGED in box.flags(uid)
+    said = str((await record(client, row))["refetch"])
+    assert "as soon as the mail itself, or every one of the files, is consumed" in said
+    assert len(box.documents("Half")) == 1
 
 
 async def test_every_rule_has_a_record_of_its_own_and_skips_what_another_took_in_the_run(
@@ -376,6 +392,54 @@ async def test_the_record_of_a_login_that_repeats_the_credentials_shows_none(
     )
     for result in (shown, listed, raw):
         assert SENT not in str(result)
+
+
+@pytest.mark.decision("decision-87")
+async def test_a_change_grant_sends_the_saved_password_anywhere_without_storing_anything(
+    box: Mailbox, stack: Stack
+) -> None:
+    """What the confirmation of set_permissions says: the account is only tested, not changed."""
+    name, password = f"{box.name}-user", "pw-e2e-imap-4711"
+    body = {
+        "username": name,
+        "password": password,
+        "user_permissions": ["view_mailaccount", "change_mailaccount"],
+    }
+    user = num(obj(parse(stack.admin.post("/api/users/", json=body).raise_for_status()))["id"])
+    box.change_account(
+        set_permissions={
+            "view": {"users": [user], "groups": []},
+            "change": {"users": [user], "groups": []},
+        }
+    )
+    heard: list[str] = []
+    try:
+        with (
+            echo_server("no", heard) as port,
+            httpx2.Client(
+                base_url=stack.base_url,
+                auth=(name, password),
+                headers={"Accept": f"application/json; version={API_VERSION}"},
+                timeout=60.0,
+            ) as grantee,
+        ):
+            body = {
+                "id": box.account,
+                "name": "x",
+                "imap_server": ECHO,
+                "imap_port": port,
+                "imap_security": 1,
+                "username": "me",
+                "password": "*",
+            }
+            tested = grantee.post("/api/mail_accounts/test/", json=body)
+    finally:
+        _ = stack.admin.delete(f"/api/users/{user}/")
+
+    assert tested.status_code == 400
+    assert any(PASSWORD in line for line in heard)
+    stored = obj(parse(stack.admin.get(f"/api/mail_accounts/{box.account}/")))
+    assert stored["imap_server"] == "imap"
 
 
 async def test_a_login_that_fails_when_the_rule_acts_shows_no_answer(

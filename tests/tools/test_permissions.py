@@ -318,7 +318,7 @@ async def test_a_mail_account_is_shared_after_a_confirmation_that_says_what_it_g
     message = await refusal(source, "set_permissions", **arguments)
     output = await call(source, "set_permissions", **arguments, confirm=True)
 
-    assert "point it at another server" in message
+    assert "send its saved password or token to a server of their choice" in message
     assert "grant on an account is none on its rules" in message
     assert output["changed_count"] == 1
     assert "pa55-x" not in str(output) + message

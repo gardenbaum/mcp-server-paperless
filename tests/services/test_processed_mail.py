@@ -58,14 +58,14 @@ HIDDEN: Final = (
     "deleted or moved on the mail server"
 )
 TAKEN: Final = (
-    "the files the rule takes from it are imported, also those imported before (a second time, "
-    "unless Paperless rejects duplicates), and if every one of them is consumed"
+    "the files the rule takes from it are imported (again, if they were before, unless Paperless "
+    "rejects duplicates); if every one of them is consumed"
 )
 NOT_KNOWN: Final = (
     "The rule's settings of now count, not those of then; whether the mail still exists on the "
     "server, and records you may not see, are not known here. A record keeps out the mail with its "
     "folder and uid: one stored without the folder's UIDVALIDITY any such mail, one with an older "
-    "UIDVALIDITY none; which it is is not shown."
+    "UIDVALIDITY none, unless the server names none; which it is is not shown."
 )
 
 
@@ -280,7 +280,7 @@ async def test_a_mail_without_a_file_is_looked_at_again_and_mostly_nothing_happe
     assert await setup.refetch() == (
         f"Without this record {NEXT} looks at the mail again {MATCHING} and is not flagged. "
         "Nothing happens to it unless the rule or the mail now gives a file: then that is "
-        f"imported and the rule flags the mail. {NOT_KNOWN}"
+        f"imported and, if it is consumed, the rule flags the mail. {NOT_KNOWN}"
     )
 
 
@@ -884,21 +884,67 @@ async def test_a_hidden_account_does_not_stop_the_deletion() -> None:
     assert outcomes(await setup.delete(1)) == [(1, "deleted")]
 
 
-@pytest.mark.parametrize("scope", ["eml", "eml_and_attachments"])
-async def test_a_mail_without_attachments_that_was_imported_itself_is_imported_again(
-    scope: str,
-) -> None:
-    """The mail itself is queued before Paperless finds no attachment (PROCESSED_WO_CONSUMPTION)."""
+IMPORTED: Final = {
+    "eml": (
+        "the mail itself is imported (again, if it was before, unless Paperless rejects "
+        "duplicates); if it is consumed"
+    ),
+    "eml_and_attachments": (
+        "the mail itself and the files the rule takes from it are imported (again, if they were "
+        "before, unless Paperless rejects duplicates); as soon as the mail itself, or every one of "
+        "the files, is consumed, even if the other fails"
+    ),
+    "attachments": TAKEN,
+}
+
+
+@pytest.mark.parametrize("scope", IMPORTED)
+@pytest.mark.parametrize("status", ["FAILED", "PROCESSED_WO_CONSUMPTION", "SUCCESS"])
+async def test_when_the_rule_acts_follows_from_what_it_takes(scope: str, status: str) -> None:
+    """The mail itself and its attachments are queued apart, each with the action behind it."""
     setup = Setup()
     setup.rule(action="delete", consumption_scope=scope)
-    setup.mail(status="PROCESSED_WO_CONSUMPTION")
+    setup.mail(status=status)
 
-    assert await setup.refetch() == (
-        f"Without this record {NEXT} takes the mail again {MATCHING}: the mail itself is imported "
-        "(a second time, unless Paperless rejects duplicates) with the files the rule takes from "
-        f"it, and if every one of them is consumed, the rule then DELETES the mail on the mail "
-        f"server. {NOT_KNOWN}"
-    )
+    text = await setup.refetch()
+
+    acts = f"{IMPORTED[scope]}, the rule then DELETES the mail on the mail server"
+    if (status, scope) == ("PROCESSED_WO_CONSUMPTION", "attachments"):
+        assert "imported and, if it is consumed, the rule DELETES the mail" in text
+    else:
+        assert acts in text
+    if status != "SUCCESS":
+        assert text.startswith(f"Without this record {NEXT} ")
+
+
+async def test_other_records_are_those_of_the_folder_as_the_rule_writes_it() -> None:
+    """Paperless compares the folder of a record exactly, a mail server INBOX in any case."""
+    setup = Setup()
+    setup.rule(folder="inbox")
+    setup.mail(status="FAILED", folder="INBOX")
+    setup.mail(status="FAILED", folder="inbox")
+    setup.mail(status="FAILED", folder="INBOX")
+
+    assert "until they are deleted too: 2. " in await setup.refetch()
+
+
+async def test_a_record_of_another_folder_has_the_others_of_that_folder() -> None:
+    setup = Setup()
+    setup.rule(folder="Bills")
+    setup.mail(status="FAILED")
+    setup.mail(status="FAILED")
+    setup.mail(status="FAILED", folder="Bills")
+
+    assert "until they are deleted too: 2. " in await setup.refetch()
+
+
+@pytest.mark.decision("decision-83")
+async def test_only_a_call_that_ran_out_of_time_suggests_fewer_records() -> None:
+    setup = Setup(make=Vanishing, writes=True)
+    setup.rule()
+    failed_mails(setup, 4)
+
+    assert "Delete fewer" not in (await setup.delete(1, 2, 3)).message
 
 
 async def test_the_inbox_is_the_same_in_any_case() -> None:

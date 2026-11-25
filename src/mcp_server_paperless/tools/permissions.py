@@ -116,12 +116,12 @@ async def set_permissions(  # noqa: PLR0913 -- one parameter per concept, descri
     show the user, first names, per object, who gains and who loses access and what the owner
     change does (see confirm). Objects that already are as asked are left alone and need no
     confirm. Needs to own the objects (or no owner) or be a superuser, plus the permission to
-    change the kind. Whoever may change a mail account can point it at another server with its saved
-    password; the confirmation says so, and a grant on an account is none on its rules. Other tools
-    touch permissions too: update_document(owner=) only changes a document's owner alongside other
-    edits, and bulk_edit_taxonomy (bulk toolset) sets permissions of taxonomy objects with a dry_run
-    preview, and replaces the lists you leave out; this tool also covers documents and keeps the
-    lists you leave out. Look up users and groups with
+    change the kind. The confirmation says what a change grant on a mail account (its saved password
+    can be sent anywhere) or a mail rule gives; a grant on an account is none on its rules. Other
+    tools touch permissions too: update_document(owner=) only changes a document's owner alongside
+    other edits, and bulk_edit_taxonomy (bulk toolset) sets permissions of taxonomy objects with a
+    dry_run preview, and replaces the lists you leave out; this tool also covers documents and keeps
+    the lists you leave out. Look up users and groups with
     list_users and list_groups.
     """
     request = PermissionsRequest(

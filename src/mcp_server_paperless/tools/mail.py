@@ -585,13 +585,13 @@ async def delete_processed_mail(
     """Delete records of processed mail, so that Paperless can fetch those mails again.
 
     The records cannot be brought back; documents and the mail itself stay. What follows depends on
-    the rule: a mail that failed is taken again at the next fetch, and then the rule acts on it,
-    which can DELETE or move it on the mail server without another question; one that was imported
-    can become a second document. Without confirm a dialog, or an error for you to show the user,
-    first names each mail and what follows (see confirm); dry_run shows the same. One id that does
-    not exist refuses the call. Each record is read again afterwards, since Paperless also reports
-    ids as deleted that it skipped. Needs view_processedmail and delete_processedmail, and records
-    that the user owns or that have no owner.
+    the rule: a mail that failed is taken again at the next fetch; once it is imported the rule acts
+    on it, which can DELETE or move it on the mail server without another question; one that was
+    imported can become a second document. Without confirm a dialog, or an error for you to show
+    the user, first names each mail and what follows (see confirm); dry_run shows the same. One id
+    that does not exist refuses the call. Each record is read again afterwards, since Paperless also
+    reports ids as deleted that it skipped. Needs view_processedmail and delete_processedmail, and
+    records that the user owns or that have no owner.
     """
     return await services(ctx).processed_mail.delete(mail_ids, dry_run=dry_run, confirm=confirm)
 
