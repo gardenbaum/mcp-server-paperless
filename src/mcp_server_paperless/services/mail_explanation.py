@@ -440,10 +440,11 @@ class MailExplanations:
                 page_size=FAILED_READ,
             ),
         )
+        for what, found in (("fetches", fetches), ("files that could not be consumed", failed)):
+            if found and found.count > len(found.rows):
+                read = f"only the newest {len(found.rows)} of {found.count} were looked at"
+                asking.gaps.append(f"{what}: {read}")
         rows = failed.rows if failed else ()
-        if failed and failed.count > len(rows):
-            read = f"only the newest {len(rows)} of {failed.count} were looked at"
-            asking.gaps.append(f"files that could not be consumed: {read}")
         files = [row for row in rows if row.trigger_source == "email_consume"]
         if len(files) > MAX_TASKS:
             asking.gaps.append(

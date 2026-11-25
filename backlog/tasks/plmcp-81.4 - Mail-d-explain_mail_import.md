@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:57Z'
-updated_date: '2026-11-25T11:11:46Z'
+updated_date: '2026-11-25T13:19:56Z'
 labels:
   - mail
 dependencies:
@@ -53,4 +53,6 @@ Implementation notes: the service was written before its tests, against the rule
 Review of #163 fixed, tests first: forged log dates, log forms anchored with their loggers (services/mail_log_lines.py), one start time per log (logs_from is a list), gaps for failed tasks beyond the bound, bounded gaps, check record for records that can block the mail, texts of 2000 characters for sender, recipient and subject, extreme dates, two days of doubt, colours, folder to move to, exact folder for queued mail. 84 hand mutants killed. Limits: hidden records and tasks, the uid of a mail, names with a full stop, new log wordings, same subject in another account.
 
 Second review, tests first: another mail's line with the same file name is left out, wording of skipped fetches and of records of others, contract test of the log lines of a fetch, boundaries of 5 files and 18 gaps, decision-90 names forged records and lines that may be about another mail.
+
+Codex P2 on #163: fetch tasks beyond the five that are read stand in not_checked and make complete false, test first.
 <!-- SECTION:NOTES:END -->

@@ -1165,3 +1165,22 @@ async def test_exactly_eighteen_gaps_are_all_shown(*, rules: int, counted: bool)
 
     assert any("more things" in gap for gap in found.not_checked) is counted
     assert len(found.not_checked) == (18 + 1 + counted)  # and the note about others
+
+
+@pytest.mark.parametrize(("fetches", "more"), [(5, False), (6, True)])
+async def test_more_fetches_than_are_read_are_said(*, fetches: int, more: bool) -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [LOG.format(0, "x")]
+    setup.state.logs["paperless"] = [RUN.format(0, "x")]
+    for number in range(fetches):
+        setup.state.tasks.append(
+            FakeTask(id=number + 1, task_id=f"t{number}", task_type="mail_fetch", status="success")
+        )
+
+    found = await setup.explain(subject="x")
+
+    gap = "fetches: only the newest 5 of 6 were looked at"
+    assert len(found.tasks) == 5
+    assert (gap in found.not_checked) is more
+    assert found.complete is not more
