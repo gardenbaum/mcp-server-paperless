@@ -1,4 +1,4 @@
-"""PaperlessViewReader and PaperlessViewWriter on the Paperless 3.4.2 wire format."""
+"""PaperlessViewReader and PaperlessViewWriter on the Paperless 3.5.1 wire format."""
 
 import json
 from typing import TYPE_CHECKING, cast
@@ -32,8 +32,8 @@ WIRE: Json = {
     "sort_reverse": True,
     "filter_rules": [{"rule_type": 6, "value": "1"}, {"rule_type": 3, "value": None}],
     "page_size": 10,
-    "display_mode": None,
-    "display_fields": None,
+    "display_mode": "smallCards",
+    "display_fields": ["title", "custom_field_7"],
     "owner": 2,
     "user_can_change": True,
 }
@@ -43,6 +43,9 @@ VIEW = SavedView(
     sort_field="created",
     sort_reverse=True,
     page_size=10,
+    icon="funnel",
+    display_mode="smallCards",
+    display_fields=("title", "custom_field_7"),
     owner=2,
     user_can_change=True,
     filter_rules=(FilterRule(rule_type=6, value="1"), FilterRule(rule_type=3, value=None)),
@@ -190,6 +193,53 @@ async def test_an_update_sends_only_what_was_set_and_can_clear_sort_and_page_siz
             {"sort_field": None, "page_size": None, "sort_reverse": False},
         ),
     ]
+
+
+async def test_a_write_sends_the_display_settings_and_an_update_clears_them(
+    make_client: ClientFactory,
+) -> None:
+    server = Recording(
+        httpx2.Response(201, json=WIRE),
+        httpx2.Response(200, json=WIRE),
+        httpx2.Response(200, json=WIRE),
+    )
+    writer = PaperlessViewWriter(make_client(server))
+    values = ViewValues(icon="heart", display_mode="largeCards", display_fields=("asn", "title"))
+
+    _ = await writer.create_saved_view("x", values)
+    _ = await writer.update_saved_view(2, values)
+    _ = await writer.update_saved_view(2, ViewValues(display_mode=None, display_fields=None))
+
+    sent = {"icon": "heart", "display_mode": "largeCards", "display_fields": ["asn", "title"]}
+    assert [body for _, _, body, _ in server.sent] == [
+        {"filter_rules": [], **sent, "name": "x"},
+        sent,
+        {"display_mode": None, "display_fields": None},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("stored", "shown"),
+    [
+        (None, None),
+        ([], ()),
+        (["title", "custom_field_7"], ("title", "custom_field_7")),
+        # What the check of Paperless lets through, too (probe P4 of PLMCP-88.1).
+        ("", None),
+        ({}, None),
+        ({"title": 1}, None),
+        (["xcustom_field_3"], ("xcustom_field_3",)),
+    ],
+)
+async def test_odd_stored_display_fields_do_not_hide_the_view(
+    make_client: ClientFactory, stored: object, shown: tuple[str, ...] | None
+) -> None:
+    row = {**WIRE, "display_mode": "", "display_fields": stored}
+    server = Recording(page(row))
+
+    [view] = await PaperlessViewReader(make_client(server)).list_saved_views()
+
+    assert (view.display_fields, view.display_mode) == (shown, "")
 
 
 async def test_an_update_can_replace_the_rules_by_an_empty_list(

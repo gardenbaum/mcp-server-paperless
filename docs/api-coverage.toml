@@ -63,7 +63,6 @@ task = "PLMCP-88"
 operations = [
   "GET /api/saved_views/{id}/",
   "POST /api/ui_settings/",
-  "PUT /api/saved_views/{id}/",
 ]
 
 [[open]]
@@ -246,11 +245,6 @@ fields = ["query:name__iendswith", "query:name__iexact", "query:name__istartswit
 task = "PLMCP-83"
 
 [[open_fields]]
-operation = "GET /api/saved_views/"
-fields = ["query:full_perms", "query:ordering"]
-task = "PLMCP-88"
-
-[[open_fields]]
 operation = "GET /api/share_link_bundles/"
 fields = ["query:created__date__gt", "query:created__date__gte", "query:created__date__lt", "query:created__date__lte", "query:created__day", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:created__month", "query:created__year", "query:documents", "query:expiration__date__gt", "query:expiration__date__gte", "query:expiration__date__lt", "query:expiration__date__lte", "query:expiration__day", "query:expiration__gt", "query:expiration__gte", "query:expiration__lt", "query:expiration__lte", "query:expiration__month", "query:expiration__year", "query:ordering", "query:status"]
 task = "PLMCP-83"
@@ -307,7 +301,7 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/saved_views/{id}/"
-fields = ["body:display_fields", "body:display_mode", "body:icon", "body:owner", "body:set_permissions"]
+fields = ["body:owner", "body:set_permissions"]
 task = "PLMCP-88"
 
 [[open_fields]]
@@ -374,11 +368,6 @@ task = "PLMCP-83"
 operation = "POST /api/documents/{id}/notes/"
 fields = ["body:format", "query:id"]
 task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/saved_views/"
-fields = ["body:display_fields", "body:display_mode", "body:icon", "body:owner", "body:set_permissions"]
-task = "PLMCP-88"
 
 [[open_fields]]
 operation = "POST /api/share_link_bundles/{id}/rebuild/"
@@ -637,6 +626,26 @@ fields = ["body:actions[].email.id", "body:actions[].webhook.id"]
 quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
+
+[[exclusion]]
+operation = "PUT /api/saved_views/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-91 - Saved-views-display-settings-are-checked-here-grants-go-through-set_permissions-PUT-and-list-options-stay-out.md"
+
+[[exclusion]]
+operation = "GET /api/saved_views/"
+fields = ["query:full_perms", "query:ordering"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-91 - Saved-views-display-settings-are-checked-here-grants-go-through-set_permissions-PUT-and-list-options-stay-out.md"
+
+[[exclusion]]
+operation = "POST /api/saved_views/"
+fields = ["body:owner", "body:set_permissions"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-91 - Saved-views-display-settings-are-checked-here-grants-go-through-set_permissions-PUT-and-list-options-stay-out.md"
 
 [[exclusion]]
 operation = "POST /api/workflows/"
