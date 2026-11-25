@@ -300,16 +300,6 @@ fields = ["body:created_date", "body:remove_inbox_tags"]
 task = "PLMCP-83"
 
 [[open_fields]]
-operation = "PATCH /api/mail_accounts/{id}/"
-fields = ["body:owner", "body:set_permissions"]
-task = "PLMCP-81.5"
-
-[[open_fields]]
-operation = "PATCH /api/mail_rules/{id}/"
-fields = ["body:set_permissions"]
-task = "PLMCP-81.5"
-
-[[open_fields]]
 operation = "PATCH /api/saved_views/{id}/"
 fields = ["body:owner", "body:set_permissions"]
 task = "PLMCP-88"

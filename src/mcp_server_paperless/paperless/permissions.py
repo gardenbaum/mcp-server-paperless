@@ -17,6 +17,9 @@ Documents, tags, correspondents, document types and storage paths take ``owner``
   list, but NOT on the PATCH: with ``fields`` a document PATCH answers 200 and silently ignores
   ``set_permissions`` (probed: the grants stay as they were), so the answer of a document PATCH
   carries its whole text and the adapter reads only the fields it needs.
+- Mail accounts and rules (3.5.1, PLMCP-81.5) answer their grants with ``full_perms=true`` as well,
+  though the schema does not say so; nothing but owner and grants is sent, so the saved password
+  stays, and the mask of it that Paperless answers is not read.
 - The users and groups lists are sent in Paperless's own order (case-insensitive by name).
 """
 
@@ -49,7 +52,11 @@ PATHS: Final[dict[PermissionKind, str]] = {
     "correspondent": "/api/correspondents/",
     "document_type": "/api/document_types/",
     "storage_path": "/api/storage_paths/",
+    "mail_account": "/api/mail_accounts/",
+    "mail_rule": "/api/mail_rules/",
 }
+# Their lists have no `id__in`: the objects are read one by one.
+MAIL_KINDS: Final[frozenset[PermissionKind]] = frozenset({"mail_account", "mail_rule"})
 USERS = "/api/users/"
 GROUPS = "/api/groups/"
 USERS_LABEL = "users"
@@ -153,6 +160,8 @@ class PaperlessPermissionReader:
         wanted = list(dict.fromkeys(object_ids))
         if not wanted:
             return []
+        if kind in MAIL_KINDS:
+            return [row for number in wanted if (row := await self._one(kind, number)) is not None]
         params: dict[str, str | int] = {
             "id__in": ",".join(map(str, wanted)),
             "full_perms": "true",
@@ -163,6 +172,13 @@ class PaperlessPermissionReader:
         found = await self._client.get(PATHS[kind], Page[_Row], params=params)
         rows = {row.id: row for row in found.results}
         return [_access(rows[number]) for number in wanted if number in rows]
+
+    async def _one(self, kind: PermissionKind, number: int) -> ObjectAccess | None:
+        path = f"{PATHS[kind]}{number}/"
+        try:
+            return _access(await self._client.get(path, _Row, params={"full_perms": "true"}))
+        except NotFound:
+            return None
 
     async def list_users(self, *, name_contains: str | None, page: int, page_size: int) -> UserPage:
         """See ``PermissionReader.list_users``."""

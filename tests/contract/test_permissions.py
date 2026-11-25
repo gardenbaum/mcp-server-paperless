@@ -16,15 +16,20 @@ from typing import TYPE_CHECKING
 
 import pytest
 from fakes.accounts import ADMIN, BLIND, READER
+from pydantic import SecretStr
 
 from mcp_server_paperless.domain.bulk import ObjectPermissions
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.mail import MailAccountValues, MailRuleValues
 from mcp_server_paperless.domain.permissions import AccessChange
 from mcp_server_paperless.domain.taxonomy import TaxonomyValues
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from contract.conftest import Backend, Ports
     from mcp_server_paperless.domain.bulk import BulkKind
+    from mcp_server_paperless.domain.permissions import PermissionKind
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-12")]
 
@@ -368,3 +373,249 @@ async def test_listing_groups_needs_the_permission_to_view_them(backend: Backend
     page = await viewer.permissions.list_groups(name_contains="e2e-group", page=1, page_size=25)
 
     assert [row.name for row in page.rows] == ["e2e-group"]
+
+
+# --- mail accounts and rules (PLMCP-81.5)
+
+
+@pytest.fixture
+async def account(backend: Backend) -> AsyncIterator[int]:
+    """A mail account of the admin; its rules go with it."""
+    writes = backend.admin.mail_writes
+    made = await writes.create_mail_account(
+        MailAccountValues(
+            name=f"contract-{uuid.uuid4().hex[:12]}",
+            imap_server="127.0.0.1",
+            imap_port=1,
+            username="u",
+            password=SecretStr("contract-Passw0rd"),
+        )
+    )
+    yield made.id
+    await writes.delete_mail_account(made.id)
+
+
+async def mail_object(backend: Backend, kind: PermissionKind, account: int) -> int:
+    if kind == "mail_account":
+        return account
+    values = MailRuleValues(name=f"contract-{uuid.uuid4().hex[:12]}", account_id=account)
+    return (await backend.admin.mail_writes.create_mail_rule(values)).id
+
+
+MAIL: tuple[PermissionKind, ...] = ("mail_account", "mail_rule")
+MAILING = frozenset(
+    {
+        *("view_mailaccount", "change_mailaccount", "add_mailaccount"),
+        *("view_mailrule", "change_mailrule", "add_mailrule"),
+    }
+)
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.contract(GET)
+@pytest.mark.contract(SET)
+@pytest.mark.parametrize("kind", MAIL)
+async def test_mail_objects_take_owner_and_grants_and_show_them(
+    backend: Backend, account: int, kind: PermissionKind
+) -> None:
+    ports = backend.admin
+    number = await mail_object(backend, kind, account)
+    reader, admin = await user_id(ports, READER[0]), await user_id(ports, ADMIN[0])
+    group = await group_id(ports)
+    grants = ObjectPermissions(
+        view_users=(reader,), view_groups=(group,), change_users=(reader,), change_groups=()
+    )
+
+    changed = await ports.permission_writes.set_permissions(
+        kind, number, AccessChange(permissions=grants)
+    )
+    [read] = await ports.permissions.get_permissions(kind, [number, MISSING])
+
+    assert changed == read
+    assert (read.id, read.owner, read.permissions) == (number, admin, grants)
+    handed = await ports.permission_writes.set_permissions(kind, number, AccessChange(owner=reader))
+    assert (handed.owner, handed.permissions) == (reader, grants)
+    cleared = await ports.permission_writes.set_permissions(
+        kind, number, AccessChange(owner=None, permissions=ObjectPermissions())
+    )
+    assert (cleared.owner, cleared.permissions) == (None, ObjectPermissions())
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.contract(SET)
+@pytest.mark.parametrize("kind", MAIL)
+async def test_a_change_grant_on_a_mail_object_does_not_let_the_grantee_grant(
+    backend: Backend, account: int, kind: PermissionKind
+) -> None:
+    name = f"contract-user-{uuid.uuid4().hex[:12]}"
+    user = backend.restricted(MAILING, name=name)
+    number = await mail_object(backend, kind, account)
+    grantee = await user_id(backend.admin, name)
+
+    with pytest.raises(NotFound):
+        _ = await user.permission_writes.set_permissions(kind, number, AccessChange(owner=grantee))
+    assert await user.permissions.get_permissions(kind, [number]) == []
+    _ = await backend.admin.permission_writes.set_permissions(
+        kind, number, AccessChange(permissions=ObjectPermissions(change_users=(grantee,)))
+    )
+    [seen] = await user.permissions.get_permissions(kind, [number])
+
+    assert seen.permissions.change_users == (grantee,)
+    for change in (
+        AccessChange(owner=grantee),
+        AccessChange(permissions=ObjectPermissions()),
+    ):
+        with pytest.raises(PermissionDenied):
+            _ = await user.permission_writes.set_permissions(kind, number, change)
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.contract(SET)
+async def test_what_a_change_grant_on_an_account_gives(backend: Backend, account: int) -> None:
+    """The note of the confirmation: another server, rules of one's own, nothing on other rules."""
+    name = f"contract-user-{uuid.uuid4().hex[:12]}"
+    user = backend.restricted(MAILING, name=name)
+    rule = await mail_object(backend, "mail_rule", account)
+    grantee = await user_id(backend.admin, name)
+    _ = await backend.admin.permission_writes.set_permissions(
+        "mail_account",
+        account,
+        AccessChange(permissions=ObjectPermissions(change_users=(grantee,))),
+    )
+
+    moved = await user.mail_writes.update_mail_account(
+        account, MailAccountValues(imap_server="127.0.0.2")
+    )
+    own = await user.mail_writes.create_mail_rule(
+        MailRuleValues(
+            name=f"contract-{uuid.uuid4().hex[:12]}", account_id=account, action="delete"
+        )
+    )
+
+    assert (moved.imap_server, moved.can_change) == ("127.0.0.2", True)
+    assert own.owner == grantee
+    assert rule not in {row.id for row in await user.mail.list_mail_rules()}
+    with pytest.raises(NotFound):
+        _ = await user.mail.get_mail_rule(rule)
+    with pytest.raises(PermissionDenied):  # only its owner can fetch at once
+        await user.mail_writes.process_mail_account(account)
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.contract(GET)
+@pytest.mark.contract(SET)
+@pytest.mark.parametrize("kind", MAIL)
+async def test_mail_grants_need_the_permissions_of_the_kind_and_known_users(
+    backend: Backend, account: int, kind: PermissionKind
+) -> None:
+    number = await mail_object(backend, kind, account)
+    change = AccessChange(permissions=ObjectPermissions(view_users=(MISSING,)))
+
+    with pytest.raises(PermissionDenied):
+        _ = await backend.blind.permissions.get_permissions(kind, [number])
+    with pytest.raises(PermissionDenied):
+        _ = await backend.blind.permission_writes.set_permissions(kind, number, change)
+    with pytest.raises(Validation):
+        _ = await backend.admin.permission_writes.set_permissions(kind, number, change)
+    with pytest.raises(NotFound):
+        _ = await backend.admin.permission_writes.set_permissions(
+            kind, MISSING, AccessChange(owner=None)
+        )
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.contract(SET)
+@pytest.mark.parametrize("kind", MAIL)
+async def test_an_owner_who_is_no_superuser_and_anyone_on_an_unowned_object_may_grant(
+    backend: Backend, account: int, kind: PermissionKind
+) -> None:
+    name = f"contract-user-{uuid.uuid4().hex[:12]}"
+    user = backend.restricted(MAILING, name=name)
+    number = await mail_object(backend, kind, account)
+    owner, reader = await user_id(backend.admin, name), await user_id(backend.admin, READER[0])
+    grants = ObjectPermissions(view_users=(reader,))
+    admin = backend.admin.permission_writes
+
+    _ = await admin.set_permissions(kind, number, AccessChange(owner=owner))
+    owned = await user.permission_writes.set_permissions(
+        kind, number, AccessChange(permissions=grants)
+    )
+    _ = await admin.set_permissions(
+        kind, number, AccessChange(owner=None, permissions=ObjectPermissions())
+    )
+    unowned = await user.permission_writes.set_permissions(
+        kind, number, AccessChange(permissions=grants)
+    )
+
+    assert (owned.owner, owned.permissions) == (owner, grants)
+    assert (unowned.owner, unowned.permissions) == (None, grants)
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.contract(SET)
+@pytest.mark.parametrize("unowned", [True, False])
+async def test_grants_of_a_rule_are_set_when_only_its_unowned_twin_is_refused(
+    backend: Backend,
+    account: int,
+    unowned: bool,  # noqa: FBT001 -- the case
+) -> None:
+    """Two rules of one owner cannot have the same name: checked first for a user, last for none."""
+    ports = backend.admin
+    number = await mail_object(backend, "mail_rule", account)
+    reader = await user_id(ports, READER[0])
+    owner = None if unowned else reader
+    name = (await ports.mail.get_mail_rule(number)).name
+    _ = await ports.permission_writes.set_permissions(
+        "mail_rule", number, AccessChange(owner=owner)
+    )
+    twin = await ports.mail_writes.create_mail_rule(MailRuleValues(name=name, account_id=account))
+    change = AccessChange(owner=owner, permissions=ObjectPermissions(view_users=(reader,)))
+
+    with pytest.raises(Validation):
+        _ = await ports.permission_writes.set_permissions("mail_rule", twin.id, change)
+
+    [after] = await ports.permissions.get_permissions("mail_rule", [twin.id])
+    assert after.owner == twin.owner
+    assert after.permissions.view_users == ((reader,) if unowned else ())
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.contract(SET)
+async def test_a_change_grant_on_a_rule_is_enough_to_make_it_delete_mail(
+    backend: Backend, account: int
+) -> None:
+    """Without any right on the account, whose saved password the rule then uses."""
+    name = f"contract-user-{uuid.uuid4().hex[:12]}"
+    user = backend.restricted(frozenset({"view_mailrule", "change_mailrule"}), name=name)
+    rule = await mail_object(backend, "mail_rule", account)
+    grantee = await user_id(backend.admin, name)
+    _ = await backend.admin.permission_writes.set_permissions(
+        "mail_rule", rule, AccessChange(permissions=ObjectPermissions(change_users=(grantee,)))
+    )
+
+    changed = await user.mail_writes.update_mail_rule(rule, MailRuleValues(action="delete"))
+
+    assert (changed.action, changed.account_id) == ("delete", account)
+    with pytest.raises(PermissionDenied):
+        _ = await user.mail.get_mail_account(account)
+
+
+@pytest.mark.contract(SET)
+async def test_grants_of_a_tag_are_not_set_when_its_new_owner_is_refused(backend: Backend) -> None:
+    ports = backend.admin
+    reader = await user_id(ports, READER[0])
+    first = await make(ports, "tag")
+    tags = {item.id: item.name for item in await ports.taxonomy.list_taxonomy("tag")}
+    _ = await ports.permission_writes.set_permissions("tag", first, AccessChange(owner=reader))
+    twin = (
+        await ports.taxonomy_writes.create_taxonomy_item(
+            "tag", tags[first], TaxonomyValues.model_validate({})
+        )
+    ).id
+    change = AccessChange(owner=reader, permissions=ObjectPermissions(view_users=(reader,)))
+
+    with pytest.raises(Validation):
+        _ = await ports.permission_writes.set_permissions("tag", twin, change)
+
+    [after] = await ports.permissions.get_permissions("tag", [twin])
+    assert after.permissions.view_users == ()
