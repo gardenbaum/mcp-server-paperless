@@ -229,7 +229,7 @@ class DocumentReader(Protocol):
         ...
 
     async def list_document_history(self, document_id: int) -> tuple[HistoryEntry, ...]:
-        """The audit log of a document, newest first, without the OCR text.
+        """The audit log of a document, newest first; ``content`` is only ``TEXT_CHANGED``.
 
         Raises:
             NotFound: No such document.
@@ -1566,7 +1566,7 @@ class AdminReader(Protocol):
         """
         ...
 
-    async def list_tasks(
+    async def list_tasks(  # noqa: PLR0913 -- one parameter per filter
         self,
         *,
         state: TaskState | None,
@@ -1574,8 +1574,11 @@ class AdminReader(Protocol):
         acknowledged: bool | None,
         page: int,
         page_size: int,
+        created: tuple[datetime, datetime] | None = None,
     ) -> TaskRowPage:
         """One page of tasks, newest first, optionally filtered.
+
+        ``created`` is a pair of moments: only tasks created between them.
 
         Raises:
             NotFound: ``page`` is beyond the last page.

@@ -185,6 +185,7 @@ async def test_get_document_include_adds_the_asked_sections() -> None:
     assert [n["note"] for n in cast("list[Json]", output["notes"])] == ["e2e remark zebra"]
     history = cast("Json", output["history"])
     assert history["total"] == 2
+    assert "changed, the text is not shown" in str(history)
     assert "ACME" not in str(history)
     assert cast("Json", output["file_metadata"])["original_filename"] == "e2e-public-invoice.pdf"
     assert output["versions"] is None

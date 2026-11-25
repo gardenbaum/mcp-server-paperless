@@ -217,6 +217,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "workflow_runs": ("test_run_workflow",),
     "workflow_parts": ("test_workflows",),
     "workflow_usage": ("test_workflows",),
+    "workflow_explanation": ("test_workflows",),
     "run_workflow": ("test_workflow_runs",),
     # tools/selection.py selects toolsets; domain/ and services/selection.py choose documents.
     "selection": ("test_bulk", "test_read_documents", "test_toolset_guide"),
@@ -243,7 +244,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "ai": ("test_ai_reader",),
     "mail": ("test_mail_import",),
     "mail_explanation": ("test_mail", "test_mail_import"),
-    "log_records": ("test_mail_import",),
+    "log_records": ("test_mail_import", "test_workflows"),
     "processed_mail": ("test_mail", "test_mail_import"),
     "principals": ("test_admin", "test_permissions"),
     "admin_accounts": ("test_admin", "test_permissions"),

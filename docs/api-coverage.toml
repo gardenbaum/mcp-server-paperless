@@ -163,7 +163,7 @@ reason = "page and page_size are constants of a helper that reads every page; no
 
 [[internal]]
 operation = "GET /api/tasks/"
-fields = ["query:owner", "query:ordering", "query:date_created_after"]
+fields = ["query:owner", "query:ordering", "query:date_created_after", "query:date_created_before"]
 reason = "the adapter chooses it"
 
 [[internal]]

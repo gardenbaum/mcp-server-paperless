@@ -104,7 +104,7 @@ async def test_the_environment_selects_the_tools_over_stdio(stack: Stack) -> Non
     listings = {
         *("list_document_versions", "list_share_links", "list_share_bundles"),
         *("list_trash", "get_trash_entry", "get_trashed_file"),
-        *("list_users", "list_groups", "list_workflows", "get_workflow"),
+        *("list_users", "list_groups", "list_workflows", "get_workflow", "explain_workflow"),
     }
     admin = {
         *("get_user", "get_group", "get_app_config", "list_tasks", "list_logs", "get_log"),

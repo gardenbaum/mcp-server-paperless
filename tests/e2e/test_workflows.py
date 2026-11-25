@@ -507,3 +507,53 @@ async def test_a_user_who_may_change_workflows_writes_parts_and_a_viewer_does_no
     assert results_of == [True, False]
     [raw] = stored(stack, name)
     assert (raw["actions"], raw["triggers"]) == (rest, made["triggers"])
+
+
+@pytest.mark.decision("decision-88")
+async def test_a_workflow_is_explained_for_a_consumed_document(
+    client: Connected, stack: Stack, user: Callable[..., Signed]
+) -> None:
+    prefix = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
+    tag = make(stack, "tags", {"name": f"{prefix}-tag"})
+    assign = {"type": 1, "assign_tags": [tag]}
+
+    def flow(name: str, *triggers: Json) -> None:
+        body = {"name": f"{prefix}-{name}", "triggers": list(triggers), "actions": [assign]}
+        _ = stack.admin.post("/api/workflows/", json=body).raise_for_status()
+
+    flow("runs", {"type": 2, "filter_filename": f"{prefix}*"})
+    # Not the inbox tag: Paperless gives it to every new document.
+    flow("not", {"type": 2, "filter_has_tags": [stack.seeded.child_tag]})
+    flow("later", {"type": 3, "match": "nothing-like-it", "matching_algorithm": 1})
+    document = consume_text(stack.admin, f"{prefix} words")
+
+    async def explain(name: str, connected: Connected = client) -> Json:
+        arguments: Json = {"workflow": f"{prefix}-{name}", "document_id": document}
+        return await call(connected, "explain_workflow", **arguments)
+
+    try:
+        ran, missed, later = [await explain(name) for name in ("runs", "not", "later")]
+        token = user("view_workflow", "view_document", "view_uisettings").token
+        unowned: Json = {"owner": None}
+        _ = stack.admin.patch(f"/api/documents/{document}/", json=unowned).raise_for_status()
+        settings = server_settings(toolsets=["core", "workflows"])
+        server = create_server(paperless_settings(stack.base_url, token), settings)
+        async with Client(server) as restricted:
+            limited = await explain("runs", restricted)
+    finally:
+        delete_and_empty_trash(stack, [document])
+
+    assert (ran["would_match_now"], ran["did_run"]) == ("yes", "likely"), ran
+    certain = [
+        f["said"] for f in cast("list[Json]", ran["log"]) if f["whose"] == "likely this document"
+    ]
+    assert any("matched trigger" in str(said) for said in certain), ran
+    assert any("was applied" in str(said) for said in certain), ran
+    assert (missed["would_match_now"], missed["did_run"]) == ("no", "unknown"), missed
+    said = [f for f in cast("list[Json]", missed["log"]) if f["whose"] == "likely this document"]
+    assert [f["said"] for f in said] == ["the document did not match: the tags do not fit"], missed
+    [check] = cast("list[Json]", cast("list[Json]", later["triggers"])[0]["checks"])
+    assert (check["filter"], check["result"]) == ("match", "no")
+    assert limited["did_run"] == "unknown"
+    assert len(cast("list[str]", limited["not_checked"])) == 3
+    assert limited["would_match_now"] == "yes"

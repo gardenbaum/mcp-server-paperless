@@ -465,7 +465,7 @@ class PaperlessAdminReader:
                 raise unseen_log(name) from None
         return tuple(found.root)
 
-    async def list_tasks(
+    async def list_tasks(  # noqa: PLR0913 -- one parameter per filter
         self,
         *,
         state: TaskState | None,
@@ -473,6 +473,7 @@ class PaperlessAdminReader:
         acknowledged: bool | None,
         page: int,
         page_size: int,
+        created: tuple[datetime, datetime] | None = None,
     ) -> TaskRowPage:
         """See ``AdminReader.list_tasks``."""
         params: dict[str, str | int] = {
@@ -486,6 +487,9 @@ class PaperlessAdminReader:
             params["task_type"] = task_type
         if acknowledged is not None:
             params["acknowledged"] = "true" if acknowledged else "false"
+        if created is not None:
+            params["date_created_after"] = created[0].isoformat()
+            params["date_created_before"] = created[1].isoformat()
         with Refused(VIEW_TASKS):
             try:
                 found = await self._client.get(TASKS, Page[_Task], params=params)

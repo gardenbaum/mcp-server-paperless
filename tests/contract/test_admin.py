@@ -9,6 +9,7 @@ when it failed (the stack is shared). The configuration is shared by every test 
 import io
 import uuid
 import zipfile
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -651,3 +652,30 @@ async def test_a_user_shows_what_its_groups_grant(backend: Backend, people: Peop
 
     assert found.permissions == ("add_tag",)
     assert "view_tag" in found.inherited_permissions
+
+
+@pytest.mark.decision("decision-88")
+@pytest.mark.contract(LIST_TASKS)
+async def test_tasks_are_found_by_the_time_they_were_created(backend: Backend) -> None:
+    management = backend.admin.management
+    task_id = backend.consume(succeed=True)
+    listed = await management.list_tasks(
+        state=None, task_type="consume_file", acknowledged=None, page=1, page_size=100
+    )
+    found = next(row for row in listed.rows if row.task_id == task_id)
+
+    async def within(start: datetime, end: datetime) -> bool:
+        rows = await management.list_tasks(
+            state=None,
+            task_type="consume_file",
+            acknowledged=None,
+            page=1,
+            page_size=100,
+            created=(start, end),
+        )
+        return task_id in {row.task_id for row in rows.rows}
+
+    second = timedelta(seconds=1)
+    assert await within(found.created - second, found.created + second)
+    assert not await within(found.created - 2 * second, found.created - second)
+    assert not await within(found.created + second, found.created + 2 * second)

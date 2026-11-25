@@ -88,6 +88,7 @@ from mcp_server_paperless.domain.bulk import (
     TrashDocuments,
 )
 from mcp_server_paperless.domain.documents import (
+    TEXT_CHANGED,
     CustomFieldValue,
     DocumentFile,
     DocumentHit,
@@ -3807,7 +3808,7 @@ class FakePaperless:
             raise unseen_log(name)
         return tuple(self.state.logs[name][-limit:])
 
-    async def list_tasks(
+    async def list_tasks(  # noqa: PLR0913 -- one parameter per filter
         self,
         *,
         state: TaskState | None,
@@ -3815,6 +3816,7 @@ class FakePaperless:
         acknowledged: bool | None,
         page: int,
         page_size: int,
+        created: tuple[datetime, datetime] | None = None,
     ) -> TaskRowPage:
         """`AdminReader.list_tasks` (TasksViewSet list, newest first)."""
         self._need("view_paperlesstask", VIEW_TASKS)
@@ -3836,6 +3838,7 @@ class FakePaperless:
             )
             for t in tasks
             if (state is None or t.status == state)
+            and (created is None or created[0] <= t.created <= created[1])
             and (task_type is None or t.task_type == task_type)
             and (acknowledged is None or t.acknowledged == acknowledged)
         )
@@ -4131,7 +4134,7 @@ class FakePaperless:
         Order in Paperless 3.4.2: `view_document` (viewset), audit log enabled (400), the
         document exists (404, even without `view_logentry`), then `view_logentry` and ownership:
         an object-level view grant is not enough, the document must be unowned, the user's own,
-        or the user a superuser (403). The create entry's `content` (OCR text) is dropped.
+        or the user a superuser (403). The OCR text in `content` is never told.
         """
         user = self.user
         if not user.has("view_document"):
@@ -4149,7 +4152,9 @@ class FakePaperless:
         return tuple(
             entry.model_copy(
                 update={
-                    "changes": {k: v for k, v in entry.changes.items() if k != "content"},
+                    "changes": {
+                        k: TEXT_CHANGED if k == "content" else v for k, v in entry.changes.items()
+                    },
                 }
             )
             for entry in entries

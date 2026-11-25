@@ -93,6 +93,7 @@ from mcp_server_paperless.services.version_uploads import VersionUploadService
 from mcp_server_paperless.services.versions import VersionService
 from mcp_server_paperless.services.view_pins import ViewPins
 from mcp_server_paperless.services.views import ViewService
+from mcp_server_paperless.services.workflow_explanation import WorkflowExplanations
 from mcp_server_paperless.services.workflow_parts import WorkflowParts
 from mcp_server_paperless.services.workflow_runs import WorkflowRuns
 from mcp_server_paperless.services.workflows import WorkflowService
@@ -583,6 +584,9 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.workflows,
                     adapters.workflow_writes,
                     flows,
+                ),
+                workflow_explanations=WorkflowExplanations(
+                    adapters.documents, adapters.management, flows, taxonomy
                 ),
                 workflow_runs=WorkflowRuns(
                     adapters.documents,

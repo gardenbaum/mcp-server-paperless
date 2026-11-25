@@ -25,9 +25,9 @@ from mcp_server_paperless.services.admin_accounts import AccountAdmin
 from mcp_server_paperless.services.admin_system import (
     MAX_DOCUMENTS,
     MAX_LOG_CHARS,
-    MAX_LOG_LINES,
     SystemAdmin,
 )
+from mcp_server_paperless.services.log_records import MAX_LOG_LINES
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
