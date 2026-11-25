@@ -38,6 +38,7 @@ from e2e.helpers import (
     results,
 )
 from fakes.accounts import ADMIN, BLIND, READER
+from fakes.mail import FakeMailAccount
 from fakes.paperless import (
     VERSION,
     FakeDocument,
@@ -111,6 +112,9 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.bulk import BulkKind
 
 
+# The access token of `Backend.new_token_account`, which nothing may show, and when it expires.
+TOKEN = "contract-acc3ss-t0ken"
+EXPIRES = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 # Every tag a contract test creates starts with this; the live backend deletes them again.
 SCRATCH_TAG = "contract-tag-"
 # The same for every other kind of taxonomy object (and tags that are not about tags as such).
@@ -317,6 +321,9 @@ class Backend:
     # index-writing tasks, then rebuilds it; the fake has no stale entries). Call it right before
     # a more-like-this search: see `rebuild_search_index` for why the result can be empty without.
     rebuild_search_index: Callable[[], None]
+    # A new mail account of the admin that signs in with an OAuth access token, as Paperless takes
+    # it from anyone (the web UI makes real ones); the test deletes it.
+    new_token_account: Callable[[], int]
     # Takes a file of a document with one version away from Paperless, or its file names.
     lose_file: Callable[[int, FilePart], None]
 
@@ -406,6 +413,45 @@ def fake_restricted(state: FakeState) -> Restricted:
         return fake_ports(state, user.username)
 
     return restricted
+
+
+def fake_token_account(state: FakeState) -> Callable[[], int]:
+    def token_account() -> int:
+        [admin] = [user for user in state.users if user.username == ADMIN[0]]
+        number = max((row.id for row in state.mail_accounts), default=0) + 1
+        state.mail_accounts.append(
+            FakeMailAccount(
+                id=number,
+                name=f"contract-{uuid.uuid4().hex[:12]}",
+                imap_server="127.0.0.1",
+                imap_port=1,
+                username="",
+                password=TOKEN,
+                account_type="gmail_oauth",
+                is_token=True,
+                expiration=EXPIRES,
+                owner=admin.id,
+            )
+        )
+        return number
+
+    return token_account
+
+
+def live_token_account(stack: Stack) -> int:
+    body = {
+        "name": f"contract-{uuid.uuid4().hex[:12]}",
+        "imap_server": "127.0.0.1",
+        "imap_port": 1,
+        "imap_security": 2,
+        "username": "unset",
+        "password": TOKEN,
+        "account_type": 2,
+        "is_token": True,
+        "expiration": EXPIRES.isoformat(),
+    }
+    made = stack.admin.post("/api/mail_accounts/", json=body).raise_for_status()
+    return int(cast("int", cast("dict[str, object]", made.json())["id"]))
 
 
 def fake_in_trash(state: FakeState) -> Callable[[int], bool]:
@@ -507,6 +553,7 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
         track_document=lambda _document: None,
         expected_version=VERSION,
         rebuild_search_index=lambda: None,
+        new_token_account=fake_token_account(state),
         lose_file=fake_lose_file(state),
     )
 
@@ -764,6 +811,7 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
                 track_document=created.append,
                 expected_version=EXPECTED_VERSION,
                 rebuild_search_index=lambda: rebuild_search_index(stack.admin),
+                new_token_account=lambda: live_token_account(stack),
                 lose_file=lambda document, part: lose_file(stack.admin, document, part),
             )
     finally:

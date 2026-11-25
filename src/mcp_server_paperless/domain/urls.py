@@ -1,4 +1,7 @@
-"""URLs without user name and password, in results and texts (decision-64, decision-66)."""
+"""URLs without user name and password, in results and texts (decision-64, decision-66).
+
+What a mail server answered to a login is in no text either (decision-80).
+"""
 
 import re
 from itertools import groupby, islice, takewhile
@@ -32,6 +35,23 @@ _SECRET_BEFORE: Final = re.compile(r"(?::|[/\\]{2})[\"'`(\[{<=]*[^\"'`(\[{<=]")
 _MAILTO: Final = re.compile(r"\bmailto:", flags=re.IGNORECASE)
 # Where a record of a log starts; its other lines have no time.
 _RECORD: Final = re.compile(r"\[[0-9]{4}-[0-9]{2}-[0-9]{2}[ T]")
+# What stands for the answer of a mail server to a login, which can repeat the password.
+ANSWER_NOT_SHOWN: Final = "(answer of the mail server not shown)"
+# What stands for a line of a log record whose start was not read.
+REST_NOT_SHOWN: Final = "(rest of a log record not shown)"
+# In the traceback of a login that failed: its frame, and an error that quotes the server.
+_LOGIN: Final = re.compile(r", in mailbox_login$", flags=re.MULTILINE)
+_MAIL_ERROR: Final = re.compile(
+    r"^ *(?:imaplib|imap_tools)\.[\w.]+:(?: |(?=\s)|\Z)", flags=re.MULTILINE
+)
+# What Paperless logs of a login that failed, or of the end of the connection after it, up to the
+# name of the account, and the colon before the answer. A line of a log that is read has lost what
+# is blank at its end.
+_LOGGED: Final = re.compile(
+    r"^(?:\[[^\n]*?\] )?Error while (?:authenticating account|retrieving mailbox) ",
+    flags=re.MULTILINE,
+)
+_ANSWER: Final = re.compile(r":(?: |(?=\s)|\Z)")
 
 
 def without_credentials(url: str) -> str | None:
@@ -96,8 +116,34 @@ def _shown_word(word: str) -> str | None:
     return word[:start] + shown if certain else None
 
 
+def _without_answers(text: str) -> str:
+    """``text`` without what a mail server answered to a login.
+
+    All goes from the answer on, line by line: nothing tells for sure where an answer ends.
+    """
+    logged = _LOGGED.search(text)
+    answer = _ANSWER.search(text, logged.end()) if logged else None
+    starts = [answer.end()] if answer else []
+    if _LOGIN.search(text) and (error := _MAIL_ERROR.search(text)):
+        starts.append(error.end())
+    if not starts:
+        return text
+    start = min(starts)
+    end = max(start, len(text.rstrip("\n")))
+    lines = text.count("\n", start, end) + 1
+    return text[:start] + "\n".join([ANSWER_NOT_SHOWN] * lines) + text[end:]
+
+
 def text_without_credentials(text: str) -> str:
-    """``text`` (a record of a log, an error) without the credentials of the URLs in it.
+    """``text`` without the credentials of URLs and without the answer to a mail login.
+
+    ``text`` is a record of a log or an error. The answers go first: they can hold URLs.
+    """
+    return _text_without_urls(_without_answers(text))
+
+
+def _text_without_urls(text: str) -> str:
+    """``text`` without the credentials of the URLs in it.
 
     Where they are certain, nothing else goes. Otherwise ``URL_NOT_SHOWN`` stands for all from
     the first URL to the last word with an @, once per line, because credentials may hold spaces,
@@ -116,17 +162,15 @@ def text_without_credentials(text: str) -> str:
 
 
 def lines_without_credentials(lines: Sequence[str]) -> list[str]:
-    """The lines of a log without the credentials of URLs, also of those split over lines.
+    """The lines of a log without credentials of URLs, also of those split over lines.
 
     A URL is looked for in all lines of a record, but no further: what stands between it and an
     e-mail address of another record is not lost. The lines before the first record can be the rest
-    of one whose URL is not among them: all up to the last of them with an @ are
-    not shown.
+    of one whose URL or login is not among them: none of them is shown.
     """
     record = 0
-    head = list(takewhile(lambda line: _RECORD.match(line) is None, lines))
-    end = max((n for n, line in enumerate(head, start=1) if _AT.search(line)), default=0)
-    shown = ["\n".join(URL_NOT_SHOWN for _ in line.split("\n")) for line in head[:end]]
+    head = takewhile(lambda line: _RECORD.match(line) is None, lines)
+    shown = ["\n".join(REST_NOT_SHOWN for _ in line.split("\n")) for line in head]
 
     def number(line: str) -> int:
         nonlocal record

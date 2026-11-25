@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import SecretStr
 
+from contract.conftest import EXPIRES, TOKEN
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 from mcp_server_paperless.domain.mail import (
     MailAccount,
@@ -37,6 +38,7 @@ pytestmark = [
 LIST_ACCOUNTS, GET_ACCOUNT = "MailReader.list_mail_accounts", "MailReader.get_mail_account"
 LIST_RULES, GET_RULE = "MailReader.list_mail_rules", "MailReader.get_mail_rule"
 LIST_PROCESSED = "MailReader.list_processed_mail"
+GET_PROCESSED = "MailReader.get_processed_mail"
 CREATE_ACCOUNT = "MailWriter.create_mail_account"
 UPDATE_ACCOUNT = "MailWriter.update_mail_account"
 DELETE_ACCOUNT = "MailWriter.delete_mail_account"
@@ -300,7 +302,11 @@ async def test_a_user_without_mail_permissions_is_denied_everywhere(backend: Bac
     with pytest.raises(PermissionDenied):
         _ = await blind.mail.get_mail_rule(1)
     with pytest.raises(PermissionDenied):
-        _ = await blind.mail.list_processed_mail(rule_id=None, status=None, page=1, page_size=25)
+        _ = await blind.mail.list_processed_mail(
+            rule_id=None, status=None, ordering="-processed", page=1, page_size=25
+        )
+    with pytest.raises(PermissionDenied):
+        _ = await blind.mail.get_processed_mail(1)
     with pytest.raises(PermissionDenied):
         _ = await blind.mail_writes.create_mail_account(MailAccountValues(name="x"))
     with pytest.raises(PermissionDenied):
@@ -580,15 +586,53 @@ async def test_the_processed_mail_of_a_new_rule_is_empty_and_filters_are_accepte
     account = await mail.account()
     made = await mail.rule(account.id)
 
-    for status in (None, "SUCCESS", "FAILED"):
+    statuses = (None, "SUCCESS", "FAILED", "PROCESSED_WO_CONSUMPTION")
+    for status in statuses:
         found = await backend.admin.mail.list_processed_mail(
-            rule_id=made.id, status=status, page=1, page_size=25
+            rule_id=made.id, status=status, ordering="-processed", page=1, page_size=25
         )
         assert (found.count, found.next_page, found.mails) == (0, None, ())
-    everything = await backend.admin.mail.list_processed_mail(
-        rule_id=None, status=None, page=1, page_size=25
+    orderings = ("-processed", "processed", "-received", "received")
+    for ordering in orderings:
+        everything = await backend.admin.mail.list_processed_mail(
+            rule_id=None, status=None, ordering=ordering, page=1, page_size=25
+        )
+        assert everything.count >= 0
+
+
+@pytest.mark.contract(GET_PROCESSED)
+async def test_a_processed_mail_that_does_not_exist_is_not_found(backend: Backend) -> None:
+    with pytest.raises(NotFound, match="No processed mail"):
+        _ = await backend.admin.mail.get_processed_mail(UNKNOWN)
+
+
+@pytest.mark.decision("decision-79")
+@pytest.mark.contract(GET_ACCOUNT)
+@pytest.mark.contract(UPDATE_ACCOUNT)
+async def test_a_token_account_is_read_and_changed_but_its_token_is_not(
+    backend: Backend, mail: Mail
+) -> None:
+    number = backend.new_token_account()
+    mail.accounts.append(number)
+    writer, reader = backend.admin.mail_writes, backend.admin.mail
+
+    read = await reader.get_mail_account(number)
+    assert (read.account_type, read.is_token, read.expiration) == ("gmail_oauth", True, EXPIRES)
+    with pytest.raises(Validation, match="OAuth access token") as raised:
+        _ = await writer.update_mail_account(
+            number, MailAccountValues(name="x", password=SecretStr(PASSWORD))
+        )
+    assert await reader.get_mail_account(number) == read
+    renamed = mail.name()
+    changed = await writer.update_mail_account(
+        number, MailAccountValues(name=renamed, username="me@example.com")
     )
-    assert everything.count >= 0
+
+    assert changed == read.model_copy(update={"name": renamed, "username": "me@example.com"})
+    assert await reader.get_mail_account(number) == changed
+    for shown in (repr(read), repr(changed), raised.value.describe()):
+        assert TOKEN not in shown
+        assert PASSWORD not in shown
 
 
 @pytest.mark.contract(LIST_PROCESSED)
@@ -600,7 +644,7 @@ async def test_a_page_beyond_the_last_one_of_the_processed_mail_is_not_found(
 
     with pytest.raises(NotFound, match="Page 2 of the processed mail"):
         _ = await backend.admin.mail.list_processed_mail(
-            rule_id=made.id, status=None, page=2, page_size=25
+            rule_id=made.id, status=None, ordering="-processed", page=2, page_size=25
         )
 
 

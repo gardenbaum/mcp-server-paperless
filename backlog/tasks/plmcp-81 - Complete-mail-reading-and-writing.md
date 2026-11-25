@@ -1,10 +1,11 @@
 ---
 id: PLMCP-81
 title: Complete mail, reading and writing
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T12:14:51Z'
-updated_date: '2026-11-23T18:30:56Z'
+updated_date: '2026-11-24T22:45:00Z'
 labels: []
 dependencies:
   - PLMCP-91
@@ -37,3 +38,9 @@ The toolset mail (off by default) already reads and writes accounts and rules, l
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner approval (2026-11-24, question dialog, recommended options chosen): designs 81, 87, 88, 89, 90, 83, 100 all as recommended, with the guide limit in steps (2943 to 3010 for 81). Here design-plmcp-81.md, decisions 1 to 12: 1 leave out PUT and ignored bodies, 2a, 3a, 4a, 5a, 6a, 7a, 8a, 9a, 10 raise to at most 3010, 11a, 12 five parts (PLMCP-81.1 to 81.5).
+<!-- SECTION:NOTES:END -->

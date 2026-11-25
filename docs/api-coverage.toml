@@ -7,9 +7,8 @@
 #                 value of a field that is sent carries a `reason`, so that the owner can decide on
 #                 an exclusion. A field a tool supports that no tool test sends is listed too.
 # [[internal]]    fields the adapter chooses itself although a task wants them as a tool argument
-#                 (tasks owner, ordering, date_created_after; processed_mail ordering; the body
-#                 of mail_accounts/test, for testing an unsaved account; the documents of a bundle
-#                 rebuild, PLMCP-83). They
+#                 (tasks owner, ordering, date_created_after; the body of mail_accounts/test, for
+#                 testing an unsaved account; the documents of a bundle rebuild, PLMCP-83). They
 #                 stay open under that task although they are sent.
 # [[plumbing]]    fields the adapter chooses itself and no task is known to want as an argument
 #                 (applied where it was noticed, not a census of every constant): full_perms,
@@ -25,13 +24,9 @@
 # [[undeclared]]  query parameters the generated schema omits (listed by hand)
 
 [[open]]
-task = "PLMCP-81"
+task = "PLMCP-81.3"
 operations = [
-  "GET /api/oauth/callback/",
-  "GET /api/processed_mail/{id}/",
   "POST /api/processed_mail/bulk_delete/",
-  "PUT /api/mail_accounts/{id}/",
-  "PUT /api/mail_rules/{id}/",
 ]
 
 [[open]]
@@ -181,11 +176,6 @@ fields = ["query:owner", "query:ordering", "query:date_created_after"]
 reason = "the adapter chooses it"
 
 [[internal]]
-operation = "GET /api/processed_mail/"
-fields = ["query:ordering"]
-reason = "the adapter chooses it"
-
-[[internal]]
 operation = "POST /api/share_link_bundles/{id}/rebuild/"
 fields = ["body:document_ids"]
 reason = "the stored bundle's documents are sent back; rebuilding with other documents is not offered (PLMCP-83)"
@@ -193,7 +183,7 @@ reason = "the stored bundle's documents are sent back; rebuilding with other doc
 [[internal]]
 operation = "POST /api/mail_accounts/test/"
 fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security", "body:username", "body:password", "body:character_set", "body:is_token"]
-reason = "the stored account is sent back; testing an unsaved account is open (PLMCP-81)"
+reason = "the stored account is sent back; testing an unsaved account is excluded (decision-79)"
 
 [[open_fields]]
 operation = "GET /api/correspondents/"
@@ -262,11 +252,6 @@ fields = ["query:name__iendswith", "query:name__iexact", "query:name__istartswit
 task = "PLMCP-83"
 
 [[open_fields]]
-operation = "GET /api/processed_mail/"
-fields = ["query:ordering"]
-task = "PLMCP-81"
-
-[[open_fields]]
 operation = "GET /api/saved_views/"
 fields = ["query:full_perms", "query:ordering"]
 task = "PLMCP-88"
@@ -328,13 +313,13 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/mail_accounts/{id}/"
-fields = ["body:account_type", "body:expiration", "body:is_token", "body:owner", "body:set_permissions"]
-task = "PLMCP-81"
+fields = ["body:owner", "body:set_permissions"]
+task = "PLMCP-81.5"
 
 [[open_fields]]
 operation = "PATCH /api/mail_rules/{id}/"
 fields = ["body:set_permissions"]
-task = "PLMCP-81"
+task = "PLMCP-81.5"
 
 [[open_fields]]
 operation = "PATCH /api/saved_views/{id}/"
@@ -416,26 +401,6 @@ task = "PLMCP-83"
 operation = "POST /api/documents/{id}/notes/"
 fields = ["body:format", "query:id"]
 task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/mail_accounts/"
-fields = ["body:account_type", "body:expiration", "body:is_token", "body:owner", "body:set_permissions"]
-task = "PLMCP-81"
-
-[[open_fields]]
-operation = "POST /api/mail_accounts/test/"
-fields = ["body:account_type", "body:character_set", "body:expiration", "body:imap_port", "body:imap_security", "body:imap_server", "body:is_token", "body:name", "body:owner", "body:password", "body:set_permissions", "body:username"]
-task = "PLMCP-81"
-
-[[open_fields]]
-operation = "POST /api/mail_accounts/{id}/process/"
-fields = ["body:account_type", "body:expiration", "body:owner", "body:set_permissions"]
-task = "PLMCP-81"
-
-[[open_fields]]
-operation = "POST /api/mail_rules/"
-fields = ["body:set_permissions"]
-task = "PLMCP-81"
 
 [[open_fields]]
 operation = "POST /api/saved_views/"
@@ -570,6 +535,59 @@ fields = ["body:all", "body:excluded_documents", "body:filters"]
 quote = "Bitte alles wie von dir empfohlen umsetzen."
 date = "2026-11-24"
 source = "backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-run-name-the-version-they-read-and-leave-selections-by-filter-out.md"
+
+[[exclusion]]
+operation = "GET /api/oauth/callback/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md"
+
+[[exclusion]]
+operation = "PUT /api/mail_accounts/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md"
+
+[[exclusion]]
+operation = "PUT /api/mail_rules/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md"
+
+[[exclusion]]
+operation = "PATCH /api/mail_accounts/{id}/"
+fields = ["body:account_type", "body:expiration", "body:is_token"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md"
+
+[[exclusion]]
+operation = "POST /api/mail_accounts/"
+fields = ["body:account_type", "body:expiration", "body:is_token", "body:owner", "body:set_permissions"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md"
+
+[[exclusion]]
+operation = "POST /api/mail_accounts/test/"
+fields = ["body:account_type", "body:character_set", "body:expiration", "body:imap_port", "body:imap_security", "body:imap_server", "body:is_token", "body:name", "body:owner", "body:password", "body:set_permissions", "body:username"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md"
+
+[[exclusion]]
+operation = "POST /api/mail_accounts/{id}/process/"
+fields = ["body:account_type", "body:expiration", "body:owner", "body:set_permissions"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md"
+
+[[exclusion]]
+operation = "POST /api/mail_rules/"
+fields = ["body:set_permissions"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md"
 
 [[exclusion]]
 operation = "GET /api/workflows/"
