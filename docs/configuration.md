@@ -478,7 +478,9 @@ them as seen, and `run_task` starts one. `get_task` of `core` follows one task b
   the server's Paperless user.
 - `acknowledge_tasks` with ids needs no `confirm`; with `all_unacknowledged` it does, after saying
   how many tasks, which newest failures and whose they are, because there is no way back (`dry_run`
-  shows the same). Tasks that come in meanwhile are marked too.
+  shows the same). Without a dialog `confirm` counts only together with the `expected` value that
+  preview names, so a task that came in or ended asks again. Tasks that come in while Paperless
+  does it are marked too.
 - The system status (host, database, Redis, workers, when each component last ran) is for staff,
   superusers and holders of `view_system_monitoring`; others get the statistics alone. URLs in it
   come without user name and password.

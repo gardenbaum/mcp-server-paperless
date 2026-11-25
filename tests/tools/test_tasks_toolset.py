@@ -1,9 +1,10 @@
 """The tasks toolset through the in-memory client on the seeded fake (PLMCP-89)."""
 
 from datetime import UTC, datetime
-from typing import cast
+from typing import Literal, cast
 
 import pytest
+from confirmation import YES, answering
 from fakes.paperless import FakePaperless, FakeState, FakeTask, seeded
 from fastmcp import Client
 from harness import serve
@@ -190,8 +191,20 @@ async def test_acknowledging_all_is_refused_until_confirmed_and_can_be_previewed
     shown = await call(
         fake(state, writes=False), "acknowledge_tasks", all_unacknowledged=True, dry_run=True
     )
-    done = await call(fake(state), "acknowledge_tasks", all_unacknowledged=True, confirm=True)
+    alone = await refusal(
+        fake(state, writes=False), "acknowledge_tasks", all_unacknowledged=True, confirm=True
+    )
+    done = await call(
+        fake(state),
+        "acknowledge_tasks",
+        all_unacknowledged=True,
+        confirm=True,
+        expected="1-1-0-0-1",
+    )
 
+    assert alone == text
+    assert "confirm=true and expected=1-1-0-0-1 only once they agree" in text
+    assert str(shown["message"]).endswith("Pass confirm=true and expected=1-1-0-0-1 to go ahead.")
     assert "cannot be taken back" in text
     assert "'a.pdf'" in text
     assert shown["dry_run"] is True
@@ -214,6 +227,73 @@ async def test_run_task_says_what_paperless_starts_and_what_the_index_sends() ->
     assert "Paperless starts only these three by hand and one per call; call once per type" in text
     assert "new or changed" in text
     assert "rebuild" not in text
+
+
+ALL: Json = {"all_unacknowledged": True}
+WRONG: Json = {**ALL, "confirm": True, "expected": "9-9-9-9-9"}
+RIGHT: Json = {**ALL, "confirm": True, "expected": "1-1-0-0-1"}
+
+
+def one_failure() -> FakeState:
+    state = seeded()
+    state.tasks = [FakeTask(id=1, task_id="u1", status="failure", file_name="a.pdf")]
+    return state
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("arguments", [ALL, {**ALL, "confirm": True}, WRONG])
+async def test_a_client_with_dialogs_asks_where_the_value_does_not_confirm(
+    mode: Literal["auto", "legacy"], arguments: Json
+) -> None:
+    state, seen = one_failure(), list[str]()
+    served = serve(fake(state), toolsets=["tasks"])
+
+    async with Client(
+        served, mode=mode, elicitation_handler=answering("accept", YES, seen=seen)
+    ) as client:
+        done = await client.call_tool("acknowledge_tasks", arguments)
+
+    assert done.structured_content is not None
+    assert done.structured_content["acknowledged"] == 1
+    assert len(seen) == 1
+    assert "expected" not in seen[0]
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_a_client_with_dialogs_is_not_asked_where_the_value_confirms(
+    mode: Literal["auto", "legacy"],
+) -> None:
+    state, seen = one_failure(), list[str]()
+    served = serve(fake(state), toolsets=["tasks"])
+
+    async with Client(served, mode=mode, elicitation_handler=answering("decline", seen=seen)) as c:
+        done = await c.call_tool("acknowledge_tasks", RIGHT)
+
+    assert done.structured_content is not None
+    assert (done.structured_content["acknowledged"], seen) == (1, [])
+
+
+@pytest.mark.decision("decision-53")
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_where_the_operator_requires_the_dialog_the_value_confirms_nothing(
+    mode: Literal["auto", "legacy"],
+) -> None:
+    served = serve(fake(one_failure(), writes=False), toolsets=["tasks"], require_dialog=True)
+    async with Client(served, mode=mode) as client:
+        no = await client.call_tool("acknowledge_tasks", RIGHT, raise_on_error=False)
+    state, seen = one_failure(), list[str]()
+    served = serve(fake(state), toolsets=["tasks"], require_dialog=True)
+    async with Client(
+        served, mode=mode, elicitation_handler=answering("accept", YES, seen=seen)
+    ) as client:
+        _ = await client.call_tool("acknowledge_tasks", RIGHT)
+
+    assert no.is_error
+    assert "the operator requires the user's answer" in str(no.content)
+    assert len(seen) == 1
+    assert state.tasks[0].acknowledged
 
 
 # --- the system report (PLMCP-89.3)

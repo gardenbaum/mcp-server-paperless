@@ -99,12 +99,22 @@ class Mailbox:
 
     # --- the mail server
 
-    def put(self, subject: str, files: dict[str, bytes] | None = None, *, age: int = 0) -> str:
-        """Append an unread mail, sent `age` seconds ago, to the inbox; its uid."""
+    def put(  # noqa: PLR0913 -- what a mail can differ in
+        self,
+        subject: str,
+        files: dict[str, bytes] | None = None,
+        *,
+        age: int = 0,
+        arrived: int = 0,
+        folder: str = "INBOX",
+        flag: str = "",
+    ) -> str:
+        """Append a mail, sent `age` seconds ago and here since `arrived` seconds; its uid."""
         content = mail(f"{self.name} {subject}", files, age=age)
-        status, said = self.imap.append("INBOX", "", "", content)
+        since = imaplib.Time2Internaldate(time.time() - arrived) if arrived else ""
+        status, said = self.imap.append(folder, flag, since, content)
         assert status == "OK", said
-        return self.uids()[-1]
+        return self.uids(folder)[-1]
 
     def _select(self, folder: str) -> None:
         status, said = self.imap.select(folder)

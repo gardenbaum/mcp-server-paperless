@@ -23,6 +23,13 @@ type Json = dict[str, object]
 type Handler = Callable[[str, object, object, object], Awaitable[ElicitResult[object]]]
 
 NOTE: Final[Json] = {"document_id": 1, "note_id": 1}
+# The end of the refusal of a tool whose hint is not the usual one, on `world()`.
+HINTS: Final[dict[str, str]] = {
+    "acknowledge_tasks": (
+        " Hint: Describe the effect to the user and call the tool again with the same arguments, "
+        "confirm=true and expected=1-1-0-0-1 only once they agree."
+    ),
+}
 YES: Final[dict[str, bool]] = {"confirm": True}
 NOT_AGAIN: Final = "Do not call the tool again on your own; ask the user what they want."
 KNOWN: Final = b"%PDF-1.4 a file Paperless holds"

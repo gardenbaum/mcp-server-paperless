@@ -881,9 +881,10 @@
         
         They no longer show as new in the web UI; nothing is deleted, and there is no way back. Ids
         need no confirm. all_unacknowledged does: without it a dialog, or an error for you to show the
-        user, first says how many, the newest failures and whose they are (see confirm). Staff users
-        mark every user's tasks, others their own and those without an owner, also tasks that come in
-        meanwhile. Needs the change_paperlesstask permission.
+        user, first says how many, the newest failures and whose they are (see confirm); without a
+        dialog confirm counts only with the expected value this names. Staff users mark every user's
+        tasks, others their own and those without an owner, also tasks that come in meanwhile. Needs
+        the change_paperlesstask permission.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -902,6 +903,18 @@
             'default': False,
             'description': 'Only say what would be marked; change nothing.',
             'type': 'boolean',
+          }),
+          'expected': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': "With all_unacknowledged and confirm: the preview's expected value.",
           }),
           'task_ids': dict({
             'anyOf': list([
