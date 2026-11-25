@@ -13,7 +13,12 @@ PLMCP-89 AC 2, 3, 4 and 7: `list_tasks`, `acknowledge_tasks` and `run_task` were
 
 On 2026-11-24 the owner approved the design: asked in a question dialog "Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?" (do you approve the drafts with all recommended options, with the guide limit 2943 to 3229, the instructions limit 1465 and the definition limit 1010), the owner chose "Alle wie empfohlen" (all as recommended). So decisions 2 and 3 of the draft (`GET /api/tasks/{id}/` and the ten task types) are owner-approved exclusions of 2026-11-24, and its decisions 4a (a new toolset), 5a (the logs stay in `admin`) and 10 (guide limit +89) are approved.
 
-PROBES
+Probed on Paperless 3.5.1 (CI run 45604535090, job 139171854815 "e2e (1/6)", temporary tests of PLMCP-89.1; P1, P3, P4 and P5 are in decisions 94 and 95):
+
+- **P1, the list**: `task_type` given twice means either. An unknown owner, type or time is a 400, an unknown ordering is ignored. `name` finds part of the file's name and the words for the type ("consume"). Two orderings can be joined by a comma.
+- **P2**: each of the ten types is a 400, "Task type '...' cannot be manually triggered"; two types in one call are a 400; a staff user who is no superuser gets a 403.
+- **P6**: `input_data` of uploads holds file name, MIME type and the metadata asked for (title, owner id); of bulk operations the operation and the number of documents; of every other type seen nothing. A password given to remove_password is in no task. The error of a failed task can name a server path.
+- The tasks of a deleted user have no owner any more: every user who may view tasks sees them.
 <!-- SECTION:CONTEXT:END -->
 
 ## Decision

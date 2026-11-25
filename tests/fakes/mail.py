@@ -39,6 +39,7 @@ from mcp_server_paperless.paperless.mail import (
     connected,
     failed_login,
     silent_server,
+    undeletable_processed,
     unreachable_server,
     unseen_account,
     unseen_processed,
@@ -284,6 +285,19 @@ def _processed(row: FakeProcessedMail) -> ProcessedMail:
         status=row.status,
         error=row.error,
     )
+
+
+def delete_processed(data: MailData, user: Viewer, mail_ids: Collection[int]) -> None:
+    """`MailWriter.delete_processed_mail` (ProcessedMailViewSet bulk_delete).
+
+    Ids that do not exist are skipped; one that the user may not delete refuses all. It needs no
+    view permission.
+    """
+    if not user.has("delete_processedmail"):
+        raise undeletable_processed()
+    if any(r.id in mail_ids and not _visible(r.owner, user) for r in data.processed):
+        raise undeletable_processed()
+    data.processed[:] = [r for r in data.processed if r.id not in mail_ids]
 
 
 def list_processed(  # noqa: PLR0913 -- the port's signature

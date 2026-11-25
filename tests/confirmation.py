@@ -7,8 +7,16 @@ state `world()` makes.
 import base64
 from typing import TYPE_CHECKING, Final
 
+<<<<<<< HEAD
 from fakes.mail import FakeMailAccount, FakeMailRule
 from fakes.paperless import FakeDocument, FakeFile, FakePaperless, FakeState, FakeTask, seeded
+||||||| 8b4764b
+from fakes.mail import FakeMailAccount, FakeMailRule
+from fakes.paperless import FakeDocument, FakeFile, FakePaperless, FakeState, seeded
+=======
+from fakes.mail import FakeMailAccount, FakeMailRule, FakeProcessedMail
+from fakes.paperless import FakeDocument, FakeFile, FakePaperless, FakeState, seeded
+>>>>>>> plmcp-89-1-tasks
 from fakes.sharing import FakeShareBundle, FakeShareLink
 from fastmcp.client.elicitation import ElicitResult
 
@@ -68,6 +76,7 @@ def world() -> FakeState:
         )
     ]
     state.mail_rules = [FakeMailRule(id=1, name="Rule", account=1, owner=2)]
+    state.processed_mail = [FakeProcessedMail(id=1, rule=1, subject="Invoice", owner=2)]
     state.workflows = [
         Workflow(
             id=1,
@@ -161,6 +170,7 @@ CALLS: Final[dict[str, Json]] = {
     "create_mail_rule": {"name": "New", "account_id": 1, "action": "delete"},
     "update_mail_rule": {"rule_id": 1, "action": "delete"},
     "delete_mail_rule": {"rule_id": 1},
+    "delete_processed_mail": {"mail_ids": [1]},
     "create_user": {"username": "new", "password": PASSWORD, "groups": ["e2e-group"]},
     "update_user": {"user": "e2e-reader", "is_superuser": True},
     "delete_user": {"user": "e2e-reader"},

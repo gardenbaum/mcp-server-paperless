@@ -37,12 +37,9 @@ from mcp_server_paperless.services.admin_system import (
 from mcp_server_paperless.tools._shared import ANNOTATIONS, Confirm, boundary, services
 
 TOOLSET = "admin"
-PAGE_SIZE = 25
-LIST_LIMIT = 100
 
 provider = LocalProvider()
 
-type PositiveId = Annotated[int, Field(ge=1)]
 type UserRef = Annotated[
     NameOrId, Field(description="Username or id; the ids are in list_users (permissions toolset).")
 ]
@@ -63,8 +60,6 @@ type Permissions = Annotated[
         )
     ),
 ]
-type Page = Annotated[int, Field(ge=1, description="Page number, from 1.")]
-type Size = Annotated[int, Field(ge=1, le=LIST_LIMIT, description="Rows per page, at most 100.")]
 
 
 def secret(value: object) -> SecretStr:

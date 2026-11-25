@@ -94,11 +94,21 @@ async def test_view_service_errors(snapshot: SnapshotAssertion) -> None:
         "taken name": ViewCreate(name="E2E-view"),
         "bad sort": ViewCreate(name="n", sort_field="bogus"),
         "bad rule value": ViewCreate(name="n", rules=(RuleInput(rule=2, value="x"),)),
+        "unknown icon": ViewCreate(name="n", icon="nope"),
+        "no display fields": ViewCreate(name="n", display_fields=()),
+        "too many display fields": ViewCreate(
+            name="n", display_fields=tuple(f"custom_field_{n}" for n in range(1, 52))
+        ),
+        "unknown display field": ViewCreate(name="n", display_fields=("nope",)),
+        "display field twice": ViewCreate(name="n", display_fields=("asn", "asn")),
+        "unknown custom field": ViewCreate(name="n", display_fields=("custom_field_99",)),
         "unknown label": ViewCreate(name="n", rules=(RuleInput(rule="has tags", value="1"),)),
     }
     edited = {
         "nothing": ViewEdit(),
         "both sort": ViewEdit(sort_field="title", clear_sort=True),
+        "both display modes": ViewEdit(display_mode="table", clear_display_mode=True),
+        "both display fields": ViewEdit(display_fields=("asn",), clear_display_fields=True),
         "both page size": ViewEdit(page_size=3, clear_page_size=True),
         "blank name": ViewEdit(name=" "),
         "taken name": ViewEdit(name="ODD"),

@@ -5,7 +5,8 @@ text value. Paperless itself never runs a view: the web UI turns the rules into 
 and so does ``run_saved_view`` (``mcp_server_paperless.services.filter_rules``).
 """
 
-from typing import TYPE_CHECKING, Annotated, ClassVar, Final
+import re
+from typing import TYPE_CHECKING, Annotated, ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -68,6 +69,85 @@ RULE_TYPES: Final[Mapping[int, str]] = {
     50: "has duplicates",
 }
 
+# The icons of 3.5.1 (a test compares them with the vendored OpenAPI schema).
+ICONS: Final = (
+    "archive",
+    "bank",
+    "basket",
+    "bell",
+    "bookmark",
+    "boxes",
+    "briefcase",
+    "building",
+    "calculator",
+    "calendar",
+    "camera",
+    "card-checklist",
+    "cash",
+    "chat-left-text",
+    "check-circle",
+    "clipboard",
+    "clock-history",
+    "credit-card",
+    "download",
+    "envelope",
+    "exclamation-triangle",
+    "file-earmark",
+    "file-earmark-check",
+    "file-earmark-lock",
+    "file-earmark-medical",
+    "file-earmark-person",
+    "file-earmark-spreadsheet",
+    "file-text",
+    "files",
+    "folder",
+    "funnel",
+    "gear",
+    "globe2",
+    "hash",
+    "heart",
+    "house",
+    "inbox",
+    "journals",
+    "list-task",
+    "newspaper",
+    "paperclip",
+    "people",
+    "person",
+    "printer",
+    "receipt",
+    "safe",
+    "search",
+    "send",
+    "shop",
+    "stack",
+    "stars",
+    "tag",
+    "tags",
+    "telephone",
+    "truck",
+    "upc-scan",
+    "wallet2",
+)
+DEFAULT_ICON: Final = "funnel"
+type DisplayMode = Literal["table", "smallCards", "largeCards"]
+# SavedView.DisplayFields of 3.5.1 (the schema leaves them open) beside ``custom_field_<id>``.
+DISPLAY_FIELDS: Final = (
+    *("title", "created", "added", "tag", "correspondent", "documenttype", "storagepath"),
+    *("note", "owner", "shared", "asn", "pagecount"),
+)
+MAX_DISPLAY_FIELDS: Final = 50
+_CUSTOM_FIELD: Final = re.compile(r"custom_field_([1-9][0-9]{0,8})")
+
+
+def display_field_id(field: str) -> int | None:
+    """The id of the custom field that ``field`` names in exactly the form Paperless writes.
+
+    Paperless itself looks for the text anywhere and fails without a number (PLMCP-88.1, P4).
+    """
+    found = _CUSTOM_FIELD.fullmatch(field)
+    return None if found is None else int(found[1])
+
 
 class FilterRule(BaseModel):
     """One filter rule as Paperless stores it: the rule type and its value as text."""
@@ -79,7 +159,10 @@ class FilterRule(BaseModel):
 
 
 class SavedView(BaseModel):
-    """A saved view as Paperless lists it (display settings of the web UI are left out)."""
+    """A saved view as Paperless lists it.
+
+    ``display_fields`` is ``None`` where Paperless has none or something else than a list.
+    """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
@@ -88,6 +171,9 @@ class SavedView(BaseModel):
     sort_field: str | None
     sort_reverse: bool
     page_size: int | None
+    icon: str
+    display_mode: str | None
+    display_fields: tuple[str, ...] | None
     owner: int | None
     user_can_change: bool
     filter_rules: tuple[FilterRule, ...]
@@ -97,7 +183,8 @@ class ViewValues(BaseModel):
     """The fields of a saved view a write sets; the port sends exactly those.
 
     A field that was never given is left alone. ``filter_rules`` is the whole new list.
-    ``sort_field`` and ``page_size`` can be given as ``None`` (no sort, the default page size).
+    ``sort_field``, ``page_size``, ``display_mode`` and ``display_fields`` can be given as
+    ``None`` (no sort, the defaults of the web UI).
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
@@ -107,11 +194,15 @@ class ViewValues(BaseModel):
     sort_field: str | None = None
     sort_reverse: bool | None = None
     page_size: int | None = None
+    icon: str | None = None
+    display_mode: DisplayMode | None = None
+    display_fields: tuple[str, ...] | None = None
 
     @model_validator(mode="after")
     def _only_some_fields_clear(self) -> ViewValues:
-        """Name, rules and sort direction have a value once given."""
-        for name in self.model_fields_set - {"sort_field", "page_size"}:
+        """Name, rules, sort direction and icon have a value once given."""
+        clearable = {"sort_field", "page_size", "display_mode", "display_fields"}
+        for name in self.model_fields_set - clearable:
             if getattr(self, name) is None:
                 message = f"{name} cannot be cleared"
                 raise ValueError(message)
@@ -149,6 +240,9 @@ class ViewCreate(BaseModel):
     sort_field: str | None = None
     sort_reverse: bool = False
     page_size: int | None = None
+    icon: str | None = None
+    display_mode: DisplayMode | None = None
+    display_fields: tuple[str, ...] | None = None
 
 
 class ViewEdit(BaseModel):
@@ -161,8 +255,13 @@ class ViewEdit(BaseModel):
     sort_field: str | None = None
     sort_reverse: bool | None = None
     page_size: int | None = None
+    icon: str | None = None
+    display_mode: DisplayMode | None = None
+    display_fields: tuple[str, ...] | None = None
     clear_sort: bool = False
     clear_page_size: bool = False
+    clear_display_mode: bool = False
+    clear_display_fields: bool = False
 
 
 class RuleInfo(BaseModel):
@@ -175,6 +274,17 @@ class RuleInfo(BaseModel):
     value: Annotated[str | None, Field(description="The value as stored, usually an id.")]
 
 
+class DisplayField(BaseModel):
+    """A document field a view shows."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    field: Annotated[str, Field(description="As stored, e.g. 'title' or 'custom_field_3'.")]
+    name: Annotated[
+        str | None, Field(description="The name of a custom field where it can be read.")
+    ]
+
+
 class SavedViewInfo(BaseModel):
     """A saved view as tools show it."""
 
@@ -185,6 +295,14 @@ class SavedViewInfo(BaseModel):
     sort_field: Annotated[str | None, Field(description="The field it sorts by, null: default.")]
     sort_reverse: Annotated[bool, Field(description="Descending when sort_field is set.")]
     page_size: Annotated[int | None, Field(description="The page size of the web UI, if set.")]
+    icon: str
+    display_mode: Annotated[
+        str | None, Field(description="table, smallCards or largeCards; null: the default.")
+    ]
+    display_fields: Annotated[
+        tuple[DisplayField, ...] | None,
+        Field(description="What the web UI shows of each document; null: the default."),
+    ]
     owner: Annotated[int | None, Field(description="User id of the owner; null: shared by all.")]
     can_change: Annotated[bool, Field(description="Whether the current user may change it.")]
     rules: tuple[RuleInfo, ...]

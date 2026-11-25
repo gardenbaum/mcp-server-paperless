@@ -221,6 +221,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "delete_mail_rule": "mail",
     "list_processed_mail": "mail",
     "get_processed_mail": "mail",
+    "delete_processed_mail": "mail",
     "paperless_api_get": "raw",
     "list_workflows": "workflows",
     "get_workflow": "workflows",
@@ -626,6 +627,15 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         title="Get processed mail",
         read_only_hint=True,
         idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Destructive (decision-6, decision-83): the records are gone, and the next fetch can import the
+    # mails again and act on them. Not idempotent: an id that is gone refuses the call.
+    "delete_processed_mail": ToolAnnotations(
+        title="Delete processed mail",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
         open_world_hint=False,
     ),
     # Storing an account contacts nobody. Updating one needs confirm only to point it at another

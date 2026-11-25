@@ -195,3 +195,53 @@ async def test_the_confirm_parameter_is_the_shared_one_and_off_by_default() -> N
     properties = cast("dict[str, Json]", tools["delete_saved_view"].input_schema["properties"])
     assert properties["confirm"]["default"] is False
     assert "confirm" not in cast("list[str]", tools["delete_saved_view"].input_schema["required"])
+
+
+async def test_the_display_settings_are_set_shown_changed_and_cleared() -> None:
+    source = fake()
+    made = await call(
+        source,
+        "create_saved_view",
+        name="cards",
+        icon="heart",
+        display_mode="largeCards",
+        display_fields=["title", "custom_field_1"],
+    )
+    changed = await call(
+        source, "update_saved_view", view="cards", icon="bank", display_mode="table"
+    )
+    cleared = await call(
+        source,
+        "update_saved_view",
+        view="cards",
+        clear_display_mode=True,
+        clear_display_fields=True,
+    )
+
+    fields = [
+        {"field": "title", "name": None},
+        {"field": "custom_field_1", "name": "e2e-string"},
+    ]
+    assert [(v["icon"], v["display_mode"], v["display_fields"]) for v in (made, changed)] == [
+        ("heart", "largeCards", fields),
+        ("bank", "table", fields),
+    ]
+    assert (cleared["icon"], cleared["display_mode"], cleared["display_fields"]) == (
+        "bank",
+        None,
+        None,
+    )
+    assert await call(source, "get_saved_view", view="cards") == cleared
+
+
+async def test_unusable_display_settings_are_errors_that_say_what_is_usable() -> None:
+    source = fake(writes=False)
+
+    icon = await refusal(source, "create_saved_view", name="n", icon="nope")
+    field = await refusal(source, "update_saved_view", view=1, display_fields=["nope"])
+    mode = await refusal(source, "create_saved_view", name="n", display_mode="cards")
+
+    assert "funnel" in icon
+    assert "wallet2" in icon
+    assert "pagecount" in field
+    assert "smallCards" in mode

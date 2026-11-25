@@ -2,7 +2,7 @@
 
 <!-- Generated from the tool surface by `just docs-tools`. Do not edit by hand. -->
 
-102 tools in 14 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
+103 tools in 14 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
 default; the others are switched on with
 [`PAPERLESS_MCP_TOOLSETS`](configuration.md#toolsets), which also says what each toolset is for.
 
@@ -90,6 +90,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | `delete_mail_rule` | destructive, confirm | Delete a mail rule and the records of the mail it processed. |
 | `list_processed_mail` | read | List the mails Paperless handled, as compact rows. |
 | `get_processed_mail` | read | Read one mail Paperless handled, with its whole error. |
+| `delete_processed_mail` | destructive, confirm, dry run | Delete records of processed mail, so that Paperless can fetch those mails again. |
 
 ## `pdf`
 
@@ -167,7 +168,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | Tool | Kind | What it does |
 |---|---|---|
 | `list_saved_views` | read | List the saved views the current user may see, with their filter rules. |
-| `get_saved_view` | read | Read one saved view with its filter rules, sort order and page size. |
+| `get_saved_view` | read | Read one saved view with its filter rules, sort order and display settings. |
 | `create_saved_view` | write | Create a saved view: a named document filter that run_saved_view can run. |
 | `update_saved_view` | write | Change a saved view; only the settings you name change. |
 | `delete_saved_view` | destructive, confirm | Delete a saved view for good: it has no trash. |
