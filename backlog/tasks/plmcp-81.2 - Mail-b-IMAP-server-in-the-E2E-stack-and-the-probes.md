@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:55Z'
-updated_date: '2026-11-25T08:23:37Z'
+updated_date: '2026-11-25T08:23:48Z'
 labels:
   - mail
 dependencies:
@@ -53,4 +53,6 @@ P3: the tracebacks, mail.log and paperless.log are as the redaction of decision-
 P4: Dovecot signs in without setup and has UIDVALIDITY, keywords and MOVE; the whole job took 5 to 8 minutes (design: 1 to 2).
 
 Owner, 2026-11-25: 'Überall wie von dir empfohlen bitte.': the job e2e-imap stays complete at 4 to 5 minutes.
+
+Review round 1, tests first: servers that repeat the credentials (LOGIN, AUTHENTICATE PLAIN for a password that is not ASCII, XOAUTH2 for a token; NO, untagged BYE with a carriage return, NO to LOGOUT; also in the record of an action), a stub in the tests beside Dovecot; a live test of every order; the log tail test first proves that the answer is in the tail.
 <!-- SECTION:NOTES:END -->

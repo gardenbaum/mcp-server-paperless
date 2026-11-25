@@ -511,6 +511,11 @@ async def test_permissions_and_bulk_changes_take_every_argument() -> None:
         await sweep(
             "set_permissions", {"kind": kind, "items": [1], "clear_owner": True}, (), prepare=owned
         )
+    for kind in ("mail_account", "mail_rule"):
+        grants = {"view_users": ["admin"], "change_groups": [1], "owner": "e2e-reader"}
+        await sweep(
+            "set_permissions", {"kind": kind, "items": [1], **grants}, (), prepare=with_mail
+        )
     for kind in ("tag", "correspondent", "document_type", "storage_path"):
         await sweep(
             "bulk_edit_taxonomy", {"kind": kind, "items": [1], "operation": {"op": "delete"}}, ()
@@ -1591,6 +1596,12 @@ async def test_the_remaining_tools_have_a_scenario_with_all_their_arguments() ->
     await sweep("get_mail_rule", {"rule_id": 1}, (), prepare=with_mail)
     await sweep("delete_mail_account", {"account_id": 2}, (), prepare=with_mail)
     await sweep("delete_mail_rule", {"rule_id": 1}, (), prepare=with_mail)
+    await sweep(
+        "delete_processed_mail",
+        {"mail_ids": [1], "dry_run": False},
+        (),
+        prepare=with_processed_mail,
+    )
     await sweep("list_mail_accounts", {"page": 1, "page_size": 10}, (), prepare=with_mail)
     await sweep(
         "list_mail_rules", {"account_id": 1, "page": 1, "page_size": 10}, (), prepare=with_mail

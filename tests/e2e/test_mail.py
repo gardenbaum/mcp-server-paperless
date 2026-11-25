@@ -363,3 +363,35 @@ async def test_deleting_a_rule_and_an_account_needs_confirm_and_takes_the_rules_
     assert stack.admin.get(f"/api/mail_rules/{rule['id']}/").status_code == 404
     again = await error(client, "delete_mail_rule", rule_id=rule["id"], confirm=True)
     assert f"No mail rule {rule['id']}" in again
+
+
+@pytest.mark.decision("decision-87")
+async def test_an_account_and_its_rule_are_shared_one_by_one(
+    client: Connected, stack: Stack
+) -> None:
+    made = await account(client, "shared")
+    rule = await call(client, "create_mail_rule", name=f"{PREFIX}shared", account_id=made["id"])
+    server = create_server(
+        PaperlessSettings.model_validate({"url": stack.base_url, "token": stack.admin_token}),
+        server_settings(toolsets=["core", "permissions"]),
+    )
+    async with Client(server) as sharing:
+        wanted = {"kind": "mail_account", "items": [made["id"]], "change_users": ["e2e-reader"]}
+        asked = await error(sharing, "set_permissions", **wanted)
+        shared = await call(sharing, "set_permissions", **wanted, confirm=True)
+        ruled = await call(
+            sharing,
+            "set_permissions",
+            kind="mail_rule",
+            items=[rule["id"]],
+            clear_owner=True,
+            confirm=True,
+        )
+
+    assert "send its saved password or token to a server of their choice" in asked
+    assert (shared["changed_count"], ruled["changed_count"]) == (1, 1)
+    wire = obj(
+        parse(stack.admin.get(f"/api/mail_accounts/{made['id']}/", params={"full_perms": "true"}))
+    )
+    assert len(cast("list[int]", obj(obj(wire["permissions"])["change"])["users"])) == 1
+    assert obj(parse(stack.admin.get(f"/api/mail_rules/{rule['id']}/")))["owner"] is None

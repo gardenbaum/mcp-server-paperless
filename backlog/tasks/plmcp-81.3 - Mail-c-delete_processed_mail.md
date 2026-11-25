@@ -1,9 +1,11 @@
 ---
 id: PLMCP-81.3
 title: 'Mail c: delete_processed_mail'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T22:44:56Z'
+updated_date: '2026-11-25T09:42:49Z'
 labels:
   - mail
 dependencies:
@@ -35,3 +37,21 @@ Third part of PLMCP-81: records of processed mail cannot be deleted, so a failed
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Port MailWriter.delete_processed_mail: adapter (one POST, not repeated, its echo not believed), fake (T1, 403 for all); adapter tests, contract on fake and live with rows made in Paperless itself. 2. services/processed_mail.py: read each id, rules, accounts, siblings; refusals; effect grouped by what follows; scope; read back one by one (one_by_one of decision-73, 40 s). 3. Tool with dry_run and confirm; tables of confirmation, destinations, registry, arguments, budgets. 4. Live tests with the mail server: partial, foreign, refetch after the tool. 5. decision-83, coverage row, docs, guide 2964 to 2988, measured dialog of 100.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner's words (2026-11-24): 'Alle wie empfohlen' in the question 'Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?' (here decisions 9a, 10, 11a). Dialog of 100 records measured, with its hint: 11,023 characters ordinary (one rule), 17,123 with a staying record each, 19,810 with long subjects and rule name, 81,027 with 100 rules that move to a 250-character folder each, hostile 54,195 (one rule) to 220,327 (100 rules, every text 250 escapes). What follows is said once per kind of outcome. WORST (5,388, one record) holds. No cap built: put to the owner. A security review asked whether bulk_delete deletes before it meets a forbidden record; it checks all first (source, and a live contract test with an older permitted record).
+
+After the review of 81.1 other records are always looked for; dialog of 100 measured again: 11,054 ordinary, 16,887 with a staying record each, 19,841 long subjects, 81,058 with 100 rules and folders, hostile 54,226 to 220,091 characters.
+
+Review round 1 (independent), tests first: the sentence for PROCESSED_WO_CONSUMPTION of rules that import the mail itself, the UIDVALIDITY caveat always, hidden rules, texts softened, rights before the long reads, vanished pages, doubled rows, INBOX in any case, tests for the survivors (each request checks the time, every account is bound). Dialog of 100 measured: 11,330 ordinary; 17,830 with a staying record each; 20,117 long subjects; not hostile 132,122 (100 rules, SUCCESS, move to long folders) and 171,922 (also staying records and other folders); hostile 307,322. No bound built (with the owner).
+
+Review round 2, tests first: when the rule acts follows from what it takes (eml_and_attachments: one half is enough), other records by the rule's folder, UIDVALIDITY of a server that names none. Dialog of 100 measured: 11,341 ordinary, 17,920 with a staying record each, 20,128 long subjects; not hostile 130,252 and 170,052; hostile 305,452. No bound built (with the owner).
+<!-- SECTION:NOTES:END -->

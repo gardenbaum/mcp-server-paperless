@@ -22,13 +22,15 @@ from mcp_server_paperless.domain.mail import (
     MailAccountValues,
     MailRule,
     MailRuleValues,
+    ProcessedMail,
 )
 from mcp_server_paperless.paperless.mail import unreachable_server
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from contract.conftest import Backend, Ports
+    from contract.conftest import Backend, Ports, Processed
+    from mcp_server_paperless.domain.mail import ProcessedStatus
 
 pytestmark = [
     pytest.mark.anyio,
@@ -38,6 +40,7 @@ pytestmark = [
 LIST_ACCOUNTS, GET_ACCOUNT = "MailReader.list_mail_accounts", "MailReader.get_mail_account"
 LIST_RULES, GET_RULE = "MailReader.list_mail_rules", "MailReader.get_mail_rule"
 LIST_PROCESSED = "MailReader.list_processed_mail"
+DELETE_PROCESSED = "MailWriter.delete_processed_mail"
 GET_PROCESSED = "MailReader.get_processed_mail"
 CREATE_ACCOUNT = "MailWriter.create_mail_account"
 UPDATE_ACCOUNT = "MailWriter.update_mail_account"
@@ -604,6 +607,95 @@ async def test_the_processed_mail_of_a_new_rule_is_empty_and_filters_are_accepte
 async def test_a_processed_mail_that_does_not_exist_is_not_found(backend: Backend) -> None:
     with pytest.raises(NotFound, match="No processed mail"):
         _ = await backend.admin.mail.get_processed_mail(UNKNOWN)
+
+
+async def made(
+    backend: Backend, mail: Mail, *rows: Processed, owned: bool = False
+) -> tuple[ProcessedMail, ...]:
+    """Records of a new rule, in the order they were processed."""
+    rule = await mail.rule((await mail.account()).id)
+    backend.new_processed(rule.id, rows, owner=rule.owner if owned else None)
+    found = await backend.admin.mail.list_processed_mail(
+        rule_id=rule.id, status=None, ordering="processed", page=1, page_size=25
+    )
+    return found.mails
+
+
+@pytest.mark.contract(LIST_PROCESSED)
+@pytest.mark.contract(GET_PROCESSED)
+async def test_records_are_listed_by_status_and_order_and_read_one_by_one(
+    backend: Backend, mail: Mail
+) -> None:
+    rows = await made(
+        backend,
+        mail,
+        ("One", "11", "SUCCESS", None),
+        ("Two", "12", "FAILED", "Traceback\nboom"),
+        ("Three", "13", "PROCESSED_WO_CONSUMPTION", None),
+    )
+
+    assert [(r.subject, r.uid, r.status, r.error) for r in rows] == [
+        ("One", "11", "SUCCESS", None),
+        ("Two", "12", "FAILED", "Traceback\nboom"),
+        ("Three", "13", "PROCESSED_WO_CONSUMPTION", None),
+    ]
+    reader = backend.admin.mail
+    statuses: tuple[ProcessedStatus, ...] = ("SUCCESS", "FAILED", "PROCESSED_WO_CONSUMPTION")
+    for row, status in zip(rows, statuses, strict=True):
+        assert await reader.get_processed_mail(row.id) == row
+        found = await reader.list_processed_mail(
+            rule_id=row.rule_id, status=status, ordering="-processed", page=1, page_size=25
+        )
+        assert found.mails == (row,)
+    newest = await reader.list_processed_mail(
+        rule_id=rows[0].rule_id, status=None, ordering="-processed", page=1, page_size=25
+    )
+    assert newest.mails == rows[::-1]
+
+
+@pytest.mark.decision("decision-83")
+@pytest.mark.contract(DELETE_PROCESSED)
+async def test_records_are_deleted_and_an_id_that_is_none_is_skipped(
+    backend: Backend, mail: Mail
+) -> None:
+    """T1: that is why only another read is believed."""
+    first, second, kept = await made(
+        backend, mail, *((subject, "1", "FAILED", None) for subject in "abc")
+    )
+    writer, reader = backend.admin.mail_writes, backend.admin.mail
+
+    await writer.delete_processed_mail([first.id, second.id, UNKNOWN])
+    await writer.delete_processed_mail([UNKNOWN])
+
+    for gone in (first, second):
+        with pytest.raises(NotFound):
+            _ = await reader.get_processed_mail(gone.id)
+    assert await reader.get_processed_mail(kept.id) == kept
+
+
+@pytest.mark.decision("decision-83")
+@pytest.mark.contract(DELETE_PROCESSED)
+async def test_one_record_of_another_user_refuses_all_and_the_permission_is_needed(
+    backend: Backend, mail: Mail
+) -> None:
+    """Paperless checks every record before it deletes any, also one older than the forbidden."""
+    [free] = await made(backend, mail, ("Free", "1", "FAILED", None))
+    [owned] = await made(backend, mail, ("Mine", "1", "FAILED", None), owned=True)
+    deleting = backend.restricted(frozenset({"delete_processedmail"}))
+    viewing = backend.restricted(frozenset({"view_processedmail"}))
+
+    assert owned.owner is not None
+    assert free.id < owned.id
+    with pytest.raises(PermissionDenied, match="Nothing was deleted"):
+        await deleting.mail_writes.delete_processed_mail([free.id, owned.id])
+    with pytest.raises(PermissionDenied, match="Nothing was deleted"):
+        await viewing.mail_writes.delete_processed_mail([free.id])
+    assert await viewing.mail.get_processed_mail(free.id) == free
+    await deleting.mail_writes.delete_processed_mail([free.id])
+
+    with pytest.raises(NotFound):
+        _ = await backend.admin.mail.get_processed_mail(free.id)
+    assert await backend.admin.mail.get_processed_mail(owned.id) == owned
 
 
 @pytest.mark.decision("decision-79")
