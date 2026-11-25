@@ -490,6 +490,7 @@ async def test_the_mail_destructive_tools_are_checked_for_confirm() -> None:
     found = {t.name for t in await server_tools() if destructive(t)}
 
     assert found >= {"delete_mail_account", "delete_mail_rule", "process_mail_account"}
+    assert "delete_processed_mail" in found
 
 
 @pytest.mark.decision("decision-18")

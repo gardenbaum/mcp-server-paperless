@@ -853,7 +853,7 @@ class TrashWriter(Protocol):
 
 
 class PermissionReader(Protocol):
-    """Owners and grants of documents and taxonomy objects, and the users and groups."""
+    """Owners and grants of documents, taxonomy and mail objects, and the users and groups."""
 
     async def get_permissions(
         self, kind: PermissionKind, object_ids: Sequence[int]
@@ -1292,6 +1292,17 @@ class MailWriter(Protocol):
         Raises:
             NotFound: No such account, or the user may not see it.
             PermissionDenied: The user may not delete this account.
+        """
+        ...
+
+    async def delete_processed_mail(self, mail_ids: Sequence[int]) -> None:
+        """Delete records of processed mail: all of them, or none.
+
+        An id that does not exist is skipped without a word, and Paperless says it was deleted:
+        only another read tells what became of a record. The request is never repeated.
+
+        Raises:
+            PermissionDenied: The user may not delete one of the records; nothing was deleted.
         """
         ...
 

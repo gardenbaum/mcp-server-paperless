@@ -330,11 +330,14 @@ documents in its refusal. E-mail needs a mail server set up in Paperless
 ### `permissions`
 
 Off by default: `set_permissions`, `list_users`, `list_groups`. Shares documents, tags,
-correspondents, document types and storage paths and hands them over: `set_permissions` sets the
-owner and the users and groups who may view or change, by name or id. Its default mode `merge`
-only adds to the grants and mode `replace` makes each list you give exactly that list. Granting
-access cannot be taken back, so every call that changes anything needs `confirm` (also a merge
-and any change of the owner), and the refusal names who gains and who loses access.
+correspondents, document types, storage paths, mail accounts and mail rules (the last two by id),
+and hands them over: `set_permissions` sets the owner and the users and groups who may view or
+change, by name or id. Its default mode `merge` only adds to the grants and mode `replace` makes
+each list you give exactly that list. Granting access cannot be taken back, so every call that
+changes anything needs `confirm` (also a merge and any change of the owner), and the refusal names
+who gains and who loses access. Whoever may change a mail account can make Paperless send its saved
+password to any server, and whoever may change a mail rule can make it move or delete mail; the
+confirmation says so, and a grant on an account is none on its rules.
 `bulk_edit_taxonomy` (bulk toolset) also sets permissions of taxonomy objects, behind `confirm`
 and with a `dry_run` preview (it empties the lists you leave out, `set_permissions` keeps them),
 and `update_document` can change a document's owner along with other edits. `list_users` and
@@ -346,9 +349,9 @@ users or groups needs the `view_user` or `view_group` permission in Paperless.
 Off by default. Manages the mail import: `list_mail_accounts`, `get_mail_account`,
 `create_mail_account`, `update_mail_account`, `delete_mail_account`, `test_mail_account`,
 `process_mail_account`, `list_mail_rules`, `get_mail_rule`, `create_mail_rule`,
-`update_mail_rule`, `delete_mail_rule`, `list_processed_mail` (compact rows) and
-`get_processed_mail` (one mail with its whole error, in parts of 20,000 characters, and whether it
-would be fetched again without its record).
+`update_mail_rule`, `delete_mail_rule`, `list_processed_mail` (compact rows), `get_processed_mail`
+(one mail with its whole error, in parts of 20,000 characters, and whether it would be fetched again
+without its record) and `delete_processed_mail`.
 
 - Passwords are write-only: they are accepted when an account is created or changed and are
   never returned, quoted or logged, nor is any OAuth token. Gmail and Outlook accounts are set up
@@ -367,6 +370,11 @@ would be fetched again without its record).
   off, and to hand a rule to another owner.
 - `test_mail_account` logs in with the saved password and changes nothing; a failed login is a
   result, not an error.
+- `delete_processed_mail` deletes 1 to 100 records, always behind `confirm` (`dry_run` shows the
+  same): the confirmation names each mail and what follows, since Paperless can then fetch it
+  again, import it a second time, and run the rule's action on it, which can delete it on the mail
+  server. Each record is read again afterwards. It needs `view_processedmail` and
+  `delete_processedmail`.
 - `process_mail_account` only queues the fetch: follow it with `list_processed_mail` and the
   Paperless task list. While another fetch runs, Paperless skips it without an error.
 

@@ -24,12 +24,6 @@
 # [[undeclared]]  query parameters the generated schema omits (listed by hand)
 
 [[open]]
-task = "PLMCP-81.3"
-operations = [
-  "POST /api/processed_mail/bulk_delete/",
-]
-
-[[open]]
 task = "PLMCP-83"
 operations = [
   "DELETE /api/config/{id}/",
@@ -303,16 +297,6 @@ task = "PLMCP-83"
 operation = "PATCH /api/documents/{id}/"
 fields = ["body:created_date", "body:remove_inbox_tags"]
 task = "PLMCP-83"
-
-[[open_fields]]
-operation = "PATCH /api/mail_accounts/{id}/"
-fields = ["body:owner", "body:set_permissions"]
-task = "PLMCP-81.5"
-
-[[open_fields]]
-operation = "PATCH /api/mail_rules/{id}/"
-fields = ["body:set_permissions"]
-task = "PLMCP-81.5"
 
 [[open_fields]]
 operation = "PATCH /api/saved_views/{id}/"

@@ -268,7 +268,7 @@ switch them on (never for a session: only you decide, see
 | `views` | 6 | | Saved views: list, create, change, pin and delete them (running them is in `core`) |
 | `sharing` | 8 | | Public share links and bundles, and sending documents by e-mail |
 | `permissions` | 3 | | Owners and view and change rights of documents and taxonomy; list users and groups |
-| `mail` | 14 | | Mail accounts and rules for the mail import, and what it processed |
+| `mail` | 15 | | Mail accounts and rules for the mail import, and what it processed |
 | `workflows` | 7 | | The workflows Paperless runs by itself: triggers and actions; run one by hand on chosen documents |
 | `admin` | 16 | | Users, groups, application configuration, logs, tasks, bulk download |
 | `raw` | 1 | | A read-only escape hatch: GET any path of the Paperless API the other tools do not cover |
