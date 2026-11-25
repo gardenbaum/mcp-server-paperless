@@ -238,7 +238,9 @@ EXACT: Final = frozenset({"headers", "params", "assign_custom_fields_values"})
 
 def _exact(value: JsonValue) -> JsonValue:
     """A JSON setting: Paperless stores an empty custom field value as none."""
-    return {k: (None if v == "" else v) for k, v in as_object(value).items()}
+    if isinstance(value, dict):
+        return {k: (None if v == "" else v) for k, v in value.items()}
+    return value or {}
 
 
 def _unlike(wanted: Mapping[str, JsonValue], now: Mapping[str, JsonValue]) -> list[str]:
@@ -537,22 +539,19 @@ class WorkflowParts:
                 message = "no setting was named."
                 raise _usage(message, "Pass the settings that change, clear or position.")
             values = as_object(given.get("assign_custom_fields_values"))
-            if values:
-                kept = as_object(old.settings.get("assign_custom_fields_values"))
-                given["assign_custom_fields_values"] = {**kept, **values}
             if values and "assign_custom_fields" in edit.clear:
                 message = (
                     "assign_custom_fields_values adds its fields to assign_custom_fields, which "
                     "is to be cleared."
                 )
                 raise _usage(message, "Give assign_custom_fields with all fields that remain.")
-            if old.type == ASSIGNMENT and values and spec.assign_custom_fields is None:
-                # Paperless writes only the values of fields in assign_custom_fields.
+            if values and spec.assign_custom_fields is None:
                 held = old.settings.get("assign_custom_fields")
                 fields_now = list(held) if isinstance(held, list) else []
                 more = [int(k) for k in values if int(k) not in fields_now]
                 given["assign_custom_fields"] = [*fields_now, *more]
-        return {**_cleared(edit.clear, fields, given), **given}
+        settings = {**_cleared(edit.clear, fields, given), **given}
+        return settings | _assigned_values(old, settings)
 
     @staticmethod
     def _credentials(
@@ -675,6 +674,27 @@ class WorkflowParts:
             "Someone else may have changed it at the same time."
         )
         raise PaperlessMcpError(message, hint=AGAIN)
+
+
+def _assigned_values(
+    old: WorkflowAction, settings: Mapping[str, JsonValue]
+) -> dict[str, JsonValue]:
+    """The custom field values of a changed assignment: the stored ones with the new ones.
+
+    Only those of fields it assigns: Paperless writes no others, and one that is kept would come
+    back unseen with its field.
+    """
+    names = ("assign_custom_fields", "assign_custom_fields_values")
+    if old.type != ASSIGNMENT or not settings.keys() & set(names):
+        return {}
+    fields = {**old.settings, **settings}.get(names[0])
+    stored = as_object(old.settings.get(names[1]))
+    values = stored if names[1] not in settings else as_object(settings[names[1]])
+    if values and names[1] in settings:
+        values = {**stored, **values}
+    assigned = {str(number) for number in fields} if isinstance(fields, list) else set[str]()
+    kept = {number: value for number, value in values.items() if number in assigned}
+    return {names[1]: kept} if names[1] in settings or kept != stored else {}
 
 
 def _values_kept(old: WorkflowAction, settings: Mapping[str, JsonValue], given: int) -> list[str]:

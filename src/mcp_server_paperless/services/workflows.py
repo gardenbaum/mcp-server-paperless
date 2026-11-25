@@ -591,7 +591,8 @@ def _told(
     """The stored actions whose URL credentials a confirmation speaks of by place or number."""
     told = {specs[place - 1].id for place in lost}
     if gone:
-        told |= {action.id for action in found.actions}  # one that is claimed is kept or in lost
+        # A webhook that is claimed is kept, or in lost.
+        told |= {action.id for action in found.actions if webhook_url(action)}
     return told
 
 

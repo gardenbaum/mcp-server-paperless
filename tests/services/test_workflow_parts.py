@@ -34,7 +34,7 @@ from mcp_server_paperless.domain.workflows import (
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.workflow_parts import WorkflowParts
-from mcp_server_paperless.services.workflows import HIDDEN, WorkflowService
+from mcp_server_paperless.services.workflows import HIDDEN, WorkflowService, hidden_lost
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -1362,3 +1362,116 @@ async def test_one_broken_rule_does_not_allow_another_to_be_broken() -> None:
 
     with pytest.raises(Validation, match="applying AI suggestions needs a trigger other"):
         _ = await setup.do(operation="remove", trigger_id=2)
+
+
+# --- second review of #159
+
+
+VALUES: dict[str, JsonValue] = {"1": "a", "2": "b", "3": "gone"}
+
+
+@pytest.mark.parametrize(
+    ("edit", "values", "fields", "note"),
+    [
+        (
+            {"action": ActionInput(type=1, assign_custom_fields_values={"1": "x"})},
+            {"1": "x", "2": "b"},
+            [1, 2],
+            "The stored values of 1 other custom field stay",
+        ),
+        ({"action": ActionInput(type=1, assign_custom_fields=[2])}, {"2": "b"}, [2], None),
+        (
+            {
+                "action": ActionInput(
+                    type=1, assign_custom_fields=[2], assign_custom_fields_values={"1": "x"}
+                )
+            },
+            {"1": "x", "2": "b"},
+            [2, 1],
+            "The stored values of 1 other custom field stay",
+        ),
+        ({"clear": ("assign_custom_fields",)}, {}, [], None),
+        ({"action": ActionInput(type=1, assign_title="x")}, VALUES, [1, 2], None),
+    ],
+    ids=["value", "fields", "both", "cleared", "untouched"],
+)
+async def test_values_of_fields_that_are_no_longer_assigned_are_dropped(
+    edit: dict[str, object], values: dict[str, JsonValue], fields: list[int], note: str | None
+) -> None:
+    setup = Setup()
+    held = action(11, assign_custom_fields=[1, 2], assign_custom_fields_values=VALUES)
+    _ = setup.seed([BY_HAND], [held])
+
+    info = await setup.do(**CHANGE, action_id=11, **edit)
+
+    stored = setup.now.actions[0].settings
+    assert stored["assign_custom_fields_values"] == values
+    assert stored["assign_custom_fields"] == fields
+    assert (info.note or "").startswith(note or "")
+    assert (info.note is None) == (note is None)
+
+
+@pytest.mark.parametrize(
+    ("sent", "now"),
+    [({"a": ["x"]}, ["x"]), ({"a": "x"}, "x"), (["x"], ["y"]), ({}, ["x"])],
+    ids=str,
+)
+async def test_json_that_is_no_object_is_compared_too(sent: JsonValue, now: JsonValue) -> None:
+    setup = Setup()
+    hooked = action(14, 4, webhook={**HOOK, "params": sent})
+    _ = setup.seed([BY_HAND], [hooked])
+
+    def stored() -> None:
+        other = action(14, 4, webhook={**HOOK, "params": now})
+        new = [a for a in setup.now.actions if a.id != 14]
+        setup.state.workflows[0] = setup.now.model_copy(update={"actions": (other, *new)})
+
+    setup.fake.after = stored
+    with pytest.raises(PaperlessMcpError, match=r"another webhook\.params"):
+        _ = await setup.do(operation="add", action=RETITLE)
+
+
+@pytest.mark.parametrize("part", ["triggers", "actions"])
+async def test_a_lost_answer_with_one_list_changed_is_not_called_unchanged(part: str) -> None:
+    setup = Setup()
+    _ = setup.seed([BY_HAND], [TITLE])
+    other = {"triggers": (BY_HAND, trigger(9)), "actions": (TITLE, BINS)}[part]
+
+    def meddle() -> None:
+        setup.state.workflows[0] = setup.now.model_copy(update={part: other})
+
+    setup.fake.fails, setup.fake.unwritten, setup.fake.after = LOST, True, meddle
+    with pytest.raises(PaperlessMcpError, match="not as planned") as raised:
+        _ = await setup.do(operation="add", action=RETITLE)
+
+    assert "as it was" not in raised.value.message
+
+
+HIDDEN_HOOK: dict[str, JsonValue] = {"url": URL, "headers": {"A": "1", "B": "2"}}
+
+
+@pytest.mark.parametrize(
+    ("new", "lost"),
+    [
+        (HIDDEN_HOOK, []),
+        ({"url": URL, "headers": {"A": "1"}}, ["the value of 'B'"]),
+        ({"url": URL, "headers": {"A": "1", "B": "3"}}, ["the value of 'B'"]),
+        ({"url": URL, "headers": {}}, ["the values of 'A', 'B'"]),
+        ({**HIDDEN_HOOK, "url": "https://h.example/x"}, ["the credentials of its URL"]),
+        (None, ["the values of 'A', 'B'", "the credentials of its URL"]),
+    ],
+)
+def test_what_a_webhook_loses(new: JsonValue, lost: list[str]) -> None:
+    old = action(14, 4, webhook=HIDDEN_HOOK)
+    after = None if new is None else action(14, 4, webhook=new)
+
+    assert hidden_lost(old, after) == lost
+    plain = [text for text in lost if "credentials" not in text]
+    assert hidden_lost(old, after, credentials=False) == plain
+
+
+def test_passwords_are_lost_unless_the_same_stay() -> None:
+    assert hidden_lost(UNLOCKS, UNLOCKS) == []
+    assert hidden_lost(UNLOCKS, action(15, 5, passwords=["other"])) == ["its passwords"]
+    assert hidden_lost(UNLOCKS, None) == ["its passwords"]
+    assert hidden_lost(action(15, 5, passwords=[]), None) == []
