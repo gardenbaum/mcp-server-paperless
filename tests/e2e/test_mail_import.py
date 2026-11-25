@@ -8,6 +8,7 @@ and what Paperless answers and logs (probes P1 to P4). The tests run on a stack 
 import base64
 import json
 import os
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
 import httpx2
@@ -360,7 +361,7 @@ async def test_a_skipped_fetch_and_a_failed_login_are_in_the_explanation(
 async def test_a_user_who_is_no_staff_is_told_what_is_not_known(box: Mailbox, stack: Stack) -> None:
     settings = obj(parse(stack.admin.get("/api/ui_settings/")))
     # A rule of somebody else, which the user does not see.
-    _ = box.rule(owner=num(obj(settings["user"])["id"]))
+    hidden = box.rule(owner=num(obj(settings["user"])["id"]))
     body = {
         "username": f"{box.name}-user",
         "password": "pw-e2e-imap-4711",
@@ -380,6 +381,8 @@ async def test_a_user_who_is_no_staff_is_told_what_is_not_known(box: Mailbox, st
         )
         async with Client(server) as limited:
             found = await call(limited, "explain_mail_import", account_id=box.account)
+            visible = box.rule(owner=user, order=9)
+            seen = await call(limited, "explain_mail_import", account_id=box.account)
     finally:
         box.change_account(owner=None)
         _ = stack.admin.delete(f"/api/users/{user}/")
@@ -390,6 +393,310 @@ async def test_a_user_who_is_no_staff_is_told_what_is_not_known(box: Mailbox, st
     assert "whether a fetch was skipped is not known" in gaps
     assert found["complete"] is False
     assert found["logs"] == []
+    assert [rule["rule_id"] for rule in cast("list[Json]", seen["rules"])] == [visible]
+    assert f"(id {hidden})" not in str(seen)
+
+
+DAY = 86_400
+
+
+async def explained(box: Mailbox, client: Connected, rule: int, **facts: object) -> Json:
+    """What the tool says of one rule; the answer says that it is no dry run."""
+    found = await call(client, "explain_mail_import", account_id=box.account, rule_id=rule, **facts)
+    assert str(found["message"]).startswith("This is not a dry run")
+    [checked] = cast("list[Json]", found["rules"])
+    assert checked["rule_id"] == rule
+    return found
+
+
+async def said(box: Mailbox, client: Connected, rule: int, what: str, **facts: object) -> list[str]:
+    """The results of one check of a rule."""
+    [checked] = cast("list[Json]", (await explained(box, client, rule, **facts))["rules"])
+    checks = cast("list[Json]", checked["checks"])
+    return [str(check["result"]) for check in checks if check["what"] == what]
+
+
+@pytest.mark.decision("decision-90")
+@pytest.mark.parametrize(
+    ("field", "what", "given", "other", "fitting"),
+    [
+        ("filter_from", "sender", "Sender <sender@example.org>", "nobody@", "SENDER@example.org"),
+        ("filter_to", "recipient", "me@example.org", "you@example.org", "ME@example.org"),
+        ("filter_subject", "subject", "Invoice", "Reminder", "INVOICE"),
+        ("filter_body", "body", None, "nowhere in it", "body of the mail"),
+    ],
+)
+async def test_a_filter_for_text_is_explained_as_the_server_then_searches(  # noqa: PLR0913, PLR0917 -- the cases
+    box: Mailbox,
+    client: Connected,
+    field: str,
+    what: str,
+    given: str | None,
+    other: str,
+    fitting: str,
+) -> None:
+    rule = box.rule(**{field: other})
+    _ = box.put("Invoice", {"a.txt": note()})
+    facts = {what: given} if given else {}
+
+    assert await said(box, client, rule, what, **facts) == ["no" if given else "unknown"]
+    assert await said(box, client, rule, what) == ["unknown"]
+    assert box.fetch() == 0
+    assert box.records(rule, 0) == []
+
+    box.change_rule(rule, **{field: fitting})
+    assert await said(box, client, rule, what, **facts) == ["ok" if given else "unknown"]
+    assert box.fetch() == 1
+    _ = box.records(rule, 1)
+
+
+@pytest.mark.decision("decision-90")
+async def test_the_age_is_explained_as_the_server_then_searches(
+    box: Mailbox, client: Connected
+) -> None:
+    rule = box.rule(maximum_age=5)
+    _ = box.put("Old", {"a.txt": note()}, arrived=10 * DAY)
+    received = datetime.now(UTC) - timedelta(days=10)
+    facts = {"received": received.isoformat()}
+
+    assert await said(box, client, rule, "age", **facts) == ["no"]
+    assert await said(box, client, rule, "age") == ["unknown"]
+    assert box.fetch() == 0
+    assert box.records(rule, 0) == []
+    box.change_rule(rule, maximum_age=10)
+    assert await said(box, client, rule, "age", **facts) == ["unknown"]
+
+    box.change_rule(rule, maximum_age=20)
+    assert await said(box, client, rule, "age", **facts) == ["ok"]
+    assert box.fetch() == 1
+    _ = box.records(rule, 1)
+    box.change_rule(rule, maximum_age=0)
+    assert await said(box, client, rule, "age") == ["ok"]
+
+
+@pytest.mark.decision("decision-90")
+async def test_another_folder_is_explained(box: Mailbox, client: Connected) -> None:
+    _ = box.imap.create("Elsewhere")
+    rule = box.rule(folder="INBOX")
+    _ = box.put("Filed", {"a.txt": note()}, folder="Elsewhere")
+
+    assert await said(box, client, rule, "folder", folder="Elsewhere") == ["no"]
+    assert await said(box, client, rule, "folder") == ["unknown"]
+    assert box.fetch() == 0
+    assert box.records(rule, 0) == []
+
+    box.change_rule(rule, folder="Elsewhere")
+    assert await said(box, client, rule, "folder", folder="Elsewhere") == ["ok"]
+    assert box.fetch() == 1
+    _ = box.records(rule, 1)
+
+
+@pytest.mark.decision("decision-90")
+async def test_a_disabled_rule_is_explained(box: Mailbox, client: Connected) -> None:
+    rule = box.rule(enabled=False)
+    _ = box.put("Off", {"a.txt": note()})
+
+    assert await said(box, client, rule, "enabled") == ["no"]
+    found = await explained(box, client, rule, subject=f"{box.name} Off")
+    assert "None of these rules is enabled" in str(found["message"])
+    assert box.fetch() == 0
+    found = await explained(box, client, rule, subject=f"{box.name} Off")
+    assert f"No rules enabled for account {box.name}. Skipping." in str(found["logs"])
+
+    box.change_rule(rule, enabled=True)
+    assert await said(box, client, rule, "enabled") == []
+    assert box.fetch() == 1
+    _ = box.records(rule, 1)
+
+
+@pytest.mark.decision("decision-90")
+@pytest.mark.parametrize(
+    ("files", "fields", "before", "after"),
+    [
+        (["a.txt"], {"filter_attachment_filename_include": "*.pdf"}, "no", "unknown"),
+        (["a.txt"], {"filter_attachment_filename_exclude": "*.TXT"}, "no", "unknown"),
+        ([], {}, "no", "ok"),
+    ],
+)
+async def test_attachments_are_explained(  # noqa: PLR0913, PLR0917 -- the cases
+    box: Mailbox,
+    client: Connected,
+    files: list[str],
+    fields: dict[str, object],
+    before: str,
+    after: str,
+) -> None:
+    rule = box.rule("mark_read", **fields)
+    _ = box.put("Files", {name: note() for name in files})
+
+    assert await said(box, client, rule, "attachments", attachment_names=files) == [before]
+    assert await said(box, client, rule, "attachments") == ["unknown"]
+    assert box.fetch() == 0
+    [row] = box.records(rule, 1)
+    assert row["status"] == "PROCESSED_WO_CONSUMPTION"
+
+    # Without its filter, or for the mail itself, the rule takes it.
+    if files:
+        box.change_rule(rule, **dict.fromkeys(fields, None))
+    else:
+        box.change_rule(rule, consumption_scope=2)
+    assert await said(box, client, rule, "attachments", attachment_names=files) == [after]
+    box.forget(num(row["id"]))
+    assert box.fetch() == 1
+    _ = box.records(rule, 1)
+
+
+@pytest.mark.decision("decision-90")
+@pytest.mark.parametrize(
+    ("action", "parameter", "flag", "fact"),
+    [
+        ("mark_read", None, SEEN, "is_read"),
+        ("flag", None, FLAGGED, "is_flagged"),
+        ("tag", "apple:red", FLAGGED, "is_flagged"),
+        ("tag", "done", "done", None),
+    ],
+)
+async def test_a_mark_is_explained(  # noqa: PLR0913, PLR0917 -- the cases
+    box: Mailbox,
+    client: Connected,
+    action: str,
+    parameter: str | None,
+    flag: str,
+    fact: str | None,
+) -> None:
+    rule = box.rule(action, action_parameter=parameter)
+    uid = box.put("Marked", {"a.txt": note()}, flag=flag)
+
+    def given(*, marked: bool) -> dict[str, bool]:
+        return {fact: marked} if fact else {}
+
+    marked = await said(box, client, rule, "mark", **given(marked=True))
+    assert marked == ["no" if fact else "unknown"]
+    assert await said(box, client, rule, "mark") == ["unknown"]
+    assert box.fetch() == 0
+    assert box.records(rule, 0) == []
+
+    box.unflag(uid, flag)
+    unmarked = await said(box, client, rule, "mark", **given(marked=False))
+    assert unmarked == ["ok" if fact else "unknown"]
+    assert box.fetch() == 1
+    _ = box.records(rule, 1)
+
+
+@pytest.mark.decision("decision-90")
+@pytest.mark.parametrize("colour", ["apple:pink", "apple:red:blue"])
+async def test_a_colour_paperless_does_not_know_is_explained(
+    box: Mailbox, client: Connected, colour: str
+) -> None:
+    rule = box.rule("tag", action_parameter=colour)
+    _ = box.put("Coloured", {"a.txt": note()})
+
+    assert await said(box, client, rule, "mark", is_flagged=False) == ["no"]
+    assert box.fetch() == 0
+    assert box.records(rule, 0) == []
+    found = await explained(box, client, rule, subject=f"{box.name} Coloured")
+    assert f"Rule {box.name}.{box.name}-0: Error while processing rule" in str(found["logs"])
+
+
+@pytest.mark.decision("decision-90")
+async def test_a_folder_to_move_to_that_is_missing_is_explained(
+    box: Mailbox, client: Connected
+) -> None:
+    rule = box.rule("move", action_parameter="Missing")
+    uid = box.put("Moving", {"a.txt": note()})
+
+    assert await said(box, client, rule, "target") == ["unknown"]
+    assert box.fetch() == 0
+    assert (box.records(rule, 0), box.uids()) == ([], [uid])
+
+    _ = box.imap.create("Missing")
+    assert await said(box, client, rule, "target") == ["unknown"]
+    assert box.fetch() == 1
+    _ = box.records(rule, 1)
+    assert box.uids() == []
+
+
+@pytest.mark.decision("decision-90")
+async def test_a_record_and_a_failed_file_are_explained(box: Mailbox, client: Connected) -> None:
+    rule = box.rule("flag")
+    _ = box.put("Broken", {"broken.pdf": BROKEN})
+    assert await said(box, client, rule, "record", subject=f"{box.name} Broken") == []
+    assert box.fetch() == 1
+    [row] = box.records(rule, 1)
+
+    found = await explained(box, client, rule, subject=f"{box.name} BROKEN")
+
+    [processed] = cast("list[Json]", found["processed"])
+    assert (processed["id"], processed["status"]) == (row["id"], "FAILED")
+    assert processed["error"]
+    [checked] = cast("list[Json]", found["rules"])
+    [check] = [c for c in cast("list[Json]", checked["checks"]) if c["what"] == "record"]
+    assert check["result"] == "unknown"
+    assert str(check["why"]).startswith(f"records {row['id']} have this subject")
+    tasks = [(t["task_type"], t["state"]) for t in cast("list[Json]", found["tasks"])]
+    assert ("consume_file", "failure") in tasks
+    assert box.fetch() == 0
+    box.forget(num(row["id"]))
+    assert await said(box, client, rule, "record", subject=f"{box.name} Broken") == []
+
+
+@pytest.mark.decision("decision-90")
+async def test_a_rule_that_ends_the_run_is_explained(box: Mailbox, client: Connected) -> None:
+    _ = box.imap.create("First")
+    first = box.rule("flag", folder="First", order=1, stop_processing=True)
+    second = box.rule("flag", order=2)
+    _ = box.put("Stops", {"a.txt": note()}, folder="First")
+    _ = box.put("Waits", {"b.txt": note()})
+
+    found = await explained(box, client, second)
+    [checked] = cast("list[Json]", found["rules"])
+    [check] = [c for c in cast("list[Json]", checked["checks"]) if c["what"] == "earlier rules"]
+    assert check["result"] == "unknown"
+    assert f"(id {first}) ends the run" in str(check["why"])
+    assert await said(box, client, first, "earlier rules") == []
+
+    assert box.fetch() == 1
+    _ = box.records(first, 1)
+    assert box.records(second, 0) == []
+    assert box.fetch() == 1
+    _ = box.records(second, 1)
+
+
+@pytest.mark.decision("decision-90")
+async def test_a_rule_that_takes_the_mail_first_is_explained(
+    box: Mailbox, client: Connected
+) -> None:
+    first, second = box.rule("flag", order=1), box.rule("flag", order=2)
+    _ = box.put("Once", {"a.txt": note()})
+
+    found = await explained(box, client, second)
+    [checked] = cast("list[Json]", found["rules"])
+    [check] = [c for c in cast("list[Json]", checked["checks"]) if c["what"] == "earlier rules"]
+    assert check["result"] == "unknown"
+    assert f"(id {first}) reads the same folder first" in str(check["why"])
+
+    assert box.fetch() == 1
+    _ = box.records(first, 1)
+    assert box.records(second, 0) == []
+    told = await explained(box, client, second, subject=f"{box.name} Once")
+    assert "already queued by a previous rule in this run" in str(told["logs"])
+
+
+@pytest.mark.decision("decision-90")
+async def test_what_the_account_lacks_is_explained(box: Mailbox, client: Connected) -> None:
+    rule = box.rule()
+    assert (await explained(box, client, rule))["account"] == []
+
+    box.change_account(account_type=2, is_token=True, expiration="2020-01-01T00:00:00Z")
+    code = (
+        "from paperless_mail.models import MailAccount; "
+        f"MailAccount.objects.filter(pk={box.account}).update(username='')"
+    )
+    in_container("python", "manage.py", "shell", "-c", code)
+
+    notes = "\n".join(cast("list[str]", (await explained(box, client, rule))["account"]))
+    assert "The access token has expired" in notes
+    assert "The account has no username" in notes
 
 
 # --- logins that fail
@@ -462,6 +769,10 @@ async def test_a_server_that_repeats_the_credentials_leaks_none(
         for form in forms:
             assert form not in str(shown)
             assert form not in str(read)
+    told = await call(client, "explain_mail_import", account_id=box.account)
+    assert told["logs"], "the failed login is not among the lines"
+    for form in forms:
+        assert form not in str(told)
 
 
 @pytest.mark.parametrize("how", ["no", "bye"])

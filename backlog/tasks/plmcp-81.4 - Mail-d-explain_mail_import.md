@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:57Z'
-updated_date: '2026-11-25T13:49:30Z'
+updated_date: '2026-11-25T14:37:38Z'
 labels:
   - mail
 dependencies:
@@ -26,7 +26,7 @@ Fourth part of PLMCP-81: why a mail was not imported must be gathered by hand fr
 <!-- AC:BEGIN -->
 - [x] #1 explain_mail_import explains from settings, processed mail, tasks and logs without a connection of this server, says it is not a dry run and names the closest way
 - [x] #2 Each check says ok, no or unknown; bounds and what could not be read are named
-- [ ] #3 Contract, tool and E2E tests cover each check, hidden rules, a user who is not staff, and that no credential appears
+- [x] #3 Contract, tool and E2E tests cover each check, hidden rules, a user who is not staff, and that no credential appears
 <!-- AC:END -->
 
 ## Definition of Done
@@ -59,4 +59,6 @@ Codex P2 on #163: fetch tasks beyond the five that are read stand in not_checked
 Owner, 2026-11-25: "Alles wie empfohlen" (everything as recommended): fetches before the newest five are named in not_checked and leave complete as it is; test first. This replaces the note before. Full E2E 45615787192 on 4254397 is green in all ten jobs.
 
 Codex P2 on #163, test first: the rules are read page by page (MailReader.list_mail_rule_page, new), so no page is asked for 40 seconds after the call began; unread rules stand in not_checked, make complete false, and are not said to be missing.
+
+AC 3: every check of a rule (enabled, folder, age, sender, recipient, subject, body, attachments, mark, target, record, earlier rules) in tool and contract tests (tests/explained.py) and in E2E with the mail server, where Paperless then does what was said; hidden rules, no staff and credentials too. Full E2E 45632136477 on 27cf967 green in all ten jobs (60 mail tests in 415 s, before 39 in 328 s). Notes about the account are no check of a rule: service and E2E.
 <!-- SECTION:NOTES:END -->
