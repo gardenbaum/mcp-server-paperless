@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:22:03Z'
-updated_date: '2026-11-25T16:26:22Z'
+updated_date: '2026-11-25T16:27:20Z'
 labels: []
 dependencies:
   - PLMCP-91
@@ -44,4 +44,6 @@ The task list is in the admin toolset (off by default), beside user administrati
 
 <!-- SECTION:NOTES:BEGIN -->
 Cleanup 2026-11-25, criteria read literally (every item at every named level). All parts are merged (#167, #168, #169). Runs: full hosted E2E 45641757616 and CI 45641757981 of main 7fcce34 (with all three parts) green, the E2E in all ten jobs: tests/contract/test_task_lists.py 28 and tests/e2e/test_task_lists.py 13 passed (13 is every test of the file, no skip, so also test_all_tasks_are_acknowledged_after_a_preview and test_the_value_of_a_preview_is_stale_after_another_failure; by count, their names are not in the log). AC 3 is proven: acknowledging all (89.2), the three types started in E2E, one type per call stated in run_task. AC 8 stays open for what 89.1 (AC 5), 89.2 (AC 5) and 89.3 (AC 4) miss. DoD 1 and 3 are ticked in the parts; DoD 2: see the parts; DoD 4: merged through the parts' pull requests, no own one.
+
+The missing tests are in PLMCP-120.
 <!-- SECTION:NOTES:END -->

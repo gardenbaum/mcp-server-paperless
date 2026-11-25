@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:38Z'
-updated_date: '2026-11-25T16:26:21Z'
+updated_date: '2026-11-25T16:27:19Z'
 labels:
   - admin
 dependencies: []
@@ -64,10 +64,8 @@ Review fixes: the pointers to list_tasks name the toolset (snapshot of upload_do
 Merged main 1efb5cd (106 tools, guide 3069). explain_mail_import and explain_workflow read TaskListReader; AdminReader.list_tasks and the created= window with its tests are gone. Output change of explain_mail_import: failed files are counted exactly by trigger source. Guide measured 3118, 3138, 3158 (3069 + 89), instructions 1443.
 
 Cleanup 2026-11-25, criteria read literally (every item at every named level). Merged as de956f5 (#167). Runs: full hosted E2E 45641757616 and CI 45641757981 of main 7fcce34 (with all three parts) green, the E2E in all ten jobs: tests/contract/test_task_lists.py 28 and tests/e2e/test_task_lists.py 13 passed (13 is every test of the file, no skip, so also test_all_tasks_are_acknowledged_after_a_preview and test_the_value_of_a_preview_is_stale_after_another_failure; by count, their names are not in the log). AC 1 stays open: configuration and README name the break, the release notes do not exist yet (no release after v0.4.0; a draft is in these notes and in #167). AC 5, missing: contract tests of the moved toolset; tool tests of the orderings created, finished (ascending), task_type, duration_seconds and wait_time_seconds both ways and state descending, and of the refused types of run_task; E2E of the orderings other than -finished and of the refused types. acknowledged and result of list_tasks are sent in a tool test (test_arguments), their effect is in contract and E2E. DoD 2 stays open: no local run of the whole just check is recorded, and the check jobs of the last head of the pull request were cancelled by its merge; those of CI 45641757981 (7fcce34) and 45646896491 (205e78f) are green.
+
+Final summary of the implementer, moved here because the task is open: The task tools have the toolset tasks; list_tasks takes every filter and ordering; exclusions recorded (decision-93). Probes P1 to P6 done.
+
+The missing tests are in PLMCP-120; the release notes of AC 1 belong to the task of the 0.5.0 release. Read literally, AC 5 also misses tool tests of the effect of acknowledged and result, and E2E that assert an order (the one with -finished has a single task).
 <!-- SECTION:NOTES:END -->
-
-## Final Summary
-
-<!-- SECTION:FINAL_SUMMARY:BEGIN -->
-The task tools have the toolset tasks; list_tasks takes every filter and ordering; exclusions recorded (decision-93). Probes P1 to P6 done.
-<!-- SECTION:FINAL_SUMMARY:END -->

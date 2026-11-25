@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:40Z'
-updated_date: '2026-11-25T16:26:21Z'
+updated_date: '2026-11-25T16:27:20Z'
 labels:
   - admin
 dependencies:
@@ -56,10 +56,8 @@ Full hosted E2E 45618698199 on 9c536a1; tests/contract/test_document_reader.py 3
 Review: the hint for a too large history comes from its caller (L5), the port names the 60 s wait; equivalent mutants of DocumentService.detail renumbered (one parameter more, checked against mutmut's generated source, not run).
 
 Cleanup 2026-11-25, criteria read literally (every item at every named level). Merged as 58c792a (#169). Runs: full hosted E2E 45641757616 and CI 45641757981 of main 7fcce34 (with all three parts) green, the E2E in all ten jobs: tests/contract/test_task_lists.py 28 and tests/e2e/test_task_lists.py 13 passed (13 is every test of the file, no skip, so also test_all_tasks_are_acknowledged_after_a_preview and test_the_value_of_a_preview_is_stale_after_another_failure; by count, their names are not in the log). AC 4, missing: a contract test (fake and 3.5.1) of paging 60 changes of the history; the contract test makes 3 and reads no pages. Report and rights are covered at every level, paging in tool tests and E2E. DoD 2 stays open: no local run of the whole just check is recorded, and the check jobs of the last head of the pull request were cancelled by its merge; those of CI 45641757981 (7fcce34) and 45646896491 (205e78f) are green.
+
+Final summary of the implementer, moved here because the task is open: history_page on get_document and get_system_report (decision-95); no open coverage row of PLMCP-89.
+
+The missing tests are in PLMCP-120.
 <!-- SECTION:NOTES:END -->
-
-## Final Summary
-
-<!-- SECTION:FINAL_SUMMARY:BEGIN -->
-history_page on get_document and get_system_report (decision-95); no open coverage row of PLMCP-89.
-<!-- SECTION:FINAL_SUMMARY:END -->

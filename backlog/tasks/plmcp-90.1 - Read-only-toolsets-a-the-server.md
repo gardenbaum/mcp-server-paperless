@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T12:22:10Z'
-updated_date: '2026-11-25T16:26:22Z'
+updated_date: '2026-11-25T16:27:20Z'
 labels: []
 dependencies: []
 parent_task_id: PLMCP-90
@@ -71,4 +71,6 @@ Merged main de956f5: guide 3118 to 3135 (+17), instructions 1474 measured with t
 AC 5: full hosted E2E 45639073065 on 2bec926 green in all ten jobs (live contract, stdio and HTTP, e2e-imap included). The head after it only adds the merge of main 58c792a (guide 3175, instructions 1474 unchanged, 391 targeted tests) and records; the full E2E was not repeated on it.
 
 Cleanup 2026-11-25, criteria read literally (every item at every named level). Merged as 205e78f (#170). Runs: full hosted E2E 45639073065 on 2bec926 green in all ten jobs, CI 45646896491 of 205e78f green. AC 3 stays open (PLMCP-90.3). AC 5, missing: contract tests of downloads, prompts and the error messages of a wrong selection; E2E of the downloads of a read-only toolset. Proven: mixed selections at every level; downloads and prompts in tool tests over stdio and HTTP on both eras; prompts and error messages in E2E. DoD 2 stays open: no local run of the whole just check is recorded, and the check jobs of the last head of #170 were cancelled by its merge.
+
+Read literally, AC 5 also misses the error messages of a wrong selection in tool tests over stdio and HTTP on both protocol eras. The missing tests are in PLMCP-120.
 <!-- SECTION:NOTES:END -->

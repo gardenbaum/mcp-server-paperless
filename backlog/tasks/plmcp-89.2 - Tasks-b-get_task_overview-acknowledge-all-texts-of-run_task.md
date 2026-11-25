@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:39Z'
-updated_date: '2026-11-25T16:26:21Z'
+updated_date: '2026-11-25T16:27:20Z'
 labels:
   - admin
 dependencies:
@@ -59,10 +59,8 @@ Review: M3 (at least), L1 to L4, L6, L8 and the Codex thread (a broken connectio
 Owner, 2026-11-25, as relayed by the main agent: 'alles wie von dir empfohlen' (everything as you recommend). (1) The sizes of PLMCP-89 are accepted: tasks 21.2 KB, admin 31.2 KB, get_document +283 bytes, core +434 bytes. (2) M2 variant A is built: confirm=true for all_unacknowledged counts only with the preview's expected value. acknowledge_tasks 1,968 to 2,197 bytes (+229 of about 245). Red first at service and tool level (48 red), E2E written before its first hosted run; 14 hand mutants, all killed.
 
 Cleanup 2026-11-25, criteria read literally (every item at every named level). Merged as 5dc35fa (#168). Runs: full hosted E2E 45641757616 and CI 45641757981 of main 7fcce34 (with all three parts) green, the E2E in all ten jobs: tests/contract/test_task_lists.py 28 and tests/e2e/test_task_lists.py 13 passed (13 is every test of the file, no skip, so also test_all_tasks_are_acknowledged_after_a_preview and test_the_value_of_a_preview_is_stale_after_another_failure; by count, their names are not in the log). AC 2 is proven: preview, a yes bound to counts and newest task (dialog, and confirm with the preview's value), what came in: tests/services/test_task_lists.py, tests/tools/test_tasks_toolset.py and E2E; what slips in between the second read and the POST is proven on the fake only. AC 5, missing: contract tests of starting train_classifier and llm_index; tool tests of what the summary by type holds, of acknowledging all as a user who is not staff, and of starting train_classifier and llm_index; E2E of acknowledging all as a user who is not staff. DoD 2 stays open: no local run of the whole just check is recorded, and the check jobs of the last head of the pull request were cancelled by its merge; those of CI 45641757981 (7fcce34) and 45646896491 (205e78f) are green.
+
+Final summary of the implementer, moved here because the task is open: get_task_overview, acknowledging all after a preview with a bound yes, true texts of run_task (decision-94).
+
+The missing tests are in PLMCP-120.
 <!-- SECTION:NOTES:END -->
-
-## Final Summary
-
-<!-- SECTION:FINAL_SUMMARY:BEGIN -->
-get_task_overview, acknowledging all after a preview with a bound yes, true texts of run_task (decision-94).
-<!-- SECTION:FINAL_SUMMARY:END -->
