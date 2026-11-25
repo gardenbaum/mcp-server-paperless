@@ -120,7 +120,7 @@ Limits.
 | `PATCH /api/mail_rules/{id}/` | `update_mail_rule` |  |
 | `PUT /api/mail_rules/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `GET /api/oauth/callback/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
-| `GET /api/processed_mail/` | `list_processed_mail` |  |
+| `GET /api/processed_mail/` | `delete_processed_mail`, `get_processed_mail`, `list_processed_mail` |  |
 | `POST /api/processed_mail/bulk_delete/` | `delete_processed_mail` |  |
 | `GET /api/processed_mail/{id}/` | `delete_processed_mail`, `get_processed_mail` |  |
 | `GET /api/profile/` |  | PLMCP-83 |
