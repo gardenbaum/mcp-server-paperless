@@ -173,6 +173,9 @@ class TaxonomyReader(Protocol):
 
         Raises:
             Validation: No such document, or the user may not see it, or the template is blank.
+            AnswerTooLarge: The path is larger than 64 KiB; it is not read to its end.
+            UpstreamUnavailable: Paperless failed; with status 500 on this template (a path that is
+                only a dot does that).
             PermissionDenied: The user may not view documents.
         """
         ...

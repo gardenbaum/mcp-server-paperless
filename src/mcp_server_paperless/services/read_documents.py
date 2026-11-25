@@ -82,6 +82,9 @@ COUNT_CHARS: Final = 10_000
 NOT_COUNTED: Final = (
     f"The counts were left out: {TEXT_SECONDS:g} seconds had passed. Try again, or choose less."
 )
+NO_ROWS: Final = (
+    f"No row was read: the counts took {TEXT_SECONDS:g} seconds. Ask for the rows without counts."
+)
 # Characters of notices in an answer.
 NOTICE_CHARS: Final = 5000
 # The fields of a row whose size nothing bounds, and the text (as JSON up to six times as long).
@@ -190,7 +193,10 @@ class ReadDocuments:
         counted = await self._counts(every, until) if counts else None
         if counts and counted is None:
             notices = (NOT_COUNTED, *notices)
-        rows = await self._rows(ids, wanted) if ids else []
+        late = counts and bool(ids) and self._clock() >= until
+        if late:
+            notices = (NO_ROWS, *notices)
+        rows = await self._rows(ids, wanted) if ids and not late else []
         left: tuple[int, ...] = ()
         failed: tuple[int, ...] = ()
         if "content" in wanted:
@@ -211,6 +217,10 @@ class ReadDocuments:
             counts=counted,
             notices=_short(notices),
         )
+        if late:
+            return answer.model_copy(
+                update={"left": ids, "missing": chosen.missing, "truncated": True}
+            )
         return _bounded(answer, rows)
 
     async def _counts(self, ids: Sequence[int], until: float) -> SelectionCounts | None:

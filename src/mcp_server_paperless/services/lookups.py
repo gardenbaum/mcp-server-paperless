@@ -1,9 +1,15 @@
 """Small questions to Paperless: words of the search index, the path a template gives a file."""
 
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.documents import Ref
-from mcp_server_paperless.domain.errors import PermissionDenied, Validation
+from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
+    PermissionDenied,
+    UpstreamUnavailable,
+    Validation,
+)
 from mcp_server_paperless.domain.lookups import StoragePathTest, Words
 from mcp_server_paperless.services.documents import known_items
 
@@ -20,6 +26,13 @@ NO_PATH: Final = (
     "The template cannot be rendered for this document, or gives nothing or an unsafe path: "
     "Paperless would name the file by the id of the document."
 )
+
+FAILED: Final = (
+    "Paperless failed on this template for this document (a server error); a path that is only a "
+    "dot does that."
+)
+TOO_LONG: Final = "The template makes a path that is too long to read (more than 64 KiB)."
+SHORTEN: Final = "Shorten the template; Paperless still renders all of it before it answers."
 
 
 class Lookups:
@@ -56,6 +69,7 @@ class Lookups:
             Validation: Not exactly one of the two is given, or the template is blank.
             NotFound: No such document or storage path, or the user may not see it.
             Ambiguous: The name matches several storage paths.
+            AnswerTooLarge: The template makes a path of more than 64 KiB.
             PermissionDenied: The user may not view documents, or storage paths, or the document
                 refers to an object the user may not see: Paperless renders every name.
         """
@@ -70,8 +84,17 @@ class Lookups:
             item = await self._resolver.resolve("storage_path", storage_path)
             template = await self._taxonomy.get_storage_path_template(item.id)
         await self._require_visible(await self._documents.get_document(document_id))
-        path = await self._taxonomy.render_storage_path(document_id, template or "")
-        note = None if path else NO_PATH
+        note = None
+        try:
+            path = await self._taxonomy.render_storage_path(document_id, template or "")
+        except AnswerTooLarge:
+            raise AnswerTooLarge(TOO_LONG, hint=SHORTEN) from None
+        except UpstreamUnavailable as error:
+            if error.status != HTTPStatus.INTERNAL_SERVER_ERROR:
+                raise
+            path, note = None, FAILED
+        if not path:
+            note = note or NO_PATH
         if path and len(path) > MAX_PATH_SHOWN:
             note = f"The path has {len(path)} characters; the first {MAX_PATH_SHOWN} are shown."
             path = path[:MAX_PATH_SHOWN]

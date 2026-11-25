@@ -322,36 +322,66 @@ class PaperlessClient:
                 a body that does not match.
         """
         outgoing = self._build("GET", path, params=params, timeout=timeout)
+        response, body = await self._limited(outgoing, max_bytes, compressed=compressed)
+        try:
+            return await asyncio.to_thread(model.model_validate_json, body)
+        except pydantic.ValidationError as error:
+            raise unexpected(response) from error
+
+    async def post_json[M: pydantic.BaseModel](
+        self, path: str, model: type[M], *, json: object, max_bytes: int
+    ) -> M | None:
+        """POST ``json`` and validate a body of at most ``max_bytes`` bytes; None if it is empty.
+
+        Never repeated. The limit is enforced like that of ``read_json``.
+
+        Raises:
+            AnswerCompressed: The body is compressed.
+            AnswerTooLarge: The body is larger than ``max_bytes``.
+            PaperlessMcpError: The matching subclass for an error status or a failed transport, or
+                a body that does not match.
+        """
+        outgoing = self._build("POST", path, json=json)
+        response, body = await self._limited(outgoing, max_bytes, retry=False)
+        try:
+            return model.model_validate_json(body) if body else None
+        except pydantic.ValidationError as error:
+            raise unexpected(response) from error
+
+    async def _limited(
+        self,
+        outgoing: httpx2.Request,
+        max_bytes: int,
+        *,
+        compressed: bool = False,
+        retry: bool = True,
+    ) -> tuple[httpx2.Response, bytearray]:
+        """The response and its body, of which at most ``max_bytes`` bytes are read."""
+        what = f"{outgoing.method} {outgoing.url.path}"
         taken = ENCODINGS if compressed else ("identity",)
         outgoing.headers["Accept-Encoding"] = ", ".join(taken)
-        response = await self._exchange(outgoing, stream=True)
+        response = await self._exchange(outgoing, stream=True, retry=retry)
         body = bytearray()
         try:
             encoding = response.headers.get("Content-Encoding", "").strip().lower()
             if response.is_error:
                 raise error_for_status(await _with_capped_body(response, cut=True))
             if encoding not in {"", "identity", *taken}:
-                message = (
-                    f"The answer to GET {outgoing.url.path} was compressed although that was not "
-                    "asked for."
-                )
+                message = f"The answer to {what} was compressed although that was not asked for."
                 raise AnswerCompressed(message, hint=COMPRESSED_HINT)
             async for chunk in unpacked(response, encoding, max_bytes):
                 if len(body) + len(chunk) > max_bytes:
-                    message = f"Paperless sent more than {max_bytes} bytes for GET {path}."
+                    message = f"Paperless sent more than {max_bytes} bytes for {what}."
                     raise AnswerTooLarge(message)
                 body += chunk
         except httpx2.TransportError as error:
-            logger.warning("GET %s failed: %s", outgoing.url.path, type(error).__name__)
+            logger.warning("%s failed: %s", what, type(error).__name__)
             raise error_for_transport(error) from error
         except BrokenBodyError as error:
             raise unexpected(response) from error
         finally:
             await response.aclose()
-        try:
-            return await asyncio.to_thread(model.model_validate_json, body)
-        except pydantic.ValidationError as error:
-            raise unexpected(response) from error
+        return response, body
 
     @property
     def base_url(self) -> httpx2.URL:

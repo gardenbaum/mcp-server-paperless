@@ -9,6 +9,8 @@ import unicodedata
 from collections import Counter
 from typing import TYPE_CHECKING, Final, cast
 
+from mcp_server_paperless.domain.errors import UpstreamUnavailable
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
@@ -39,4 +41,8 @@ def rendered(template: str, values: Mapping[str, str]) -> str | None:
     path = re.sub(r"\s*/\s*", "/", text).strip().strip("/")
     if "{{" in text or ".." in path.split("/"):
         return None
+    if path and not [part for part in path.split("/") if part not in {"", "."}]:
+        # Paperless fails to put the extension behind a name that is not there (read in 3.5.1).
+        message = "Paperless is temporarily unavailable (HTTP 500)."
+        raise UpstreamUnavailable(message, status=500)
     return f"{path}.pdf" if path else ""

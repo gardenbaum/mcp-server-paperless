@@ -6,7 +6,12 @@ from typing import TYPE_CHECKING
 import pytest
 
 from mcp_server_paperless.domain.documents import DocumentPatch, DocumentQuery
-from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.errors import (
+    NotFound,
+    PermissionDenied,
+    UpstreamUnavailable,
+    Validation,
+)
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.lookups import Lookups
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
@@ -185,3 +190,17 @@ async def test_paperless_renders_hidden_names_so_the_server_does_not_try(backend
 
     assert name in (shown or "")
     assert (tried.path or "").startswith("x/y.")
+
+
+@pytest.mark.parametrize("template", [".", "./", "./."])
+@pytest.mark.decision("decision-100")
+@pytest.mark.contract(RENDER)
+async def test_paperless_fails_on_a_path_that_is_only_a_dot(
+    backend: Backend, template: str
+) -> None:
+    document = await seeded(backend.admin, "e2e-public-invoice")
+
+    with pytest.raises(UpstreamUnavailable) as raised:
+        _ = await backend.admin.taxonomy.render_storage_path(document, template)
+
+    assert raised.value.status == 500

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T14:42:17Z'
-updated_date: '2026-11-25T16:01:18Z'
+updated_date: '2026-11-25T16:19:53Z'
 labels: []
 dependencies:
   - PLMCP-83.1
@@ -49,4 +49,6 @@ Second part of PLMCP-83: the next archive serial number, word suggestions, tryin
 Red first at adapter (10), contract (14), service (import errors), tool (12), then green; the security fix red first too (14). Probes P1 to P8 on 3.5.1: run 45638730209, job 139291151398 (temporary test, deleted). 49 hand mutants: 4 survived, killed by new tests and re-run. decision-100, decision-101. Deviation: field next_asn instead of next_archive_serial_number (definition limit). Security review: a template shows names of hidden objects, so a document that refers to any is refused; suggest_words mirrors Paperless (words of hidden tag names of visible documents) and says so: the owner may accept it.
 
 Owner, 2026-11-26, asked whether the disclosure of suggest_words (words of hidden correspondent, type and tag names of visible documents, the same words Paperless autocomplete gives) is accepted with the note in the tool description and decision-100: "Alles wie von dir empfohlen." (everything as recommended by you; the recommendation was to accept).
+
+Independent review, closed test first: M1 the rendered path was read unbounded (now PaperlessClient.post_json, 64 KiB, uncompressed, stopped while it arrives; proven with a mock transport that never ends). L2 no row is read once the counts took the 40 s (left, notice). L6 the schema guard exempts only the empty body. L7 a path that is only a dot is a 500 in 3.5.1, told in a note, the fake too. decision-100: size, that Paperless still renders, soft-deleted custom field values.
 <!-- SECTION:NOTES:END -->

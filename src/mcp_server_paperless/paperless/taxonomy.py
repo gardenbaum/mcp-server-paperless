@@ -16,7 +16,6 @@ from mcp_server_paperless.domain.taxonomy import (
     TaxonomyDetail,
     TaxonomyItem,
 )
-from mcp_server_paperless.paperless.client import parse
 from mcp_server_paperless.paperless.pagination import MAX_ITEMS, Page, collect
 
 if TYPE_CHECKING:
@@ -25,6 +24,8 @@ if TYPE_CHECKING:
 
 # MatchingAlgorithm.NONE: the tag is only ever set by hand.
 NO_MATCHING = 0
+# Most bytes of a rendered path that are read: a template can make a text of any size.
+PATH_BYTES: Final = 64 * 1024
 TAG_DELETE_HINT: Final = (
     "Deleting a tag needs the permission to delete it and every child tag below it. Paperless "
     "refuses a deletion that would take child tags of other users with it; ask their owner or "
@@ -140,13 +141,14 @@ class PaperlessTaxonomyReader:
 
     async def render_storage_path(self, document_id: int, template: str) -> str | None:
         """See ``TaxonomyReader.render_storage_path``."""
-        response = await self._client.request(
-            "POST",
+        found = await self._client.post_json(
             f"{PATHS['storage_path']}test/",
+            _Rendered,
             json={"document": document_id, "path": template},
+            max_bytes=PATH_BYTES,
         )
         # Paperless 3.5.1 sends no body for null.
-        return parse(response, _Rendered).root if response.content else None
+        return found.root if found else None
 
 
 class PaperlessTaxonomyWriter:
