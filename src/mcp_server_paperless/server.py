@@ -151,6 +151,7 @@ from mcp_server_paperless.tools.selection import (
     unchecked_toolsets,
     visible_tools,
 )
+from mcp_server_paperless.tools.text_refusal import TextRefusal
 from mcp_server_paperless.tools.upload_hint import PATH_OFF, UPLOAD_TOOLS, PathRefusal
 
 if TYPE_CHECKING:
@@ -762,6 +763,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
         ],
         middleware=[
             CallLogging(),
+            TextRefusal(),
             *([PathRefusal(UPLOAD_TOOLS & selected)] if path_hint else []),
         ],
         lifespan=start,

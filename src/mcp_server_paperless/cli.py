@@ -4,14 +4,18 @@ Configuration errors and a Paperless that rejects the token or API version end t
 with exit code 1 and one line on stderr, without a traceback.
 """
 
+import contextlib
+import io
+import os
 import sys
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING, BinaryIO, NoReturn, final, override
 
 from pydantic import ValidationError
 from pydantic_settings import BaseSettings
 
 from mcp_server_paperless.app import create_app, run_server, uvicorn_server
 from mcp_server_paperless.domain.errors import PaperlessMcpError
+from mcp_server_paperless.domain.texts import parseable
 from mcp_server_paperless.observability import configure_logging, server_failure
 from mcp_server_paperless.server import create_server, protect_process
 from mcp_server_paperless.settings import (
@@ -22,9 +26,10 @@ from mcp_server_paperless.settings import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Generator
 
     import uvicorn
+    from _typeshed import WriteableBuffer
     from fastmcp import FastMCP
 
 
@@ -47,10 +52,52 @@ def _load[S: BaseSettings](kind: type[S], problems: list[str]) -> S | None:
         return None
 
 
+@final
+class _Messages(io.RawIOBase):
+    """The lines of a stream as ``parseable`` has them."""
+
+    def __init__(self, source: BinaryIO) -> None:
+        super().__init__()
+        self._source: BinaryIO = source
+        self._rest: bytes = b""
+
+    @override
+    def readable(self) -> bool:
+        return True
+
+    @override
+    def readinto(self, buffer: WriteableBuffer, /) -> int:
+        view = memoryview(buffer).cast("B")
+        self._rest = self._rest or parseable(self._source.readline())
+        size = min(len(view), len(self._rest))
+        view[:size], self._rest = self._rest[:size], self._rest[size:]
+        return size
+
+
+@contextlib.contextmanager
+def parseable_stdin() -> Generator[None]:
+    """Standard input with every message the SDK's parser would drop in a form it takes.
+
+    The SDK reads the buffer of ``sys.stdin``. It keeps the descriptor from child processes only if
+    that buffer is the descriptor's own, so this does.
+    """
+    given = sys.stdin
+    private = os.dup(0)
+    with open(os.devnull, "rb") as nothing:
+        os.dup2(nothing.fileno(), 0)
+    sys.stdin = io.TextIOWrapper(io.BufferedReader(_Messages(os.fdopen(private, "rb"))))
+    try:
+        yield
+    finally:
+        os.dup2(private, 0)
+        sys.stdin = given
+
+
 def run_stdio(server: FastMCP) -> None:
     """Serve over stdio until the client is done."""
     # No banner: it is noise on stderr and would check PyPI for updates (decision-7).
-    server.run(transport="stdio", show_banner=False)
+    with parseable_stdin():
+        server.run(transport="stdio", show_banner=False)
 
 
 def main(
