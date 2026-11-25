@@ -177,7 +177,7 @@ Limits.
 | `POST /api/token/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `GET /api/trash/` | `empty_trash`, `get_trash_entry`, `get_trashed_file`, `list_trash`, `restore_from_trash` and 3 more |  |
 | `POST /api/trash/` | `empty_trash`, `restore_from_trash` |  |
-| `GET /api/ui_settings/` | `create_saved_view`, `delete_pages`, `delete_processed_mail`, `delete_user`, `edit_pdf` and 16 more |  |
+| `GET /api/ui_settings/` | `create_saved_view`, `delete_pages`, `delete_processed_mail`, `delete_user`, `edit_pdf` and 17 more |  |
 | `POST /api/ui_settings/` | `pin_saved_view` |  |
 | `GET /api/users/` | `create_mail_rule`, `create_workflow`, `get_document`, `get_saved_view`, `get_task_overview` and 12 more |  |
 | `POST /api/users/` | `create_user` |  |

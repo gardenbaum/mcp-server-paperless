@@ -96,7 +96,9 @@ async def test_a_compressed_answer_is_taken(make_client: ClientFactory) -> None:
 
 
 async def test_settings_over_the_limit_are_refused(make_client: ClientFactory) -> None:
-    server = Recording(answer({"x": "a" * MAX_BYTES}))
+    # As Paperless sends it; the largest answer is the one the coverage table replays.
+    computed = {"update_checking": {"backend_setting": "default"}}
+    server = Recording(answer({"x": "a" * MAX_BYTES, **computed}))
 
     with pytest.raises(AnswerTooLarge):
         _ = await PaperlessUiSettingsReader(make_client(server)).get_ui_settings()
