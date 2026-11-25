@@ -822,7 +822,12 @@ class LogFinding(BaseModel):
     said: str
     whose: Annotated[
         Literal["likely this document", "perhaps this document"],
-        Field(description="likely: by its consume task and while that ran; perhaps: by the time."),
+        Field(
+            description=(
+                "likely: its consume task wrote it, as far as the log can be trusted; perhaps: the "
+                "time only."
+            )
+        ),
     ]
 
 
@@ -843,7 +848,7 @@ class WorkflowExplanation(BaseModel):
         Field(
             description=(
                 "likely: a log record of the document's consume task says so; people who may "
-                "upload can influence the log. Never certain, never no."
+                "upload or change documents can influence the log. Never certain, never no."
             )
         ),
     ]

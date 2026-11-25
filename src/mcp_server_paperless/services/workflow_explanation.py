@@ -31,6 +31,7 @@ from mcp_server_paperless.domain.workflows import (
     WorkflowExplanation,
 )
 from mcp_server_paperless.services.log_records import read_log_records
+from mcp_server_paperless.services.views import plural
 from mcp_server_paperless.services.workflows import CONSUMPTION, MANUAL, SCHEDULED, is_empty
 
 if TYPE_CHECKING:
@@ -54,7 +55,8 @@ if TYPE_CHECKING:
 
 NOTE: Final = (
     "Paperless keeps no readable record of workflow runs. This compares the settings of today with "
-    "the document of today; both may have been different when the workflow could have run."
+    "the document of today; both may have been different when the workflow could have run. Log "
+    "records under a former name of the workflow are not found."
 )
 # Nothing is asked of Paperless this many seconds after the call began.
 SECONDS: Final = 40.0
@@ -63,6 +65,9 @@ MAX_HISTORY, MAX_NAMES, MAX_FINDINGS, MAX_TASKS = 50, 10, 20, 100
 YEAR: Final = timedelta(days=365)  # a date in a custom field counts that long
 NEAR: Final = timedelta(minutes=2)
 LOG: Final = "paperless"
+QUERY: Final = "a custom field query"
+# Characters of an error that is repeated.
+MAX_REASON: Final = 300
 # How the refusal of a query begins; another refusal says nothing of the document.
 REJECTED_QUERY: Final = "rejected the request: custom_field_query"
 MATCHING, HANDLERS = "paperless.matching", "paperless.handlers"
@@ -133,6 +138,7 @@ class _Facts:
     tasks: Sequence[TaskRow] = ()
     records: Sequence[LogRecord] = ()
     missing: list[str] = field(default_factory=list[str])
+    too_large: int = 0
 
 
 def _ids(value: JsonValue) -> list[int]:
@@ -383,8 +389,7 @@ class _Checks:
             result, why = self._due(name, days)
         except OverflowError:
             result, why = "unknown", "the offset is too large"
-            said = f"the schedule of trigger {self._trigger.id}: its offset is too large"
-            self._facts.missing.append(said)
+            self._facts.too_large += 1
         self._add("schedule_date_field", result, why)
 
     def _due(self, name: str, days: timedelta) -> tuple[CheckResult, str]:
@@ -545,6 +550,9 @@ class WorkflowExplanations:
         facts = _Facts(document=document, names={}, now=self._now())
         await self._read(found, facts, until)
         triggers = [_explained(trigger, facts) for trigger in found.triggers]
+        if facts.too_large:
+            said = f"{plural(facts.too_large, 'schedule')}: the offset is too large"
+            facts.missing.append(said)
         findings = _findings(found, facts)
         ran = any(f.whose.startswith("likely") and "not match" not in f.said for f in findings)
         if len(findings) > MAX_FINDINGS:
@@ -579,14 +587,22 @@ class WorkflowExplanations:
 
     async def _read(self, workflow: Workflow, facts: _Facts, until: float) -> None:
         """What may be missing: each source is asked once, and said where it cannot be read."""
+        failed: list[tuple[str, str]] = []
         for label, read in self._sources(workflow, facts):
             if self._clock() >= until:
-                facts.missing.append(f"{label}: the time was up")
+                failed.append((label, "the time was up"))
                 continue
             try:
                 await read()
             except PaperlessMcpError as error:
-                facts.missing.append(f"{label}: {error.message}")
+                failed.append((label, error.message[:MAX_REASON]))
+        queries = [why for label, why in failed if label == QUERY]
+        told = [f"{label}: {why}" for label, why in failed if label != QUERY]
+        if len(queries) == 1:
+            told.insert(0, f"{QUERY}: {queries[0]}")
+        elif queries:
+            told.insert(0, f"{len(queries)} custom field queries: {queries[0]}")
+        facts.missing = [*told, *facts.missing]
 
     def _sources(
         self, workflow: Workflow, facts: _Facts
@@ -622,7 +638,7 @@ class WorkflowExplanations:
         if any(settings.get("matching_algorithm") in {1, 2, 3} for settings in later):
             found.append(("the text", text))
         queries = {str(q) for s in later if not is_empty(q := s.get("filter_custom_field_query"))}
-        found += [("a custom field query", self._asking(q, facts)) for q in sorted(queries)]
+        found += [(QUERY, self._asking(q, facts)) for q in sorted(queries)]
         return [
             *found,
             ("the history (needs the right to view the audit log)", history),
@@ -699,8 +715,8 @@ def _message(workflow: Workflow, triggers: Sequence[TriggerExplanation], *, ran:
         told += " It runs only when a user runs it by hand."
     if ran:
         told += (
-            " It likely ran on this document: the log says so, which people who may upload can "
-            "influence."
+            " It likely ran on this document: the log says so, which people who may upload or "
+            "change documents can influence."
         )
     else:
         told += " Whether it ran is not known."

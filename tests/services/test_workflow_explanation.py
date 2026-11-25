@@ -550,7 +550,7 @@ async def test_the_log_is_this_document_s_only_by_its_consume_task() -> None:
         ),
     )
     assert (answer.did_run, answer.log_from) == ("likely", "2026-11-11 10:00:00")
-    assert answer.message.endswith("which people who may upload can influence.")
+    assert answer.message.endswith("who may upload or change documents can influence.")
     assert "secret-name" not in answer.model_dump_json()
 
 
@@ -1044,7 +1044,7 @@ async def test_a_huge_offset_is_unknown_and_named() -> None:
 
         assert (check.filter, check.result) == ("schedule_date_field", "unknown")
         assert answer.would_match_now == "unknown"
-        assert "the schedule of trigger 7: its offset is too large" in answer.not_checked
+        assert "1 schedule: the offset is too large" in answer.not_checked
 
 
 NOON = datetime(2026, 7, 12, 10, 0, tzinfo=UTC)  # 12:00 in Zurich
@@ -1224,15 +1224,28 @@ async def test_a_consumption_without_a_stored_name_is_unknown() -> None:
     assert [c.filter for c in none] == ["path"]
 
 
-async def test_two_triggers_with_a_huge_offset_are_both_named() -> None:
+async def test_what_cannot_be_checked_many_times_is_named_once_with_its_number() -> None:
     setup = Setup()
+    setup.fake.search_error = UpstreamTimeout("late " + "y" * 5000)
     setup.flow(
-        trigger(4, 1, schedule_offset_days=10**12), trigger(4, 2, schedule_offset_days=10**12)
+        *(
+            trigger(
+                4,
+                number,
+                schedule_offset_days=10**12,
+                filter_custom_field_query=f'["f{number}","exists",true]',
+            )
+            for number in range(300)
+        )
     )
 
     answer = await setup.explain()
 
-    assert sum("offset is too large" in text for text in answer.not_checked) == 2
+    assert "300 schedules: the offset is too large" in answer.not_checked
+    [queries] = [t for t in answer.not_checked if "custom field quer" in t]
+    assert queries.startswith("300 custom field queries: late yyy")
+    assert len(queries) < 400
+    assert len(json.dumps(answer.model_dump(mode="json"))) <= MAX_CHARS
 
 
 async def test_a_bounded_answer_may_hold_no_trigger() -> None:
@@ -1285,3 +1298,189 @@ async def test_a_forged_record_start_without_a_date_is_no_record() -> None:
     answer = await setup.explain()
 
     assert [f.said for f in answer.log] == ["the document matched trigger 7"]
+
+
+@pytest.mark.parametrize(
+    ("before", "found"),
+    [(timedelta(hours=23), True), (timedelta(hours=25), False), (timedelta(0), True)],
+    ids=str,
+)
+async def test_consume_tasks_of_the_day_before_are_looked_at(
+    before: timedelta, *, found: bool
+) -> None:
+    setup = Setup()
+    setup.consumed()
+    setup.state.tasks = [replace(setup.state.tasks[0], created=ADDED - before)]
+    setup.flow(trigger())
+    setup.state.logs["paperless"] = [line(MATCHED, task="0badcafe")]
+
+    assert ((await setup.explain()).did_run == "likely") is found
+
+
+async def test_a_cut_keeps_what_was_named_before() -> None:
+    setup = Setup(READER[0], grant=("view_workflow",))
+    many = cast("list[JsonValue]", list(range(1, 200)))
+    setup.flow(*(trigger(2, n, {"filter_has_tags": many}) for n in range(400)))
+
+    missing = (await setup.explain()).not_checked
+
+    assert [text.split(" ")[1] for text in missing[:3]] == ["history", "consume", "log"]
+    assert missing[-1].endswith("the answer would be too long")
+
+
+async def test_values_and_patterns_are_told() -> None:
+    setup = Setup()
+    setup.document.content = "x"
+    setup.put({"correspondent": 1, "document_type": None, "storage_path": 1})
+
+    rows = await setup.checks(
+        trigger(
+            match="it\u202es",
+            matching_algorithm=1,
+            filter_has_correspondent=1,
+            filter_has_document_type=1,
+            filter_has_storage_path=1,
+        )
+    )
+
+    assert [c.why for c in rows] == [
+        "the text does not match 'its' (any)",
+        "its correspondent is 'e2e-acme'; wanted is 'e2e-acme'",
+        "its document type is none; wanted is 'e2e-invoice'",
+        "its storage path is 'e2e-archive'; wanted is 'e2e-archive'",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("moment", "offset", "result"),
+    [
+        (NOW, 0, "ok"),
+        (NOW + timedelta(seconds=1), 0, "no"),
+        (NOW - timedelta(days=1), 1, "ok"),
+        (NOW - timedelta(days=1) + timedelta(seconds=1), 1, "no"),
+        (NOW + timedelta(days=1), -1, "ok"),
+        (NOW + timedelta(days=1, seconds=1), -1, "no"),
+    ],
+)
+async def test_a_moment_is_compared_to_the_second(
+    moment: datetime, offset: int, result: str
+) -> None:
+    for name in ("added", "modified"):
+        setup = Setup()
+        setup.put({name: moment})
+        [check, *_] = await setup.checks(
+            trigger(4, schedule_date_field=name, schedule_offset_days=offset)
+        )
+        assert check.result == result
+        assert (moment + timedelta(days=offset)).isoformat() in check.why
+
+
+@pytest.mark.parametrize(
+    ("day", "offset", "result"),
+    [("2025-11-20", 30, "ok"), ("2025-11-19", 30, "no"), ("2025-11-20", -30, "ok")],
+)
+async def test_the_year_of_a_custom_field_does_not_move_with_the_offset(
+    day: str, offset: int, result: str
+) -> None:
+    setup = Setup()
+    setup.document.custom_fields = {3: day}
+
+    [check, *_] = await setup.checks(
+        trigger(
+            4,
+            schedule_date_field="custom_field",
+            schedule_date_custom_field=3,
+            schedule_offset_days=offset,
+        )
+    )
+
+    assert check.result == result
+
+
+@pytest.mark.parametrize(
+    ("change", "hours"),
+    [
+        # The closer of two timestamps within a day decides.
+        ("2026-03-29T00:10:00+00:00", ["01"]),
+        ("2026-03-29T11:50:00+00:00", ["13"]),
+        # A day from the nearest one still counts, more does not.
+        ("2026-03-30T12:00:00+00:00", ["14"]),
+        ("2026-03-30T12:01:00+00:00", ["12", "13", "14", "15"]),
+    ],
+)
+async def test_the_closest_timestamp_within_a_day_decides(change: str, hours: list[str]) -> None:
+    setup = Setup()
+    setup.put(
+        {
+            "added": datetime.fromisoformat("2026-03-29T01:00:00+01:00"),
+            "modified": datetime.fromisoformat("2026-03-29T14:00:00+02:00"),
+        }
+    )
+    moment = datetime.fromisoformat(change)
+    setup.document.history = [changed(moment)]
+    setup.flow(trigger(3))
+    setup.state.logs["paperless"] = [
+        f"[{moment.date()} {hour:02d}:{moment.minute:02d}:00,000] [INFO] [{MATCHING}] {MISSED}"
+        for hour in range(24)
+    ]
+
+    found = [f.time[11:13] for f in (await setup.explain()).log]
+
+    assert found == hours
+
+
+async def test_the_start_of_a_task_is_a_known_zone_and_counts_from_its_second() -> None:
+    setup = Setup()
+    setup.put({"added": ADDED, "modified": ADDED})
+    setup.consumed()
+    started = datetime(2026, 11, 11, 20, 47, 20, 900_000, tzinfo=ZURICH_WINTER)
+    setup.state.tasks = [replace(setup.state.tasks[0], started=started)]
+    setup.document.history = [changed(datetime(2026, 7, 12, 8, tzinfo=UTC))]
+    setup.flow(trigger())
+    setup.state.logs["paperless"] = [
+        f"[2026-07-12 {hour:02d}:00:00,000] [INFO] [{MATCHING}] {MISSED}" for hour in range(24)
+    ] + [
+        line(MATCHED, at="20:47:19", task="0badcafe"),
+        line(MATCHED, at="20:47:20", task="0badcafe"),
+    ]
+
+    log = (await setup.explain()).log
+
+    assert [f.time[11:13] for f in log if f.whose.startswith("perhaps")] == ["07", "08", "09", "10"]
+    assert [f.time[-2:] for f in log if f.whose.startswith("likely")] == ["20"]
+
+
+async def test_the_newest_of_the_uncertain_findings_are_kept() -> None:
+    setup = Setup()
+    setup.flow(trigger())
+    setup.state.logs["paperless"] = [line(MISSED, at=f"19:47:{n:02d}") for n in range(30)]
+
+    assert [f.time[-2:] for f in (await setup.explain()).log] == [f"{n:02d}" for n in range(10, 30)]
+
+
+async def test_where_it_came_from_is_that_of_its_own_tasks() -> None:
+    setup = Setup()
+    setup.consumed("11111111-1111-4222-8333-444455556666", document=2)
+    setup.state.tasks = [replace(setup.state.tasks[0], trigger_source="email_consume")]
+    setup.consumed()
+
+    [check] = await setup.checks(trigger(1, sources=[1]))
+    setup.state.tasks = setup.state.tasks[:1]
+    [none] = await setup.checks(trigger(1, sources=[1]))
+
+    assert "(it came by api_upload)" in check.why
+    assert "(not known)" in none.why
+
+
+@pytest.mark.parametrize("query", ["{", "nonsense", "[" * 1_000_000], ids=["cut", "word", "deep"])
+async def test_a_query_that_is_no_json_matches_nothing(query: str) -> None:
+    [check] = await Setup().checks(trigger(filter_custom_field_query=query))
+
+    assert check.result == "no"
+
+
+async def test_the_answer_names_what_a_rename_hides() -> None:
+    setup = Setup()
+    setup.flow(trigger())
+
+    assert "under a former name" in (await setup.explain()).note
