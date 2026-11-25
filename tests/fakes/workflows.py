@@ -18,7 +18,7 @@ write guard), so `paperless.py` does not grow further. What the contract tests p
 """
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fakes.document_values import reject
 from mcp_server_paperless.domain.errors import PermissionDenied
@@ -311,7 +311,7 @@ def _merged_trigger(
     base = {**TRIGGER_DEFAULTS, **MODEL_TRIGGER} if held is None else held.settings
     _check_references(user, _new(part, base), _kinds(TRIGGER_FIELDS.values()))
     number = part.type or (CONSUMPTION if held is None else held.type)
-    return WorkflowTrigger(id=part.id, type=number, settings={**base, **part.settings})
+    return WorkflowTrigger(id=part.id, type=number, settings={**base, **_once(part.settings)})
 
 
 def _merged_action(
@@ -326,7 +326,7 @@ def _merged_action(
         user, _new(part, base), _kinds(f for g in ACTION_FIELDS.values() for f in g.values())
     )
     number = part.type or (1 if held is None else held.type)
-    return WorkflowAction(id=part.id, type=number, settings={**base, **part.settings})
+    return WorkflowAction(id=part.id, type=number, settings={**base, **_once(part.settings)})
 
 
 def delete_workflow(data: WorkflowData, user: Actor, workflow_id: int) -> None:
@@ -350,6 +350,18 @@ def _check_name(data: WorkflowData, name: str, *, except_id: int | None) -> None
 def _next_id(data: WorkflowData) -> int:
     data.last_object_id[0] += 1
     return data.last_object_id[0]
+
+
+def _once(settings: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """The settings as Paperless stores them: texts trimmed, ids and sources without doubles."""
+    return {
+        name: value.strip()
+        if isinstance(value, str)
+        else [*dict.fromkeys(cast("list[int]", value))]
+        if isinstance(value, list) and all(isinstance(item, int) for item in value)
+        else value
+        for name, value in settings.items()
+    }
 
 
 def _check_references(
@@ -377,7 +389,7 @@ def _triggers(
     for trigger in given:
         if trigger.type not in TRIGGER_TYPES:
             reject("triggers.type", f'"{trigger.type}" is not a valid choice.')
-        settings = {**TRIGGER_DEFAULTS, **trigger.settings}
+        settings = {**TRIGGER_DEFAULTS, **_once(trigger.settings)}
         for source in settings["sources"] if isinstance(settings["sources"], list) else []:
             if source not in SOURCES:
                 reject("sources", f'"{source}" is not a valid choice.')
@@ -406,7 +418,7 @@ def _actions(
     for action in given:
         if action.type not in ACTION_TYPES:
             reject("actions.type", f'"{action.type}" is not a valid choice.')
-        settings = {**ACTION_DEFAULTS, **action.settings}
+        settings = {**ACTION_DEFAULTS, **_once(action.settings)}
         if action.type == EMAIL:
             settings["email"] = _nested(action, "email", EMAIL_DEFAULTS, {"subject", "body", "to"})
         if action.type == WEBHOOK:

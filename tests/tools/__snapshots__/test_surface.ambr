@@ -29194,14 +29194,15 @@
         Their settings, ids and hidden values are kept, also of types this server cannot write (those
         can be moved and removed here). add takes a trigger or an action, described in create_workflow;
         change takes an id and what changes (the type stays; email and webhook are given whole, and
-        '(hidden)' or the URL as shown keep what is stored); remove takes an id. Without confirm a
-        dialog, or an error for you to show the user, comes first if the workflow that results is
-        enabled and moves documents to the trash (undo with restore_from_trash, trash toolset), e-mails,
-        calls a webhook, asks the AI, removes things or changes owner or permissions, and always if
-        hidden values are lost for good (see confirm). Afterwards the workflow is read again: an error
-        that says it is not as planned, or that this is not known, means the change may be there, so
-        read it and ask the user instead of calling again. A trigger or action that another workflow
-        holds, too, is not changed. Needs the permission to change workflows.
+        '(hidden)' or the URL as shown keep what is stored; custom field values join the stored ones);
+        remove takes an id. Without confirm a dialog, or an error for you to show the user, comes first
+        if the workflow that results is enabled and moves documents to the trash (undo with
+        restore_from_trash, trash toolset), e-mails, calls a webhook, asks the AI, removes things or
+        changes owner or permissions, and always if hidden values are lost for good (see confirm).
+        Afterwards the workflow is read again: an error that says it is not as planned, or that this is
+        not known, means the change may be there, so read it and ask the user instead of calling again.
+        A trigger or action that another workflow holds, too, is not changed. Needs the permission to
+        change workflows.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,

@@ -4,7 +4,8 @@ A workflow runs by itself on every document its triggers match, so what a caller
 narrower than what Paperless stores: only the trigger and action types in
 ``domain.workflows.WRITABLE_*``, and a setting that does not belong to the type it sits under is an
 error instead of a value Paperless would store and ignore. Replacing a list never drops what this
-server cannot write. Secrets (webhook header values, credentials in
+server cannot write, and loses hidden values only confirmed; ``workflow_parts`` writes single
+triggers and actions. Secrets (webhook header values, credentials in
 webhook URLs, PDF passwords) are never shown.
 """
 
@@ -65,7 +66,7 @@ from mcp_server_paperless.services.views import plural
 from mcp_server_paperless.services.workflow_usage import workflow_uses
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Mapping, Sequence
+    from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 
     from pydantic import JsonValue
 
@@ -246,7 +247,9 @@ TEXT_CHECKS: Final[Mapping[str, Callable[[str], str]]] = {
 
 
 def is_empty(value: JsonValue) -> bool:
-    """Whether a stored setting holds nothing."""
+    """Whether a stored setting holds nothing: a blank text is none."""
+    if isinstance(value, str):
+        return not value.strip()
     return value is None or value in ([], {}, "", 0, False)
 
 
@@ -538,16 +541,35 @@ def losses_of(
     written: Sequence[WorkflowAction],
     found: Workflow,
     *,
-    credentials: bool,
+    told: Collection[int | None],
+    others: Sequence[Workflow],
 ) -> list[str]:
-    """What a new list of actions does not keep of the hidden values of ``found``."""
-    told: list[str] = []
+    """What a new list of actions does not keep of the hidden values of ``found``.
+
+    Left out are the credentials in the URLs of the actions ``told`` otherwise, and the actions that
+    one of the workflows ``others`` holds, too.
+    """
+    elsewhere = {a.id for w in others if w.id != found.id for a in w.actions}
+    lines: list[str] = []
     for old in found.actions:
+        if old.id in elsewhere:
+            continue
+        credentials = old.id not in told
         claimed = [new for spec, new in zip(specs, written, strict=True) if spec.id == old.id]
         rows = [hidden_lost(old, new, credentials=credentials) for new in claimed or written]
         lost = min(rows, key=len, default=hidden_lost(old, None, credentials=credentials))
         if lost:
-            told.append(f"of the {action_label(old)} {', '.join(lost)}")
+            lines.append(f"of the {action_label(old)} {', '.join(lost)}")
+    return lines
+
+
+def _told(
+    specs: Sequence[ActionInput], lost: Mapping[int, str], gone: str, found: Workflow
+) -> set[int | None]:
+    """The stored actions whose URL credentials a confirmation speaks of by place or number."""
+    told = {specs[place - 1].id for place in lost}
+    if gone:
+        told |= {action.id for action in found.actions}  # one that is claimed is kept or in lost
     return told
 
 
@@ -637,9 +659,23 @@ def far_acts(
     return found
 
 
+def check_match(settings: Mapping[str, JsonValue]) -> None:
+    """Refuse a content filter Paperless ignores.
+
+    Raises:
+        Validation: There is a match, and no algorithm that applies it.
+    """
+    if not is_empty(settings.get("match")) and not settings.get("matching_algorithm"):
+        message = "A match needs a matching_algorithm other than none to restrict anything."
+        hint = "Use any, all, exact, regex or fuzzy; with none Paperless ignores the match."
+        raise Validation(message, hint=hint)
+
+
 def trigger_filters(trigger: WorkflowTrigger) -> list[str]:
     """The filters of a trigger that limit it."""
     found = list(_set(TRIGGER_FIELDS, trigger.settings))
+    if not trigger.settings.get("matching_algorithm") and "match" in found:
+        found.remove("match")  # Paperless ignores it
     return [n for n in found if n in MANUAL_FILTERS] if trigger.type == MANUAL else found
 
 
@@ -987,7 +1023,13 @@ class WorkflowService:
         losses = (
             []
             if edit.actions is None
-            else losses_of(edit.actions, actions, found, credentials=not (acts and (lost or gone)))
+            else losses_of(
+                edit.actions,
+                actions,
+                found,
+                told=_told(edit.actions, lost, gone, found) if acts else (),
+                others=workflows,
+            )
         )
         if (acts or losses) and not confirm:
             lead = f"change the workflow {quoted(found.name)} (id {found.id})"
@@ -1095,12 +1137,21 @@ class WorkflowService:
         return (await self._taxonomy.resolve(kind, value)).id
 
     async def _ids(self, kind: TaxonomyKind, values: Sequence[NameOrId]) -> list[JsonValue]:
-        return [await self._id(kind, value) for value in values]
+        ids = [await self._id(kind, value) for value in values]
+        return [*dict.fromkeys(ids)]
 
     async def _setting(self, name: str, field: Field_, value: object) -> JsonValue:
-        """The stored form of the setting ``name`` given as ``value``."""
+        """The stored form of the setting ``name`` given as ``value``; a list without doubles.
+
+        Raises:
+            Validation: A text of a trigger is blank: Paperless would store no filter.
+        """
+        if name in TRIGGER_FIELDS and isinstance(value, str) and value and not value.strip():
+            message = f"Nothing was changed: {name!r} is blank."
+            raise Validation(message, hint="Leave it out, or give what it should match.")
         if name == "sources":
-            return [_lookup(SOURCES, "source", s) for s in cast("list[int | str]", value)]
+            sources = (_lookup(SOURCES, "source", s) for s in cast("list[int | str]", value))
+            return [*dict.fromkeys(sources)]
         if name == "matching_algorithm":
             return _lookup(MATCHING_ALGORITHMS, "matching algorithm", cast("int | str", value))
         if name in TEXT_CHECKS:
@@ -1111,10 +1162,11 @@ class WorkflowService:
             return await self._id(field.kind, cast("NameOrId", value))
         return cast("JsonValue", value)
 
-    async def build_trigger(
-        self, spec: TriggerInput, held: Mapping[str, JsonValue] | None = None
-    ) -> WorkflowTrigger:
-        """The trigger to write, with the settings ``spec`` gives; ``held`` are those it has now."""
+    async def build_trigger(self, spec: TriggerInput, *, change: bool = False) -> WorkflowTrigger:
+        """The trigger to write, with the settings ``spec`` gives.
+
+        With ``change`` they join those of a stored one, and ``check_match`` is left to the caller.
+        """
         number = trigger_type(spec.type)
         label = TRIGGER_TYPES[number]
         settings: dict[str, JsonValue] = {}
@@ -1135,14 +1187,8 @@ class WorkflowService:
                 )
                 raise Validation(message, hint="Use a document added or updated trigger.")
             settings[field.wire] = await self._setting(name, field, value)
-        whole = {**(held or {}), **settings}
-        matches = not {"match", "matching_algorithm"}.isdisjoint(settings)
-        if matches and whole.get("match") and not whole.get("matching_algorithm"):
-            message = "A match needs a matching_algorithm other than none to restrict anything."
-            raise Validation(
-                message,
-                hint="Use any, all, exact, regex or fuzzy; with none Paperless ignores the match.",
-            )
+        if not change:
+            check_match(settings)
         return WorkflowTrigger(type=number, settings=settings)
 
     async def build_action(

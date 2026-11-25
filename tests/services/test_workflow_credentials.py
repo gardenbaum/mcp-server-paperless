@@ -682,3 +682,65 @@ async def test_an_acceptance_does_not_cover_other_hidden_values() -> None:
         found.append(raised.value.fingerprint)
 
     assert found[0] != found[1]
+
+
+def hidden(number: int, url_: str, **headers: str) -> WorkflowAction:
+    hook = {"url": url_, "headers": headers}
+    return WorkflowAction.model_validate({"id": number, "type": 4, "settings": {"webhook": hook}})
+
+
+@pytest.mark.decision("decision-82")
+async def test_every_lost_credential_is_named_also_beside_one_that_is_told_otherwise() -> None:
+    other = "https://b:planted@b.example/"
+    service, _ = seeding(hidden(7, SECRET), hidden(8, other), enabled=True)
+
+    # 7 gets another URL (decision-66 says so), 8 becomes an assignment under its own id.
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await write(
+            service,
+            given("https://n.example/", 7),
+            ActionInput(type=1, id=8, assign_title="x"),
+        )
+
+    message = raised.value.message
+    told = message.count("credentials of the stored URL") + message.count("credentials of its URL")
+    assert "remove the credentials of the stored URL" in message
+    assert "of the webhook action 8 the credentials of its URL" in message
+    assert told == 2
+
+
+@pytest.mark.decision("decision-82")
+async def test_credentials_no_action_keeps_are_told_once() -> None:
+    service, _ = seeding(hidden(7, SECRET), enabled=True)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await write(service, given("https://n.example/"))
+
+    assert "the stored credentials of 1 webhook URL" in raised.value.message
+    assert "lose for good" not in raised.value.message
+
+
+@pytest.mark.decision("decision-82")
+async def test_hidden_values_another_workflow_keeps_are_not_lost() -> None:
+    service, state = seeding(hidden(7, SECRET, A="planted"))
+    state.workflows.append(
+        state.workflows[0].model_copy(update={"id": 2, "name": "Other", "enabled": False})
+    )
+
+    _ = await write(service, ActionInput(type=1, assign_title="x"))
+
+
+@pytest.mark.decision("decision-82")
+async def test_credentials_counted_as_kept_by_no_action_are_not_named_again() -> None:
+    other = "https://b:planted@b.example/"
+    service, _ = seeding(hidden(7, SECRET), hidden(8, other), enabled=True)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await write(
+            service,
+            given("https://n.example/"),
+            ActionInput(type=1, id=8, assign_title="x"),
+        )
+
+    assert "the stored credentials of 2 webhook URLs" in raised.value.message
+    assert "credentials of its URL" not in raised.value.message

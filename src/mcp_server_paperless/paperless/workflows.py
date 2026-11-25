@@ -1,8 +1,9 @@
 """WorkflowReader and WorkflowWriter on ``/api/workflows/``.
 
-A workflow carries its triggers and actions as nested objects. Paperless 3.4.2 stores each of them
-as an object of its own and replaces the nested lists of a workflow as a whole, so a write sends
-them without ids; the settings travel under Paperless's names, the type apart from them.
+A workflow carries its triggers and actions as nested objects. Paperless stores each of them as an
+object of its own and replaces the nested lists of a workflow as a whole. A write of whole lists
+sends them without ids and makes new ones; a write of parts (``update_workflow_parts``) names the
+ones that stay by their ids. The settings travel under Paperless's names, the type apart from them.
 """
 
 import asyncio

@@ -6,7 +6,7 @@ nothing matches (`never`).
 """
 
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -738,3 +738,50 @@ async def test_ai_suggestions_without_fields_or_a_trigger_for_them_are_refused(
             _ = await writer.create_workflow(
                 scratch(), safe(triggers=(WorkflowTrigger(type=5),), actions=(bad,))
             )
+
+
+@pytest.mark.decision("decision-82")
+@pytest.mark.contract(PARTS)
+async def test_doubles_in_a_list_are_stored_once(backend: Backend) -> None:
+    writer, reader = backend.admin.workflow_writes, backend.admin.workflows
+    tags = [t.id for t in await backend.admin.taxonomy.list_taxonomy("tag")][:2]
+    made = await writer.create_workflow(scratch(), safe())
+    doubled: dict[str, JsonValue] = {"assign_tags": [*tags, *tags]}
+    sources: dict[str, JsonValue] = {**NEVER.settings, "sources": [2, 2]}
+
+    await writer.update_workflow_parts(
+        made.id, "actions", [PartWrite(id=made.actions[0].id, settings=doubled)]
+    )
+    await writer.update_workflow_parts(
+        made.id, "triggers", [PartWrite(id=made.triggers[0].id, type=1, settings=sources)]
+    )
+
+    after = await reader.get_workflow(made.id)
+    assert sorted(cast("list[int]", after.actions[0].settings["assign_tags"])) == sorted(tags)
+    assert after.triggers[0].settings["sources"] == [2]
+    assert await named(backend.admin, made.name) == after
+
+
+@pytest.mark.decision("decision-82")
+@pytest.mark.contract(PARTS)
+async def test_texts_are_trimmed_and_json_is_stored_as_it_comes(backend: Backend) -> None:
+    """What the comparison after a write counts as no difference, and what it counts."""
+    writer, reader = backend.admin.workflow_writes, backend.admin.workflows
+    made = await writer.create_workflow(scratch(), safe())
+    hook: dict[str, JsonValue] = {
+        **HOOK,
+        "headers": {"A": " x "},
+        "params": {"p": " y "},
+        "use_params": True,
+    }
+    sent = [
+        PartWrite(type=1, settings={"assign_title": " t "}),
+        PartWrite(type=4, settings={"webhook": hook}),
+    ]
+
+    await writer.update_workflow_parts(made.id, "actions", sent)
+
+    titled, called = (await reader.get_workflow(made.id)).actions
+    assert titled.settings["assign_title"] == "t"
+    stored = cast("dict[str, JsonValue]", called.settings["webhook"])
+    assert (stored["headers"], stored["params"]) == ({"A": " x "}, {"p": " y "})
