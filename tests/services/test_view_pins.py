@@ -540,7 +540,8 @@ async def test_a_call_does_not_wait_for_ever_for_another_one() -> None:
     _ = await held.wait()
 
     with pytest.raises(Conflict, match="Another call") as raised:
-        _ = await pins.pin(view, dashboard=None, sidebar=True)
+        async with asyncio.timeout(5):
+            _ = await pins.pin(view, dashboard=None, sidebar=True)
     go.set()
     _ = await first
     done = await pins.pin(view, dashboard=None, sidebar=True)
