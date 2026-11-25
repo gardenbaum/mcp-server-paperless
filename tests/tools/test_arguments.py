@@ -511,6 +511,12 @@ async def test_permissions_and_bulk_changes_take_every_argument() -> None:
         await sweep(
             "set_permissions", {"kind": kind, "items": [1], "clear_owner": True}, (), prepare=owned
         )
+    for change in (
+        {"owner": "e2e-reader", "view_users": ["e2e-reader"], "view_groups": ["e2e-group"]},
+        {"change_users": ["e2e-reader"], "change_groups": [1], "mode": "replace"},
+        {"clear_owner": True},
+    ):
+        await sweep("set_permissions", {"kind": "saved_view", "items": [1], **change}, ())
     for kind in ("mail_account", "mail_rule"):
         grants = {"view_users": ["admin"], "change_groups": [1], "owner": "e2e-reader"}
         await sweep(

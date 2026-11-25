@@ -148,7 +148,7 @@ def bulk_editor(fake: FakePaperless, taxonomy: TaxonomyResolver) -> BulkDocument
     """`BulkDocumentEditor` on the fake, with everything it is built from."""
     web = "https://paperless.example"
     documents = DocumentService(fake, fake, taxonomy, web_url=web)
-    views = ViewService(fake, fake, taxonomy, documents, ViewPins(fake, fake))
+    views = ViewService(fake, fake, taxonomy, documents, ViewPins(fake, fake), permissions=fake)
     selector = DocumentSelector(fake, documents, views, taxonomy)
     return BulkDocumentEditor(fake, fake, selector, taxonomy, web_url=web)
 
@@ -167,7 +167,7 @@ def bulk_notes(fake: FakePaperless, *, clock: Callable[[], float]) -> BulkNotes:
     web = "https://paperless.example"
     taxonomy = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
     documents = DocumentService(fake, fake, taxonomy, web_url=web)
-    views = ViewService(fake, fake, taxonomy, documents, ViewPins(fake, fake))
+    views = ViewService(fake, fake, taxonomy, documents, ViewPins(fake, fake), permissions=fake)
     selector = DocumentSelector(fake, documents, views, taxonomy)
     return BulkNotes(fake, fake, selector, web_url=web, clock=clock)
 
@@ -177,7 +177,7 @@ def workflow_runs(fake: FakePaperless, taxonomy: TaxonomyResolver | None = None)
     web = "https://paperless.example"
     taxonomy = taxonomy or TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
     documents = DocumentService(fake, fake, taxonomy, web_url=web)
-    views = ViewService(fake, fake, taxonomy, documents, ViewPins(fake, fake))
+    views = ViewService(fake, fake, taxonomy, documents, ViewPins(fake, fake), permissions=fake)
     selector = DocumentSelector(fake, documents, views, taxonomy)
     flows = WorkflowService(fake, fake, taxonomy)
     return WorkflowRuns(fake, fake, flows, selector, taxonomy)

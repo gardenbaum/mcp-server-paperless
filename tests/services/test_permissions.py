@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, ClassVar, final, override
 import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.mail import FakeMailAccount, FakeMailRule
-from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
+from fakes.paperless import FakeDocument, FakePaperless, FakeSavedView, FakeState, seeded
 
 from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
@@ -31,6 +31,7 @@ from mcp_server_paperless.domain.permissions import (
     PermissionsRequest,
 )
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.access import read_access
 from mcp_server_paperless.services.permissions import PermissionService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
@@ -1451,3 +1452,159 @@ async def test_the_forty_seconds_start_with_the_call() -> None:
         _ = await service.set_permissions(
             "mail_rule", [1], PermissionsRequest(view_users=["e2e-reader"]), confirm=True
         )
+
+
+# --- saved views (PLMCP-88.3)
+
+VIEW_NOTE = (
+    "Whoever may change a saved view decides which documents run_saved_view and bulk calls that "
+    "name it see"
+)
+
+
+@pytest.mark.decision("decision-96")
+@pytest.mark.parametrize(
+    ("request_", "noted"),
+    [
+        ({"view_users": ["e2e-reader"]}, False),
+        ({"change_groups": ["e2e-group"]}, True),
+        ({"owner": "e2e-reader"}, True),
+        ({"clear_owner": True}, True),
+    ],
+)
+async def test_the_note_stands_where_somebody_may_change_the_view(
+    request_: dict[str, object],
+    noted: bool,  # noqa: FBT001 -- the case
+) -> None:
+    setup = Setup(writes=False)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.set_permissions(
+            "saved_view", [1], PermissionsRequest.model_validate(request_)
+        )
+
+    assert (VIEW_NOTE in raised.value.message) == noted
+
+
+@pytest.mark.decision("decision-91")
+async def test_a_view_the_user_sees_no_more_points_to_the_list_of_views() -> None:
+    setup = Setup(writes=False)
+    _ = await setup.taxonomy.items("saved_view")  # cached, then gone
+    setup.state.saved_views.clear()
+
+    with pytest.raises(NotFound) as raised:
+        _ = await setup.run("saved_view", ["e2e-view"], view_users=["e2e-reader"])
+
+    assert raised.value.describe() == (
+        "No saved view with id 1 exists that you may see. Hint: Find the ids with list_saved_views."
+    )
+
+
+@pytest.mark.decision("decision-91")
+async def test_a_view_is_shared_by_name_or_id_after_a_confirmation_and_forgotten() -> None:
+    setup = Setup()
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.run("saved_view", ["E2E-VIEW"], change_users=["e2e-reader"], confirm=False)
+    by_name = await setup.run("saved_view", ["E2E-VIEW"], change_users=["e2e-reader"])
+    by_id = await setup.run("saved_view", [1], owner="e2e-reader")
+
+    assert raised.value.message == (
+        "Nothing was changed. Confirming would change the permissions of 1 saved view 'e2e-view': "
+        f"gains change: user 'e2e-reader'. {VIEW_NOTE}."
+    )
+    [row] = by_name.objects
+    assert (row.id, row.name, row.web_url, row.changed) == (1, "e2e-view", None, True)
+    assert names(row.access.change_users) == ["e2e-reader"]
+    assert by_name.message == "Changed the permissions of 'e2e-view' (merge)."
+    assert by_id.objects[0].access.owner is not None
+    assert setup.state.saved_views[0].owner == READER_ID
+    reads = setup.fake.taxonomy_reads
+    _ = await setup.taxonomy.items("saved_view")
+    assert setup.fake.taxonomy_reads == reads + 1
+    assert len([kind for kind, _, _ in setup.fake.writes if kind == "saved_view"]) == 2
+
+
+@pytest.mark.decision("decision-91")
+async def test_two_views_of_one_name_are_ambiguous_and_an_unknown_one_is_not_found() -> None:
+    setup = Setup(writes=False)
+    setup.state.saved_views.append(FakeSavedView(id=2, name="e2e-view", owner=READER_ID))
+
+    with pytest.raises(Ambiguous, match=r"id 1.*id 2"):
+        _ = await setup.run("saved_view", ["e2e-view"], view_users=["e2e-reader"])
+    with pytest.raises(NotFound, match="No saved view has id 99"):
+        _ = await setup.run("saved_view", [99], view_users=["e2e-reader"])
+
+
+@pytest.mark.decision("decision-91")
+async def test_a_view_that_already_is_as_asked_is_neither_sent_nor_confirmed() -> None:
+    setup = Setup(writes=False)
+    setup.state.saved_views[0].viewers = {READER_ID}
+
+    done = await setup.run("saved_view", [1], view_users=["e2e-reader"], confirm=False)
+
+    assert done.changed_count == 0
+
+
+@pytest.mark.decision("decision-91")
+async def test_a_view_handed_to_someone_with_one_of_that_name_says_that_grants_were_set() -> None:
+    setup = Setup()
+    setup.state.saved_views.append(FakeSavedView(id=2, name="e2e-view", owner=READER_ID))
+
+    with pytest.raises(Validation) as raised:
+        _ = await setup.run("saved_view", [1], owner="e2e-reader", view_users=["e2e-blind"])
+
+    assert "The grants of 'e2e-view' were set all the same; its owner was not changed." in (
+        raised.value.message
+    )
+    assert setup.state.saved_views[0].viewers == {BLIND_ID}
+
+
+@pytest.mark.decision("decision-91")
+async def test_only_the_owner_a_superuser_or_anyone_on_an_unowned_view_may_share_it() -> None:
+    rights = frozenset({"view_savedview", "change_savedview"})
+    setup = Setup(READER[0], grant=rights)
+    setup.state.saved_views[0].editors = setup.state.saved_views[0].viewers = {READER_ID}
+
+    with pytest.raises(PermissionDenied):
+        _ = await setup.run("saved_view", [1], view_groups=[GROUP])
+    setup.state.saved_views[0].owner = None
+    done = await setup.run("saved_view", [1], view_groups=[GROUP])
+
+    assert done.changed_count == 1
+
+
+@pytest.mark.decision("decision-91")
+async def test_views_are_read_and_written_within_the_time_of_a_call() -> None:
+    setup = Setup(writes=False)
+    times = iter([0.0, 10_000.0])
+    service = PermissionService(
+        setup.fake,
+        setup.fake,
+        setup.taxonomy,
+        setup.fake,
+        web_url=WEB,
+        clock=lambda: next(times, 10_000.0),
+    )
+
+    with pytest.raises(PaperlessMcpError, match="could not be read within"):
+        _ = await service.set_permissions(
+            "saved_view", [1], PermissionsRequest(view_users=["e2e-reader"]), confirm=True
+        )
+
+
+@pytest.mark.decision("decision-91")
+async def test_access_is_shown_with_names_and_none_where_the_object_is_gone() -> None:
+    setup = Setup(writes=False)
+    setup.state.saved_views[0].viewers = {READER_ID, BLIND_ID}
+    setup.state.saved_views[0].editors = {BLIND_ID}
+    setup.state.saved_views[0].view_groups = {GROUP}
+
+    access = await read_access(setup.fake, setup.taxonomy, "saved_view", 1)
+
+    assert access is not None
+    assert access.owner is not None
+    assert (access.owner.id, access.owner.name) == (ADMIN_ID, "admin")
+    assert names(access.view_users) == ["e2e-reader"]
+    assert names(access.change_users) == ["e2e-blind"]
+    assert names(access.view_groups) == ["e2e-group"]
+    assert await read_access(setup.fake, setup.taxonomy, "saved_view", 99) is None

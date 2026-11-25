@@ -430,7 +430,7 @@ async def test_views_say_where_the_current_user_sees_them() -> None:
     read = await setup.views.get(1)
 
     assert (listed.on_dashboard, listed.in_sidebar) == (True, False)
-    assert read == listed
+    assert read.model_dump(exclude={"access"}) == listed.model_dump()
 
 
 @pytest.mark.parametrize("odd", [{}, {"saved_views": "x"}, {"saved_views": {DASHBOARD: "1"}}])
