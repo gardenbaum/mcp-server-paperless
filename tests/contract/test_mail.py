@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 import anyio
 import pytest
+from explained import CASES, FACTS, NOW, RECORDED, SUBJECT
 from pydantic import SecretStr
 
 from contract.conftest import EXPIRES, TOKEN
@@ -29,6 +30,7 @@ from mcp_server_paperless.domain.mail import (
 )
 from mcp_server_paperless.paperless.mail import unreachable_server
 from mcp_server_paperless.services.log_records import read_log_records
+from mcp_server_paperless.services.mail_explanation import rule_checks
 from mcp_server_paperless.services.mail_log_lines import about_mail, about_run
 
 if TYPE_CHECKING:
@@ -632,6 +634,44 @@ async def test_a_deleted_rule_is_gone(backend: Backend, mail: Mail) -> None:
     assert made.id not in {r.id for r in await backend.admin.mail.list_mail_rules()}
     with pytest.raises(NotFound, match="No mail rule"):
         await backend.admin.mail_writes.delete_mail_rule(made.id)
+
+
+# --- why a mail was not imported
+
+
+@pytest.mark.decision("decision-90")
+@pytest.mark.contract(PAGE_RULES)
+@pytest.mark.contract(CREATE_RULE)
+@pytest.mark.contract(LIST_PROCESSED)
+async def test_every_check_of_an_import_is_said_of_stored_rules(
+    backend: Backend, mail: Mail
+) -> None:
+    account = await mail.account()
+    made: dict[str, MailRule] = {}
+    for number, case in enumerate(CASES):
+        made[case.name] = await mail.rule(account.id, **({"order": number} | case.fields))
+    recorded = made[RECORDED].id
+    backend.new_processed(recorded, [(SUBJECT, "u1", "FAILED", "x")])
+    found = await backend.admin.mail.list_processed_mail(
+        rule_id=recorded, status=None, ordering="-processed", page=1, page_size=25
+    )
+    assert len(found.mails) == 1
+    rules = await backend.admin.mail.list_mail_rules()
+    mine = [rule for rule in rules if rule.account_id == account.id]
+    assert len(mine) == len(CASES)
+
+    for given, facts in enumerate(FACTS):
+        rows = [row for row in found.mails if row.subject == facts.subject]
+        for case in CASES:
+            [rule] = [rule for rule in mine if rule.id == made[case.name].id]
+            checks = rule_checks(rule, mine, rows, facts, NOW).checks
+            said = {check.what: check.result for check in checks}
+            assert said.get(case.what) == case.results[given], case.name
+            earlier = [check.why for check in checks if check.what == "earlier rules"]
+            if case.name == "stopped before":
+                assert ["ends the run" in why for why in earlier] == [True]
+            if case.name == "taken before":
+                assert ["reads the same folder first" in why for why in earlier] == [False, True]
 
 
 # --- processed mail
