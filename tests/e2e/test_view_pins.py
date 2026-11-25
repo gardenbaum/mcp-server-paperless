@@ -141,13 +141,14 @@ async def test_a_view_is_pinned_and_unpinned_and_other_settings_survive(
     assert json.dumps(restored, sort_keys=True) == json.dumps(before, sort_keys=True)
 
 
+@pytest.mark.parametrize("transport", TRANSPORTS)
 async def test_a_user_who_may_not_write_settings_is_told_and_nothing_changes(
-    stack: Stack, user: Callable[..., str]
+    stack: Stack, user: Callable[..., str], transport: str
 ) -> None:
     token = user(*RIGHTS, "view_uisettings")
     name = f"{PREFIX}{uuid.uuid4().hex[:8]}"
 
-    async with connected(stack, token, "memory") as client:
+    async with connected(stack, token, transport) as client:
         _ = await call(client, "create_saved_view", name=name)
         refused = await client.call_tool(
             "pin_saved_view", {"view": name, "dashboard": True}, raise_on_error=False
@@ -158,12 +159,13 @@ async def test_a_user_who_may_not_write_settings_is_told_and_nothing_changes(
     assert "saved_views" not in stored(token)
 
 
+@pytest.mark.parametrize("transport", TRANSPORTS)
 async def test_a_user_who_may_not_view_settings_still_sees_views_but_not_where(
-    stack: Stack, user: Callable[..., str]
+    stack: Stack, user: Callable[..., str], transport: str
 ) -> None:
     name = f"{PREFIX}{uuid.uuid4().hex[:8]}"
 
-    async with connected(stack, user(*RIGHTS, "add_uisettings"), "memory") as client:
+    async with connected(stack, user(*RIGHTS, "add_uisettings"), transport) as client:
         made = await call(client, "create_saved_view", name=name)
         refused = await client.call_tool(
             "pin_saved_view", {"view": name, "dashboard": True}, raise_on_error=False
@@ -197,6 +199,67 @@ async def test_a_view_of_another_owner_can_be_pinned_by_who_may_only_see_it(
 
     assert (done["on_dashboard"], done["in_sidebar"]) == (False, True)
     assert (shown["can_change"], shown["in_sidebar"]) == (False, True)
+
+
+SHARING = (*RIGHTS, "view_uisettings", "view_user", "view_group")
+
+
+def access(stack: Stack, view: int) -> tuple[object, list[int], list[int]]:
+    """The owner, who may see and who may change the view, as Paperless stores them."""
+    found = stack.admin.get(f"/api/saved_views/{view}/", params={"full_perms": "true"})
+    row = obj(parse(found.raise_for_status()))
+    users = [obj(obj(row["permissions"])[what])["users"] for what in ("view", "change")]
+    seen, changed = cast("list[list[int]]", users)
+    return row["owner"], seen, changed
+
+
+@pytest.mark.decision("decision-91")
+async def test_who_may_share_a_view_with_and_without_confirm(
+    stack: Stack, user: Callable[..., str]
+) -> None:
+    owner, other = user(*SHARING), user(*SHARING)
+    owns, grantee = (num(obj(obj(parse(_settings(t)))["user"])["id"]) for t in (owner, other))
+    name = f"{PREFIX}{uuid.uuid4().hex[:8]}"
+    async with connected(stack, owner, "memory") as client:
+        view = num((await call(client, "create_saved_view", name=name))["id"])
+    wanted: Json = {"kind": "saved_view", "items": [view], "view_users": ["e2e-reader"]}
+    reader = num(obj(obj(parse(_settings(stack.reader_token)))["user"])["id"])
+
+    def give(number: int | None, *editors: int) -> None:
+        change = {"users": list(editors), "groups": list[int]()}
+        body: Json = {"owner": number, "set_permissions": {"view": change, "change": change}}
+        _ = stack.admin.patch(f"/api/saved_views/{view}/", json=body).raise_for_status()
+
+    async def share(token: str, *, confirm: bool) -> tuple[bool, str]:
+        async with connected(stack, token, "memory") as client:
+            result = await client.call_tool(
+                "set_permissions", {**wanted, "confirm": confirm}, raise_on_error=False
+            )
+        return result.is_error, str(result.content)
+
+    # Nobody but the owner sees it: sharing it finds nothing, with and without confirm.
+    for confirm in (False, True):
+        refused, hidden = await share(other, confirm=confirm)
+        assert refused
+        assert "Confirming would" not in hidden
+    # A change grant is asked about, but not enough.
+    give(owns, grantee)
+    asked, question = await share(other, confirm=False)
+    denied, told = await share(other, confirm=True)
+    assert (asked, denied) == (True, True)
+    assert "Nothing was changed. Confirming would" in question
+    assert "may not" in told
+    assert access(stack, view) == (owns, [grantee], [grantee])
+    # The owner, who is no superuser, and then anyone on a view without an owner.
+    for token, number in ((owner, owns), (other, None)):
+        give(number)
+        asked, question = await share(token, confirm=False)
+        assert asked
+        assert "gains view: user 'e2e-reader'" in question
+        assert access(stack, view) == (number, [], [])
+        failed, said = await share(token, confirm=True)
+        assert not failed, said
+        assert access(stack, view) == (number, [reader], [])
 
 
 def _settings(token: str) -> httpx2.Response:
