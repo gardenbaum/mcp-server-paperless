@@ -48,7 +48,7 @@ _MAIL_ERROR: Final = re.compile(
 # name of the account, and the colon before the answer. A line of a log that is read has lost what
 # is blank at its end.
 _LOGGED: Final = re.compile(
-    r"^(?:\[[^\n]*\] )?Error while (?:authenticating account|retrieving mailbox) ",
+    r"^(?:\[[^\n]*?\] )?Error while (?:authenticating account|retrieving mailbox) ",
     flags=re.MULTILINE,
 )
 _ANSWER: Final = re.compile(r":(?: |(?=\s)|\Z)")
