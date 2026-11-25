@@ -52,6 +52,17 @@ class Cut(AsyncByteStream):
         await self._stream.aclose()
 
 
+def _zlibbed(start: bytes) -> bool:
+    """Whether a stream is a zlib one: its header says so, and what is there unpacks as one."""
+    if start[0] & 0x0F != zlib.DEFLATED or int.from_bytes(start[:HEADER]) % 31:
+        return False
+    try:
+        _ = zlib.decompressobj().decompress(start, PIECE)
+    except zlib.error:
+        return False
+    return True
+
+
 @final
 class _Unpacker:
     def __init__(self, encoding: str) -> None:
@@ -70,8 +81,7 @@ class _Unpacker:
             if len(data) < HEADER:
                 self._start = data
                 return
-            zlibbed = data[0] & 0x0F == zlib.DEFLATED and int.from_bytes(data[:HEADER]) % 31 == 0
-            bits = zlib.MAX_WBITS if zlibbed else -zlib.MAX_WBITS
+            bits = zlib.MAX_WBITS if _zlibbed(data) else -zlib.MAX_WBITS
             self._stream = zlib.decompressobj(zlib.MAX_WBITS | 16 if self._gzip else bits)
         stream, going = self._stream, bool(data)
         while going:

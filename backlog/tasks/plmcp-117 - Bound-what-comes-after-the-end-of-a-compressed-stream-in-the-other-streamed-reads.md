@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T21:58:47Z'
-updated_date: '2026-11-25T17:57:19Z'
+updated_date: '2026-11-25T18:19:37Z'
 labels:
   - safety
 dependencies: []
@@ -53,4 +53,6 @@ decoded() in paperless/unpacking.py replaces aiter_bytes() in every streamed rea
 Deliberate changes: stream and download no longer read on after the end; a raw deflate body whose first piece is one byte is read (was an error). Not changed: time is not bounded (empty blocks in a download, layered bombs in an error body); non-streamed request(); download() and stream_post() let DecodingError through (internal error) as before. No decision: decision-77 names this as open. Memory tests use 8 MiB on the wire and a bound of 8 MB.
 
 main merged (PLMCP-83.2 to 83.4): post_json shares the error body path, in the memory cases with its error body. A 200 body that cannot be unpacked is a typed unexpected answer in download and stream_post too (was an internal error; 10 tests red first).
+
+Codex on #188: a raw deflate body that starts like a zlib header was refused, httpx2 reads it. A body counts as zlib only if its first piece unpacks as such (3 tests red first).
 <!-- SECTION:NOTES:END -->

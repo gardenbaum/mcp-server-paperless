@@ -249,6 +249,16 @@ async def test_what_follows_the_end_is_left_out_and_not_read_on(read: str, how: 
 
 
 @pytest.mark.parametrize("read", list(READS))
+async def test_a_raw_stream_whose_start_looks_like_a_zlib_header_is_read(read: str) -> None:
+    """A stored block whose padding makes 78 9c of it: httpx2 reads it, so it is read here."""
+    data = bytes.fromhex("789c0063ff") + b"x" * 156 + bytes.fromhex("010000ffff")
+    answer = httpx2.Response(200, headers={"Content-Encoding": "deflate"}, stream=Chunks(data))
+    client, _ = streaming(lambda _: answer)
+
+    assert await READS[read](client) == b"x" * 156
+
+
+@pytest.mark.parametrize("read", list(READS))
 @pytest.mark.parametrize("how", ["gzip", "zlib", "raw"])
 async def test_a_file_whose_end_is_missing_gives_what_arrived_as_before(
     read: str, how: str
