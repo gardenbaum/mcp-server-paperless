@@ -75,11 +75,10 @@ def new(backend: Backend, pages: int, name: str = "target") -> int:
     return backend.upload(title, f"{title}.pdf", pdf_pages(texts), "application/pdf")
 
 
-async def unowned(backend: Backend, pages: int) -> int:
-    """A PDF everybody may see and edit, as far as their global permissions go."""
-    number = new(backend, pages)
-    _ = await backend.admin.document_writes.update_document(number, DocumentPatch(owner=None))
-    return number
+async def free(backend: Backend, *documents: int) -> None:
+    """Let everybody see and edit the documents, as far as their global permissions go."""
+    for number in documents:
+        _ = await backend.admin.document_writes.update_document(number, DocumentPatch(owner=None))
 
 
 async def take(backend: Backend, document: int, user: Ports) -> None:
@@ -164,8 +163,7 @@ def inserter(ports: Ports, renderer: ChildRenderer | None = None) -> PageInserte
     )
 
 
-async def test_an_insertion_is_previewed_and_refused_without_a_trace(backend: Backend) -> None:
-    target, source = new(backend, 2), new(backend, 3, "source")
+async def previewed_and_refused(backend: Backend, target: int, source: int) -> None:
     service = inserter(backend.admin)
 
     produced: dict[FileOutput, str] = {
@@ -191,24 +189,21 @@ async def test_an_insertion_is_previewed_and_refused_without_a_trace(backend: Ba
     assert (await versions(backend, target), await versions(backend, source)) == (1, 1)
 
 
-@pytest.mark.parametrize("changed", ["target", "source"])
-async def test_a_document_that_changes_during_an_insertion_stops_it(
-    backend: Backend, changed: str
-) -> None:
-    target, source = new(backend, 1), new(backend, 1, "source")
-    other = target if changed == "target" else source
+async def changed_meanwhile(backend: Backend, target: int, source: int, other: int) -> None:
+    before_it = await versions(backend, target) + await versions(backend, source)
+    kept = source if other == target else target
+    kept_versions = await versions(backend, kept)
     renderer = Acting(lambda: add_version(backend, other, 2))
 
     with pytest.raises(PaperlessMcpError, match="got another file meanwhile") as stopped:
         _ = await inserter(backend.admin, renderer).insert(target, source, "1", 1)
 
     assert NOTHING in stopped.value.message
-    assert await versions(backend, other) == 2
-    assert await versions(backend, source if other == target else target) == 1
+    assert await versions(backend, target) + await versions(backend, source) == before_it + 1
+    assert await versions(backend, kept) == kept_versions
 
 
-async def test_a_right_that_is_taken_during_an_insertion_stops_it(backend: Backend) -> None:
-    target, source = await unowned(backend, 1), await unowned(backend, 1)
+async def right_taken(backend: Backend, target: int, source: int) -> None:
     user = backend.restricted(LOOKING)
     renderer = Acting(lambda: take(backend, target, user))
 
@@ -217,8 +212,7 @@ async def test_a_right_that_is_taken_during_an_insertion_stops_it(backend: Backe
     assert await versions(backend, target) == 1
 
 
-async def test_a_file_paperless_cannot_consume_leaves_both_documents(backend: Backend) -> None:
-    target, source = new(backend, 1), new(backend, 1, "source")
+async def not_consumed(backend: Backend, target: int, source: int) -> None:
     service = inserter(backend.admin, Acting(instead=BROKEN_PDF))
 
     result = await service.insert(target, source, "1", 1, wait_seconds=30)
@@ -230,8 +224,7 @@ async def test_a_file_paperless_cannot_consume_leaves_both_documents(backend: Ba
     assert (await versions(backend, target), await versions(backend, source)) == (1, 1)
 
 
-async def test_a_user_without_tasks_is_told_to_look_before_repeating(backend: Backend) -> None:
-    target, source = await unowned(backend, 1), await unowned(backend, 1)
+async def without_tasks(backend: Backend, target: int, source: int) -> None:
     user = backend.restricted(LOOKING)
 
     result = await inserter(user).insert(target, source, "1", 1, wait_seconds=1)
@@ -245,13 +238,27 @@ async def test_a_user_without_tasks_is_told_to_look_before_repeating(backend: Ba
     assert await versions(backend, target) == 2
 
 
+async def test_every_way_an_insertion_ends_early_leaves_both_documents_until_one_succeeds(
+    backend: Backend,
+) -> None:
+    """One pair of documents for all of them: each has to leave it as it was for the next."""
+    target, source = new(backend, 2), new(backend, 3, "source")
+
+    await previewed_and_refused(backend, target, source)
+    await not_consumed(backend, target, source)
+    await free(backend, target, source)
+    await right_taken(backend, target, source)
+    await free(backend, target)
+    await without_tasks(backend, target, source)
+    # Both documents may have more versions now: what counts is what is added.
+    await changed_meanwhile(backend, target, source, source)
+    await changed_meanwhile(backend, target, source, target)
+
+
 # --- split_document with metadata
 
 
-async def test_a_split_with_metadata_is_previewed_and_refused_without_a_trace(
-    backend: Backend,
-) -> None:
-    source = new(backend, 3)
+async def split_previewed_and_refused(backend: Backend, source: int) -> None:
     service, metadata = operations(backend.admin), (FIRST, SECOND)
 
     preview = await service.split(
@@ -287,10 +294,7 @@ async def test_a_split_with_metadata_is_previewed_and_refused_without_a_trace(
     assert await versions(backend, source) == 1
 
 
-async def test_a_part_whose_metadata_is_refused_keeps_the_original_and_the_others_go_on(
-    backend: Backend,
-) -> None:
-    source = await unowned(backend, 3)
+async def part_metadata_refused(backend: Backend, source: int) -> None:
     title = (await backend.admin.documents.get_document(source)).title
     user = backend.restricted(SPLITTING)
 
@@ -324,10 +328,7 @@ async def test_a_part_whose_metadata_is_refused_keeps_the_original_and_the_other
     assert (await backend.admin.documents.get_document(two.document_id)).title == SECOND.title
 
 
-async def test_an_original_that_may_not_be_trashed_stays_beside_its_parts(
-    backend: Backend,
-) -> None:
-    source = await unowned(backend, 2)
+async def trashing_refused(backend: Backend, source: int) -> None:
     user = backend.restricted(SPLITTING)
 
     async def taken(document: int) -> None:
@@ -352,22 +353,19 @@ async def test_an_original_that_may_not_be_trashed_stays_beside_its_parts(
 
 
 async def replaced_while(
-    backend: Backend, happens: Callable[[int], Awaitable[None]]
-) -> tuple[int, PdfResult]:
-    """Split a document nobody owns, with something else just before its deletion."""
-    source = await unowned(backend, 2)
+    backend: Backend, source: int, happens: Callable[[int], Awaitable[None]]
+) -> PdfResult:
+    """Split the document, with something else just before its deletion."""
     user = backend.restricted(SPLITTING)
     writes = before(user.document_writes, "delete_document", happens)
     result = await operations(user, document_writes=writes).split(
         source, ["1", "2"], output="replace_original", options=YES
     )
     track(backend, result)
-    return source, result
+    return result
 
 
-async def test_an_original_that_is_hidden_before_its_deletion_is_not_said_to_be_trashed(
-    backend: Backend,
-) -> None:
+async def hidden_before_its_deletion(backend: Backend, source: int) -> None:
     """The deletion and the read after it answer 404 for what is hidden, as for what is gone."""
 
     async def hide(document: int) -> None:
@@ -378,7 +376,7 @@ async def test_an_original_that_is_hidden_before_its_deletion_is_not_said_to_be_
             AccessChange(owner=owner, permissions=ObjectPermissions()),
         )
 
-    source, result = await replaced_while(backend, hide)
+    result = await replaced_while(backend, source, hide)
 
     assert (result.original, result.trashed_ids) == ("unknown", ())
     assert f"It is not known whether document {source} went to the trash" in (result.message or "")
@@ -386,20 +384,41 @@ async def test_an_original_that_is_hidden_before_its_deletion_is_not_said_to_be_
     assert not backend.in_trash(source)
 
 
-async def test_an_original_that_somebody_trashed_before_its_deletion_is_in_the_trash(
-    backend: Backend,
-) -> None:
-    source, result = await replaced_while(backend, backend.admin.document_writes.delete_document)
+async def trashed_by_somebody_before_its_deletion(backend: Backend, source: int) -> None:
+    happens = backend.admin.document_writes.delete_document
+    result = await replaced_while(backend, source, happens)
 
     assert (result.original, result.trashed_ids) == ("trashed", (source,))
     assert backend.in_trash(source)
 
 
+async def test_a_split_with_metadata_is_previewed_and_the_original_stays_for_a_part_without_its_own(
+    backend: Backend,
+) -> None:
+    source = new(backend, 3)
+
+    await split_previewed_and_refused(backend, source)
+    await free(backend, source)
+    await part_metadata_refused(backend, source)
+
+
+async def test_the_original_of_a_split_is_only_said_to_be_trashed_if_it_is(
+    backend: Backend,
+) -> None:
+    source = new(backend, 2)
+
+    await free(backend, source)
+    await trashing_refused(backend, source)
+    await free(backend, source)
+    await hidden_before_its_deletion(backend, source)
+    await free(backend, source)
+    await trashed_by_somebody_before_its_deletion(backend, source)
+
+
 # --- extract_pages
 
 
-async def test_an_extraction_is_previewed_and_refused_without_a_trace(backend: Backend) -> None:
-    source = new(backend, 3)
+async def extraction_previewed_and_refused(backend: Backend, source: int) -> None:
     service = operations(backend.admin)
 
     preview = await service.extract(
@@ -424,10 +443,7 @@ async def test_an_extraction_is_previewed_and_refused_without_a_trace(backend: B
     assert await versions(backend, source) == 1
 
 
-async def test_the_pages_stay_when_the_metadata_of_the_new_document_is_refused(
-    backend: Backend,
-) -> None:
-    source = await unowned(backend, 3)
+async def metadata_refused(backend: Backend, source: int) -> None:
     user = backend.restricted(SPLITTING)
 
     async def taken(document: int, _: object) -> None:
@@ -448,11 +464,7 @@ async def test_the_pages_stay_when_the_metadata_of_the_new_document_is_refused(
     assert await versions(backend, source) == 1
 
 
-async def test_the_pages_stay_when_the_document_changes_during_an_extraction(
-    backend: Backend,
-) -> None:
-    source = new(backend, 3)
-
+async def changed_during_an_extraction(backend: Backend, source: int) -> None:
     async def changed(*_args: object) -> None:
         _ = await add_version(backend, source, 2)
 
@@ -471,8 +483,7 @@ async def test_the_pages_stay_when_the_document_changes_during_an_extraction(
     assert await versions(backend, source) == 2
 
 
-async def test_a_refused_removal_names_the_new_document_that_is_left(backend: Backend) -> None:
-    source = await unowned(backend, 3)
+async def removal_refused(backend: Backend, source: int) -> None:
     user = backend.restricted(SPLITTING)
 
     async def taken(document: int, _: object) -> None:
@@ -497,10 +508,7 @@ async def test_a_refused_removal_names_the_new_document_that_is_left(backend: Ba
     assert await versions(backend, source) == 1
 
 
-async def test_a_user_without_tasks_keeps_the_pages_and_is_told_how_to_go_on(
-    backend: Backend,
-) -> None:
-    source = await unowned(backend, 2)
+async def extraction_without_tasks(backend: Backend, source: int) -> None:
     user = backend.restricted(LOOKING)
 
     result = await operations(user).extract(source, "2", remove=True, metadata=FIRST, options=YES)
@@ -511,3 +519,15 @@ async def test_a_user_without_tasks_keeps_the_pages_and_is_told_how_to_go_on(
     assert 'title="plmcp119 first"' in (part.next or "")
     await made_files(backend, backend.admin, f"{source}_edit_1.pdf", 1)
     assert await versions(backend, source) == 1
+
+
+async def test_every_way_an_extraction_ends_early_leaves_the_pages(backend: Backend) -> None:
+    """One document for all of them: each has to leave it as it was for the next."""
+    source = new(backend, 3)
+
+    await extraction_previewed_and_refused(backend, source)
+    await free(backend, source)
+    await extraction_without_tasks(backend, source)
+    await metadata_refused(backend, source)
+    await removal_refused(backend, source)
+    await changed_during_an_extraction(backend, source)
