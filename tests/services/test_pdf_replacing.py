@@ -1,5 +1,6 @@
 """Originals are trashed last: every way a composed operation can end, and the state after it."""
 
+import asyncio
 from typing import TYPE_CHECKING, final, override
 
 import pytest
@@ -8,11 +9,13 @@ from harness import pdf_service
 
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
+    NotFound,
     PermissionDenied,
     UpstreamTimeout,
 )
 from mcp_server_paperless.domain.pdf import FoundCopies, StartedTasks
 from mcp_server_paperless.services.pdf import Options
+from mcp_server_paperless.services.pdf_parts import LAST_LOOK_SECONDS
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -27,6 +30,7 @@ if TYPE_CHECKING:
     )
     from mcp_server_paperless.domain.tasks import TaskState, TaskStatus
     from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
+    from mcp_server_paperless.domain.trash import TrashPage
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-60")]
 
@@ -93,6 +97,18 @@ class Paperless(FakePaperless):
         self.forget_included: bool = False
         self.ticked: Callable[[], None] = lambda: None
         self.now: float = 0.0
+        self.missing_now: set[int] = set()  # hidden from this user, as a 404 is
+        self.break_trash: bool = False
+        self.slow_trash: bool = False
+
+    @override
+    async def read_trash(self, *, entries: int, max_bytes: int) -> TrashPage:
+        if self.break_trash:
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
+        if self.slow_trash:
+            _ = await asyncio.Event().wait()
+        return await super().read_trash(entries=entries, max_bytes=max_bytes)
 
     def clock(self) -> float:
         if self.clock_error is not None:
@@ -217,6 +233,9 @@ class Paperless(FakePaperless):
         if self.unreadable(document_id):
             message = "Paperless did not respond in time."
             raise UpstreamTimeout(message)
+        if document_id in self.missing_now:
+            message = "No such document."
+            raise NotFound(message)
         record = await super().get_document(document_id)
         if document_id > OTHER:
             place = document_id - OTHER - 1
@@ -249,6 +268,9 @@ class Paperless(FakePaperless):
         if document_id in self.refuse_deletes:
             message = "The Paperless user may not perform this action."
             raise PermissionDenied(message)
+        if document_id in self.missing_now:
+            message = "No such document."
+            raise NotFound(message)
         await super().delete_document(document_id)
         if document_id in self.lose_deletes:
             message = "Paperless did not respond in time."
@@ -278,8 +300,10 @@ async def split(fake: Paperless, options: Options = YES) -> PdfResult:
     return await service.split(DOC, ["1", "2-4"], output="replace_original", options=options)
 
 
-async def shorten(fake: Paperless, options: Options = YES) -> PdfResult:
-    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock)
+async def shorten(
+    fake: Paperless, options: Options = YES, *, last_look: float = LAST_LOOK_SECONDS
+) -> PdfResult:
+    service = pdf_service(fake, sleep=fake.sleep, clock=fake.clock, last_look=last_look)
     return await service.delete_pages(DOC, "1", output="replace_original", options=options)
 
 
@@ -597,6 +621,62 @@ async def test_a_deletion_whose_answer_was_lost_is_looked_at() -> None:
 
     assert (result.trashed_ids, result.message, result.next) == ((DOC,), GONE, None)
     assert document(fake, 52).archive_serial_number == NUMBER
+
+
+@pytest.mark.parametrize(
+    ("way", "reason"),
+    [
+        ("hidden", "it is not in the trash this user may see"),
+        ("gone", "it is not in the trash this user may see"),
+        ("unread", "the trash could not be read (The Paperless user may not"),
+        ("lost and hidden", "did not respond in time; it is not in the trash this user may see"),
+        ("slow", "the trash could not be read in time"),
+    ],
+)
+async def test_an_original_that_is_not_found_is_only_trashed_if_the_trash_holds_it(
+    way: str, reason: str
+) -> None:
+    """Somebody hides it after the last look: not found says nothing of the trash."""
+    fake = paperless(NUMBER)
+    taken = document(fake, DOC)
+
+    def hide(number: int) -> None:
+        if way in {"gone", "unread", "slow"}:
+            fake.state.documents.remove(taken)
+        if way in {"unread", "slow"}:
+            fake.state.trash.append(taken)
+        fake.missing_now = {number}
+
+    fake.before_delete = hide
+    fake.break_trash = way == "unread"
+    fake.slow_trash = way == "slow"
+    fake.time_out = {DOC} if way == "lost and hidden" else set()
+
+    result = await shorten(fake, last_look=0.05 if way == "slow" else LAST_LOOK_SECONDS)
+
+    assert (result.trashed_ids, result.original) == ((), "unknown")
+    assert result.message is not None
+    assert f"It is not known whether document {DOC} went to the trash (" in result.message
+    assert reason in result.message
+    assert "Now in the trash" not in result.message
+    assert result.next == (
+        f"only if get_document(document_id={DOC}) still finds it unchanged: "
+        f"delete_document(document_id={DOC})"
+    )
+
+
+async def test_an_original_that_somebody_else_trashed_meanwhile_is_in_the_trash() -> None:
+    """Also what a repeated request answers whose first answer was lost: not found."""
+    fake = paperless(NUMBER)
+
+    def trashes(number: int) -> None:
+        fake.to_trash(document(fake, number))
+
+    fake.before_delete = trashes
+
+    result = await shorten(fake)
+
+    assert (result.trashed_ids, result.message, result.next) == ((DOC,), GONE, None)
 
 
 @pytest.mark.parametrize("readable", [True, False])

@@ -6,7 +6,7 @@ structured content or log line.
 """
 
 import logging
-from typing import cast
+from typing import TYPE_CHECKING, cast, final, override
 
 import pytest
 from confirmation import YES, answering
@@ -15,6 +15,12 @@ from fakes.mail import FakeMailAccount, FakeMailRule, FakeProcessedMail
 from fakes.paperless import FakePaperless, FakeState, FakeUser, seeded
 from fastmcp import Client
 from harness import serve
+
+from mcp_server_paperless.domain.errors import UpstreamTimeout
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 
 pytestmark = [
     pytest.mark.anyio,
@@ -692,7 +698,7 @@ async def test_a_user_who_is_no_staff_sees_only_the_own_rules_and_no_log() -> No
     _ = with_rule(state, account, name="Hidden")
     shown = with_rule(state, account, name="Shown")
     state.mail_rules[-1].owner = 77
-    start = "[2026-11-25 10:00:00,1] [DEBUG] [paperless_mail] "
+    start = "[2026-11-25 10:00:00,001] [DEBUG] [paperless_mail] "
     state.logs["mail"] = [f"{start}Processing mail account Invoices"]
     source = fake(state, writes=False, user="mailman")
 
@@ -711,10 +717,36 @@ async def test_no_credential_of_a_log_is_in_the_explanation() -> None:
     source = fake(writes=False)
     account = with_account(source.state)
     _ = with_rule(source.state, account)
-    start = "[2026-11-25 10:00:00,1] [ERROR] [paperless_mail] Error while authenticating account "
+    start = "[2026-11-25 10:00:00,001] [ERROR] [paperless_mail] Error while authenticating account "
     source.state.logs["mail"] = [f"{start}Invoices: {PASSWORD} refused"]
 
     found = await call(source, "explain_mail_import", account_id=account)
 
     assert len(cast("list[str]", found["logs"])) == 1
     assert PASSWORD not in repr(found)
+
+
+@pytest.mark.decision("decision-107")
+@pytest.mark.parametrize(("user", "outcome"), [("mailman", "unknown"), ("admin", "deleted")])
+async def test_without_an_answer_only_a_superuser_is_told_that_a_record_is_gone(
+    user: str, outcome: str
+) -> None:
+    @final
+    class Lost(FakePaperless):
+        @override
+        async def delete_processed_mail(self, mail_ids: Sequence[int]) -> None:
+            self.state.processed_mail.clear()
+            message = "Paperless did not respond in time."
+            raise UpstreamTimeout(message)
+
+    state = seeded()
+    rights = frozenset({"view_processedmail", "delete_processedmail", "view_uisettings"})
+    state.users.append(FakeUser(id=77, username="mailman", permissions=rights))
+    source = Lost(state, user=user)
+    with_records(source, 1)
+
+    done = await call(source, "delete_processed_mail", mail_ids=[1], confirm=True)
+
+    [row] = cast("list[Json]", done["mails"])
+    assert row["outcome"] == outcome
+    assert ("deleted or hidden: 1." in str(done["message"])) is (outcome == "unknown")

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:53Z'
-updated_date: '2026-11-25T14:46:39Z'
+updated_date: '2026-11-25T16:06:33Z'
 labels:
   - mail
 dependencies: []
@@ -26,7 +26,7 @@ First part of PLMCP-81: one processed mail and its full error cannot be read, th
 - [x] #1 get_processed_mail reads one processed mail with its full error (20,000 characters a call, continued) and says what would happen if its record were deleted
 - [x] #2 list_processed_mail filters the status PROCESSED_WO_CONSUMPTION, takes an order and shows the uid
 - [x] #3 The password of a token account is refused before anything is sent and the tool texts say that OAuth accounts are set up in the web UI and a saved account can be tested
-- [ ] #4 What the mail server answered to a login is in no result, error or log line of this server
+- [ ] #4 the answer to a failed login is in no result, error or log line, except where a hostile server forges the start of a log record or repeats it outside the login
 - [x] #5 The owner-approved exclusions of PLMCP-81 are in docs/api-coverage.toml with quote and date
 - [x] #6 Contract tests on the fake and Paperless 3.5.1 and tool tests cover the new reads and refusals
 <!-- AC:END -->
@@ -60,4 +60,6 @@ Codex round: a forged marker on the line of the answer took the place of the rea
 Owner, 2026-11-25: 'Überall wie von dir empfohlen bitte.' (everywhere as you recommend, please): decision-80 may hide more than 5a; accepted, residuals are in its consequences.
 
 Cleanup 2026-11-25, merged as 99e01fa (#155). AC 4 stays open: decision-80 (consequences) says that a log line a server forges to look like the start of a record, in its answer to a login (carriage return, untagged BYE), is not told from a real one, so such an answer can still be shown. Missing: the owner's explicit word that this residual meets 'in no result, error or log line' (the recorded approval of 2026-11-25 is about hiding more), or code and a test that hide it. The other criteria: tests/services/test_processed_mail.py, tests/tools/test_mail.py, tests/contract/test_mail.py (fake and 3.5.1), docs/api-coverage.toml. CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 1 stays open: the PR records red runs for the domain to tool levels, not for the live contract and E2E tests. DoD 2 stays open: no local run of the whole just check is recorded. On GitHub the check jobs run its recipes one by one: 45575809989 (007bdcb).
+
+AC 4 reworded by the owner, 2026-11-26: "Alles wie von dir empfohlen." (everything as you recommend), to the question whether the start of a log record is tightened and AC 4 says the answer to a failed login is in no result, error or log line, except where a hostile server forges the start of a log record or repeats it outside the login. decision-106 supplements decision-80 and names the two holes. The order of the criteria is kept.
 <!-- SECTION:NOTES:END -->
