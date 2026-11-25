@@ -513,6 +513,14 @@ def _owner_text(entry: Entry) -> str:
     return str(entry.task)
 
 
+def coverage_statement(entries: Iterable[Entry]) -> str:
+    """What the README says of the coverage: whole once every operation left has its approval."""
+    begin = "every operation of the Paperless API is covered by a tool"
+    if any(e.fields is None and e.approval is None for e in entries):
+        return f"{begin}, listed as an exclusion the owner approved, or still open under a task"
+    return f"{begin} or listed as an exclusion the owner approved"
+
+
 def _tools(usage: Usage) -> str:
     names = [f"`{t}`" for t in sorted(usage.tools)]
     more = f" and {len(names) - SHOWN} more" if len(names) > SHOWN else ""
@@ -609,7 +617,7 @@ Limits.
   only part of it (`GET /api/ui_settings/`: of the settings the pins of saved views).
 - A covered POST does not mean that all of its content can be chosen: `POST /api/ui_settings/` sends
   the settings back as read, and `pin_saved_view` chooses the pins of saved views only. The rest of
-  the settings belongs to PLMCP-83.
+  the settings is left out with the owner's approval (decision-99).
 - Requests of streamed bodies are recorded but not checked against the schema; the adapter tests
   check the others.
 

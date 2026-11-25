@@ -27,6 +27,7 @@ from quality.api_coverage import (
     Plumbing,
     Usage,
     backlog_statuses,
+    coverage_statement,
     covering,
     load_entries,
     missing_scenarios,
@@ -973,6 +974,31 @@ def test_an_exclusion_is_shown_with_its_quote_and_date() -> None:
     assert 'excluded, "approved leaving it out" (2026-11-23, backlog/decisions/d.md)' in page
 
 
+@pytest.mark.parametrize(
+    "still_open",
+    [entry(PATCH_ONE, task="PLMCP-83"), entry(PATCH_ONE)],
+    ids=["open under a task", "neither open nor approved"],
+)
+def test_the_statement_is_careful_while_an_operation_is_open(still_open: Entry) -> None:
+    assert coverage_statement([still_open]) == (
+        "every operation of the Paperless API is covered by a tool, listed as an exclusion the "
+        "owner approved, or still open under a task"
+    )
+
+
+def test_the_statement_is_whole_when_only_approved_exclusions_and_open_fields_are_left() -> None:
+    approval = Approval("approved leaving it out", "2026-11-23", "backlog/decisions/d.md")
+    left = [
+        entry(PATCH_ONE, approval=approval),
+        entry(GET_ONE, fields=names("query:page"), task="PLMCP-83"),
+    ]
+
+    assert coverage_statement(left) == (
+        "every operation of the Paperless API is covered by a tool or listed as an exclusion the "
+        "owner approved"
+    )
+
+
 def test_the_page_says_what_it_does_not_check() -> None:
     page = " ".join(render(SCHEMA, FULL, [], {}).split())
 
@@ -1055,6 +1081,13 @@ def test_no_endpoint_or_field_is_neither_covered_nor_listed_and_no_entry_is_stal
     covered: dict[Operation, Usage],
 ) -> None:
     assert real_problems(covered).found == []
+
+
+def test_the_readme_says_of_the_coverage_what_the_table_says() -> None:
+    readme = " ".join((ROOT / "README.md").read_text(encoding="utf-8").split())
+    said = coverage_statement(load_entries(ENTRIES).entries)
+
+    assert f"{said[0].upper()}{said[1:]} (" in readme
 
 
 def test_every_tool_and_every_argument_of_it_is_in_a_scenario(

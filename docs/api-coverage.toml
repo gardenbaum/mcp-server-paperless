@@ -8,8 +8,8 @@
 #                 an exclusion. A field a tool supports that no tool test sends is listed too.
 # [[internal]]    fields the adapter chooses itself although a task wants them as a tool argument
 #                 (tasks owner, ordering, date_created_after; the body of mail_accounts/test, for
-#                 testing an unsaved account; the documents of a bundle rebuild, PLMCP-83). They
-#                 stay open under that task although they are sent.
+#                 testing an unsaved account; the documents of a bundle rebuild). They
+#                 stay open under that task, or are excluded, although they are sent.
 # [[plumbing]]    fields the adapter chooses itself and no task is known to want as an argument
 #                 (applied where it was noticed, not a census of every constant): full_perms,
 #                 projections, constants of helpers that read every page, the stored object sent
@@ -26,36 +26,12 @@
 [[open]]
 task = "PLMCP-83"
 operations = [
-  "DELETE /api/config/{id}/",
-  "DELETE /api/profile/totp/",
-  "GET /api/config/{id}/",
   "GET /api/documents/next_asn/",
-  "GET /api/documents/{id}/preview/",
-  "GET /api/documents/{id}/share_links/",
-  "GET /api/profile/",
-  "GET /api/profile/social_account_providers/",
-  "GET /api/profile/totp/",
   "GET /api/remote_version/",
-  "GET /api/search/",
   "GET /api/search/autocomplete/",
-  "PATCH /api/profile/",
   "POST /api/documents/selection_data/",
-  "POST /api/documents/{id}/email/",
-  "POST /api/profile/disconnect_social_account/",
-  "POST /api/profile/generate_auth_token/",
-  "POST /api/profile/totp/",
   "POST /api/storage_paths/test/",
-  "POST /api/token/",
   "POST /api/users/{id}/deactivate_totp/",
-  "PUT /api/config/{id}/",
-  "PUT /api/correspondents/{id}/",
-  "PUT /api/custom_fields/{id}/",
-  "PUT /api/document_types/{id}/",
-  "PUT /api/documents/{id}/",
-  "PUT /api/groups/{id}/",
-  "PUT /api/storage_paths/{id}/",
-  "PUT /api/tags/{id}/",
-  "PUT /api/users/{id}/",
 ]
 
 [[open]]
@@ -169,7 +145,7 @@ reason = "the adapter chooses it"
 [[internal]]
 operation = "POST /api/share_link_bundles/{id}/rebuild/"
 fields = ["body:document_ids"]
-reason = "the stored bundle's documents are sent back; rebuilding with other documents is not offered (PLMCP-83)"
+reason = "the stored bundle's documents are sent back; rebuilding with other documents is excluded: Paperless does not read them (decision-99)"
 
 [[internal]]
 operation = "POST /api/mail_accounts/test/"
@@ -177,49 +153,8 @@ fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security
 reason = "the stored account is sent back; testing an unsaved account is excluded (decision-79)"
 
 [[open_fields]]
-operation = "GET /api/correspondents/"
-fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/correspondents/{id}/"
-fields = ["query:full_perms"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/custom_fields/"
-fields = ["query:id", "query:id__in", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/document_types/"
-fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/document_types/{id}/"
-fields = ["query:full_perms"]
-task = "PLMCP-83"
-
-[[open_fields]]
 operation = "GET /api/documents/"
-fields = ["query:added__day", "query:added__gt", "query:added__gte", "query:added__lt", "query:added__lte", "query:added__month", "query:added__year", "query:all", "query:archive_serial_number__gte", "query:archive_serial_number__lte", "query:checksum__icontains", "query:checksum__iendswith", "query:checksum__istartswith", "query:content__iendswith", "query:content__iexact", "query:content__istartswith", "query:correspondent__name__icontains", "query:correspondent__name__iendswith", "query:correspondent__name__iexact", "query:correspondent__name__istartswith", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:document_type__name__icontains", "query:document_type__name__iendswith", "query:document_type__name__iexact", "query:document_type__name__istartswith", "query:id", "query:modified__date__gte", "query:modified__date__lte", "query:modified__day", "query:modified__gt", "query:modified__gte", "query:modified__lt", "query:modified__lte", "query:modified__month", "query:modified__year", "query:original_filename__icontains", "query:original_filename__iendswith", "query:original_filename__iexact", "query:original_filename__istartswith", "query:search", "query:storage_path__name__icontains", "query:storage_path__name__iendswith", "query:storage_path__name__iexact", "query:storage_path__name__istartswith", "query:tags__id", "query:tags__name__icontains", "query:tags__name__iendswith", "query:tags__name__iexact", "query:tags__name__istartswith", "query:title__iendswith", "query:title__iexact", "query:title__istartswith", "query:title_content"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/documents/"
-fields = ["query:shared_by__id=false", "query:shared_by__id=true"]
-task = "PLMCP-83"
-reason = "the schema declares a boolean, Paperless takes a user id; a tool sends the id (PLMCP-25)"
-
-[[open_fields]]
-operation = "GET /api/documents/{id}/"
-fields = ["query:full_perms"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/documents/{id}/download/"
-fields = ["query:follow_formatting"]
+fields = ["query:archive_serial_number__gte", "query:archive_serial_number__lte", "query:modified__date__gte", "query:modified__date__lte", "query:original_filename__icontains"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -228,48 +163,13 @@ fields = ["query:page", "query:page_size"]
 task = "PLMCP-89"
 
 [[open_fields]]
-operation = "GET /api/documents/{id}/notes/"
-fields = ["query:id"]
-task = "PLMCP-83"
-
-[[open_fields]]
 operation = "GET /api/documents/{id}/thumb/"
 fields = ["query:version"]
 task = "PLMCP-83"
 
 [[open_fields]]
-operation = "GET /api/groups/"
-fields = ["query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
-task = "PLMCP-83"
-
-[[open_fields]]
 operation = "GET /api/share_link_bundles/"
-fields = ["query:created__date__gt", "query:created__date__gte", "query:created__date__lt", "query:created__date__lte", "query:created__day", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:created__month", "query:created__year", "query:documents", "query:expiration__date__gt", "query:expiration__date__gte", "query:expiration__date__lt", "query:expiration__date__lte", "query:expiration__day", "query:expiration__gt", "query:expiration__gte", "query:expiration__lt", "query:expiration__lte", "query:expiration__month", "query:expiration__year", "query:ordering", "query:status"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/share_links/"
-fields = ["query:created__date__gt", "query:created__date__gte", "query:created__date__lt", "query:created__date__lte", "query:created__day", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:created__month", "query:created__year", "query:expiration__date__gt", "query:expiration__date__gte", "query:expiration__date__lt", "query:expiration__date__lte", "query:expiration__day", "query:expiration__gt", "query:expiration__gte", "query:expiration__lt", "query:expiration__lte", "query:expiration__month", "query:expiration__year", "query:ordering"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/storage_paths/"
-fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering", "query:path__icontains", "query:path__iendswith", "query:path__iexact", "query:path__istartswith"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/storage_paths/{id}/"
-fields = ["query:full_perms"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/tags/"
-fields = ["query:id", "query:is_root", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/tags/{id}/"
-fields = ["query:full_perms"]
+fields = ["query:documents", "query:status"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -278,103 +178,8 @@ fields = ["query:date_created_after", "query:date_created_before", "query:is_com
 task = "PLMCP-89"
 
 [[open_fields]]
-operation = "GET /api/users/"
-fields = ["query:ordering", "query:username__iendswith", "query:username__iexact", "query:username__istartswith"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "PATCH /api/config/{id}/"
-fields = ["body:app_logo"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "PATCH /api/custom_fields/{id}/"
-fields = ["body:data_type"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "PATCH /api/documents/{id}/"
-fields = ["body:created_date", "body:remove_inbox_tags"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "PATCH /api/users/{id}/"
-fields = ["body:date_joined"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/correspondents/"
-fields = ["body:owner", "body:set_permissions"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/document_types/"
-fields = ["body:owner", "body:set_permissions"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/bulk_edit/"
-fields = ["body:from_webui"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/delete/"
-fields = ["body:from_webui"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/edit_pdf/"
-fields = ["body:from_webui"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/merge/"
-fields = ["body:from_webui"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/merge_as_versions/"
-fields = ["body:from_webui"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/post_document/"
-fields = ["body:from_webui"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/remove_password/"
-fields = ["body:from_webui"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/reprocess/"
-fields = ["body:from_webui"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/rotate/"
-fields = ["body:from_webui"]
-task = "PLMCP-83"
-
-[[open_fields]]
 operation = "POST /api/documents/{id}/notes/"
-fields = ["body:format", "query:id"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/share_link_bundles/{id}/rebuild/"
-fields = ["body:document_ids", "body:expiration_days", "body:file_version"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/storage_paths/"
-fields = ["body:owner", "body:set_permissions"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/tags/"
-fields = ["body:owner", "body:set_permissions"]
+fields = ["body:format"]
 task = "PLMCP-83"
 
 [[open_fields]]
@@ -387,11 +192,6 @@ operation = "POST /api/tasks/run/"
 fields = ["body:task_type=apply_ai_suggestions", "body:task_type=build_share_link", "body:task_type=bulk_delete", "body:task_type=bulk_update", "body:task_type=check_workflows", "body:task_type=consume_file", "body:task_type=empty_trash", "body:task_type=index_optimize", "body:task_type=mail_fetch", "body:task_type=reprocess_document"]
 task = "PLMCP-89"
 reason = "run_task offers train_classifier, sanity_check and llm_index; which of the other types Paperless lets a user start is PLMCP-89 AC 3"
-
-[[open_fields]]
-operation = "POST /api/users/"
-fields = ["body:date_joined"]
-task = "PLMCP-83"
 
 [[exclusion]]
 operation = "POST /api/bulk_edit_objects/"
@@ -669,3 +469,414 @@ fields = ["body:actions[].passwords"]
 quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-86 - Manual-triggers-and-AI-suggestions-are-written-password-removal-stays-with-the-web-UI.md"
+
+[[exclusion]]
+operation = "DELETE /api/config/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "DELETE /api/profile/totp/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/config/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/documents/{id}/preview/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/documents/{id}/share_links/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/profile/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/profile/social_account_providers/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/profile/totp/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/search/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PATCH /api/profile/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/documents/{id}/email/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/profile/disconnect_social_account/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/profile/generate_auth_token/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/profile/totp/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/token/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PUT /api/config/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PUT /api/correspondents/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PUT /api/custom_fields/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PUT /api/document_types/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PUT /api/documents/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PUT /api/groups/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PUT /api/storage_paths/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PUT /api/tags/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PUT /api/users/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/correspondents/"
+fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/correspondents/{id}/"
+fields = ["query:full_perms"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/custom_fields/"
+fields = ["query:id", "query:id__in", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/document_types/"
+fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/document_types/{id}/"
+fields = ["query:full_perms"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/documents/"
+fields = ["query:added__day", "query:added__gt", "query:added__gte", "query:added__lt", "query:added__lte", "query:added__month", "query:added__year", "query:all", "query:checksum__icontains", "query:checksum__iendswith", "query:checksum__istartswith", "query:content__iendswith", "query:content__iexact", "query:content__istartswith", "query:correspondent__name__icontains", "query:correspondent__name__iendswith", "query:correspondent__name__iexact", "query:correspondent__name__istartswith", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:document_type__name__icontains", "query:document_type__name__iendswith", "query:document_type__name__iexact", "query:document_type__name__istartswith", "query:id", "query:modified__day", "query:modified__gt", "query:modified__gte", "query:modified__lt", "query:modified__lte", "query:modified__month", "query:modified__year", "query:original_filename__iendswith", "query:original_filename__iexact", "query:original_filename__istartswith", "query:search", "query:storage_path__name__icontains", "query:storage_path__name__iendswith", "query:storage_path__name__iexact", "query:storage_path__name__istartswith", "query:tags__id", "query:tags__name__icontains", "query:tags__name__iendswith", "query:tags__name__iexact", "query:tags__name__istartswith", "query:title__iendswith", "query:title__iexact", "query:title__istartswith", "query:title_content"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/documents/"
+fields = ["query:shared_by__id=false", "query:shared_by__id=true"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+reason = "the schema declares a boolean, Paperless takes a user id; a tool sends the id (PLMCP-25)"
+
+[[exclusion]]
+operation = "GET /api/documents/{id}/"
+fields = ["query:full_perms"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/documents/{id}/download/"
+fields = ["query:follow_formatting"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/documents/{id}/notes/"
+fields = ["query:id"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/groups/"
+fields = ["query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/share_link_bundles/"
+fields = ["query:created__date__gt", "query:created__date__gte", "query:created__date__lt", "query:created__date__lte", "query:created__day", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:created__month", "query:created__year", "query:expiration__date__gt", "query:expiration__date__gte", "query:expiration__date__lt", "query:expiration__date__lte", "query:expiration__day", "query:expiration__gt", "query:expiration__gte", "query:expiration__lt", "query:expiration__lte", "query:expiration__month", "query:expiration__year", "query:ordering"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/share_links/"
+fields = ["query:created__date__gt", "query:created__date__gte", "query:created__date__lt", "query:created__date__lte", "query:created__day", "query:created__gt", "query:created__gte", "query:created__lt", "query:created__lte", "query:created__month", "query:created__year", "query:expiration__date__gt", "query:expiration__date__gte", "query:expiration__date__lt", "query:expiration__date__lte", "query:expiration__day", "query:expiration__gt", "query:expiration__gte", "query:expiration__lt", "query:expiration__lte", "query:expiration__month", "query:expiration__year", "query:ordering"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/storage_paths/"
+fields = ["query:id", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering", "query:path__icontains", "query:path__iendswith", "query:path__iexact", "query:path__istartswith"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/storage_paths/{id}/"
+fields = ["query:full_perms"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/tags/"
+fields = ["query:id", "query:is_root", "query:name__icontains", "query:name__iendswith", "query:name__iexact", "query:name__istartswith", "query:ordering"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/tags/{id}/"
+fields = ["query:full_perms"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "GET /api/users/"
+fields = ["query:ordering", "query:username__iendswith", "query:username__iexact", "query:username__istartswith"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PATCH /api/config/{id}/"
+fields = ["body:app_logo"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PATCH /api/custom_fields/{id}/"
+fields = ["body:data_type"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PATCH /api/documents/{id}/"
+fields = ["body:created_date", "body:remove_inbox_tags"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "PATCH /api/users/{id}/"
+fields = ["body:date_joined"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/correspondents/"
+fields = ["body:owner", "body:set_permissions"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/document_types/"
+fields = ["body:owner", "body:set_permissions"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/documents/bulk_edit/"
+fields = ["body:from_webui"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/documents/delete/"
+fields = ["body:from_webui"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/documents/edit_pdf/"
+fields = ["body:from_webui"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/documents/merge/"
+fields = ["body:from_webui"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/documents/merge_as_versions/"
+fields = ["body:from_webui"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/documents/post_document/"
+fields = ["body:from_webui"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/documents/remove_password/"
+fields = ["body:from_webui"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/documents/reprocess/"
+fields = ["body:from_webui"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/documents/rotate/"
+fields = ["body:from_webui"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/documents/{id}/notes/"
+fields = ["query:id"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/share_link_bundles/{id}/rebuild/"
+fields = ["body:document_ids", "body:expiration_days", "body:file_version"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/storage_paths/"
+fields = ["body:owner", "body:set_permissions"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/tags/"
+fields = ["body:owner", "body:set_permissions"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/users/"
+fields = ["body:date_joined"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
