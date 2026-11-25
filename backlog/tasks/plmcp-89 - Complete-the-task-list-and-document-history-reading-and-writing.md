@@ -1,10 +1,11 @@
 ---
 id: PLMCP-89
 title: Complete the task list and document history, reading and writing
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T12:22:03Z'
-updated_date: '2026-11-23T18:30:58Z'
+updated_date: '2026-11-25T11:25:41Z'
 labels: []
 dependencies:
   - PLMCP-91
