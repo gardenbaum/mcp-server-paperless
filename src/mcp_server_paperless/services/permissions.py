@@ -1,4 +1,4 @@
-"""Owners and grants of documents and taxonomy objects, and the users and groups they refer to.
+"""Owners and grants of documents, taxonomy and mail objects, and their users and groups.
 
 ``set_permissions`` reads the current owner and grants of every selected object, works out the
 complete new grants and sends only the objects that change. Two modes (the lists a caller leaves
@@ -18,6 +18,8 @@ groups fail before anything is sent. The objects are sent one at a time; if one 
 says which were already changed.
 """
 
+import math
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
@@ -42,11 +44,12 @@ from mcp_server_paperless.domain.permissions import (
     Principal,
     UserList,
 )
+from mcp_server_paperless.services.document_runner import OUT_OF_TIME, RUN_SECONDS
 from mcp_server_paperless.services.documents import document_link
 from mcp_server_paperless.services.principals import is_numeric, names_of, resolve_principals
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from mcp_server_paperless.domain.documents import NameOrId
     from mcp_server_paperless.domain.permissions import (
@@ -54,6 +57,7 @@ if TYPE_CHECKING:
         ObjectAccess,
         PermissionKind,
         PermissionsRequest,
+        SharedKind,
     )
     from mcp_server_paperless.domain.ports import InstanceReader, PermissionReader, PermissionWriter
     from mcp_server_paperless.services.principals import PrincipalKind
@@ -62,19 +66,46 @@ if TYPE_CHECKING:
 # Objects whose details a confirmation names; the others are counted.
 SHOWN: Final = 5
 # The taxonomy kinds whose document counts depend on who may see a document.
-COUNTED: Final[tuple[PermissionKind, ...]] = (
+COUNTED: Final[tuple[SharedKind, ...]] = (
     "tag",
     "correspondent",
     "document_type",
     "storage_path",
 )
+# The kinds that are chosen by name or id and cached.
+SHARED: Final[dict[PermissionKind, SharedKind]] = {kind: kind for kind in COUNTED}
 LABELS: Final[dict[PermissionKind, str]] = {
     "document": "document",
     "tag": "tag",
     "correspondent": "correspondent",
     "document_type": "document type",
     "storage_path": "storage path",
+    "mail_account": "mail account",
+    "mail_rule": "mail rule",
 }
+# Where the ids of objects that are chosen by id only are found.
+FINDERS: Final[dict[PermissionKind, str]] = {
+    "document": "search_documents",
+    "mail_account": "list_mail_accounts",
+    "mail_rule": "list_mail_rules",
+}
+# What a grant to change, or another owner, gives beyond the object itself.
+NOTES: Final[dict[PermissionKind, str]] = {
+    "mail_account": (
+        "Whoever may change a mail account can make Paperless send its saved password or token to "
+        "a server of their choice, at once and without storing anything, and can add rules that "
+        "import, move or delete its mail. A grant on an account is none on its rules"
+    ),
+    "mail_rule": (
+        "Whoever may change a mail rule can make it move or delete mail with the saved password of "
+        "its account, without any right on the account. The owner of a rule owns the mails it "
+        "imports whole from then on, and attachments where assign_owner_from_rule is on; without "
+        "an owner every user with the global permission to view documents sees them"
+    ),
+}
+# The kinds whose objects are read one by one, so that a call is bounded in time.
+TIMED: Final[frozenset[PermissionKind]] = frozenset(NOTES)
+FEWER: Final = "Choose fewer objects per call."
 NONE_GIVEN = "Nothing to change: no owner and no grants were given."
 NONE_GIVEN_HINT = (
     "Pass owner, clear_owner, or users or groups in view_users, view_groups, change_users or "
@@ -193,7 +224,7 @@ def _levels(viewers: Sequence[int], changers: Sequence[int]) -> dict[int, int]:
 class PermissionService:
     """Changes who owns objects and who may view or change them; lists users and groups."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 -- the ports it uses
         self,
         reader: PermissionReader,
         writer: PermissionWriter,
@@ -201,6 +232,7 @@ class PermissionService:
         instance: InstanceReader,
         *,
         web_url: str,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """Read through ``reader``, change through ``writer``.
 
@@ -215,6 +247,7 @@ class PermissionService:
         self._taxonomy: TaxonomyResolver = taxonomy
         self._instance: InstanceReader = instance
         self._web_url: str = web_url
+        self._clock: Callable[[], float] = clock
 
     async def list_users(self, *, name_contains: str | None, page: int, page_size: int) -> UserList:
         """One page of users, optionally those whose username contains ``name_contains``.
@@ -270,9 +303,10 @@ class PermissionService:
                 or groups to resolve a name. If objects before it were changed, the message
                 says so.
         """
+        until = self._clock() + RUN_SECONDS if kind in TIMED else math.inf
         owner, asked = await self._asked(request)
         ids = await self._select(kind, items)
-        found = await self._reader.get_permissions(kind, ids)
+        found = await self._read(kind, ids, until)
         if len(found) != len(ids):
             raise _unseen(kind, [n for n in ids if n not in {row.id for row in found}])
         plans = [_plan(row, asked, owner, request.mode) for row in found]
@@ -284,8 +318,29 @@ class PermissionService:
                 self._effect(kind, request.mode, changing, names, caller),
                 scope=[plan.scope for plan in changing],
             )
-        written = await self._write(kind, changing)
+        written = await self._write(kind, changing, until)
         return self._result(kind, request.mode, plans, written, names)
+
+    async def _read(
+        self, kind: PermissionKind, ids: Sequence[int], until: float
+    ) -> list[ObjectAccess]:
+        """The objects with their access; those of the ``TIMED`` kinds one by one.
+
+        Raises:
+            PaperlessMcpError: The time is over; nothing was changed.
+        """
+        if kind not in TIMED:
+            return await self._reader.get_permissions(kind, ids)
+        found: list[ObjectAccess] = []
+        for number in ids:
+            if self._clock() >= until:
+                message = (
+                    f"The objects could not be read within {RUN_SECONDS:g} seconds. Nothing was "
+                    "changed."
+                )
+                raise PaperlessMcpError(message, hint=FEWER)
+            found += await self._reader.get_permissions(kind, [number])
+        return found
 
     async def _caller(self) -> int | None:
         """The id of the Paperless user of the call; None if Paperless does not say."""
@@ -331,14 +386,17 @@ class PermissionService:
         if not 1 <= len(items) <= MAX_OBJECTS:
             message = f"Select between 1 and {MAX_OBJECTS} objects per call."
             raise Validation(message, hint="Work in several steps.")
-        if kind == "document":
-            if not all(is_numeric(item) for item in items):
-                message = "Documents are selected by id, not by title."
-                raise Validation(message, hint="Find the ids with search_documents.")
-            return list(dict.fromkeys(int(item) for item in items))
-        return list(
-            dict.fromkeys([(await self._taxonomy.resolve(kind, item)).id for item in items])
-        )
+        shared = SHARED.get(kind)
+        if shared is not None:
+            return list(
+                dict.fromkeys([(await self._taxonomy.resolve(shared, item)).id for item in items])
+            )
+        if not all(is_numeric(item) for item in items):
+            label = LABELS[kind].capitalize()
+            by = "title" if kind == "document" else "name"
+            message = f"{label}s are selected by id, not by {by}."
+            raise Validation(message, hint=f"Find the ids with {FINDERS[kind]}.")
+        return list(dict.fromkeys(int(item) for item in items))
 
     async def _names(
         self, plans: Sequence[_Plan], new: Sequence[ObjectPermissions]
@@ -359,11 +417,16 @@ class PermissionService:
             "group": await names_of(self._taxonomy, "group", sorted(groups)),
         }
 
-    async def _write(self, kind: PermissionKind, plans: Sequence[_Plan]) -> dict[int, ObjectAccess]:
+    async def _write(
+        self, kind: PermissionKind, plans: Sequence[_Plan], until: float
+    ) -> dict[int, ObjectAccess]:
         """Send the plans one at a time; forget what the resolver cached whatever happened."""
         written: dict[int, ObjectAccess] = {}
         try:
             for plan in plans:
+                if self._clock() >= until:
+                    late = PaperlessMcpError(OUT_OF_TIME, hint=FEWER)
+                    raise _rebuilt(late, _halfway(late, plan, plans, written, unknown=False))
                 try:
                     written[plan.current.id] = await self._writer.set_permissions(
                         kind, plan.current.id, _change(plan)
@@ -372,15 +435,35 @@ class PermissionService:
                     unknown = (
                         isinstance(error, UpstreamUnavailable) or type(error) is PaperlessMcpError
                     )
-                    if not written and not unknown:
+                    grants = await self._grants_kept(kind, plan, error)
+                    if not written and not unknown and not grants:
                         raise
-                    raise _rebuilt(
-                        error, _halfway(error, plan, plans, written, unknown=unknown)
-                    ) from None
+                    message = _halfway(error, plan, plans, written, unknown=unknown, grants=grants)
+                    raise _rebuilt(error, message) from None
         finally:
-            for kind_to_forget in (kind,) if kind != "document" else COUNTED:
+            for kind_to_forget in _cached(kind):
                 self._taxonomy.invalidate(kind_to_forget)
         return written
+
+    async def _grants_kept(
+        self, kind: PermissionKind, plan: _Plan, error: PaperlessMcpError
+    ) -> str:
+        """What became of the grants that were sent with an owner Paperless refused; mostly empty.
+
+        Paperless can set the grants before it refuses the owner, without a transaction.
+        """
+        if not (isinstance(error, Validation) and plan.owner_changes and plan.grants_change):
+            return ""
+        name = quoted(plan.current.name)
+        try:
+            [now] = await self._reader.get_permissions(kind, [plan.current.id])
+        except PaperlessMcpError, ValueError:
+            return f"Whether the grants of {name} were set all the same is not known."
+        if _normalised(now.permissions) == _normalised(plan.current.permissions):
+            return ""
+        if now.owner != plan.current.owner:
+            return f"The owner and the grants of {name} were changed all the same."
+        return f"The grants of {name} were set all the same; its owner was not changed."
 
     def _result(
         self,
@@ -450,26 +533,47 @@ class PermissionService:
         text = ". ".join(details)
         if len(changing) > SHOWN:
             text += f". {len(changing) - SHOWN} more would change as well"
+        if kind in NOTES and any(map(_hands_over, changing)):
+            text += f". {NOTES[kind]}"
         return f"{head}: {text}"
 
 
-def _halfway(
+def _cached(kind: PermissionKind) -> tuple[SharedKind, ...]:
+    """The kinds of taxonomy whose cached rows a change may make wrong."""
+    if kind == "document":
+        return COUNTED
+    return (SHARED[kind],) if kind in SHARED else ()
+
+
+def _hands_over(plan: _Plan) -> bool:
+    """Whether somebody who may not change the object now may then."""
+    before, after = plan.current.permissions, plan.grants
+    gains = set(after.change_users) - set(before.change_users)
+    return plan.owner_changes or bool(gains or set(after.change_groups) - set(before.change_groups))
+
+
+def _halfway(  # noqa: PLR0913 -- what a failure leaves behind
     error: PaperlessMcpError,
     plan: _Plan,
     plans: Sequence[_Plan],
     written: dict[int, ObjectAccess],
     *,
     unknown: bool,
+    grants: str = "",
 ) -> str:
     """The message of a failure among several writes: what changed and what is not known."""
     parts = [error.message]
+    if grants:
+        parts.append(grants)
     if written:
         done = listed([p.current.name for p in plans if p.current.id in written])
         parts.append(f"Permissions were already changed on {done}.")
     if unknown:
         parts.append(UNKNOWN_STATE.format(quoted(plan.current.name)))
-    else:
+    elif not grants:
         parts.append(f"{quoted(plan.current.name)} and the objects after it were not changed.")
+    elif plan is not plans[-1]:
+        parts.append("The objects after it were not changed.")
     return " ".join(parts)
 
 
@@ -497,8 +601,8 @@ def _unseen(kind: PermissionKind, missing: list[int]) -> NotFound:
     noun = "id" if len(missing) == 1 else "ids"
     message = f"No {label} with {noun} {', '.join(map(str, missing))} exists that you may see."
     hint = (
-        "Find the ids with search_documents."
-        if kind == "document"
+        f"Find the ids with {FINDERS[kind]}."
+        if kind in FINDERS
         else "Call list_taxonomy to see what exists."
     )
     return NotFound(message, hint=hint)
