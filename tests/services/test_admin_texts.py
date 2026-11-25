@@ -415,7 +415,7 @@ async def test_the_line_limits_are_inclusive_and_refused_with_a_hint() -> None:
 
 def dated(length: int) -> str:
     """A record of a log with this many characters."""
-    return "[2026-11-24 10:00:00,1] ".ljust(length, "x")
+    return "[2026-11-24 10:00:00,001] [INFO] [paperless] ".ljust(length, "x")
 
 
 async def test_the_character_limit_is_exact() -> None:

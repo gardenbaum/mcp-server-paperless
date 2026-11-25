@@ -441,7 +441,10 @@ async def test_the_logs_are_listed() -> None:
 
 async def test_the_last_lines_of_a_log_are_returned_oldest_first() -> None:
     setup = Setup()
-    setup.state.logs["mail"] = ["[2026-11-24 10:00:00,1] x", *(f"line {n}" for n in range(10))]
+    setup.state.logs["mail"] = [
+        "[2026-11-24 10:00:00,001] [INFO] [paperless.x] x",
+        *(f"line {n}" for n in range(10)),
+    ]
 
     found = await setup.service.get_log("mail", lines=3)
 
@@ -457,20 +460,20 @@ async def test_the_last_lines_of_a_log_are_returned_oldest_first() -> None:
 async def test_log_lines_hold_no_credentials_of_the_urls_paperless_called() -> None:
     setup = Setup()
     setup.state.logs["paperless"] = [
-        "[2026-11-24 10:00:00,123] Webhook sent to https://user:p w@h.example/x",
-        "[2026-11-24 10:00:00,124] Error for url 'https://user:pw@h.example/x'",
-        "[2026-11-24 10:00:00,125] mail from a@b.example: https://h.example",
-        "[2026-11-24 10:00:00,126] sent to https://user:p",
+        "[2026-11-24 10:00:00,123] [INFO] [paperless] Webhook sent to https://user:p w@h.example/x",
+        "[2026-11-24 10:00:00,124] [INFO] [paperless.x] Error for url 'https://user:pw@h.example/x'",
+        "[2026-11-24 10:00:00,125] [INFO] [paperless.x] mail from a@b.example: https://h.example",
+        "[2026-11-24 10:00:00,126] [INFO] [paperless.x] sent to https://user:p",
         "w@h.example/x",
     ]
 
     found = await setup.service.get_log("paperless", lines=5)
 
     assert found.lines == (
-        "[2026-11-24 10:00:00,123] Webhook sent to a URL that is not shown",
-        "[2026-11-24 10:00:00,124] Error for url 'https://h.example/x'",
-        "[2026-11-24 10:00:00,125] mail from a@b.example: https://h.example",
-        "[2026-11-24 10:00:00,126] sent to a URL that is not shown",
+        "[2026-11-24 10:00:00,123] [INFO] [paperless] Webhook sent to a URL that is not shown",
+        "[2026-11-24 10:00:00,124] [INFO] [paperless.x] Error for url 'https://h.example/x'",
+        "[2026-11-24 10:00:00,125] [INFO] [paperless.x] mail from a@b.example: https://h.example",
+        "[2026-11-24 10:00:00,126] [INFO] [paperless.x] sent to a URL that is not shown",
         "a URL that is not shown",
     )
     assert found.note == NOTE.format(4)
@@ -503,7 +506,12 @@ async def test_log_lines_hold_no_answer_of_a_mail_server_to_a_login() -> None:
     assert "pa55w0rd" not in whole.model_dump_json()
 
 
-CUT_SECRET = ["[2026-11-24 10:00:00,1] to https://user:se", "cr", "et@h.example/x", "end"]
+CUT_SECRET = [
+    "[2026-11-24 10:00:00,001] [INFO] [paperless.x] to https://user:se",
+    "cr",
+    "et@h.example/x",
+    "end",
+]
 
 
 @pytest.mark.decision("decision-66")
@@ -513,12 +521,14 @@ async def test_a_window_that_starts_inside_a_record_shows_no_rest_of_a_password(
     lines: int, before: int
 ) -> None:
     setup = Setup()
-    setup.state.logs["paperless"] = ["[2026-11-24 09:00:00,1] a"] * before + CUT_SECRET
+    setup.state.logs["paperless"] = [
+        "[2026-11-24 09:00:00,001] [INFO] [paperless.x] a"
+    ] * before + CUT_SECRET
 
     found = await setup.service.get_log("paperless", lines=lines)
 
     hidden = "a URL that is not shown"
-    whole = (f"[2026-11-24 10:00:00,1] to {hidden}", hidden, hidden, "end")
+    whole = (f"[2026-11-24 10:00:00,001] [INFO] [paperless.x] to {hidden}", hidden, hidden, "end")
     assert found.lines == whole[-lines:]
     assert (found.returned_lines, found.truncated) == (lines, False)
     note = NOTE.format(lines - 1)
@@ -553,7 +563,7 @@ async def test_a_log_without_credentials_has_no_note() -> None:
 async def test_a_log_over_the_character_limit_keeps_the_newest_lines() -> None:
     setup = Setup()
     setup.state.logs["mail"] = [
-        "[2026-11-24 10:00:00,1] x",
+        "[2026-11-24 10:00:00,001] [INFO] [paperless.x] x",
         *(f"{n:04d} " + "x" * 995 for n in range(50)),
     ]
 
@@ -567,7 +577,9 @@ async def test_a_log_over_the_character_limit_keeps_the_newest_lines() -> None:
 
 async def test_a_single_line_over_the_limit_is_cut_from_the_front() -> None:
     setup = Setup()
-    setup.state.logs["mail"] = ["[2026-11-24 10:00:00,1] " + "a" * (MAX_LOG_CHARS * 2) + "END"]
+    setup.state.logs["mail"] = [
+        "[2026-11-24 10:00:00,001] [INFO] [paperless.x] " + "a" * (MAX_LOG_CHARS * 2) + "END"
+    ]
 
     found = await setup.service.get_log("mail", lines=5)
 
