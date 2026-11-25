@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:39Z'
-updated_date: '2026-11-25T14:08:06Z'
+updated_date: '2026-11-25T14:56:34Z'
 labels:
   - admin
 dependencies:
@@ -55,6 +55,8 @@ Red first (commit 'red'), then green. 34 hand mutants on a git archive copy: 2 s
 Green: every check of #168; full hosted E2E of the stack 45618698199.
 
 Review: M3 (at least), L1 to L4, L6, L8 and the Codex thread (a broken connection counts as a lost answer) fixed, tests first (14 red); 12 hand mutants, all killed. M2 (binding confirm=true for clients without dialogs) was put to the owner; AC 2 is not narrowed and is unchecked until it is built.
+
+Owner, 2026-11-25, as relayed by the main agent: 'alles wie von dir empfohlen' (everything as you recommend). (1) The sizes of PLMCP-89 are accepted: tasks 21.2 KB, admin 31.2 KB, get_document +283 bytes, core +434 bytes. (2) M2 variant A is built: confirm=true for all_unacknowledged counts only with the preview's expected value. acknowledge_tasks 1,968 to 2,197 bytes (+229 of about 245). Red first at service and tool level (48 red), E2E written before its first hosted run; 14 hand mutants, all killed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
