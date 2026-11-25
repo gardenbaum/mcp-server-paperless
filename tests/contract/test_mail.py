@@ -44,6 +44,7 @@ pytestmark = [
 ]
 LIST_ACCOUNTS, GET_ACCOUNT = "MailReader.list_mail_accounts", "MailReader.get_mail_account"
 LIST_RULES, GET_RULE = "MailReader.list_mail_rules", "MailReader.get_mail_rule"
+PAGE_RULES = "MailReader.list_mail_rule_page"
 LIST_PROCESSED = "MailReader.list_processed_mail"
 DELETE_PROCESSED = "MailWriter.delete_processed_mail"
 GET_PROCESSED = "MailReader.get_processed_mail"
@@ -335,6 +336,8 @@ async def test_a_user_without_mail_permissions_is_denied_everywhere(backend: Bac
     with pytest.raises(PermissionDenied):
         _ = await blind.mail.list_mail_rules()
     with pytest.raises(PermissionDenied):
+        _ = await blind.mail.list_mail_rule_page(page=1, page_size=1)
+    with pytest.raises(PermissionDenied):
         _ = await blind.mail.get_mail_rule(1)
     with pytest.raises(PermissionDenied):
         _ = await blind.mail.list_processed_mail(
@@ -507,6 +510,26 @@ async def test_rules_are_listed_by_their_order(backend: Backend, mail: Mail) -> 
     ]
 
     assert listed == [early.id, late.id]
+
+
+@pytest.mark.contract(PAGE_RULES)
+async def test_rules_are_listed_page_by_page_by_their_order(backend: Backend, mail: Mail) -> None:
+    account = await mail.account()
+    late = await mail.rule(account.id, order=900_002)
+    early = await mail.rule(account.id, order=900_001)
+    reader = backend.admin.mail
+
+    first = await reader.list_mail_rule_page(page=1, page_size=1)
+    assert (len(first.rules), first.next_page) == (1, 2)
+    # The two have the highest numbers, so they are on the last pages.
+    ours: list[int] = []
+    for page in (first.count - 1, first.count):
+        found = await reader.list_mail_rule_page(page=page, page_size=1)
+        ours += [rule.id for rule in found.rules]
+    assert found.next_page is None
+    assert ours == [early.id, late.id]
+    with pytest.raises(NotFound, match="does not exist"):
+        _ = await reader.list_mail_rule_page(page=9999, page_size=100)
 
 
 @pytest.mark.contract(GET_RULE)

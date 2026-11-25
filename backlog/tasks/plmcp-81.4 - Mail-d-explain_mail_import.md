@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:57Z'
-updated_date: '2026-11-25T13:25:29Z'
+updated_date: '2026-11-25T13:49:30Z'
 labels:
   - mail
 dependencies:
@@ -57,4 +57,6 @@ Second review, tests first: another mail's line with the same file name is left 
 Codex P2 on #163: fetch tasks beyond the five that are read stand in not_checked and make complete false, test first.
 
 Owner, 2026-11-25: "Alles wie empfohlen" (everything as recommended): fetches before the newest five are named in not_checked and leave complete as it is; test first. This replaces the note before. Full E2E 45615787192 on 4254397 is green in all ten jobs.
+
+Codex P2 on #163, test first: the rules are read page by page (MailReader.list_mail_rule_page, new), so no page is asked for 40 seconds after the call began; unread rules stand in not_checked, make complete false, and are not said to be missing.
 <!-- SECTION:NOTES:END -->

@@ -59,6 +59,8 @@ EXPIRED: Final = (
     "The access token has expired: Paperless renews it at the next fetch, and fetches nothing if "
     "that fails."
 )
+# Rules that are read: what one aggregated list may hold.
+MAX_RULES: Final = 2000
 # Rows of each kind in one answer, and its length.
 MAX_PROCESSED: Final = 20
 MAX_TASKS: Final = 5
@@ -262,15 +264,21 @@ def _found(mail: MailFacts, row: ProcessedMail) -> bool:
     return row.subject.strip().casefold() == wanted.casefold()
 
 
-def _message(rules: Sequence[MailRule] | None, chosen: Sequence[MailRule], skips: int) -> str:
+def _message(
+    rules: Sequence[MailRule] | None, chosen: Sequence[MailRule], skips: int, *, unread: bool
+) -> str:
     if rules is None:
         said = "The rules could not be read, so nothing is said of them."
+    elif not chosen and unread:
+        said = "None of the rules that were read is meant."
     elif not chosen:
         said = "You see no rule of this account: without an enabled one Paperless fetches nothing."
     elif not any(rule.enabled for rule in chosen):
         said = "None of these rules is enabled, so they fetch nothing."
     else:
         said = "A check that says no most likely keeps the mail out; ok is no promise."
+    if rules is not None and unread:
+        said += " Not all rules could be read."
     if skips:
         fetches, it = ("1 fetch was", "it") if skips == 1 else (f"{skips} fetches were", "them")
         what = "it" if skips == 1 else "they"
@@ -367,10 +375,10 @@ class MailExplanations:
         asking = _Asking(self._clock)
         now = self._now()
         account = await self._reader.get_mail_account(account_id)
-        rules = await asking.ask("the rules", self._reader.list_mail_rules)
+        rules, unread = await self._rules(asking)
         mine = [rule for rule in rules or () if rule.account_id == account_id]
         chosen = [rule for rule in mine if rule_id in {None, rule.id}]
-        if rules is not None and rule_id is not None and not chosen:
+        if rule_id is not None and not chosen and not unread:
             message = f"Account {account_id} has no rule {rule_id} that you may see."
             raise Validation(message, hint="list_mail_rules shows the rules of the account.")
         rows = await self._rows(chosen, mail, asking)
@@ -378,7 +386,7 @@ class MailExplanations:
         logs, since, skips = await self._logs(account, chosen, mail, asking)
         return _bounded(
             MailExplanation(
-                message=_message(rules, chosen, skips),
+                message=_message(rules, chosen, skips, unread=unread),
                 account=tuple(_account_notes(account, now)),
                 rules=tuple(rule_checks(rule, mine, rows, mail, now) for rule in chosen),
                 processed=_records(rows, asking),
@@ -390,6 +398,26 @@ class MailExplanations:
                 not_checked=(*_short(asking.gaps), *asking.notes),
             )
         )
+
+    async def _rules(self, asking: _Asking) -> tuple[list[MailRule] | None, bool]:
+        """The rules the user may see (None if none could be read), and whether some are unread."""
+        rules: dict[int, MailRule] = {}
+        count = 0
+        for page in range(1, MAX_RULES // PAGE + 1):
+            found = await asking.ask(
+                f"the rules after the first {len(rules)}" if rules else "the rules",
+                lambda page=page: self._reader.list_mail_rule_page(page=page, page_size=PAGE),
+            )
+            if found is None:
+                return list(rules.values()) or None, True
+            rules |= {rule.id: rule for rule in found.rules}
+            count = found.count
+            if found.next_page is None:
+                break
+        unread = len(rules) < count
+        if unread:
+            asking.gaps.append(f"the rules: only {len(rules)} of {count} were read")
+        return list(rules.values()), unread
 
     async def _rows(
         self, rules: Sequence[MailRule], mail: MailFacts, asking: _Asking

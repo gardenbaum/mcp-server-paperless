@@ -245,6 +245,16 @@ class ProcessedMail(BaseModel):
     error: str | None
 
 
+class MailRulePage(BaseModel):
+    """One page of mail rules as the port reads it."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    count: int
+    next_page: int | None
+    rules: tuple[MailRule, ...]
+
+
 class ProcessedMailPage(BaseModel):
     """One page of processed mail as the port reads it."""
 
