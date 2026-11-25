@@ -4,7 +4,7 @@ The rows of `refetch` are those of the table in the design of PLMCP-81 (2.2); th
 PLMCP-81.2 prove them against a mail server.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Final, final, override
 
 import pytest
@@ -33,6 +33,7 @@ from mcp_server_paperless.services.processed_mail import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from mcp_server_paperless.domain.documents import SignedIn
     from mcp_server_paperless.domain.mail import (
         MailRule,
         ProcessedMail,
@@ -763,3 +764,99 @@ async def test_after_forty_seconds_nothing_is_started() -> None:
     report = await service.delete([1, 2], dry_run=False, confirm=True)
     assert outcomes(report) == [(1, "unknown"), (2, "unknown")]
     assert "40 seconds have passed." in report.message
+
+
+@pytest.mark.decision("decision-83")
+async def test_three_records_that_stay_are_named_and_a_swapped_fourth_is_asked_again() -> None:
+    setup = Setup()
+    setup.rule()
+    for _ in range(4):
+        setup.mail(status="FAILED")
+
+    async def asked() -> ConfirmationRequired:
+        with pytest.raises(ConfirmationRequired) as raised:
+            _ = await setup.delete(1, confirm=False)
+        return raised.value
+
+    assert "kept out by the records 2, 3, 4 with its uid" in (await asked()).message
+    setup.mail(status="FAILED")
+    before = await asked()
+    setup.state.processed_mail[-1].id = 50
+    after = await asked()
+
+    assert "2, 3, 4 and 1 more with its uid" in before.message
+    assert before.message == after.message
+    assert before.fingerprint != after.fingerprint
+
+
+@pytest.mark.decision("decision-83")
+async def test_records_of_another_rule_keep_no_mail_out() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.rule(id=2, name="Other")
+    setup.mail(status="FAILED")
+    setup.mail(status="FAILED", rule=2)
+    setup.mail(status="FAILED", rule=2)
+
+    text = (await setup.delete(1, 2, dry_run=True)).message
+
+    assert text.count("kept out by") == 1
+    assert "2 'Invoice' (received 2026-11-13 12:00 UTC, rule 'Other', id 2; kept out" in text
+
+
+@pytest.mark.decision("decision-83")
+async def test_the_time_a_mail_arrived_is_said_in_utc() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.mail(received=DAY.astimezone(timezone(timedelta(hours=2))))
+
+    assert "(received 2026-11-10 08:00 UTC," in (await setup.delete(1, dry_run=True)).message
+
+
+@pytest.mark.decision("decision-83")
+async def test_nothing_is_sent_when_the_last_read_took_too_long() -> None:
+    setup = Setup()
+    setup.rule()
+    failed_mails(setup)
+
+    @final
+    class Slow(FakePaperless):
+        @override
+        async def get_signed_in(self) -> SignedIn | None:
+            setup.now += 40
+            return await super().get_signed_in()
+
+    fake = Slow(setup.state, user=ADMIN[0])
+    service = ProcessedMailService(fake, fake, fake, clock=lambda: setup.now)
+    with pytest.raises(PaperlessMcpError, match="Nothing was deleted"):
+        _ = await service.delete([1], dry_run=False, confirm=True)
+
+
+@pytest.mark.decision("decision-83")
+@pytest.mark.parametrize(
+    ("error", "reads"),
+    [(UpstreamTimeout("silent"), 2), (UpstreamUnavailable("slow down", status=429), 1)],
+)
+async def test_reading_again_ends_when_paperless_is_silent_or_asks_for_less(
+    error: PaperlessMcpError, reads: int
+) -> None:
+    setup = Setup()
+    setup.rule()
+    failed_mails(setup, 4)
+    after: list[int] = []
+
+    @final
+    class Ending(FakePaperless):
+        @override
+        async def get_processed_mail(self, mail_id: int) -> ProcessedMail:
+            if not self.state.processed_mail:
+                after.append(mail_id)
+                raise error
+            return await super().get_processed_mail(mail_id)
+
+    fake = Ending(setup.state, user=ADMIN[0], allow_writes=True)
+    service = ProcessedMailService(fake, fake, fake, clock=lambda: 0.0)
+    report = await service.delete([1, 2, 3, 4], dry_run=False, confirm=True)
+
+    assert len(after) == reads
+    assert {outcome for _, outcome in outcomes(report)} == {"unknown"}
