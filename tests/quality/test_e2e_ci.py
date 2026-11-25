@@ -436,6 +436,7 @@ HOSTED_SECONDS = {
     "tests/e2e/test_text_edits.py": 61,
     "tests/contract/test_document_upload.py": 60,
     "tests/e2e/test_upload_duplicates.py": 60,
+    "tests/contract/test_mail_steps.py": 58,
     "tests/e2e/test_update_document.py": 58,
     "tests/e2e/test_toolset_guide.py": 54,
     "tests/e2e/test_bulk_limits.py": 52,
