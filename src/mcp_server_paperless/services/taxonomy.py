@@ -10,6 +10,7 @@ candidates or the closest names.
 import difflib
 import time
 import unicodedata
+from collections import Counter
 from typing import TYPE_CHECKING
 
 from mcp_server_paperless.domain.choices import Choice, Question, contradicts, picked
@@ -43,11 +44,13 @@ def pick(
     value: str | int,
     *,
     listing: str | None = None,
+    role: str = "",
 ) -> TaxonomyItem:
     """The one item of ``items`` that ``value`` names (rules in the module docstring).
 
     ``kind`` names the sort of object in messages; ``listing`` is the tool call that lists them
-    (default: ``list_taxonomy`` for ``kind``), for objects that taxonomy does not hold.
+    (default: ``list_taxonomy`` for ``kind``), for objects that taxonomy does not hold. ``role``
+    is the argument that holds ``value``, for the user who is asked: a pick counts for it only.
 
     Raises:
         NotFound: No item has the id or name; the hint lists the closest names.
@@ -74,14 +77,9 @@ def pick(
     exact = [item for item in items if item.name == text]
     folded = [item for item in items if fold(item.name) == fold(text)]
     for matches in (exact, folded):
-        question = Question(f"{label}s", text, tuple(map(_choice, matches)))
+        question = Question(f"{label}s", text, tuple(map(_choice, matches)), role)
         if len(matches) == 1:
-            other = contradicts(question)
-            if other is not None:
-                message = (
-                    f"The {label} the user picked (id {other}) does not match {text!r} any more."
-                )
-                raise Conflict(message, hint="Nothing was changed. Read the names again and ask.")
+            _not_contradicted(question, label)
             return matches[0]
         if matches:
             answer = picked(question)
@@ -91,8 +89,28 @@ def pick(
             candidates = ", ".join(f"{item.name!r} (id {item.id})" for item in matches)
             message = f"{len(matches)} {label}s match {text!r}: {candidates}."
             raise Ambiguous(message, hint="Pass the id of the one you mean.", question=question)
+    _not_contradicted(Question(f"{label}s", text, (), role), label)
     message = f"No {label} is named {text!r}."
     raise NotFound(message, hint=_suggest(items, text, call))
+
+
+def names_apart(rows: Sequence[TaxonomyItem]) -> dict[int, str]:
+    """The quoted names by id; with the id where another row would be shown alike."""
+    shown = {row.id: quoted(row.name) for row in rows}
+    times = Counter(shown.values())
+    return {n: f"{text} (id {n})" if times[text] > 1 else text for n, text in shown.items()}
+
+
+def _not_contradicted(left: Question, label: str) -> None:
+    """Refuse what is left of the matches if the user picked another one.
+
+    Raises:
+        Conflict: They did.
+    """
+    other = contradicts(left)
+    if other is not None:
+        message = f"The {label} the user picked (id {other}) does not match {left.word!r} any more."
+        raise Conflict(message, hint="Nothing was changed. Read the names again and ask.")
 
 
 def pick_option(
@@ -120,8 +138,8 @@ def pick_option(
 
 def _choice(item: TaxonomyItem) -> Choice:
     count = item.document_count
-    used = "" if count is None else f", {count} document{'' if count == 1 else 's'}"
-    return Choice(str(item.id), f"{quoted(item.name)} (id {item.id}{used})", item.owner)
+    used = "" if count is None else f"{count} document{'' if count == 1 else 's'}"
+    return Choice(str(item.id), f"{quoted(item.name)} (id {item.id})", item.owner, used)
 
 
 def _suggest(items: Sequence[TaxonomyItem], text: str, call: str) -> str:
@@ -189,9 +207,11 @@ class TaxonomyResolver:
         needle = fold(name_contains)
         return [row for row in rows if needle in fold(row.name)]
 
-    async def resolve(self, kind: TaxonomyKind, value: str | int) -> TaxonomyItem:
+    async def resolve(
+        self, kind: TaxonomyKind, value: str | int, *, role: str = ""
+    ) -> TaxonomyItem:
         """The object of ``kind`` that ``value`` (an id or a name) names; see ``pick``."""
-        return pick(kind, await self.items(kind), value)
+        return pick(kind, await self.items(kind), value, role=role)
 
     def invalidate(self, kind: TaxonomyKind) -> None:
         """Forget ``kind`` for every credential: a write can change what each user sees."""

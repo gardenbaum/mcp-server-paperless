@@ -210,7 +210,7 @@ async def resolve_values(
     """
     found: dict[int, tuple[TaxonomyItem, JsonValue]] = {}
     for key, value in values.items():
-        item = await taxonomy.resolve("custom_field", key)
+        item = await taxonomy.resolve("custom_field", key, role="custom fields")
         if item.id in found:
             message = f"Custom field {item.name!r} is given twice."
             raise Validation(message, hint="Name each field once, by name or by id.")

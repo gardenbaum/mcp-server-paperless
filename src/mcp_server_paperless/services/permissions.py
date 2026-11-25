@@ -31,6 +31,7 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     UpstreamUnavailable,
     Validation,
+    first_of,
     listed,
     quoted,
 )
@@ -49,6 +50,7 @@ from mcp_server_paperless.services.access import access_view, groups_of, owner_i
 from mcp_server_paperless.services.document_runner import OUT_OF_TIME, RUN_SECONDS
 from mcp_server_paperless.services.documents import document_link, known_items
 from mcp_server_paperless.services.principals import is_numeric, names_of, resolve_principals
+from mcp_server_paperless.services.taxonomy import names_apart
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -393,8 +395,11 @@ class PermissionService:
         names = await self._names(plans, [plan.grants for plan in changing])
         if changing and not confirm:
             caller = await self._caller()
+            shared = SHARED.get(kind)
+            shown = names_apart(await self._taxonomy.items(shared)) if shared else {}
+            titled = [(p, shown.get(p.current.id, quoted(p.current.name))) for p in changing]
             ConfirmationRequired.require(
-                self._effect(kind, request.mode, changing, names, caller),
+                self._effect(kind, request.mode, titled, names, caller),
                 scope=[plan.scope for plan in changing],
             )
         written = await self._write(kind, changing, until)
@@ -434,29 +439,29 @@ class PermissionService:
         if request.owner is not None and request.clear_owner:
             message = "Give owner or clear_owner, not both."
             raise Validation(message, hint="clear_owner=true removes the owner.")
-        lists: tuple[tuple[PrincipalKind, list[NameOrId] | None], ...] = (
-            ("user", request.view_users),
-            ("group", request.view_groups),
-            ("user", request.change_users),
-            ("group", request.change_groups),
+        lists: tuple[tuple[PrincipalKind, str, list[NameOrId] | None], ...] = (
+            ("user", "view users", request.view_users),
+            ("group", "view groups", request.view_groups),
+            ("user", "change users", request.change_users),
+            ("group", "change groups", request.change_groups),
         )
         owner_given = request.owner is not None or request.clear_owner
-        if not owner_given and all(values is None for _, values in lists):
+        if not owner_given and all(values is None for *_, values in lists):
             raise Validation(NONE_GIVEN, hint=NONE_GIVEN_HINT)
-        if not owner_given and request.mode == "merge" and not any(values for _, values in lists):
+        if not owner_given and request.mode == "merge" and not any(values for *_, values in lists):
             raise Validation(NO_PRINCIPALS, hint=NONE_GIVEN_HINT)
         owner: _Owner | None = None
         if request.owner is not None:
-            who = await resolve_principals(self._taxonomy, "user", [request.owner])
+            who = await resolve_principals(self._taxonomy, "user", [request.owner], role="owner")
             owner = (who.ids[0],)
         if request.clear_owner:
             owner = (None,)
         resolved: list[frozenset[int] | None] = []
-        for kind, values in lists:
+        for kind, role, values in lists:
             if values is None:
                 resolved.append(None)
             else:
-                who = await resolve_principals(self._taxonomy, kind, values)
+                who = await resolve_principals(self._taxonomy, kind, values, role=role)
                 resolved.append(frozenset(who.ids))
         return owner, _Asked(*resolved)
 
@@ -477,7 +482,7 @@ class PermissionService:
                     [
                         int(item)
                         if ids_alone and is_numeric(item)
-                        else (await self._taxonomy.resolve(shared, item)).id
+                        else (await self._taxonomy.resolve(shared, item, role="items")).id
                         for item in items
                     ]
                 )
@@ -604,27 +609,29 @@ class PermissionService:
     def _effect(
         kind: PermissionKind,
         mode: Mode,
-        changing: Sequence[_Plan],
+        changing: Sequence[tuple[_Plan, str]],
         names: dict[PrincipalKind, dict[int, str]],
         caller: int | None,
     ) -> str:
         """What confirming would do, naming the first ``SHOWN`` objects and counting the rest."""
         label = LABELS[kind]
         verb = (
-            "replace" if mode == "replace" and any(p.grants_change for p in changing) else "change"
+            "replace"
+            if mode == "replace" and any(p.grants_change for p, _ in changing)
+            else "change"
         )
         subject = _plural(len(changing), label)
-        head = f"{verb} the permissions of {subject} {listed([p.current.name for p in changing])}"
+        head = f"{verb} the permissions of {subject} {first_of([title for _, title in changing])}"
         several = len(changing) > 1
         details: list[str] = []
-        for plan in changing[:SHOWN]:
+        for plan, title in changing[:SHOWN]:
             parts = _delta(plan, names, kind, caller)
-            prefix = f"{quoted(plan.current.name)}: " if several else ""
+            prefix = f"{title}: " if several else ""
             details.append(prefix + "; ".join(parts))
         text = ". ".join(details)
         if len(changing) > SHOWN:
             text += f". {len(changing) - SHOWN} more would change as well"
-        if kind in NOTES and any(map(_hands_over, changing)):
+        if kind in NOTES and any(_hands_over(plan) for plan, _ in changing):
             text += f". {NOTES[kind]}"
         return f"{head}: {text}"
 

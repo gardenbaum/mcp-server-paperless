@@ -106,7 +106,7 @@ class AccountAdmin:
         return [known[number] for number in ids]
 
     async def _one(self, kind: PrincipalKind, value: NameOrId) -> int:
-        found = await resolve_principals(self._taxonomy, kind, [value])
+        found = await resolve_principals(self._taxonomy, kind, [value], role=kind)
         return found.ids[0]
 
     async def _detail(self, record: UserRecord) -> UserDetail:
@@ -187,7 +187,7 @@ class AccountAdmin:
         group_ids = (
             None
             if groups is None
-            else (await resolve_principals(self._taxonomy, "group", groups)).ids
+            else (await resolve_principals(self._taxonomy, "group", groups, role="groups")).ids
         )
         parts = [
             text
@@ -259,7 +259,9 @@ class AccountAdmin:
         who = quoted(current.username)
         group_ids = None
         if groups is not None:
-            group_ids = (await resolve_principals(self._taxonomy, "group", groups)).ids
+            group_ids = (
+                await resolve_principals(self._taxonomy, "group", groups, role="groups")
+            ).ids
         given: dict[str, object] = {
             "username": username,
             "email": email,

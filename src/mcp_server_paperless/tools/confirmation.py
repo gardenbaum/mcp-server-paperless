@@ -249,9 +249,9 @@ async def _form(
     owners = {choice.owner for choice in question.choices if choice.owner is not None}
     names: Mapping[int, str] = await picker.owners(owners) if owners else {}
     titles = {
-        choice.value: choice.title
+        choice.value: choice.shown
         if choice.owner is None
-        else f"{choice.title}, owner {names.get(choice.owner, f'#{choice.owner}')}"
+        else f"{choice.shown}, owner {names.get(choice.owner, f'#{choice.owner}')}"
         for choice in question.choices
     }
     options: dict[str, object] = (
@@ -264,9 +264,10 @@ async def _form(
         "properties": {CHOICE: {"type": "string", "title": "Which one?", **options}},
         "required": [CHOICE],
     }
+    role = f" ({question.role})" if question.role else ""
     message = (
-        f"{picker.title}: {len(question.choices)} {question.what} match {quoted(question.word)}. "
-        "Which one is meant? Nothing was changed."
+        f"{picker.title}: {len(question.choices)} {question.what} match {quoted(question.word)}"
+        f"{role}. Which one is meant? Nothing was changed."
     )
     return message, schema
 

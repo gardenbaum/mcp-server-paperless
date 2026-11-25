@@ -21,13 +21,20 @@ class Choice:
 
     Attributes:
         value: What identifies it.
-        title: What the user sees; ``owner`` is named after it.
-        owner: The id of the user who owns it, if any.
+        title: What the user sees first.
+        owner: The id of the user who owns it, if any; named last.
+        detail: What else the user sees; it may change without being another choice.
     """
 
     value: str
     title: str
     owner: int | None = None
+    detail: str = ""
+
+    @property
+    def shown(self) -> str:
+        """What the user sees before the owner."""
+        return f"{self.title}, {self.detail}" if self.detail else self.title
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,22 +64,26 @@ class Question:
         what: What the matches are, in the plural ("tags").
         word: What was asked for.
         choices: The matches, all of them.
+        role: The argument that holds the word, as the user may read it.
+        about: The id of the object the matches belong to, if they do.
     """
 
     what: str
     word: str
     choices: tuple[Choice, ...]
+    role: str = ""
+    about: str = ""
 
     @property
     def topic(self) -> str:
         """Identifies what was asked, whatever matches it."""
-        return _hashed((self.what, self.word))
+        return _hashed((self.what, self.word, self.role, self.about))
 
     @property
     def fingerprint(self) -> str:
-        """Identifies the question: with another word, kind or match it is another one."""
+        """Identifies the question: with another topic or match it is another one."""
         choices = [(c.value, c.title, c.owner) for c in self.choices]
-        return _hashed((self.what, self.word, choices))
+        return _hashed((self.topic, choices))
 
     def picking(self, value: str) -> Pick:
         """``value`` as the answer to this question."""

@@ -43,8 +43,11 @@ NOT_PICKED: Final = (
 )
 
 
-def doubled() -> FakeState:
-    """`world()` with two objects of every kind that "TWIN" matches."""
+def doubled(*, equal: bool = False) -> FakeState:
+    """`world()` with two objects of every kind that "TWIN" matches.
+
+    With `equal` those Paperless lets have one name (by owner) have one.
+    """
     state = world()
     for number, name in zip((FIRST, SECOND), NAMES, strict=True):
         state.tags.append(FakeTag(id=number, name=name))
@@ -102,6 +105,11 @@ def doubled() -> FakeState:
             ),
         )
     )
+    if equal:
+        kinds = (state.tags, state.correspondents, state.document_types, state.storage_paths)
+        for found in (f for kind in (*kinds, state.saved_views) for f in kind):
+            if found.id in {FIRST, SECOND}:
+                found.name, found.owner = NAMES[0], found.id
     state.workflows.append(
         Workflow(
             id=60,

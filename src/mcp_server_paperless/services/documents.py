@@ -268,12 +268,14 @@ def readable(value: JsonValue, field: TaxonomyItem | None) -> JsonValue:
     return f"{money[1]} {money[2]}" if money else value
 
 
-async def owner_id(taxonomy: TaxonomyResolver, value: NameOrId | None) -> int | None:
+async def owner_id(
+    taxonomy: TaxonomyResolver, value: NameOrId | None, *, role: str = "owner"
+) -> int | None:
     """The user id ``value`` names. Paperless takes any owner id; only a username needs the list."""
     if isinstance(value, int) or (value and value.strip().isascii() and value.strip().isdigit()):
         return int(value)
     try:
-        return None if value is None else (await taxonomy.resolve("user", value)).id
+        return None if value is None else (await taxonomy.resolve("user", value, role=role)).id
     except PermissionDenied as error:
         hint = "Pass the owner's user id instead of the username."
         raise PermissionDenied(error.message, hint=hint) from None
@@ -370,12 +372,18 @@ class DocumentService:
 
     async def _ids(self, names: NameFilters) -> dict[str, object]:
         async def one(kind: TaxonomyKind, value: NameOrId | None) -> int | None:
-            return None if value is None else (await self._taxonomy.resolve(kind, value)).id
+            if value is None:
+                return None
+            role = f"filters {kind.replace('_', ' ')}"
+            return (await self._taxonomy.resolve(kind, value, role=role)).id
 
-        async def tags(values: tuple[NameOrId, ...]) -> tuple[int, ...]:
-            return tuple([(await self._taxonomy.resolve("tag", value)).id for value in values])
+        async def tags(values: tuple[NameOrId, ...], which: str) -> tuple[int, ...]:
+            role = f"filters tags {which}"
+            found = [await self._taxonomy.resolve("tag", value, role=role) for value in values]
+            return tuple(tag.id for tag in found)
 
-        tags_all, tags_none = await tags(names.tags_all), await tags(names.tags_none)
+        tags_all = await tags(names.tags_all, "all")
+        tags_none = await tags(names.tags_none, "none")
         required = dict(zip(tags_all, names.tags_all, strict=True))
         both = [required[tag] for tag in tags_none if tag in required]
         if both:
@@ -387,12 +395,12 @@ class DocumentService:
             "storage_path": await one("storage_path", names.storage_path),
             "owner": await self._owner(names.owner),
             "tags_all": tags_all,
-            "tags_any": await tags(names.tags_any),
+            "tags_any": await tags(names.tags_any, "any"),
             "tags_none": tags_none,
         }
 
     async def _owner(self, value: NameOrId | None) -> int | None:
-        return await owner_id(self._taxonomy, value)
+        return await owner_id(self._taxonomy, value, role="filters owner")
 
     async def _known(self, kind: TaxonomyKind) -> dict[int, TaxonomyItem]:
         return await known_items(self._taxonomy, kind)

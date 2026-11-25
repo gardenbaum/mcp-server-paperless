@@ -64,7 +64,8 @@ ERROR = (
     "Hint: Pass the id of the one you mean."
 )
 QUESTION = (
-    "Update document: 2 correspondents match 'TWIN'. Which one is meant? Nothing was changed."
+    "Update document: 2 correspondents match 'TWIN' (correspondent). Which one is meant? Nothing "
+    "was changed."
 )
 
 
@@ -127,8 +128,8 @@ async def test_the_form_offers_the_titled_matches_and_preselects_none(mode: Mode
                 "type": "string",
                 "title": "Which one?",
                 "oneOf": [
-                    {"const": "50", "title": "'Twin' (id 50, 1 document)"},
-                    {"const": "51", "title": "'twin' (id 51, 1 document), owner 'e2e-reader'"},
+                    {"const": "50", "title": "'Twin' (id 50), 1 document"},
+                    {"const": "51", "title": "'twin' (id 51), 1 document, owner 'e2e-reader'"},
                 ],
             }
         },
@@ -334,14 +335,40 @@ async def test_a_second_name_that_is_declined_leaves_the_first_unwritten(mode: M
 @both_eras
 async def test_the_same_word_twice_in_one_role_is_one_question(mode: Mode) -> None:
     fake, shown = source(doubled()), picks(SECOND)
+    arguments: Json = {"kind": "document", "items": [10], "view_users": [TWIN, TWIN]}
 
-    result = await call(
-        server(fake), mode, shown.handler, "set_permissions",
-        {"kind": "document", "items": [10], "view_users": [TWIN], "change_users": [TWIN]},
-    )  # fmt: skip
+    result = await call(server(fake), mode, shown.handler, "set_permissions", arguments)
 
     assert not result.is_error, text(result)
     assert len(shown.questions) == 1
+
+
+@both_eras
+async def test_the_same_word_in_two_roles_is_two_questions_that_name_them(mode: Mode) -> None:
+    fake, shown = source(doubled()), picks(SECOND, FIRST)
+    arguments: Json = {
+        "filters": {"correspondent": TWIN},
+        "operation": {"op": "set_correspondent", "correspondent": TWIN},
+    }
+
+    result = await call(server(fake), mode, shown.handler, "bulk_edit_documents", arguments)
+
+    assert not result.is_error, text(result)
+    assert "match 'TWIN' (operation correspondent)." in shown.questions[0]
+    assert "match 'TWIN' (filters correspondent)." in shown.questions[1]
+    assert next(d for d in fake.state.documents if d.id == FIRST).correspondent == SECOND
+
+
+@both_eras
+async def test_item_and_parent_are_asked_apart(mode: Mode) -> None:
+    fake, shown = source(doubled()), picks(FIRST, SECOND)
+    arguments: Json = {"kind": "tag", "item": TWIN, "parent": TWIN}
+
+    result = await call(server(fake), mode, shown.handler, "update_taxonomy_item", arguments)
+
+    assert not result.is_error, text(result)
+    assert ["(parent)" in shown.questions[0], "(item)" in shown.questions[1]] == [True, True]
+    assert next(t for t in fake.state.tags if t.id == SECOND).parent == FIRST
 
 
 @both_eras
@@ -434,6 +461,41 @@ async def test_of_two_matches_the_other_one_is_never_taken_for_the_picked(
         assert text(result).startswith(
             "The workflow the user picked (id 51) does not match 'TWIN' any more."
         )
+
+
+async def delete_the_twins(client: Client[FastMCPTransport]) -> None:
+    """Over the connection of the waiting call, whose cached tags are forgotten with it."""
+    for number in (FIRST, SECOND):
+        arguments: Json = {"kind": "tag", "item": number, "confirm": True}
+        _ = await client.call_tool("delete_taxonomy_item", arguments)
+
+
+@both_eras
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("update_document", {"document_id": 10, "tags_add": [TWIN], "create_missing_tags": True}),
+        (
+            "update_documents",
+            {"documents": [{"document_id": 10, "tags_add": [TWIN]}], "create_missing_tags": True},
+        ),
+    ],
+)
+async def test_when_both_matches_are_gone_no_third_one_is_created(
+    mode: Mode, tool: str, arguments: Json
+) -> None:
+    state, shown = doubled(), picks(SECOND)
+
+    async def delete() -> None:
+        await delete_the_twins(client)
+
+    client = Client(server(source(state)), mode=mode, elicitation_handler=shown.before(delete))
+    async with client:
+        result = await client.call_tool(tool, arguments, raise_on_error=False)
+
+    assert len(shown.questions) == 1
+    assert text(result).startswith("The tag the user picked (id 51) does not match 'TWIN' any more")
+    assert {t.name for t in state.tags} & {TWIN, "Twin", "twin"} == set()
 
 
 @both_eras
@@ -950,7 +1012,7 @@ async def test_owners_that_cannot_be_read_are_shown_by_id(mode: Mode) -> None:
         result = await call(server(fake), mode, shown.handler)
 
         assert text(result) == f"{ERROR} {NOT_PICKED}"
-        assert "'twin' (id 51, 1 document), owner #3" in json.dumps(shown.schemas)
+        assert "'twin' (id 51), 1 document, owner #3" in json.dumps(shown.schemas)
 
 
 # --- every tool ----------------------------------------------------------------------------------
@@ -1032,11 +1094,19 @@ class Shared:
         self.fake: FakePaperless = source(doubled())
         self.servers: dict[str, FastMCP] = {}
 
-    async def call(self, mode: Mode, handler: Handler | None, tool: str, arguments: Json) -> Wrote:
+    async def call(
+        self,
+        mode: Mode,
+        handler: Handler | None,
+        tool: str,
+        arguments: Json,
+        *,
+        equal: bool = False,
+    ) -> Wrote:
         toolset = TOOL_TOOLSETS[tool]
         if toolset not in self.servers:
             self.servers[toolset] = serve(self.fake, toolsets=[toolset])
-        self.fake.state = doubled()
+        self.fake.state = doubled(equal=equal)
         self.fake.sent_writes = []
         result = await call(self.servers[toolset], mode, handler, tool, arguments)
         return Wrote(result, self.fake.sent_writes)
@@ -1058,8 +1128,9 @@ async def test_a_write_tool_asks_and_writes_what_the_call_with_the_id_writes(
     shared: Shared, tool: str, place: str, arguments: Json
 ) -> None:
     """On both eras: what is written is compared with the call that names the id."""
-    del place
-    await writes_the_same(shared, tool, arguments, by_id(arguments), SECOND)
+    role = place.rsplit(".", maxsplit=1)[-1].replace("_", " ")
+    shown_as = "rule" if place == ".rules.value" else role
+    await writes_the_same(shared, tool, arguments, by_id(arguments), SECOND, role=shown_as)
 
 
 @pytest.mark.parametrize("option", OPTIONS)
@@ -1069,11 +1140,18 @@ async def test_a_write_tool_asks_and_writes_what_the_call_with_the_id_writes(
 async def test_the_picked_of_two_options_with_one_label_is_written(
     shared: Shared, tool: str, arguments: Json, option: str
 ) -> None:
-    await writes_the_same(shared, tool, arguments, by_id(arguments, option, OPTION), option)
+    with_id = by_id(arguments, option, OPTION)
+    await writes_the_same(shared, tool, arguments, with_id, option, role="options of 'Choice'")
+
+    shown = picks(option)
+    _ = await shared.call("auto", shown.handler, tool, arguments)
+    place = f"'{OPTION}' (option {OPTIONS.index(option) + 1} of 3)"
+    for message in shown.confirmations:
+        assert message.count(f"'{OPTION}'") == message.count(place)
 
 
-async def writes_the_same(
-    shared: Shared, tool: str, arguments: Json, with_id: Json, pick: int | str
+async def writes_the_same(  # noqa: PLR0913 -- one case
+    shared: Shared, tool: str, arguments: Json, with_id: Json, pick: int | str, *, role: str
 ) -> None:
     """On both eras the call asks once, and writes after `pick` what `with_id` writes."""
     by_number = picks(pick)
@@ -1085,6 +1163,7 @@ async def writes_the_same(
         done = await shared.call(mode, shown.handler, tool, arguments)
 
         assert len(shown.questions) == 1, text(done.result)
+        assert role in shown.questions[0]
         assert shown.confirmations == by_number.confirmations
         if tool == "restore_from_trash":  # a filter restores nothing: it names what it matches
             assert text(done.result) == text(expected.result)
@@ -1150,6 +1229,23 @@ async def test_a_dry_run_of_a_batch_is_not_asked(mode: Mode) -> None:
 
     assert result.is_error
     assert shown.questions == []
+
+
+@pytest.mark.parametrize(("tool", "place", "arguments"), CASES, ids=_titles(CASES))
+async def test_a_confirmation_says_which_of_two_equal_names_was_picked(
+    shared: Shared, tool: str, place: str, arguments: Json
+) -> None:
+    """A name that two objects have stands in a confirmation with its id."""
+    del place
+    for number in (SECOND, FIRST):
+        shown = picks(number)
+        _ = await shared.call("auto", shown.handler, tool, arguments, equal=True)
+
+        assert len(shown.questions) == 1
+        if "'twin'" in str(shown.confirmations):
+            return  # users, groups, fields: Paperless holds no name twice
+        for message in shown.confirmations:
+            assert message.count("'Twin'") == message.count(f"'Twin' (id {number})")
 
 
 @both_eras
