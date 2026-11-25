@@ -167,7 +167,7 @@ async def get_system_report(
         Field(
             description=(
                 "Also let Paperless ask GitHub for its newest release, for at most 10 seconds; "
-                "update is null inside where that failed."
+                "unknown (note says why) where that failed or the operator switched it off."
             )
         ),
     ] = False,

@@ -17,7 +17,7 @@ from mcp_server_paperless.domain.errors import (
     UpstreamUnavailable,
     UpstreamUnreachable,
 )
-from mcp_server_paperless.domain.instance import UpdateCheck
+from mcp_server_paperless.domain.instance import TOO_SLOW, UpdateCheck
 from mcp_server_paperless.services.instance import InstanceService, SystemReportService
 
 pytestmark = pytest.mark.anyio
@@ -78,19 +78,31 @@ async def test_the_report_asks_for_an_update_only_when_it_is_told_to() -> None:
             self.asked += 1
             return await super().check_for_update()
 
-    fake = Asked(seeded(), user="admin")
+    state = seeded()
+    state.update_check = True
+    fake = Asked(state, user="admin")
     service = SystemReportService(fake)
 
     plain = await service.report()
     checked = await service.report(check_for_update=True)
 
     assert (plain.update, fake.asked) == (None, 1)
-    assert checked.update == UpdateCheck(newest_release="v3.5.1", update_available=False)
+    assert checked.update == UpdateCheck(newest_release="v3.5.1", update_available=False, note=None)
     assert checked.statistics == plain.statistics
 
 
 @pytest.mark.decision("decision-105")
-@pytest.mark.parametrize("error", [UpstreamTimeout("slow"), UpstreamUnavailable("down")], ids=type)
+@pytest.mark.parametrize(
+    "error",
+    [
+        UpstreamTimeout("slow"),
+        UpstreamUnavailable("down"),
+        NotFound("no such endpoint"),
+        AuthenticationFailed("rejected"),
+        PaperlessMcpError("unexpected response"),
+    ],
+    ids=type,
+)
 async def test_a_check_that_fails_is_unknown_and_the_report_stays(error: PaperlessMcpError) -> None:
     class Failing(FakePaperless):
         @override
@@ -101,7 +113,7 @@ async def test_a_check_that_fails_is_unknown_and_the_report_stays(error: Paperle
         check_for_update=True
     )
 
-    assert report.update == UpdateCheck(newest_release=None, update_available=None)
+    assert report.update == UpdateCheck.unknown(f"unknown: {error.message}")
     assert report.statistics.documents == 2
 
 
@@ -118,4 +130,4 @@ async def test_a_check_is_given_up_after_its_own_bound() -> None:
     async with asyncio.timeout(2):
         report = await service.report(check_for_update=True)
 
-    assert report.update == UpdateCheck(newest_release=None, update_available=None)
+    assert report.update == UpdateCheck.unknown(TOO_SLOW)

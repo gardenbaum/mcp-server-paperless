@@ -13,7 +13,7 @@ from fakes.accounts import ADMIN
 from fakes.paperless import FakePaperless, FakeState, FakeUser, seeded
 from pydantic import SecretStr
 
-from mcp_server_paperless.domain.admin import NotText
+from mcp_server_paperless.domain.admin import NotText, UserRecord
 from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     Ambiguous,
@@ -21,7 +21,9 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
+    UpstreamTimeout,
     Validation,
+    accepting,
 )
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.admin_accounts import CANNOT_TELL, AccountAdmin
@@ -470,6 +472,52 @@ async def test_a_second_factor_that_is_still_there_is_an_error() -> None:
 
     with pytest.raises(PaperlessMcpError, match="still has a second factor"):
         _ = await service.update_user("e2e-reader", remove_second_factor=True, confirm=True)
+
+
+@pytest.mark.decision("decision-103")
+async def test_a_removal_that_cannot_be_read_again_says_that_it_may_have_been_applied() -> None:
+    class Unread(FakePaperless):
+        reads: int = 0
+
+        @override
+        async def get_user(self, user_id: int) -> UserRecord:
+            self.reads += 1
+            if self.reads > 1:
+                message = "Paperless did not respond in time."
+                raise UpstreamTimeout(message)
+            return await super().get_user(user_id)
+
+    setup = Setup()
+    setup.put(READER_ID, mfa=True)
+    fake = Unread(setup.state, user=ADMIN[0], allow_writes=True)
+    service = AccountAdmin(fake, fake, setup.taxonomy)
+
+    with pytest.raises(PaperlessMcpError, match="may have been applied") as raised:
+        _ = await service.update_user("e2e-reader", remove_second_factor=True, confirm=True)
+
+    assert "did not respond in time" in raised.value.message
+    assert "get_user" in (raised.value.hint or "")
+    assert setup.user(READER_ID).mfa is False
+
+
+@pytest.mark.decision("decision-103")
+@pytest.mark.parametrize("change", [{"id": 30}, {"email": "other@x.org"}], ids=["id", "account"])
+async def test_a_yes_is_for_the_account_as_it_was_shown(change: dict[str, object]) -> None:
+    setup = Setup()
+    setup.put(READER_ID, mfa=True)
+    with pytest.raises(ConfirmationRequired) as asked:
+        _ = await setup.service.update_user("e2e-reader", remove_second_factor=True)
+    setup.put(READER_ID, **change)
+    setup.taxonomy.invalidate("user")
+
+    with accepting(asked.value.fingerprint), pytest.raises(ConfirmationRequired) as again:
+        _ = await setup.service.update_user("e2e-reader", remove_second_factor=True)
+
+    assert again.value.message == asked.value.message  # the same name, another account
+    assert all(user.mfa or user.id not in {READER_ID, 30} for user in setup.state.users)
+    with accepting(again.value.fingerprint):
+        done = await setup.service.update_user("e2e-reader", remove_second_factor=True)
+    assert done.changed is True
 
 
 # --- deleting users

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T14:42:19Z'
-updated_date: '2026-11-25T15:54:01Z'
+updated_date: '2026-11-25T16:24:03Z'
 labels: []
 dependencies:
   - PLMCP-83.3
@@ -48,4 +48,6 @@ Last part of PLMCP-83; needs PLMCP-89.3 (get_system_report). Design approved by 
 
 <!-- SECTION:NOTES:BEGIN -->
 Red first at every level (58 failing or erring in 10 modules), then green. 32 hand mutants (one was no valid code): 4 survived, killed by new tests and re-run. decision-103 to 105. The second factor is removed in a call of its own. Nothing is open under PLMCP-83 in docs/api-coverage.toml; the README says the whole sentence.
+
+Independent review, closed test first: M2 an unknown or new id lands in missing or is found for every kind (ids are read as they are, names from a list read anew). L1 users and groups are kept once read (test with a short ttl). L3 PAPERLESS_ENABLE_UPDATE_CHECK is honoured, fail closed; not set counts as allowed (decision-105). L4 any failure of the check is unknown with a note, the report stays. L5 an unreadable user after the removal says that it may have been applied. L6 a yes is for the account as shown (test); the contract test asks nobody outside (the E2E stack switches the check off).
 <!-- SECTION:NOTES:END -->

@@ -116,6 +116,8 @@ from mcp_server_paperless.domain.errors import (
 )
 from mcp_server_paperless.domain.files import OpenedFile, missing_file, missing_files
 from mcp_server_paperless.domain.instance import (
+    NOT_READ,
+    SWITCHED_OFF,
     ComponentStatus,
     CurrentUser,
     DatabaseStatus,
@@ -651,6 +653,9 @@ def task_matches(task: FakeTask, filters: TaskFilters) -> bool:
 class FakeState:
     """The data of one fake Paperless instance, shared by every `FakePaperless` on it."""
 
+    # PAPERLESS_ENABLE_UPDATE_CHECK, off as in the E2E stack.
+    update_check: bool = False
+
     users: list[FakeUser] = field(default_factory=list[FakeUser])
     documents: list[FakeDocument] = field(default_factory=list[FakeDocument])
     # The files Paperless cannot find, by version id, and the versions without file names.
@@ -975,8 +980,12 @@ class FakePaperless:
         )
 
     async def check_for_update(self) -> UpdateCheck:
-        """`SystemReportReader.check_for_update` (RemoteVersionView, open to every user)."""
-        return UpdateCheck(newest_release=f"v{VERSION}", update_available=False)
+        """`SystemReportReader.check_for_update` (UiSettingsView, RemoteVersionView)."""
+        if not self.user.has("view_uisettings"):
+            return UpdateCheck.unknown(NOT_READ)
+        if not self.state.update_check:
+            return UpdateCheck.unknown(SWITCHED_OFF)
+        return UpdateCheck(newest_release=f"v{VERSION}", update_available=False, note=None)
 
     def _status_report(self) -> StatusReport:
         health = self.state.system_status

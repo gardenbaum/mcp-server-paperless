@@ -15,7 +15,8 @@ Probed on Paperless 3.5.1 (CI run 45638730209, job 139291151398, a temporary tes
 ## Decision
 
 <!-- SECTION:DECISION:BEGIN -->
-- `get_system_report(check_for_update=true)`, false by default, supplementing decision-95: `update` holds the newest release and whether it is newer, both null where Paperless could not learn it, where the check took more than 10 seconds or where it failed as unavailable; the report itself stays. It is asked once, never repeated.
+- `get_system_report(check_for_update=true)`, false by default, supplementing decision-95: `update` holds the newest release and whether it is newer, both null, with a note that says why, where Paperless could not learn it, where the check took more than 10 seconds or where it failed in any way; the report itself stays. It is asked once, never repeated.
+- **`PAPERLESS_ENABLE_UPDATE_CHECK` is honoured**, as `ui_settings` reports it (`update_checking.backend_setting`; source of 3.5.1: true, false or "default" where it is not set). Paperless's endpoint itself ignores it. GitHub is asked only where it is true or not set; where it is off, has any other value or cannot be read (no permission to view UI settings, an error), nobody outside is asked and the answer is "unknown: switched off" or that it could not be read. Not set counts as allowed, because the caller asks explicitly; the web UI then asks its user.
 - Without the option `update` is null and nothing is asked.
 - The tool has the open-world hint: on request something outside Paperless is asked, by Paperless.
 <!-- SECTION:DECISION:END -->
@@ -23,6 +24,7 @@ Probed on Paperless 3.5.1 (CI run 45638730209, job 139291151398, a temporary tes
 ## Consequences
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
+- The E2E stack switches the check off, so no test needs GitHub. The answer with the check on was seen on 3.5.1 in the probe only.
 - A server without internet makes the call up to 10 seconds longer.
 <!-- SECTION:CONSEQUENCES:END -->
 

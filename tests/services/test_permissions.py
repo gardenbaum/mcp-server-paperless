@@ -17,6 +17,7 @@ from fakes.paperless import (
     FakePaperless,
     FakeSavedView,
     FakeState,
+    FakeTag,
     FakeUser,
     seeded,
 )
@@ -1683,6 +1684,10 @@ async def test_documents_are_read_by_id_only_and_unknown_names_fail() -> None:
         _ = await service.get_permissions("document", ["invoice"])
     with pytest.raises(NotFound):
         _ = await service.get_permissions("tag", ["nope"])
+    twice = Setup(writes=False)
+    twice.state.tags += [FakeTag(id=n, name=name) for n, name in ((70, "Two"), (71, "TWO"))]
+    with pytest.raises(Ambiguous):
+        _ = await twice.service.get_permissions("tag", ["two"])
 
 
 @final
@@ -1693,13 +1698,13 @@ class Timed(FakePaperless):
     names_take: float = 0.0
     object_takes: float = 0.0
 
-    def __init__(self, state: FakeState) -> None:
+    def __init__(self, state: FakeState, *, ttl: float = 3600.0) -> None:
         super().__init__(state, user=ADMIN[0])
         self.asked: list[str] = []
         self.service: PermissionService = PermissionService(
             self,
             self,
-            TaxonomyResolver(self, StaticTokenProvider("t"), ttl=3600.0),
+            TaxonomyResolver(self, StaticTokenProvider("t"), ttl=ttl, clock=lambda: self.now),
             self,
             web_url=WEB,
             clock=lambda: self.now,
@@ -1738,7 +1743,7 @@ async def test_nothing_is_asked_for_after_forty_seconds_and_what_is_left_is_name
     assert [row.id for row in found.objects] == [1, 2]
     assert (found.left, found.missing) == ((3,), ())
     # The names come before the objects, so none is asked for after the time is over.
-    assert timed.asked == ["saved_view", "user", "group", "object [1]", "object [2]"]
+    assert timed.asked == ["user", "group", "object [1]", "object [2]"]
 
 
 @pytest.mark.decision("decision-104")
@@ -1781,3 +1786,58 @@ async def test_one_object_is_shown_even_if_it_alone_is_too_large() -> None:
 
     assert [row.id for row in found.objects] == [PUBLIC]
     assert found.left == (PRIVATE,)
+
+
+@pytest.mark.decision("decision-104")
+@pytest.mark.parametrize(
+    ("kind", "known"),
+    [
+        ("tag", 1),
+        ("correspondent", 1),
+        ("document_type", 1),
+        ("storage_path", 1),
+        ("saved_view", 1),
+    ],
+)
+async def test_an_unknown_id_is_missing_and_the_others_are_read(
+    kind: PermissionKind, known: int
+) -> None:
+    found = await Setup(writes=False).service.get_permissions(kind, [known, 999, "998"])
+
+    assert [row.id for row in found.objects] == [known]
+    assert (found.missing, found.left) == ((999, 998), ())
+
+
+@pytest.mark.decision("decision-104")
+async def test_a_hidden_id_is_missing() -> None:
+    private = next(tag.id for tag in seeded().tags if tag.name == "e2e-private")
+
+    found = await Setup(READER[0], writes=False).service.get_permissions("tag", [1, private])
+
+    assert ([row.id for row in found.objects], found.missing) == ([1], (private,))
+
+
+@pytest.mark.decision("decision-104")
+async def test_an_object_made_since_the_names_were_read_is_found() -> None:
+    setup = Setup(writes=False)
+    _ = await setup.service.get_permissions("tag", ["e2e-private"])  # fills the cache
+    setup.state.tags.append(FakeTag(id=77, name="new", owner=2))
+
+    by_id = await setup.service.get_permissions("tag", [77])
+    by_name = await setup.service.get_permissions("tag", ["new"])
+
+    assert [row.name for row in by_id.objects] == [row.name for row in by_name.objects] == ["new"]
+
+
+@pytest.mark.decision("decision-104")
+async def test_names_that_grow_old_while_the_objects_are_read_are_not_asked_for_again() -> None:
+    state = three_views()
+    state.saved_views[0].viewers = {READER_ID}
+    timed = Timed(state, ttl=1.0)
+    timed.object_takes = RUN_SECONDS
+
+    found = await timed.service.get_permissions("saved_view", [1, 2])
+
+    assert timed.asked == ["user", "group", "object [1]"]
+    assert names(found.objects[0].access.view_users) == ["e2e-reader"]
+    assert found.left == (2,)

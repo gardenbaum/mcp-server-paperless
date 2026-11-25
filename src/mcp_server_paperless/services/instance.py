@@ -3,8 +3,8 @@
 import asyncio
 from typing import TYPE_CHECKING, Final
 
-from mcp_server_paperless.domain.errors import UpstreamUnavailable
-from mcp_server_paperless.domain.instance import UpdateCheck
+from mcp_server_paperless.domain.errors import PaperlessMcpError, UpstreamUnavailable
+from mcp_server_paperless.domain.instance import TOO_SLOW, UpdateCheck
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.instance import InstanceOverview, SystemReport
@@ -33,8 +33,10 @@ class SystemReportService:
         try:
             async with asyncio.timeout(self._update_seconds):
                 update = await self._reader.check_for_update()
-        except TimeoutError, UpstreamUnavailable:
-            update = UpdateCheck(newest_release=None, update_available=None)
+        except TimeoutError:
+            update = UpdateCheck.unknown(TOO_SLOW)
+        except PaperlessMcpError as error:  # whatever it is, the report is not lost
+            update = UpdateCheck.unknown(f"unknown: {error.message}")
         return report.model_copy(update={"update": update})
 
 

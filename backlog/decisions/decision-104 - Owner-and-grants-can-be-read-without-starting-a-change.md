@@ -17,8 +17,8 @@ Paperless shows the grants of an object to whoever sees the object (decision-91,
 <!-- SECTION:DECISION:BEGIN -->
 - `get_permissions(kind, items)`, read-only, 1 to 100 objects of the kinds `set_permissions` takes, chosen the same way and read by the same reader. Supplements decision-19, which holds for every change.
 - Users and groups are shown by name, as `#id` where the user may not list them.
-- Ids that do not exist or are hidden are named in `missing`; the others are read. An unknown name is an error.
-- Saved views, mail accounts and rules are read one by one for at most 40 seconds; the names are read first, so nothing is asked for after the time is over. An answer holds at most 100,000 characters, but always one object. `left` names what was not read or not shown.
+- Ids that do not exist or are hidden are named in `missing`, for every kind; the others are read. An unknown name is an error; names are looked up in a list read anew, ids are read as they are, so a new object is found.
+- Saved views, mail accounts and rules are read one by one for at most 40 seconds; the names of users and groups are read first and kept, so nothing is asked for after the time is over. An answer holds at most 100,000 characters, but always one object. `left` names what was not read or not shown.
 <!-- SECTION:DECISION:END -->
 
 ## Consequences

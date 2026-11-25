@@ -65,6 +65,7 @@ CANNOT_TELL_HINT: Final = (
 RENAME_TAIL: Final = "they sign in under the new name"
 EMAIL_TAIL: Final = "whoever controls it can reset the password and take the account over"
 ALONE: Final = "The second factor is removed in a call of its own."
+READ_AGAIN: Final = "Read the user with get_user before trying again."
 STILL_HINT: Final = "Read the user again with get_user; another kind of second factor may be left."
 SELF_HINT: Final = "Ask another administrator to do this in the Paperless web UI."
 NOTHING_GIVEN: Final = "Nothing to change: no field was given."
@@ -324,7 +325,14 @@ class AccountAdmin:
             await self._writer.remove_second_factor(current.id)
         except NotFound:  # gone meanwhile
             removed = False
-        now = await self._reader.get_user(current.id)
+        try:
+            now = await self._reader.get_user(current.id)
+        except PaperlessMcpError as error:
+            message = (
+                f"The removal of the second factor of {who} may have been applied: the user could "
+                f"not be read again. {error.message}"
+            )
+            raise PaperlessMcpError(message, hint=READ_AGAIN) from None
         if now.mfa_enabled:
             message = f"User {who} still has a second factor."
             raise PaperlessMcpError(message, hint=STILL_HINT)

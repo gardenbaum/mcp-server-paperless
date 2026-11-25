@@ -145,7 +145,10 @@ class SystemReportReader(Protocol):
         ...
 
     async def check_for_update(self) -> UpdateCheck:
-        """The newest release; Paperless asks GitHub, which can take seconds or fail (unknown)."""
+        """The newest release; Paperless asks GitHub, which can take seconds or fail (unknown).
+
+        Nobody is asked where the operator switched the check off, or where that cannot be read.
+        """
         ...
 
 

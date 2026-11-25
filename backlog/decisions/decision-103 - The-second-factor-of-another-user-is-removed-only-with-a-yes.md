@@ -18,7 +18,7 @@ Probed on Paperless 3.5.1 (CI run 45638730209, job 139291151398, a temporary tes
 - `update_user(remove_second_factor=true)`, supplementing decision-26: it always needs a yes (a dialog or `confirm`), and the question names the user and that the password alone then signs in.
 - Never for the account this server signs in with; where that account cannot be told, nothing is removed (fail closed, as decision-26).
 - In a call of its own: together with other changes it could be half done.
-- A user without a second factor is told so and nothing is sent. The user is read again afterwards; a factor that is still there is an error. The request is never repeated.
+- A user without a second factor is told so and nothing is sent. The user is read again afterwards; a factor that is still there is an error, and where the user cannot be read again the error says that the removal may have been applied. A yes is for the account as it was shown. The request is never repeated.
 <!-- SECTION:DECISION:END -->
 
 ## Consequences

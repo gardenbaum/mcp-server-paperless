@@ -239,12 +239,15 @@ async def test_the_system_report_follows_the_rights_of_the_user(stack: Stack) ->
 
 
 @pytest.mark.decision("decision-105")
-async def test_the_system_report_asks_paperless_for_an_update(stack: Stack) -> None:
+async def test_the_system_report_says_that_the_update_check_is_switched_off(
+    stack: Stack,
+) -> None:
     report = await run(stack, "get_system_report", check_for_update=True)
     plain = await run(stack, "get_system_report")
 
     update = cast("Json", report["update"])
-    assert (update["newest_release"] is None) is (update["update_available"] is None)
+    assert (update["newest_release"], update["update_available"]) == (None, None)
+    assert "switched off" in str(update["note"])
     assert plain["update"] is None
 
 

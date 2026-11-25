@@ -9,10 +9,13 @@ error. ``/api/remote_version/`` (Paperless asks GitHub) is read only by ``check_
 from datetime import datetime
 from typing import TYPE_CHECKING, Final
 
-from pydantic import BaseModel, RootModel
+from pydantic import BaseModel, JsonValue, RootModel
 
-from mcp_server_paperless.domain.errors import PermissionDenied
+from mcp_server_paperless.domain.errors import PaperlessMcpError, PermissionDenied
 from mcp_server_paperless.domain.instance import (
+    NO_ANSWER,
+    NOT_READ,
+    SWITCHED_OFF,
     ComponentStatus,
     CurrentUser,
     DatabaseStatus,
@@ -44,6 +47,8 @@ class _FileType(BaseModel):
 UPDATE_SECONDS: Final = 10.0
 # The release Paperless names when it could not ask for the newest one.
 NO_VERSION: Final = "0.0.0"
+# The values of PAPERLESS_ENABLE_UPDATE_CHECK that do not switch the check off.
+UPDATE_ON: Final[tuple[JsonValue, ...]] = (True, "default")
 
 
 class _Statistics(BaseModel):
@@ -145,6 +150,20 @@ class _Settings(BaseModel):
 class _UiSettings(BaseModel):
     user: _User
     settings: _Settings
+
+
+class _Checking(BaseModel):
+    backend_setting: JsonValue
+
+
+class _Checks(BaseModel):
+    update_checking: _Checking
+
+
+class _UpdateSettings(BaseModel):
+    """What PAPERLESS_ENABLE_UPDATE_CHECK says; Paperless adds it to the settings of every user."""
+
+    settings: _Checks
 
 
 class _RemoteVersion(BaseModel):
@@ -291,13 +310,27 @@ class PaperlessInstanceReader:
         )
 
     async def check_for_update(self) -> UpdateCheck:
-        """See ``SystemReportReader.check_for_update``; 0.0.0 says that GitHub did not answer."""
+        """See ``SystemReportReader.check_for_update``.
+
+        Paperless asks GitHub whatever its own setting says, so the setting is read first: true, or
+        not set ("default": the web UI asks its user). 0.0.0 says that GitHub did not answer.
+        """
+        try:
+            ui = await self._client.get(
+                "/api/ui_settings/", _UpdateSettings, timeout=UPDATE_SECONDS, retry=False
+            )
+        except PaperlessMcpError:
+            return UpdateCheck.unknown(NOT_READ)
+        if ui.settings.update_checking.backend_setting not in UPDATE_ON:
+            return UpdateCheck.unknown(SWITCHED_OFF)
         found = await self._client.get(
             "/api/remote_version/", _RemoteVersion, timeout=UPDATE_SECONDS, retry=False
         )
         if found.version == NO_VERSION:
-            return UpdateCheck(newest_release=None, update_available=None)
-        return UpdateCheck(newest_release=found.version, update_available=found.update_available)
+            return UpdateCheck.unknown(NO_ANSWER)
+        return UpdateCheck(
+            newest_release=found.version, update_available=found.update_available, note=None
+        )
 
     async def _unless_forbidden[M: BaseModel](self, path: str, model: type[M]) -> M | None:
         """GET ``path``, or None if the user may not see it (HTTP 403)."""

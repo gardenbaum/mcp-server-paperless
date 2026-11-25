@@ -14343,7 +14343,7 @@
         'properties': dict({
           'check_for_update': dict({
             'default': False,
-            'description': 'Also let Paperless ask GitHub for its newest release, for at most 10 seconds; update is null inside where that failed.',
+            'description': 'Also let Paperless ask GitHub for its newest release, for at most 10 seconds; unknown (note says why) where that failed or the operator switched it off.',
             'type': 'boolean',
           }),
         }),
@@ -14784,6 +14784,16 @@
                       }),
                     ]),
                   }),
+                  'note': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                  }),
                   'update_available': dict({
                     'anyOf': list([
                       dict({
@@ -14798,6 +14808,7 @@
                 'required': list([
                   'newest_release',
                   'update_available',
+                  'note',
                 ]),
                 'type': 'object',
               }),
@@ -46496,7 +46507,7 @@
         'properties': dict({
           'check_for_update': dict({
             'default': False,
-            'description': 'Also let Paperless ask GitHub for its newest release, for at most 10 seconds; update is null inside where that failed.',
+            'description': 'Also let Paperless ask GitHub for its newest release, for at most 10 seconds; unknown (note says why) where that failed or the operator switched it off.',
             'type': 'boolean',
           }),
         }),
@@ -46937,6 +46948,16 @@
                       }),
                     ]),
                   }),
+                  'note': dict({
+                    'anyOf': list([
+                      dict({
+                        'type': 'string',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                  }),
                   'update_available': dict({
                     'anyOf': list([
                       dict({
@@ -46951,6 +46972,7 @@
                 'required': list([
                   'newest_release',
                   'update_available',
+                  'note',
                 ]),
                 'type': 'object',
               }),

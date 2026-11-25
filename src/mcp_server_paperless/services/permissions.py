@@ -47,7 +47,7 @@ from mcp_server_paperless.domain.permissions import (
 from mcp_server_paperless.domain.selection import MAX_ANSWER
 from mcp_server_paperless.services.access import access_view, groups_of, owner_ids, users_of
 from mcp_server_paperless.services.document_runner import OUT_OF_TIME, RUN_SECONDS
-from mcp_server_paperless.services.documents import document_link
+from mcp_server_paperless.services.documents import document_link, known_items
 from mcp_server_paperless.services.principals import is_numeric, names_of, resolve_principals
 
 if TYPE_CHECKING:
@@ -116,6 +116,7 @@ NOTES: Final[dict[PermissionKind, str]] = {
 }
 # The kinds whose objects are read one by one, so that a call is bounded in time.
 TIMED: Final[frozenset[PermissionKind]] = frozenset(NOTES)
+PRINCIPALS: Final[tuple[PrincipalKind, ...]] = ("user", "group")
 FEWER: Final = "Choose fewer objects per call."
 NONE_GIVEN = "Nothing to change: no owner and no grants were given."
 NONE_GIVEN_HINT = (
@@ -304,10 +305,18 @@ class PermissionService:
             PermissionDenied: The user may not view the kind.
         """
         until = self._clock() + RUN_SECONDS if kind in TIMED else math.inf
-        ids = await self._select(kind, items)
-        if kind in TIMED:  # read now, the names are there when the time is over
-            for principals in ("user", "group"):
-                _ = await names_of(self._taxonomy, principals, ())
+        shared = SHARED.get(kind)
+        if shared is not None and not all(is_numeric(item) for item in items):
+            self._taxonomy.invalidate(shared)  # a name may be newer than the list that was read
+        ids = await self._select(kind, items, ids_alone=True)
+        # Read before the objects and kept: none is asked for when their time is over.
+        known: dict[PrincipalKind, dict[int, str]] = {
+            principals: {
+                number: item.name
+                for number, item in (await known_items(self._taxonomy, principals)).items()
+            }
+            for principals in PRINCIPALS
+        }
         found: list[ObjectAccess] = []
         asked = len(ids)
         if kind not in TIMED:
@@ -318,17 +327,11 @@ class PermissionService:
                     asked = at
                     break
                 found += await self._reader.get_permissions(kind, [number])
+        users = {n for row in found for n in users_of(row.permissions) | owner_ids(row)}
+        groups = {n for row in found for n in groups_of(row.permissions)}
         names: dict[PrincipalKind, dict[int, str]] = {
-            "user": await names_of(
-                self._taxonomy,
-                "user",
-                sorted({n for row in found for n in users_of(row.permissions) | owner_ids(row)}),
-            ),
-            "group": await names_of(
-                self._taxonomy,
-                "group",
-                sorted({n for row in found for n in groups_of(row.permissions)}),
-            ),
+            "user": {n: known["user"].get(n, f"#{n}") for n in users},
+            "group": {n: known["group"].get(n, f"#{n}") for n in groups},
         }
         rows = [
             ObjectGrants(
@@ -457,15 +460,27 @@ class PermissionService:
                 resolved.append(frozenset(who.ids))
         return owner, _Asked(*resolved)
 
-    async def _select(self, kind: PermissionKind, items: Sequence[NameOrId]) -> list[int]:
-        """The ids of the objects ``items`` name, each once, in the order given."""
+    async def _select(
+        self, kind: PermissionKind, items: Sequence[NameOrId], *, ids_alone: bool = False
+    ) -> list[int]:
+        """The ids of the objects ``items`` name, each once, in the order given.
+
+        With ``ids_alone`` an id is taken as it is, whether the lists know it or not.
+        """
         if not 1 <= len(items) <= MAX_OBJECTS:
             message = f"Select between 1 and {MAX_OBJECTS} objects per call."
             raise Validation(message, hint="Work in several steps.")
         shared = SHARED.get(kind)
         if shared is not None:
             return list(
-                dict.fromkeys([(await self._taxonomy.resolve(shared, item)).id for item in items])
+                dict.fromkeys(
+                    [
+                        int(item)
+                        if ids_alone and is_numeric(item)
+                        else (await self._taxonomy.resolve(shared, item)).id
+                        for item in items
+                    ]
+                )
             )
         if not all(is_numeric(item) for item in items):
             label = LABELS[kind].capitalize()
