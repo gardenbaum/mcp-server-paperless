@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T14:42:19Z'
-updated_date: '2026-11-25T15:40:47Z'
+updated_date: '2026-11-25T15:54:01Z'
 labels: []
 dependencies:
   - PLMCP-83.3
@@ -43,3 +43,9 @@ Last part of PLMCP-83; needs PLMCP-89.3 (get_system_report). Design approved by 
 <!-- SECTION:PLAN:BEGIN -->
 1. PLMCP-89 is merged. Tests first per level. 2. get_permissions in PermissionService (reader of set_permissions, 40 s for what is read one by one, 100,000 characters, what is left named). 3. AdminWriter.remove_second_factor behind update_user, in a call of its own, always confirmed, own account refused. 4. SystemReportReader.check_for_update behind get_system_report, 10 s, unknown where it cannot. 5. Decisions, guide limit +18, coverage rows, README sentence, docs, snapshots.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Red first at every level (58 failing or erring in 10 modules), then green. 32 hand mutants (one was no valid code): 4 survived, killed by new tests and re-run. decision-103 to 105. The second factor is removed in a call of its own. Nothing is open under PLMCP-83 in docs/api-coverage.toml; the README says the whole sentence.
+<!-- SECTION:NOTES:END -->

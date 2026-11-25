@@ -1027,7 +1027,7 @@ async def test_the_second_factor_is_removed_once(make_client: ClientFactory) -> 
 async def test_a_failed_removal_of_the_second_factor_is_not_repeated(
     make_client: ClientFactory,
 ) -> None:
-    server = Recording(httpx2.Response(503, text="x"))
+    server = Recording(httpx2.Response(429, json={"detail": "x"}), ok({}))
 
     with pytest.raises(UpstreamUnavailable):
         await PaperlessAdminWriter(make_client(server)).remove_second_factor(5)
@@ -1048,4 +1048,7 @@ async def test_only_a_superuser_removes_a_second_factor(make_client: ClientFacto
     with pytest.raises(PermissionDenied) as raised:
         await PaperlessAdminWriter(make_client(server)).remove_second_factor(5)
 
-    assert "superuser" in (raised.value.hint or "")
+    assert raised.value.describe() == (
+        "The Paperless user may not remove the second factor of this user. Hint: Only a superuser "
+        "may, or the user in the web UI."
+    )

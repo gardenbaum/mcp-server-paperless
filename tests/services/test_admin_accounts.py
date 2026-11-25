@@ -371,6 +371,16 @@ async def test_a_second_factor_is_removed_only_with_a_yes_that_names_the_user() 
 
 
 @pytest.mark.decision("decision-103")
+async def test_the_question_says_that_the_user_is_a_superuser() -> None:
+    setup = Setup(writes=False)
+    setup.put(READER_ID, mfa=True, is_superuser=True)
+
+    message = await refusal(setup.service.update_user("e2e-reader", remove_second_factor=True))
+
+    assert "the password alone; the user is a superuser" in message
+
+
+@pytest.mark.decision("decision-103")
 async def test_without_a_second_factor_that_is_said_and_nothing_is_sent() -> None:
     done = await Setup(writes=False).service.update_user("e2e-reader", remove_second_factor=True)
 

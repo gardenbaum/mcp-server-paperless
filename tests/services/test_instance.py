@@ -115,6 +115,7 @@ async def test_a_check_is_given_up_after_its_own_bound() -> None:
 
     service = SystemReportService(Hanging(seeded(), user="admin"), update_seconds=0.01)
 
-    report = await service.report(check_for_update=True)
+    async with asyncio.timeout(2):
+        report = await service.report(check_for_update=True)
 
     assert report.update == UpdateCheck(newest_release=None, update_available=None)
