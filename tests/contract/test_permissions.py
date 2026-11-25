@@ -521,3 +521,76 @@ async def test_mail_grants_need_the_permissions_of_the_kind_and_known_users(
         _ = await backend.admin.permission_writes.set_permissions(
             kind, MISSING, AccessChange(owner=None)
         )
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.contract(SET)
+@pytest.mark.parametrize("kind", MAIL)
+async def test_an_owner_who_is_no_superuser_and_anyone_on_an_unowned_object_may_grant(
+    backend: Backend, account: int, kind: PermissionKind
+) -> None:
+    name = f"contract-user-{uuid.uuid4().hex[:12]}"
+    user = backend.restricted(MAILING, name=name)
+    number = await mail_object(backend, kind, account)
+    owner, reader = await user_id(backend.admin, name), await user_id(backend.admin, READER[0])
+    grants = ObjectPermissions(view_users=(reader,))
+    admin = backend.admin.permission_writes
+
+    _ = await admin.set_permissions(kind, number, AccessChange(owner=owner))
+    owned = await user.permission_writes.set_permissions(
+        kind, number, AccessChange(permissions=grants)
+    )
+    _ = await admin.set_permissions(
+        kind, number, AccessChange(owner=None, permissions=ObjectPermissions())
+    )
+    unowned = await user.permission_writes.set_permissions(
+        kind, number, AccessChange(permissions=grants)
+    )
+
+    assert (owned.owner, owned.permissions) == (owner, grants)
+    assert (unowned.owner, unowned.permissions) == (None, grants)
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.contract(SET)
+async def test_grants_of_a_rule_are_set_although_its_new_owner_is_refused(
+    backend: Backend, account: int
+) -> None:
+    """Two rules of one owner cannot have the same name; Paperless checks that after the grants."""
+    ports = backend.admin
+    number = await mail_object(backend, "mail_rule", account)
+    reader = await user_id(ports, READER[0])
+    name = (await ports.mail.get_mail_rule(number)).name
+    _ = await ports.permission_writes.set_permissions(
+        "mail_rule", number, AccessChange(owner=reader)
+    )
+    twin = await ports.mail_writes.create_mail_rule(MailRuleValues(name=name, account_id=account))
+    change = AccessChange(owner=reader, permissions=ObjectPermissions(view_users=(reader,)))
+
+    with pytest.raises(Validation):
+        _ = await ports.permission_writes.set_permissions("mail_rule", twin.id, change)
+
+    [after] = await ports.permissions.get_permissions("mail_rule", [twin.id])
+    assert after.owner == twin.owner
+    assert after.permissions.view_users == (reader,)
+
+
+@pytest.mark.contract(SET)
+async def test_grants_of_a_tag_are_not_set_when_its_new_owner_is_refused(backend: Backend) -> None:
+    ports = backend.admin
+    reader = await user_id(ports, READER[0])
+    first = await make(ports, "tag")
+    tags = {item.id: item.name for item in await ports.taxonomy.list_taxonomy("tag")}
+    _ = await ports.permission_writes.set_permissions("tag", first, AccessChange(owner=reader))
+    twin = (
+        await ports.taxonomy_writes.create_taxonomy_item(
+            "tag", tags[first], TaxonomyValues.model_validate({})
+        )
+    ).id
+    change = AccessChange(owner=reader, permissions=ObjectPermissions(view_users=(reader,)))
+
+    with pytest.raises(Validation):
+        _ = await ports.permission_writes.set_permissions("tag", twin, change)
+
+    [after] = await ports.permissions.get_permissions("tag", [twin])
+    assert after.permissions.view_users == ()

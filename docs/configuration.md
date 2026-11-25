@@ -323,14 +323,14 @@ documents in its refusal. E-mail needs a mail server set up in Paperless
 ### `permissions`
 
 Off by default: `set_permissions`, `list_users`, `list_groups`. Shares documents, tags,
-correspondents, document types, storage paths, mail accounts and mail rules (the last two by id) and
-hands them over. Whoever may change a mail account can point it at another server, to which Paperless
-then sends the saved password, so the confirmation says so; a grant on an account is none on its
-rules. `set_permissions` sets the
-owner and the users and groups who may view or change, by name or id. Its default mode `merge`
-only adds to the grants and mode `replace` makes each list you give exactly that list. Granting
-access cannot be taken back, so every call that changes anything needs `confirm` (also a merge
-and any change of the owner), and the refusal names who gains and who loses access.
+correspondents, document types, storage paths, mail accounts and mail rules (the last two by id),
+and hands them over: `set_permissions` sets the owner and the users and groups who may view or
+change, by name or id. Its default mode `merge` only adds to the grants and mode `replace` makes
+each list you give exactly that list. Granting access cannot be taken back, so every call that
+changes anything needs `confirm` (also a merge and any change of the owner), and the refusal names
+who gains and who loses access. Whoever may change a mail account can make Paperless send its saved
+password to any server, and whoever may change a mail rule can make it move or delete mail; the
+confirmation says so, and a grant on an account is none on its rules.
 `bulk_edit_taxonomy` (bulk toolset) also sets permissions of taxonomy objects, behind `confirm`
 and with a `dry_run` preview (it empties the lists you leave out, `set_permissions` keeps them),
 and `update_document` can change a document's owner along with other edits. `list_users` and

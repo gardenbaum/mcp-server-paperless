@@ -35,6 +35,8 @@ from mcp_server_paperless.services.permissions import PermissionService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from mcp_server_paperless.domain.documents import NameOrId
     from mcp_server_paperless.domain.instance import InstanceOverview
     from mcp_server_paperless.domain.permissions import (
@@ -1034,9 +1036,15 @@ async def test_a_caller_lookup_that_fails_leaves_the_warning_in() -> None:
 
 
 ACCOUNT_NOTE = (
-    "Whoever may change a mail account can point it at another server, to which Paperless then "
-    "sends the saved password or token, and add rules that import, move or delete its mail. A "
-    "grant on an account is none on its rules"
+    "Whoever may change a mail account can make Paperless send its saved password or token to a "
+    "server of their choice, at once and without storing anything, and can add rules that import, "
+    "move or delete its mail. A grant on an account is none on its rules"
+)
+RULE_NOTE = (
+    "Whoever may change a mail rule can make it move or delete mail with the saved password of its "
+    "account, without any right on the account. The owner of a rule owns the documents it imports "
+    "from then on; without an owner every user with the global permission to view documents sees "
+    "them"
 )
 
 
@@ -1089,7 +1097,9 @@ async def test_the_note_stands_where_somebody_may_change_the_account(
         _ = await setup.service.set_permissions("mail_rule", ["6"], asked)
 
     assert (ACCOUNT_NOTE in raised.value.message) == noted
+    assert (RULE_NOTE in ruled.value.message) == noted
     assert ACCOUNT_NOTE not in ruled.value.message
+    assert RULE_NOTE not in raised.value.message
 
 
 @pytest.mark.decision("decision-87")
@@ -1149,3 +1159,200 @@ async def test_mail_objects_are_chosen_by_id_only(
         f"No {label.lower().removesuffix('s')} with id 99 exists that you may see. Hint: Find the "
         f"ids with {tool}."
     )
+
+
+@pytest.mark.decision("decision-87")
+async def test_a_view_grant_beside_an_editor_needs_no_note() -> None:
+    setup = Setup(writes=False)
+    with_mail(setup)
+    setup.state.mail_accounts[0].editors = {READER_ID}
+    setup.state.mail_accounts[0].change_groups = {GROUP}
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.run("mail_account", [5], view_users=["e2e-blind"], confirm=False)
+
+    assert ACCOUNT_NOTE not in raised.value.message
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.parametrize("risky", [1, 2, 6])
+async def test_the_note_stands_whichever_account_it_is_about(risky: int) -> None:
+    """Also one of those the confirmation only counts."""
+    setup = Setup(writes=False)
+    for number in range(1, 7):
+        setup.state.mail_accounts.append(
+            FakeMailAccount(
+                id=number,
+                name=f"A{number}",
+                imap_server="h",
+                imap_port=1,
+                username="u",
+                password="p",
+                owner=2,
+                # The others have the change grant already and only get a view grant.
+                editors=set() if number == risky else {READER_ID},
+            )
+        )
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.run(
+            "mail_account",
+            list(range(1, 7)),
+            change_users=["e2e-reader"],
+            view_users=["e2e-blind"],
+            confirm=False,
+        )
+
+    assert raised.value.message.count(ACCOUNT_NOTE) == 1
+
+
+class Clashing(Recording):
+    """A Paperless that sets the grants and then refuses the owner."""
+
+    sets: bool = True
+    silent: bool = False
+
+    @override
+    async def set_permissions(
+        self, kind: PermissionKind, object_id: int, change: AccessChange
+    ) -> ObjectAccess:
+        if self.sets:
+            grants = AccessChange(permissions=change.permissions)
+            _ = await super().set_permissions(kind, object_id, grants)
+        message = "Paperless rejected the request: owner / name unique constraint."
+        raise Validation(message, hint="Check the ids.")
+
+    @override
+    async def get_permissions(
+        self, kind: PermissionKind, object_ids: Sequence[int]
+    ) -> list[ObjectAccess]:
+        if self.writes and self.silent:
+            message = "Paperless did not respond in time."
+            raise UpstreamTimeout(message)
+        return await super().get_permissions(kind, object_ids)
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.parametrize("kind", ["mail_rule", "tag"])
+@pytest.mark.parametrize(
+    ("sets", "silent", "said"),
+    [
+        (True, False, " The grants of {} were set all the same; its owner was not changed."),
+        (False, False, ""),
+        (True, True, " Whether the grants of {} were set all the same is not known."),
+    ],
+)
+async def test_a_refused_owner_is_told_with_what_became_of_the_grants(
+    kind: PermissionKind,
+    sets: bool,  # noqa: FBT001 -- the case
+    silent: bool,  # noqa: FBT001 -- the case
+    said: str,
+) -> None:
+    """Paperless sets the grants of some kinds before it checks the owner, without a transaction."""
+    setup = Setup()
+    with_mail(setup)
+    fake = Clashing(setup.state, user=ADMIN[0], writes=True)
+    fake.sets, fake.silent = sets, silent
+    service = PermissionService(fake, fake, setup.taxonomy, fake, web_url=WEB)
+    number = 6 if kind == "mail_rule" else FINANCE
+    name = "'Bills'" if kind == "mail_rule" else "'e2e-finance'"
+    if not sets:
+        fake.writes.append((kind, number, AccessChange()))
+
+    asked = PermissionsRequest(owner="e2e-reader", view_users=["e2e-blind"])
+    with pytest.raises(Validation) as raised:
+        _ = await service.set_permissions(kind, [number], asked, confirm=True)
+
+    assert raised.value.message == (
+        "Paperless rejected the request: owner / name unique constraint." + said.format(name)
+    )
+    assert raised.value.hint == "Check the ids."
+
+
+@pytest.mark.decision("decision-87")
+async def test_a_refused_owner_alone_is_not_read_again() -> None:
+    setup = Setup()
+    with_mail(setup)
+    fake = Clashing(setup.state, user=ADMIN[0], writes=True)
+    fake.sets = False
+    service = PermissionService(fake, fake, setup.taxonomy, fake, web_url=WEB)
+
+    with pytest.raises(Validation) as raised:
+        _ = await service.set_permissions(
+            "mail_rule", [6], PermissionsRequest(owner="e2e-reader"), confirm=True
+        )
+
+    assert raised.value.message.endswith("unique constraint.")
+
+
+@final
+class Slow(Recording):
+    """Each read or write of a mail object takes 25 seconds."""
+
+    now: float = 0.0
+    slow: str = "get"
+
+    @override
+    async def get_permissions(
+        self, kind: PermissionKind, object_ids: Sequence[int]
+    ) -> list[ObjectAccess]:
+        self.now += 25 if self.slow == "get" else 0
+        return await super().get_permissions(kind, object_ids)
+
+    @override
+    async def set_permissions(
+        self, kind: PermissionKind, object_id: int, change: AccessChange
+    ) -> ObjectAccess:
+        self.now += 25 if self.slow == "set" else 0
+        return await super().set_permissions(kind, object_id, change)
+
+
+def many_rules(setup: Setup) -> None:
+    for number in range(1, 5):
+        setup.state.mail_rules.append(
+            FakeMailRule(id=number, name=f"R{number}", account=1, owner=2)
+        )
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.parametrize("slow", ["get", "set"])
+async def test_mail_objects_are_read_and_changed_for_at_most_forty_seconds(slow: str) -> None:
+    setup = Setup()
+    many_rules(setup)
+    fake = Slow(setup.state, user=ADMIN[0], writes=True)
+    fake.slow = slow
+    service = PermissionService(
+        fake, fake, setup.taxonomy, fake, web_url=WEB, clock=lambda: fake.now
+    )
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await service.set_permissions(
+            "mail_rule", [1, 2, 3, 4], PermissionsRequest(view_users=["e2e-reader"]), confirm=True
+        )
+
+    if slow == "get":
+        assert raised.value.message == (
+            "The objects could not be read within 40 seconds. Nothing was changed."
+        )
+    else:
+        assert raised.value.message == (
+            "40 seconds have passed. Permissions were already changed on 'R1', 'R2'. 'R3' and "
+            "the objects after it were not changed."
+        )
+    assert raised.value.hint == "Choose fewer objects per call."
+    assert len(fake.writes) == (0 if slow == "get" else 2)
+
+
+async def test_other_kinds_have_no_such_bound() -> None:
+    setup = Setup()
+    fake = Slow(setup.state, user=ADMIN[0], writes=True)
+    fake.slow = "set"
+    service = PermissionService(
+        fake, fake, setup.taxonomy, fake, web_url=WEB, clock=lambda: fake.now
+    )
+
+    done = await service.set_permissions(
+        "tag", [1, 2, 3], PermissionsRequest(view_users=["e2e-reader"]), confirm=True
+    )
+
+    assert done.changed_count == 3

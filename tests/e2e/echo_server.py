@@ -21,6 +21,7 @@ class _Server(socketserver.ThreadingTCPServer):
     allow_reuse_address: bool = True
     daemon_threads: bool = True
     how: How = "no"
+    heard: list[str] | None = None
 
 
 class _Session(socketserver.StreamRequestHandler):
@@ -55,6 +56,8 @@ class _Session(socketserver.StreamRequestHandler):
                 self._say(f"{tag} OK done")
             elif verb == "LOGIN":
                 heard = command
+                if (kept := cast("_Server", self.server).heard) is not None:
+                    kept.append(command)
                 self._refuse(tag, heard)
             elif verb == "AUTHENTICATE":
                 self._say("+ ")
@@ -74,10 +77,11 @@ class _Session(socketserver.StreamRequestHandler):
 
 
 @contextlib.contextmanager
-def echo_server(how: How) -> Generator[int]:
-    """The port of such a server on this machine, while the context lasts."""
+def echo_server(how: How, heard: list[str] | None = None) -> Generator[int]:
+    """The port of such a server on this machine, while the context lasts; what it `heard`."""
     with _Server(("0.0.0.0", 0), _Session) as server:  # noqa: S104 -- Paperless is in a container
         server.how = how
+        server.heard = heard
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         yield cast("tuple[str, int]", server.server_address)[1]

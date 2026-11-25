@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:58Z'
-updated_date: '2026-11-25T09:18:17Z'
+updated_date: '2026-11-25T09:48:54Z'
 labels:
   - mail
 dependencies: []
@@ -41,3 +41,9 @@ Fifth part of PLMCP-81: owner and grants of mail accounts and rules cannot be re
 <!-- SECTION:PLAN:BEGIN -->
 1. PermissionKind gains mail_account and mail_rule. Adapter: read one by one with full_perms (the mail views have no id__in filter), PATCH as for the others; schema guard entries with the reason. 2. Fake: grants of accounts and rules, visibility and change by them. 3. Service: ids only, no taxonomy cache, the note of what a change grant on an account gives. 4. Contract on fake and live (P5), tool, E2E. 5. decision-84, coverage rows, docs.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Review round 1, tests first: the note for accounts (POST mail_accounts/test/ sends the saved password anywhere at once) and one for rules; after a 400 to owner and grants together the object is read again, for every kind; 40 seconds for mail objects; PermissionKind is one flat Literal; contract tests for an owner who is no superuser, an unowned object, and what a refused owner leaves of the grants (a rule: set; a tag: not). decision-87 instead of 84 (the CLI gave it).
+<!-- SECTION:NOTES:END -->
