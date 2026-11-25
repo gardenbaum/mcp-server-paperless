@@ -141,7 +141,12 @@ from mcp_server_paperless.domain.trash import (
 )
 from mcp_server_paperless.domain.versions import VersionPage, VersionRow
 from mcp_server_paperless.domain.views import FilterRule, SavedView
-from mcp_server_paperless.domain.workflows import Workflow, WorkflowRun
+from mcp_server_paperless.domain.workflows import (
+    Workflow,
+    WorkflowAction,
+    WorkflowRun,
+    WorkflowTrigger,
+)
 from mcp_server_paperless.paperless.admin import (
     ACK_TASKS,
     ADD_GROUP,
@@ -620,6 +625,9 @@ class FakeState:
     workflows: list[Workflow] = field(default_factory=list[Workflow])
     # The last id given to a workflow's trigger or action (a one-item list, shared by reference).
     workflow_object_id: list[int] = field(default_factory=lambda: [0])
+    # The triggers and actions of deleted workflows.
+    loose_triggers: list[WorkflowTrigger] = field(default_factory=list[WorkflowTrigger])
+    loose_actions: list[WorkflowAction] = field(default_factory=list[WorkflowAction])
     # What was asked to run (workflow, documents, with filters), and documents every run fails on.
     workflow_runs: list[tuple[int, tuple[int, ...], bool]] = field(
         default_factory=list[tuple[int, tuple[int, ...], bool]]
@@ -3518,15 +3526,29 @@ class FakePaperless:
     def _workflows(self) -> tuple[WorkflowData, Actor]:
         state = self.state
         user = self.user
-        data = WorkflowData(state.workflows, state.workflow_object_id)
+        data = WorkflowData(
+            state.workflows, state.workflow_object_id, state.loose_triggers, state.loose_actions
+        )
         return data, Actor(
             has=user.has, known=lambda kind: frozenset(r.id for r in self._rows(kind))
         )
 
-    async def list_workflows(self) -> tuple[Workflow, ...]:
+    async def list_workflows(
+        self, *, enabled: bool | None = None, trigger_type: int | None = None
+    ) -> tuple[Workflow, ...]:
         """`WorkflowReader.list_workflows`."""
         data, actor = self._workflows()
-        return workflows.list_workflows(data, actor)
+        return workflows.list_workflows(data, actor, enabled=enabled, trigger_type=trigger_type)
+
+    async def get_trigger(self, trigger_id: int) -> WorkflowTrigger:
+        """`WorkflowReader.get_trigger`."""
+        data, actor = self._workflows()
+        return workflows.get_trigger(data, actor, trigger_id)
+
+    async def get_action(self, action_id: int) -> WorkflowAction:
+        """`WorkflowReader.get_action`."""
+        data, actor = self._workflows()
+        return workflows.get_action(data, actor, action_id)
 
     async def get_workflow(self, workflow_id: int) -> Workflow:
         """`WorkflowReader.get_workflow`."""

@@ -1,7 +1,7 @@
-"""The workflow part of FakePaperless: workflows with nested triggers and actions, as 3.4.2.
+"""The workflow part of FakePaperless: workflows with nested triggers and actions, as 3.5.1.
 
 Plain functions on the fake's state and user; `FakePaperless` delegates to them (and carries the
-write guard), so `paperless.py` does not grow further. What the contract tests pin on live 3.4.2:
+write guard), so `paperless.py` does not grow further. What the contract tests pin on live 3.5.1:
 
 - Every user with the global permission of the model sees every workflow (workflows have no owner).
 - A trigger or action starts from the defaults of its type and keeps what is sent; a list that is
@@ -10,6 +10,7 @@ write guard), so `paperless.py` does not grow further. What the contract tests p
   e-mail data, a webhook action a webhook with a URL that has a scheme; remote OCR needs a
   consumption trigger in the workflow. Settings that belong to another type of action are stored
   as sent (Paperless does not check them).
+- The triggers and actions of a deleted workflow stay until the next update of any workflow.
 - Names are unique and not blank; the list is ordered by `order`, then id.
 """
 
@@ -31,7 +32,7 @@ from mcp_server_paperless.domain.workflows import (
     WorkflowAction,
     WorkflowTrigger,
 )
-from mcp_server_paperless.paperless.workflows import unseen_workflow
+from mcp_server_paperless.paperless.workflows import unseen_part, unseen_workflow
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -126,6 +127,9 @@ class WorkflowData:
     workflows: list[Workflow]
     # The last id given to a trigger or action; Paperless numbers them apart, the fake together.
     last_object_id: list[int] = field(default_factory=lambda: [0])
+    # The triggers and actions of deleted workflows, until an update prunes them.
+    loose_triggers: list[WorkflowTrigger] = field(default_factory=list[WorkflowTrigger])
+    loose_actions: list[WorkflowAction] = field(default_factory=list[WorkflowAction])
 
 
 @dataclass(frozen=True)
@@ -136,22 +140,50 @@ class Actor:
     known: Callable[[TaxonomyKind], frozenset[int]]
 
 
-def _allow(user: Actor, action: str) -> None:
-    if not user.has(f"{action}_workflow"):
+def _allow(user: Actor, action: str, model: str = "workflow") -> None:
+    if not user.has(f"{action}_{model}"):
         message = "The Paperless user may not perform this action."
         raise PermissionDenied(message)
 
 
-def list_workflows(data: WorkflowData, user: Actor) -> tuple[Workflow, ...]:
+def list_workflows(
+    data: WorkflowData, user: Actor, *, enabled: bool | None, trigger_type: int | None
+) -> tuple[Workflow, ...]:
     """`WorkflowReader.list_workflows`: by order, then id."""
     _allow(user, "view")
-    return tuple(sorted(data.workflows, key=lambda w: (w.order, w.id)))
+    found = [
+        workflow
+        for workflow in data.workflows
+        if enabled in {None, workflow.enabled}
+        and (trigger_type is None or any(t.type == trigger_type for t in workflow.triggers))
+    ]
+    return tuple(sorted(found, key=lambda w: (w.order, w.id)))
 
 
 def get_workflow(data: WorkflowData, user: Actor, workflow_id: int) -> Workflow:
     """`WorkflowReader.get_workflow`."""
     _allow(user, "view")
     return _find(data, workflow_id)
+
+
+def get_trigger(data: WorkflowData, user: Actor, trigger_id: int) -> WorkflowTrigger:
+    """`WorkflowReader.get_trigger`."""
+    _allow(user, "view", "workflowtrigger")
+    held = (t for w in data.workflows for t in w.triggers)
+    for trigger in (*held, *data.loose_triggers):
+        if trigger.id == trigger_id:
+            return trigger
+    raise unseen_part(kind="trigger", number=trigger_id)
+
+
+def get_action(data: WorkflowData, user: Actor, action_id: int) -> WorkflowAction:
+    """`WorkflowReader.get_action`."""
+    _allow(user, "view", "workflowaction")
+    held = (a for w in data.workflows for a in w.actions)
+    for action in (*held, *data.loose_actions):
+        if action.id == action_id:
+            return action
+    raise unseen_part(kind="action", number=action_id)
 
 
 def _find(data: WorkflowData, workflow_id: int) -> Workflow:
@@ -201,13 +233,18 @@ def update_workflow(
         }
     )
     data.workflows[data.workflows.index(old)] = new
+    data.loose_triggers.clear()
+    data.loose_actions.clear()
     return new
 
 
 def delete_workflow(data: WorkflowData, user: Actor, workflow_id: int) -> None:
     """`WorkflowWriter.delete_workflow`."""
     _allow(user, "delete")
-    data.workflows.remove(_find(data, workflow_id))
+    workflow = _find(data, workflow_id)
+    data.workflows.remove(workflow)
+    data.loose_triggers.extend(workflow.triggers)
+    data.loose_actions.extend(workflow.actions)
 
 
 def _check_name(data: WorkflowData, name: str, *, except_id: int | None) -> None:

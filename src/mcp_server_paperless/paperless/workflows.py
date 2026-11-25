@@ -7,11 +7,12 @@ them without ids; the settings travel under Paperless's names, the type apart fr
 
 import asyncio
 import re
-from typing import TYPE_CHECKING, ClassVar, Final
+from typing import TYPE_CHECKING, ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
@@ -38,6 +39,8 @@ if TYPE_CHECKING:
     from mcp_server_paperless.paperless.client import PaperlessClient
 
 PATH = "/api/workflows/"
+TRIGGERS = "/api/workflow_triggers/"
+ACTIONS = "/api/workflow_actions/"
 RUN: Final = "/api/documents/bulk_edit/"
 # What the task of a run says when the workflow failed on some documents.
 FAILED_ON: Final = re.compile(
@@ -81,18 +84,22 @@ class _Row(BaseModel):
     actions: list[_Part]
 
 
+def _trigger(part: _Part) -> WorkflowTrigger:
+    return WorkflowTrigger(id=part.id, type=part.kind(), settings=part.settings())
+
+
+def _action(part: _Part) -> WorkflowAction:
+    return WorkflowAction(id=part.id, type=part.kind(), settings=part.settings())
+
+
 def _workflow(row: _Row) -> Workflow:
     return Workflow(
         id=row.id,
         name=row.name,
         order=row.order,
         enabled=row.enabled,
-        triggers=tuple(
-            WorkflowTrigger(id=t.id, type=t.kind(), settings=t.settings()) for t in row.triggers
-        ),
-        actions=tuple(
-            WorkflowAction(id=a.id, type=a.kind(), settings=a.settings()) for a in row.actions
-        ),
+        triggers=tuple(_trigger(t) for t in row.triggers),
+        actions=tuple(_action(a) for a in row.actions),
     )
 
 
@@ -100,6 +107,12 @@ def unseen_workflow(workflow_id: int) -> NotFound:
     """The error for a workflow that does not exist."""
     message = f"No workflow {workflow_id} exists."
     return NotFound(message, hint="Call list_workflows to see the workflows you can use.")
+
+
+def unseen_part(kind: Literal["trigger", "action"], number: int) -> NotFound:
+    """The error for a trigger or action that does not exist."""
+    message = f"No workflow {kind} {number} exists."
+    return NotFound(message, hint="Call list_workflows to see the ids of triggers and actions.")
 
 
 def _body(values: WorkflowValues) -> dict[str, object]:
@@ -153,19 +166,26 @@ class PaperlessWorkflowReader:
         """Read through ``client``."""
         self._client: PaperlessClient = client
 
-    async def list_workflows(self) -> tuple[Workflow, ...]:
+    async def list_workflows(
+        self, *, enabled: bool | None = None, trigger_type: int | None = None
+    ) -> tuple[Workflow, ...]:
         """See ``WorkflowReader.list_workflows``.
 
         Raises:
-            PaperlessMcpError: More than ``MAX_ITEMS`` workflows; resolving names on a part of
+            AnswerTooLarge: More than ``MAX_ITEMS`` workflows; resolving names on a part of
                 them could pick the wrong one.
         """
-        collected = await collect(self._client, PATH, Page[_Row])
+        params: dict[str, int] = {}
+        if enabled is not None:
+            params["enabled"] = enabled
+        if trigger_type is not None:
+            params["trigger_type"] = trigger_type
+        collected = await collect(self._client, PATH, Page[_Row], params=params)
         if collected.truncated:
             message = (
                 f"Paperless has more than {MAX_ITEMS} workflows; this server reads up to that."
             )
-            raise PaperlessMcpError(message)
+            raise AnswerTooLarge(message)
         return tuple(_workflow(row) for row in collected.items)
 
     async def get_workflow(self, workflow_id: int) -> Workflow:
@@ -174,6 +194,20 @@ class PaperlessWorkflowReader:
             return _workflow(await self._client.get(f"{PATH}{workflow_id}/", _Row))
         except NotFound:
             raise unseen_workflow(workflow_id) from None
+
+    async def get_trigger(self, trigger_id: int) -> WorkflowTrigger:
+        """See ``WorkflowReader.get_trigger``."""
+        try:
+            return _trigger(await self._client.get(f"{TRIGGERS}{trigger_id}/", _Part))
+        except NotFound:
+            raise unseen_part(kind="trigger", number=trigger_id) from None
+
+    async def get_action(self, action_id: int) -> WorkflowAction:
+        """See ``WorkflowReader.get_action``."""
+        try:
+            return _action(await self._client.get(f"{ACTIONS}{action_id}/", _Part))
+        except NotFound:
+            raise unseen_part(kind="action", number=action_id) from None
 
 
 class PaperlessWorkflowWriter:
