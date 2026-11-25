@@ -862,3 +862,13 @@ async def test_reading_again_ends_when_paperless_is_silent_or_asks_for_less(
 
     assert len(after) == reads
     assert {outcome for _, outcome in outcomes(report)} == {"unknown"}
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_hidden_account_does_not_stop_the_deletion() -> None:
+    rights = {"view_processedmail", "delete_processedmail", "view_mailrule"}
+    setup = Setup("mailman", permissions=rights, writes=True)
+    setup.rule(owner=None)
+    setup.mail(owner=None, status="FAILED")
+
+    assert outcomes(await setup.delete(1)) == [(1, "deleted")]
