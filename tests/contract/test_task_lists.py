@@ -4,19 +4,17 @@ Tasks are started by hand only as `sanity_check`, which changes nothing; its row
 afterwards. Other tests add tasks to the live stack meanwhile, so a test looks for its own rows.
 """
 
-from datetime import timedelta
 from typing import TYPE_CHECKING, cast
 
 import pytest
-from mcp_server_paperless.domain.task_lists import TaskFilters, TaskOrdering, TaskRow
 
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.domain.task_lists import TaskFilters, TaskOrdering, TaskRow
 
 if TYPE_CHECKING:
-    from mcp_server_paperless.domain.task_lists import RunnableTask
-
     from contract.conftest import Backend
     from mcp_server_paperless.domain.ports import TaskListReader
+    from mcp_server_paperless.domain.task_lists import RunnableTask
 
 pytestmark = [
     pytest.mark.anyio,
@@ -127,7 +125,6 @@ async def test_every_filter_keeps_what_matches_and_leaves_out_the_rest(backend: 
     assert failure.message
     assert (success.owner, failure.owner, manual.owner) == (success.owner, success.owner, None)
     owner = cast("int", success.owner)
-    moment = timedelta(milliseconds=1)
 
     cases: list[tuple[TaskFilters, set[str], set[str]]] = [
         (TaskFilters(states=("failure",)), {bad}, {good}),
@@ -143,7 +140,7 @@ async def test_every_filter_keeps_what_matches_and_leaves_out_the_rest(backend: 
         (TaskFilters(is_complete=False), set(), {good, bad}),
         (TaskFilters(owner=owner), {good, bad}, {check}),
         (TaskFilters(created_from=success.created), {good, bad, check}, set()),
-        (TaskFilters(created_from=failure.created + moment), {check}, {good, bad}),
+        (TaskFilters(created_from=manual.created), {check}, {good, bad}),
         (TaskFilters(created_to=success.created), {good}, {bad, check}),
         (TaskFilters(name=cast("str", success.file_name)), {good}, {bad, check}),
         (TaskFilters(result=failure.message[:20]), {bad}, {good, check}),
@@ -192,7 +189,8 @@ async def test_every_ordering_sorts_and_its_reverse_turns_it_round(backend: Back
                 TaskFilters(), ordering=ordering, page=1, page_size=100
             )
             # Where the tasks without the value come is the database's choice.
-            values = [v for row in listed.rows if (v := row.model_dump()[field]) is not None]
+            shown = [cast("object", row.model_dump()[field]) for row in listed.rows]
+            values = cast("list[float]", [v for v in shown if v is not None])
             assert values == sorted(values, reverse=sign == "-"), ordering
             assert values, ordering
 

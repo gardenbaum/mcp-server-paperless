@@ -38,7 +38,7 @@ claude mcp add paperless --env PAPERLESS_URL=https://paperless.example.org \
 
 mcp-server-paperless is a [Model Context Protocol](https://modelcontextprotocol.io) server for
 paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai, Cursor, VS
-Code and any other MCP client 102 tools in 13 toolsets that cover most of what the Paperless API
+Code and any other MCP client 102 tools in 14 toolsets that cover most of what the Paperless API
 can do, from a search to saved views, mail rules and workflows. It starts small and careful: 20
 tools by default, names instead of ids, and a confirmation step before anything that cannot be
 undone.
@@ -270,7 +270,8 @@ switch them on (never for a session: only you decide, see
 | `permissions` | 3 | | Owners and view and change rights of documents and taxonomy; list users and groups |
 | `mail` | 14 | | Mail accounts and rules for the mail import, and what it processed |
 | `workflows` | 7 | | The workflows Paperless runs by itself: triggers and actions; run one by hand on chosen documents |
-| `admin` | 16 | | Users, groups, application configuration, logs, tasks, bulk download |
+| `admin` | 13 | | Users, groups, application configuration, logs, bulk download |
+| `tasks` | 3 | | Background tasks: list and filter, mark as seen, start by hand |
 | `raw` | 1 | | A read-only escape hatch: GET any path of the Paperless API the other tools do not cover |
 
 Every tool with its kind and a one-line description is in the [tool

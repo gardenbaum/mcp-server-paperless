@@ -10,8 +10,6 @@ from typing import TYPE_CHECKING, cast
 
 import httpx2
 import pytest
-from mcp_server_paperless.domain.task_lists import TaskFilters
-from mcp_server_paperless.paperless.task_lists import PaperlessTaskListReader
 
 from adapter.conftest import streaming
 from adapter.test_task_lists import TASK_WIRE
@@ -25,8 +23,10 @@ from mcp_server_paperless.domain.errors import (
     UpstreamTimeout,
     UpstreamUnavailable,
 )
+from mcp_server_paperless.domain.task_lists import TaskFilters
 from mcp_server_paperless.domain.tasks import REJECTED
 from mcp_server_paperless.paperless.documents import PaperlessDocumentReader
+from mcp_server_paperless.paperless.task_lists import PaperlessTaskListReader
 from mcp_server_paperless.paperless.tasks import PaperlessTaskReader
 from mcp_server_paperless.paperless.trash import PaperlessTrashReader
 from mcp_server_paperless.services.duplicates import Bounds, DuplicateFinder

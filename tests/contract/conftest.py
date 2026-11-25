@@ -49,10 +49,6 @@ from fakes.paperless import (
     counted_pages,
     seeded,
 )
-from mcp_server_paperless.paperless.task_lists import (
-    PaperlessTaskListReader,
-    PaperlessTaskListWriter,
-)
 
 from mcp_server_paperless.domain.bulk import ObjectPermissions
 from mcp_server_paperless.domain.ports import (  # noqa: TC001 -- Ports' annotations are introspected
@@ -101,6 +97,10 @@ from mcp_server_paperless.paperless.permissions import (
 )
 from mcp_server_paperless.paperless.raw import PaperlessRawReader
 from mcp_server_paperless.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
+from mcp_server_paperless.paperless.task_lists import (
+    PaperlessTaskListReader,
+    PaperlessTaskListWriter,
+)
 from mcp_server_paperless.paperless.tasks import PaperlessTaskReader
 from mcp_server_paperless.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
 from mcp_server_paperless.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter

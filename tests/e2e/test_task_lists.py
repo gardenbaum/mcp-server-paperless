@@ -74,7 +74,7 @@ async def test_a_failed_upload_is_found_by_every_filter(stack: Stack) -> None:
     created = datetime.fromisoformat(str(wire["date_created"])).isoformat()
     mine: Json = {"name": title}
 
-    for arguments in (
+    matching: list[Json] = [
         {"state": "failure"},
         {"state": ["failure", "revoked"], "is_complete": True},
         {"task_type": "consume_file", "trigger_source": ["api_upload", "web_ui"]},
@@ -82,17 +82,19 @@ async def test_a_failed_upload_is_found_by_every_filter(stack: Stack) -> None:
         {"owner": me["id"], "result": f"{title}.pdf"},
         {"created_from": created, "created_to": created},
         {"ordering": "-finished"},
-    ):
-        found = tasks(await run(stack, "list_tasks", **mine, **arguments))
+    ]
+    for arguments in matching:
+        found = tasks(await run(stack, "list_tasks", None, **mine, **arguments))
         assert set(found) == {task_id}, arguments
         assert (found[task_id]["file_name"], found[task_id]["owner"]) == (f"{title}.pdf", me["id"])
-    for arguments in (
+    others: list[Json] = [
         {"state": "success"},
         {"is_complete": False},
         {"trigger_source": "scheduled"},
         {"acknowledged": True},
-    ):
-        assert (await run(stack, "list_tasks", **mine, **arguments))["count"] == 0, arguments
+    ]
+    for arguments in others:
+        assert (await run(stack, "list_tasks", None, **mine, **arguments))["count"] == 0, arguments
 
 
 async def test_a_sanity_check_is_run_listed_and_acknowledged(stack: Stack) -> None:

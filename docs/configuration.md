@@ -410,7 +410,7 @@ you have to own every document, or it has no owner.
 Off by default. Administers the instance: users (`get_user`, `create_user`, `update_user`,
 `delete_user`), groups (`get_group`, `create_group`, `update_group`, `delete_group`), the
 application configuration (`get_app_config`, `update_app_config`), logs (`list_logs`,
-`get_log`), background tasks (`list_tasks`, `acknowledge_tasks`, `run_task`) and
+`get_log`) and
 `bulk_download`, which hands over the files of several documents as one ZIP archive: attached
 within the download limit, in parts, or saved (see [Uploads and downloads](#uploads-and-downloads)).
 `list_users` and `list_groups` of the `permissions` toolset find the users and
@@ -422,8 +422,6 @@ groups.
   group; changing what a group grants.
 - Every `update_app_config` needs `confirm` and lists each setting with its old and new value,
   because it applies to every user and the AI settings decide which service gets document text.
-- `run_task` needs `confirm` to train the classifier or rebuild the AI index; a sanity check
-  only reads and needs none.
 - Passwords and API keys are write-only: never returned, quoted or logged.
 - Service URLs are returned without the user name and password in them (a query string is
   returned); `shown_in_part` names those that may have some. Writing one back as it was returned
@@ -431,9 +429,27 @@ groups.
 - The account the server signs in with cannot be deleted, deactivated or stripped of its
   superuser status through these tools.
 - Paperless decides who may do what: most tools need the matching Paperless permission, the
-  logs are for staff users and `run_task` for superusers.
+  logs are for staff users.
 - Log lines come without the user name and password of the URLs in them (`note` says
   so).
+
+### `tasks`
+
+Off by default. The background tasks of Paperless: uploads, mail fetches, sanity checks, classifier
+training and the rest. `list_tasks` lists them with every filter Paperless has (state, type, source,
+seen or not, ended or not, owner, file name, result, time) and in any of its orders,
+`acknowledge_tasks` marks them as seen, and `run_task` starts one. `get_task` of `core` follows one
+task by its `task_id`.
+
+- These three tools were in `admin` up to version 0.4: an operator who offered `admin` for them
+  adds `tasks` (decision-93). User administration is not needed for them.
+- Staff users see every task, others their own and those without an owner. Of what a task was given
+  only the file name is shown, not the server path or the metadata of an upload.
+- `name` finds part of the file's name, and also the words for type and source in the language of
+  the server's Paperless user.
+- `run_task` needs `confirm` to train the classifier or rebuild the AI index; a sanity check
+  only reads and needs none. It is for superusers; the other tools need the matching Paperless
+  permission.
 
 ### `raw`
 

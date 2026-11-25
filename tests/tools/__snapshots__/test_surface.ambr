@@ -865,7 +865,7 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
-            'admin',
+            'tasks',
           ]),
         }),
       }),
@@ -16395,7 +16395,7 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
-            'admin',
+            'tasks',
           ]),
         }),
       }),
@@ -16409,8 +16409,10 @@
         List background tasks, newest first: uploads, mail fetches, sanity checks, training.
         
         Each row has the database id acknowledge_tasks takes, the task_id get_task takes, its state
-        and, for a failure, the first line of the error. count is the total; pass next_page as page
-        for more. Needs the view_paperlesstask permission.
+        and, for a failure, the first line of the error; get_task shows all of it. Filters combine;
+        several values of one filter mean any of them. count is the total; pass next_page as page for
+        more. Staff users see every task, others their own and those without an owner. Needs the
+        view_paperlesstask permission.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -16427,6 +16429,94 @@
             'default': None,
             'description': 'false: only tasks nobody acknowledged yet.',
           }),
+          'created_from': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'ISO time with zone, included.',
+          }),
+          'created_to': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'ISO time with zone, included.',
+          }),
+          'is_complete': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: only ended tasks; false: only waiting or running.',
+          }),
+          'name': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': "Part of the uploaded file's name, or of the words for type or source in the user's language.",
+          }),
+          'ordering': dict({
+            'default': '-created',
+            'description': 'Sort field, - for descending; equal ones newest first.',
+            'enum': list([
+              '-created',
+              'created',
+              '-finished',
+              'finished',
+              '-state',
+              'state',
+              '-task_type',
+              'task_type',
+              '-duration_seconds',
+              'duration_seconds',
+              '-wait_time_seconds',
+              'wait_time_seconds',
+            ]),
+            'type': 'string',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Username or id of the owner.',
+          }),
           'page': dict({
             'default': 1,
             'description': 'Page number, from 1.',
@@ -16439,6 +16529,18 @@
             'maximum': 100,
             'minimum': 1,
             'type': 'integer',
+          }),
+          'result': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Part of a reason or error; a number also finds a document id.',
           }),
           'state': dict({
             'anyOf': list([
@@ -16453,11 +16555,24 @@
                 'type': 'string',
               }),
               dict({
+                'items': dict({
+                  'enum': list([
+                    'pending',
+                    'started',
+                    'success',
+                    'failure',
+                    'revoked',
+                  ]),
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
                 'type': 'null',
               }),
             ]),
             'default': None,
-            'description': 'Only tasks in this state, e.g. failure.',
+            'description': 'Only tasks in this state, or in one of these, e.g. failure.',
           }),
           'task_type': dict({
             'anyOf': list([
@@ -16480,11 +16595,68 @@
                 'type': 'string',
               }),
               dict({
+                'items': dict({
+                  'enum': list([
+                    'consume_file',
+                    'train_classifier',
+                    'sanity_check',
+                    'index_optimize',
+                    'mail_fetch',
+                    'llm_index',
+                    'empty_trash',
+                    'check_workflows',
+                    'bulk_update',
+                    'reprocess_document',
+                    'build_share_link',
+                    'bulk_delete',
+                    'apply_ai_suggestions',
+                  ]),
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
                 'type': 'null',
               }),
             ]),
             'default': None,
-            'description': 'Only this kind, e.g. consume_file or sanity_check.',
+            'description': 'Only this kind, or one of these, e.g. consume_file (an upload).',
+          }),
+          'trigger_source': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'scheduled',
+                  'web_ui',
+                  'api_upload',
+                  'folder_consume',
+                  'email_consume',
+                  'system',
+                  'manual',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'items': dict({
+                  'enum': list([
+                    'scheduled',
+                    'web_ui',
+                    'api_upload',
+                    'folder_consume',
+                    'email_consume',
+                    'system',
+                    'manual',
+                  ]),
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only what this, or one of these, started.',
           }),
         }),
         'type': 'object',
@@ -16539,6 +16711,17 @@
                     }),
                   ]),
                 }),
+                'file_name': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'The uploaded file; null for other types.',
+                }),
                 'finished': dict({
                   'anyOf': list([
                     dict({
@@ -16565,6 +16748,17 @@
                     }),
                   ]),
                   'description': 'Why the task failed; null otherwise.',
+                }),
+                'owner': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'integer',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'User id; null: visible to all.',
                 }),
                 'started': dict({
                   'anyOf': list([
@@ -16596,8 +16790,19 @@
                   'type': 'string',
                 }),
                 'trigger_source': dict({
-                  'description': 'scheduled, web_ui, api_upload, folder_consume, email_consume, system or manual.',
+                  'description': 'What started it: the values of the argument of the same name.',
                   'type': 'string',
+                }),
+                'wait_time_seconds': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'number',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'From creation to start.',
                 }),
               }),
               'required': list([
@@ -16605,10 +16810,13 @@
                 'task_id',
                 'task_type',
                 'trigger_source',
+                'file_name',
+                'owner',
                 'state',
                 'created',
                 'started',
                 'finished',
+                'wait_time_seconds',
                 'duration_seconds',
                 'document_ids',
                 'acknowledged',
@@ -21722,7 +21930,7 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
-            'admin',
+            'tasks',
           ]),
         }),
       }),
@@ -44532,7 +44740,7 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
-            'admin',
+            'tasks',
           ]),
         }),
       }),
@@ -44546,8 +44754,10 @@
         List background tasks, newest first: uploads, mail fetches, sanity checks, training.
         
         Each row has the database id acknowledge_tasks takes, the task_id get_task takes, its state
-        and, for a failure, the first line of the error. count is the total; pass next_page as page
-        for more. Needs the view_paperlesstask permission.
+        and, for a failure, the first line of the error; get_task shows all of it. Filters combine;
+        several values of one filter mean any of them. count is the total; pass next_page as page for
+        more. Staff users see every task, others their own and those without an owner. Needs the
+        view_paperlesstask permission.
       ''',
       'inputSchema': dict({
         'additionalProperties': False,
@@ -44564,6 +44774,94 @@
             'default': None,
             'description': 'false: only tasks nobody acknowledged yet.',
           }),
+          'created_from': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'ISO time with zone, included.',
+          }),
+          'created_to': dict({
+            'anyOf': list([
+              dict({
+                'format': 'date-time',
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'ISO time with zone, included.',
+          }),
+          'is_complete': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: only ended tasks; false: only waiting or running.',
+          }),
+          'name': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': "Part of the uploaded file's name, or of the words for type or source in the user's language.",
+          }),
+          'ordering': dict({
+            'default': '-created',
+            'description': 'Sort field, - for descending; equal ones newest first.',
+            'enum': list([
+              '-created',
+              'created',
+              '-finished',
+              'finished',
+              '-state',
+              'state',
+              '-task_type',
+              'task_type',
+              '-duration_seconds',
+              'duration_seconds',
+              '-wait_time_seconds',
+              'wait_time_seconds',
+            ]),
+            'type': 'string',
+          }),
+          'owner': dict({
+            'anyOf': list([
+              dict({
+                'anyOf': list([
+                  dict({
+                    'type': 'string',
+                  }),
+                  dict({
+                    'type': 'integer',
+                  }),
+                ]),
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Username or id of the owner.',
+          }),
           'page': dict({
             'default': 1,
             'description': 'Page number, from 1.',
@@ -44576,6 +44874,18 @@
             'maximum': 100,
             'minimum': 1,
             'type': 'integer',
+          }),
+          'result': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Part of a reason or error; a number also finds a document id.',
           }),
           'state': dict({
             'anyOf': list([
@@ -44590,11 +44900,24 @@
                 'type': 'string',
               }),
               dict({
+                'items': dict({
+                  'enum': list([
+                    'pending',
+                    'started',
+                    'success',
+                    'failure',
+                    'revoked',
+                  ]),
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
                 'type': 'null',
               }),
             ]),
             'default': None,
-            'description': 'Only tasks in this state, e.g. failure.',
+            'description': 'Only tasks in this state, or in one of these, e.g. failure.',
           }),
           'task_type': dict({
             'anyOf': list([
@@ -44617,11 +44940,68 @@
                 'type': 'string',
               }),
               dict({
+                'items': dict({
+                  'enum': list([
+                    'consume_file',
+                    'train_classifier',
+                    'sanity_check',
+                    'index_optimize',
+                    'mail_fetch',
+                    'llm_index',
+                    'empty_trash',
+                    'check_workflows',
+                    'bulk_update',
+                    'reprocess_document',
+                    'build_share_link',
+                    'bulk_delete',
+                    'apply_ai_suggestions',
+                  ]),
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
                 'type': 'null',
               }),
             ]),
             'default': None,
-            'description': 'Only this kind, e.g. consume_file or sanity_check.',
+            'description': 'Only this kind, or one of these, e.g. consume_file (an upload).',
+          }),
+          'trigger_source': dict({
+            'anyOf': list([
+              dict({
+                'enum': list([
+                  'scheduled',
+                  'web_ui',
+                  'api_upload',
+                  'folder_consume',
+                  'email_consume',
+                  'system',
+                  'manual',
+                ]),
+                'type': 'string',
+              }),
+              dict({
+                'items': dict({
+                  'enum': list([
+                    'scheduled',
+                    'web_ui',
+                    'api_upload',
+                    'folder_consume',
+                    'email_consume',
+                    'system',
+                    'manual',
+                  ]),
+                  'type': 'string',
+                }),
+                'type': 'array',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'Only what this, or one of these, started.',
           }),
         }),
         'type': 'object',
@@ -44676,6 +45056,17 @@
                     }),
                   ]),
                 }),
+                'file_name': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'string',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'The uploaded file; null for other types.',
+                }),
                 'finished': dict({
                   'anyOf': list([
                     dict({
@@ -44702,6 +45093,17 @@
                     }),
                   ]),
                   'description': 'Why the task failed; null otherwise.',
+                }),
+                'owner': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'integer',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'User id; null: visible to all.',
                 }),
                 'started': dict({
                   'anyOf': list([
@@ -44733,8 +45135,19 @@
                   'type': 'string',
                 }),
                 'trigger_source': dict({
-                  'description': 'scheduled, web_ui, api_upload, folder_consume, email_consume, system or manual.',
+                  'description': 'What started it: the values of the argument of the same name.',
                   'type': 'string',
+                }),
+                'wait_time_seconds': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'number',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'From creation to start.',
                 }),
               }),
               'required': list([
@@ -44742,10 +45155,13 @@
                 'task_id',
                 'task_type',
                 'trigger_source',
+                'file_name',
+                'owner',
                 'state',
                 'created',
                 'started',
                 'finished',
+                'wait_time_seconds',
                 'duration_seconds',
                 'document_ids',
                 'acknowledged',

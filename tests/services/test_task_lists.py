@@ -10,7 +10,6 @@ from typing import final
 import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakePaperless, FakeState, FakeTask, FakeUser, seeded
-from mcp_server_paperless.services.task_lists import TaskListService
 
 from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
@@ -20,6 +19,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.task_lists import TaskListService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 pytestmark = [
@@ -241,8 +241,13 @@ async def test_a_blank_text_is_refused_as_a_filter(field: str, blank: str) -> No
 
 async def test_an_empty_list_is_refused_as_a_filter() -> None:
     """Sent on, it would be no filter at all."""
-    for field in ("state", "task_type", "trigger_source"):
-        text = await failure(several().service.list_tasks(**{field: []}), Validation)  # pyright: ignore[reportArgumentType] -- test data built from dicts
+    service = several().service
+    for field, call in (
+        ("state", service.list_tasks(state=[])),
+        ("task_type", service.list_tasks(task_type=[])),
+        ("trigger_source", service.list_tasks(trigger_source=[])),
+    ):
+        text = await failure(call, Validation)
         assert text == f"{field} must name at least one value. Hint: Leave {field} out for all."
 
 

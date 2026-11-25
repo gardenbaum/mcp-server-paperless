@@ -2,7 +2,7 @@
 
 <!-- Generated from the tool surface by `just docs-tools`. Do not edit by hand. -->
 
-102 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
+102 tools in 14 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
 default; the others are switched on with
 [`PAPERLESS_MCP_TOOLSETS`](configuration.md#toolsets), which also says what each toolset is for.
 
@@ -58,9 +58,6 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | `update_app_config` | destructive, confirm | Change the application configuration: OCR, barcodes, title, AI. |
 | `list_logs` | read | List the log files this instance keeps (paperless, mail, celery). |
 | `get_log` | read | Read the newest lines of a log, oldest first, to find out why something failed. |
-| `list_tasks` | read | List background tasks, newest first: uploads, mail fetches, sanity checks, training. |
-| `acknowledge_tasks` | write | Mark tasks as seen, e.g. failed ones after you looked at them. |
-| `run_task` | write, confirm | Start a background task by hand and return its task_id; follow it with get_task. |
 | `bulk_download` | read | Get the files of several documents as one ZIP archive, attached as an embedded resource. |
 
 ## `bulk`
@@ -135,6 +132,14 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | `rebuild_share_bundle` | write | Build the archive of a bundle again, for example after a failed build. |
 | `delete_share_bundle` | destructive, confirm | Delete a bundle and its archive: its URL stops working for everyone who has it. |
 | `email_documents` | destructive, confirm | Send the files of documents by e-mail through the mail server of Paperless. |
+
+## `tasks`
+
+| Tool | Kind | What it does |
+|---|---|---|
+| `list_tasks` | read | List background tasks, newest first: uploads, mail fetches, sanity checks, training. |
+| `acknowledge_tasks` | write | Mark tasks as seen, e.g. failed ones after you looked at them. |
+| `run_task` | write, confirm | Start a background task by hand and return its task_id; follow it with get_task. |
 
 ## `trash`
 

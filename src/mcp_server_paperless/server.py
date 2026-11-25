@@ -37,6 +37,10 @@ from mcp_server_paperless.paperless.permissions import (
 )
 from mcp_server_paperless.paperless.raw import PaperlessRawReader
 from mcp_server_paperless.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
+from mcp_server_paperless.paperless.task_lists import (
+    PaperlessTaskListReader,
+    PaperlessTaskListWriter,
+)
 from mcp_server_paperless.paperless.tasks import PaperlessTaskReader
 from mcp_server_paperless.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
 from mcp_server_paperless.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
@@ -76,6 +80,7 @@ from mcp_server_paperless.services.read_documents import ReadDocuments
 from mcp_server_paperless.services.removal import DocumentRemoval
 from mcp_server_paperless.services.selection import DocumentSelector
 from mcp_server_paperless.services.sharing import SharingService
+from mcp_server_paperless.services.task_lists import TaskListService
 from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
@@ -112,6 +117,7 @@ from mcp_server_paperless.tools import (
     views,
     workflows,
 )
+from mcp_server_paperless.tools import tasks as tasks_toolset
 from mcp_server_paperless.tools._shared import (
     ANNOTATIONS,
     DOCUMENT_TEXT,
@@ -162,6 +168,8 @@ if TYPE_CHECKING:
         RawReader,
         SharingReader,
         SharingWriter,
+        TaskListReader,
+        TaskListWriter,
         TaskReader,
         TaxonomyReader,
         TaxonomyWriter,
@@ -261,6 +269,7 @@ CATALOGUE: Final = Catalogue(
         permissions.provider,
         mail.provider,
         admin.provider,
+        tasks_toolset.provider,
         raw.provider,
         prompts.provider,
         workflows.provider,
@@ -309,6 +318,8 @@ class Ports:
     workflow_writes: WorkflowWriter
     management: AdminReader
     management_writes: AdminWriter
+    task_lists: TaskListReader
+    task_list_writes: TaskListWriter
 
 
 def paperless_ports(client: PaperlessClient) -> Ports:
@@ -338,6 +349,8 @@ def paperless_ports(client: PaperlessClient) -> Ports:
         workflow_writes=PaperlessWorkflowWriter(client),
         management=PaperlessAdminReader(client),
         management_writes=PaperlessAdminWriter(client),
+        task_lists=PaperlessTaskListReader(client),
+        task_list_writes=PaperlessTaskListWriter(client),
     )
 
 
@@ -575,6 +588,9 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.management_writes,
                     max_bytes=settings.max_download_bytes,
                     sink=sink,
+                ),
+                task_lists=TaskListService(
+                    adapters.task_lists, adapters.task_list_writes, taxonomy
                 ),
                 uploads=uploading,
                 upload_batches=BatchUploadService(

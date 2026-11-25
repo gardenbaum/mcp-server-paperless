@@ -7,7 +7,7 @@
 #                 value of a field that is sent carries a `reason`, so that the owner can decide on
 #                 an exclusion. A field a tool supports that no tool test sends is listed too.
 # [[internal]]    fields the adapter chooses itself although a task wants them as a tool argument
-#                 (tasks owner, ordering, date_created_after; the body of mail_accounts/test, for
+#                 (the body of mail_accounts/test, for
 #                 testing an unsaved account; the documents of a bundle rebuild, PLMCP-83). They
 #                 stay open under that task although they are sent.
 # [[plumbing]]    fields the adapter chooses itself and no task is known to want as an argument
@@ -78,7 +78,6 @@ operations = [
   "GET /api/tasks/active/",
   "GET /api/tasks/status_counts/",
   "GET /api/tasks/summary/",
-  "GET /api/tasks/{id}/",
 ]
 
 [[undeclared]]
@@ -169,11 +168,6 @@ reason = "a projection that keeps the OCR text out of the answer; no tool argume
 operation = "GET /api/workflows/"
 fields = ["query:page", "query:page_size"]
 reason = "page and page_size are constants of a helper that reads every page; no tool argument sets them"
-
-[[internal]]
-operation = "GET /api/tasks/"
-fields = ["query:owner", "query:ordering", "query:date_created_after"]
-reason = "the adapter chooses it"
 
 [[internal]]
 operation = "POST /api/share_link_bundles/{id}/rebuild/"
@@ -285,11 +279,6 @@ task = "PLMCP-83"
 operation = "GET /api/tags/{id}/"
 fields = ["query:full_perms"]
 task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/tasks/"
-fields = ["query:date_created_after", "query:date_created_before", "query:is_complete", "query:name", "query:ordering", "query:owner", "query:result", "query:trigger_source"]
-task = "PLMCP-89"
 
 [[open_fields]]
 operation = "GET /api/users/"
@@ -415,12 +404,6 @@ task = "PLMCP-83"
 operation = "POST /api/tasks/acknowledge/"
 fields = ["body:all"]
 task = "PLMCP-89"
-
-[[open_fields]]
-operation = "POST /api/tasks/run/"
-fields = ["body:task_type=apply_ai_suggestions", "body:task_type=build_share_link", "body:task_type=bulk_delete", "body:task_type=bulk_update", "body:task_type=check_workflows", "body:task_type=consume_file", "body:task_type=empty_trash", "body:task_type=index_optimize", "body:task_type=mail_fetch", "body:task_type=reprocess_document"]
-task = "PLMCP-89"
-reason = "run_task offers train_classifier, sanity_check and llm_index; which of the other types Paperless lets a user start is PLMCP-89 AC 3"
 
 [[open_fields]]
 operation = "POST /api/users/"
@@ -683,3 +666,17 @@ fields = ["body:actions[].passwords"]
 quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-86 - Manual-triggers-and-AI-suggestions-are-written-password-removal-stays-with-the-web-UI.md"
+
+[[exclusion]]
+operation = "GET /api/tasks/{id}/"
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-93 - The-task-tools-have-a-toolset-of-their-own-and-show-of-a-tasks-input-only-the-file-name.md"
+
+[[exclusion]]
+operation = "POST /api/tasks/run/"
+fields = ["body:task_type=apply_ai_suggestions", "body:task_type=build_share_link", "body:task_type=bulk_delete", "body:task_type=bulk_update", "body:task_type=check_workflows", "body:task_type=consume_file", "body:task_type=empty_trash", "body:task_type=index_optimize", "body:task_type=mail_fetch", "body:task_type=reprocess_document"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-93 - The-task-tools-have-a-toolset-of-their-own-and-show-of-a-tasks-input-only-the-file-name.md"
+reason = "Paperless lists them and answers 400: they cannot be started by hand"

@@ -73,8 +73,6 @@ from mcp_server_paperless.domain.admin import (
     AppConfigRecord,
     ArchiveFile,
     GroupRecord,
-    TaskRow,
-    TaskRowPage,
     UserRecord,
     check_secret,
 )
@@ -129,6 +127,7 @@ from mcp_server_paperless.domain.permissions import (
     UserRow,
 )
 from mcp_server_paperless.domain.selection import DocumentRow
+from mcp_server_paperless.domain.task_lists import TaskRow, TaskRowPage
 from mcp_server_paperless.domain.tasks import REJECTED, TaskState, TaskStatus, Unconfirmed
 from mcp_server_paperless.domain.taxonomy import SelectOption, TaxonomyDetail, TaxonomyItem
 from mcp_server_paperless.domain.trash import (
@@ -148,7 +147,6 @@ from mcp_server_paperless.domain.workflows import (
     WorkflowTrigger,
 )
 from mcp_server_paperless.paperless.admin import (
-    ACK_TASKS,
     ADD_GROUP,
     ADD_USER,
     ARCHIVE_FILES,
@@ -160,16 +158,13 @@ from mcp_server_paperless.paperless.admin import (
     DOWNLOAD,
     READ_CONFIG,
     READ_LOGS,
-    RUN_TASKS,
     VIEW_GROUP,
-    VIEW_TASKS,
     VIEW_USER,
     denied,
     unseen_group,
     unseen_log,
     unseen_user,
 )
-from mcp_server_paperless.paperless.admin import beyond_last_page as beyond_tasks
 from mcp_server_paperless.paperless.bulk import documents_refused, objects_refused
 from mcp_server_paperless.paperless.documents import (
     NO_THUMBNAIL_HINT,
@@ -193,6 +188,8 @@ from mcp_server_paperless.paperless.pdf import (
     wrong_password,
 )
 from mcp_server_paperless.paperless.queued import FORBIDDEN_REASON
+from mcp_server_paperless.paperless.task_lists import ACK_TASKS, RUN_TASKS, VIEW_TASKS
+from mcp_server_paperless.paperless.task_lists import beyond_last_page as beyond_tasks
 from mcp_server_paperless.paperless.tasks import not_found
 from mcp_server_paperless.paperless.taxonomy import TAG_DELETE_HINT
 from mcp_server_paperless.paperless.trash import beyond_last_page as beyond_trash
@@ -210,8 +207,6 @@ if TYPE_CHECKING:
         Compression,
         ConfigValues,
         GroupValues,
-        RunnableTask,
-        TaskType,
         UserValues,
     )
     from mcp_server_paperless.domain.bulk import (
@@ -236,6 +231,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.raw import RawReply
     from mcp_server_paperless.domain.selection import ReadField
     from mcp_server_paperless.domain.sharing import FileVersionKind, ShareBundle, ShareLink
+    from mcp_server_paperless.domain.task_lists import RunnableTask, TaskFilters, TaskOrdering
     from mcp_server_paperless.domain.taxonomy import (
         MatchingAlgorithm,
         TaxonomyKind,
@@ -558,9 +554,6 @@ class FakeCopying:
 class FakeTask:
     """A background task, as `/api/tasks/` reports it.
 
-    Not owner-filtered: whether Paperless hides another owner's task from a user who may view
-    tasks is not verified on 3.4.2 (the seed has no such user).
-
     Attributes:
         task_id: The Celery UUID clients look tasks up by.
         message: The error message of a failed task (its traceback is not modelled).
@@ -582,6 +575,35 @@ class FakeTask:
     acknowledged: bool = False
     started: datetime | None = None
     duration_seconds: float | None = None
+    wait_time_seconds: float | None = None
+    owner: int | None = None
+
+
+def task_matches(task: FakeTask, filters: TaskFilters) -> bool:
+    """`PaperlessTaskFilterSet`: a name also finds the words for type and source."""
+    name, result = (text.lower() if text else None for text in (filters.name, filters.result))
+    words = (task.file_name, *(v.replace("_", " ") for v in (task.task_type, task.trigger_source)))
+    related = task.document_ids if task.duplicate_of is None else (task.duplicate_of,)
+    return (
+        (not filters.states or task.status in filters.states)
+        and (not filters.task_types or task.task_type in filters.task_types)
+        and (not filters.trigger_sources or task.trigger_source in filters.trigger_sources)
+        and (filters.acknowledged is None or task.acknowledged == filters.acknowledged)
+        and (
+            filters.is_complete is None
+            or (task.status not in {"pending", "started"}) == filters.is_complete
+        )
+        and (filters.owner is None or task.owner == filters.owner)
+        and (name is None or any(name in word.lower() for word in words))
+        and (
+            result is None
+            or result in (task.message or "").lower()
+            or result in {str(number) for number in related}
+            or ("duplicate" in result and task.duplicate_of is not None)
+        )
+        and (filters.created_from is None or task.created >= filters.created_from)
+        and (filters.created_to is None or task.created <= filters.created_to)
+    )
 
 
 @dataclass(kw_only=True)
@@ -1065,7 +1087,7 @@ class FakePaperless:
         if not self.user.has("view_paperlesstask"):
             message = "The Paperless user may not perform this action."
             raise PermissionDenied(message)
-        for task in self.state.tasks:
+        for task in self._tasks():
             if task.task_id == task_id:
                 return TaskStatus(
                     task_id=task.task_id,
@@ -1287,7 +1309,12 @@ class FakePaperless:
         values = self._values(upload)
         now = datetime.now(UTC)
         task = FakeTask(
-            id=len(state.tasks) + 1, task_id=str(uuid.uuid4()), created=now, finished=now
+            id=len(state.tasks) + 1,
+            task_id=str(uuid.uuid4()),
+            file_name=upload.filename,
+            owner=self.user.id,
+            created=now,
+            finished=now,
         )
         state.tasks.append(task)
         if self._rejected(upload.content, task):
@@ -1889,7 +1916,12 @@ class FakePaperless:
         )
         archive = upload.content + b"\n%archive" if upload.mime_type == "application/pdf" else None
         task = FakeTask(
-            id=len(self.state.tasks) + 1, task_id=str(uuid.uuid4()), created=now, finished=now
+            id=len(self.state.tasks) + 1,
+            task_id=str(uuid.uuid4()),
+            file_name=upload.filename,
+            owner=self.user.id,
+            created=now,
+            finished=now,
         )
         self.state.tasks.append(task)
         if self._rejected(upload.content, task):
@@ -3717,43 +3749,56 @@ class FakePaperless:
             raise unseen_log(name)
         return tuple(self.state.logs[name][-limit:])
 
+    def _tasks(self) -> list[FakeTask]:
+        """The tasks this user may see: staff all, others their own and those without an owner."""
+        staff = self.user.is_staff or self.user.is_superuser
+        return [t for t in self.state.tasks if staff or t.owner in {None, self.user.id}]
+
     async def list_tasks(
         self,
+        filters: TaskFilters,
         *,
-        state: TaskState | None,
-        task_type: TaskType | None,
-        acknowledged: bool | None,
+        ordering: TaskOrdering = "-created",
         page: int,
         page_size: int,
     ) -> TaskRowPage:
-        """`AdminReader.list_tasks` (TasksViewSet list, newest first)."""
+        """`TaskListReader.list_tasks` (TasksViewSet list)."""
         self._need("view_paperlesstask", VIEW_TASKS)
-        tasks = sorted(self.state.tasks, key=lambda t: (t.created, t.id), reverse=True)
-        rows = tuple(
+        if filters.owner is not None and filters.owner not in {u.id for u in self.state.users}:
+            reject("owner", "Select a valid choice. That choice is not one of the available ones.")
+        kept = [t for t in self._tasks() if task_matches(t, filters)]
+        rows = [
             TaskRow(
                 id=t.id,
                 task_id=t.task_id,
                 task_type=t.task_type,
                 trigger_source=t.trigger_source,
+                file_name=t.file_name or None,
+                owner=t.owner,
                 state=t.status,
                 created=t.created,
                 started=t.started,
                 finished=t.finished,
+                wait_time_seconds=t.wait_time_seconds,
                 duration_seconds=t.duration_seconds,
                 document_ids=t.document_ids,
                 acknowledged=t.acknowledged,
                 message=t.message if t.duplicate_of is None else REJECTED,
             )
-            for t in tasks
-            if (state is None or t.status == state)
-            and (task_type is None or t.task_type == task_type)
-            and (acknowledged is None or t.acknowledged == acknowledged)
+            for t in sorted(kept, key=lambda t: (t.created, t.id), reverse=True)
+        ]
+        field = ordering.removeprefix("-")
+        with_value = [r for r in rows if getattr(r, field) is not None]
+        without = [r for r in rows if getattr(r, field) is None]
+        with_value.sort(
+            key=lambda r: cast("float", getattr(r, field)), reverse=ordering.startswith("-")
         )
+        found = (*with_value, *without)
         try:
-            shown, more = self._page(rows, page, page_size)
+            shown, more = self._page(found, page, page_size)
         except NotFound:
             raise beyond_tasks(page) from None
-        return TaskRowPage(count=len(rows), next_page=more, rows=shown)
+        return TaskRowPage(count=len(found), next_page=more, rows=shown)
 
     async def download_documents(
         self,
@@ -3977,9 +4022,9 @@ class FakePaperless:
 
     @write
     async def acknowledge_tasks(self, task_ids: Sequence[int]) -> int:
-        """`AdminWriter.acknowledge_tasks` (TasksViewSet acknowledge)."""
+        """`TaskListWriter.acknowledge_tasks` (TasksViewSet acknowledge)."""
         self._need("change_paperlesstask", ACK_TASKS)
-        known = {t.id: t for t in self.state.tasks}
+        known = {t.id: t for t in self._tasks()}
         if len(set(task_ids)) != len(task_ids) or not set(task_ids) <= known.keys():
             reject("tasks", "Some tasks in tasks don't exist or were specified twice.")
         for number in task_ids:
@@ -3988,7 +4033,7 @@ class FakePaperless:
 
     @write
     async def run_task(self, task_type: RunnableTask) -> str:
-        """`AdminWriter.run_task` (TasksViewSet run): superusers only, three task types."""
+        """`TaskListWriter.run_task` (TasksViewSet run): superusers only, three task types."""
         if not self.user.is_superuser:
             raise denied(RUN_TASKS)
         if task_type not in {"train_classifier", "sanity_check", "llm_index"}:

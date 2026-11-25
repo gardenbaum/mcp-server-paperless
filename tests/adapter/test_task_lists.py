@@ -3,18 +3,19 @@
 from datetime import UTC, datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
-import httpx2
 import pytest
+
+from adapter.test_admin import Json, Recording, forbidden, not_found, ok, page
+from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 from mcp_server_paperless.domain.task_lists import TaskFilters, TaskOrdering, TaskRow
 from mcp_server_paperless.paperless.task_lists import (
     PaperlessTaskListReader,
     PaperlessTaskListWriter,
 )
 
-from adapter.test_admin import Json, Recording, forbidden, not_found, ok, page
-from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
-
 if TYPE_CHECKING:
+    import httpx2
+
     from adapter.conftest import ClientFactory
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-93")]

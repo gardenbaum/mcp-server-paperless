@@ -170,13 +170,13 @@ Limits.
 | `POST /api/tasks/run/` | `run_task` |  |
 | `GET /api/tasks/status_counts/` |  | PLMCP-89 |
 | `GET /api/tasks/summary/` |  | PLMCP-89 |
-| `GET /api/tasks/{id}/` |  | PLMCP-89 |
+| `GET /api/tasks/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-93 - The-task-tools-have-a-toolset-of-their-own-and-show-of-a-tasks-input-only-the-file-name.md) |
 | `POST /api/token/` |  | PLMCP-83 |
 | `GET /api/trash/` | `empty_trash`, `get_trash_entry`, `get_trashed_file`, `list_trash`, `restore_from_trash` and 3 more |  |
 | `POST /api/trash/` | `empty_trash`, `restore_from_trash` |  |
 | `GET /api/ui_settings/` | `delete_pages`, `delete_user`, `edit_pdf`, `email_documents`, `extract_pages` and 9 more |  |
 | `POST /api/ui_settings/` |  | PLMCP-88 |
-| `GET /api/users/` | `create_mail_rule`, `create_workflow`, `delete_user`, `get_document`, `get_user` and 10 more |  |
+| `GET /api/users/` | `create_mail_rule`, `create_workflow`, `delete_user`, `get_document`, `get_user` and 11 more |  |
 | `POST /api/users/` | `create_user` |  |
 | `DELETE /api/users/{id}/` | `delete_user` |  |
 | `GET /api/users/{id}/` | `delete_user`, `get_user`, `update_user` |  |
@@ -270,9 +270,8 @@ TOML file.
 | `GET /api/tags/` | `query:id`, `query:is_root`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
 | `POST /api/tags/` | `body:owner`, `body:set_permissions` | PLMCP-83 |
 | `GET /api/tags/{id}/` | `query:full_perms` | PLMCP-83 |
-| `GET /api/tasks/` | `query:date_created_after`, `query:date_created_before`, `query:is_complete`, `query:name`, `query:ordering`, `query:owner`, `query:result`, `query:trigger_source` | PLMCP-89 |
 | `POST /api/tasks/acknowledge/` | `body:all` | PLMCP-89 |
-| `POST /api/tasks/run/` | `body:task_type=apply_ai_suggestions`, `body:task_type=build_share_link`, `body:task_type=bulk_delete`, `body:task_type=bulk_update`, `body:task_type=check_workflows`, `body:task_type=consume_file`, `body:task_type=empty_trash`, `body:task_type=index_optimize`, `body:task_type=mail_fetch`, `body:task_type=reprocess_document` | PLMCP-89 |
+| `POST /api/tasks/run/` | `body:task_type=apply_ai_suggestions`, `body:task_type=build_share_link`, `body:task_type=bulk_delete`, `body:task_type=bulk_update`, `body:task_type=check_workflows`, `body:task_type=consume_file`, `body:task_type=empty_trash`, `body:task_type=index_optimize`, `body:task_type=mail_fetch`, `body:task_type=reprocess_document` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-93 - The-task-tools-have-a-toolset-of-their-own-and-show-of-a-tasks-input-only-the-file-name.md) |
 | `GET /api/users/` | `query:ordering`, `query:username__iendswith`, `query:username__iexact`, `query:username__istartswith` | PLMCP-83 |
 | `POST /api/users/` | `body:date_joined` | PLMCP-83 |
 | `PATCH /api/users/{id}/` | `body:date_joined` | PLMCP-83 |

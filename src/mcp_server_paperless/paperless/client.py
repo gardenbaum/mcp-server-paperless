@@ -46,7 +46,8 @@ IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
 RETRY_STATUSES = frozenset({429, 502, 503, 504})
 
 type Method = Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]
-type Params = Mapping[str, str | int]
+# Query parameters; a list repeats the parameter.
+type Params = Mapping[str, str | int | list[str]]
 type Files = Mapping[str, tuple[str, bytes, str]]
 # Form fields; a list repeats the field, as Paperless wants its tags.
 type Form = Mapping[str, str | list[str]]
