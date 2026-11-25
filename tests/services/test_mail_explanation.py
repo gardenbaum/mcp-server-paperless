@@ -474,7 +474,7 @@ async def test_each_line_about_the_account_is_taken_whole_and_from_its_logger(
 ) -> None:
     setup = Setup()
     setup.rule()
-    start = f"[2026-11-25 10:00:00,1] [DEBUG] [{logger}] "
+    start = f"[2026-11-25 10:00:00,001] [DEBUG] [{logger}] "
     names = ("Work", "Work Private", "Work2", "My Work", "Work.R1")
     setup.state.logs["mail"] = [start + account_lines(name)[index] for name in names]
 
@@ -491,7 +491,7 @@ async def test_each_line_about_the_account_is_taken_whole_and_from_its_logger(
 @pytest.mark.parametrize("logger", ["paperless.mail.tasks", "paperless_mail", "paperless.x"])
 async def test_runs_are_told_by_the_task_only(logger: str) -> None:
     setup = Setup()
-    start = f"[2026-11-25 10:00:00,1] [INFO] [{logger}] "
+    start = f"[2026-11-25 10:00:00,001] [INFO] [{logger}] "
     setup.state.logs["paperless"] = [
         start + SKIP,
         start + SKIP + " more",
@@ -692,7 +692,7 @@ async def test_logs_are_bounded_newest_first() -> None:
     setup.rule()
     line = "Rule Work.R1: Searching folder with criteria "
     setup.state.logs["mail"] = [
-        f"[2026-11-25 10:{n:02}:00,1] [DEBUG] [paperless_mail] {line}{n} " + "x" * 300
+        f"[2026-11-25 10:{n:02}:00,001] [DEBUG] [paperless_mail] {line}{n} " + "x" * 300
         for n in range(30)
     ]
 

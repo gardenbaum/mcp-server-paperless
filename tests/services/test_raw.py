@@ -943,9 +943,9 @@ async def test_the_urls_of_webhooks_lose_their_credentials_and_the_result_says_s
 @pytest.mark.decision("decision-66")
 async def test_log_lines_lose_the_credentials_of_the_urls_in_them() -> None:
     lines = [
-        "[2026-11-24 10:00:00,123] Webhook sent to https://user:pw@h.example/x",
-        "[2026-11-24 10:00:00,124] mail a@b.example",
-        "[2026-11-24 10:00:00,125] to https://user:p",
+        "[2026-11-24 10:00:00,123] [INFO] [paperless.x] Webhook sent to https://user:pw@h.example/x",
+        "[2026-11-24 10:00:00,124] [INFO] [paperless.x] mail a@b.example",
+        "[2026-11-24 10:00:00,125] [INFO] [paperless.x] to https://user:p",
         3,
         "w@h.example/x",
     ]
@@ -953,9 +953,9 @@ async def test_log_lines_lose_the_credentials_of_the_urls_in_them() -> None:
     result = await RawApiService(Recording(json_reply(lines))).get("/api/LOGS/paperless/", {})
 
     assert result.data == [
-        "[2026-11-24 10:00:00,123] Webhook sent to https://h.example/x",
-        "[2026-11-24 10:00:00,124] mail a@b.example",
-        "[2026-11-24 10:00:00,125] to a URL that is not shown",
+        "[2026-11-24 10:00:00,123] [INFO] [paperless.x] Webhook sent to https://h.example/x",
+        "[2026-11-24 10:00:00,124] [INFO] [paperless.x] mail a@b.example",
+        "[2026-11-24 10:00:00,125] [INFO] [paperless.x] to a URL that is not shown",
         3,
         "a URL that is not shown",
     ]
@@ -966,7 +966,10 @@ async def test_log_lines_lose_the_credentials_of_the_urls_in_them() -> None:
 @pytest.mark.parametrize(
     ("body", "shown"),
     [
-        ("[2026-11-24 10:00:00,1] to https://user:pw@h", "[2026-11-24 10:00:00,1] to https://h"),
+        (
+            "[2026-11-24 10:00:00,001] [INFO] [paperless.x] to https://user:pw@h",
+            "[2026-11-24 10:00:00,001] [INFO] [paperless.x] to https://h",
+        ),
         ("pw@h", "(rest of a log record not shown)"),
         ({"redis_url": "redis://user:pw@h:6379/0"}, {"redis_url": "redis://h:6379/0"}),
         ({"webhook": "https://user:pw@h"}, {"webhook": "https://h"}),
@@ -1018,7 +1021,8 @@ async def test_errors_and_log_lines_hold_no_answer_of_a_mail_server_to_a_login()
         '  File "mail.py", line 1, in mailbox_login\n'
         "imaplib.IMAP4.error: NO pa55w0rd\n\npaperless_mail.mail.MailError: x"
     )
-    line = "[2026-11-24 10:00:00,1] Error while authenticating account A: NO pa55w0rd"
+    start = "[2026-11-24 10:00:00,001] [ERROR] [paperless_mail] "
+    line = f"{start}Error while authenticating account A: NO pa55w0rd"
 
     mails = await RawApiService(Recording(json_reply({"results": [{"error": error}]}))).get(
         "/api/processed_mail/", {}
@@ -1036,13 +1040,13 @@ async def test_errors_and_log_lines_hold_no_answer_of_a_mail_server_to_a_login()
 async def test_the_rest_of_a_record_at_the_top_of_a_log_is_not_shown(
     params: dict[str, str | int | bool],
 ) -> None:
-    reply = json_reply(["me@b.example", "[2026-11-24 10:00:00,1] by a@b"])
+    reply = json_reply(["me@b.example", "[2026-11-24 10:00:00,001] [INFO] [paperless.x] by a@b"])
 
     result = await RawApiService(Recording(reply)).get("/api/logs/mail/", params)
 
     assert result.data == [
         "(rest of a log record not shown)",
-        "[2026-11-24 10:00:00,1] by a@b",
+        "[2026-11-24 10:00:00,001] [INFO] [paperless.x] by a@b",
     ]
 
 

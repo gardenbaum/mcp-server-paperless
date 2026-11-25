@@ -692,7 +692,7 @@ async def test_a_user_who_is_no_staff_sees_only_the_own_rules_and_no_log() -> No
     _ = with_rule(state, account, name="Hidden")
     shown = with_rule(state, account, name="Shown")
     state.mail_rules[-1].owner = 77
-    start = "[2026-11-25 10:00:00,1] [DEBUG] [paperless_mail] "
+    start = "[2026-11-25 10:00:00,001] [DEBUG] [paperless_mail] "
     state.logs["mail"] = [f"{start}Processing mail account Invoices"]
     source = fake(state, writes=False, user="mailman")
 
@@ -711,7 +711,7 @@ async def test_no_credential_of_a_log_is_in_the_explanation() -> None:
     source = fake(writes=False)
     account = with_account(source.state)
     _ = with_rule(source.state, account)
-    start = "[2026-11-25 10:00:00,1] [ERROR] [paperless_mail] Error while authenticating account "
+    start = "[2026-11-25 10:00:00,001] [ERROR] [paperless_mail] Error while authenticating account "
     source.state.logs["mail"] = [f"{start}Invoices: {PASSWORD} refused"]
 
     found = await call(source, "explain_mail_import", account_id=account)
