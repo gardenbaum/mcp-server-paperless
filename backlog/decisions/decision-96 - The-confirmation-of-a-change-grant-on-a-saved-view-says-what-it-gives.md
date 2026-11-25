@@ -1,13 +1,14 @@
 ---
+updated_date: '2026-11-25T13:25:20Z'
 id: decision-96
 title: The confirmation of a change grant on a saved view says what it gives
 date: '2026-11-25T11:41:41Z'
-status: proposed
+status: accepted
 ---
 ## Context
 
 <!-- SECTION:CONTEXT:BEGIN -->
-PLMCP-88.3: `set_permissions` shares saved views (decision-91). A view looks harmless, but `run_saved_view` and the bulk tools choose documents by it, so its holder of a change grant can change which documents such a call sees or works on. Mail accounts and rules have a note of this sort in their confirmation (decision-87). The independent review of PLMCP-88.3 asked for one here. It is not part of the design the owner approved on 2026-11-24; the owner has been asked and has not answered yet.
+PLMCP-88.3: `set_permissions` shares saved views (decision-91). A view looks harmless, but `run_saved_view` and the bulk tools choose documents by it, so its holder of a change grant can change which documents such a call sees or works on. Mail accounts and rules have a note of this sort in their confirmation (decision-87). The independent review of PLMCP-88.3 asked for one here. It is not part of the design the owner approved on 2026-11-24. Asked whether the confirmation should say in one sentence that whoever may change a saved view decides which documents run_saved_view and bulk actions see, the owner approved it on 2026-11-25 with "Alles wie empfohlen" (all as recommended).
 <!-- SECTION:CONTEXT:END -->
 
 ## Decision
@@ -21,7 +22,6 @@ PLMCP-88.3: `set_permissions` shares saved views (decision-91). A view looks har
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
 - The dialog gets one sentence longer.
-- If the owner declines, the entry in `NOTES` (`services/permissions.py`) and its tests go, and this decision with them; that views are read one by one within the time of a call stays.
 <!-- SECTION:CONSEQUENCES:END -->
 
 

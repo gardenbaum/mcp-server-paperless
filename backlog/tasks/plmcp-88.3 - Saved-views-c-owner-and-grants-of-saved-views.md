@@ -1,11 +1,11 @@
 ---
 id: PLMCP-88.3
 title: 'Saved views c: owner and grants of saved views'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T10:18:28Z'
-updated_date: '2026-11-25T11:41:56Z'
+updated_date: '2026-11-25T13:25:28Z'
 labels:
   - views
 dependencies:
@@ -24,10 +24,10 @@ Third part of PLMCP-88: owner and grants of a saved view cannot be read or set. 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 set_permissions takes saved views by name or id with the confirmation of decisions 12 and 19, read one by one
-- [ ] #2 get_saved_view shows owner and grants with names
-- [ ] #3 The remaining rows of saved_views in docs/api-coverage.toml are covered
-- [ ] #4 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover owner, non-owner, superuser and unowned views, with and without confirm
+- [x] #1 set_permissions takes saved views by name or id with the confirmation of decisions 12 and 19, read one by one
+- [x] #2 get_saved_view shows owner and grants with names
+- [x] #3 The remaining rows of saved_views in docs/api-coverage.toml are covered
+- [x] #4 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover owner, non-owner, superuser and unowned views, with and without confirm
 <!-- AC:END -->
 
 ## Definition of Done
@@ -58,4 +58,12 @@ Deliberate: five tests compare get_saved_view without its new field access.
 Review: get_saved_view shows access null where reading it fails with anything but a refusal; an unseen view points to list_saved_views; the confirmation says what a change grant on a view gives (the note was asked for by the main agent, the owner's answer is open; not written into decision-91, which belongs to #164). Views are read one by one and a call stops after the 40 s of PLMCP-81.5. Tests first (7 red); 4 mutants, none survives.
 
 The note of a change grant is decision-96 (proposed, the owner is asked); the number was given by the CLI in a copy of backlog/ outside the repository, because 93 to 95 are taken elsewhere. Full hosted E2E: 45600303375 on 9d33f6f green; 45606044346 on 8629d91 (after it only backlog files, a test marker and the merge of #164).
+
+decision-96 accepted: the owner approved the note on 2026-11-25 with 'Alles wie empfohlen' (all as recommended); this answers the open point above. Evidence of the criteria: full hosted E2E 45606044346 on 8629d91, all jobs green (contract permissions 37 and views 25, E2E permissions 7 and views 6); tests/quality/test_api_coverage.py: no saved_views row is open. Definition of Done: just check was not run as a whole locally, the merge is open.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+set_permissions takes saved views by name or id with the confirmation of decisions 12 and 19, reads them one by one within 40 seconds, and says what a change grant gives (decision-96). get_saved_view shows owner and grants by name, null where they cannot be read. The last rows of saved_views are covered. Full hosted E2E 45606044346 on Paperless 3.5.1 green; tests red first, 15 hand mutants, none survives. Not proven: whether the holder of a change grant may delete a view.
+<!-- SECTION:FINAL_SUMMARY:END -->
