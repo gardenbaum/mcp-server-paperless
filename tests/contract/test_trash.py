@@ -52,7 +52,7 @@ async def find(ports: Ports, wanted: set[int]) -> dict[int, TrashedDocument]:
     found: dict[int, TrashedDocument] = {}
     page: int | None = 1
     while page is not None and not wanted <= found.keys():
-        listed = await ports.trash.list_trash(page=page, page_size=SCAN_SIZE)
+        listed = await ports.trash.list_trash(page=page, page_size=SCAN_SIZE, max_bytes=64 * MIB)
         found |= {e.id: e for e in listed.entries if e.id in wanted}
         page = listed.next_page
     return found
@@ -71,7 +71,7 @@ async def everything(ports: Ports) -> list[TrashedDocument]:
     entries: list[TrashedDocument] = []
     page: int | None = 1
     while page is not None:
-        listed = await ports.trash.list_trash(page=page, page_size=SCAN_SIZE)
+        listed = await ports.trash.list_trash(page=page, page_size=SCAN_SIZE, max_bytes=64 * MIB)
         entries += listed.entries
         page = listed.next_page
     return entries
@@ -97,11 +97,11 @@ async def test_deleted_documents_are_listed_paged_and_only_to_those_who_may_view
     assert all(before < e.deleted_at < after for e in found.values())
 
     # Paging: one entry a page, and a page beyond the last is not found.
-    one = await ports.trash.list_trash(page=1, page_size=1)
+    one = await ports.trash.list_trash(page=1, page_size=1, max_bytes=64 * MIB)
     assert (len(one.entries), one.next_page) == (1, 2)
     assert one.count >= 2
     with pytest.raises(NotFound):
-        _ = await ports.trash.list_trash(page=one.count + 1, page_size=1)
+        _ = await ports.trash.list_trash(page=one.count + 1, page_size=1, max_bytes=64 * MIB)
 
     # The reader sees owned and unowned entries only (the admin's `first` stays hidden from it),
     # and a user without view_document none.
@@ -109,7 +109,7 @@ async def test_deleted_documents_are_listed_paged_and_only_to_those_who_may_view
     assert seen.keys() == {second}
     assert first not in {e.id for e in await everything(backend.reader)}
     with pytest.raises(PermissionDenied):
-        _ = await backend.blind.trash.list_trash(page=1, page_size=SCAN_SIZE)
+        _ = await backend.blind.trash.list_trash(page=1, page_size=SCAN_SIZE, max_bytes=64 * MIB)
 
 
 @pytest.mark.contract(RESTORE)
@@ -301,6 +301,9 @@ async def test_an_entry_has_the_fields_and_the_text_of_its_first_version(backend
         _ = await ports.trash.look_up_in_trash(document, page=MISSING, page_size=1, max_bytes=MIB)
     with pytest.raises(AnswerTooLarge):
         _ = await ports.trash.look_up_in_trash(document, page=1, page_size=SCAN, max_bytes=10)
+    # A page of the list has the limit, too.
+    with pytest.raises(AnswerTooLarge):
+        _ = await ports.trash.list_trash(page=1, page_size=SCAN, max_bytes=10)
 
 
 @pytest.mark.contract(LOOK)
@@ -382,6 +385,32 @@ async def test_a_view_grant_reaches_the_file_but_not_the_list(backend: Backend) 
         _ = await granted.documents.get_document_thumbnail(hidden)
     with pytest.raises(NotFound):
         _ = await granted.documents.get_root(hidden)
+
+
+@pytest.mark.contract(THUMB)
+async def test_the_thumbnail_of_what_is_in_the_trash_is_served_to_whom_may_view_it(
+    backend: Backend,
+) -> None:
+    ports = backend.admin
+    document = await uploaded(backend, b"plmcp102 document")
+    parent = await uploaded(backend, b"plmcp102 parent")
+    version = await add_version(backend, parent, "plmcp102 version")
+    granted = backend.restricted(frozenset({"view_document"}), view=[document, parent])
+    stranger = backend.restricted(frozenset({"view_document"}))
+    await ports.document_writes.delete_document(document)
+    _ = await ports.document_writes.delete_version(parent, version)
+
+    for number in (document, version):
+        for seen in (ports, granted):
+            found = await seen.documents.get_document_thumbnail(number)
+            assert (found.content[8:12], found.mime_type) == (b"WEBP", "image/webp")
+            # What tells it from a live one.
+            assert await seen.documents.get_document_titles([number]) == {}
+            with pytest.raises(NotFound):
+                _ = await seen.documents.get_document_metadata(number)
+        with pytest.raises(PermissionDenied):
+            _ = await stranger.documents.get_document_thumbnail(number)
+    assert (await granted.documents.get_document_titles([parent])).keys() == {parent}
 
 
 @pytest.mark.contract(LIST)

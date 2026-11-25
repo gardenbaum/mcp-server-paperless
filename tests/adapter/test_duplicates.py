@@ -157,7 +157,9 @@ async def test_a_trashed_document_has_its_roots_checksum_and_a_version_none(
     both = {**DOCUMENT, "versions": [newer, *cast("list[Json]", DOCUMENT["versions"])]}
     server = Recorded(listing(both, VERSION, {**DOCUMENT, "versions": []}))
 
-    page = await PaperlessTrashReader(make_client(server)).list_trash(page=1, page_size=25)
+    page = await PaperlessTrashReader(make_client(server)).list_trash(
+        page=1, page_size=25, max_bytes=10**6
+    )
 
     assert [e.checksum for e in page.entries] == [SHA, None, None]
 

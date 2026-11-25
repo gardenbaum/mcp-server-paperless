@@ -24,7 +24,7 @@ from mcp_server_paperless.domain.versions import VersionUpload
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
-from mcp_server_paperless.services.trash_scan import TrashScan
+from mcp_server_paperless.services.trash_scan import SKIPPED, TrashScan
 from mcp_server_paperless.services.trashed_documents import (
     DOCUMENT_LIMITS,
     NO_CHANGE,
@@ -193,8 +193,10 @@ async def test_an_entry_beyond_one_request_is_found_page_by_page(
 
     assert found.id == numbers[0]
     assert fake.asked == [(1, 1), (1, 100), (2, 100)]
-    with pytest.raises(NotFound, match="Not found in the trash: 4242"):
-        _ = await looking(setup, fake, cap=1).entry(4242, max_chars=1)
+    for cap, said in ((1, True), (1000, False)):
+        with pytest.raises(NotFound, match="Not found in the trash: 4242") as raised:
+            _ = await looking(setup, fake, cap=cap).entry(4242, max_chars=1)
+        assert (SKIPPED in (raised.value.hint or "")) is said
 
 
 async def test_a_file_comes_with_its_report() -> None:

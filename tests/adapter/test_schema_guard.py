@@ -611,7 +611,7 @@ async def test_a_request_is_recorded_with_the_port_method_that_sent_it(
     start = len(OBSERVED)
     reader = PaperlessTrashReader(make_client(lambda _: httpx2.Response(200, json=TRASH_PAGE)))
 
-    _ = await reader.list_trash(page=2, page_size=5)
+    _ = await reader.list_trash(page=2, page_size=5, max_bytes=10**6)
 
     assert OBSERVED[start:] == [
         Observation(
@@ -689,7 +689,7 @@ async def test_a_good_answer_is_kept_per_operation_for_the_replay(
     _ = RESPONSES.pop(("GET", "/api/trash/"), None)
     reader = PaperlessTrashReader(make_client(lambda _: httpx2.Response(200, json=TRASH_PAGE)))
 
-    _ = await reader.list_trash(page=1, page_size=5)
+    _ = await reader.list_trash(page=1, page_size=5, max_bytes=10**6)
 
     status, headers, content = RESPONSES[("GET", "/api/trash/")]
     assert (status, headers["content-type"]) == (200, "application/json")

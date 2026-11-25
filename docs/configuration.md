@@ -271,8 +271,10 @@ version is re-attached to its document) and empties the trash.
 `list_trash` filters by title, document type, kind, day of deletion and ids. Paperless cannot filter
 its trash, so the server looks at the first 1,000 entries in one request of at most 64 MiB (if that
 is too large, slow or fails, at 100), and `truncated` says when there are more; `ids` also looks
-beyond them. Of a document in the trash Paperless shows the text, thumbnail and file of its first
-version and no notes or custom field values: restore it to read the rest.
+beyond them. A page of the list, too, is at most 64 MiB, unpacked: a larger one is an error that
+asks for a smaller `page_size`. Of a document in the trash Paperless shows the text, thumbnail and
+file of its first version and no notes or custom field values: restore it to read the rest.
+`get_document_thumbnail` does not show what is in the trash; `get_trashed_file` does.
 
 `restore_from_trash` and `empty_trash` take `document_ids` or a `filter`. A filter never acts by
 itself: it lists its matches, and only ids that were shown are acted on, by a dialog or a second
@@ -604,8 +606,13 @@ details). An unreachable Paperless does not stop it; the tools report the proble
 Paperless is back.
 
 Logs go to stderr (the server's own records as JSON lines). At INFO and above, the records of tool
-calls hold no arguments, results or error messages, the API token and bearer tokens are not
-logged, and an internal error in a tool is logged by type. Error messages of resources and prompts
-and a failed startup check are logged and can quote a prompt's argument or Paperless's answer;
-DEBUG can log arguments and document content. The full list is in the
+calls, resources and prompts hold no arguments, results or error messages (the exceptions, such as
+the name of an unknown tool and request paths, are in the policy), and the API token and bearer
+tokens are not logged. Errors are logged by type and place in the code, without message or
+traceback, also those that libraries log; a failed startup check is told by a text of this project
+or by type. What a library writes into its own message stays: FastMCP's messages about a failed
+sign-in through an identity provider quote some of its values. `DEBUG` logs the tracebacks, which can
+quote arguments and what Paperless answered, document content included, because an error could not
+be traced without them; arguments can also appear in other records. The answers to the client are
+not logged as a whole, at any level. The full list is in the
 [privacy policy](../PRIVACY.md#what-the-server-logs).
