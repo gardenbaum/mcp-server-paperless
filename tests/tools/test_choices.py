@@ -103,7 +103,7 @@ async def test_the_call_goes_on_with_the_picked_match_and_writes_once(
     assert not result.is_error, text(result)
     assert shown.questions == [QUESTION]
     assert shown.confirmations == []
-    assert len(fake.writes) == 1
+    assert len(fake.sent_writes) == 1
     assert next(d for d in fake.state.documents if d.id == 10).correspondent == chosen
 
 
@@ -242,7 +242,7 @@ async def test_dialogs_required_change_nothing_about_a_pick(mode: Mode) -> None:
     no = await call(server(reading(), require_dialog=True), mode, picks(None).handler)
 
     assert not done.is_error, text(done)
-    assert len(fake.writes) == 1
+    assert len(fake.sent_writes) == 1
     assert text(none) == ERROR
     assert text(no) == f"{ERROR} {NOT_PICKED}"
 
@@ -305,7 +305,7 @@ async def test_two_ambiguous_names_are_two_dialogs_and_one_write(mode: Mode) -> 
 
     assert not result.is_error, text(result)
     assert len(shown.questions) == len(set(shown.questions)) == 2
-    assert len(fake.writes) == 1
+    assert len(fake.sent_writes) == 1
     changed = next(d for d in fake.state.documents if d.id == 10)
     assert changed.correspondent in {FIRST, SECOND}
     asked_first = "correspondents" in shown.questions[0]
@@ -358,7 +358,7 @@ async def test_five_names_are_asked_and_the_sixth_is_the_old_error(
         assert sorted(next(d for d in state.documents if d.id == 10).tags) == [
             101 + 2 * n for n in range(count)
         ]
-        assert len(fake.writes) == 1
+        assert len(fake.sent_writes) == 1
     else:
         assert text(result).startswith("2 tags match 'Word5'")
         assert NOT_PICKED not in text(result)
@@ -707,7 +707,7 @@ async def test_a_pick_does_not_work_twice() -> None:
         assert not done.is_error
         assert refused(await raw(client, PICK, state)) == ERROR
 
-    assert len(fake.writes) == 1
+    assert len(fake.sent_writes) == 1
 
 
 async def test_a_used_confirmation_takes_its_picks_with_it() -> None:
@@ -1038,8 +1038,8 @@ async def test_a_write_tool_asks_and_writes_what_the_call_with_the_id_writes(
             assert text(result) == text(expected)
         else:
             assert not result.is_error, text(result)
-            assert fake.writes
-        assert fake.writes == oracle.writes
+            assert fake.sent_writes
+        assert fake.sent_writes == oracle.sent_writes
 
         plain = await call(unwritten, mode, None, tool, arguments)
         declined = await call(unwritten, mode, picks(None).handler, tool, arguments)

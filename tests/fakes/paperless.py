@@ -888,7 +888,7 @@ def write[F: FakePaperless, **P, R](
             )
             raise WriteNotAllowedError(message)
         note_write()  # as the client does
-        self.writes.append((method.__name__, args, kwargs))
+        self.sent_writes.append((method.__name__, args, kwargs))
         return await method(self, *args, **kwargs)
 
     _WRITES.add(guarded)
@@ -917,7 +917,7 @@ class FakePaperless:
         self.user: FakeUser = found[0]
         self.allow_writes: bool = allow_writes
         # Every write this user sent, in order: the method and its arguments.
-        self.writes: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+        self.sent_writes: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
 
     async def get_overview(self) -> InstanceOverview:
         """`InstanceReader.get_overview` (StatisticsView, SystemStatusView, UiSettingsView)."""

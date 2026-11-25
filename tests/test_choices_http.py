@@ -127,7 +127,7 @@ async def test_an_older_client_gets_the_older_form_and_its_pick_counts(
     choice = {"type": "string", "title": "Which one?", **options}
     assert schemas == [{"type": "object", "properties": {"choice": choice}, "required": ["choice"]}]
     assert correspondent(fake) == SECOND
-    assert len(fake.writes) == 1
+    assert len(fake.sent_writes) == 1
 
 
 async def test_a_2026_07_28_client_gets_titled_options(http: httpx2.AsyncClient) -> None:
@@ -210,13 +210,13 @@ async def test_every_round_may_come_over_a_connection_of_its_own() -> None:
         which = question(await once())["requestState"]
         confirm = question(await once(state=which, answer=PICK, key="choice"))
         assert "confirm" in cast("Json", confirm["inputRequests"])
-        assert fake.writes == []
+        assert fake.sent_writes == []
         accept: Json = {"action": "accept", "content": YES}
         done = await once(state=confirm["requestState"], answer=accept)
 
     assert not cast("Json", done["result"]).get("isError")
     assert [t.id for t in fake.state.tags if t.id in {FIRST, SECOND}] == [FIRST]
-    assert len(fake.writes) == 1
+    assert len(fake.sent_writes) == 1
 
 
 async def test_a_state_is_worthless_to_another_caller(http: httpx2.AsyncClient) -> None:
@@ -224,7 +224,7 @@ async def test_a_state_is_worthless_to_another_caller(http: httpx2.AsyncClient) 
     with running(app(fake)) as url:
         token = question(await rounds(http, url))["requestState"]
         bert = await rounds(http, url, token=BERT, state=token, answer=PICK)
-        assert fake.writes == []
+        assert fake.sent_writes == []
         anna = await rounds(http, url, state=token, answer=PICK)
 
     assert "Invalid or expired requestState" in said(bert)
@@ -267,7 +267,7 @@ async def test_a_pick_after_the_connection_dropped_changes_nothing(
         await asyncio.sleep(0.3)
         _ = await session.send({"id": number, "result": PICK})
         await asyncio.sleep(0.5)
-        assert fake.writes == []
+        assert fake.sent_writes == []
         # The session goes on, and the next dialog works.
         shown, _ = await session.finish({"result": PICK}, arguments=CALL, tool=TOOL)
         assert shown
