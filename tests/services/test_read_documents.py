@@ -970,3 +970,13 @@ async def test_counts_in_time_leave_the_rows_alone() -> None:
     found = await setup.read((), counts=True, document_ids=(PUBLIC,))
 
     assert (ids(found), found.truncated, found.left) == ([PUBLIC], False, ())
+
+
+@pytest.mark.decision("decision-100")
+async def test_without_counts_the_rows_are_read_as_before() -> None:
+    setup = Setup()
+    setup.fake.list_seconds = TEXT_SECONDS
+
+    found = await setup.read((), filters={"tags_all": ["e2e-finance"]})
+
+    assert (ids(found), found.truncated) == ([PUBLIC], False)
