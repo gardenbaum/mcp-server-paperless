@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T14:42:19Z'
-updated_date: '2026-11-25T17:07:06Z'
+updated_date: '2026-11-25T17:35:20Z'
 labels: []
 dependencies:
   - PLMCP-83.3
@@ -52,4 +52,6 @@ Red first at every level (58 failing or erring in 10 modules), then green. 32 ha
 Independent review, closed test first: M2 an unknown or new id lands in missing or is found for every kind (ids are read as they are, names from a list read anew). L1 users and groups are kept once read (test with a short ttl). L3 PAPERLESS_ENABLE_UPDATE_CHECK is honoured, fail closed; not set counts as allowed (decision-105). L4 any failure of the check is unknown with a note, the report stays. L5 an unreadable user after the removal says that it may have been applied. L6 a yes is for the account as shown (test); the contract test asks nobody outside (the E2E stack switches the check off).
 
 Full E2E 45654514444 on 16d9a5d7: nine of ten jobs green; shard 5/6 red in test_a_second_factor_is_removed_only_with_confirm only. Cause, from the job log (139347500802) and the 3.5.1 source: the test made its user without view_document and signs_in reads /api/documents/, so a signed-in user gets 403; the removal had worked (mfa_enabled was asserted false on the line before). PaperlessBasicAuthentication answers 'MFA required' with 401, and basic authentication is not throttled. The check before ('not 200') had passed for the wrong reason. Now the user may view documents and the test asserts 200, then 401 with the factor, 401 after the refused call, 200 after the confirmed one. No code change.
+
+The owner was asked to accept three points: the field name `next_asn` (instead of `next_archive_serial_number`), that `test_storage_path` refuses documents that refer to anything the caller may not see, and that the update check counts an unset PAPERLESS_ENABLE_UPDATE_CHECK ("default") as allowed. The owner decided on 2026-11-26: "Bitte alles wie von dir empfohlen." (please everything as recommended by you); the recommendation was to accept all three.
 <!-- SECTION:NOTES:END -->

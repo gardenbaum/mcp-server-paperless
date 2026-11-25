@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T14:42:17Z'
-updated_date: '2026-11-25T16:19:53Z'
+updated_date: '2026-11-25T17:35:19Z'
 labels: []
 dependencies:
   - PLMCP-83.1
@@ -51,4 +51,6 @@ Red first at adapter (10), contract (14), service (import errors), tool (12), th
 Owner, 2026-11-26, asked whether the disclosure of suggest_words (words of hidden correspondent, type and tag names of visible documents, the same words Paperless autocomplete gives) is accepted with the note in the tool description and decision-100: "Alles wie von dir empfohlen." (everything as recommended by you; the recommendation was to accept).
 
 Independent review, closed test first: M1 the rendered path was read unbounded (now PaperlessClient.post_json, 64 KiB, uncompressed, stopped while it arrives; proven with a mock transport that never ends). L2 no row is read once the counts took the 40 s (left, notice). L6 the schema guard exempts only the empty body. L7 a path that is only a dot is a 500 in 3.5.1, told in a note, the fake too. decision-100: size, that Paperless still renders, soft-deleted custom field values.
+
+The owner was asked to accept three points: the field name `next_asn` (instead of `next_archive_serial_number`), that `test_storage_path` refuses documents that refer to anything the caller may not see, and that the update check counts an unset PAPERLESS_ENABLE_UPDATE_CHECK ("default") as allowed. The owner decided on 2026-11-26: "Bitte alles wie von dir empfohlen." (please everything as recommended by you); the recommendation was to accept all three.
 <!-- SECTION:NOTES:END -->

@@ -10,6 +10,8 @@ status: accepted
 On 2026-11-24 the owner approved the design of PLMCP-83 with all recommended options ("Alle wie empfohlen", all as recommended; the question is quoted in decision-99). Its decision 4: the update check (`GET /api/remote_version/`) is an option of PLMCP-89's `get_system_report`, off by default, because Paperless then contacts GitHub.
 
 Probed on Paperless 3.5.1 (CI run 45638730209, job 139291151398, a temporary test of PLMCP-83.2): every signed-in user gets the answer (0.32 s); where GitHub does not answer, the source says version `0.0.0`.
+
+The owner was asked to accept three points: the field name `next_asn` (instead of `next_archive_serial_number`), that `test_storage_path` refuses documents that refer to anything the caller may not see, and that the update check counts an unset PAPERLESS_ENABLE_UPDATE_CHECK ("default") as allowed. The owner decided on 2026-11-26: "Bitte alles wie von dir empfohlen." (please everything as recommended by you); the recommendation was to accept all three.
 <!-- SECTION:CONTEXT:END -->
 
 ## Decision
