@@ -128,7 +128,7 @@ async def test_a_workflow_is_filed_by_names_read_changed_and_deleted(
     }
     assert name in listed
     read = await call(client, "get_workflow", workflow=name.upper())
-    assert read == {**created, "part": None}
+    assert read == {**{k: v for k, v in created.items() if k != "note"}, "part": None}
 
     renamed = await call(
         client, "update_workflow", workflow=name, name=f"{name}-b", triggers=[NEVER], order=9

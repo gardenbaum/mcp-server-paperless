@@ -13803,6 +13803,7 @@
           'action_id': dict({
             'anyOf': list([
               dict({
+                'minimum': 1,
                 'type': 'integer',
               }),
               dict({
@@ -13815,6 +13816,7 @@
           'trigger_id': dict({
             'anyOf': list([
               dict({
+                'minimum': 1,
                 'type': 'integer',
               }),
               dict({
@@ -13932,10 +13934,6 @@
               }),
             ]),
             'default': None,
-          }),
-          'note': dict({
-            'default': None,
-            'type': 'null',
           }),
           'order': dict({
             'anyOf': list([
@@ -14078,7 +14076,7 @@
                         'type': 'null',
                       }),
                     ]),
-                    'description': 'The workflows that hold it; empty: none, it does nothing; null: you may not view workflows.',
+                    'description': 'The workflows that hold it; empty: none, it does nothing; null: you may not view workflows, or there are too many to list.',
                   }),
                 }),
                 'required': list([
@@ -40700,6 +40698,7 @@
           'action_id': dict({
             'anyOf': list([
               dict({
+                'minimum': 1,
                 'type': 'integer',
               }),
               dict({
@@ -40712,6 +40711,7 @@
           'trigger_id': dict({
             'anyOf': list([
               dict({
+                'minimum': 1,
                 'type': 'integer',
               }),
               dict({
@@ -40829,10 +40829,6 @@
               }),
             ]),
             'default': None,
-          }),
-          'note': dict({
-            'default': None,
-            'type': 'null',
           }),
           'order': dict({
             'anyOf': list([
@@ -40975,7 +40971,7 @@
                         'type': 'null',
                       }),
                     ]),
-                    'description': 'The workflows that hold it; empty: none, it does nothing; null: you may not view workflows.',
+                    'description': 'The workflows that hold it; empty: none, it does nothing; null: you may not view workflows, or there are too many to list.',
                   }),
                 }),
                 'required': list([

@@ -614,7 +614,7 @@ class WorkflowPart(BaseModel):
         Field(
             description=(
                 "The workflows that hold it; empty: none, it does nothing; null: you may not view "
-                "workflows."
+                "workflows, or there are too many to list."
             )
         ),
     ]
@@ -633,7 +633,6 @@ class WorkflowRead(BaseModel):
     enabled: bool | None = None
     triggers: tuple[TriggerInfo, ...] = ()
     actions: tuple[ActionInfo, ...] = ()
-    note: None = None
     part: Annotated[
         WorkflowPart | None, Field(description="With trigger_id or action_id: that part.")
     ] = None

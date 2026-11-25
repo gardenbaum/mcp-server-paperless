@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 
 from mcp_server_paperless.domain.documents import NameOrId  # noqa: TC001 -- cast target at runtime
 from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
     ConfirmationRequired,
     NotFound,
     PermissionDenied,
@@ -674,7 +675,8 @@ class WorkflowService:
         trigger, ``uses`` to those that use an object.
 
         Raises:
-            NotFound: No object has the name in ``uses``; the hint lists the closest names.
+            NotFound: No object has the name in ``uses``; the hint lists the closest names, or
+                the id of an object whose name is made of digits.
             Ambiguous: The name matches several objects.
             Validation: A mail rule is given by a name.
             PermissionDenied: The user may not view workflows, or the named object's kind.
@@ -689,11 +691,12 @@ class WorkflowService:
             number, name = wanted
             found = {w.id: workflow_uses(w, uses.kind, number, name) for w in workflows}
             workflows = [w for w in workflows if found[w.id]]
-            if uses.kind == "custom_field" and name is None:
-                note = (
-                    f"You see no custom field {number}: it was searched by its id only, so a "
-                    "custom field query that names it is not found."
-                )
+            if uses.kind != "mail_rule" and name is None:
+                label = uses.kind.replace("_", " ")
+                note = f"You see no {label} with the id {number}: it was searched by its id only"
+                if uses.kind == "custom_field":
+                    note += ", so a custom field query that names it is not found"
+                note += "."
         names = await self._names(workflows)
         return WorkflowListing(
             count=len(workflows),
@@ -718,9 +721,14 @@ class WorkflowService:
             return number, None
         try:
             item = await self._taxonomy.resolve(uses.kind, uses.value)
-        except NotFound, PermissionDenied:
+        except PermissionDenied:
             if number is None:
                 raise
+            return number, None
+        except NotFound:
+            text = str(uses.value).strip()
+            if number is None or text in {i.name for i in await self._taxonomy.items(uses.kind)}:
+                raise  # a name of digits: the hint says the id
             return number, None
         return item.id, item.name
 
@@ -746,7 +754,7 @@ class WorkflowService:
             return WorkflowRead.model_validate((await self.get(workflow)).model_dump())
         try:
             workflows = await self._reader.list_workflows()
-        except PermissionDenied:
+        except PermissionDenied, AnswerTooLarge:
             workflows = None
         if trigger_id is not None:
             holders = _holders(workflows, "triggers", trigger_id)

@@ -450,3 +450,11 @@ async def test_a_single_action_shows_no_hidden_value() -> None:
     assert all("planted" not in str(output) for output in outputs)
     shown = cast("Json", cast("Json", outputs[0]["part"])["action"])
     assert shown["shown_in_part"] == ["webhook.url"]
+
+
+@pytest.mark.decision("decision-81")
+@pytest.mark.parametrize("given", [{"trigger_id": 0}, {"action_id": -1}], ids=["trigger", "action"])
+async def test_an_id_of_a_part_is_positive(given: Json) -> None:
+    assert "greater than or equal to 1" in await refusal(
+        fake(with_workflow()), "get_workflow", **given
+    )

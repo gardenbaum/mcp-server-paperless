@@ -44,6 +44,7 @@ TOOLSET = "workflows"
 
 provider = LocalProvider()
 
+type PositiveId = Annotated[int, Field(ge=1)]
 type Workflow = Annotated[NameOrId, Field(description="The workflow: its name or id.")]
 type Triggers = Annotated[
     list[TriggerInput] | None,
@@ -153,8 +154,12 @@ async def get_workflow(
     ctx: Context,
     workflow: Annotated[NameOrId | None, Field(description="The workflow: its name or id.")] = None,
     *,
-    trigger_id: Annotated[int | None, Field(description="Instead: one trigger, by its id.")] = None,
-    action_id: Annotated[int | None, Field(description="Instead: one action, by its id.")] = None,
+    trigger_id: Annotated[
+        PositiveId | None, Field(description="Instead: one trigger, by its id.")
+    ] = None,
+    action_id: Annotated[
+        PositiveId | None, Field(description="Instead: one action, by its id.")
+    ] = None,
 ) -> WorkflowRead:
     """Read one workflow with its triggers and actions, as list_workflows shows it.
 
