@@ -9,6 +9,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from adapter.conftest import streaming
 from adapter.test_views import Recording
 from mcp_server_paperless.domain.errors import (
     AnswerTooLarge,
@@ -123,8 +124,14 @@ async def test_a_user_without_the_permissions_is_told_which_one_is_missing(
     assert "view_uisettings" in reading.value.hint
     assert writing.value.hint is not None
     assert "add_uisettings" in writing.value.hint
-    assert "may not view UI settings" in reading.value.message
-    assert "may not change UI settings" in writing.value.message
+    assert reading.value.describe() == (
+        "The Paperless user may not view UI settings. Nothing was changed. "
+        "Hint: The user needs the permission view_uisettings."
+    )
+    assert writing.value.describe() == (
+        "The Paperless user may not change UI settings. Nothing was changed. "
+        "Hint: The user needs the permission add_uisettings."
+    )
 
 
 async def test_a_write_sends_all_settings_under_their_key_and_is_never_repeated(
@@ -143,6 +150,23 @@ async def test_a_write_sends_all_settings_under_their_key_and_is_never_repeated(
         ("POST", "/api/ui_settings/", {"settings": STORED}, {}),
         ("POST", "/api/ui_settings/", {"settings": {}}, {}),
     ]
+
+
+@pytest.mark.parametrize(
+    "page",
+    [(302, b""), (200, b"<html>Sign in"), (200, b'{"success": false}')],
+    ids=["redirect", "login page", "no success"],
+)
+async def test_what_is_no_answer_of_paperless_is_no_success(
+    page: tuple[int, bytes],
+) -> None:
+    status, content = page
+    client, _ = streaming(lambda _request: httpx2.Response(status, content=content))
+
+    with pytest.raises(UnexpectedAnswer, match="unexpected response for POST"):
+        await PaperlessUiSettingsWriter(client).replace_ui_settings({})
+    with pytest.raises(UnexpectedAnswer, match="unexpected response for GET"):
+        _ = await PaperlessUiSettingsReader(client).get_ui_settings()
 
 
 VALUES = st.recursive(

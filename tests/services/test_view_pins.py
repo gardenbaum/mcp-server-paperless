@@ -16,6 +16,7 @@ from mcp_server_paperless.domain.errors import (
     Conflict,
     PaperlessMcpError,
     PermissionDenied,
+    UnexpectedAnswer,
     UpstreamTimeout,
     UpstreamUnavailable,
     Validation,
@@ -52,6 +53,9 @@ class Store(FakePaperless):
         self.fails: PaperlessMcpError | None = None
         self.applied: bool = True
         self.reading_fails_from: int | None = None
+        self.reading_fails: PaperlessMcpError = UpstreamUnavailable("down")
+        self.before_read: Callable[[], None] = lambda: None
+        self.hold: asyncio.Event | None = None
 
     @property
     def stored(self) -> Settings:
@@ -61,8 +65,10 @@ class Store(FakePaperless):
     async def get_ui_settings(self) -> Settings:
         self.reads += 1
         if self.reading_fails_from is not None and self.reads >= self.reading_fails_from:
-            message = "down"
-            raise UpstreamUnavailable(message)
+            raise self.reading_fails
+        self.before_read()
+        if self.hold is not None:
+            _ = await self.hold.wait()
         return await super().get_ui_settings()
 
     @override
@@ -458,3 +464,98 @@ async def test_a_view_one_may_only_see_can_be_pinned() -> None:
     assert (done.id, done.on_dashboard, done.in_sidebar, done.changed) == (1, False, True, True)
     assert setup.state.ui_settings[setup.fake.user.id] == {"saved_views": {SIDEBAR: [1]}}
     assert (await setup.views.get(1)).can_change is False
+
+
+@pytest.mark.parametrize("error", [PermissionDenied("Nothing was changed."), Validation("odd")])
+async def test_a_refused_second_read_does_not_say_that_nothing_was_changed(
+    error: PaperlessMcpError,
+) -> None:
+    store = Store()
+    store.reading_fails_from, store.reading_fails = 2, error
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await store.pins.pin(await store.view(), dashboard=True, sidebar=None)
+
+    assert "could not be read again" in raised.value.message
+    assert "Nothing was changed" not in raised.value.describe()
+    assert store.stored == {"saved_views": {DASHBOARD: [1]}}
+
+
+async def test_a_difference_elsewhere_says_that_the_pin_is_stored() -> None:
+    store = Store()
+    store.after_write = lambda s: s.update({"theme": 1})
+
+    with pytest.raises(Conflict, match="The place of the view is stored as asked, but"):
+        _ = await store.pins.pin(await store.view(), dashboard=True, sidebar=None)
+
+
+async def test_a_change_that_is_not_there_may_still_come_and_set_everything_back() -> None:
+    store = Store()
+    store.fails, store.applied = UpstreamTimeout("Paperless did not respond in time."), False
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await store.pins.pin(await store.view(), dashboard=True, sidebar=None)
+
+    assert raised.value.message.startswith("Paperless did not respond in time. ")
+    assert "sets all UI settings of this user back to what they were before the call" in (
+        raised.value.message
+    )
+
+
+@pytest.mark.parametrize("applied", [True, False])
+async def test_an_answer_that_is_not_paperlesss_is_looked_up_and_named(
+    applied: bool,  # noqa: FBT001 -- the case
+) -> None:
+    store = Store()
+    page = "Paperless sent an unexpected response for POST /api/ui_settings/."
+    store.fails, store.applied = UnexpectedAnswer(page), applied
+
+    if applied:
+        done = await store.pins.pin(await store.view(), dashboard=True, sidebar=None)
+        assert done.changed
+        return
+    with pytest.raises(PaperlessMcpError, match="unexpected response for POST"):
+        _ = await store.pins.pin(await store.view(), dashboard=True, sidebar=None)
+    assert len(store.writes) == 1
+
+
+async def test_both_failures_are_named_when_the_settings_cannot_be_read_again() -> None:
+    store = Store()
+    store.fails, store.reading_fails_from = UnexpectedAnswer("A login page came."), 2
+
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await store.pins.pin(await store.view(), dashboard=True, sidebar=None)
+
+    assert raised.value.message.startswith("A login page came. The UI settings could not be read")
+
+
+async def test_a_call_does_not_wait_for_ever_for_another_one() -> None:
+    store = Store()
+    pins = ViewPins(store, store, wait=0.01)
+    view = await store.view()
+    held, go = asyncio.Event(), asyncio.Event()
+    store.before_read = held.set
+    store.hold = go
+    first = asyncio.create_task(pins.pin(view, dashboard=True, sidebar=None))
+    _ = await held.wait()
+
+    with pytest.raises(Conflict, match="Another call") as raised:
+        _ = await pins.pin(view, dashboard=None, sidebar=True)
+    go.set()
+    _ = await first
+    done = await pins.pin(view, dashboard=None, sidebar=True)
+
+    assert "Nothing was changed" in raised.value.message
+    assert done.changed
+
+
+async def test_a_failed_call_lets_the_next_one_through() -> None:
+    store = Store({"saved_views": "odd"})
+    pins = store.pins
+    with pytest.raises(Conflict):
+        _ = await pins.pin(await store.view(), dashboard=True, sidebar=None)
+    store.state.ui_settings[store.user.id] = {}
+
+    done = await pins.pin(await store.view(), dashboard=True, sidebar=None)
+
+    assert done.changed
