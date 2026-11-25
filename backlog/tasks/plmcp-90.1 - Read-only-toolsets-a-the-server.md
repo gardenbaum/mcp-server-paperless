@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T12:22:10Z'
-updated_date: '2026-11-25T14:52:31Z'
+updated_date: '2026-11-25T15:19:06Z'
 labels: []
 dependencies: []
 parent_task_id: PLMCP-90
@@ -26,14 +26,14 @@ First part of PLMCP-90: reading mail rules, workflows or views means either offe
 - [x] #2 all:read, all with exceptions, an unknown suffix, a toolset both with and without suffix and an unknown name stop the server with a message that says what to write; server-wide read-only mode wins
 - [ ] #3 What the assistant is told marks a read-only toolset and the value to set keeps :read; nothing of it is named that is hidden; prompts that need a hidden tool are not offered
 - [x] #4 A decision records the setting and how it extends decisions 4 and 6; README, configuration, container docs and server.json say it
-- [ ] #5 Contract tests on the fake and Paperless 3.5.1, tool tests over stdio and HTTP on both protocol eras and E2E cover mixed selections, downloads, prompts and the error messages
+- [x] #5 Contract tests on the fake and Paperless 3.5.1, tool tests over stdio and HTTP on both protocol eras and E2E cover mixed selections, downloads, prompts and the error messages
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -67,4 +67,6 @@ DoD stays open: just check was not run as a whole, CI and the hosted E2E of the 
 
 Owner, 2026-11-25 (relayed by the main agent): 'alles wie von dir empfohlen' (all as you recommend), to '#170 mergen, Kriterium 3 offen lassen und als Folgeaufgabe umsetzen, zuerst die 12 Lese-Tools' (merge #170, leave criterion 3 open and do it as a follow-up task, the 12 reading tools first): PLMCP-90.3. Criterion 3 stays unticked.
 Merged main de956f5: guide 3118 to 3135 (+17), instructions 1474 measured with the toolset tasks, exactly the approved maximum; no byte is left for PLMCP-89.2 and later toolset texts.
+
+AC 5: full hosted E2E 45639073065 on 2bec926 green in all ten jobs (live contract, stdio and HTTP, e2e-imap included). The head after it only adds the merge of main 58c792a (guide 3175, instructions 1474 unchanged, 391 targeted tests) and records; the full E2E was not repeated on it.
 <!-- SECTION:NOTES:END -->
