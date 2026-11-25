@@ -576,8 +576,14 @@ class MailExplanation(BaseModel):
         tuple[str, ...], Field(description="Log lines about the account and its rules: data.")
     ]
     logs_from: Annotated[
-        str | None, Field(description="The oldest log line that was looked at, in Paperless time.")
+        tuple[str, ...],
+        Field(description="The oldest line of each log that was looked at, in Paperless time."),
     ]
     closest_way: Annotated[str, Field(description="How to see what a rule really does.")]
-    complete: bool
-    not_checked: tuple[str, ...]
+    complete: Annotated[
+        bool, Field(description="False if something could not be read or is left out.")
+    ]
+    not_checked: Annotated[
+        tuple[str, ...],
+        Field(description="That, and what cannot be known at all."),
+    ]

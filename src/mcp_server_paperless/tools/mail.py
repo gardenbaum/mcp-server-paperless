@@ -53,6 +53,7 @@ TOOLSET = "mail"
 PAGE_SIZE = 25
 LIST_LIMIT = 100
 MAX_TEXT = 256
+MAX_HEADER = 2000
 
 provider = LocalProvider()
 
@@ -64,6 +65,8 @@ type RuleId = Annotated[PositiveId, Field(description="Mail rule id, from list_m
 type Page = Annotated[int, Field(ge=1, description="Page number, from 1.")]
 type Size = Annotated[int, Field(ge=1, le=LIST_LIMIT, description="Rows per page, at most 100.")]
 type Text = Annotated[str, Field(max_length=MAX_TEXT)]
+# A header of a mail, which Paperless stores shortened or not at all.
+type Header = Annotated[str, Field(max_length=MAX_HEADER)]
 
 
 def secret(value: object) -> SecretStr:
@@ -605,10 +608,12 @@ async def explain_mail_import(  # noqa: PLR0913 -- what the caller knows of the 
     rule_id: Annotated[
         PositiveId | None, Field(description="Only this rule of the account; default: all.")
     ] = None,
-    sender: Annotated[Text | None, Field(description="The mail's From, name and address.")] = None,
-    recipient: Annotated[Text | None, Field(description="The mail's To.")] = None,
+    sender: Annotated[
+        Header | None, Field(description="The mail's From, name and address.")
+    ] = None,
+    recipient: Annotated[Header | None, Field(description="The mail's To.")] = None,
     subject: Annotated[
-        Text | None, Field(description="The mail's whole subject; finds its records too.")
+        Header | None, Field(description="The mail's whole subject; finds its records too.")
     ] = None,
     received: Annotated[datetime | None, Field(description="When the mail arrived.")] = None,
     folder: Annotated[Text | None, Field(description="The IMAP folder the mail is in.")] = None,

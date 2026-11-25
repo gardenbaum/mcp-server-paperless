@@ -9362,7 +9362,7 @@
           'recipient': dict({
             'anyOf': list([
               dict({
-                'maxLength': 256,
+                'maxLength': 2000,
                 'type': 'string',
               }),
               dict({
@@ -9388,7 +9388,7 @@
           'sender': dict({
             'anyOf': list([
               dict({
-                'maxLength': 256,
+                'maxLength': 2000,
                 'type': 'string',
               }),
               dict({
@@ -9401,7 +9401,7 @@
           'subject': dict({
             'anyOf': list([
               dict({
-                'maxLength': 256,
+                'maxLength': 2000,
                 'type': 'string',
               }),
               dict({
@@ -9432,6 +9432,7 @@
             'type': 'string',
           }),
           'complete': dict({
+            'description': 'False if something could not be read or is left out.',
             'type': 'boolean',
           }),
           'logs': dict({
@@ -9442,20 +9443,17 @@
             'type': 'array',
           }),
           'logs_from': dict({
-            'anyOf': list([
-              dict({
-                'type': 'string',
-              }),
-              dict({
-                'type': 'null',
-              }),
-            ]),
-            'description': 'The oldest log line that was looked at, in Paperless time.',
+            'description': 'The oldest line of each log that was looked at, in Paperless time.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
           }),
           'message': dict({
             'type': 'string',
           }),
           'not_checked': dict({
+            'description': 'That, and what cannot be known at all.',
             'items': dict({
               'type': 'string',
             }),
@@ -38764,7 +38762,7 @@
           'recipient': dict({
             'anyOf': list([
               dict({
-                'maxLength': 256,
+                'maxLength': 2000,
                 'type': 'string',
               }),
               dict({
@@ -38790,7 +38788,7 @@
           'sender': dict({
             'anyOf': list([
               dict({
-                'maxLength': 256,
+                'maxLength': 2000,
                 'type': 'string',
               }),
               dict({
@@ -38803,7 +38801,7 @@
           'subject': dict({
             'anyOf': list([
               dict({
-                'maxLength': 256,
+                'maxLength': 2000,
                 'type': 'string',
               }),
               dict({
@@ -38834,6 +38832,7 @@
             'type': 'string',
           }),
           'complete': dict({
+            'description': 'False if something could not be read or is left out.',
             'type': 'boolean',
           }),
           'logs': dict({
@@ -38844,20 +38843,17 @@
             'type': 'array',
           }),
           'logs_from': dict({
-            'anyOf': list([
-              dict({
-                'type': 'string',
-              }),
-              dict({
-                'type': 'null',
-              }),
-            ]),
-            'description': 'The oldest log line that was looked at, in Paperless time.',
+            'description': 'The oldest line of each log that was looked at, in Paperless time.',
+            'items': dict({
+              'type': 'string',
+            }),
+            'type': 'array',
           }),
           'message': dict({
             'type': 'string',
           }),
           'not_checked': dict({
+            'description': 'That, and what cannot be known at all.',
             'items': dict({
               'type': 'string',
             }),

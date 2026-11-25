@@ -10,7 +10,6 @@ and, in one run, what an earlier rule has queued. ``mail_fetch`` tasks say nothi
 (``result_data`` is null), so a fetch that was skipped is only in the log ``paperless``.
 """
 
-import re
 import time
 from datetime import UTC, datetime, timedelta
 from fnmatch import fnmatch
@@ -29,13 +28,14 @@ from mcp_server_paperless.domain.mail import (
     MailExplanation,
     RuleChecks,
 )
-from mcp_server_paperless.services.document_runner import RUN_SECONDS, stopped_by
+from mcp_server_paperless.services.document_runner import RUN_SECONDS, cut, stopped_by
 from mcp_server_paperless.services.log_records import read_log_records
 from mcp_server_paperless.services.mail import one_line
+from mcp_server_paperless.services.mail_log_lines import about_mail, about_run, skipped
 from mcp_server_paperless.services.processed_mail import MAX_RECORDS, PAGE, same_folder
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Iterable, Sequence
+    from collections.abc import Awaitable, Callable, Sequence
 
     from mcp_server_paperless.domain.mail import (
         CheckResult,
@@ -67,12 +67,17 @@ MAX_LOGS: Final = 20
 LOG_CHARS: Final = 4000
 MAX_ANSWER: Final = 50_000
 SUBJECT: Final = 256
-SKIPPED: Final = "Mail account processing is already running; skipping this run."
 NOT_STAFF: Final = "Logs need a staff user."
-# A record of the log about one mail, which may be another one.
-_ABOUT_MAIL: Final = re.compile(
-    r"\bmail '|Processing mail (?!account)|Consuming (?:attachment|eml)|Skipping attachment"
-)
+OTHERS: Final = "records and tasks that are owned by others are not visible to you"
+UNKNOWN_SKIPS: Final = "whether a fetch was skipped is not known"
+# Days at the edge of an age that are unsure: the server counts whole days of its own time zone.
+DOUBT: Final = 2
+NAMED: Final = 3
+# What is not checked, in one answer, and the length of each.
+MAX_GAPS: Final = 18
+GAP_CHARS: Final = 300
+# The colours of Apple Mail that Paperless knows.
+COLOURS: Final = frozenset({"red", "orange", "yellow", "blue", "green", "violet", "grey"})
 
 
 def _check(what: str, result: CheckResult, why: str) -> MailCheck:
@@ -84,7 +89,9 @@ def _folder(rule: MailRule, mail: MailFacts) -> MailCheck:
     if mail.folder is None:
         return _check("folder", "unknown", f"{reads}; the mail's folder was not given")
     same = same_folder(rule.folder, mail.folder)
-    return _check("folder", "ok" if same else "no", reads)
+    if same:
+        return _check("folder", "ok", reads)
+    return _check("folder", "no", f"{reads}, so it most likely does not see the mail")
 
 
 def _age(rule: MailRule, mail: MailFacts, now: datetime) -> MailCheck:
@@ -94,10 +101,16 @@ def _age(rule: MailRule, mail: MailFacts, now: datetime) -> MailCheck:
     if mail.received is None:
         return _check("age", "unknown", f"{limit}; when it was received was not given")
     received = mail.received if mail.received.tzinfo else mail.received.replace(tzinfo=UTC)
-    days = (received.astimezone(UTC).date() - (now - timedelta(days=rule.maximum_age)).date()).days
-    if abs(days) <= 1:
+    try:
+        day = received.astimezone(UTC).date()
+    except OverflowError:  # the first or the last day there is
+        day = received.date()
+    days = (day - (now - timedelta(days=rule.maximum_age)).date()).days
+    if abs(days) <= DOUBT:
         return _check("age", "unknown", f"{limit}; it is at the edge, whole days count")
-    return _check("age", "ok" if days > 0 else "no", limit)
+    if days > 0:
+        return _check("age", "ok", limit)
+    return _check("age", "no", f"{limit}, so it is most likely too old; the server decides")
 
 
 def _contains(what: str, wanted: str | None, given: str | None) -> list[MailCheck]:
@@ -136,23 +149,47 @@ def _attachments(rule: MailRule, mail: MailFacts) -> MailCheck:
         if rule.attachment_type == "all_files"
         else "whether Paperless supports their type, and whether they are inline, is not known"
     )
-    return _check("attachments", "ok", f"{quoted(left[0])} passes the file name filters; {unsure}")
+    return _check(
+        "attachments", "unknown", f"{quoted(left[0])} passes the file name filters; {unsure}"
+    )
 
 
 def _marked(rule: MailRule, mail: MailFacts) -> list[MailCheck]:
     """What the action of the rule leaves out: mail that it has marked already."""
     parameter = rule.action_parameter or ""
+    if rule.action == "move":
+        why = f"the rule fails if the folder {quoted(parameter)} does not exist on the mail server"
+        return [_check("target", "unknown", why)]
+    if rule.action == "delete":
+        return []
     if rule.action == "tag" and "apple:" not in parameter.lower():
         why = f"mail that is tagged {quoted(parameter)} on the server is left out"
         return [_check("mark", "unknown", why)]
-    if rule.action in {"delete", "move"}:
-        return []
+    if rule.action == "tag":
+        _, *colours = parameter.split(":")
+        if len(colours) != 1 or colours[0].strip().lower() not in COLOURS:
+            why = f"{quoted(parameter)} is no colour Paperless knows, so the rule fails"
+            return [_check("mark", "no", why)]
     known, state = (
         (mail.is_read, "read") if rule.action == "mark_read" else (mail.is_flagged, "flagged")
     )
     why = f"mail that is {state} on the server is left out"
     result: CheckResult = "unknown" if known is None else "no" if known else "ok"
-    return [_check("mark", result, why)]
+    return [_check("mark", result, f"{why}, most likely also this one" if known else why)]
+
+
+def _blocking(rule: MailRule, rows: Sequence[ProcessedMail]) -> list[MailCheck]:
+    """Records that keep the mail out if they are of it; their folder is compared exactly."""
+    ids = sorted(row.id for row in rows if row.rule_id == rule.id and row.folder == rule.folder)
+    if not ids:
+        return []
+    more = f" and {len(ids) - NAMED} more" if len(ids) > NAMED else ""
+    why = (
+        f"records {', '.join(map(str, ids[:NAMED]))}{more} have this subject: if one is of this "
+        "mail, it keeps it out; get_processed_mail says what follows, delete_processed_mail "
+        "deletes them"
+    )
+    return [_check("record", "unknown", why)]
 
 
 def _earlier(rule: MailRule, rules: Sequence[MailRule]) -> list[MailCheck]:
@@ -167,7 +204,8 @@ def _earlier(rule: MailRule, rules: Sequence[MailRule]) -> list[MailCheck]:
             "was queued in it"
         )
         found.append(_check("earlier rules", "unknown", why))
-    taking = [r for r in before if same_folder(r.folder, rule.folder)]
+    # Paperless keeps the mail it queued by the folder as it is written in the rule.
+    taking = [r for r in before if r.folder == rule.folder]
     if taking:
         why = (
             f"rule {quoted(taking[0].name)} (id {taking[0].id}) reads the same folder first; what "
@@ -178,9 +216,16 @@ def _earlier(rule: MailRule, rules: Sequence[MailRule]) -> list[MailCheck]:
 
 
 def rule_checks(
-    rule: MailRule, rules: Sequence[MailRule], mail: MailFacts, now: datetime
+    rule: MailRule,
+    rules: Sequence[MailRule],
+    rows: Sequence[ProcessedMail],
+    mail: MailFacts,
+    now: datetime,
 ) -> RuleChecks:
-    """What can be said of ``rule``, one of the ``rules`` of its account, and the mail."""
+    """What can be said of ``rule``, one of the ``rules`` of its account, and the mail.
+
+    ``rows`` are the records with its subject.
+    """
     if not rule.enabled:
         checks = [_check("enabled", "no", "the rule is disabled: it fetches nothing")]
     else:
@@ -194,6 +239,7 @@ def rule_checks(
             *([_check("body", "unknown", body)] if rule.filter_body else []),
             _attachments(rule, mail),
             *_marked(rule, mail),
+            *_blocking(rule, rows),
             *_earlier(rule, rules),
         ]
     results = {check.result for check in checks}
@@ -210,26 +256,13 @@ def _account_notes(account: MailAccount, now: datetime) -> list[str]:
     return notes
 
 
-def _names(message: str, account: str, rules: Iterable[str]) -> bool:
-    """Whether a record of the log names the account or one of these rules of it."""
-    where = re.search(rf"(?:account|mailbox|Account) {re.escape(account)}(?![\w-])", message)
-    return where is not None or any(f"Rule {account}.{rule}:" in message for rule in rules)
-
-
-def _about(message: str, mail: MailFacts) -> bool:
-    """Whether a record of the log can be about the mail: not about one with another subject."""
-    if mail.subject is None or _ABOUT_MAIL.search(message) is None:
-        return True
-    return mail.subject in message or any(name in message for name in mail.attachment_names or ())
-
-
 def _found(mail: MailFacts, row: ProcessedMail) -> bool:
     """Whether a record is about a mail with this subject, which Paperless cuts."""
-    wanted = (mail.subject or "").strip()[:SUBJECT].casefold()
-    return row.subject.strip().casefold() == wanted
+    wanted = (mail.subject or "").strip()[:SUBJECT].strip()
+    return row.subject.strip().casefold() == wanted.casefold()
 
 
-def _message(rules: Sequence[MailRule] | None, chosen: Sequence[MailRule]) -> str:
+def _message(rules: Sequence[MailRule] | None, chosen: Sequence[MailRule], skips: int) -> str:
     if rules is None:
         said = "The rules could not be read, so nothing is said of them."
     elif not chosen:
@@ -238,10 +271,22 @@ def _message(rules: Sequence[MailRule] | None, chosen: Sequence[MailRule]) -> st
         said = "None of these rules is enabled, so they fetch nothing."
     else:
         said = "A check that says no most likely keeps the mail out; ok is no promise."
+    if skips:
+        fetches = "1 fetch was" if skips == 1 else f"{skips} fetches were"
+        said += (
+            f" The log shows that {fetches} skipped because another one was running: what they "
+            "would have fetched was left to a later one."
+        )
     return (
         f"{NO_DRY_RUN} {said} Rules of other users that you may not see can act on the account "
         "too, and are not checked."
     )
+
+
+def _short(gaps: Sequence[str]) -> list[str]:
+    """The gaps within their bounds: the rest is counted."""
+    shown = [cut(gap, GAP_CHARS) for gap in gaps[:MAX_GAPS]]
+    return [*shown, f"{len(gaps) - MAX_GAPS} more things"] if len(gaps) > MAX_GAPS else shown
 
 
 def _bounded(found: MailExplanation) -> MailExplanation:
@@ -270,6 +315,8 @@ class _Asking:
         self._clock: Callable[[], float] = clock
         self._until: float = clock() + RUN_SECONDS
         self.gaps: list[str] = []
+        # What can never be known, whoever asks.
+        self.notes: list[str] = [OTHERS]
 
     async def ask[T](self, what: str, request: Callable[[], Awaitable[T]]) -> T | None:
         """The answer; None and a gap named ``what`` if there is none.
@@ -325,46 +372,35 @@ class MailExplanations:
         if rules is not None and rule_id is not None and not chosen:
             message = f"Account {account_id} has no rule {rule_id} that you may see."
             raise Validation(message, hint="list_mail_rules shows the rules of the account.")
-        processed = await self._processed(chosen, mail, asking)
+        rows = await self._rows(chosen, mail, asking)
         tasks = await self._tasks(asking)
-        logs, since = await self._logs(account, chosen, mail, asking)
+        logs, since, skips = await self._logs(account, chosen, mail, asking)
         return _bounded(
             MailExplanation(
-                message=_message(rules, chosen),
+                message=_message(rules, chosen, skips),
                 account=tuple(_account_notes(account, now)),
-                rules=tuple(rule_checks(rule, mine, mail, now) for rule in chosen),
-                processed=processed,
+                rules=tuple(rule_checks(rule, mine, rows, mail, now) for rule in chosen),
+                processed=_records(rows, asking),
                 tasks=tasks,
                 logs=logs,
                 logs_from=since,
                 closest_way=CLOSEST,
                 complete=not asking.gaps,
-                not_checked=tuple(asking.gaps),
+                not_checked=(*_short(asking.gaps), *asking.notes),
             )
         )
 
-    async def _processed(
+    async def _rows(
         self, rules: Sequence[MailRule], mail: MailFacts, asking: _Asking
-    ) -> tuple[ExplainedRecord, ...]:
+    ) -> list[ProcessedMail]:
         """The records of the rules with the subject of the mail, newest first per rule."""
-        if not mail.subject:
+        if not (mail.subject or "").strip():
             asking.gaps.append("processed mail: pass the subject of the mail")
-            return ()
+            return []
         rows: list[ProcessedMail] = []
         for rule in rules:
             rows += [row for row in await self._records(rule, asking) if _found(mail, row)]
-        if len(rows) > MAX_PROCESSED:
-            asking.gaps.append(f"{len(rows) - MAX_PROCESSED} more records with this subject")
-        return tuple(
-            ExplainedRecord(
-                id=row.id,
-                rule_id=row.rule_id,
-                status=row.status,
-                processed=row.processed,
-                error=one_line(row.error),
-            )
-            for row in rows[:MAX_PROCESSED]
-        )
+        return rows
 
     async def _records(self, rule: MailRule, asking: _Asking) -> list[ProcessedMail]:
         rows: dict[int, ProcessedMail] = {}
@@ -404,7 +440,14 @@ class MailExplanations:
             ),
         )
         rows = failed.rows if failed else ()
+        if failed and failed.count > len(rows):
+            read = f"only the newest {len(rows)} of {failed.count} were looked at"
+            asking.gaps.append(f"files that could not be consumed: {read}")
         files = [row for row in rows if row.trigger_source == "email_consume"]
+        if len(files) > MAX_TASKS:
+            asking.gaps.append(
+                f"{len(files) - MAX_TASKS} more files from mails that could not be consumed"
+            )
         return tuple(
             ExplainedTask(
                 task_type=row.task_type,
@@ -417,20 +460,32 @@ class MailExplanations:
 
     async def _logs(
         self, account: MailAccount, rules: Sequence[MailRule], mail: MailFacts, asking: _Asking
-    ) -> tuple[tuple[str, ...], str | None]:
-        """The newest lines about the account, its rules or a skipped fetch; oldest line read."""
+    ) -> tuple[tuple[str, ...], tuple[str, ...], int]:
+        """The newest lines about the account, its rules or a skipped fetch.
+
+        Also how far back each log reaches, and how many fetches were skipped.
+        """
         names = [rule.name for rule in rules]
-        records = await asking.ask("the log mail", lambda: self._log("mail"))
+        mails = await asking.ask("the log mail", lambda: self._log("mail"))
         runs = await asking.ask("the log paperless", lambda: self._log("paperless"))
-        if runs is None:
-            asking.gaps.append("whether a fetch was skipped is not known")
-        read = sorted([*(records or ()), *(runs or ())], key=lambda record: record.time)
-        told = [
-            record
-            for record in read
-            if record.message.startswith(SKIPPED)
-            or (_names(record.message, account.name, names) and _about(record.message, mail))
-        ]
+        since: list[str] = []
+        for name, records in (("mail", mails), ("paperless", runs)):
+            if records:
+                since.append(f"{name}: {records[0].time}")
+            elif records is not None:
+                asking.gaps.append(f"the log {name} is empty")
+        if runs:
+            asking.notes.append(f"whether a fetch was skipped before {runs[0].time} is not known")
+        else:
+            asking.gaps.append(UNKNOWN_SKIPS)
+        skips = sum(map(skipped, runs or ()))
+        told = sorted(
+            [
+                *(r for r in mails or () if about_mail(r, account.name, names, mail)),
+                *(r for r in runs or () if skipped(r) or about_run(r, account.name)),
+            ],
+            key=lambda record: record.time,
+        )
         lines: list[str] = []
         used = 0
         for record in reversed(told[-MAX_LOGS:]):
@@ -440,11 +495,26 @@ class MailExplanations:
             lines.append(line)
             used += len(line)
         if len(lines) < len(told):
-            asking.gaps.append(f"{len(told) - len(lines)} older log lines about the account")
-        return tuple(reversed(lines)), str(read[0].time) if read else None
+            asking.gaps.append(f"{len(told) - len(lines)} older log lines")
+        return tuple(reversed(lines)), tuple(since), skips
 
     async def _log(self, name: str) -> list[LogRecord]:
         try:
             return await read_log_records(self._management, name)
         except PermissionDenied:
             raise PaperlessMcpError(NOT_STAFF) from None
+
+
+def _records(rows: Sequence[ProcessedMail], asking: _Asking) -> tuple[ExplainedRecord, ...]:
+    if len(rows) > MAX_PROCESSED:
+        asking.gaps.append(f"{len(rows) - MAX_PROCESSED} more records with this subject")
+    return tuple(
+        ExplainedRecord(
+            id=row.id,
+            rule_id=row.rule_id,
+            status=row.status,
+            processed=row.processed,
+            error=one_line(row.error),
+        )
+        for row in rows[:MAX_PROCESSED]
+    )

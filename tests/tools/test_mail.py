@@ -526,9 +526,9 @@ async def test_why_a_mail_was_not_imported_is_explained_also_read_only() -> None
             "explain_mail_import",
             {
                 "account_id": account,
-                "subject": "Reminder",
+                "subject": "Reminder" + "x" * 1000,
                 "sender": "a@b",
-                "recipient": "c@d",
+                "recipient": "c@d" * 400,
                 "received": "2026-11-25T10:00:00Z",
                 "folder": "INBOX",
                 "attachment_names": ["a.pdf"],

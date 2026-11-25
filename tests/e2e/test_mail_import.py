@@ -324,6 +324,7 @@ async def test_an_import_that_did_not_happen_is_explained(box: Mailbox, client: 
     [checked] = cast("list[Json]", found["rules"])
     results = {c["what"]: c["result"] for c in cast("list[Json]", checked["checks"])}
     assert (results["folder"], results["attachments"], results["mark"]) == ("ok", "no", "ok")
+    assert results["record"] == "unknown"
     assert checked["result"] == "no"
     [row] = cast("list[Json]", found["processed"])
     assert row["status"] == "PROCESSED_WO_CONSUMPTION"
@@ -356,10 +357,13 @@ async def test_a_skipped_fetch_and_a_failed_login_are_in_the_explanation(
 
 @pytest.mark.decision("decision-90")
 async def test_a_user_who_is_no_staff_is_told_what_is_not_known(box: Mailbox, stack: Stack) -> None:
+    settings = obj(parse(stack.admin.get("/api/ui_settings/")))
+    # A rule of somebody else, which the user does not see.
+    _ = box.rule(owner=num(obj(settings["user"])["id"]))
     body = {
         "username": f"{box.name}-user",
         "password": "pw-e2e-imap-4711",
-        "user_permissions": ["view_mailaccount"],
+        "user_permissions": ["view_mailaccount", "view_mailrule"],
     }
     user = num(obj(parse(stack.admin.post("/api/users/", json=body).raise_for_status()))["id"])
     box.change_account(owner=user)
@@ -379,7 +383,8 @@ async def test_a_user_who_is_no_staff_is_told_what_is_not_known(box: Mailbox, st
         box.change_account(owner=None)
         _ = stack.admin.delete(f"/api/users/{user}/")
 
-    assert "The rules could not be read" in str(found["message"])
+    assert "You see no rule of this account" in str(found["message"])
+    assert "Rules of other users that you may not see" in str(found["message"])
     gaps = cast("list[str]", found["not_checked"])
     assert "whether a fetch was skipped is not known" in gaps
     assert found["complete"] is False
