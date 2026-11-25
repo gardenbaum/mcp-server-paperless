@@ -202,13 +202,23 @@ async def test_a_user_without_the_permissions_gets_hints(stack: Stack) -> None:
 @pytest.mark.usefixtures("cleanup")
 @pytest.mark.decision("decision-103")
 async def test_a_second_factor_is_removed_only_with_confirm(stack: Stack, tag: str) -> None:
-    made = await run(stack, "create_user", username=tag, password=PASSWORD, confirm=True)
+    # A user who may not view documents would get a 403 whether signed in or not.
+    made = await run(
+        stack,
+        "create_user",
+        username=tag,
+        password=PASSWORD,
+        permissions=["view_document"],
+        confirm=True,
+    )
+    assert signs_in(stack, tag) == 200
     none = await run(stack, "update_user", user=tag, remove_second_factor=True)
     add_second_factor(num(cast("Json", made["user"])["id"]))
-    assert signs_in(stack, tag) != 200
+    assert signs_in(stack, tag) == 401
 
     shown = await refused(stack, "update_user", user=tag, remove_second_factor=True)
     still = await run(stack, "get_user", user=tag)
+    assert signs_in(stack, tag) == 401
     done = await run(stack, "update_user", user=tag, remove_second_factor=True, confirm=True)
     own = await refused(stack, "update_user", user="admin", remove_second_factor=True, confirm=True)
 
