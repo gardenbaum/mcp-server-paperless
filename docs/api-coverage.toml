@@ -574,86 +574,86 @@ source = "backlog/decisions/decision-61 - PDF-tools-say-their-plan-before-they-r
 [[exclusion]]
 operation = "GET /api/workflows/"
 fields = ["query:id", "query:id__in"]
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
 
 [[exclusion]]
 operation = "GET /api/workflow_actions/"
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
 
 [[exclusion]]
 operation = "POST /api/workflow_actions/"
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
 
 [[exclusion]]
 operation = "PUT /api/workflow_actions/{id}/"
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
 
 [[exclusion]]
 operation = "PATCH /api/workflow_actions/{id}/"
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
 
 [[exclusion]]
 operation = "DELETE /api/workflow_actions/{id}/"
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
 
 [[exclusion]]
 operation = "GET /api/workflow_triggers/"
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
 
 [[exclusion]]
 operation = "POST /api/workflow_triggers/"
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
 
 [[exclusion]]
 operation = "PUT /api/workflow_triggers/{id}/"
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
 
 [[exclusion]]
 operation = "PATCH /api/workflow_triggers/{id}/"
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
 
 [[exclusion]]
 operation = "DELETE /api/workflow_triggers/{id}/"
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
 
 [[exclusion]]
 operation = "PUT /api/workflows/{id}/"
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
 
 [[exclusion]]
 operation = "POST /api/workflows/"
 fields = ["body:actions[].email.id", "body:actions[].id", "body:actions[].webhook.id", "body:triggers[].id"]
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"
 
 [[exclusion]]
 operation = "PATCH /api/workflows/{id}/"
 fields = ["body:actions[].email.id", "body:actions[].webhook.id"]
-quote = "Designs 81, 87, 88, 89, 90, 83, 100 all as recommended"
+quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md"

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:04Z'
-updated_date: '2026-11-24T23:00:17Z'
+updated_date: '2026-11-25T07:14:23Z'
 labels:
   - workflows
 dependencies:
@@ -24,19 +24,19 @@ First part of PLMCP-87. How Paperless 3.5.1 treats parts sent with ids decides h
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Probes P1 to P5 ran against Paperless 3.5.1 on GitHub and their results are recorded; P1 decides the mechanism of the writing part
-- [ ] #2 list_workflows filters by enabled, by trigger type and by a used tag, correspondent, document type, storage path, custom field, user, group or mail rule, and names the part and setting that use it
-- [ ] #3 get_workflow reads one trigger or action and the workflows that hold it, also without the permission to view parts where the workflows may be viewed
-- [ ] #4 Hidden values (webhook headers, URL credentials, passwords) are not shown on any new path
-- [ ] #5 The owner-approved exclusions 2 and 3 are recorded with quote and date, and the covered rows are covered
-- [ ] #6 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover each new read
+- [x] #1 Probes P1 to P5 ran against Paperless 3.5.1 on GitHub and their results are recorded; P1 decides the mechanism of the writing part
+- [x] #2 list_workflows filters by enabled, by trigger type and by a used tag, correspondent, document type, storage path, custom field, user, group or mail rule, and names the part and setting that use it
+- [x] #3 get_workflow reads one trigger or action and the workflows that hold it, also without the permission to view parts where the workflows may be viewed
+- [x] #4 Hidden values (webhook headers, URL credentials, passwords) are not shown on any new path
+- [x] #5 The owner-approved exclusions 2 and 3 are recorded with quote and date, and the covered rows are covered
+- [x] #6 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover each new read
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -55,4 +55,8 @@ First part of PLMCP-87. How Paperless 3.5.1 treats parts sent with ids decides h
 Owner approval (2026-11-24, question dialog, recommended options chosen; record of the main agent): 'Designs 81, 87, 88, 89, 90, 83, 100 all as recommended'. Guide limit: this part needs none of the 42 bytes (no new tool).
 
 Probes on Paperless 3.5.1, CI run 45503786740, job e2e (1/6), head 54845e1 (temporary tests, removed): P1 holds: id-only and full PATCHes kept all five trigger and eight action types with hidden values, one changed part changed nothing else; the one red case was the test's own expectation: the answer of a PATCH that moves actions does not list them in their order, so part b has to compare with a fresh read. P2 to P5 confirm T1 to T7 and T13 of the design (details in decision-81).
+
+Owner's words (2026-11-24, question dialog 'Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?'): 'Alle wie empfohlen'.
+
+Full hosted E2E 45507183680 on 6d12e49 green: tests/e2e/test_workflow_parts.py 6 passed (P1 with move, add, remove against a fresh read), tests/contract/test_workflows.py 25 and tests/e2e/test_workflows.py 6 passed. Then only main was merged and the quote set.
 <!-- SECTION:NOTES:END -->
