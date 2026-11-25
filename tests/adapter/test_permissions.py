@@ -16,6 +16,7 @@ from mcp_server_paperless.paperless.permissions import (
 
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory
+    from mcp_server_paperless.domain.permissions import PermissionKind
 
 pytestmark = pytest.mark.anyio
 
@@ -60,6 +61,49 @@ DOCUMENT: Json = {
     "title": "plmcp28-d-c1b70e",
     "owner": 2,
     "permissions": grants((488,), (3,), (), (3,)),
+}
+# A mail account and a rule as they answer with `full_perms=true` (no `user_can_change`).
+MAIL_ACCOUNT: Json = {
+    "name": "Work",
+    "imap_server": "imap.example.com",
+    "imap_port": 993,
+    "imap_security": 1,
+    "username": "me@example.com",
+    "password": "**********",
+    "character_set": "UTF-8",
+    "is_token": False,
+    "owner": 2,
+    "account_type": 1,
+    "expiration": None,
+    "id": 7,
+}
+MAIL_RULE: Json = {
+    "id": 7,
+    "name": "Work",
+    "account": 1,
+    "enabled": True,
+    "folder": "INBOX",
+    "filter_from": None,
+    "filter_to": None,
+    "filter_subject": None,
+    "filter_body": None,
+    "filter_attachment_filename_include": None,
+    "filter_attachment_filename_exclude": None,
+    "maximum_age": 30,
+    "action": 3,
+    "action_parameter": None,
+    "assign_title_from": 1,
+    "assign_tags": [],
+    "assign_correspondent_from": 1,
+    "assign_correspondent": None,
+    "assign_document_type": None,
+    "assign_owner_from_rule": True,
+    "order": 0,
+    "attachment_type": 1,
+    "consumption_scope": 1,
+    "pdf_layout": 0,
+    "owner": 2,
+    "stop_processing": False,
 }
 USER: Json = {
     "id": 489,
@@ -171,6 +215,61 @@ async def test_every_taxonomy_kind_has_its_own_endpoint(
 
     assert found == []
     assert server.sent[0][1] == path
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.parametrize(
+    ("kind", "path"),
+    [("mail_account", "/api/mail_accounts/"), ("mail_rule", "/api/mail_rules/")],
+)
+async def test_mail_objects_are_read_one_by_one_because_their_lists_take_no_ids(
+    make_client: ClientFactory, kind: PermissionKind, path: str
+) -> None:
+    sent: list[tuple[str, dict[str, str]]] = []
+
+    def server(request: httpx2.Request) -> httpx2.Response:
+        sent.append((request.url.path, dict(request.url.params)))
+        number = int(request.url.path.rstrip("/").rsplit("/", 1)[1])
+        if number == 8:
+            return httpx2.Response(404, json={"detail": "Nothing matches."})
+        row = MAIL_ACCOUNT if kind == "mail_account" else MAIL_RULE
+        return httpx2.Response(
+            200, json={**row, "id": number, "permissions": grants((488,), (), (488,), ())}
+        )
+
+    found = await PaperlessPermissionReader(make_client(server)).get_permissions(kind, [9, 8, 7, 9])
+
+    assert sent == [(f"{path}{n}/", {"full_perms": "true"}) for n in (9, 8, 7)]
+    assert [(row.id, row.name, row.owner) for row in found] == [(9, "Work", 2), (7, "Work", 2)]
+    assert found[0].permissions == ObjectPermissions(view_users=(488,), change_users=(488,))
+    assert "***" not in repr(found)
+
+
+@pytest.mark.decision("decision-87")
+@pytest.mark.parametrize(
+    ("kind", "path"),
+    [("mail_account", "/api/mail_accounts/7/"), ("mail_rule", "/api/mail_rules/7/")],
+)
+async def test_mail_objects_are_patched_with_nothing_but_owner_and_grants(
+    make_client: ClientFactory, kind: PermissionKind, path: str
+) -> None:
+    row = MAIL_ACCOUNT if kind == "mail_account" else MAIL_RULE
+    server = Recorded({**row, "permissions": grants((488,), (), (), ())})
+
+    changed = await PaperlessPermissionWriter(make_client(server)).set_permissions(
+        kind, 7, AccessChange(owner=2, permissions=ObjectPermissions(view_users=(488,)))
+    )
+
+    [(method, sent, params, body)] = server.sent
+    assert (method, sent, params) == ("PATCH", path, {"full_perms": "true"})
+    assert body == {
+        "owner": 2,
+        "set_permissions": {
+            "view": {"users": [488], "groups": []},
+            "change": {"users": [], "groups": []},
+        },
+    }
+    assert changed.permissions == ObjectPermissions(view_users=(488,))
 
 
 async def test_no_ids_send_no_request(make_client: ClientFactory) -> None:

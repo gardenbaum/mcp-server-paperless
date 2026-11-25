@@ -826,7 +826,7 @@ class TrashWriter(Protocol):
 
 
 class PermissionReader(Protocol):
-    """Owners and grants of documents and taxonomy objects, and the users and groups."""
+    """Owners and grants of documents, taxonomy and mail objects, and the users and groups."""
 
     async def get_permissions(
         self, kind: PermissionKind, object_ids: Sequence[int]
