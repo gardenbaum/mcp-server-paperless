@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
+    Conflict,
     NotFound,
     PaperlessMcpError,
     Validation,
@@ -42,11 +43,13 @@ from mcp_server_paperless.services.workflows import (
     action_label,
     action_type,
     as_object,
+    check_match,
     copied_places,
     credentials_fate,
     credentials_said,
     far_acts,
     hidden_lost,
+    is_empty,
     losing,
     past_fate,
     place_notes,
@@ -223,9 +226,16 @@ def _normal(value: JsonValue) -> JsonValue:
     if isinstance(value, list):
         rows: list[JsonValue] = [_normal(item) for item in value]
         return sorted(rows, key=lambda row: json.dumps(row, sort_keys=True)) or None
-    if isinstance(value, dict):
-        return {k: _normal(v) for k, v in value.items()} or None
     return value
+
+
+# JSON, which Paperless stores as it comes: spaces and order count.
+EXACT: Final = frozenset({"headers", "params", "assign_custom_fields_values"})
+
+
+def _exact(value: JsonValue) -> JsonValue:
+    """A JSON setting: Paperless stores an empty custom field value as none."""
+    return {k: (None if v == "" else v) for k, v in as_object(value).items()}
 
 
 def _unlike(wanted: Mapping[str, JsonValue], now: Mapping[str, JsonValue]) -> list[str]:
@@ -236,6 +246,9 @@ def _unlike(wanted: Mapping[str, JsonValue], now: Mapping[str, JsonValue]) -> li
         if name in {"email", "webhook"} and isinstance(value, dict):
             inner = as_object(there)
             found += [f"{name}.{k}" for k in _unlike(value, inner)]
+        elif name in EXACT:
+            if _exact(value) != _exact(there):
+                found.append(name)
         elif _normal(value) != _normal(there):
             found.append(name)
     return found
@@ -331,7 +344,11 @@ class WorkflowParts:
 
     @staticmethod
     def _ask(plan: _Plan, *, confirm: bool) -> None:
-        acts = far_acts(plan.actions, plan.said) if plan.found.enabled else []
+        try:
+            acts = far_acts(plan.actions, plan.said) if plan.found.enabled else []
+        except Validation as error:
+            hint = "Switch the workflow off first (update_workflow, enabled=false)."
+            raise Validation(error.message, hint=f"{error.hint or ''} {hint}".strip()) from None
         if not (acts or plan.losses) or confirm:
             return
         lead = f"{plan.lead} the workflow {quoted(plan.found.name)} (id {plan.found.id})"
@@ -382,14 +399,17 @@ class WorkflowParts:
             message = f"a trigger of type {TRIGGER_TYPES.get(old.type, old.type)!r} is not written."
             raise _stays(message)
         given: Mapping[str, JsonValue] = {}
-        cleared = _cleared(edit.clear, TRIGGER_FIELDS, {})
         if edit.trigger is not None:
             _same_type(trigger_type(edit.trigger.type), old.type, TRIGGER_TYPES, "trigger")
-            held = {**old.settings, **cleared}
-            given = (await self._workflows.build_trigger(edit.trigger, held)).settings
+            given = (await self._workflows.build_trigger(edit.trigger, change=True)).settings
+            if not given and not edit.clear:
+                message = "no setting was named."
+                raise _usage(message, "Pass the settings that change, or clear.")
         cleared = _cleared(edit.clear, TRIGGER_FIELDS, given)
         new = old.model_copy(update={"settings": {**old.settings, **cleared, **given}})
         self._limited(new)
+        if any(new.settings.get(n) != old.settings.get(n) for n in ("match", "matching_algorithm")):
+            check_match(new.settings)
         return new
 
     @staticmethod
@@ -400,7 +420,7 @@ class WorkflowParts:
             Validation: It has no path, file name or mail rule filter.
         """
         if trigger.type == CONSUMPTION and not any(
-            trigger.settings.get(name) for name in ORIGIN_FILTERS
+            not is_empty(trigger.settings.get(name)) for name in ORIGIN_FILTERS
         ):
             message = "a consumption trigger needs a path, filename or mailrule filter."
             raise _usage(message, ORIGIN_HINT)
@@ -441,12 +461,14 @@ class WorkflowParts:
             sent = PartWrite(id=old.id, settings=settings)
             new = old.model_copy(update={"settings": {**old.settings, **settings}})
             lead = f"change {label} of"
+            values = edit.action.assign_custom_fields_values if edit.action else None
+            notes += _values_kept(old, settings, len(values or {}))
             lost_hidden = hidden_lost(old, new, credentials=not found.enabled)
             losses = (f"of {label} {', '.join(lost_hidden)}",) if lost_hidden else ()
             if edit.action is not None:
-                said, notes = self._credentials(
-                    workflows, found, edit.action.model_copy(update={"id": old.id}), old, new, place
-                )
+                spec = edit.action.model_copy(update={"id": old.id})
+                said, told = self._credentials(workflows, found, spec, new, place)
+                notes += told
         actions.insert(place - 1, new)
         return _Plan(
             found=found,
@@ -499,6 +521,9 @@ class WorkflowParts:
                 message = "no setting was named."
                 raise _usage(message, "Pass the settings that change, clear or position.")
             values = as_object(given.get("assign_custom_fields_values"))
+            if values:
+                kept = as_object(old.settings.get("assign_custom_fields_values"))
+                given["assign_custom_fields_values"] = {**kept, **values}
             if old.type == ASSIGNMENT and values and spec.assign_custom_fields is None:
                 # Paperless writes only the values of fields in assign_custom_fields.
                 held = old.settings.get("assign_custom_fields")
@@ -508,18 +533,16 @@ class WorkflowParts:
         return {**_cleared(edit.clear, fields, given), **given}
 
     @staticmethod
-    def _credentials(  # noqa: PLR0913, PLR0917 -- an action before and after, and where it stands
+    def _credentials(
         workflows: Sequence[Workflow],
         found: Workflow,
         spec: ActionInput,
-        old: WorkflowAction,
         new: WorkflowAction,
         place: int,
     ) -> tuple[Mapping[int, str], list[str]]:
         """What confirmation and result say of the credentials in the URL of a changed webhook."""
-        alone = found.model_copy(update={"actions": (old,)})
-        kept, lost, _ = credentials_fate([spec], [new], alone)
-        copies = copied_places([spec], [new], workflows, alone)
+        kept, lost, _ = credentials_fate([spec], [new], found)
+        copies = copied_places([spec], [new], workflows, found)
         notes = place_notes(COPY_NOTE, [place] if copies else [])
         fate = lost.get(1, "")
         if fate:
@@ -557,8 +580,32 @@ class WorkflowParts:
 
     # --- writing
 
+    async def _unchanged(self, found: Workflow) -> None:
+        """Read the workflow right before it is written.
+
+        Raises:
+            Conflict: Its triggers, actions or whether it is enabled differ from ``found``.
+        """
+        now = await self._reader.get_workflow(found.id)
+        same = _Plan(
+            found=found,
+            kind="actions",
+            sent=(),
+            triggers=found.triggers,
+            actions=found.actions,
+            lead="",
+            said={},
+        )
+        if now.enabled != found.enabled or _differences(same, now):
+            message = (
+                f"Nothing was changed: the workflow {quoted(found.name)} (id {found.id}) was "
+                "changed by someone else meanwhile."
+            )
+            raise Conflict(message, hint="Read it again with get_workflow and decide anew.")
+
     async def _write(self, plan: _Plan) -> WorkflowInfo:
         """Send the plan once, read the workflow and compare."""
+        await self._unchanged(plan.found)
         lost: PaperlessMcpError | None = None
         try:
             await self._writer.update_workflow_parts(plan.found.id, plan.kind, plan.sent)
@@ -590,6 +637,19 @@ class WorkflowParts:
             "Someone else may have changed it at the same time."
         )
         raise PaperlessMcpError(message, hint=AGAIN)
+
+
+def _values_kept(old: WorkflowAction, settings: Mapping[str, JsonValue], given: int) -> list[str]:
+    """What the result says of stored custom field values beside the ``given`` ones."""
+    after = as_object(settings.get("assign_custom_fields_values"))
+    stay = len(after) - given
+    if not given or not as_object(old.settings.get("assign_custom_fields_values")) or stay < 1:
+        return []
+    note = (
+        f"The stored values of {plural(stay, 'other custom field')} stay; to drop one, leave its "
+        "field out of assign_custom_fields."
+    )
+    return [note]
 
 
 def _listed(wrong: Sequence[str]) -> str:

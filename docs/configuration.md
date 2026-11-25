@@ -376,7 +376,8 @@ does not belong to its trigger or action type is an error.
   the workflows that hold it.
 - `update_workflow_part` adds, changes, moves or removes one trigger or action and leaves the others
   as they are, hidden values and types this server does not write included. It reads the workflow
-  again and reports a difference instead of repeating anything. Losing webhook header values, URL
+  right before and after the change, refuses it if someone else changed the workflow, and reports a
+  difference instead of repeating anything. Losing webhook header values, URL
   credentials or passwords needs `confirm` even while the workflow is disabled, with
   `update_workflow` too.
 - Webhook URLs are returned without the user name and password in them (a query string is

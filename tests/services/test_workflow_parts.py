@@ -13,6 +13,7 @@ from hypothesis import strategies as st
 
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
+    Conflict,
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
@@ -100,6 +101,7 @@ class Recording(FakePaperless):
     fails: PaperlessMcpError | None = None
     unwritten: bool = False
     unread: PaperlessMcpError | None = None
+    meanwhile: Callable[[], None] | None = None
 
     def __init__(self, state: FakeState, *, user: str, writes: bool) -> None:
         super().__init__(state, user=user, allow_writes=writes)
@@ -121,8 +123,10 @@ class Recording(FakePaperless):
 
     @override
     async def get_workflow(self, workflow_id: int) -> Workflow:
-        if self.unread is not None:
+        if self.sent and self.unread is not None:
             raise self.unread
+        if not self.sent and self.meanwhile is not None:
+            self.meanwhile()
         return await super().get_workflow(workflow_id)
 
 
@@ -335,13 +339,14 @@ async def test_values_of_custom_fields_join_the_fields_the_action_assigns() -> N
     _ = setup.seed(actions=[action(11, assign_custom_fields=[2])])
     change = ActionInput(type=1, assign_custom_fields_values={"e2e-string": "x"})
 
-    _ = await setup.do(operation="change", action_id=11, action=change)
+    first = await setup.do(operation="change", action_id=11, action=change)
 
     [(_, [sent])] = setup.fake.sent
     assert sent.settings == {
         "assign_custom_fields_values": {"1": "x"},
         "assign_custom_fields": [2, 1],
     }
+    assert first.note is None
     both = change.model_copy(update={"assign_custom_fields": [3]})
     _ = await setup.do(operation="change", action_id=11, action=both)
     assert setup.now.actions[0].settings["assign_custom_fields"] == [3, 1]
@@ -1020,3 +1025,302 @@ async def test_no_operation_touches_or_sends_another_action(  # noqa: PLR0913, P
             assert left[old.id] == old
     assert len(left) == len(actions) + {"add": 1, "move": 0, "remove": -1}[operation]
     assert setup.now.triggers == before.triggers
+
+
+# --- review of #159
+
+
+BLANK = (" ", "\t", "\u00a0 ")
+
+
+@pytest.mark.parametrize("blank", BLANK, ids=ascii)
+@pytest.mark.parametrize("name", ["filename", "path", "match", "custom_field_query"])
+async def test_a_blank_text_is_no_filter(name: str, blank: str) -> None:
+    setup = Setup(writes=False)
+    _ = setup.seed()
+    kind = "consumption" if name in {"filename", "path"} else "added"
+    spec = TriggerInput.model_validate({"type": kind, name: blank, "matching_algorithm": None})
+
+    for edit in (
+        {**ADD, "trigger": spec},
+        {**CHANGE, "trigger_id": 1 if kind == "consumption" else 2, "trigger": spec},
+    ):
+        with pytest.raises(Validation, match=f"'{name}' is blank"):
+            _ = await setup.do(confirm=True, **edit)
+
+
+async def test_a_stored_blank_filter_does_not_limit_a_consumption_trigger() -> None:
+    setup = Setup(writes=False)
+    _ = setup.seed([trigger(1, 1, filter_filename="x", filter_path=" ")], [])
+
+    with pytest.raises(Validation, match="needs a path, filename or mailrule filter"):
+        _ = await setup.do(**CHANGE, trigger_id=1, clear=("filename",))
+
+
+async def test_a_match_is_not_left_without_its_algorithm() -> None:
+    setup = Setup()
+    _ = setup.seed([trigger(2, match="m", matching_algorithm=1)], [SENDS], enabled=True)
+
+    with pytest.raises(Validation, match="needs a matching_algorithm"):
+        _ = await setup.do(**CHANGE, trigger_id=2, clear=("matching_algorithm",), confirm=True)
+    _ = await setup.do(**CHANGE, trigger_id=2, clear=("matching_algorithm", "match"), confirm=True)
+    assert setup.now.triggers[0].settings["match"] == ""
+
+
+async def test_a_match_without_an_algorithm_is_not_told_as_a_filter() -> None:
+    setup = Setup(writes=False)
+    _ = setup.seed([trigger(2, match="m")], [SENDS, TITLE], enabled=True)
+
+    message = await setup.asked(operation="remove", action_id=11)
+
+    assert "triggers (document added) and will" in message
+
+
+async def test_doubles_are_sent_once() -> None:
+    setup = Setup()
+    _ = setup.seed([BY_HAND], [TITLE])
+    new = ActionInput(type=1, assign_tags=[1, "1", "e2e-finance", 4], assign_custom_fields=[1, "1"])
+    start = TriggerInput(type=1, filename="x", sources=[2, "api_upload", 2])
+
+    _ = await setup.do(operation="add", action=new)
+    _ = await setup.do(operation="add", trigger=start)
+
+    (_, actions), (_, triggers) = setup.fake.sent
+    assert actions[-1].settings == {"assign_tags": [1, 4], "assign_custom_fields": [1]}
+    assert triggers[-1].settings["sources"] == [2]
+
+
+async def test_one_custom_field_value_changes_and_the_others_stay_and_are_told() -> None:
+    setup = Setup()
+    held = action(11, assign_custom_fields=[1, 2], assign_custom_fields_values={"1": "a", "2": "b"})
+    _ = setup.seed([BY_HAND], [held])
+    change = ActionInput(type=1, assign_custom_fields_values={"e2e-string": "x"})
+
+    info = await setup.do(**CHANGE, action_id=11, action=change)
+
+    stored = setup.now.actions[0].settings
+    assert stored["assign_custom_fields_values"] == {"1": "x", "2": "b"}
+    assert stored["assign_custom_fields"] == [1, 2]
+    assert info.note == (
+        "The stored values of 1 other custom field stay; to drop one, leave its field out of "
+        "assign_custom_fields."
+    )
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_what_changed_since_it_was_read_is_refused_and_nothing_is_sent(
+    *, enabled: bool
+) -> None:
+    for change in (
+        {"actions": (TITLE, REMOVES, BINS)},
+        {"actions": (TITLE,)},
+        {"triggers": (BY_HAND, trigger(2))},
+        {"enabled": not enabled},
+        {"actions": (action(11, assign_title="changed"), REMOVES)},
+    ):
+        setup = Setup()
+        before = setup.seed([BY_HAND], [TITLE, REMOVES], enabled=enabled)
+        changed = before.model_copy(update=change)
+        setup.fake.meanwhile = lambda s=setup, c=changed: s.state.workflows.__setitem__(0, c)
+
+        with pytest.raises(Conflict, match="Nothing was changed: the workflow 'W'") as raised:
+            _ = await setup.do(operation="add", action=RETITLE, confirm=True)
+
+        assert "Read it again" in str(raised.value.hint)
+        assert setup.fake.sent == []
+
+
+async def test_a_trigger_with_only_its_type_changes_nothing_and_is_refused() -> None:
+    setup = Setup(writes=False)
+    _ = setup.seed()
+
+    with pytest.raises(Validation, match="no setting was named"):
+        _ = await setup.do(**CHANGE, trigger_id=2, trigger=TriggerInput(type="added"))
+
+
+async def test_a_destination_that_cannot_be_shown_says_how_to_go_on() -> None:
+    setup = Setup()
+    bad = action(14, 4, webhook={**HOOK, "url": "https://[bad"})
+    _ = setup.seed([BY_HAND], [TITLE, bad], enabled=True)
+
+    with pytest.raises(Validation) as raised:
+        _ = await setup.do(operation="remove", action_id=11, confirm=True)
+
+    assert "Switch the workflow off first (update_workflow, enabled=false)" in str(
+        raised.value.hint
+    )
+
+
+@pytest.mark.parametrize(
+    ("setting", "sent", "now"),
+    [
+        ("headers", {"A": "x"}, {"A": " x"}),
+        ("params", {"a": "x "}, {"a": "x"}),
+        ("headers", {"A": ""}, {}),
+    ],
+)
+async def test_spaces_count_in_headers_and_params(
+    setting: str, sent: dict[str, str], now: dict[str, JsonValue]
+) -> None:
+    setup = Setup()
+    _ = setup.seed([BY_HAND], [])
+
+    def stored() -> None:
+        hook: dict[str, JsonValue] = {
+            **HOOK,
+            "url": "https://h.example/",
+            "headers": None,
+            setting: cast("JsonValue", now),
+        }
+        setup.state.workflows[0] = setup.now.model_copy(
+            update={"actions": (action(60, 4, webhook=hook),)}
+        )
+
+    setup.fake.after = stored
+    hook = WebhookSettings.model_validate({"url": "https://h.example/", setting: sent})
+    with pytest.raises(PaperlessMcpError, match=rf"another webhook\.{setting}"):
+        _ = await setup.do(operation="add", action=ActionInput(type=4, webhook=hook))
+
+
+async def test_spaces_count_in_custom_field_values_and_an_empty_one_is_none() -> None:
+    for now, fine in (({"1": "x"}, False), ({"1": " x"}, True)):
+        setup = Setup()
+        _ = setup.seed([BY_HAND], [])
+        value = action(
+            60, assign_custom_fields=[1, 2], assign_custom_fields_values={**now, "2": None}
+        )
+
+        def stored(s: Setup = setup, v: WorkflowAction = value) -> None:
+            s.state.workflows[0] = s.now.model_copy(update={"actions": (v,)})
+
+        setup.fake.after = stored
+        spec = ActionInput(type=1, assign_custom_fields_values={"1": " x", "2": ""})
+        if fine:
+            _ = await setup.do(operation="add", action=spec)
+        else:
+            with pytest.raises(PaperlessMcpError, match="another assign_custom_fields_values"):
+                _ = await setup.do(operation="add", action=spec)
+
+
+async def test_an_acceptance_does_not_cover_another_plan() -> None:
+    edits: list[dict[str, object]] = [
+        {
+            **ADD,
+            "action": ActionInput(type=3, email=EmailSettings.model_validate({**MAIL, "body": b})),
+        }
+        for b in ("one", "two")
+    ]
+    edits.extend({**ADD, "trigger": TriggerInput(type=2, has_tags=[n])} for n in (1, 4))
+    found: list[str] = []
+    for edit in edits:
+        setup = Setup()
+        _ = setup.seed([trigger(2)], [SENDS], enabled=True)
+        with pytest.raises(ConfirmationRequired) as raised:
+            _ = await setup.do(**edit)
+        found.append(raised.value.fingerprint)
+
+    assert len(set(found)) == 4
+
+
+async def test_a_copied_url_is_told_at_its_place() -> None:
+    setup = Setup()
+    plain = action(14, 4, webhook={**HOOK, "url": "https://o.example/", "headers": None})
+    _ = setup.seed([trigger(2)], [TITLE, plain], enabled=True)
+    _ = setup.seed([], [action(20, 4, webhook=HOOK)], name="Other")
+    shown = ActionInput(type=4, webhook=WebhookSettings(url="https://h.example/x"))
+
+    message = await setup.asked(**CHANGE, action_id=14, action=shown)
+    info = await setup.do(**CHANGE, action_id=14, action=shown, confirm=True)
+
+    assert "without the credentials that another workflow stores for this URL" in message
+    assert "the webhook URL of action 2" in str(info.note)
+
+
+async def test_a_lost_answer_of_a_trigger_is_looked_up() -> None:
+    done, undone = Setup(), Setup()
+    for setup in (done, undone):
+        _ = setup.seed([BY_HAND], [TITLE])
+        setup.fake.fails = LOST
+    undone.fake.unwritten = True
+
+    info = await done.do(operation="add", trigger=NEVER)
+    with pytest.raises(PaperlessMcpError, match="as it was, so it was not written yet"):
+        _ = await undone.do(operation="add", trigger=NEVER)
+
+    assert len(info.triggers) == 2
+
+
+async def test_an_action_alone_in_another_workflow_does_not_stop_a_write() -> None:
+    setup = Setup()
+    _ = setup.seed([BY_HAND], [TITLE, REMOVES])
+    other = setup.seed([BY_HAND], [REMOVES], name="Other")
+
+    _ = await setup.do(operation="add", action=RETITLE)
+
+    assert len(setup.now.actions) == 3
+    assert setup.state.workflows[1] == other
+
+
+SOME_TRIGGERS = st.lists(
+    st.sampled_from([*TRIGGERS, trigger(5, 3), trigger(6, 4), trigger(7, 99)]),
+    unique_by=lambda t: t.id,
+    min_size=1,
+    max_size=6,
+)
+
+
+@given(
+    triggers=SOME_TRIGGERS,
+    operation=st.sampled_from(["add", "change", "remove"]),
+    which=st.integers(0, 5),
+    enabled=st.booleans(),
+)
+async def test_no_operation_touches_another_trigger_or_any_action(
+    triggers: list[WorkflowTrigger],
+    operation: str,
+    which: int,
+    enabled: bool,  # noqa: FBT001 -- hypothesis gives it by name
+) -> None:
+    setup = Setup()
+    before = setup.seed(triggers=triggers, actions=[TITLE, CALLS, UNLOCKS], enabled=enabled)
+    writable = [t for t in triggers if t.type in {2, 3, 4}]
+    chosen = triggers[which % len(triggers)]
+    edit: dict[str, object] = {"operation": "remove", "trigger_id": chosen.id}
+    if operation == "add":
+        edit = {"operation": "add", "trigger": TriggerInput(type="updated", has_tags=[4])}
+    elif operation == "change":
+        if not writable:
+            return
+        chosen = writable[which % len(writable)]
+        edit = {"operation": "change", "trigger_id": chosen.id, "clear": ["has_tags"]}
+
+    info = await setup.do(confirm=True, **edit)
+
+    [(_, sent)] = setup.fake.sent
+    left = {t.id: t for t in setup.now.triggers}
+    for old in triggers:
+        if operation == "add" or old is not chosen:
+            assert left[old.id] == old
+            assert PartWrite(id=old.id, type=old.type, settings=old.settings) in sent
+    assert setup.now.actions == before.actions
+    assert "planted" not in info.model_dump_json()
+
+
+async def test_the_only_stored_value_that_is_given_anew_leaves_no_note() -> None:
+    setup = Setup()
+    held = action(11, assign_custom_fields=[1], assign_custom_fields_values={"1": "a"})
+    _ = setup.seed([BY_HAND], [held])
+    change = ActionInput(type=1, assign_custom_fields_values={"e2e-string": "x"})
+
+    assert (await setup.do(**CHANGE, action_id=11, action=change)).note is None
+
+
+async def test_a_new_copied_url_is_told_at_its_place() -> None:
+    setup = Setup()
+    _ = setup.seed([trigger(2)], [TITLE])
+    _ = setup.seed([], [CALLS], name="Other")
+    shown = ActionInput(type=4, webhook=WebhookSettings(url="https://h.example/x"))
+
+    info = await setup.do(operation="add", action=shown)
+
+    assert "the webhook URL of action 2" in str(info.note)

@@ -552,16 +552,18 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 ),
                 mail=MailService(adapters.mail, adapters.mail_writes, taxonomy, adapters.instance),
                 raw=RawApiService(adapters.raw),
-                workflows=WorkflowService(adapters.workflows, adapters.workflow_writes, taxonomy),
+                workflows=(
+                    flows := WorkflowService(adapters.workflows, adapters.workflow_writes, taxonomy)
+                ),
                 workflow_parts=WorkflowParts(
                     adapters.workflows,
                     adapters.workflow_writes,
-                    WorkflowService(adapters.workflows, adapters.workflow_writes, taxonomy),
+                    flows,
                 ),
                 workflow_runs=WorkflowRuns(
                     adapters.documents,
                     adapters.workflow_writes,
-                    WorkflowService(adapters.workflows, adapters.workflow_writes, taxonomy),
+                    flows,
                     DocumentSelector(adapters.documents, documents, views, taxonomy),
                     taxonomy,
                 ),
