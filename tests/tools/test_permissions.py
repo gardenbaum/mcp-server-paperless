@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Literal, cast
 import pytest
 from confirmation import YES, answering
 from fakes.mail import FakeMailAccount, FakeMailRule
-from fakes.paperless import FakePaperless, FakeState, FakeUser, seeded
+from fakes.paperless import FakePaperless, FakeSavedView, FakeState, FakeUser, seeded
 from fastmcp import Client
 from harness import serve
 
@@ -518,3 +518,68 @@ async def test_a_change_grant_on_a_mail_object_does_not_let_share_it(
 
     assert "may not" in message
     assert mail_grants(state, kind) == ({77}, {77})
+
+
+# --- saved views, by who may and who may not
+
+VIEWING = frozenset(
+    {"view_savedview", "change_savedview", "view_user", "view_group", "view_uisettings"}
+)
+SHARE: Json = {"kind": "saved_view", "items": [7], "view_users": ["e2e-reader"]}
+
+
+def view_world(owner: int | None, *, editor: bool = False) -> FakePaperless:
+    """A view of this owner, as the user `viewer` (id 77), who is maybe a grantee, sees it."""
+    state = seeded()
+    state.users.append(FakeUser(id=77, username="viewer", permissions=VIEWING))
+    grantee = {77} if editor else set[int]()
+    state.saved_views.append(
+        FakeSavedView(id=7, name="Mine", owner=owner, viewers=set(grantee), editors=set(grantee))
+    )
+    return FakePaperless(state, user="viewer", allow_writes=True)
+
+
+def view_of(source: FakePaperless) -> FakeSavedView:
+    return next(view for view in source.state.saved_views if view.id == 7)
+
+
+@pytest.mark.decision("decision-91")
+@pytest.mark.parametrize("owner", [77, None], ids=["owner", "unowned"])
+async def test_a_view_is_shared_by_its_owner_or_if_it_has_none_once_confirmed(
+    owner: int | None,
+) -> None:
+    source = view_world(owner)
+
+    message = await refusal(source, "set_permissions", **SHARE)
+    untouched = set(view_of(source).viewers)
+    output = await call(source, "set_permissions", **SHARE, confirm=True)
+
+    assert "Nothing was changed. Confirming would" in message
+    assert "gains view: user 'e2e-reader'" in message
+    assert untouched == set()
+    assert output["changed_count"] == 1
+    assert (view_of(source).owner, view_of(source).viewers) == (owner, {3})
+
+
+@pytest.mark.decision("decision-91")
+@pytest.mark.parametrize("confirm", [False, True])
+async def test_a_change_grant_on_a_view_does_not_let_share_it(*, confirm: bool) -> None:
+    source = view_world(2, editor=True)
+
+    message = await refusal(source, "set_permissions", **SHARE, confirm=confirm)
+
+    expected = "may not" if confirm else "Nothing was changed. Confirming would"
+    assert expected in message
+    assert view_of(source).viewers == {77}
+
+
+@pytest.mark.decision("decision-91")
+@pytest.mark.parametrize("confirm", [False, True])
+async def test_a_view_one_may_not_see_cannot_be_shared(*, confirm: bool) -> None:
+    source = view_world(2)
+
+    message = await refusal(source, "set_permissions", **SHARE, confirm=confirm)
+
+    assert "7" in message
+    assert "Confirming would" not in message
+    assert view_of(source).viewers == set()
