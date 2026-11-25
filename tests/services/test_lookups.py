@@ -1,8 +1,19 @@
 """Lookups: words of the search index, and the path a storage path would give a file."""
 
+from dataclasses import replace
+
 import pytest
 from fakes.accounts import ADMIN, BLIND, READER
-from fakes.paperless import FakeDocument, FakePaperless, FakeState, seeded
+from fakes.paperless import (
+    FakeCustomField,
+    FakeDocument,
+    FakePaperless,
+    FakeState,
+    FakeStoragePath,
+    FakeTag,
+    FakeTaxonomy,
+    seeded,
+)
 
 from mcp_server_paperless.domain.errors import (
     Ambiguous,
@@ -140,3 +151,107 @@ async def test_a_name_that_matches_two_paths_is_refused() -> None:
 
     with pytest.raises(Ambiguous):
         _ = await lookups(state).test_storage_path(PUBLIC, "twice", None)
+
+
+def hiding(**fields: object) -> FakeState:
+    """A document of the reader (id 3) that refers to what only the admin (id 2) sees."""
+    state = seeded()
+    state.tags.append(FakeTag(id=70, name="secret-tag", owner=2))
+    state.correspondents.append(FakeTaxonomy(id=70, name="secret-sender", owner=2))
+    state.document_types.append(FakeTaxonomy(id=70, name="secret-type", owner=2))
+    state.storage_paths.append(FakeStoragePath(id=70, name="secret-path", owner=2))
+    document = FakeDocument(id=10, title="mine", owner=3)
+    state.documents.append(replace(document, **fields))
+    return state
+
+
+REFUSED = "refers to objects you may not see"
+
+
+@pytest.mark.decision("decision-100")
+@pytest.mark.parametrize(
+    ("fields", "kind"),
+    [
+        ({"tags": [1, 70]}, "tag"),
+        ({"correspondent": 70}, "correspondent"),
+        ({"document_type": 70}, "document type"),
+        ({"storage_path": 70}, "storage path"),
+        ({"tags": [70], "correspondent": 70}, "correspondent, tag"),
+    ],
+)
+@pytest.mark.parametrize("stored", [False, True])
+async def test_no_template_is_tried_where_it_could_show_hidden_names(
+    fields: dict[str, object], kind: str, *, stored: bool
+) -> None:
+    state = hiding(**fields)
+    reading = lookups(state, READER[0])
+    given = ("e2e-archive", None) if stored else (None, "x")  # whatever the template holds
+
+    with pytest.raises(PermissionDenied, match=REFUSED) as caught:
+        _ = await reading.test_storage_path(10, *given)
+
+    assert f"({kind})" in caught.value.message
+    assert "secret" not in f"{caught.value.message} {caught.value.hint}"
+    seen = await lookups(state).test_storage_path(10, None, "x")
+    assert seen.path == "x.pdf"
+
+
+@pytest.mark.decision("decision-100")
+async def test_a_document_whose_objects_are_seen_is_tried_for_a_restricted_user() -> None:
+    state = hiding(tags=[1], correspondent=1, document_type=1, storage_path=1)
+
+    found = await lookups(state, READER[0]).test_storage_path(10, None, "{{ correspondent }}")
+
+    assert found.path == "e2e-acme.pdf"
+
+
+@pytest.mark.decision("decision-100")
+async def test_the_names_of_custom_fields_need_the_right_to_view_them() -> None:
+    state = hiding(custom_fields={1: "x"})
+    assert isinstance(state.custom_fields[0], FakeCustomField)
+    assert (await lookups(state, READER[0]).test_storage_path(10, None, "x")).path == "x.pdf"
+    state.users[:] = [
+        replace(user, permissions=user.permissions - {"view_customfield"}) for user in state.users
+    ]
+
+    with pytest.raises(PermissionDenied, match="custom field"):
+        _ = await lookups(state, READER[0]).test_storage_path(10, None, "x")
+
+
+@pytest.mark.decision("decision-100")
+@pytest.mark.parametrize(
+    ("owner", "view_user", "allowed"),
+    [(3, False, True), (None, False, True), (2, True, True), (2, False, False)],
+    ids=["own", "nobody", "listed", "hidden"],
+)
+async def test_the_name_of_the_owner_is_hidden_from_who_may_not_list_users(
+    *, owner: int | None, view_user: bool, allowed: bool
+) -> None:
+    state = hiding(owner=owner, viewers={3})
+    state.users[:] = [
+        replace(
+            user,
+            permissions=user.permissions | {"view_user"}
+            if view_user
+            else user.permissions - {"view_user"},
+        )
+        for user in state.users
+    ]
+    reading = lookups(state, READER[0])
+
+    if allowed:
+        assert (await reading.test_storage_path(10, None, "x")).path == "x.pdf"
+    else:
+        with pytest.raises(PermissionDenied, match="owner"):
+            _ = await reading.test_storage_path(10, None, "x")
+
+
+@pytest.mark.decision("decision-100")
+async def test_what_the_user_may_see_is_read_anew() -> None:
+    state = hiding(tags=[1])
+    reading = lookups(state, READER[0])
+    assert (await reading.test_storage_path(10, None, "x")).path == "x.pdf"
+    state.tags[:] = [replace(tag, owner=2) if tag.id == 1 else tag for tag in state.tags]
+
+    with pytest.raises(PermissionDenied, match=REFUSED):
+        _ = await reading.test_storage_path(10, None, "x")

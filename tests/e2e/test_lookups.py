@@ -175,3 +175,24 @@ async def test_a_storage_path_is_tried_and_nothing_moves(
     assert broken["path"] is None
     assert hidden.is_error
     assert obj(parse(stack.admin.get(path)))["media_filename"] == before
+
+
+async def test_a_hidden_name_is_not_rendered(
+    stack: Stack, transport: Transport, scratch: tuple[str, list[int], int]
+) -> None:
+    word, [document, _], _ = scratch
+    user = num(obj(obj(parse(stack.reader.get("/api/ui_settings/")))["user"])["id"])
+    nobody: dict[str, list[int]] = {"users": [], "groups": []}
+    grants = {"view": {**nobody, "users": [user]}, "change": nobody}
+    path = f"/api/documents/{document}/"
+    body = {"set_permissions": grants, "owner": None}
+    _ = stack.admin.patch(path, json=body).raise_for_status()
+
+    async with connected(stack, transport, token=stack.reader_token) as client:
+        refused = await call(
+            client, "test_storage_path", document_id=document, template="{{ tag_list }}"
+        )
+
+    assert refused.is_error
+    assert "may not see (tag)" in str(refused.content)
+    assert word not in str(refused.content)

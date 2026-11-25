@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING
 
 import pytest
-from fakes.paperless import FakePaperless, seeded
+from fakes.paperless import FakeDocument, FakePaperless, FakeTag, seeded
 from fastmcp import Client
 from harness import serve
 
@@ -91,3 +91,20 @@ async def test_neither_and_both_and_hidden_documents_are_refused() -> None:
 async def test_a_template_may_have_two_thousand_characters() -> None:
     _ = await call("test_storage_path", document_id=1, template="a" * 2000)
     assert "2000" in await refusal("test_storage_path", {"document_id": 1, "template": "a" * 2001})
+
+
+@pytest.mark.decision("decision-100")
+async def test_hidden_names_are_not_shown_by_a_template() -> None:
+    state = seeded()
+    state.tags.append(FakeTag(id=70, name="secret-tag", owner=2))
+    state.documents.append(FakeDocument(id=10, title="mine", owner=3, tags=[70]))
+    async with Client(
+        serve(FakePaperless(state, user="e2e-reader"), toolsets=["bulk"], read_only=True)
+    ) as client:
+        result = await client.call_tool(
+            "test_storage_path", {"document_id": 10, "template": "x"}, raise_on_error=False
+        )
+
+    assert result.is_error
+    assert "may not see (tag)" in str(result.content)
+    assert "secret" not in str(result.content)

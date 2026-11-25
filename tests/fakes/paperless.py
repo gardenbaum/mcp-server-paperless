@@ -975,6 +975,7 @@ class FakePaperless:
             "title": found[0].title,
             "created_year": f"{found[0].created.year}",
             "correspondent": names.get(found[0].correspondent or 0, "none"),
+            "tag_list": ",".join(sorted(t.name for t in self.state.tags if t.id in found[0].tags)),
             "''": "",
         }
         return lookups.rendered(template, values)

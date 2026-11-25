@@ -7,6 +7,9 @@ import pytest
 
 from mcp_server_paperless.domain.documents import DocumentPatch, DocumentQuery
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.services.lookups import Lookups
+from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
@@ -158,3 +161,27 @@ async def test_trying_a_template_needs_the_view_of_the_document_only(backend: Ba
             _ = await viewer.taxonomy.render_storage_path(hidden, "x")
     with pytest.raises(PermissionDenied):
         _ = await backend.blind.taxonomy.render_storage_path(private, "x")
+
+
+@pytest.mark.decision("decision-100")
+@pytest.mark.contract(RENDER)
+async def test_paperless_renders_hidden_names_so_the_server_does_not_try(backend: Backend) -> None:
+    ports = backend.admin
+    [document] = backend.new_documents(1)
+    name = f"contract-tag-{uuid.uuid4().hex}"
+    tag = (await ports.taxonomy_writes.create_tag(name)).id
+    _ = await ports.document_writes.update_document(
+        document, DocumentPatch(tags=(tag,), owner=None)
+    )
+    viewer = backend.restricted(frozenset({"view_document", "view_tag"}), view=[document])
+    resolver = TaxonomyResolver(viewer.taxonomy, StaticTokenProvider("t"), ttl=60.0)
+    service = Lookups(viewer.documents, viewer.taxonomy, resolver)
+
+    shown = await viewer.taxonomy.render_storage_path(document, "{{ tag_list }}")
+    with pytest.raises(PermissionDenied, match="may not see \\(tag\\)"):
+        _ = await service.test_storage_path(document, None, "{{ tag_list }}")
+    _ = await ports.document_writes.update_document(document, DocumentPatch(tags=()))
+    tried = await service.test_storage_path(document, None, "x/y")
+
+    assert name in (shown or "")
+    assert (tried.path or "").startswith("x/y.")
