@@ -28,7 +28,11 @@ from mcp_server_paperless.paperless.task_lists import (
 if TYPE_CHECKING:
     from adapter.conftest import ClientFactory
 
-pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-93")]
+pytestmark = [
+    pytest.mark.anyio,
+    pytest.mark.decision("decision-93"),
+    pytest.mark.decision("decision-94"),
+]
 
 # The query string of every request as pairs: some names are repeated.
 type Pairs = list[tuple[str, str]]
@@ -172,7 +176,9 @@ async def test_tasks_are_acknowledged_by_id(make_client: ClientFactory) -> None:
     count = await PaperlessTaskListWriter(make_client(server)).acknowledge_tasks([41, 42])
 
     assert count == 2
-    assert server.sent == [("POST", "/api/tasks/acknowledge/", {"tasks": [41, 42]}, {})]
+    assert server.sent == [
+        ("POST", "/api/tasks/acknowledge/", {"tasks": [41, 42], "all": False}, {})
+    ]
 
 
 async def test_acknowledging_unknown_tasks_is_a_validation_error(

@@ -317,12 +317,9 @@ class TaskListService:
         except PaperlessMcpError:
             message = f"{lost} and the tasks cannot be read now, {unknown}: look at list_tasks."
         else:
-            message = (
-                f"{lost}; {_plural(left, 'task')} {'is' if left == 1 else 'are'} new now {then}, "
-                f"{unknown}: look at list_tasks."
-                if left
-                else f"{lost}; no task is new any more, so it was done {then}."
-            )
+            now = f"{lost}; {_plural(left, 'task')} {'is' if left == 1 else 'are'} new now {then}"
+            done = f"{lost}; no task is new any more, so it was done {then}."
+            message = f"{now}, {unknown}: look at list_tasks." if left else done
         return Acknowledged(acknowledged=None, dry_run=False, message=message)
 
     async def run_task(self, task_type: RunnableTask, *, confirm: bool = False) -> StartedTask:

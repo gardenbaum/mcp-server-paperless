@@ -1,10 +1,11 @@
 ---
 id: PLMCP-89.2
 title: 'Tasks b: get_task_overview, acknowledge all, texts of run_task'
-status: To Do
+status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:39Z'
+updated_date: '2026-11-25T12:10:48Z'
 labels:
   - admin
 dependencies:
@@ -37,3 +38,11 @@ Second part of PLMCP-89: how many tasks need attention, what runs now and how ea
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Red: adapter, contract, service, tool and E2E for count_tasks, list_active_tasks, summarize_tasks, get_viewer, acknowledge_all_tasks, overview, preview, bound yes, lost answer.
+2. Ports, adapter, service, tool get_task_overview, acknowledge_tasks with all; texts of run_task by P4.
+3. decision-94, coverage, exclusions, guide limit +20, docs.
+<!-- SECTION:PLAN:END -->

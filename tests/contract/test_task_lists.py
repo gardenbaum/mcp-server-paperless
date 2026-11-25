@@ -20,6 +20,7 @@ pytestmark = [
     pytest.mark.anyio,
     pytest.mark.decision("decision-8"),
     pytest.mark.decision("decision-93"),
+    pytest.mark.decision("decision-94"),
 ]
 LIST_TASKS = "TaskListReader.list_tasks"
 COUNT, ACTIVE = "TaskListReader.count_tasks", "TaskListReader.list_active_tasks"

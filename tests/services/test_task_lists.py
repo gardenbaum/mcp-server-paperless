@@ -4,7 +4,7 @@ Fakes of "nothing may be written" cases are created without `allow_writes`. Seed
 (superuser), reader 3.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import final, override
 
 import pytest
@@ -17,11 +17,12 @@ from mcp_server_paperless.domain.errors import (
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
+    UnexpectedAnswer,
     UpstreamTimeout,
     UpstreamUnreachable,
     Validation,
 )
-from mcp_server_paperless.domain.task_lists import TaskCounts
+from mcp_server_paperless.domain.task_lists import TaskCounts, TaskFilters
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.task_lists import TaskListService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
@@ -31,6 +32,7 @@ pytestmark = [
     pytest.mark.decision("decision-15"),
     pytest.mark.decision("decision-26"),
     pytest.mark.decision("decision-93"),
+    pytest.mark.decision("decision-94"),
 ]
 
 
@@ -478,9 +480,19 @@ class Lost(FakePaperless):
         raise self.error
 
 
-async def test_a_lost_answer_is_looked_up_and_nothing_is_sent_again() -> None:
+@pytest.mark.parametrize(
+    "error",
+    [
+        UpstreamTimeout("Paperless did not answer in time."),
+        UnexpectedAnswer("Paperless answered something that cannot be read."),
+    ],
+)
+async def test_a_lost_answer_is_looked_up_and_nothing_is_sent_again(
+    error: PaperlessMcpError,
+) -> None:
     state = unseen().state
     fake = Lost(state, user=ADMIN[0], allow_writes=True)
+    fake.error = error
 
     done = await Setup.over(fake).acknowledge_tasks(all_unacknowledged=True, confirm=True)
 
@@ -503,6 +515,62 @@ async def test_a_lost_answer_with_tasks_left_is_unknown() -> None:
     )
 
 
+class Gone(Lost):
+    """After the lost answer nothing can be read either."""
+
+    @override
+    async def count_tasks(self, filters: TaskFilters) -> TaskCounts:
+        if filters.owner is None and all(t.acknowledged for t in self.state.tasks):
+            raise self.error
+        return await super().count_tasks(filters)
+
+
+async def test_a_lost_answer_after_which_nothing_can_be_read_is_unknown() -> None:
+    fake = Gone(unseen().state, user=ADMIN[0], allow_writes=True)
+
+    done = await Setup.over(fake).acknowledge_tasks(all_unacknowledged=True, confirm=True)
+
+    assert done.acknowledged is None
+    assert done.message == (
+        "Paperless's answer was lost and the tasks cannot be read now, so it is not known "
+        "whether it was done. Do not call again on your own: look at list_tasks."
+    )
+
+
+class Fewer(FakePaperless):
+    """Somebody else acknowledges one right before."""
+
+    @override
+    async def acknowledge_all_tasks(self) -> int:
+        self.state.tasks[0].acknowledged = True
+        return await super().acknowledge_all_tasks()
+
+
+async def test_fewer_than_previewed_is_what_paperless_says() -> None:
+    fake = Fewer(unseen().state, user=ADMIN[0], allow_writes=True)
+
+    done = await Setup.over(fake).acknowledge_tasks(all_unacknowledged=True, confirm=True)
+
+    assert done.message == "Acknowledged 4 tasks (they no longer show as new)."
+
+
+async def test_a_dry_run_without_new_tasks_is_a_dry_run() -> None:
+    shown = await Setup.of(seeded()).acknowledge_tasks(all_unacknowledged=True, dry_run=True)
+
+    assert (shown.dry_run, shown.acknowledged) == (True, 0)
+
+
+async def test_a_time_is_shown_in_utc_and_an_only_task_is_named_so() -> None:
+    setup = Setup()
+    setup.state.tasks = [task(1, status="failure", owner=2, task_type="mail_fetch")]
+    setup.state.tasks[0].created = datetime(2026, 11, 17, 9, 5, tzinfo=timezone(timedelta(hours=1)))
+
+    message = await ask(setup)
+
+    assert "mark the only task nobody" in message
+    assert "mail_fetch (id 1, 2026-11-17 08:05 UTC). Tasks" in message
+
+
 @pytest.mark.parametrize(
     "error", [UpstreamUnreachable("No connection."), PermissionDenied("No.", hint="Ask.")]
 )
@@ -519,8 +587,16 @@ async def test_a_call_that_never_arrived_or_was_refused_is_an_error(
 # --- the overview (PLMCP-89.2)
 
 
+def recent() -> Setup:
+    """The same tasks, of the last minutes: the summary counts from today."""
+    setup = unseen()
+    for one in setup.state.tasks:
+        one.created = datetime.now(UTC) - timedelta(minutes=10 - one.id)
+    return setup
+
+
 async def test_the_overview_counts_lists_and_summarises() -> None:
-    found = await unseen().service.overview(days=365)
+    found = await recent().service.overview(days=365)
 
     assert found.counts == TaskCounts(total=6, needs_attention=3, in_progress=2, completed=1)
     assert found.active is not None
@@ -557,7 +633,7 @@ async def test_the_filters_apply_to_the_counts_only(given: dict[str, object], to
 
 
 async def test_parts_the_user_may_not_see_are_named() -> None:
-    state = unseen().state
+    state = recent().state
     for number, permissions in enumerate(({"view_system_monitoring"}, {"view_paperlesstask"}), 8):
         state.users.append(
             FakeUser(id=number, username=f"u{number}", permissions=frozenset(permissions))
@@ -597,6 +673,21 @@ async def test_a_blank_text_or_an_empty_list_is_refused_in_the_overview_too() ->
 
     assert "name must not be blank" in await failure(service.overview(name=" "), Validation)
     assert "task_type must name" in await failure(service.overview(task_type=[]), Validation)
+
+
+async def test_the_summary_leaves_out_what_is_older_than_the_days() -> None:
+    setup = Setup()
+    setup.state.tasks = [task(1), task(2, task_type="mail_fetch")]
+    now = datetime.now(UTC)
+    setup.state.tasks[0].created, setup.state.tasks[1].created = (
+        now - timedelta(days=3),
+        now - timedelta(days=40),
+    )
+
+    for days, types in ((2, []), (30, ["consume_file"]), (60, ["consume_file", "mail_fetch"])):
+        found = await setup.service.overview(days=days)
+        assert found.by_type is not None
+        assert [s.task_type for s in found.by_type] == types
 
 
 @pytest.mark.parametrize("days", [0, 366])

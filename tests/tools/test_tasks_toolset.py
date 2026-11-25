@@ -15,6 +15,7 @@ pytestmark = [
     pytest.mark.decision("decision-4"),
     pytest.mark.decision("decision-26"),
     pytest.mark.decision("decision-93"),
+    pytest.mark.decision("decision-94"),
 ]
 
 type Json = dict[str, object]

@@ -24,6 +24,7 @@ pytestmark = [
     pytest.mark.anyio,
     pytest.mark.decision("decision-26"),
     pytest.mark.decision("decision-93"),
+    pytest.mark.decision("decision-94"),
 ]
 
 PREFIX = "plmcp89-"

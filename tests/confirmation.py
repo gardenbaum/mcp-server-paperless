@@ -7,16 +7,8 @@ state `world()` makes.
 import base64
 from typing import TYPE_CHECKING, Final
 
-<<<<<<< HEAD
-from fakes.mail import FakeMailAccount, FakeMailRule
-from fakes.paperless import FakeDocument, FakeFile, FakePaperless, FakeState, FakeTask, seeded
-||||||| 8b4764b
-from fakes.mail import FakeMailAccount, FakeMailRule
-from fakes.paperless import FakeDocument, FakeFile, FakePaperless, FakeState, seeded
-=======
 from fakes.mail import FakeMailAccount, FakeMailRule, FakeProcessedMail
-from fakes.paperless import FakeDocument, FakeFile, FakePaperless, FakeState, seeded
->>>>>>> plmcp-89-1-tasks
+from fakes.paperless import FakeDocument, FakeFile, FakePaperless, FakeState, FakeTask, seeded
 from fakes.sharing import FakeShareBundle, FakeShareLink
 from fastmcp.client.elicitation import ElicitResult
 

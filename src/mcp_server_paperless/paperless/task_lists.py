@@ -288,7 +288,10 @@ class PaperlessTaskListWriter:
         """See ``TaskListWriter.acknowledge_tasks``."""
         with Refused(ACK_TASKS):
             done = await self._client.call(
-                "POST", f"{TASKS}acknowledge/", _Acknowledged, json={"tasks": list(task_ids)}
+                "POST",
+                f"{TASKS}acknowledge/",
+                _Acknowledged,
+                json={"tasks": list(task_ids), "all": False},
             )
         return done.result
 
