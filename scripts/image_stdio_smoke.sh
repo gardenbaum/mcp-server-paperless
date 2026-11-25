@@ -24,7 +24,7 @@ grep -q PAPERLESS_TOKEN <<< "$output" \
 mkfifo "$tmp/stdin"
 docker run -i --init --name "$name" --read-only --cap-drop ALL --security-opt no-new-privileges \
     -e PAPERLESS_URL=http://paperless.invalid:8000 -e PAPERLESS_TOKEN=smoke-paperless-token \
-    "$image" < "$tmp/stdin" > "$tmp/stdout" 2> "$tmp/stderr" &
+    -e PAPERLESS_MCP_TOOLSETS=core:read "$image" < "$tmp/stdin" > "$tmp/stdout" 2> "$tmp/stderr" &
 pid=$!
 exec 3> "$tmp/stdin"
 
@@ -49,10 +49,10 @@ ids="$(docker exec "$name" sh -c 'cat /proc/[0-9]*/status' | grep -E '^(Uid|Gid)
 [[ "$ids" == "Gid: 10001 10001 10001 10001 Uid: 10001 10001 10001 10001 " ]] \
     || { echo "expected 10001:10001, got $ids" >&2; exit 1; }
 
-echo "4/6 answers tools/list"
+echo "4/6 answers tools/list, of a toolset that is only read (decision-97)"
 echo '{"jsonrpc":"2.0","method":"notifications/initialized"}' >&3
 echo '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' >&3
-answer 2 '[.result.tools[].name] | index("search_documents") != null'
+answer 2 '[.result.tools[].name] | index("search_documents") != null and index("update_document") == null'
 
 echo "5/6 exits with 0 at the end of stdin, with nothing but JSON-RPC 2.0 on stdout"
 exec 3>&-

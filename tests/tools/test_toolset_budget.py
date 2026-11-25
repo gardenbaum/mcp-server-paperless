@@ -6,7 +6,9 @@ about four bytes a token). The limits are tight on purpose: a longer guide has t
 with a reason, instead of growing unnoticed. They are measured on the worst case, which is built
 from the real catalogue and searched, not sampled:
 
-- Instructions: every toolset but one is listed, so the selection is each single toolset in turn;
+- Instructions: every toolset but one is listed, so the selection is each single toolset in turn,
+  also read-only (PLMCP-90: its mark and the suffix in the value), and from there every read-only
+  toolset whose mark and suffix are longer than its line among those that are off (``grown``);
   a toolset is described by its summary, or by ``PARTIAL`` where that is longer and a disabled
   tool cuts it down; Paperless AI is unknown (its gap is named); the overview tool is on or off.
   The instructions name no tool, so the count of tools does not matter.
@@ -44,7 +46,13 @@ BASE_OVERVIEW_DEFINITION = 4442
 # The limits, in bytes: the instructions as a whole (so the guide adds at most the difference to
 # BASE_INSTRUCTIONS), the guide in a call of the overview, and the growth of the overview's
 # definition in tools/list (its output schema).
-INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut down)
+#
+# Measured 1423 at most before PLMCP-90 (core alone, AI unknown, cut down), 1440 with core:read, and
+# 1451 with core, views, pdf and workflows all read-only, whose lines among those that are off are
+# shorter; 1474 with the toolset tasks (PLMCP-89.1) read-only, too. The owner approved 1451 on
+# 2026-11-25 ("Alles wie empfohlen", all as recommended) and, with PLMCP-89, what is measured then,
+# at most 1474.
+INSTRUCTIONS_LIMIT = 1474
 # Measured 2943 (core alone, nothing cut, stdio with upload directories): 19 bytes of
 # upload_documents (PLMCP-85) and 21 of resolve_duplicates (PLMCP-86) over the 2758 of HTTP before,
 # both approved by the owner on 2026-11-23; and 37 of get_trash_entry and get_trashed_file
@@ -59,10 +67,11 @@ INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut 
 # explain_workflow (PLMCP-87.4), the 42 of PLMCP-87 (3010 to 3052), and 17 of pin_saved_view
 # (PLMCP-88.2, 3052 to 3069), in the steps up to 3229 the owner approved on 2026-11-24. And 49 of
 # the toolset tasks (PLMCP-89.1), 20 of get_task_overview (PLMCP-89.2) and 20 of get_system_report
-# (PLMCP-89.3), the 89 of PLMCP-89 (3069 to 3158) in the same steps. And 16 of
-# suggest_words and 20 of test_storage_path (PLMCP-83.2) and 18 of get_permissions
-# (PLMCP-83.4), the 54 of PLMCP-83 in the same steps.
-OVERVIEW_GUIDE_LIMIT = 3212
+# (PLMCP-89.3), the 89 of PLMCP-89 (3069 to 3158) in the same steps. And
+# 17 of the mark and the suffix of core:read (PLMCP-90, 3158 to 3175), also one of them. And 16 of
+# suggest_words, 20 of test_storage_path (PLMCP-83.2) and 18 of get_permissions (PLMCP-83.4), the
+# 54 of PLMCP-83 in the same steps.
+OVERVIEW_GUIDE_LIMIT = 3229
 # Measured 879: 747 before, plus 132 of too_old (PLMCP-101); the rise from 750 was approved by the
 # owner on 2026-11-24. And 131 of next_asn (PLMCP-83.2): measured 1010, what the owner approved on
 # 2026-11-24.
@@ -118,18 +127,43 @@ async def measure(
         return len((client.instructions or "").encode()), guide
 
 
+def others(selection: Sequence[str]) -> list[str]:
+    """``cut_down`` without the selected toolsets: there it changes no text, and may leave none."""
+    on = {entry.removesuffix(":read") for entry in selection}
+    return [tool for tool in cut_down() if TOOL_TOOLSETS[tool] not in on]
+
+
+async def grown(selection: list[str]) -> tuple[list[str], int]:
+    """The selection with every read-only toolset that makes the instructions longer, their size.
+
+    Each toolset adds its own words only, so one after the other finds the longest.
+    """
+    longest, _ = await measure(selection, others(selection))
+    for name in TOOLSETS:
+        if name not in {entry.removesuffix(":read") for entry in selection}:
+            wider = [*selection, f"{name}:read"]
+            size_of_wider, _ = await measure(wider, others(wider))
+            if size_of_wider > longest:
+                selection, longest = wider, size_of_wider
+    return selection, longest
+
+
 async def worst() -> tuple[int, int]:
-    """The longest instructions over every single-toolset selection, and the longest guide."""
+    """The longest instructions over the selections above, and the longest guide."""
     instructions = guide = 0
     readers = (unknown_ai, lambda: admin(ai_enabled=True))
     directories = (None, (), ("/srv/scans",))  # HTTP, stdio, stdio with upload directories
+    entries = [f"{name}{suffix}" for name in TOOLSETS for suffix in ("", ":read")]
     for name, cut, overview, reader, dirs in itertools.product(
-        TOOLSETS, (False, True), (True, False), readers, directories
+        entries, (False, True), (True, False), readers, directories
     ):
-        disabled = [*(cut_down() if cut else []), *([] if overview else [OVERVIEW])]
+        disabled = [*(others([name]) if cut else []), *([] if overview else [OVERVIEW])]
         text, listed = await measure([name], disabled, reader(), dirs)
         instructions = max(instructions, text)
         guide = max(guide, listed or 0)
+    for name in TOOLSETS:
+        _, text = await grown([f"{name}:read"])
+        instructions = max(instructions, text)
     return instructions, guide
 
 
