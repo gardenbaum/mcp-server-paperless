@@ -14,6 +14,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
 )
 from mcp_server_paperless.domain.workflows import (
+    PartWrite,
     Workflow,
     WorkflowAction,
     WorkflowTrigger,
@@ -380,3 +381,51 @@ async def test_a_user_without_the_permission_for_a_part_is_denied(
         _ = await reader.get_trigger(5)
     with pytest.raises(PermissionDenied):
         _ = await reader.get_action(6)
+
+
+@pytest.mark.decision("decision-82")
+async def test_parts_are_written_in_one_patch_of_their_list(make_client: ClientFactory) -> None:
+    server = Recording(httpx2.Response(200, json=WIRE), httpx2.Response(200, json=WIRE))
+    writer = PaperlessWorkflowWriter(make_client(server))
+    mail: dict[str, JsonValue] = {"subject": "s", "body": "b", "to": "a@example.org"}
+    actions = (
+        PartWrite(id=6),
+        PartWrite(id=7, settings={"assign_title": "x", "assign_tags": []}),
+        PartWrite(type=3, settings={"email": mail}),
+    )
+
+    _ = await writer.update_workflow_parts(3, "actions", actions)
+    _ = await writer.update_workflow_parts(
+        3, "triggers", (PartWrite(id=5, type=2, settings=TRIGGER_SETTINGS),)
+    )
+
+    assert [(method, path, body) for method, path, body, _ in server.sent] == [
+        (
+            "PATCH",
+            "/api/workflows/3/",
+            {
+                "actions": [
+                    {"id": 6},
+                    {"id": 7, "assign_title": "x", "assign_tags": []},
+                    {"type": 3, "email": mail},
+                ]
+            },
+        ),
+        ("PATCH", "/api/workflows/3/", {"triggers": [TRIGGER_WIRE]}),
+    ]
+
+
+@pytest.mark.decision("decision-82")
+async def test_parts_of_a_missing_workflow_are_not_found_and_a_refusal_passes(
+    make_client: ClientFactory,
+) -> None:
+    server = Recording(
+        httpx2.Response(404, json={"detail": "No Workflow matches."}),
+        httpx2.Response(403, json={"detail": "no"}),
+    )
+    writer = PaperlessWorkflowWriter(make_client(server))
+
+    with pytest.raises(NotFound, match="No workflow 9"):
+        await writer.update_workflow_parts(9, "actions", ())
+    with pytest.raises(PermissionDenied):
+        await writer.update_workflow_parts(9, "actions", ())

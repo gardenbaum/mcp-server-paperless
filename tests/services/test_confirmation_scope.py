@@ -43,6 +43,7 @@ from mcp_server_paperless.domain.taxonomy_edits import TaxonomyEdit
 from mcp_server_paperless.domain.views import FilterRule
 from mcp_server_paperless.domain.workflows import (
     ActionInput,
+    PartEdit,
     TriggerInput,
     Workflow,
     WorkflowAction,
@@ -67,6 +68,7 @@ from mcp_server_paperless.services.trash import TrashService
 from mcp_server_paperless.services.trash_scan import TrashScan
 from mcp_server_paperless.services.versions import VersionService
 from mcp_server_paperless.services.views import ViewService
+from mcp_server_paperless.services.workflow_parts import WorkflowParts
 from mcp_server_paperless.services.workflows import WorkflowService
 
 if TYPE_CHECKING:
@@ -337,6 +339,16 @@ def update_workflow(state: FakeState) -> Callable[[], Awaitable[object]]:
     return lambda: service.update(1, WorkflowEdit(enabled=True), confirm=False)
 
 
+def remove_part(state: FakeState) -> Callable[[], Awaitable[object]]:
+    workflow(state)
+    held = WorkflowAction(id=2, type=5, settings={"passwords": ["x"]})
+    state.workflows[0] = state.workflows[0].model_copy(update={"actions": (held,)})
+    fake, taxonomy = fakes(state)
+    service = WorkflowParts(fake, fake, WorkflowService(fake, fake, taxonomy))
+    edit = PartEdit(operation="remove", action_id=2)
+    return lambda: service.update(1, edit, confirm=False)
+
+
 def create_workflow(state: FakeState) -> Callable[[], Awaitable[object]]:
     fake, taxonomy = fakes(state)
     service = WorkflowService(fake, fake, taxonomy)
@@ -563,6 +575,7 @@ NEWER_FILE = {
         (delete_group, other_permissions),
         (delete_note, renamed_note),
         (update_workflow, other_trigger),
+        (remove_part, other_trigger),
         (create_workflow, other_tag),
         (delete_view, other_rules),
         (create_rule, other_tag),

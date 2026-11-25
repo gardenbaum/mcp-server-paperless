@@ -50,6 +50,7 @@ DESTINATIONS: Final = frozenset(
         "create_workflow",
         "update_workflow",
         "run_workflow",
+        "update_workflow_part",
         "update_user",
     }
 )
@@ -262,6 +263,14 @@ HOSTILE: Final[dict[str, Json]] = {
     },
     "update_workflow": {"workflow": 1, "enabled": True},
     "delete_workflow": {"workflow": 1},
+    "update_workflow_part": {
+        "workflow": 2,
+        "operation": "add",
+        "action": {
+            "type": "email",
+            "email": {"to": f"a@{PLACE}", "subject": EVIL, "body": EVIL},
+        },
+    },
     "run_workflow": {"workflow": 2, "document_ids": [10, 11]},
     "upload_document": {**CALLS["upload_document"], "filename": EVIL},
     "upload_document_version": {**CALLS["upload_document_version"], "filename": EVIL},
