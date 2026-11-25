@@ -10,8 +10,9 @@ from typing import cast
 
 import pytest
 from confirmation import YES, answering
+from explained import CASES, FACTS, RECORDED, SUBJECT
 from fakes.mail import FakeMailAccount, FakeMailRule, FakeProcessedMail
-from fakes.paperless import FakePaperless, FakeState, seeded
+from fakes.paperless import FakePaperless, FakeState, FakeUser, seeded
 from fastmcp import Client
 from harness import serve
 
@@ -628,3 +629,92 @@ async def test_no_dialog_asks_for_a_deletion_that_is_too_long_to_show(*, confirm
     assert "longer than what can be shown" in str(result.content)
     assert "Nothing was deleted" in str(result.content)
     assert len(source.state.processed_mail) == 100
+
+
+@pytest.mark.decision("decision-90")
+@pytest.mark.parametrize("given", [0, 1, 2])
+async def test_every_check_is_said_for_a_mail_that_fits_one_that_does_not_and_nothing(
+    given: int,
+) -> None:
+    source = fake(writes=False)
+    account = with_account(source.state)
+    rules = [
+        with_rule(source.state, account, name=case.name, **({"order": n} | case.fields))
+        for n, case in enumerate(CASES)
+    ]
+    recorded = rules[[case.name for case in CASES].index(RECORDED)]
+    source.state.processed_mail.append(FakeProcessedMail(id=1, rule=recorded, subject=SUBJECT))
+    facts = cast("Json", FACTS[given].model_dump(mode="json", exclude_none=True))
+
+    for number, case in zip(rules, CASES, strict=True):
+        found = await call(
+            source, "explain_mail_import", account_id=account, rule_id=number, **facts
+        )
+        [rule] = cast("list[Json]", found["rules"])
+        checks = cast("list[Json]", rule["checks"])
+        said = {c["what"]: c["result"] for c in checks}
+        assert said.get(case.what) == case.results[given], case.name
+        assert ("record" in said) is (case.name == RECORDED and given == 0)
+        assert all(c["why"] for c in checks)
+        worst = next(result for result in ("no", "unknown", "ok") if result in said.values())
+        assert rule["result"] == worst
+
+
+@pytest.mark.decision("decision-90")
+async def test_what_earlier_rules_of_the_run_do_is_said() -> None:
+    source = fake(writes=False)
+    account = with_account(source.state)
+    first = with_rule(source.state, account, name="First", order=1, stop_processing=True)
+    second = with_rule(source.state, account, name="Second", order=2)
+
+    found = await call(source, "explain_mail_import", account_id=account, rule_id=second)
+
+    [rule] = cast("list[Json]", found["rules"])
+    stops, takes = [
+        c["why"] for c in cast("list[Json]", rule["checks"]) if c["what"] == "earlier rules"
+    ]
+    assert str(stops).startswith(f"rule 'First' (id {first}) ends the run")
+    assert str(takes).startswith(f"rule 'First' (id {first}) reads the same folder first")
+
+
+@pytest.mark.decision("decision-90")
+async def test_a_user_who_is_no_staff_sees_only_the_own_rules_and_no_log() -> None:
+    state = seeded()
+    state.users.append(
+        FakeUser(
+            id=77,
+            username="mailman",
+            permissions=frozenset({"view_mailaccount", "view_mailrule", "view_processedmail"}),
+        )
+    )
+    account = with_account(state)
+    state.mail_accounts[-1].owner = 77
+    _ = with_rule(state, account, name="Hidden")
+    shown = with_rule(state, account, name="Shown")
+    state.mail_rules[-1].owner = 77
+    start = "[2026-11-25 10:00:00,1] [DEBUG] [paperless_mail] "
+    state.logs["mail"] = [f"{start}Processing mail account Invoices"]
+    source = fake(state, writes=False, user="mailman")
+
+    found = await call(source, "explain_mail_import", account_id=account)
+
+    assert [r["rule_id"] for r in cast("list[Json]", found["rules"])] == [shown]
+    assert "Hidden" not in str(found)
+    assert found["logs"] == []
+    assert "the log mail: Logs need a staff user." in cast("list[str]", found["not_checked"])
+    assert "Rules of other users that you may not see" in str(found["message"])
+
+
+@pytest.mark.decision("decision-80")
+@pytest.mark.decision("decision-90")
+async def test_no_credential_of_a_log_is_in_the_explanation() -> None:
+    source = fake(writes=False)
+    account = with_account(source.state)
+    _ = with_rule(source.state, account)
+    start = "[2026-11-25 10:00:00,1] [ERROR] [paperless_mail] Error while authenticating account "
+    source.state.logs["mail"] = [f"{start}Invoices: {PASSWORD} refused"]
+
+    found = await call(source, "explain_mail_import", account_id=account)
+
+    assert len(cast("list[str]", found["logs"])) == 1
+    assert PASSWORD not in repr(found)
