@@ -9625,7 +9625,7 @@
             'type': 'string',
           }),
           'not_checked': dict({
-            'description': 'That, and what cannot be known at all.',
+            'description': 'That, older fetches, and what cannot be known at all.',
             'items': dict({
               'type': 'string',
             }),
@@ -39511,7 +39511,7 @@
             'type': 'string',
           }),
           'not_checked': dict({
-            'description': 'That, and what cannot be known at all.',
+            'description': 'That, older fetches, and what cannot be known at all.',
             'items': dict({
               'type': 'string',
             }),

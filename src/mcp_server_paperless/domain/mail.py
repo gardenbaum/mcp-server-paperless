@@ -585,5 +585,5 @@ class MailExplanation(BaseModel):
     ]
     not_checked: Annotated[
         tuple[str, ...],
-        Field(description="That, and what cannot be known at all."),
+        Field(description="That, older fetches, and what cannot be known at all."),
     ]

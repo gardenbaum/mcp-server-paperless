@@ -897,10 +897,13 @@ async def test_only_failed_files_of_mails_count_and_what_is_left_out_is_said() -
 
 async def test_more_failed_tasks_than_are_read_are_said() -> None:
     setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [LOG.format(0, "x")]
+    setup.state.logs["paperless"] = [RUN.format(0, "x")]
     for number in range(26):
         setup.state.tasks.append(FakeTask(id=number, task_id=f"t{number}", status="failure"))
 
-    found = await setup.explain()
+    found = await setup.explain(subject="x")
 
     assert "files that could not be consumed: only the newest 25 of 26 were looked at" in (
         found.not_checked
@@ -1183,4 +1186,4 @@ async def test_more_fetches_than_are_read_are_said(*, fetches: int, more: bool) 
     gap = "fetches: only the newest 5 of 6 were looked at"
     assert len(found.tasks) == 5
     assert (gap in found.not_checked) is more
-    assert found.complete is not more
+    assert found.complete  # reading the newest is the purpose

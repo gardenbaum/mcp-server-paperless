@@ -316,7 +316,7 @@ class _Asking:
         self._clock: Callable[[], float] = clock
         self._until: float = clock() + RUN_SECONDS
         self.gaps: list[str] = []
-        # What can never be known, whoever asks.
+        # What is not looked at on purpose, or can never be known.
         self.notes: list[str] = [OTHERS]
 
     async def ask[T](self, what: str, request: Callable[[], Awaitable[T]]) -> T | None:
@@ -440,10 +440,14 @@ class MailExplanations:
                 page_size=FAILED_READ,
             ),
         )
-        for what, found in (("fetches", fetches), ("files that could not be consumed", failed)):
+        # Paperless fetches every ten minutes: older fetches alone leave the answer complete.
+        for what, found, said in (
+            ("fetches", fetches, asking.notes),
+            ("files that could not be consumed", failed, asking.gaps),
+        ):
             if found and found.count > len(found.rows):
                 read = f"only the newest {len(found.rows)} of {found.count} were looked at"
-                asking.gaps.append(f"{what}: {read}")
+                said.append(f"{what}: {read}")
         rows = failed.rows if failed else ()
         files = [row for row in rows if row.trigger_source == "email_consume"]
         if len(files) > MAX_TASKS:
