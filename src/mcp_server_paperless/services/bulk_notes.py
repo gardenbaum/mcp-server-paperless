@@ -1,9 +1,9 @@
 """Notes on many documents in one call: one text for a selection, or a text per document.
 
-A document that already has a note with the text gets none (decision-73), so repeating a call adds
-nothing twice and a filter converges. That needs the notes: they are read at first, and those of
-each document again right before its note is added. A POST whose answer was lost is never repeated;
-the notes are read once and tell what became of it.
+A document that already has a note with the text in that format gets none (decision-73), so
+repeating a call adds nothing twice and a filter converges. That needs the notes: they are read at
+first, and those of each document again right before its note is added. A POST whose answer was lost
+is never repeated; the notes are read once and tell what became of it.
 
 Paperless stores a note without the whitespace around it, so that is how texts are compared.
 """
@@ -50,7 +50,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from mcp_server_paperless.domain.bulk_items import DocumentNote
-    from mcp_server_paperless.domain.documents import Note
+    from mcp_server_paperless.domain.documents import Note, NoteFormat
     from mcp_server_paperless.domain.ports import DocumentReader, DocumentWriter
     from mcp_server_paperless.domain.selection import DocumentRow, ReadField
     from mcp_server_paperless.services.selection import DocumentSelector, Selected
@@ -74,8 +74,9 @@ class _Item:
     id: int
     title: str
     text: str
+    format: NoteFormat
     may_change: bool
-    there: int | None  # the note with this text
+    there: int | None  # the note with this text and format
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,7 +108,8 @@ class _Call:
         if self.single:
             text = adding[0].text
             return (
-                f"add the note {quoted(text, START)} ({len(text)} characters) to "
+                f"add the {_kind(adding[0].format)}note {quoted(text, START)} "
+                f"({len(text)} characters) to "
                 f"{_named(adding)}{unchecked(self.chosen) if self.chosen else ''}"
             )
         told = [
@@ -115,7 +117,7 @@ class _Call:
             + (quoted(item.text, START) if at < SHOWN else f"({len(item.text)} characters)")
             for at, item in enumerate(adding)
         ]
-        return f"add {_notes(len(adding))}: {', '.join(told)}"
+        return f"add {_notes(len(adding), adding[0].format)}: {', '.join(told)}"
 
     def more(self, *, dry_run: bool) -> str:
         """What also matches and is not touched, as a sentence."""
@@ -134,22 +136,30 @@ def _named(items: Sequence[_Item]) -> str:
     return named(list(dict.fromkeys((item.id, item.title) for item in items)))
 
 
-def _notes(count: int) -> str:
-    return f"{count} note" if count == 1 else f"{count} notes"
+def _kind(note_format: NoteFormat) -> str:
+    """What to say before "note"; plain is not said."""
+    return "" if note_format == "plain" else f"{note_format} "
 
 
-def _with(notes: Sequence[Note], text: str) -> int | None:
-    """The newest note with ``text``."""
-    return max((note.id for note in notes if note.note.strip() == text), default=None)
+def _notes(count: int, note_format: NoteFormat = "plain") -> str:
+    return f"{count} {_kind(note_format)}{'note' if count == 1 else 'notes'}"
 
 
-def _item(row: DocumentRow, text: str) -> _Item:
+def _with(notes: Sequence[Note], text: str, note_format: NoteFormat) -> int | None:
+    """The newest note with ``text`` in that format."""
+    return max(
+        (n.id for n in notes if n.note.strip() == text and n.format == note_format), default=None
+    )
+
+
+def _item(row: DocumentRow, text: str, note_format: NoteFormat) -> _Item:
     return _Item(
         id=row.id,
         title=row.title or "",
         text=text,
+        format=note_format,
         may_change=row.user_can_change is not False,
-        there=_with(row.notes or (), text),
+        there=_with(row.notes or (), text, note_format),
     )
 
 
@@ -172,12 +182,13 @@ class BulkNotes:
         self._web_url: str = web_url
         self._clock: Callable[[], float] = clock
 
-    async def add(
+    async def add(  # noqa: PLR0913 -- the arguments of the tool
         self,
         selection: Selection,
         note: str | None,
         notes: Sequence[DocumentNote],
         *,
+        note_format: NoteFormat = "plain",
         dry_run: bool,
         confirm: bool,
     ) -> NotesReport:
@@ -197,9 +208,9 @@ class BulkNotes:
         """
         until = self._clock() + RUN_SECONDS
         if note is not None and not notes:
-            call = await self._chosen(selection, note)
+            call = await self._chosen(selection, note, note_format)
         elif note is None and notes and selection == Selection():
-            call = await self._given(notes)
+            call = await self._given(notes, note_format)
         else:
             raise Validation(WHICH, hint="notes holds a document_id and a note per item.")
         adding, blocked = call.adding, call.blocked
@@ -219,13 +230,13 @@ class BulkNotes:
             hint = NEXT_CALL.format(ids=ids, what="note")
             ConfirmationRequired.require(
                 call.effect,
-                scope=[(item.id, item.text) for item in adding],
+                scope=[(item.id, item.text, item.format) for item in adding],
                 hint=hint if call.alone else CONFIRM_HINT,
             )
         rows, stop = await one_by_one(adding, self._add, until=until, clock=self._clock)
         return self._done(call, rows, stop)
 
-    async def _given(self, notes: Sequence[DocumentNote]) -> _Call:
+    async def _given(self, notes: Sequence[DocumentNote], note_format: NoteFormat) -> _Call:
         if len(notes) > MAX_DOCUMENTS:
             message = f"Pass between 1 and {MAX_DOCUMENTS} notes; got {len(notes)}."
             raise Validation(message, hint="Work in several calls.")
@@ -237,10 +248,10 @@ class BulkNotes:
             message = f"The same note is given twice for document {', '.join(map(str, twice))}."
             raise Validation(message, hint="Name each note of a document once.")
         rows = await self._rows(list(dict.fromkeys(number for number, _ in pairs)))
-        items = [_item(rows[number], text) for number, text in pairs]
+        items = [_item(rows[number], text, note_format) for number, text in pairs]
         return _Call(items, len(rows), single=False)
 
-    async def _chosen(self, selection: Selection, note: str) -> _Call:
+    async def _chosen(self, selection: Selection, note: str, note_format: NoteFormat) -> _Call:
         check_note(note)
         text = note.strip()
         ids = dict.fromkeys(selection.document_ids)
@@ -252,11 +263,11 @@ class BulkNotes:
         require_exclusions(chosen)
         by_filter = selection.filters is not None or selection.saved_view is not None
         rows = await self._rows([hit.id for hit in (*chosen.hits, *chosen.others)])
-        items = [_item(rows[hit.id], text) for hit in chosen.hits]
+        items = [_item(rows[hit.id], text, note_format) for hit in chosen.hits]
         if not by_filter:
             return _Call(items, chosen.matched, chosen=chosen)
         if ids:
-            others = [_item(rows[hit.id], text) for hit in chosen.others]
+            others = [_item(rows[hit.id], text, note_format) for hit in chosen.others]
             rest = tuple(item.id for item in others if item.there is None)
             return _Call(items, chosen.matched, chosen=chosen, beside=True, rest=rest)
         lacking = [item for item in items if item.there is None]
@@ -287,14 +298,14 @@ class BulkNotes:
     async def _add(self, item: _Item) -> Ended[NotedDocument]:
         """Add one note, unless it is there by now."""
         try:
-            there = _with(await self._reader.list_document_notes(item.id), item.text)
+            there = _with(await self._reader.list_document_notes(item.id), item.text, item.format)
         except PaperlessMcpError as error:
             row = self._row(item, "failed", why=error.message)
             return Ended(row, stopped_by(error), silent=not refused(error))
         if there is not None:
             return Ended(self._row(item, "already_there", there))
         try:
-            added = await self._writer.add_note(item.id, item.text)
+            added = await self._writer.add_note(item.id, item.text, item.format)
         except PaperlessMcpError as error:
             # Paperless also says that it could not save when only what comes after that failed.
             if refused(error) and not isinstance(error, Validation):
@@ -306,7 +317,7 @@ class BulkNotes:
         """What became of a note whose answer was lost, read once."""
         silent = not refused(error)
         try:
-            there = _with(await self._reader.list_document_notes(item.id), item.text)
+            there = _with(await self._reader.list_document_notes(item.id), item.text, item.format)
         except PaperlessMcpError as second:
             why = f"{error.message} The notes could not be read again: {second.message}"
             return Ended(self._row(item, "unknown", why=why), stopped_by(second), silent=silent)

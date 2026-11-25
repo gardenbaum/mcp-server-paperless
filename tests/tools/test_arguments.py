@@ -362,6 +362,11 @@ async def test_documents_are_searched_changed_and_uploaded_with_every_argument()
             "created_to": "2030-01-01",
             "added_from": "2020-01-01",
             "added_to": "2030-01-01",
+            "modified_from": "2020-01-01",
+            "modified_to": "2030-01-01",
+            "asn_from": 0,
+            "asn_to": 100,
+            "file_name_contains": "e2e",
             "owner": "admin",
             "inbox": True,
             "page": 1,
@@ -595,7 +600,7 @@ async def test_many_documents_take_every_value_and_notes_every_choice() -> None:
         {"document_ids": [1], "exclude_ids": [2], "filters": filters},
         {"document_ids": [1], "saved_view": "e2e-view"},
     ):
-        await sweep("add_notes", {**chosen, "note": "New", "dry_run": False}, ("dry_run",))
+        await sweep("add_notes", {**chosen, "note": "New", "dry_run": False}, ("dry_run", "format"))
     await sweep("add_notes", {"notes": [{"document_id": 1, "note": "New"}]}, ())
     assert not FAILED, "\n".join(FAILED)
 
@@ -1146,7 +1151,7 @@ async def test_documents_are_read_with_every_section_and_slice() -> None:
         {"document_id": 1, "offset": 1, "max_chars": 10, "version_id": 1},
         (),
     )
-    await sweep("get_document_thumbnail", {"document_id": 1}, ())
+    await sweep("get_document_thumbnail", {"document_id": 1, "version_id": 1}, ())
     await sweep(
         "get_document_pages",
         {
@@ -1174,7 +1179,7 @@ async def test_documents_are_read_with_every_section_and_slice() -> None:
         },
         (),
     )
-    await sweep("add_note", {"document_id": 1, "note": "n"}, ())
+    await sweep("add_note", {"document_id": 1, "note": "n"}, ("format",))
     await sweep("delete_note", {"document_id": 1, "note_id": 1}, ())
     await sweep("list_document_versions", {"document_id": 1}, ())
     await sweep("set_document_version_label", {"document_id": 1, "version_id": 1, "label": "L"}, ())
@@ -1262,6 +1267,11 @@ async def test_many_documents_are_read_by_ids_filters_and_view() -> None:
         "created_to": "2030-01-01",
         "added_from": "2020-01-01",
         "added_to": "2030-01-01",
+        "modified_from": "2020-01-01",
+        "modified_to": "2030-01-01",
+        "asn_from": 0,
+        "asn_to": 100,
+        "file_name_contains": "e2e",
         "owner": 2,
         "inbox": True,
         "custom_field_query": ["e2e-string", "exact", "hello"],
@@ -1416,7 +1426,7 @@ async def test_the_pdf_tools_take_every_option() -> None:
         {"document_ids": [1], "expires_in_days": 2, "file_version": "archive"},
     )
     await sweep("list_share_links", {"document_id": 1, "page": 1, "page_size": 10}, ())
-    await sweep("list_share_bundles", {"page": 1, "page_size": 10}, ())
+    await sweep("list_share_bundles", {"page": 1, "page_size": 10, "document_id": 1}, ("status",))
     await sweep("restore_from_trash", {"document_ids": [2]}, (), prepare=with_trash)
     await sweep("empty_trash", {"all": True}, (), prepare=with_trash)
     await sweep("empty_trash", {"document_ids": [2]}, (), prepare=with_trash)

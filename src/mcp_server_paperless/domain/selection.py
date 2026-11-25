@@ -100,6 +100,11 @@ class SelectionFilters(BaseModel):
     created_to: Annotated[date, CALENDAR] | None = None
     added_from: Annotated[date, CALENDAR] | None = None
     added_to: Annotated[date, CALENDAR] | None = None
+    modified_from: Annotated[date, CALENDAR] | None = None
+    modified_to: Annotated[date, CALENDAR] | None = None
+    asn_from: Annotated[int, Field(ge=0), NO_FLAG] | None = None
+    asn_to: Annotated[int, Field(ge=0), NO_FLAG] | None = None
+    file_name_contains: str | None = None
     owner: Annotated[NameOrId, NO_FLAG] | None = None
     inbox: bool | None = None
     custom_field_query: list[JsonValue] | None = None
@@ -124,6 +129,11 @@ class SelectionFilters(BaseModel):
             created_to=self.created_to,
             added_from=self.added_from,
             added_to=self.added_to,
+            modified_from=self.modified_from,
+            modified_to=self.modified_to,
+            asn_from=self.asn_from,
+            asn_to=self.asn_to,
+            file_name_contains=self.file_name_contains,
             inbox=self.inbox,
             correspondent_isnull=_absent(self.has_correspondent),
             document_type_isnull=_absent(self.has_document_type),

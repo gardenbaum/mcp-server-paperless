@@ -233,6 +233,23 @@ async def test_the_bundle_listing_shows_the_build_state_in_pages() -> None:
     assert first.bundles[0].size_bytes is not None
 
 
+async def test_bundles_are_filtered_before_they_are_counted_and_paged() -> None:
+    setup = Setup()
+    for documents in ([1], [1, 2], [2]):
+        _ = await setup.service.create_bundle(
+            documents, expires_in_days=None, file_version="archive", confirm=True
+        )
+    _ = await setup.service.list_bundles(page=1, page_size=25)  # the build completes
+
+    of_one = await setup.service.list_bundles(page=2, page_size=1, document_id=1)
+    ready = await setup.service.list_bundles(page=1, page_size=25, status="ready")
+    none = await setup.service.list_bundles(page=1, page_size=25, document_id=1, status="failed")
+
+    assert (of_one.count, [b.id for b in of_one.bundles]) == (2, [2])
+    assert [b.id for b in ready.bundles] == [1, 2, 3]
+    assert (none.count, none.bundles) == (0, ())
+
+
 async def test_a_rebuilt_bundle_comes_back_pending_with_the_same_url() -> None:
     setup = Setup()
     made = await setup.service.create_bundle(

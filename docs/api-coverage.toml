@@ -138,26 +138,6 @@ operation = "POST /api/mail_accounts/test/"
 fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security", "body:username", "body:password", "body:character_set", "body:is_token"]
 reason = "the stored account is sent back; testing an unsaved account is excluded (decision-79)"
 
-[[open_fields]]
-operation = "GET /api/documents/"
-fields = ["query:archive_serial_number__gte", "query:archive_serial_number__lte", "query:modified__date__gte", "query:modified__date__lte", "query:original_filename__icontains"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/documents/{id}/thumb/"
-fields = ["query:version"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/share_link_bundles/"
-fields = ["query:documents", "query:status"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/{id}/notes/"
-fields = ["body:format"]
-task = "PLMCP-83"
-
 [[exclusion]]
 operation = "POST /api/bulk_edit_objects/"
 fields = ["body:all", "body:filters"]

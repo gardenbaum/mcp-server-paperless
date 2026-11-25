@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from mcp_server_paperless.domain.bulk_items import NotesReport
+    from mcp_server_paperless.domain.documents import NoteFormat
     from mcp_server_paperless.domain.selection import DocumentRow, ReadField
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-73")]
@@ -47,8 +48,14 @@ LIMITED = UpstreamUnavailable("Paperless is temporarily unavailable (HTTP 429)."
 TIMEOUT = UpstreamTimeout("Paperless did not respond in time.")
 
 
-def note(number: int, text: str = TEXT) -> Note:
-    return Note(id=number, note=text, created=datetime(2026, 1, 1, tzinfo=UTC), user="e2e-reader")
+def note(number: int, text: str = TEXT, note_format: str = "plain") -> Note:
+    return Note(
+        id=number,
+        note=text,
+        format=note_format,
+        created=datetime(2026, 1, 1, tzinfo=UTC),
+        user="e2e-reader",
+    )
 
 
 class World(FakePaperless):
@@ -97,12 +104,14 @@ class World(FakePaperless):
         return await super().list_document_notes(document_id)
 
     @override
-    async def add_note(self, document_id: int, text: str) -> Note:
+    async def add_note(
+        self, document_id: int, text: str, note_format: NoteFormat = "plain"
+    ) -> Note:
         self.sent.append((document_id, text))
         error = self.write_fails.get(document_id)
         if error is not None and document_id not in self.applied:
             raise error
-        found = await super().add_note(document_id, text)
+        found = await super().add_note(document_id, text, note_format)
         if error is not None:
             raise error
         return found
@@ -130,24 +139,35 @@ class Setup:
         self,
         text: str | None = TEXT,
         *,
+        note_format: NoteFormat = "plain",
         dry_run: bool = False,
         confirm: bool = True,
         **selection: object,
     ) -> NotesReport:
         """One note for a selection."""
         chosen = Selection.model_validate(selection or {"document_ids": (101, 102)})
-        return await self.notes.add(chosen, text, (), dry_run=dry_run, confirm=confirm)
+        return await self.notes.add(
+            chosen, text, (), note_format=note_format, dry_run=dry_run, confirm=confirm
+        )
 
     async def each(
-        self, *notes: tuple[int, str], dry_run: bool = False, confirm: bool = True
+        self,
+        *notes: tuple[int, str],
+        note_format: NoteFormat = "plain",
+        dry_run: bool = False,
+        confirm: bool = True,
     ) -> NotesReport:
         """A note per document."""
         given = [DocumentNote(document_id=number, note=text) for number, text in notes]
-        return await self.notes.add(Selection(), None, given, dry_run=dry_run, confirm=confirm)
+        return await self.notes.add(
+            Selection(), None, given, note_format=note_format, dry_run=dry_run, confirm=confirm
+        )
 
     async def asked(self, *, confirm: bool = False, **selection: object) -> ConfirmationRequired:
         with pytest.raises(ConfirmationRequired) as raised:
-            _ = await self.one(TEXT, dry_run=False, confirm=confirm, **selection)
+            _ = await self.one(
+                TEXT, note_format="plain", dry_run=False, confirm=confirm, **selection
+            )
         return raised.value
 
 
@@ -744,7 +764,12 @@ async def test_no_document_ends_with_the_note_twice_and_every_one_is_accounted_f
 
     try:
         report = await setup.one(
-            TEXT, dry_run=dry_run, confirm=True, document_ids=tuple(numbers), **selection
+            TEXT,
+            note_format="plain",
+            dry_run=dry_run,
+            confirm=True,
+            document_ids=tuple(numbers),
+            **selection,
         )
     except PaperlessMcpError:
         assert not dry_run
@@ -808,3 +833,55 @@ async def test_the_list_request_is_bounded_by_64_mib() -> None:
     _ = await setup.one(dry_run=True)
 
     assert setup.fake.limits == [64 * 1024 * 1024]
+
+
+# --- the format
+
+
+async def test_the_same_text_in_another_format_is_another_note() -> None:
+    setup = Setup()
+    setup.document(101).notes = [note(50)]
+    setup.document(102).notes = [note(51, note_format="markdown")]
+
+    report = await setup.one(note_format="markdown")
+    again = await setup.one(note_format="markdown", confirm=False)
+
+    assert statuses(report) == {101: "added", 102: "already_there"}
+    assert [(n.note, n.format) for n in setup.document(101).notes] == [
+        (TEXT, "plain"),
+        (TEXT, "markdown"),
+    ]
+    assert again.counts == {"already_there": 2}
+
+
+async def test_the_format_is_one_for_all_notes_of_a_call() -> None:
+    setup = Setup()
+
+    _ = await setup.each((101, "a"), (102, "b"), note_format="markdown")
+
+    assert {n.format for d in (101, 102) for n in setup.document(d).notes} == {"markdown"}
+
+
+async def test_the_format_is_part_of_what_is_confirmed() -> None:
+    setup = Setup()
+
+    plain = await setup.asked()
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.one(note_format="markdown", confirm=False)
+    with pytest.raises(ConfirmationRequired) as each:
+        _ = await setup.each((101, "a"), note_format="markdown", confirm=False)
+
+    assert "markdown" not in plain.message
+    assert f"add the markdown note '{TEXT}'" in raised.value.message
+    assert "add 1 markdown note: " in each.value.message
+    with accepting(plain.fingerprint), pytest.raises(ConfirmationRequired):
+        _ = await setup.one(note_format="markdown", confirm=False)
+
+
+async def test_a_lost_answer_is_looked_up_by_text_and_format() -> None:
+    setup = Setup()
+    setup.document(101).notes = [note(50)]
+    setup.fake.write_fails[101] = TIMEOUT
+
+    with pytest.raises(PaperlessMcpError, match="not there, but may still appear"):
+        _ = await setup.one(note_format="markdown", document_ids=(101,))
