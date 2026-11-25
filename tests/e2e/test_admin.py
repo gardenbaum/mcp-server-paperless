@@ -17,7 +17,7 @@ from fastmcp import Client
 from harness import paperless_settings, server_settings
 from mcp.types import EmbeddedResource
 
-from e2e.helpers import consume_text, num, parse, results
+from e2e.helpers import add_second_factor, consume_text, num, parse, results
 from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
@@ -197,3 +197,34 @@ async def test_a_user_without_the_permissions_gets_hints(stack: Stack) -> None:
 
     assert "Only staff users may read the logs." in logs
     assert "view_user" in users
+
+
+@pytest.mark.usefixtures("cleanup")
+@pytest.mark.decision("decision-103")
+async def test_a_second_factor_is_removed_only_with_confirm(stack: Stack, tag: str) -> None:
+    # A user who may not view documents would get a 403 whether signed in or not.
+    made = await run(
+        stack,
+        "create_user",
+        username=tag,
+        password=PASSWORD,
+        permissions=["view_document"],
+        confirm=True,
+    )
+    assert signs_in(stack, tag) == 200
+    none = await run(stack, "update_user", user=tag, remove_second_factor=True)
+    add_second_factor(num(cast("Json", made["user"])["id"]))
+    assert signs_in(stack, tag) == 401
+
+    shown = await refused(stack, "update_user", user=tag, remove_second_factor=True)
+    still = await run(stack, "get_user", user=tag)
+    assert signs_in(stack, tag) == 401
+    done = await run(stack, "update_user", user=tag, remove_second_factor=True, confirm=True)
+    own = await refused(stack, "update_user", user="admin", remove_second_factor=True, confirm=True)
+
+    assert "has no second factor" in str(none["message"])
+    assert f"remove the second factor of '{tag}'" in shown
+    assert still["mfa_enabled"] is True
+    assert cast("Json", done["user"])["mfa_enabled"] is False
+    assert signs_in(stack, tag) == 200
+    assert "account this server signs in with" in own

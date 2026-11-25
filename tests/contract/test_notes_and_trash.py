@@ -234,3 +234,21 @@ async def test_a_view_or_change_grant_is_not_enough_to_delete_a_document(backend
         await user.document_writes.delete_document(hidden)
 
     assert not any(backend.in_trash(d) for d in (viewed, changed, hidden))
+
+
+@pytest.mark.contract(ADD)
+async def test_a_note_keeps_its_format(backend: Backend) -> None:
+    ports, document = backend.admin, backend.new_document()
+
+    markdown = await ports.document_writes.add_note(document, "**paid**", "markdown")
+    plain = await ports.document_writes.add_note(document, "**paid**", "plain")
+
+    assert (markdown.format, plain.format) == ("markdown", "plain")
+    assert markdown.id != plain.id
+    listed = await ports.documents.list_document_notes(document)
+    assert {(note.id, note.format) for note in listed} == {
+        (markdown.id, "markdown"),
+        (plain.id, "plain"),
+    }
+    [row] = await ports.documents.read_rows([document], ["notes"], max_bytes=1_000_000)
+    assert {note.format for note in row.notes or ()} == {"markdown", "plain"}

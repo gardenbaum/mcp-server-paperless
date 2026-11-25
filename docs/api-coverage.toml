@@ -23,17 +23,6 @@
 #                 (an excluded value of a field that is sent also needs a `reason`)
 # [[undeclared]]  query parameters the generated schema omits (listed by hand)
 
-[[open]]
-task = "PLMCP-83"
-operations = [
-  "GET /api/documents/next_asn/",
-  "GET /api/remote_version/",
-  "GET /api/search/autocomplete/",
-  "POST /api/documents/selection_data/",
-  "POST /api/storage_paths/test/",
-  "POST /api/users/{id}/deactivate_totp/",
-]
-
 [[undeclared]]
 operation = "GET /api/documents/{id}/"
 params = ["version"]
@@ -141,26 +130,6 @@ reason = "the stored bundle's documents are sent back; rebuilding with other doc
 operation = "POST /api/mail_accounts/test/"
 fields = ["body:name", "body:imap_server", "body:imap_port", "body:imap_security", "body:username", "body:password", "body:character_set", "body:is_token"]
 reason = "the stored account is sent back; testing an unsaved account is excluded (decision-79)"
-
-[[open_fields]]
-operation = "GET /api/documents/"
-fields = ["query:archive_serial_number__gte", "query:archive_serial_number__lte", "query:modified__date__gte", "query:modified__date__lte", "query:original_filename__icontains"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/documents/{id}/thumb/"
-fields = ["query:version"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "GET /api/share_link_bundles/"
-fields = ["query:documents", "query:status"]
-task = "PLMCP-83"
-
-[[open_fields]]
-operation = "POST /api/documents/{id}/notes/"
-fields = ["body:format"]
-task = "PLMCP-83"
 
 [[exclusion]]
 operation = "POST /api/bulk_edit_objects/"
@@ -881,6 +850,13 @@ source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-
 [[exclusion]]
 operation = "POST /api/users/"
 fields = ["body:date_joined"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"
+
+[[exclusion]]
+operation = "POST /api/documents/selection_data/"
+fields = ["body:all", "body:excluded_documents", "body:filters"]
 quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md"

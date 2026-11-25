@@ -106,16 +106,21 @@ class FileService:
         self._web_url: str = web_url
         self._max_bytes: int = max_bytes
 
-    async def thumbnail(self, document_id: int) -> Thumbnail:
+    async def thumbnail(self, document_id: int, *, version_id: int | None = None) -> Thumbnail:
         """The thumbnail image of a document; thumbnails are small and have no limit.
 
+        ``version_id`` names one of the versions the document lists (default: the newest).
+
         Raises:
-            NotFound: No such document, or it is in the trash.
+            NotFound: No such document or version, or it is in the trash.
             PermissionDenied: The user may not see the document.
             PaperlessMcpError: Paperless sent an empty image.
         """
-        found = await self._reader.get_document_thumbnail(document_id)
-        await self._check_live(document_id)
+        found = await self._reader.get_document_thumbnail(document_id, version_id=version_id)
+        if version_id is None:
+            await self._check_live(document_id)
+        else:  # as late as the other: one deleted meanwhile is not shown
+            _ = listed_version(await self._reader.get_document(document_id), version_id)
         if not found.content:
             message = f"Paperless sent an empty thumbnail for document {document_id}."
             raise PaperlessMcpError(message)
@@ -129,6 +134,7 @@ class FileService:
             max_bytes=None,
             web_url=document_link(self._web_url, document_id),
             note=None,
+            version_id=version_id,
         )
         return Thumbnail(report=report, data=found.content)
 

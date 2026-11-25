@@ -276,7 +276,9 @@ class NoFile(FakePaperless):
     empty: bool = False
 
     @override
-    async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
+    async def get_document_thumbnail(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> DocumentFile:
         if self.empty:
             return DocumentFile(content=b"", mime_type="image/webp", filename=None)
         raise NotFound(NO_FILE)

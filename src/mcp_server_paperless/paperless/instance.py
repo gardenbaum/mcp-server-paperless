@@ -1,18 +1,21 @@
-"""InstanceReader on /api/statistics/, /api/status/ and /api/ui_settings/.
+"""InstanceReader on /api/statistics/, /api/status/, /api/ui_settings/ and next_asn of documents.
 
 Versions come from the ``X-Version`` and ``X-Api-Version`` headers Paperless sends on every
 response, so every user gets them. A missing ``X-Version`` is an unknown release, no
-error. ``/api/remote_version/`` (an update check) and ``/api/profile/`` (it returns the user's API
-token) are deliberately not used.
+error. ``/api/remote_version/`` (Paperless asks GitHub) is read only by ``check_for_update``;
+``/api/profile/`` (it returns the user's API token) is deliberately not used.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue, RootModel
 
-from mcp_server_paperless.domain.errors import PermissionDenied
+from mcp_server_paperless.domain.errors import PaperlessMcpError, PermissionDenied
 from mcp_server_paperless.domain.instance import (
+    NO_ANSWER,
+    NOT_READ,
+    SWITCHED_OFF,
     ComponentStatus,
     CurrentUser,
     DatabaseStatus,
@@ -26,6 +29,7 @@ from mcp_server_paperless.domain.instance import (
     SystemStatus,
     TaskTotals,
     TimedStatus,
+    UpdateCheck,
 )
 from mcp_server_paperless.domain.urls import text_without_credentials
 from mcp_server_paperless.paperless.client import parse, unexpected
@@ -37,6 +41,14 @@ if TYPE_CHECKING:
 class _FileType(BaseModel):
     mime_type: str
     mime_type_count: int
+
+
+# Seconds the check for an update may take.
+UPDATE_SECONDS: Final = 10.0
+# The release Paperless names when it could not ask for the newest one.
+NO_VERSION: Final = "0.0.0"
+# The values of PAPERLESS_ENABLE_UPDATE_CHECK that do not switch the check off.
+UPDATE_ON: Final[tuple[JsonValue, ...]] = (True, "default")
 
 
 class _Statistics(BaseModel):
@@ -140,6 +152,29 @@ class _UiSettings(BaseModel):
     settings: _Settings
 
 
+class _Checking(BaseModel):
+    backend_setting: JsonValue
+
+
+class _Checks(BaseModel):
+    update_checking: _Checking
+
+
+class _UpdateSettings(BaseModel):
+    """What PAPERLESS_ENABLE_UPDATE_CHECK says; Paperless adds it to the settings of every user."""
+
+    settings: _Checks
+
+
+class _RemoteVersion(BaseModel):
+    version: str
+    update_available: bool
+
+
+class _Number(RootModel[int]):
+    """The next archive serial number, a bare integer."""
+
+
 def _component(status: str, error: str | None) -> ComponentStatus:
     shown = None if error is None else text_without_credentials(error)
     return ComponentStatus(status=status, error=shown)
@@ -226,6 +261,7 @@ class PaperlessInstanceReader:
             api_version = int(response.headers["X-Api-Version"])
         except (KeyError, ValueError) as error:
             raise unexpected(response) from error
+        following = await self._unless_forbidden("/api/documents/next_asn/", _Number)
         status = await self._unless_forbidden("/api/status/", _Status)
         ui_settings = await self._unless_forbidden("/api/ui_settings/", _UiSettings)
         user = ui_settings.user if ui_settings else None
@@ -247,6 +283,7 @@ class PaperlessInstanceReader:
                 else None
             ),
             ai_enabled=ui_settings.settings.ai_enabled if ui_settings else None,
+            next_asn=following.root if following else None,
         )
 
     async def get_system_report(self) -> SystemReport:
@@ -270,6 +307,29 @@ class PaperlessInstanceReader:
                 highest_serial_number=found.current_asn,
             ),
             status=_status_report(status) if status else None,
+        )
+
+    async def check_for_update(self) -> UpdateCheck:
+        """See ``SystemReportReader.check_for_update``.
+
+        Paperless asks GitHub whatever its own setting says, so the setting is read first: true, or
+        not set ("default": the web UI asks its user). 0.0.0 says that GitHub did not answer.
+        """
+        try:
+            ui = await self._client.get(
+                "/api/ui_settings/", _UpdateSettings, timeout=UPDATE_SECONDS, retry=False
+            )
+        except PaperlessMcpError:
+            return UpdateCheck.unknown(NOT_READ)
+        if ui.settings.update_checking.backend_setting not in UPDATE_ON:
+            return UpdateCheck.unknown(SWITCHED_OFF)
+        found = await self._client.get(
+            "/api/remote_version/", _RemoteVersion, timeout=UPDATE_SECONDS, retry=False
+        )
+        if found.version == NO_VERSION:
+            return UpdateCheck.unknown(NO_ANSWER)
+        return UpdateCheck(
+            newest_release=found.version, update_available=found.update_available, note=None
         )
 
     async def _unless_forbidden[M: BaseModel](self, path: str, model: type[M]) -> M | None:

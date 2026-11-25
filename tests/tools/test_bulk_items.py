@@ -105,7 +105,7 @@ async def test_the_documents_take_the_fields_of_update_document_and_the_lists_ar
     notes = cast("dict[str, Json]", tools["add_notes"].input_schema["properties"])
     reading = cast("dict[str, Json]", tools["read_documents"].input_schema["properties"])
     selection = {"document_ids", "filters", "saved_view", "exclude_ids"}
-    assert set(notes) == {*selection, "note", "notes", "dry_run", "confirm"}
+    assert set(notes) == {*selection, "note", "notes", "format", "dry_run", "confirm"}
     assert {n: notes[n] for n in selection} == {n: reading[n] for n in selection}
 
 
@@ -289,3 +289,16 @@ async def test_a_document_that_keeps_changing_is_given_up_after_three_dialogs() 
 
     assert result.is_error
     assert len(seen) == MAX_DIALOGS
+
+
+async def test_add_notes_takes_the_format_of_its_notes() -> None:
+    state = world()
+
+    _ = output(await call(state, "add_notes", {**NOTE, "format": "markdown", "confirm": True}))
+    again = output(await call(state, "add_notes", {**NOTE, "confirm": True}))
+
+    assert cast("Json", again["counts"]) == {"added": 2}
+    assert {n.format for d in state.documents if d.id in {10, 11} for n in d.notes} == {
+        "markdown",
+        "plain",
+    }
