@@ -654,6 +654,7 @@ async def test_every_check_is_said_for_a_mail_that_fits_one_that_does_not_and_no
         checks = cast("list[Json]", rule["checks"])
         said = {c["what"]: c["result"] for c in checks}
         assert said.get(case.what) == case.results[given], case.name
+        assert ("record" in said) is (case.name == RECORDED and given == 0)
         assert all(c["why"] for c in checks)
         worst = next(result for result in ("no", "unknown", "ok") if result in said.values())
         assert rule["result"] == worst

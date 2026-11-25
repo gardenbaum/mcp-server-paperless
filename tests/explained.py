@@ -16,12 +16,12 @@ FACTS: Final = (
     MailFacts(
         subject=SUBJECT,
         sender="Acme <a@example.org>",
-        recipient="Acme desk <me@example.org>",
+        recipient="Front desk <me@example.org>",
         received=NOW - timedelta(days=10),
         folder="inbox",
         attachment_names=("a.PDF",),
         is_read=False,
-        is_flagged=False,
+        is_flagged=True,
     ),
     MailFacts(
         subject="Other",
@@ -31,11 +31,13 @@ FACTS: Final = (
         folder="Elsewhere",
         attachment_names=("a.txt",),
         is_read=True,
-        is_flagged=True,
+        is_flagged=False,
     ),
     MailFacts(),
 )
 KNOWN: Final = ("ok", "no", "unknown")
+# The mail that fits is flagged, the other one is not.
+FLAGGED: Final = ("no", "ok", "unknown")
 NO: Final = ("no", "no", "no")
 OK: Final = ("ok", "ok", "ok")
 NONE: Final = (None, None, None)
@@ -59,7 +61,7 @@ CASES: Final = (
     Case("age", "age", {"maximum_age": 30}, KNOWN),
     Case("age at the edge", "age", {"maximum_age": 10}, ("unknown", "no", "unknown")),
     Case("sender", "sender", {"filter_from": "ACME"}, KNOWN),
-    Case("recipient", "recipient", {"filter_to": "acme"}, KNOWN),
+    Case("recipient", "recipient", {"filter_to": "DESK"}, KNOWN),
     Case("subject", "subject", {"filter_subject": "acme"}, KNOWN),
     Case("body", "body", {"filter_body": "acme"}, NOT_KNOWN),
     Case(
@@ -76,9 +78,9 @@ CASES: Final = (
     ),
     Case("whole mail", "attachments", {"consumption_scope": "eml"}, OK),
     Case("read", "mark", {"action": "mark_read"}, KNOWN),
-    Case("flagged", "mark", {"action": "flag"}, KNOWN),
+    Case("flagged", "mark", {"action": "flag"}, FLAGGED),
     Case("tagged", "mark", {"action": "tag", "action_parameter": "done"}, NOT_KNOWN),
-    Case("coloured", "mark", {"action": "tag", "action_parameter": "apple:red"}, KNOWN),
+    Case("coloured", "mark", {"action": "tag", "action_parameter": "apple:red"}, FLAGGED),
     Case("no colour", "mark", {"action": "tag", "action_parameter": "apple:pink"}, NO),
     Case("two colours", "mark", {"action": "tag", "action_parameter": "apple:red:blue"}, NO),
     Case("moved", "target", {"action": "move", "action_parameter": "Done"}, NOT_KNOWN),

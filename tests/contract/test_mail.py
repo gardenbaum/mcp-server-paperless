@@ -667,6 +667,7 @@ async def test_every_check_of_an_import_is_said_of_stored_rules(
             checks = rule_checks(rule, mine, rows, facts, NOW).checks
             said = {check.what: check.result for check in checks}
             assert said.get(case.what) == case.results[given], case.name
+            assert ("record" in said) is (case.name == RECORDED and given == 0)
             earlier = [check.why for check in checks if check.what == "earlier rules"]
             if case.name == "stopped before":
                 assert ["ends the run" in why for why in earlier] == [True]
