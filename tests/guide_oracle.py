@@ -59,7 +59,7 @@ SELECTIONS: dict[str, list[str] | None] = {
     "trash": ["trash"],
     "raw": ["raw"],
     # Read-only toolsets (PLMCP-90).
-    "mixed": ["core", "ai:read", "trash:read", "mail:read", "workflows"],
+    "mixed": ["core", "ai:read", "trash:read", "mail:read", "workflows", "tasks:read"],
     "core-read": ["core:read"],
     "trash-read": ["trash:read"],
     "every-one-read": [f"{name}:read" for name in CANONICAL],

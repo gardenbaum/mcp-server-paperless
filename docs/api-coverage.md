@@ -81,13 +81,13 @@ Limits.
 | `POST /api/documents/rotate/` | `rotate_documents` |  |
 | `POST /api/documents/selection_data/` |  | PLMCP-83 |
 | `DELETE /api/documents/{id}/` | `delete_document` |  |
-| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 22 more |  |
+| `GET /api/documents/{id}/` | `correct_document_text`, `delete_document`, `delete_document_version`, `delete_note`, `delete_pages` and 23 more |  |
 | `PATCH /api/documents/{id}/` | `correct_document_text`, `extract_pages`, `set_permissions`, `split_document`, `update_document` and 1 more |  |
 | `PUT /api/documents/{id}/` |  | PLMCP-83 |
 | `GET /api/documents/{id}/ai_suggestions/` | `get_ai_suggestions` |  |
 | `GET /api/documents/{id}/download/` | `download_document`, `get_document_pages`, `get_trashed_file`, `insert_pages`, `inspect_pdf` |  |
 | `POST /api/documents/{id}/email/` |  | PLMCP-83 |
-| `GET /api/documents/{id}/history/` | `get_document` |  |
+| `GET /api/documents/{id}/history/` | `explain_workflow`, `get_document` |  |
 | `GET /api/documents/{id}/metadata/` | `delete_pages`, `download_document`, `edit_pdf`, `email_documents`, `extract_pages` and 11 more |  |
 | `DELETE /api/documents/{id}/notes/` | `delete_note` |  |
 | `GET /api/documents/{id}/notes/` | `add_notes`, `delete_note`, `get_document`, `read_documents` |  |
@@ -107,23 +107,23 @@ Limits.
 | `PATCH /api/groups/{id}/` | `update_group` |  |
 | `PUT /api/groups/{id}/` |  | PLMCP-83 |
 | `GET /api/logs/` | `list_logs` |  |
-| `GET /api/logs/{id}/` | `get_log` |  |
+| `GET /api/logs/{id}/` | `explain_mail_import`, `explain_workflow`, `get_log` |  |
 | `GET /api/mail_accounts/` | `list_mail_accounts` |  |
 | `POST /api/mail_accounts/` | `create_mail_account` |  |
 | `POST /api/mail_accounts/test/` | `test_mail_account` |  |
 | `DELETE /api/mail_accounts/{id}/` | `delete_mail_account` |  |
-| `GET /api/mail_accounts/{id}/` | `create_mail_rule`, `delete_mail_account`, `delete_processed_mail`, `get_mail_account`, `process_mail_account` and 4 more |  |
+| `GET /api/mail_accounts/{id}/` | `create_mail_rule`, `delete_mail_account`, `delete_processed_mail`, `explain_mail_import`, `get_mail_account` and 5 more |  |
 | `PATCH /api/mail_accounts/{id}/` | `set_permissions`, `update_mail_account` |  |
 | `PUT /api/mail_accounts/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `POST /api/mail_accounts/{id}/process/` | `process_mail_account` |  |
-| `GET /api/mail_rules/` | `delete_mail_account`, `list_mail_rules` |  |
+| `GET /api/mail_rules/` | `delete_mail_account`, `explain_mail_import`, `list_mail_rules` |  |
 | `POST /api/mail_rules/` | `create_mail_rule` |  |
 | `DELETE /api/mail_rules/{id}/` | `delete_mail_rule` |  |
 | `GET /api/mail_rules/{id}/` | `delete_mail_rule`, `delete_processed_mail`, `get_mail_rule`, `get_processed_mail`, `set_permissions` and 1 more |  |
 | `PATCH /api/mail_rules/{id}/` | `set_permissions`, `update_mail_rule` |  |
 | `PUT /api/mail_rules/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `GET /api/oauth/callback/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
-| `GET /api/processed_mail/` | `delete_processed_mail`, `get_processed_mail`, `list_processed_mail` |  |
+| `GET /api/processed_mail/` | `delete_processed_mail`, `explain_mail_import`, `get_processed_mail`, `list_processed_mail` |  |
 | `POST /api/processed_mail/bulk_delete/` | `delete_processed_mail` |  |
 | `GET /api/processed_mail/{id}/` | `delete_processed_mail`, `get_processed_mail` |  |
 | `GET /api/profile/` |  | PLMCP-83 |
@@ -167,19 +167,19 @@ Limits.
 | `GET /api/tags/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/tags/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/tags/{id}/` |  | PLMCP-83 |
-| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `extract_pages`, `get_task` and 13 more |  |
+| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `explain_mail_import`, `explain_workflow` and 15 more |  |
 | `POST /api/tasks/acknowledge/` | `acknowledge_tasks` |  |
 | `GET /api/tasks/active/` |  | PLMCP-89 |
 | `POST /api/tasks/run/` | `run_task` |  |
 | `GET /api/tasks/status_counts/` |  | PLMCP-89 |
 | `GET /api/tasks/summary/` |  | PLMCP-89 |
-| `GET /api/tasks/{id}/` |  | PLMCP-89 |
+| `GET /api/tasks/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-93 - The-task-tools-have-a-toolset-of-their-own-and-show-of-a-tasks-input-only-the-file-name.md) |
 | `POST /api/token/` |  | PLMCP-83 |
 | `GET /api/trash/` | `empty_trash`, `get_trash_entry`, `get_trashed_file`, `list_trash`, `restore_from_trash` and 3 more |  |
 | `POST /api/trash/` | `empty_trash`, `restore_from_trash` |  |
 | `GET /api/ui_settings/` | `create_saved_view`, `delete_pages`, `delete_processed_mail`, `delete_user`, `edit_pdf` and 15 more |  |
 | `POST /api/ui_settings/` | `pin_saved_view` |  |
-| `GET /api/users/` | `create_mail_rule`, `create_workflow`, `delete_user`, `get_document`, `get_saved_view` and 11 more |  |
+| `GET /api/users/` | `create_mail_rule`, `create_workflow`, `delete_user`, `get_document`, `get_saved_view` and 12 more |  |
 | `POST /api/users/` | `create_user` |  |
 | `DELETE /api/users/{id}/` | `delete_user` |  |
 | `GET /api/users/{id}/` | `delete_user`, `get_user`, `update_user` |  |
@@ -198,7 +198,7 @@ Limits.
 | `GET /api/workflow_triggers/{id}/` | `get_workflow` |  |
 | `PATCH /api/workflow_triggers/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
 | `PUT /api/workflow_triggers/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-81 - Workflows-are-searched-here-for-the-objects-they-use-and-their-parts-are-written-only-through-their-workflow.md) |
-| `GET /api/workflows/` | `create_workflow`, `delete_workflow`, `get_workflow`, `list_workflows`, `run_workflow` and 2 more |  |
+| `GET /api/workflows/` | `create_workflow`, `delete_workflow`, `explain_workflow`, `get_workflow`, `list_workflows` and 3 more |  |
 | `POST /api/workflows/` | `create_workflow` |  |
 | `DELETE /api/workflows/{id}/` | `delete_workflow` |  |
 | `GET /api/workflows/{id}/` | `get_workflow`, `update_workflow_part` |  |
@@ -270,9 +270,8 @@ TOML file.
 | `GET /api/tags/` | `query:id`, `query:is_root`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
 | `POST /api/tags/` | `body:owner`, `body:set_permissions` | PLMCP-83 |
 | `GET /api/tags/{id}/` | `query:full_perms` | PLMCP-83 |
-| `GET /api/tasks/` | `query:date_created_after`, `query:date_created_before`, `query:is_complete`, `query:name`, `query:ordering`, `query:owner`, `query:result`, `query:trigger_source` | PLMCP-89 |
 | `POST /api/tasks/acknowledge/` | `body:all` | PLMCP-89 |
-| `POST /api/tasks/run/` | `body:task_type=apply_ai_suggestions`, `body:task_type=build_share_link`, `body:task_type=bulk_delete`, `body:task_type=bulk_update`, `body:task_type=check_workflows`, `body:task_type=consume_file`, `body:task_type=empty_trash`, `body:task_type=index_optimize`, `body:task_type=mail_fetch`, `body:task_type=reprocess_document` | PLMCP-89 |
+| `POST /api/tasks/run/` | `body:task_type=apply_ai_suggestions`, `body:task_type=build_share_link`, `body:task_type=bulk_delete`, `body:task_type=bulk_update`, `body:task_type=check_workflows`, `body:task_type=consume_file`, `body:task_type=empty_trash`, `body:task_type=index_optimize`, `body:task_type=mail_fetch`, `body:task_type=reprocess_document` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-93 - The-task-tools-have-a-toolset-of-their-own-and-show-of-a-tasks-input-only-the-file-name.md) |
 | `GET /api/users/` | `query:ordering`, `query:username__iendswith`, `query:username__iexact`, `query:username__istartswith` | PLMCP-83 |
 | `POST /api/users/` | `body:date_joined` | PLMCP-83 |
 | `PATCH /api/users/{id}/` | `body:date_joined` | PLMCP-83 |

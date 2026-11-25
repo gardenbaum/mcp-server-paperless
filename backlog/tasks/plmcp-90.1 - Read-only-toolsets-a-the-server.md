@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T12:22:10Z'
-updated_date: '2026-11-25T13:54:14Z'
+updated_date: '2026-11-25T14:52:31Z'
 labels: []
 dependencies: []
 parent_task_id: PLMCP-90
@@ -64,4 +64,7 @@ Owner, 2026-11-25 (relayed by the main agent): 'Alles wie empfohlen' (all as rec
 Review of #170 (3ce7a53), relayed by the main agent: F2, what starts with a toolset's name is suggested with :read (12 tests red first); F3, configuration page; F4, hidden calls must be 'Unknown tool' (a sharper assertion, green at once). Mutant mark=True in server.py is killed by the guide oracle (61 tests of test_toolset_guide, 4 of test_instance_reader). 6 mutants of the new suggestion rule, 3 survivors closed.
 AC 1, 2, 4 proven. AC 3 is not: the instructions, guide and overview name nothing hidden, but descriptions and schemas of offered tools still name hidden tools (decision-97 lists the known cases); the owner decides, the criterion is unchanged. AC 5 stays open: its live part was green on a52f7b2 (E2E 45617913750, except e2e-imap, red on main too), not yet on the final head.
 DoD stays open: just check was not run as a whole, CI and the hosted E2E of the final head are missing.
+
+Owner, 2026-11-25 (relayed by the main agent): 'alles wie von dir empfohlen' (all as you recommend), to '#170 mergen, Kriterium 3 offen lassen und als Folgeaufgabe umsetzen, zuerst die 12 Lese-Tools' (merge #170, leave criterion 3 open and do it as a follow-up task, the 12 reading tools first): PLMCP-90.3. Criterion 3 stays unticked.
+Merged main de956f5: guide 3118 to 3135 (+17), instructions 1474 measured with the toolset tasks, exactly the approved maximum; no byte is left for PLMCP-89.2 and later toolset texts.
 <!-- SECTION:NOTES:END -->

@@ -669,6 +669,18 @@ async def test_the_administration_takes_every_argument() -> None:
     await sweep("list_users", {"name_contains": "e2e", "page": 1, "page_size": 10}, ())
     await sweep("list_groups", {"name_contains": "e2e", "page": 1, "page_size": 10}, ())
     await sweep("list_tasks", {"acknowledged": False, "page": 1, "page_size": 10})
+    await sweep(
+        "list_tasks",
+        {
+            "is_complete": True,
+            "owner": "admin",
+            "name": "scan",
+            "result": "error",
+            "created_from": "2026-11-01T00:00:00Z",
+            "created_to": "2026-11-30T00:00:00+01:00",
+            "ordering": "-finished",
+        },
+    )
     await sweep("run_task", {"task_type": "sanity_check"})
     config: Json = {}
     for name in CONFIG_SETTINGS:
@@ -755,6 +767,23 @@ async def test_mail_takes_every_argument() -> None:
     await sweep("test_mail_account", {"account_id": 1}, (), prepare=with_mail)
     await sweep("process_mail_account", {"account_id": 1}, (), prepare=with_mail)
     await sweep("list_processed_mail", {}, ("ordering",))
+    await sweep(
+        "explain_mail_import",
+        {
+            "account_id": 1,
+            "rule_id": 1,
+            "sender": "a",
+            "recipient": "b",
+            "subject": "Invoice",
+            "received": "2026-11-25T10:00:00Z",
+            "folder": "INBOX",
+            "attachment_names": ["a.pdf"],
+            "is_read": True,
+            "is_flagged": False,
+        },
+        (),
+        prepare=with_processed_mail,
+    )
     await sweep(
         "get_processed_mail", {"mail_id": 1, "error_from": 0}, (), prepare=with_processed_mail
     )
@@ -910,6 +939,7 @@ async def test_workflows_take_every_trigger_and_action_with_every_setting() -> N
         )
     await sweep("get_workflow", {"workflow": 1}, (), prepare=with_workflow)
     await sweep("list_workflows", {}, (), prepare=with_workflow)
+    await sweep("explain_workflow", {"workflow": 1, "document_id": 1}, (), prepare=with_workflow)
     await sweep("get_workflow", {"trigger_id": 1}, (), prepare=with_workflow)
     await sweep("get_workflow", {"action_id": 2}, (), prepare=with_workflow)
     for enabled in (True, False):

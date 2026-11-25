@@ -217,6 +217,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "workflow_runs": ("test_run_workflow",),
     "workflow_parts": ("test_workflows",),
     "workflow_usage": ("test_workflows",),
+    "workflow_explanation": ("test_workflows",),
     "run_workflow": ("test_workflow_runs",),
     # tools/selection.py selects toolsets; domain/ and services/selection.py choose documents.
     "selection": ("test_bulk", "test_read_documents", "test_toolset_guide"),
@@ -235,17 +236,20 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "wire": ("test_pages", "test_pages_files", "test_pdf_insert"),
     "limits": ("test_pages", "test_pages_files", "test_pdf_insert"),
     "task_outcome": ("test_tasks", "test_task_reader"),
-    "tasks": ("test_task_reader",),
+    "tasks": ("test_task_lists", "test_task_reader"),
     "tag_hierarchy": ("test_taxonomy_edits",),
     "taxonomy": ("test_taxonomy_edits", "test_taxonomy_reader", "test_taxonomy_writer"),
     "taxonomy_edits": ("test_taxonomy_edits",),
     "instance": ("test_instance_reader", "test_minimum_release", "test_toolset_guide"),
     "ai": ("test_ai_reader",),
     "mail": ("test_mail_import",),
+    "mail_explanation": ("test_mail", "test_mail_import"),
+    "log_records": ("test_mail_import", "test_workflows"),
     "processed_mail": ("test_mail", "test_mail_import"),
     "principals": ("test_admin", "test_permissions"),
     "admin_accounts": ("test_admin", "test_permissions"),
     "admin_system": ("test_admin",),
+    "task_lists": ("test_rejected_duplicates",),
 }
 
 # Shared plumbing every toolset goes through: such a change runs the smoke set and the modules its

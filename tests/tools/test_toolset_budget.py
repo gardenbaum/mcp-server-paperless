@@ -49,9 +49,10 @@ BASE_OVERVIEW_DEFINITION = 4442
 #
 # Measured 1423 at most before PLMCP-90 (core alone, AI unknown, cut down), 1440 with core:read, and
 # 1451 with core, views, pdf and workflows all read-only, whose lines among those that are off are
-# shorter. The owner approved 1451 on 2026-11-25 ("Alles wie empfohlen", all as recommended) and,
-# once PLMCP-89 is in, what is measured then, at most 1474.
-INSTRUCTIONS_LIMIT = 1451
+# shorter; 1474 with the toolset tasks (PLMCP-89.1) read-only, too. The owner approved 1451 on
+# 2026-11-25 ("Alles wie empfohlen", all as recommended) and, with PLMCP-89, what is measured then,
+# at most 1474.
+INSTRUCTIONS_LIMIT = 1474
 # Measured 2943 (core alone, nothing cut, stdio with upload directories): 19 bytes of
 # upload_documents (PLMCP-85) and 21 of resolve_duplicates (PLMCP-86) over the 2758 of HTTP before,
 # both approved by the owner on 2026-11-23; and 37 of get_trash_entry and get_trashed_file
@@ -61,11 +62,13 @@ INSTRUCTIONS_LIMIT = 1451
 # (PLMCP-80.1), 31 of update_documents and add_notes (PLMCP-80.3) and 15 of run_workflow
 # (PLMCP-80.4): the 63 bytes for the four names of PLMCP-80 (2880 to 2943) the owner approved on
 # 2026-11-24. And 21 of get_processed_mail (PLMCP-81.1), of the 67 for the three names of PLMCP-81
-# (2943 to 3010) the owner approved on 2026-11-24; and 24 of delete_processed_mail (PLMCP-81.3). And
-# 23 of update_workflow_part (PLMCP-87.2), of the 42 of PLMCP-87 (3010 to 3052), and 17 of
-# pin_saved_view (PLMCP-88.2, 3052 to 3069), in the steps up to 3229 the owner approved on
-# 2026-11-24. And 17 of the mark and the suffix of core:read (PLMCP-90), one of these steps.
-OVERVIEW_GUIDE_LIMIT = 3045
+# (2943 to 3010) the owner approved on 2026-11-24; 24 of delete_processed_mail (PLMCP-81.3) and 22
+# of explain_mail_import (PLMCP-81.4). And 23 of update_workflow_part (PLMCP-87.2) and 19 of
+# explain_workflow (PLMCP-87.4), the 42 of PLMCP-87 (3010 to 3052), and 17 of pin_saved_view
+# (PLMCP-88.2, 3052 to 3069), in the steps up to 3229 the owner approved on 2026-11-24. And 49 of
+# the toolset tasks (PLMCP-89.1), of the 89 of PLMCP-89 (3069 to 3158) in the same steps. And
+# 17 of the mark and the suffix of core:read (PLMCP-90), also one of them.
+OVERVIEW_GUIDE_LIMIT = 3135
 # Measured 879: 747 before, plus 132 of too_old (PLMCP-101); the rise from 750 was approved by the
 # owner on 2026-11-24.
 DEFINITION_ADDED_LIMIT = 879

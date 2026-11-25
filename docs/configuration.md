@@ -386,7 +386,7 @@ Off by default. Manages the mail import: `list_mail_accounts`, `get_mail_account
 `process_mail_account`, `list_mail_rules`, `get_mail_rule`, `create_mail_rule`,
 `update_mail_rule`, `delete_mail_rule`, `list_processed_mail` (compact rows), `get_processed_mail`
 (one mail with its whole error, in parts of 20,000 characters, and whether it would be fetched again
-without its record) and `delete_processed_mail`.
+without its record), `delete_processed_mail` and `explain_mail_import`.
 
 - Passwords are write-only: they are accepted when an account is created or changed and are
   never returned, quoted or logged, nor is any OAuth token. Gmail and Outlook accounts are set up
@@ -410,13 +410,16 @@ without its record) and `delete_processed_mail`.
   again, import it a second time, and run the rule's action on it, which can delete it on the mail
   server. Each record is read again afterwards. It needs `view_processedmail` and
   `delete_processedmail`.
+- `explain_mail_import` says why a mail may not have been imported, from the settings of the rules,
+  processed mail, tasks and logs, and what you know of the mail. It is no dry run: it contacts no
+  mail server. Log lines need a staff user; without them a fetch that was skipped is not known.
 - `process_mail_account` only queues the fetch: follow it with `list_processed_mail` and the
   Paperless task list. While another fetch runs, Paperless skips it without an error.
 
 ### `workflows`
 
 Off by default: `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow`,
-`update_workflow_part`, `delete_workflow`, `run_workflow`. Manages the workflows Paperless runs by itself, with triggers and actions as
+`update_workflow_part`, `delete_workflow`, `run_workflow`, `explain_workflow`. Manages the workflows Paperless runs by itself, with triggers and actions as
 nested objects and tags, correspondents, document types, storage paths, custom fields, users and
 groups given by name. An enabled workflow keeps acting on every matching document, so
 `create_workflow`, `update_workflow` and `update_workflow_part` need `confirm` when it moves documents to the trash,
@@ -443,6 +446,13 @@ does not belong to its trigger or action type is an error.
   with an empty user name (`https://@host/path`) it loses them. Without the id, it is refused.
   A copy of it in another workflow is written without them, and the result says so.
 
+- `explain_workflow` compares a workflow with a document, filter by filter, and says what the document's
+  history, its consume task and (for staff users) the log tell. Paperless keeps no readable record of
+  runs: the answer is an inference from the state of today and says so; `did_run` is `likely` only with
+  a log record of the document's own consume task (people who may upload or change documents can influence the log),
+  otherwise `unknown`. Log lines are told in the
+  server's words, without names and text of other documents.
+
 `run_workflow` runs an enabled workflow with a manual trigger on up to 100 documents, chosen like those
 of `bulk_edit_documents`; see `create_workflow` for manual triggers. Every run is confirmed:
 every action with its step, with all e-mail recipients and webhook hosts, and every document is named before, also
@@ -460,11 +470,10 @@ you have to own every document, or it has no owner.
 Off by default. Administers the instance: users (`get_user`, `create_user`, `update_user`,
 `delete_user`), groups (`get_group`, `create_group`, `update_group`, `delete_group`), the
 application configuration (`get_app_config`, `update_app_config`), logs (`list_logs`,
-`get_log`), background tasks (`list_tasks`, `acknowledge_tasks`, `run_task`) and
-`bulk_download`, which hands over the files of several documents as one ZIP archive: attached
-within the download limit, in parts, or saved (see [Uploads and downloads](#uploads-and-downloads)).
-`list_users` and `list_groups` of the `permissions` toolset find the users and
-groups.
+`get_log`) and `bulk_download`, which hands over the files of several documents as one ZIP archive:
+attached within the download limit, in parts, or saved (see
+[Uploads and downloads](#uploads-and-downloads)). `list_users` and `list_groups` of the
+`permissions` toolset find the users and groups.
 
 - Anything that gives or takes away access needs `confirm`, and the refusal names who is
   affected: creating a superuser or staff user or a user with a password, groups or permissions;
@@ -472,18 +481,33 @@ groups.
   group; changing what a group grants.
 - Every `update_app_config` needs `confirm` and lists each setting with its old and new value,
   because it applies to every user and the AI settings decide which service gets document text.
-- `run_task` needs `confirm` to train the classifier or rebuild the AI index; a sanity check
-  only reads and needs none.
 - Passwords and API keys are write-only: never returned, quoted or logged.
 - Service URLs are returned without the user name and password in them (a query string is
   returned); `shown_in_part` names those that may have some. Writing one back as it was returned
   keeps what is stored; written with an empty user name (`https://@host/path`) it loses them.
 - The account the server signs in with cannot be deleted, deactivated or stripped of its
   superuser status through these tools.
-- Paperless decides who may do what: most tools need the matching Paperless permission, the
-  logs are for staff users and `run_task` for superusers.
-- Log lines come without the user name and password of the URLs in them (`note` says
-  so).
+- Paperless decides who may do what: most tools need the matching Paperless permission, the logs
+  are for staff users.
+- Log lines come without the user name and password of the URLs in them (`note` says so).
+
+### `tasks`
+
+Off by default. The background tasks of Paperless: uploads, mail fetches, sanity checks, classifier
+training and the rest. `list_tasks` lists them with every filter Paperless has (state, type, source,
+seen or not, ended or not, owner, file name, result, time) and in any of its orders,
+`acknowledge_tasks` marks them as seen, and `run_task` starts one. `get_task` of `core` follows one
+task by its `task_id`.
+
+- These three tools were in `admin` up to version 0.4: an operator who offered `admin` for them
+  adds `tasks` (decision-93). User administration is not needed for them.
+- Staff users see every task, others their own and those without an owner. Of what a task was given
+  only the file name is shown, not the server path or the metadata of an upload.
+- `name` finds part of the file's name, and also the words for type and source in the language of
+  the server's Paperless user.
+- `run_task` needs `confirm` to train the classifier or rebuild the AI index; a sanity check
+  only reads and needs none. It is for superusers; the other tools need the matching Paperless
+  permission.
 
 ### `raw`
 
@@ -555,7 +579,8 @@ model names the file instead of encoding it.
   is refused; subdirectories more than 32 levels down are named, not read. What does not fit is named,
   and `next_after` goes on with the directory: it has to be passed unchanged, a file added before it
   meanwhile is missed (the number of files before it is said), and failed files are not repeated. After
-  a timeout or an aborted call the report is lost: look at `list_tasks` (or the server's log) before
+  a timeout or an aborted call the report is lost: look at `list_tasks` (toolset
+  `tasks`) or the server's log before
   repeating it. In reports a backslash in a name is doubled and characters nobody sees are escaped;
   `paths` and `directory` take paths in that form. It never sends a known duplicate: `upload_document` with `confirm` does, one
   by one. Equal files in two calls at once are not noticed until Paperless consumed the first. The

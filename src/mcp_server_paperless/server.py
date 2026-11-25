@@ -38,6 +38,10 @@ from mcp_server_paperless.paperless.permissions import (
 )
 from mcp_server_paperless.paperless.raw import PaperlessRawReader
 from mcp_server_paperless.paperless.sharing import PaperlessSharingReader, PaperlessSharingWriter
+from mcp_server_paperless.paperless.task_lists import (
+    PaperlessTaskListReader,
+    PaperlessTaskListWriter,
+)
 from mcp_server_paperless.paperless.tasks import PaperlessTaskReader
 from mcp_server_paperless.paperless.taxonomy import PaperlessTaxonomyReader, PaperlessTaxonomyWriter
 from mcp_server_paperless.paperless.trash import PaperlessTrashReader, PaperlessTrashWriter
@@ -68,6 +72,7 @@ from mcp_server_paperless.services.file_sink import NO_SINK, FileSink
 from mcp_server_paperless.services.files import FileService
 from mcp_server_paperless.services.instance import InstanceService
 from mcp_server_paperless.services.mail import MailService
+from mcp_server_paperless.services.mail_explanation import MailExplanations
 from mcp_server_paperless.services.notes import NoteService
 from mcp_server_paperless.services.pages import PageService
 from mcp_server_paperless.services.pdf import PdfService
@@ -81,6 +86,7 @@ from mcp_server_paperless.services.read_documents import ReadDocuments
 from mcp_server_paperless.services.removal import DocumentRemoval
 from mcp_server_paperless.services.selection import DocumentSelector
 from mcp_server_paperless.services.sharing import SharingService
+from mcp_server_paperless.services.task_lists import TaskListService
 from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
@@ -93,6 +99,7 @@ from mcp_server_paperless.services.version_uploads import VersionUploadService
 from mcp_server_paperless.services.versions import VersionService
 from mcp_server_paperless.services.view_pins import ViewPins
 from mcp_server_paperless.services.views import ViewService
+from mcp_server_paperless.services.workflow_explanation import WorkflowExplanations
 from mcp_server_paperless.services.workflow_parts import WorkflowParts
 from mcp_server_paperless.services.workflow_runs import WorkflowRuns
 from mcp_server_paperless.services.workflows import WorkflowService
@@ -118,6 +125,7 @@ from mcp_server_paperless.tools import (
     views,
     workflows,
 )
+from mcp_server_paperless.tools import tasks as tasks_toolset
 from mcp_server_paperless.tools._shared import (
     ANNOTATIONS,
     DOCUMENT_TEXT,
@@ -169,6 +177,8 @@ if TYPE_CHECKING:
         RawReader,
         SharingReader,
         SharingWriter,
+        TaskListReader,
+        TaskListWriter,
         TaskReader,
         TaxonomyReader,
         TaxonomyWriter,
@@ -272,6 +282,7 @@ CATALOGUE: Final = Catalogue(
         permissions.provider,
         mail.provider,
         admin.provider,
+        tasks_toolset.provider,
         raw.provider,
         prompts.provider,
         workflows.provider,
@@ -325,6 +336,8 @@ class Ports:
     workflow_writes: WorkflowWriter
     management: AdminReader
     management_writes: AdminWriter
+    task_lists: TaskListReader
+    task_list_writes: TaskListWriter
 
 
 def paperless_ports(client: PaperlessClient) -> Ports:
@@ -356,6 +369,8 @@ def paperless_ports(client: PaperlessClient) -> Ports:
         workflow_writes=PaperlessWorkflowWriter(client),
         management=PaperlessAdminReader(client),
         management_writes=PaperlessAdminWriter(client),
+        task_lists=PaperlessTaskListReader(client),
+        task_list_writes=PaperlessTaskListWriter(client),
     )
 
 
@@ -589,6 +604,9 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.sharing, adapters.sharing_writes, adapters.documents, web_url=web_url
                 ),
                 mail=MailService(adapters.mail, adapters.mail_writes, taxonomy, adapters.instance),
+                mail_explanations=MailExplanations(
+                    adapters.mail, adapters.management, adapters.task_lists
+                ),
                 processed_mail=ProcessedMailService(
                     adapters.mail, adapters.mail_writes, adapters.documents
                 ),
@@ -600,6 +618,13 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.workflows,
                     adapters.workflow_writes,
                     flows,
+                ),
+                workflow_explanations=WorkflowExplanations(
+                    adapters.documents,
+                    adapters.management,
+                    adapters.task_lists,
+                    flows,
+                    taxonomy,
                 ),
                 workflow_runs=WorkflowRuns(
                     adapters.documents,
@@ -614,6 +639,9 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.management_writes,
                     max_bytes=settings.max_download_bytes,
                     sink=_sink(settings, saves=downloads.ADMIN in saving),
+                ),
+                task_lists=TaskListService(
+                    adapters.task_lists, adapters.task_list_writes, taxonomy
                 ),
                 uploads=uploading,
                 upload_batches=BatchUploadService(

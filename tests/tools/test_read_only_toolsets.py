@@ -29,9 +29,13 @@ if TYPE_CHECKING:
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-97")]
 
-SELECTION = ["core", "bulk:read", "mail:read", "admin:read", "workflows"]
-READ_ONLY = {"bulk", "mail", "admin"}
-VALUE = "PAPERLESS_MCP_TOOLSETS=core,bulk:read,mail:read,workflows,admin:read,<name>"
+SELECTION = ["core", "bulk:read", "mail:read", "admin:read", "tasks:read", "workflows"]
+READ_ONLY = {"bulk", "mail", "admin", "tasks"}
+VALUE = "PAPERLESS_MCP_TOOLSETS=core,bulk:read,mail:read,workflows,admin:read,tasks:read,<name>"
+ON = (
+    "Toolsets on: core, bulk (read-only), mail (read-only), workflows, admin (read-only), "
+    "tasks (read-only)."
+)
 # The server over stdio with a fake Paperless behind it.
 STDIO = """
 import sys
@@ -87,6 +91,8 @@ async def test_a_mixed_selection_offers_tells_and_refuses_the_same(
                 for name, arguments in (
                     ("delete_mail_rule", {"rule_id": 1, "confirm": True}),
                     ("upload_documents", {}),
+                    ("acknowledge_tasks", {"task_ids": [1]}),
+                    ("run_task", {"task_type": "sanity_check"}),
                 )
             ]
             unsaved = await client.call_tool(
@@ -105,10 +111,7 @@ async def test_a_mixed_selection_offers_tells_and_refuses_the_same(
     saving = SAVING_ANNOTATIONS if kind == "stdio" else ANNOTATIONS
     assert hints["download_document"] == saving["download_document"]
     assert hints["bulk_download"] == ANNOTATIONS["bulk_download"]
-    assert (
-        "Toolsets on: core, bulk (read-only), mail (read-only), workflows, admin (read-only)."
-        in (seen.instructions)
-    )
+    assert ON in seen.instructions
     assert VALUE in seen.instructions
     assert seen.guide is not None
     assert VALUE in cast("str", seen.guide["switch_on"])

@@ -1,4 +1,4 @@
-"""AdminReader and AdminWriter on the user, group, config, log, task and bulk download endpoints.
+"""AdminReader and AdminWriter on the user, group, config, log and bulk download endpoints.
 
 Probed on 3.4.2 (PLMCP-31):
 
@@ -16,10 +16,6 @@ Probed on 3.4.2 (PLMCP-31):
   ``null`` resets a setting; names Paperless does not know are ignored without an error.
 - ``GET /api/logs/`` lists the existing log names (staff only), ``/api/logs/{name}/?limit=N``
   the last N lines; a name that does not exist (or has no file yet) is a 404.
-- ``/api/tasks/`` is paginated (v10) and filters ``status``, ``task_type`` and ``acknowledged``;
-  ``acknowledge`` takes database ids and refuses ids that do not exist (400). ``run`` is for
-  superusers only and starts ``train_classifier``, ``sanity_check`` or ``llm_index``; any other
-  type is a 400. Its answer is the Celery id, not the database id.
 - ``POST /api/documents/bulk_download/`` answers the ZIP at once (200, no file name); a document
   that does not exist is a 400, one the user may not see a 403 (text) for the whole request, and
   an empty list an empty archive. A file Paperless cannot find is an uncaught error: a 500.
@@ -42,8 +38,6 @@ from mcp_server_paperless.domain.admin import (
     ArchiveFile,
     GroupRecord,
     GroupValues,
-    TaskRow,
-    TaskRowPage,
     UserRecord,
     UserValues,
     check_secret,
@@ -55,12 +49,8 @@ from mcp_server_paperless.domain.errors import (
     UpstreamUnavailable,
 )
 from mcp_server_paperless.domain.files import missing_files
-from mcp_server_paperless.domain.tasks import REJECTED, TaskState
-from mcp_server_paperless.domain.urls import text_without_credentials
 from mcp_server_paperless.paperless.client import opened
 from mcp_server_paperless.paperless.documents import PaperlessDocumentReader
-from mcp_server_paperless.paperless.pagination import Page
-from mcp_server_paperless.paperless.tasks import duplicate_of
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Sequence
@@ -70,8 +60,6 @@ if TYPE_CHECKING:
         ArchiveContent,
         Compression,
         ConfigValues,
-        RunnableTask,
-        TaskType,
     )
     from mcp_server_paperless.domain.documents import FileMetadata, FileVersion
     from mcp_server_paperless.domain.files import OpenedFile
@@ -82,7 +70,6 @@ GROUPS: Final = "/api/groups/"
 CONFIG: Final = "/api/config/"
 UI_SETTINGS: Final = "/api/ui_settings/"
 LOGS: Final = "/api/logs/"
-TASKS: Final = "/api/tasks/"
 BULK_DOWNLOAD: Final = "/api/documents/bulk_download/"
 # Building and sending a large archive takes a while; the web worker holds the request meanwhile.
 DOWNLOAD_SECONDS: Final = 120.0
@@ -94,8 +81,6 @@ ARCHIVE_FILES: Final[dict[ArchiveContent, tuple[FileVersion, ...]]] = {
     "archive": ("archive",),
     "both": ("original", "archive"),
 }
-# The first line of a failed task's message: later lines can be a traceback with server paths.
-MAX_MESSAGE: Final = 300
 # A log name is a plain word: anything else would change the path of the request.
 LOG_NAME: Final = re.compile(r"[a-z0-9_]+")
 
@@ -144,15 +129,6 @@ CHANGE_CONFIG: Final = (
     "It needs the change_applicationconfiguration permission, or must be a superuser.",
 )
 READ_LOGS: Final = ("read the logs", "Only staff users may read the logs.")
-VIEW_TASKS: Final = (
-    "view tasks",
-    "It needs the view_paperlesstask permission, or must be a superuser.",
-)
-ACK_TASKS: Final = (
-    "acknowledge tasks",
-    "It needs the change_paperlesstask permission, or must be a superuser.",
-)
-RUN_TASKS: Final = ("start tasks", "Only a superuser may start tasks.")
 DOWNLOAD: Final = (
     "download these documents",
     "It needs the view_document permission and must be allowed to see every one of the documents.",
@@ -215,14 +191,6 @@ def unseen_log(name: str) -> NotFound:
     )
 
 
-def beyond_last_page(page: int) -> NotFound:
-    """The error for a page past the end of the tasks."""
-    return NotFound(
-        f"Page {page} of the tasks does not exist.",
-        hint="List the tasks with page=1; count and next_page tell how far it goes.",
-    )
-
-
 class _User(BaseModel):
     """A user as Paperless sends it. The ``password`` it also sends is not read at all."""
 
@@ -282,29 +250,6 @@ class _Lines(RootModel[list[str]]):
     pass
 
 
-class _Task(BaseModel):
-    id: int
-    task_id: str
-    task_type: str
-    trigger_source: str
-    status: TaskState
-    date_created: datetime
-    date_started: datetime | None
-    date_done: datetime | None
-    duration_seconds: float | None
-    result_data: JsonValue
-    related_document_ids: list[int]
-    acknowledged: bool
-
-
-class _Acknowledged(BaseModel):
-    result: int
-
-
-class _Started(BaseModel):
-    task_id: str
-
-
 def _codenames(row: _User) -> tuple[str, ...]:
     """What the groups grant, as codenames without the app label; none for a superuser."""
     if row.is_superuser:
@@ -349,37 +294,6 @@ def _config(row: _Config) -> AppConfigRecord:
             name: value for name, value in extra.items() if name in wanted and value is not None
         },
         keys_configured=tuple(name for name in CONFIG_SECRETS if saved[name]),
-    )
-
-
-def _message(result: JsonValue) -> str | None:
-    """The first line of the error message of a failed task, cut short."""
-    if not isinstance(result, dict):
-        return None
-    message = result.get("error_message")
-    if not isinstance(message, str):
-        return None
-    lines = [
-        line.strip() for line in text_without_credentials(message).splitlines() if line.strip()
-    ]
-    return lines[0][:MAX_MESSAGE] if lines else None
-
-
-def _task(row: _Task) -> TaskRow:
-    rejected = duplicate_of(row.result_data) is not None
-    return TaskRow(
-        id=row.id,
-        task_id=row.task_id,
-        task_type=row.task_type,
-        trigger_source=row.trigger_source,
-        state=row.status,
-        created=row.date_created,
-        started=row.date_started,
-        finished=row.date_done,
-        duration_seconds=row.duration_seconds,
-        document_ids=() if rejected else tuple(row.related_document_ids),
-        acknowledged=row.acknowledged,
-        message=REJECTED if rejected else _message(row.result_data),
     )
 
 
@@ -464,38 +378,6 @@ class PaperlessAdminReader:
             except NotFound:
                 raise unseen_log(name) from None
         return tuple(found.root)
-
-    async def list_tasks(
-        self,
-        *,
-        state: TaskState | None,
-        task_type: TaskType | None,
-        acknowledged: bool | None,
-        page: int,
-        page_size: int,
-    ) -> TaskRowPage:
-        """See ``AdminReader.list_tasks``."""
-        params: dict[str, str | int] = {
-            "page": page,
-            "page_size": page_size,
-            "ordering": "-date_created",
-        }
-        if state is not None:
-            params["status"] = state
-        if task_type is not None:
-            params["task_type"] = task_type
-        if acknowledged is not None:
-            params["acknowledged"] = "true" if acknowledged else "false"
-        with Refused(VIEW_TASKS):
-            try:
-                found = await self._client.get(TASKS, Page[_Task], params=params)
-            except NotFound:
-                raise beyond_last_page(page) from None
-        return TaskRowPage(
-            count=found.count,
-            next_page=found.next_page,
-            rows=tuple(_task(row) for row in found.results),
-        )
 
     async def download_documents(
         self,
@@ -652,19 +534,3 @@ class PaperlessAdminWriter:
         with Refused(CHANGE_CONFIG):
             row = await self._client.call("PATCH", f"{CONFIG}{current.id}/", _Config, json=body)
         return _config(row)
-
-    async def acknowledge_tasks(self, task_ids: Sequence[int]) -> int:
-        """See ``AdminWriter.acknowledge_tasks``."""
-        with Refused(ACK_TASKS):
-            done = await self._client.call(
-                "POST", f"{TASKS}acknowledge/", _Acknowledged, json={"tasks": list(task_ids)}
-            )
-        return done.result
-
-    async def run_task(self, task_type: RunnableTask) -> str:
-        """See ``AdminWriter.run_task``: a POST, which the client never retries."""
-        with Refused(RUN_TASKS):
-            started = await self._client.call(
-                "POST", f"{TASKS}run/", _Started, json={"task_type": task_type}
-            )
-        return started.task_id

@@ -93,9 +93,11 @@ SHIPPED_PERMISSIONS = {name for name, toolset in TOOL_TOOLSETS.items() if toolse
 MAIL = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "mail"}
 ADMIN = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "admin"}
 READ_ADMIN = {
-    *("get_user", "get_group", "get_app_config", "list_logs", "get_log", "list_tasks"),
+    *("get_user", "get_group", "get_app_config", "list_logs", "get_log"),
     "bulk_download",
 }
+TASKS = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "tasks"}
+READ_TASKS = {"list_tasks"}
 RAW = {"paperless_api_get"}
 READ_PDF = {"inspect_pdf"}
 READ_BULK = {"read_documents"}
@@ -103,9 +105,10 @@ READ_MAIL = {
     *("list_mail_accounts", "get_mail_account", "list_mail_rules", "get_mail_rule"),
     "list_processed_mail",
     "get_processed_mail",
+    "explain_mail_import",
 }
 WORKFLOWS = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "workflows"}
-READ_WORKFLOWS = {"list_workflows", "get_workflow"}
+READ_WORKFLOWS = {"list_workflows", "get_workflow", "explain_workflow"}
 
 
 async def names(server: FastMCP) -> set[str]:
@@ -148,6 +151,7 @@ async def test_all_offers_every_toolset_the_server_may_offer() -> None:
         | RAW
         | WORKFLOWS
         | ADMIN
+        | TASKS
     )
     assert await names(server) == shipped | SHIPPED_PDF | SHIPPED_PERMISSIONS | {
         "ask_something",
@@ -197,6 +201,7 @@ async def test_read_only_mode_offers_only_tools_with_the_read_only_hint() -> Non
         | RAW
         | READ_WORKFLOWS
         | READ_ADMIN
+        | READ_TASKS
         | {"ask_something", "scratch_preview"}
     )
     assert await names(server) == expected
@@ -313,6 +318,37 @@ async def test_one_server_follows_the_capability_of_each_start() -> None:
 # --- A toolset read-only (PLMCP-90) --------------------------------------------------------------
 
 READING = {name for name, hints in ANNOTATIONS.items() if hints.read_only_hint}
+
+
+# Written out, so that a new toolset or tool, or a changed hint, is noticed here.
+READS = {
+    "core": {
+        *("get_instance_overview", "list_taxonomy", "search_documents", "get_task"),
+        *("get_document", "get_document_content", "get_document_thumbnail", "get_document_pages"),
+        *("run_saved_view", "download_document"),
+    },
+    "ai": {"ask_paperless_ai", "get_ai_suggestions"},
+    "bulk": READ_BULK,
+    "versions": {"list_document_versions"},
+    "views": READ_VIEWS,
+    "trash": {"list_trash", "get_trash_entry", "get_trashed_file"},
+    "pdf": READ_PDF,
+    "sharing": READ_SHARING,
+    "permissions": {"list_users", "list_groups"},
+    "mail": READ_MAIL,
+    "raw": RAW,
+    "workflows": READ_WORKFLOWS,
+    "admin": READ_ADMIN,
+    "tasks": READ_TASKS,
+}
+
+
+@pytest.mark.decision("decision-97")
+async def test_each_toolset_read_only_alone_offers_exactly_its_reading_tools() -> None:
+    assert set(READS) == TOOLSETS
+    for toolset, reads in READS.items():
+        server = serve(with_ai(enabled=True), toolsets=[f"{toolset}:read"])
+        assert await names(server) == reads, toolset
 
 
 def all_but(toolset: str) -> list[str]:

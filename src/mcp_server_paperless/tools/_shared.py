@@ -58,6 +58,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.files import FileService
     from mcp_server_paperless.services.instance import InstanceService
     from mcp_server_paperless.services.mail import MailService
+    from mcp_server_paperless.services.mail_explanation import MailExplanations
     from mcp_server_paperless.services.notes import NoteService
     from mcp_server_paperless.services.pages import PageService
     from mcp_server_paperless.services.pdf import PdfService
@@ -68,6 +69,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.read_documents import ReadDocuments
     from mcp_server_paperless.services.removal import DocumentRemoval
     from mcp_server_paperless.services.sharing import SharingService
+    from mcp_server_paperless.services.task_lists import TaskListService
     from mcp_server_paperless.services.tasks import TaskService
     from mcp_server_paperless.services.taxonomy import TaxonomyResolver
     from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
@@ -78,6 +80,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.version_uploads import VersionUploadService
     from mcp_server_paperless.services.versions import VersionService
     from mcp_server_paperless.services.views import ViewService
+    from mcp_server_paperless.services.workflow_explanation import WorkflowExplanations
     from mcp_server_paperless.services.workflow_parts import WorkflowParts
     from mcp_server_paperless.services.workflow_runs import WorkflowRuns
     from mcp_server_paperless.services.workflows import WorkflowService
@@ -98,6 +101,7 @@ TOOLSETS: Final = frozenset(
         "raw",
         "workflows",
         "admin",
+        "tasks",
     }
 )
 
@@ -116,7 +120,8 @@ TOOLSET_SUMMARIES: Final[Mapping[str, str]] = {
     "mail": "mail accounts and rules",
     "raw": "other API endpoints, read-only",
     "workflows": "workflows",
-    "admin": "users, groups, settings, logs, tasks",
+    "admin": "users, groups, settings, logs",
+    "tasks": "background tasks",
 }
 
 # What the prompts, the server instructions and every core tool and resource that can return such
@@ -219,12 +224,14 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "delete_mail_rule": "mail",
     "list_processed_mail": "mail",
     "get_processed_mail": "mail",
+    "explain_mail_import": "mail",
     "delete_processed_mail": "mail",
     "paperless_api_get": "raw",
     "list_workflows": "workflows",
     "get_workflow": "workflows",
     "create_workflow": "workflows",
     "update_workflow": "workflows",
+    "explain_workflow": "workflows",
     "update_workflow_part": "workflows",
     "delete_workflow": "workflows",
     "run_workflow": "workflows",
@@ -240,10 +247,10 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "update_app_config": "admin",
     "list_logs": "admin",
     "get_log": "admin",
-    "list_tasks": "admin",
-    "acknowledge_tasks": "admin",
-    "run_task": "admin",
     "bulk_download": "admin",
+    "list_tasks": "tasks",
+    "acknowledge_tasks": "tasks",
+    "run_task": "tasks",
 }
 
 # Tools that exist only over stdio with upload directories (decision-50): beside the table above,
@@ -628,6 +635,13 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    # Compares stored settings and reads what Paperless stored; contacts no mail server.
+    "explain_mail_import": ToolAnnotations(
+        title="Explain mail import",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     "get_processed_mail": ToolAnnotations(
         title="Get processed mail",
         read_only_hint=True,
@@ -990,6 +1004,12 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    "explain_workflow": ToolAnnotations(
+        title="Explain workflow",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     # A workflow runs unattended on every matching document and can send documents out (e-mail,
     # webhook): open world. Not destructive in itself (decision-21): trashing, removing and the
     # outward actions need confirm while the workflow is enabled, plain filing does not. Creating
@@ -1184,6 +1204,7 @@ class Services:
 
     workflows: WorkflowService
     workflow_parts: WorkflowParts
+    workflow_explanations: WorkflowExplanations
     workflow_runs: WorkflowRuns
 
     instance: InstanceService
@@ -1217,8 +1238,10 @@ class Services:
     sharing: SharingService
     mail: MailService
     processed_mail: ProcessedMailService
+    mail_explanations: MailExplanations
     accounts: AccountAdmin
     system: SystemAdmin
+    task_lists: TaskListService
     raw: RawApiService
 
 

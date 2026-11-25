@@ -96,17 +96,17 @@ async def test_the_environment_selects_the_tools_over_stdio(stack: Stack) -> Non
         "delete_taxonomy_item",
     }
     # `all` adds the toolsets that are off by default: of versions, trash, sharing, permissions,
-    # mail, workflows, bulk and admin only the listings and reads are read-only, of views the
+    # mail, workflows, bulk, tasks and admin only the listings and reads are read-only, of views the
     # listing and the read (running a view is in core, decision-34).
     views = {"list_saved_views", "get_saved_view"}
     mail = {
         *("list_mail_accounts", "get_mail_account", "list_mail_rules", "get_mail_rule"),
-        *("list_processed_mail", "get_processed_mail"),
+        *("list_processed_mail", "get_processed_mail", "explain_mail_import"),
     }
     listings = {
         *("list_document_versions", "list_share_links", "list_share_bundles"),
         *("list_trash", "get_trash_entry", "get_trashed_file"),
-        *("list_users", "list_groups", "list_workflows", "get_workflow"),
+        *("list_users", "list_groups", "list_workflows", "get_workflow", "explain_workflow"),
     }
     admin = {
         *("get_user", "get_group", "get_app_config", "list_tasks", "list_logs", "get_log"),
@@ -119,7 +119,7 @@ async def test_the_environment_selects_the_tools_over_stdio(stack: Stack) -> Non
 
 # --- A toolset read-only (PLMCP-90) --------------------------------------------------------------
 
-MIXED = "core:read,mail:read,workflows"
+MIXED = "core:read,mail:read,workflows,tasks:read"
 
 
 async def offered(stack: Stack, mode: str = "auto", **env: str) -> tuple[Seen, set[str]]:
@@ -139,7 +139,7 @@ def mixed_tools() -> set[str]:
         tool
         for tool, toolset in TOOL_TOOLSETS.items()
         if toolset == "workflows"
-        or (toolset in {"core", "mail"} and ANNOTATIONS[tool].read_only_hint)
+        or (toolset in {"core", "mail", "tasks"} and ANNOTATIONS[tool].read_only_hint)
     }
 
 
@@ -150,10 +150,18 @@ async def test_a_mixed_selection_over_stdio(stack: Stack, mode: str) -> None:
 
     assert seen.tools == mixed_tools()
     assert prompts == {"find_document"}  # the others need a tool that writes (decision-20)
-    assert "Toolsets on: core (read-only), mail (read-only), workflows." in seen.instructions
+    assert (
+        "Toolsets on: core (read-only), mail (read-only), workflows, tasks (read-only)."
+        in seen.instructions
+    )
     assert f"PAPERLESS_MCP_TOOLSETS={MIXED},<name>" in seen.instructions
     assert seen.guide is not None
-    assert seen.guide["on"] == ["core (read-only)", "mail (read-only)", "workflows"]
+    assert seen.guide["on"] == [
+        "core (read-only)",
+        "mail (read-only)",
+        "workflows",
+        "tasks (read-only)",
+    ]
 
 
 @pytest.mark.decision("decision-97")
@@ -169,7 +177,7 @@ async def test_following_the_guide_keeps_a_read_only_toolset_read_only(stack: St
 async def test_server_wide_read_only_mode_wins_over_stdio(stack: Stack) -> None:
     suffixed, _ = await offered(stack, PAPERLESS_MCP_TOOLSETS=MIXED, PAPERLESS_MCP_READ_ONLY="true")
     bare, _ = await offered(
-        stack, PAPERLESS_MCP_TOOLSETS="core,mail,workflows", PAPERLESS_MCP_READ_ONLY="true"
+        stack, PAPERLESS_MCP_TOOLSETS="core,mail,workflows,tasks", PAPERLESS_MCP_READ_ONLY="true"
     )
 
     assert suffixed.tools == bare.tools

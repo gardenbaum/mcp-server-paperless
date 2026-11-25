@@ -144,6 +144,7 @@ KEYWORDS = {
     "raw": "endpoints",
     "workflows": "workflows",
     "admin": "logs",
+    "tasks": "background",
 }
 
 

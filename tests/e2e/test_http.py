@@ -128,7 +128,7 @@ async def test_the_setting_the_guide_names_switches_the_toolset_wanted_on_over_h
 @pytest.mark.decision("decision-97")
 @pytest.mark.parametrize("mode", ["legacy", "auto"])
 async def test_a_mixed_selection_over_http(stack: Stack, mode: str) -> None:
-    selection = "core:read,mail:read,workflows"
+    selection = "core:read,mail:read,workflows,tasks:read"
     with running(stack, PAPERLESS_MCP_TOOLSETS=selection) as url:
         transport = StreamableHttpTransport(url, headers={"Authorization": f"Bearer {MCP_TOKEN}"})
         async with Client(transport, mode=mode) as client:
@@ -142,7 +142,7 @@ async def test_a_mixed_selection_over_http(stack: Stack, mode: str) -> None:
         tool
         for tool, toolset in TOOL_TOOLSETS.items()
         if toolset == "workflows"
-        or (toolset in {"core", "mail"} and ANNOTATIONS[tool].read_only_hint)
+        or (toolset in {"core", "mail", "tasks"} and ANNOTATIONS[tool].read_only_hint)
     }
     assert prompts == {"find_document"}
     assert f"PAPERLESS_MCP_TOOLSETS={selection},<name>" in seen.instructions

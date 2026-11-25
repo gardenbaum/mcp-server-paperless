@@ -26,9 +26,6 @@ if TYPE_CHECKING:
         ConfigValues,
         GroupRecord,
         GroupValues,
-        RunnableTask,
-        TaskRowPage,
-        TaskType,
         UserRecord,
         UserValues,
     )
@@ -63,6 +60,7 @@ if TYPE_CHECKING:
         MailAccountTestResult,
         MailAccountValues,
         MailRule,
+        MailRulePage,
         MailRuleValues,
         ProcessedMail,
         ProcessedMailPage,
@@ -87,7 +85,13 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.raw import RawReply
     from mcp_server_paperless.domain.selection import DocumentRow, ReadField
     from mcp_server_paperless.domain.sharing import FileVersionKind, ShareBundle, ShareLink
-    from mcp_server_paperless.domain.tasks import TaskState, TaskStatus, Unconfirmed
+    from mcp_server_paperless.domain.task_lists import (
+        RunnableTask,
+        TaskFilters,
+        TaskOrdering,
+        TaskRowPage,
+    )
+    from mcp_server_paperless.domain.tasks import TaskStatus, Unconfirmed
     from mcp_server_paperless.domain.taxonomy import (
         TaxonomyDetail,
         TaxonomyItem,
@@ -228,7 +232,7 @@ class DocumentReader(Protocol):
         ...
 
     async def list_document_history(self, document_id: int) -> tuple[HistoryEntry, ...]:
-        """The audit log of a document, newest first, without the OCR text.
+        """The audit log of a document, newest first; ``content`` is only ``TEXT_CHANGED``.
 
         Raises:
             NotFound: No such document.
@@ -1227,6 +1231,15 @@ class MailReader(Protocol):
         """
         ...
 
+    async def list_mail_rule_page(self, *, page: int, page_size: int) -> MailRulePage:
+        """One page of the mail rules the user may see, in Paperless order (by ``order``).
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+            PermissionDenied: The user lacks the global ``view_mailrule`` permission.
+        """
+        ...
+
     async def get_mail_rule(self, rule_id: int) -> MailRule:
         """One mail rule.
 
@@ -1498,7 +1511,7 @@ class WorkflowWriter(Protocol):
 
 
 class AdminReader(Protocol):
-    """Users and groups by id, the application configuration, logs, tasks and bulk download.
+    """Users and groups by id, the application configuration, logs and bulk download.
 
     Listing users and groups is ``PermissionReader``'s job; the admin tools resolve names with it.
     """
@@ -1556,23 +1569,6 @@ class AdminReader(Protocol):
         """
         ...
 
-    async def list_tasks(
-        self,
-        *,
-        state: TaskState | None,
-        task_type: TaskType | None,
-        acknowledged: bool | None,
-        page: int,
-        page_size: int,
-    ) -> TaskRowPage:
-        """One page of tasks, newest first, optionally filtered.
-
-        Raises:
-            NotFound: ``page`` is beyond the last page.
-            PermissionDenied: The user lacks the ``view_paperlesstask`` permission.
-        """
-        ...
-
     async def download_documents(
         self,
         document_ids: Sequence[int],
@@ -1616,7 +1612,7 @@ class AdminReader(Protocol):
 
 
 class AdminWriter(Protocol):
-    """Changes to users, groups, the application configuration and tasks."""
+    """Changes to users, groups and the application configuration."""
 
     async def create_user(self, values: UserValues) -> UserRecord:
         """Create a user from the fields set in ``values`` and return it.
@@ -1685,6 +1681,31 @@ class AdminWriter(Protocol):
             PermissionDenied: The user may not view or change the configuration.
         """
         ...
+
+
+class TaskListReader(Protocol):
+    """The background tasks the current user may see."""
+
+    async def list_tasks(
+        self,
+        filters: TaskFilters,
+        *,
+        ordering: TaskOrdering = "-created",
+        page: int,
+        page_size: int,
+    ) -> TaskRowPage:
+        """One page of the tasks ``filters`` leaves; equal ones come newest first.
+
+        Raises:
+            NotFound: ``page`` is beyond the last page.
+            Validation: No user has the id ``filters.owner``.
+            PermissionDenied: The user lacks the ``view_paperlesstask`` permission.
+        """
+        ...
+
+
+class TaskListWriter(Protocol):
+    """Starts background tasks and marks them as seen."""
 
     async def acknowledge_tasks(self, task_ids: Sequence[int]) -> int:
         """Mark tasks (database ids) as seen and return how many were marked.

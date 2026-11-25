@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, final, override
 
 import pytest
 from fakes.accounts import ADMIN
-from fakes.paperless import FakePaperless, FakeState, FakeTask, seeded
+from fakes.paperless import FakePaperless, FakeState, seeded
 from pydantic import SecretStr
 
 from mcp_server_paperless.domain.admin import GroupValues, NotText, UserValues
@@ -25,9 +25,9 @@ from mcp_server_paperless.services.admin_accounts import AccountAdmin
 from mcp_server_paperless.services.admin_system import (
     MAX_DOCUMENTS,
     MAX_LOG_CHARS,
-    MAX_LOG_LINES,
     SystemAdmin,
 )
+from mcp_server_paperless.services.log_records import MAX_LOG_LINES
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
@@ -439,27 +439,7 @@ async def test_a_line_that_alone_is_too_long_is_cut_to_the_limit_minus_one() -> 
     assert [len(line) for line in found.lines] == [MAX_LOG_CHARS - 1]
 
 
-# --- system: tasks and downloads
-
-
-async def test_the_default_page_has_twenty_five_tasks_and_the_filter_is_passed_on() -> None:
-    setup = Setup()
-    setup.state.tasks = [
-        FakeTask(id=n, task_id=f"u{n}", acknowledged=n % 2 == 0) for n in range(1, 41)
-    ]
-
-    first = await setup.system.list_tasks()
-    seen = await setup.system.list_tasks(acknowledged=True, page_size=100)
-
-    assert len(first.tasks) == 25
-    assert seen.count == 20
-    assert all(t.acknowledged for t in seen.tasks)
-
-
-async def test_acknowledging_a_repeated_id_is_refused_with_a_hint() -> None:
-    assert await failure(Setup().system.acknowledge_tasks([1, 1]), Validation) == (
-        "A task id is listed twice. Hint: List every id once."
-    )
+# --- system: downloads
 
 
 class Recorder(FakePaperless):
