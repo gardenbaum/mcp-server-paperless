@@ -4514,8 +4514,30 @@
           'id': dict({
             'type': 'integer',
           }),
+          'in_sidebar': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
+          }),
           'name': dict({
             'type': 'string',
+          }),
+          'on_dashboard': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
           }),
           'owner': dict({
             'anyOf': list([
@@ -4596,6 +4618,8 @@
           'icon',
           'display_mode',
           'display_fields',
+          'on_dashboard',
+          'in_sidebar',
           'owner',
           'can_change',
           'rules',
@@ -13295,8 +13319,30 @@
           'id': dict({
             'type': 'integer',
           }),
+          'in_sidebar': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
+          }),
           'name': dict({
             'type': 'string',
+          }),
+          'on_dashboard': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
           }),
           'owner': dict({
             'anyOf': list([
@@ -13377,6 +13423,8 @@
           'icon',
           'display_mode',
           'display_fields',
+          'on_dashboard',
+          'in_sidebar',
           'owner',
           'can_change',
           'rules',
@@ -16590,8 +16638,30 @@
                 'id': dict({
                   'type': 'integer',
                 }),
+                'in_sidebar': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'boolean',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Of the current user; null: cannot be read.',
+                }),
                 'name': dict({
                   'type': 'string',
+                }),
+                'on_dashboard': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'boolean',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Of the current user; null: cannot be read.',
                 }),
                 'owner': dict({
                   'anyOf': list([
@@ -16672,6 +16742,8 @@
                 'icon',
                 'display_mode',
                 'display_fields',
+                'on_dashboard',
+                'in_sidebar',
                 'owner',
                 'can_change',
                 'rules',
@@ -18986,6 +19058,109 @@
         'type': 'object',
       }),
       'title': 'Read a Paperless API path',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'views',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Pin saved view',
+      }),
+      'description': '''
+        Show a saved view on the dashboard or in the sidebar of the web UI, or take it away.
+        
+        Applies only to the Paperless user this server signs in as. Works for every view that user
+        sees; the view itself does not change. What is left out stays. An open Paperless tab shows it
+        only after a reload and can undo it with its next save: tell the user to reload. The other
+        settings of the user are written back as they were and compared; a difference is an error.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'dashboard': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: show it on the dashboard; false: take it away.',
+          }),
+          'sidebar': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: show it in the sidebar; false: take it away.',
+          }),
+          'view': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'The saved view: its name or id.',
+          }),
+        }),
+        'required': list([
+          'view',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'pin_saved_view',
+      'outputSchema': dict({
+        'description': 'Where the current user has a saved view after pin_saved_view.',
+        'properties': dict({
+          'changed': dict({
+            'description': 'false: it already was as asked.',
+            'type': 'boolean',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'in_sidebar': dict({
+            'type': 'boolean',
+          }),
+          'message': dict({
+            'type': 'string',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'on_dashboard': dict({
+            'type': 'boolean',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'on_dashboard',
+          'in_sidebar',
+          'changed',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Pin saved view',
     }),
     dict({
       '_meta': dict({
@@ -27890,8 +28065,30 @@
           'id': dict({
             'type': 'integer',
           }),
+          'in_sidebar': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
+          }),
           'name': dict({
             'type': 'string',
+          }),
+          'on_dashboard': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
           }),
           'owner': dict({
             'anyOf': list([
@@ -27972,6 +28169,8 @@
           'icon',
           'display_mode',
           'display_fields',
+          'on_dashboard',
+          'in_sidebar',
           'owner',
           'can_change',
           'rules',
@@ -42454,8 +42653,30 @@
           'id': dict({
             'type': 'integer',
           }),
+          'in_sidebar': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
+          }),
           'name': dict({
             'type': 'string',
+          }),
+          'on_dashboard': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
           }),
           'owner': dict({
             'anyOf': list([
@@ -42536,6 +42757,8 @@
           'icon',
           'display_mode',
           'display_fields',
+          'on_dashboard',
+          'in_sidebar',
           'owner',
           'can_change',
           'rules',
@@ -45298,8 +45521,30 @@
                 'id': dict({
                   'type': 'integer',
                 }),
+                'in_sidebar': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'boolean',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Of the current user; null: cannot be read.',
+                }),
                 'name': dict({
                   'type': 'string',
+                }),
+                'on_dashboard': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'boolean',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Of the current user; null: cannot be read.',
                 }),
                 'owner': dict({
                   'anyOf': list([
@@ -45380,6 +45625,8 @@
                 'icon',
                 'display_mode',
                 'display_fields',
+                'on_dashboard',
+                'in_sidebar',
                 'owner',
                 'can_change',
                 'rules',

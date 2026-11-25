@@ -67,6 +67,7 @@ from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
 from mcp_server_paperless.services.trash import TrashService
 from mcp_server_paperless.services.trash_scan import TrashScan
 from mcp_server_paperless.services.versions import VersionService
+from mcp_server_paperless.services.view_pins import ViewPins
 from mcp_server_paperless.services.views import ViewService
 from mcp_server_paperless.services.workflow_parts import WorkflowParts
 from mcp_server_paperless.services.workflows import WorkflowService
@@ -361,7 +362,7 @@ def create_workflow(state: FakeState) -> Callable[[], Awaitable[object]]:
 def delete_view(state: FakeState) -> Callable[[], Awaitable[object]]:
     fake, taxonomy = fakes(state)
     documents = DocumentService(fake, fake, taxonomy, web_url=WEB)
-    service = ViewService(fake, fake, taxonomy, documents)
+    service = ViewService(fake, fake, taxonomy, documents, ViewPins(fake, fake))
     return lambda: service.delete("e2e-view", confirm=False)
 
 

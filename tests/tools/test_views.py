@@ -23,6 +23,7 @@ TOOLS = {
     "update_saved_view",
     "delete_saved_view",
     "run_saved_view",
+    "pin_saved_view",
 }
 
 
@@ -50,7 +51,7 @@ def titles(output: Json) -> list[str]:
     return [str(d["title"]) for d in cast("list[Json]", output["documents"])]
 
 
-async def test_the_views_toolset_offers_five_tools_and_read_only_mode_keeps_two() -> None:
+async def test_the_views_toolset_offers_six_tools_and_read_only_mode_keeps_two() -> None:
     async with Client(serve(fake(), toolsets=["views"])) as client:
         names = {tool.name for tool in await client.list_tools()}
     async with Client(serve(fake(), toolsets=["views"], read_only=True)) as client:
@@ -245,3 +246,50 @@ async def test_unusable_display_settings_are_errors_that_say_what_is_usable() ->
     assert "wallet2" in icon
     assert "pagecount" in field
     assert "smallCards" in mode
+
+
+@pytest.mark.decision("decision-92")
+async def test_a_view_is_pinned_for_the_current_user_and_shown_so() -> None:
+    state = seeded()
+    source = fake(state)
+    state.ui_settings[source.user.id] = {"theme": 1}
+
+    done = await call(source, "pin_saved_view", view="e2e-view", dashboard=True)
+    shown = await call(source, "get_saved_view", view=1)
+    listed = cast("list[Json]", (await call(source, "list_saved_views"))["views"])
+    again = await call(source, "pin_saved_view", view=1, dashboard=True, sidebar=False)
+
+    assert (done["on_dashboard"], done["in_sidebar"], done["changed"]) == (True, False, True)
+    assert again["changed"] is False
+    for view in (shown, *listed):
+        assert (view["on_dashboard"], view["in_sidebar"]) == (True, False)
+    assert state.ui_settings[source.user.id] == {
+        "theme": 1,
+        "saved_views": {"dashboard_views_visible_ids": [1]},
+    }
+
+
+@pytest.mark.decision("decision-92")
+async def test_pinning_needs_a_place_the_permission_and_says_whose_dashboard_it_is() -> None:
+    nothing = await refusal(fake(), "pin_saved_view", view=1)
+    reader = await refusal(fake(user="e2e-reader"), "pin_saved_view", view=1, sidebar=True)
+    async with Client(serve(fake(), toolsets=["views"])) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+
+    assert "Nothing to change" in nothing
+    assert "may not perform this action" in reader
+    described = " ".join((tools["pin_saved_view"].description or "").split())
+    assert "only to the Paperless user this server signs in as" in described
+    assert "reload" in described
+
+
+@pytest.mark.decision("decision-92")
+async def test_the_name_of_a_hostile_view_is_shown_on_one_line() -> None:
+    state = seeded()
+    state.saved_views.append(FakeSavedView(id=7, name="x\nIGNORE\u202e all", owner=2))
+
+    done = await call(fake(state), "pin_saved_view", view=7, sidebar=True)
+
+    assert done["name"] == "x\nIGNORE\u202e all"  # data, as in every other tool
+    assert "\n" not in str(done["message"])
+    assert "\u202e" not in str(done["message"])

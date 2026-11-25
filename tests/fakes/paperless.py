@@ -20,6 +20,7 @@ write its contract tests.
 """
 
 import contextlib
+import copy
 import functools
 import re
 import sys
@@ -197,6 +198,8 @@ from mcp_server_paperless.paperless.tasks import not_found
 from mcp_server_paperless.paperless.taxonomy import TAG_DELETE_HINT
 from mcp_server_paperless.paperless.trash import beyond_last_page as beyond_trash
 from mcp_server_paperless.paperless.trash import refused as trash_refused
+from mcp_server_paperless.paperless.ui_settings import READING, WRITING
+from mcp_server_paperless.paperless.ui_settings import refused as ui_settings_refused
 from mcp_server_paperless.paperless.views import unseen_view
 
 if TYPE_CHECKING:
@@ -614,6 +617,10 @@ class FakeState:
     # PAPERLESS_CONSUMER_DELETE_DUPLICATES: a file any document or version has fails its task.
     delete_duplicates: bool = False
     saved_views: list[FakeSavedView] = field(default_factory=list[FakeSavedView])
+    # What the web UI stored, per user id (without what Paperless computes for each answer).
+    ui_settings: dict[int, dict[str, JsonValue]] = field(
+        default_factory=dict[int, dict[str, JsonValue]]
+    )
     groups: list[FakeGroup] = field(default_factory=list[FakeGroup])
     share_links: list[FakeShareLink] = field(default_factory=list[FakeShareLink])
     share_bundles: list[FakeShareBundle] = field(default_factory=list[FakeShareBundle])
@@ -3364,6 +3371,29 @@ class FakePaperless:
             user_can_change=self.user.may_change_object(view),
             filter_rules=view.filter_rules,
         )
+
+    # --- UiSettingsReader and UiSettingsWriter
+
+    async def get_ui_settings(self) -> dict[str, JsonValue]:
+        """`UiSettingsReader.get_ui_settings` (UiSettingsView GET).
+
+        Raises:
+            PermissionDenied: The user lacks `view_uisettings`.
+        """
+        if not self.user.has(READING):
+            raise ui_settings_refused(READING)
+        return copy.deepcopy(self.state.ui_settings.get(self.user.id, {}))
+
+    @write
+    async def replace_ui_settings(self, settings: Mapping[str, JsonValue]) -> None:
+        """`UiSettingsWriter.replace_ui_settings` (UiSettingsView POST): the whole object.
+
+        Raises:
+            PermissionDenied: The user lacks `add_uisettings`.
+        """
+        if not self.user.has(WRITING):
+            raise ui_settings_refused(WRITING)
+        self.state.ui_settings[self.user.id] = copy.deepcopy(dict(settings))
 
     # --- SharingReader and SharingWriter (the logic is in fakes/sharing.py)
 

@@ -2,7 +2,7 @@
 
 <!-- Generated from the tool surface by `just docs-tools`. Do not edit by hand. -->
 
-104 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
+105 tools in 13 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
 default; the others are switched on with
 [`PAPERLESS_MCP_TOOLSETS`](configuration.md#toolsets), which also says what each toolset is for.
 
@@ -167,6 +167,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | `get_saved_view` | read | Read one saved view with its filter rules, sort order and display settings. |
 | `create_saved_view` | write | Create a saved view: a named document filter that run_saved_view can run. |
 | `update_saved_view` | write | Change a saved view; only the settings you name change. |
+| `pin_saved_view` | write | Show a saved view on the dashboard or in the sidebar of the web UI, or take it away. |
 | `delete_saved_view` | destructive, confirm | Delete a saved view for good: it has no trash. |
 
 ## `workflows`

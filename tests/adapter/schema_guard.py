@@ -254,6 +254,9 @@ WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
     ("GET", "/api/ui_settings/", 200): (
         "3.5.1 answers {user, settings, permissions}; the schema has {id, settings} (PLMCP-7)"
     ),
+    ("POST", "/api/ui_settings/", 200): (
+        "3.5.1 answers {success: true}; the schema has {id, settings} (PLMCP-88.2)"
+    ),
 }
 # Responses that lack a property the schema requires, which is filled in (as an empty object)
 # before the body is validated, so that the rest of the body is still checked: (method, path

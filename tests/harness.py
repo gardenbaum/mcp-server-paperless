@@ -32,6 +32,7 @@ from mcp_server_paperless.services.removal import DocumentRemoval
 from mcp_server_paperless.services.selection import DocumentSelector
 from mcp_server_paperless.services.tasks import TaskService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.view_pins import ViewPins
 from mcp_server_paperless.services.views import ViewService
 from mcp_server_paperless.services.workflow_runs import WorkflowRuns
 from mcp_server_paperless.services.workflows import WorkflowService
@@ -66,6 +67,8 @@ if TYPE_CHECKING:
         TaxonomyWriter,
         TrashReader,
         TrashWriter,
+        UiSettingsReader,
+        UiSettingsWriter,
         ViewReader,
         ViewWriter,
         WorkflowReader,
@@ -145,7 +148,7 @@ def bulk_editor(fake: FakePaperless, taxonomy: TaxonomyResolver) -> BulkDocument
     """`BulkDocumentEditor` on the fake, with everything it is built from."""
     web = "https://paperless.example"
     documents = DocumentService(fake, fake, taxonomy, web_url=web)
-    views = ViewService(fake, fake, taxonomy, documents)
+    views = ViewService(fake, fake, taxonomy, documents, ViewPins(fake, fake))
     selector = DocumentSelector(fake, documents, views, taxonomy)
     return BulkDocumentEditor(fake, fake, selector, taxonomy, web_url=web)
 
@@ -164,7 +167,7 @@ def bulk_notes(fake: FakePaperless, *, clock: Callable[[], float]) -> BulkNotes:
     web = "https://paperless.example"
     taxonomy = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
     documents = DocumentService(fake, fake, taxonomy, web_url=web)
-    views = ViewService(fake, fake, taxonomy, documents)
+    views = ViewService(fake, fake, taxonomy, documents, ViewPins(fake, fake))
     selector = DocumentSelector(fake, documents, views, taxonomy)
     return BulkNotes(fake, fake, selector, web_url=web, clock=clock)
 
@@ -174,7 +177,7 @@ def workflow_runs(fake: FakePaperless, taxonomy: TaxonomyResolver | None = None)
     web = "https://paperless.example"
     taxonomy = taxonomy or TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
     documents = DocumentService(fake, fake, taxonomy, web_url=web)
-    views = ViewService(fake, fake, taxonomy, documents)
+    views = ViewService(fake, fake, taxonomy, documents, ViewPins(fake, fake))
     selector = DocumentSelector(fake, documents, views, taxonomy)
     flows = WorkflowService(fake, fake, taxonomy)
     return WorkflowRuns(fake, fake, flows, selector, taxonomy)
@@ -192,6 +195,8 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     ai: AiReader | None = None,
     views: ViewReader | None = None,
     view_writes: ViewWriter | None = None,
+    ui_settings: UiSettingsReader | None = None,
+    ui_setting_writes: UiSettingsWriter | None = None,
     trash: TrashReader | None = None,
     trash_writes: TrashWriter | None = None,
     pdf_writes: PdfWriter | None = None,
@@ -268,6 +273,8 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
                 ai=ai or fake,
                 views=views or fake,
                 view_writes=view_writes or fake,
+                ui_settings=ui_settings or fake,
+                ui_setting_writes=ui_setting_writes or fake,
                 trash=trash or fake,
                 trash_writes=trash_writes or fake,
                 pdf_writes=pdf_writes or fake,

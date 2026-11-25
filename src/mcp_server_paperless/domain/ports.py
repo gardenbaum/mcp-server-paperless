@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from contextlib import AbstractAsyncContextManager
     from datetime import datetime
 
+    from pydantic import JsonValue
+
     from mcp_server_paperless.domain.admin import (
         AppConfigRecord,
         ArchiveContent,
@@ -721,6 +723,31 @@ class ViewWriter(Protocol):
         Raises:
             NotFound: No such view, or the user may not see it.
             PermissionDenied: The user may not delete saved views, or this one.
+        """
+        ...
+
+
+class UiSettingsReader(Protocol):
+    """The settings the web UI stores for the current user."""
+
+    async def get_ui_settings(self) -> dict[str, JsonValue]:
+        """What is stored, without what Paperless computes for every answer.
+
+        Raises:
+            PermissionDenied: The user lacks ``view_uisettings``.
+            AnswerTooLarge: More than 1 MiB.
+        """
+        ...
+
+
+class UiSettingsWriter(Protocol):
+    """Changes to the settings of the web UI of the current user."""
+
+    async def replace_ui_settings(self, settings: Mapping[str, JsonValue]) -> None:
+        """Store exactly ``settings``: whatever they leave out is lost. Sent once.
+
+        Raises:
+            PermissionDenied: The user lacks ``add_uisettings``.
         """
         ...
 
