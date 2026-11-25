@@ -10,6 +10,7 @@ import pytest
 from mcp_server_paperless.domain.workflows import (
     ACTION_FIELDS,
     ACTION_TYPES,
+    AI_FIELDS,
     MATCHING_ALGORITHMS,
     SCHEDULE_DATE_FIELDS,
     SOURCES,
@@ -95,7 +96,7 @@ def test_every_setting_of_a_trigger_is_known_and_none_is_missing() -> None:
 
 def test_every_setting_of_an_action_is_known_and_the_rest_is_read_only() -> None:
     wires = {field.wire for fields in ACTION_FIELDS.values() for field in fields.values()}
-    read_only = {"passwords", "ai_suggestion_fields", "ai_create_missing", "ai_overwrite_existing"}
+    read_only = {"passwords"}
 
     assert wires | read_only == properties("WorkflowActionRequest") - {"id", "type"}
     assert not wires & read_only
@@ -156,3 +157,14 @@ def test_a_misspelt_setting_is_an_error_not_dropped(
 ) -> None:
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         _ = cast("type[TriggerInput]", model).model_validate(given)
+
+
+def test_the_ai_fields_are_those_of_the_vendored_schema_or_source() -> None:
+    assert AI_FIELDS == (
+        "title",
+        "tags",
+        "correspondent",
+        "document_type",
+        "storage_path",
+        "created",
+    )

@@ -375,10 +375,10 @@ Off by default: `list_workflows`, `get_workflow`, `create_workflow`, `update_wor
 nested objects and tags, correspondents, document types, storage paths, custom fields, users and
 groups given by name. An enabled workflow keeps acting on every matching document, so
 `create_workflow`, `update_workflow` and `update_workflow_part` need `confirm` when it moves documents to the trash,
-e-mails them, calls a webhook, removes tags or other values, or changes owner or permissions
+e-mails them, calls a webhook, asks the AI, removes tags or other values, or changes owner or permissions
 (disabled workflows and plain filing, such as tags and titles, need none), and `delete_workflow`
-always does. Password removal and applying AI suggestions are not written by these tools (they
-are shown when read), webhook header values and passwords are never shown, and a setting that
+always does. Password removal is not written by these tools (it
+is shown when read), webhook header values and passwords are never shown, and a setting that
 does not belong to its trigger or action type is an error.
 
 - `list_workflows` filters by enabled, by trigger type and by what a workflow uses (a tag,
@@ -399,7 +399,7 @@ does not belong to its trigger or action type is an error.
   A copy of it in another workflow is written without them, and the result says so.
 
 `run_workflow` runs an enabled workflow with a manual trigger on up to 100 documents, chosen like those
-of `bulk_edit_documents`; manual triggers are set up in the Paperless web UI. Every run is confirmed:
+of `bulk_edit_documents`; see `create_workflow` for manual triggers. Every run is confirmed:
 every action with its step, with all e-mail recipients and webhook hosts, and every document is named before, also
 tags that come along (parents of assigned ones, children of removed ones), and a
 filter or a view alone never runs anything. With `apply_filters=false` the filters of the trigger are

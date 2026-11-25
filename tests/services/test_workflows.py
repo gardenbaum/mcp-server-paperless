@@ -1,11 +1,13 @@
 """WorkflowService: workflows by name or id, nested triggers and actions with taxonomy by name."""
 
+import re
 from dataclasses import replace
 from typing import TYPE_CHECKING, cast, final, override
 
 import pytest
 from fakes.accounts import ADMIN, READER
 from fakes.paperless import FakePaperless, FakeState, seeded
+from pydantic import ValidationError
 
 from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
@@ -623,33 +625,133 @@ async def test_an_unsupported_trigger_type_is_rejected_naming_the_types_there_ar
     assert setup.fake.writes == []
 
 
+@pytest.mark.decision("decision-86")
 @pytest.mark.parametrize("kind", [5, "manual", "Manual"])
-async def test_a_manual_trigger_is_read_but_not_written(kind: int | str) -> None:
-    """A manual trigger is run by hand from the web UI; it is read here and not written."""
+async def test_a_manual_trigger_is_written_with_the_filters_paperless_reads(
+    kind: int | str,
+) -> None:
     setup = Setup()
+    trigger = TriggerInput(
+        type=kind,
+        filename="*.pdf",
+        match="x",
+        matching_algorithm="any",
+        has_tags=["e2e-finance"],
+        custom_field_query='["e2e-url","exists",true]',
+    )
 
-    with pytest.raises(
-        Validation, match=r"trigger type 'manual' \(5\) cannot be written"
-    ) as raised:
+    made = await setup.workflows.create(
+        WorkflowCreate(name="n", triggers=(trigger,), actions=(RETITLE,)), confirm=False
+    )
+    again = await setup.workflows.update(
+        "n", WorkflowEdit(triggers=(trigger, NEVER)), confirm=False
+    )
+
+    [shown] = made.triggers
+    assert (shown.type, shown.type_name) == (5, "manual")
+    assert shown.settings == {
+        "filename": "*.pdf",
+        "match": "x",
+        "matching_algorithm": "any",
+        "has_tags": ["e2e-finance"],
+        "custom_field_query": '["e2e-url","exists",true]',
+    }
+    assert [t.type for t in again.triggers] == [5, 1]
+
+
+@pytest.mark.decision("decision-86")
+@pytest.mark.parametrize(
+    "setting",
+    [
+        {"sources": ["web_ui"]},
+        {"path": "/x"},
+        {"mailrule": 1},
+        {"schedule_offset_days": 1},
+        {"schedule_date_field": "added"},
+    ],
+    ids=str,
+)
+async def test_a_setting_paperless_ignores_on_a_manual_trigger_is_refused(
+    setting: dict[str, object],
+) -> None:
+    setup = Setup()
+    trigger = TriggerInput.model_validate({"type": "manual", **setting})
+
+    with pytest.raises(Validation, match="only applies to"):
         _ = await setup.workflows.create(
-            WorkflowCreate(name="n", triggers=(TriggerInput(type=kind),)), confirm=True
+            WorkflowCreate(name="n", triggers=(trigger,)), confirm=True
         )
 
-    assert "web UI" in (raised.value.hint or "")
     assert setup.fake.writes == []
 
 
-async def test_a_manual_trigger_is_refused_in_any_place_of_a_create_or_an_update() -> None:
+@pytest.mark.decision("decision-86")
+async def test_a_workflow_with_only_a_manual_trigger_is_confirmed_as_run_by_hand() -> None:
+    setup = Setup(writes=False)
+    spec = WorkflowCreate(name="n", triggers=(TriggerInput(type="manual"),), actions=(MAIL,))
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.workflows.create(spec, confirm=False)
+
+    assert "runs only when a user runs it by hand (manual)" in raised.value.message
+
+
+@pytest.mark.decision("decision-86")
+@pytest.mark.parametrize("kind", [8, "apply AI suggestions", "Apply-AI-Suggestions"])
+async def test_applying_ai_suggestions_is_written_and_confirmed_while_enabled(
+    kind: int | str,
+) -> None:
     setup = Setup()
-    _ = setup.seed("w", enabled=False)
-    triggers = (NEVER, TriggerInput(type="manual"))
+    ai = ActionInput(type=kind, ai_suggestion_fields=["title", "tags"], ai_create_missing=True)
+    triggers = (TriggerInput(type="added"),)
+    spec = WorkflowCreate(name="n", triggers=triggers, actions=(ai,))
 
-    with pytest.raises(Validation, match=r"'manual' \(5\) cannot be written"):
-        _ = await setup.workflows.create(WorkflowCreate(name="n", triggers=triggers), confirm=True)
-    with pytest.raises(Validation, match=r"'manual' \(5\) cannot be written"):
-        _ = await setup.workflows.update("w", WorkflowEdit(triggers=triggers), confirm=True)
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.workflows.create(spec, confirm=False)
+    off = await setup.workflows.create(spec.model_copy(update={"enabled": False}), confirm=False)
+    with pytest.raises(ConfirmationRequired):
+        _ = await setup.workflows.update("n", WorkflowEdit(enabled=True), confirm=False)
 
+    assert (
+        "ask the AI backend, at least once each, about the text of every document that matches a "
+        "trigger other than consumption and apply what it suggests for title, tags, only where "
+        "there is no value (title always has one, so it stays; tags are only added), creating tags "
+        "that do not exist"
+    ) in raised.value.message
+    [action] = off.actions
+    assert (action.type, action.type_name) == (8, "apply AI suggestions")
+    assert action.settings == {"ai_suggestion_fields": ["title", "tags"], "ai_create_missing": True}
+
+
+@pytest.mark.decision("decision-86")
+async def test_applying_ai_suggestions_needs_fields_and_keeps_to_its_settings() -> None:
+    setup = Setup()
+
+    for action, said in (
+        (ActionInput(type=8), "needs ai_suggestion_fields"),
+        (ActionInput(type=8, ai_create_missing=True), "needs ai_suggestion_fields"),
+        (ActionInput(type=8, ai_suggestion_fields=["title"], assign_title="x"), "belongs to"),
+        (ActionInput(type=1, ai_overwrite_existing=True), "belongs to apply AI suggestions"),
+    ):
+        with pytest.raises(Validation, match=said):
+            _ = await setup.workflows.create(
+                WorkflowCreate(name="n", actions=(action,)), confirm=True
+            )
+    for fields in ([], ["content"]):
+        with pytest.raises(ValidationError):
+            _ = ActionInput.model_validate({"type": 8, "ai_suggestion_fields": fields})
     assert setup.fake.writes == []
+
+
+@pytest.mark.decision("decision-86")
+async def test_a_list_with_ai_suggestions_is_replaced_like_any_other() -> None:
+    setup = Setup()
+    ai = WorkflowAction(id=4, type=8, settings={"ai_suggestion_fields": ["title"]})
+    _ = setup.seed("w", enabled=False, actions=[ai])
+
+    done = await setup.workflows.update("w", WorkflowEdit(actions=(RETITLE,)), confirm=False)
+
+    assert [a.type for a in done.actions] == [1]
 
 
 async def test_a_manual_trigger_is_listed_by_its_label() -> None:
@@ -661,22 +763,22 @@ async def test_a_manual_trigger_is_listed_by_its_label() -> None:
     assert [(t.type, t.type_name) for t in listed.triggers] == [(5, "manual")]
 
 
-async def test_replacing_triggers_never_drops_a_manual_one() -> None:
+async def test_replacing_triggers_never_drops_one_of_an_unknown_type() -> None:
     setup = Setup()
     _ = setup.seed(
         "w",
         enabled=False,
-        triggers=[WorkflowTrigger(id=1, type=5, settings={}), WorkflowTrigger(id=2, type=2)],
+        triggers=[WorkflowTrigger(id=1, type=6, settings={}), WorkflowTrigger(id=2, type=2)],
     )
 
     with pytest.raises(Validation, match="holds triggers this server cannot write") as raised:
         _ = await setup.workflows.update("w", WorkflowEdit(triggers=(NEVER,)), confirm=False)
     renamed = await setup.workflows.update("w", WorkflowEdit(name="v"), confirm=False)
 
-    assert "manual (id 1)" in raised.value.message
+    assert "unknown type 6 (id 1)" in raised.value.message
     assert "web UI" in (raised.value.hint or "")
     assert setup.fake.writes == ["update"]
-    assert [t.type for t in renamed.triggers] == [5, 2]  # untouched, in the order stored
+    assert [t.type for t in renamed.triggers] == [6, 2]  # untouched, in the order stored
 
 
 @pytest.mark.parametrize(
@@ -684,7 +786,6 @@ async def test_replacing_triggers_never_drops_a_manual_one() -> None:
     [
         (5, r"action type 'password removal' \(5\) cannot be written by this server"),
         ("Password Removal", r"action type 'password removal' \(5\) cannot be written"),
-        (8, r"action type 'apply AI suggestions' \(8\) cannot be written by this server"),
         (99, "No workflow action type 99"),
         ("shell", "No workflow action type is called 'shell'"),
     ],
@@ -710,15 +811,9 @@ async def test_the_reasons_name_what_to_do_instead() -> None:
         _ = await setup.workflows.create(
             WorkflowCreate(name="n", actions=(ActionInput(type=5),)), confirm=True
         )
-    with pytest.raises(Validation) as ai:
-        _ = await setup.workflows.create(
-            WorkflowCreate(name="n", actions=(ActionInput(type=8),)), confirm=True
-        )
 
     assert "passwords" in password.value.message
     assert "web UI" in (password.value.hint or "")
-    assert "AI" in ai.value.message
-    assert "web UI" in (ai.value.hint or "")
 
 
 @pytest.mark.parametrize(
@@ -1310,6 +1405,7 @@ async def test_replacing_actions_never_drops_one_this_server_cannot_write() -> N
     _ = setup.seed(
         "w",
         enabled=False,
+        triggers=[WorkflowTrigger(id=1, type=2)],
         actions=[
             WorkflowAction(id=3, type=5, settings={"passwords": "x"}),
             WorkflowAction(id=4, type=8, settings={}),
@@ -1322,7 +1418,7 @@ async def test_replacing_actions_never_drops_one_this_server_cannot_write() -> N
     renamed = await setup.workflows.update("w", WorkflowEdit(name="v", enabled=True), confirm=True)
 
     assert "password removal (id 3)" in raised.value.message
-    assert "apply AI suggestions (id 4)" in raised.value.message
+    assert "AI" not in raised.value.message
     assert raised.value.hint is not None
     assert "web UI" in raised.value.hint
     assert setup.fake.writes == ["update"]
@@ -1491,7 +1587,7 @@ async def test_a_match_with_an_algorithm_or_an_empty_match_is_accepted() -> None
             5,
             "unlock each matching document with stored passwords and add the result",
         ),
-        (8, "ask the AI backend about every matching document and apply what it suggests"),
+        (8, "apply AI suggestions to no field (Paperless skips it)"),
         (77, "run an action of type 77"),
     ],
 )
@@ -1499,9 +1595,14 @@ async def test_switching_on_a_workflow_with_an_action_this_server_cannot_write_n
     kind: int, acts: str
 ) -> None:
     setup = Setup()
-    _ = setup.seed("w", enabled=False, actions=[WorkflowAction(type=kind)])
+    _ = setup.seed(
+        "w",
+        enabled=False,
+        triggers=[WorkflowTrigger(id=1, type=2)],
+        actions=[WorkflowAction(type=kind)],
+    )
 
-    with pytest.raises(ConfirmationRequired, match=acts):
+    with pytest.raises(ConfirmationRequired, match=re.escape(acts)):
         _ = await setup.workflows.update("w", WorkflowEdit(enabled=True), confirm=False)
     done = await setup.workflows.update("w", WorkflowEdit(enabled=True), confirm=True)
 
@@ -1583,4 +1684,31 @@ async def test_a_blank_filter_is_refused_when_a_workflow_is_created_or_changed(n
         _ = await setup.workflows.create(WorkflowCreate(name="n", triggers=(blank,)), confirm=True)
     with pytest.raises(Validation, match=f"'{name}' is blank"):
         _ = await setup.workflows.update("w", WorkflowEdit(triggers=(blank,)), confirm=True)
+    assert setup.fake.writes == []
+
+
+@pytest.mark.decision("decision-86")
+async def test_ai_fields_are_stored_once_in_their_order() -> None:
+    setup = Setup()
+    ai = ActionInput(type=8, ai_suggestion_fields=["tags", "title", "tags"])
+
+    made = await setup.workflows.create(
+        WorkflowCreate(
+            name="n", enabled=False, triggers=(TriggerInput(type="manual"),), actions=(ai,)
+        ),
+        confirm=False,
+    )
+
+    assert made.actions[0].settings == {"ai_suggestion_fields": ["tags", "title"]}
+
+
+@pytest.mark.decision("decision-86")
+async def test_a_manual_trigger_with_an_algorithm_needs_a_match() -> None:
+    setup = Setup()
+    trigger = TriggerInput(type="manual", matching_algorithm="any")
+
+    with pytest.raises(Validation, match="would match no document"):
+        _ = await setup.workflows.create(
+            WorkflowCreate(name="n", triggers=(trigger,)), confirm=True
+        )
     assert setup.fake.writes == []

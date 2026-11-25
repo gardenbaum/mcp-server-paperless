@@ -459,10 +459,11 @@ ADD, CHANGE, REMOVE = {"operation": "add"}, {"operation": "change"}, {"operation
         {**CHANGE, "trigger_id": 2, "trigger": NEVER},
         {**CHANGE, "action_id": 15, "clear": ("assign_title",)},
         {**CHANGE, "action_id": 18, "action": RETITLE},
-        {**CHANGE, "trigger_id": 4, "clear": ("filename",)},
+        {**CHANGE, "trigger_id": 9, "clear": ("filename",)},
         {**ADD, "action": ActionInput(type="password removal")},
         {**ADD, "action": ActionInput(type="apply AI suggestions")},
-        {**ADD, "trigger": TriggerInput(type="manual")},
+        {**ADD, "trigger": TriggerInput(type="manual", path="/x")},
+        {**CHANGE, "action_id": 18, "clear": ("ai_suggestion_fields",)},
         {**ADD, "trigger": TriggerInput(type="consumption")},
         {**CHANGE, "trigger_id": 1, "clear": ("filename",)},
         {**CHANGE, "trigger_id": 2, "trigger": TriggerInput(type=2, matching_algorithm="none")},
@@ -473,7 +474,7 @@ async def test_what_does_not_belong_together_is_refused_and_nothing_is_sent(
     edit: dict[str, object],
 ) -> None:
     setup = Setup(writes=False)
-    before = setup.seed(enabled=True)
+    before = setup.seed([*TRIGGERS, trigger(9, 6)], enabled=True)
 
     with pytest.raises(Validation) as raised:
         _ = await setup.do(confirm=True, **edit)
@@ -765,12 +766,13 @@ async def test_a_new_header_value_loses_the_stored_one() -> None:
         ({"action_id": 13, "clear": ("email",)}, "'email' cannot be cleared"),
         ({"action_id": 14, "clear": ("webhook",)}, "'webhook' cannot be cleared"),
         ({"action_id": 15, "clear": ("assign_title",)}, "'password removal' is not written"),
-        ({"trigger_id": 4, "clear": ("filename",)}, "'manual' is not written"),
+        ({"trigger_id": 9, "clear": ("filename",)}, "6 is not written"),
+        ({"action_id": 18, "clear": ("ai_suggestion_fields",)}, "cannot be cleared"),
     ],
 )
 async def test_the_refusal_of_a_change_says_why(edit: dict[str, object], said: str) -> None:
     setup = Setup(writes=False)
-    _ = setup.seed()
+    _ = setup.seed([*TRIGGERS, trigger(9, 6)])
 
     with pytest.raises(Validation, match=said):
         _ = await setup.do(**CHANGE, confirm=True, **edit)
@@ -1025,6 +1027,40 @@ async def test_no_operation_touches_or_sends_another_action(  # noqa: PLR0913, P
             assert left[old.id] == old
     assert len(left) == len(actions) + {"add": 1, "move": 0, "remove": -1}[operation]
     assert setup.now.triggers == before.triggers
+
+
+@pytest.mark.decision("decision-86")
+async def test_a_manual_trigger_and_ai_suggestions_are_added_and_changed() -> None:
+    setup = Setup()
+    _ = setup.seed([START], [TITLE])
+
+    _ = await setup.do(operation="add", trigger=TriggerInput(type="manual", filename="a"))
+    number = setup.now.triggers[1].id
+    _ = await setup.do(**CHANGE, trigger_id=number, clear=("filename",))
+    ai = ActionInput(type=8, ai_suggestion_fields=["title"], ai_overwrite_existing=True)
+    _ = await setup.do(operation="add", action=ai)
+    action_id = setup.now.actions[1].id
+    more = ActionInput(type=8, ai_create_missing=True)
+    _ = await setup.do(**CHANGE, action_id=action_id, action=more, clear=("ai_overwrite_existing",))
+
+    assert setup.now.triggers[1] == trigger(number or 0, 5)
+    assert setup.now.actions[1].settings == {
+        **ACTION_DEFAULTS,
+        "ai_suggestion_fields": ["title"],
+        "ai_create_missing": True,
+    }
+    with pytest.raises(Validation, match="applying AI suggestions needs a trigger other"):
+        _ = await setup.do(operation="remove", trigger_id=number)
+
+
+@pytest.mark.decision("decision-86")
+async def test_ai_suggestions_without_a_trigger_that_can_run_them_are_refused() -> None:
+    setup = Setup(writes=False)
+    _ = setup.seed([START], [TITLE])
+    ai = ActionInput(type=8, ai_suggestion_fields=["title"])
+
+    with pytest.raises(Validation, match="applying AI suggestions needs a trigger other"):
+        _ = await setup.do(operation="add", action=ai)
 
 
 # --- review of #159
@@ -1475,3 +1511,12 @@ def test_passwords_are_lost_unless_the_same_stay() -> None:
     assert hidden_lost(UNLOCKS, action(15, 5, passwords=["other"])) == ["its passwords"]
     assert hidden_lost(UNLOCKS, None) == ["its passwords"]
     assert hidden_lost(action(15, 5, passwords=[]), None) == []
+
+
+@pytest.mark.decision("decision-86")
+async def test_a_manual_trigger_is_not_left_with_an_algorithm_alone() -> None:
+    setup = Setup(writes=False)
+    _ = setup.seed([trigger(4, 5, match="m", matching_algorithm=1)], [])
+
+    with pytest.raises(Validation, match="would match no document"):
+        _ = await setup.do(**CHANGE, trigger_id=4, clear=("match",))

@@ -68,19 +68,21 @@ added, updated and scheduled can filter by content (match with matching_algorith
 correspondents, document types, storage paths and a custom field query. Taxonomy values are names
 or ids, as in search_documents.
 
-Actions run in order on the matching document: 'assignment' (assign_title as a template such as
-'{{ correspondent }} {{ created_year }}', tags, correspondent, document type, storage path, owner,
-view and change permissions, custom fields with values), 'removal' (remove_all_* flags and
-remove_* lists), 'email' (email: subject, body, to, include_document), 'webhook' (a POST request:
-webhook: url, headers, params or body, include_document), 'move to trash' (undo with
-restore_from_trash, trash toolset, or in the web UI) and 'remote OCR' (consumption triggers only).
-Settings of another action type than the one given are an error. Password removal and applying AI
-suggestions cannot be written here; use the Paperless web UI. A 'manual' trigger (for
-run_workflow) is listed but cannot be written here either.
+Actions run in order on the matching document: 'assignment' (assign_title as a template such as '{{
+correspondent }} {{ created_year }}', tags, correspondent, document type, storage path, owner, view
+and change permissions, custom fields with values), 'removal' (remove_all_* flags and remove_*
+lists), 'email' (email: subject, body, to, include_document), 'webhook' (a POST request: webhook:
+url, headers, params or body, include_document), 'move to trash' (undo with restore_from_trash,
+trash toolset, or in the web UI), 'remote OCR' (consumption triggers only) and 'apply AI
+suggestions' (ai_suggestion_fields; asks the AI backend at least once per matching document; not
+for consumption triggers; title and created only change with ai_overwrite_existing; a change also
+counts for documents already queued, and removing it drops them). Settings of another action type
+than the one given are an error. Password removal cannot be written here; use the Paperless web UI.
+A 'manual' trigger filters as 'added' does, and by filename; its workflow runs with run_workflow.
 
 A workflow runs by itself on every matching document once it is enabled (one with only manual
-triggers runs only with run_workflow or in the web UI). Without confirm, an
-enabled workflow that moves to trash, e-mails, calls a webhook, removes things or changes owner or
+triggers runs only with run_workflow or in the web UI). Without confirm, an enabled workflow that
+moves to trash, e-mails, calls a webhook, asks the AI, removes things or changes owner or
 permissions needs the user's yes: a dialog, or an error for you to show the user, first says what
 it would do (see confirm). Disabled workflows and plain filing (tags, title, correspondent and so
 on) need no confirm. Needs the workflow permissions in Paperless.
@@ -264,12 +266,12 @@ async def update_workflow_part(  # noqa: PLR0913 -- one parameter per concept, d
     '(hidden)' or the URL as shown keep what is stored; custom field values join the stored ones);
     remove takes an id. Without confirm a dialog, or an error for you to show the user, comes first
     if the workflow that results is enabled and moves documents to the trash (undo with
-    restore_from_trash, trash toolset), e-mails, calls a webhook, removes things or changes owner or
-    permissions, and always if hidden values are lost for good (see confirm). Afterwards the
-    workflow is read again: an error that says it is not as planned, or that this is not known,
-    means the change may be there, so read it and ask the user instead of calling again. A trigger
-    or action that another workflow holds, too, is not changed. Needs the permission to change
-    workflows.
+    restore_from_trash, trash toolset), e-mails, calls a webhook, asks the AI, removes things or
+    changes owner or permissions, and always if hidden values are lost for good (see confirm).
+    Afterwards the workflow is read again: an error that says it is not as planned, or that this is
+    not known, means the change may be there, so read it and ask the user instead of calling again.
+    A trigger or action that another workflow holds, too, is not changed. Needs the permission to
+    change workflows.
     """
     edit = PartEdit(
         operation=operation,

@@ -1,6 +1,6 @@
 """run_workflow through the assembled server on the E2E Paperless (decision-75).
 
-The workflows are made through the API of Paperless (this server writes no manual trigger) and have
+The workflows are made through the API of Paperless and have
 only manual triggers, so they act on nothing but the documents of these tests.
 """
 
