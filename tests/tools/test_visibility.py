@@ -335,7 +335,7 @@ READS = {
     "trash": {"list_trash", "get_trash_entry", "get_trashed_file"},
     "pdf": READ_PDF,
     "sharing": READ_SHARING,
-    "permissions": {"list_users", "list_groups"},
+    "permissions": {"get_permissions", "list_users", "list_groups"},
     "mail": READ_MAIL,
     "raw": RAW,
     "workflows": READ_WORKFLOWS,
