@@ -385,3 +385,9 @@ def test_the_readme_links_files_by_url_so_they_work_on_the_pypi_page() -> None:
     links = [found[1] for found in LINK.finditer(prose(README))]
 
     assert [link for link in links if not re.match(r"[a-z][a-z0-9+.-]*:|#", link)] == []
+
+
+@pytest.mark.decision("decision-97")
+@pytest.mark.parametrize("page", ["README.md", "docs/configuration.md", "docs/container.md"])
+def test_the_pages_that_name_the_selection_say_how_a_toolset_is_only_read(page: str) -> None:
+    assert "`name:read`" in prose(ROOT / page)

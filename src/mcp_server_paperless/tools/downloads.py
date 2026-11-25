@@ -34,8 +34,9 @@ if TYPE_CHECKING:
 
 CORE, ADMIN = "core", "admin"
 
-# The tools' names are the same in both variants; the server registers exactly one of them.
-remote = LocalProvider()
+# The tools' names are the same in both variants; the server registers exactly one of them. One
+# provider per tool: each may be in the saving variant or not, as its toolset is (decision-97).
+document, archive = LocalProvider(), LocalProvider()
 
 type DocumentId = Annotated[int, Field(description="Document id, from search_documents.")]
 type Kind = Annotated[
@@ -195,7 +196,7 @@ async def read_archive(  # noqa: PLR0913 -- the tool's parameters
     return file_result(found.report, found.data or None, uri, OCTETS, found.report.filename)
 
 
-@remote.tool(
+@document.tool(
     tags={CORE},
     annotations=ANNOTATIONS["download_document"],
     description=FILE_LEAD + NOT_SAVED + FILE_PARTS,
@@ -217,7 +218,7 @@ async def download_document(  # noqa: PLR0913 -- the file and the part of it
     )
 
 
-@remote.tool(
+@archive.tool(
     tags={ADMIN},
     annotations=ANNOTATIONS["bulk_download"],
     description=ARCHIVE_LEAD + NOT_SAVED + ARCHIVE_PARTS,

@@ -21,6 +21,7 @@ from guide_oracle import (
     SELECTIONS,
     Seen,
     check,
+    everything,
     look,
     observe,
     refused,
@@ -216,7 +217,9 @@ async def test_a_paperless_that_does_not_answer_is_a_gap_with_the_real_adapter(
         toolsets=SELECTIONS[selection], read_only=read_only, disabled_tools=DISABLED[disabled]
     )
     ceiling = server_settings(
-        toolsets=["all"], read_only=read_only, disabled_tools=DISABLED[disabled]
+        toolsets=everything(SELECTIONS[selection]),
+        read_only=read_only,
+        disabled_tools=DISABLED[disabled],
     )
     url = refused_url()
     try:
@@ -228,7 +231,13 @@ async def test_a_paperless_that_does_not_answer_is_a_gap_with_the_real_adapter(
 
     assert current is not None
     assert wide is not None
-    verify(current, wide, capability="silent", selected=resolved(SELECTIONS[selection]))
+    verify(
+        current,
+        wide,
+        capability="silent",
+        selected=resolved(SELECTIONS[selection]),
+        read_only=read_only,
+    )
 
 
 async def test_the_gap_of_a_toolset_that_is_on_follows_the_current_answer() -> None:
@@ -254,7 +263,7 @@ async def look_started(
 
 
 @pytest.mark.parametrize("disabled", [(), ("ask_paperless_ai", "get_ai_suggestions")])
-@pytest.mark.parametrize("selection", ["default", "core", "core-ai-trash", "all"])
+@pytest.mark.parametrize("selection", ["default", "core", "core-ai-trash", "all", "mixed"])
 @pytest.mark.parametrize("now", [True, False, None])
 @pytest.mark.parametrize("started", [True, False, None])
 async def test_the_overview_after_the_answer_changed_says_what_a_restart_would_deliver(
@@ -267,7 +276,7 @@ async def test_the_overview_after_the_answer_changed_says_what_a_restart_would_d
         paperless.ai_enabled = now
         seen = await look(client)
     restarted = await look_started(Says(now), toolsets, disabled)
-    ceiling = await look_started(Says(now), ["all"], disabled)
+    ceiling = await look_started(Says(now), everything(toolsets), disabled)
     assert seen.guide is not None
 
     def toolsets_of(tools: frozenset[str]) -> list[str]:
@@ -276,8 +285,13 @@ async def test_the_overview_after_the_answer_changed_says_what_a_restart_would_d
     on = toolsets_of(seen.tools)
     delivered = toolsets_of(restarted.tools - seen.tools)
     off = toolsets_of(ceiling.tools - restarted.tools)
-    assert seen.guide["on"] == on
-    assert seen.guide["offered_after_restart"] == delivered
+    chosen = resolved(toolsets)
+
+    def marked(names: list[str]) -> list[str]:
+        return [f"{n} (read-only)" if f"{n}:read" in chosen else n for n in names]
+
+    assert seen.guide["on"] == marked(on)
+    assert seen.guide["offered_after_restart"] == marked(delivered)
     assert [e["toolset"] for e in cast("list[dict[str, str]]", seen.guide["off"])] == off
     # The gap follows the current answer, for any toolset the guide mentions.
     mentioned = {*on, *delivered, *off}

@@ -73,7 +73,8 @@ class ServerSettings(BaseSettings):
             (``PAPERLESS_MCP_STARTUP_TIMEOUT``); a Paperless that does not answer in time does
             not stop the start.
         toolsets: Toolsets whose tools are offered (``PAPERLESS_MCP_TOOLSETS``): names, or
-            ``all``; comma-separated or a JSON array. Default ``core,ai``; ``ai`` is hidden
+            ``all``; comma-separated or a JSON array. ``name:read`` offers only the tools of the
+            toolset that change nothing (decision-97). Default ``core,ai``; ``ai`` is hidden
             while Paperless AI is disabled. The ai tools are read-only but each call may cost
             money (Paperless asks its LLM backend), so clients that auto-approve read-only tools
             will run them unasked: set ``core`` to leave them out, or name them in
@@ -109,7 +110,7 @@ class ServerSettings(BaseSettings):
         download_dirs: Directories ``download_document`` and ``bulk_download`` may save files into
             (``PAPERLESS_MCP_DOWNLOAD_DIRS``), with the rules of ``upload_dirs``. Empty (the
             default): nothing is ever saved. Only the stdio transport offers it, and only without
-            ``read_only`` (decision-45).
+            ``read_only``, and not for a tool whose toolset is read-only (decision-45, decision-97).
     """
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
@@ -168,7 +169,10 @@ class ServerSettings(BaseSettings):
             message = "name at least one toolset, or all"
             raise ValueError(message)
         if ALL_TOOLSETS in value and len(value) > 1:
-            message = f"{ALL_TOOLSETS} stands alone; do not combine it with toolset names"
+            message = (
+                f"{ALL_TOOLSETS} stands alone; do not combine it with toolset names. To offer some "
+                "toolsets only for reading, list every toolset (core,ai,mail:read)"
+            )
             raise ValueError(message)
         return value
 

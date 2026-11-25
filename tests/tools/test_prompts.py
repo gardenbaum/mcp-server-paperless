@@ -359,6 +359,15 @@ async def test_read_only_mode_keeps_the_prompt_that_only_reads() -> None:
     assert await prompt_names(server) == {"find_document"}
 
 
+@pytest.mark.decision("decision-97")
+async def test_a_read_only_toolset_hides_the_prompts_that_need_its_writing_tools() -> None:
+    mixed = serve(admin(), toolsets=["core", "mail:read", "bulk:read"])
+    reading = serve(admin(), toolsets=["core:read", "bulk"])
+
+    assert await prompt_names(mixed) == PROMPTS
+    assert await prompt_names(reading) == {"find_document"}
+
+
 async def test_disabling_a_tool_a_prompt_names_hides_that_prompt_only() -> None:
     server = serve(admin(), disabled_tools=["delete_taxonomy_item"])
 
