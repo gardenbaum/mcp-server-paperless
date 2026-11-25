@@ -373,7 +373,9 @@ async def test_the_history_runs_newest_first_and_never_holds_the_ocr_text(
     assert entries
     assert entries[-1].action == "create"
     assert [entry.id for entry in entries] == sorted((e.id for e in entries), reverse=True)
-    assert all("content" not in entry.changes for entry in entries)
+    texts = [entry.changes["content"] for entry in entries if "content" in entry.changes]
+    assert texts  # the first text at least: that it changed is told, the text never
+    assert set(map(str, texts)) == {"changed, the text is not shown"}
     assert "private admin only" not in repr(entries)
     assert any(entry.actor == "admin" for entry in entries)
 

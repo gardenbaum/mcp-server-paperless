@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Final
 from pydantic import BaseModel, Field, JsonValue, RootModel
 
 from mcp_server_paperless.domain.documents import (
+    TEXT_CHANGED,
     CustomFieldValue,
     DocumentFile,
     DocumentHit,
@@ -406,13 +407,16 @@ def _note(row: _Note) -> Note:
 
 
 def _entry(row: _HistoryRow) -> HistoryEntry:
-    """An audit log entry; ``content`` holds the OCR text, which never leaves the adapter."""
+    """An audit log entry; the OCR text in ``content`` never leaves the adapter."""
     return HistoryEntry(
         id=row.id,
         timestamp=row.timestamp,
         action=row.action,
         actor=row.actor.username if row.actor else None,
-        changes={name: change for name, change in row.changes.items() if name != "content"},
+        changes={
+            name: TEXT_CHANGED if name == "content" else change
+            for name, change in row.changes.items()
+        },
     )
 
 

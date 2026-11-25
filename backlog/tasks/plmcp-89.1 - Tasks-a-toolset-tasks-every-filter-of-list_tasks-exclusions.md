@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:38Z'
-updated_date: '2026-11-25T14:07:05Z'
+updated_date: '2026-11-25T14:19:10Z'
 labels:
   - admin
 dependencies: []
@@ -60,6 +60,8 @@ Green on d4f9fcf: every check of #167. Full hosted E2E of the stack 45618698199 
 The E2E tests were written before their first hosted run and not run red (no local E2E). The README names the break with 89.3's commit.
 
 Review fixes: the pointers to list_tasks name the toolset (snapshot of upload_documents changed), superuser without staff pinned on fake and 3.5.1, every ordering in the adapter test, hashes of the moved equivalent mutants recomputed with mutmut's own functions in-process (no run), line breaks in configuration.md.
+
+Merged main 1efb5cd (106 tools, guide 3069). explain_mail_import and explain_workflow read TaskListReader; AdminReader.list_tasks and the created= window with its tests are gone. Output change of explain_mail_import: failed files are counted exactly by trigger source. Guide measured 3118, 3138, 3158 (3069 + 89), instructions 1443.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

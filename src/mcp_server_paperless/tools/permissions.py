@@ -1,4 +1,4 @@
-"""The permissions toolset: who owns documents, taxonomy and mail objects, and who may use them.
+"""The permissions toolset: who owns documents, taxonomy, views and mail, and who may use them.
 
 Opt-in (``PAPERLESS_MCP_TOOLSETS=core,permissions``). Granting access cannot be taken back (what a
 user saw, they may have kept), so every call that changes anything needs ``confirm`` and the
@@ -45,7 +45,7 @@ async def set_permissions(  # noqa: PLR0913 -- one parameter per concept, descri
         Field(
             description=(
                 "What the objects are: document, tag, correspondent, document_type, storage_path, "
-                "mail_account or mail_rule."
+                "mail_account, mail_rule or saved_view."
             )
         ),
     ],
@@ -104,7 +104,7 @@ async def set_permissions(  # noqa: PLR0913 -- one parameter per concept, descri
     ] = "merge",
     confirm: Confirm = False,
 ) -> PermissionsResult:
-    """Share documents, taxonomy objects, mail accounts or mail rules, or hand them over.
+    """Share documents, taxonomy objects, saved views, mail accounts or rules, or hand them over.
 
     Sets who owns the objects and which users and groups may view or change them, by name or id.
     A change grant includes view. Lists you leave out are never touched in either mode, so a

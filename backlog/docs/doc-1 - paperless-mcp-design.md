@@ -3,7 +3,7 @@ id: doc-1
 title: paperless-mcp design
 type: specification
 created_date: '2026-11-09T19:21:00Z'
-updated_date: '2026-11-25T09:26:56Z'
+updated_date: '2026-11-25T10:42:36Z'
 ---
 # mcp-server-paperless — Design
 
@@ -249,11 +249,11 @@ Names are indicative; the builder finalises parameters within §5.5. "Phase" ref
 | bulk | `read_documents` (up to 100 documents by ids, search filters or saved view, at most 1000 matches; chosen fields, text on request: decision-69, decision-70) · `bulk_edit_documents` (by ids, filters or view, every document named: decision-71; typed operations: tags add/remove/modify, correspondent, type, storage path, custom fields, delete, reprocess; `dry_run`, confirm) · `update_documents` (values of their own for up to 100 documents) and `add_notes` (a note for many or one each), both confirmed as a whole, one document after the other: decision-73 · `bulk_edit_taxonomy` (delete, permissions) · `upload_documents` (several files or a directory; stdio with upload directories only: decision-50) | M3 |
 | pdf | `rotate_documents` · `merge_documents` · `split_document` · `delete_pages` · `edit_pdf` · `remove_document_password` · `reprocess_documents` | M3 |
 | versions | `list_document_versions` · `upload_document_version` · `set_document_version_label` · `delete_document_version` (confirm) · `merge_documents_as_versions` · `correct_document_text` (dry_run, confirm: decision-48) | M3 |
-| views | saved views list/get/create/update/delete (`run_saved_view`, which translates a view's filter rules into a document query, is in core: decision-34) | M3 |
+| views | saved views list/get/create/update/delete, and `pin_saved_view` for the dashboard and the sidebar of the current user (decision-92) (`run_saved_view`, which translates a view's filter rules into a document query, is in core: decision-34) | M3 |
 | sharing | share links list/create/delete · share-link bundles list/create/rebuild/delete · `email_documents` | M3 |
 | trash | `list_trash` (filters) · `get_trash_entry` · `get_trashed_file` · `restore_from_trash` · `empty_trash` (explicit ids, a filter that only shows, or `all=true`; confirm: decision-54, decision-55) | M3 |
 | permissions | `set_permissions` (documents, taxonomy, mail accounts and rules: decision-87; owner, view/change users/groups; merge or replace) · `list_users` · `list_groups` | M3 |
-| mail | mail accounts list/get/create/update/delete/test/process (passwords write-only, never returned) · mail rules CRUD · `list_processed_mail` · `get_processed_mail` · `delete_processed_mail` (confirm, dry_run) (decision-79, decision-80, decision-83) | M4 |
+| mail | mail accounts list/get/create/update/delete/test/process (passwords write-only, never returned) · mail rules CRUD · `list_processed_mail` · `get_processed_mail` · `delete_processed_mail` (confirm, dry_run) · `explain_mail_import` (no dry run) (decision-79, decision-80, decision-83, decision-90) | M4 |
 | workflows | workflows list/get/create/update/delete (triggers and actions nested) · `run_workflow` (by hand, on up to 100 documents by ids, filters or view; always confirmed with every document and action: decision-75) | M4 |
 | admin | users CRUD · groups CRUD · application config get/update · logs list/get · tasks list/acknowledge/run (e.g. classifier training, sanity check) · `bulk_download` (ZIP: whole, in parts, or saved over stdio: decision-45) | M4 |
 | raw (off) | `paperless_api_get(path, params)` — read-only GET under `/api/`, size-capped, for anything not covered | M4 |

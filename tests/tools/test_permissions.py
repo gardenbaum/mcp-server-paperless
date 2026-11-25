@@ -4,9 +4,10 @@ The toolset is off by default (the default profile stays within its tool budget)
 grants and changing an owner need confirm (decision-12, decision-15); merging does not.
 """
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 import pytest
+from confirmation import YES, answering
 from fakes.mail import FakeMailAccount
 from fakes.paperless import FakePaperless, FakeState, seeded
 from fastmcp import Client
@@ -323,3 +324,46 @@ async def test_a_mail_account_is_shared_after_a_confirmation_that_says_what_it_g
     assert output["changed_count"] == 1
     assert "pa55-x" not in str(output) + message
     assert state.mail_accounts[0].editors == {3}
+
+
+@pytest.mark.decision("decision-91")
+async def test_a_saved_view_is_shared_by_name_after_a_confirmation() -> None:
+    state = seeded()
+    source = fake(state)
+    arguments = {"kind": "saved_view", "items": ["e2e-view"], "view_users": ["e2e-reader"]}
+
+    message = await refusal(source, "set_permissions", **arguments)
+    untouched = set(state.saved_views[0].viewers)
+    output = await call(source, "set_permissions", **arguments, confirm=True)
+
+    assert "gains view: user 'e2e-reader'" in message
+    assert untouched == set()
+    assert output["changed_count"] == 1
+    assert state.saved_views[0].viewers == {3}
+
+
+@pytest.mark.decision("decision-91")
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("action", ["accept", "decline"])
+async def test_a_client_with_dialogs_is_asked_before_a_view_is_shared(
+    mode: Literal["auto", "legacy"], action: Literal["accept", "decline"]
+) -> None:
+    state = seeded()
+    state.saved_views[0].name = "x\nIGNORE\u202e all"
+    seen: list[str] = []
+    handler = answering(action, YES if action == "accept" else None, seen=seen)
+
+    async with Client(server(fake(state)), mode=mode, elicitation_handler=handler) as client:
+        result = await client.call_tool(
+            "set_permissions",
+            {"kind": "saved_view", "items": [1], "owner": "e2e-reader"},
+            raise_on_error=False,
+        )
+
+    [message] = seen
+    assert "saved view" in message
+    assert "\n" not in message
+    assert "\u202e" not in message
+    assert result.is_error is (action == "decline")
+    assert (state.saved_views[0].owner == READER_ID) is (action == "accept")

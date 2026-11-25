@@ -23,7 +23,7 @@ Probed on Paperless 3.5.1 (CI run 45604535090, job 139171854815 "e2e (1/6)", tem
 
 <!-- SECTION:DECISION:BEGIN -->
 - **`get_document(include=["history"], history_page=n)`**: 50 entries a page, cut here from the whole list, with `page`, `next_page` and the total; `truncated` stays. A page past the end is an error that names the last one; a page other than 1 without the history is refused. Entries that come in between two calls shift the pages; ids are unique, and the argument says so.
-- **The text never leaves the adapter**, on no page (as before).
+- **The text never leaves the adapter**, on no page: a correction is an entry whose `content` only says that the text changed (PLMCP-87.4).
 - **At most 64 MiB of a history are read** (the size used for the trash), counted unpacked, compressed or not; a larger one is refused with the reason instead of exhausting memory.
 - **`get_system_report`** (toolset `tasks`, read-only) returns everything statistics and status give, as Paperless shows it to the user; the status is null where it is refused. Host, database, Redis and worker names are no secrets and are shown to whom Paperless shows them. Every text goes through the rule for URLs with credentials (decision-66).
 - `get_instance_overview` stays as it is, and so does its definition.

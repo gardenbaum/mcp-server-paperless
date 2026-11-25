@@ -37,9 +37,10 @@ Probed on Paperless 3.5.1 (CI run 45604535090, job 139171854815 "e2e (1/6)", tem
 ## Consequences
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
-- The guide to the toolsets is 49 bytes longer in a session with `core` alone (limit 2987 to 3036, of the approved 89).
+- The guide to the toolsets is 49 bytes longer in a session with `core` alone (of the approved 89).
 - `list_tasks` still works with a single value per filter, so callers of 0.4 need no other change than the toolset.
 - `name` also matches the words for type and source, in the language of the server's Paperless user; the argument says so.
+- `AdminReader.list_tasks` is gone, also its time window of decision-88 (Consequences): `explain_workflow` and `explain_mail_import` read `TaskListReader.list_tasks`. `explain_mail_import` asks only for failed files that came by mail (`email_consume`), so the number it leaves out is exact, and failed uploads of other kinds no longer make its answer incomplete; before, it looked for them among the newest 25 failed files of any kind.
 - Where tasks without a value come in an ordering is the choice of the database.
 <!-- SECTION:CONSEQUENCES:END -->
 

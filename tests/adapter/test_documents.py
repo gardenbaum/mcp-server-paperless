@@ -666,16 +666,25 @@ async def test_a_sub_resource_the_user_may_not_read_is_permission_denied(
 async def test_the_history_never_holds_the_ocr_text_and_keeps_system_changes(
     make_client: ClientFactory,
 ) -> None:
-    server = Resource(HISTORY)
+    edited: Json = {
+        **HISTORY[1],
+        "id": 60,
+        "action": "update",
+        "changes": {"content": ["E2E public invoice ACME 2026", "corrected ZEBRA"]},
+    }
+    server = Resource([edited, *HISTORY])
 
     entries = await PaperlessDocumentReader(make_client(server)).list_document_history(1)
 
     assert server.sent == [("/api/documents/1/history/", {})]
-    assert [entry.id for entry in entries] == [55, 17]
-    assert (entries[0].actor, entries[1].actor) == (None, "admin")
-    assert entries[0].changes == {"Note Added": ["None", 1]}
-    assert entries[1].changes == {"title": ["None", "e2e-public-invoice"]}
+    assert [entry.id for entry in entries] == [60, 55, 17]
+    assert [entry.actor for entry in entries] == ["admin", None, "admin"]
+    marker = "changed, the text is not shown"
+    assert entries[0].changes == {"content": marker}
+    assert entries[1].changes == {"Note Added": ["None", 1]}
+    assert entries[2].changes == {"title": ["None", "e2e-public-invoice"], "content": marker}
     assert "ACME" not in repr(entries)
+    assert "ZEBRA" not in repr(entries)
 
 
 async def test_the_file_metadata_keeps_the_facts_and_drops_the_embedded_metadata(
