@@ -413,12 +413,17 @@ async def test_the_line_limits_are_inclusive_and_refused_with_a_hint() -> None:
         _ = await setup.system.get_log("celery", lines=MAX_LOG_LINES + 1)
 
 
+def dated(length: int) -> str:
+    """A record of a log with this many characters."""
+    return "[2026-11-24 10:00:00,1] ".ljust(length, "x")
+
+
 async def test_the_character_limit_is_exact() -> None:
     setup = Setup()
-    setup.state.logs["mail"] = ["x" * 99] * (MAX_LOG_CHARS // 100)
+    setup.state.logs["mail"] = [dated(99)] * (MAX_LOG_CHARS // 100)
 
     fits = await setup.system.get_log("mail", lines=MAX_LOG_LINES)
-    setup.state.logs["mail"] = ["x" * 99] * (MAX_LOG_CHARS // 100 + 1)
+    setup.state.logs["mail"] = [dated(99)] * (MAX_LOG_CHARS // 100 + 1)
     over = await setup.system.get_log("mail", lines=MAX_LOG_LINES)
 
     assert (fits.returned_lines, fits.truncated) == (MAX_LOG_CHARS // 100, False)
@@ -427,7 +432,7 @@ async def test_the_character_limit_is_exact() -> None:
 
 async def test_a_line_that_alone_is_too_long_is_cut_to_the_limit_minus_one() -> None:
     setup = Setup()
-    setup.state.logs["mail"] = ["a" * MAX_LOG_CHARS * 2]
+    setup.state.logs["mail"] = [dated(MAX_LOG_CHARS * 2)]
 
     found = await setup.system.get_log("mail", lines=1)
 
@@ -587,7 +592,7 @@ async def test_the_changed_settings_are_listed_in_the_message() -> None:
 
 async def test_the_oldest_line_that_would_overflow_by_one_is_dropped() -> None:
     setup = Setup()
-    setup.state.logs["mail"] = ["o" * 100, *["n" * 99] * 199]
+    setup.state.logs["mail"] = [dated(100), *[dated(99)] * 199]
 
     found = await setup.system.get_log("mail", lines=MAX_LOG_LINES)
 

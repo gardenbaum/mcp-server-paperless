@@ -63,6 +63,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.pdf import PdfService
     from mcp_server_paperless.services.pdf_insert import PageInserter
     from mcp_server_paperless.services.permissions import PermissionService
+    from mcp_server_paperless.services.processed_mail import ProcessedMailService
     from mcp_server_paperless.services.raw import RawApiService
     from mcp_server_paperless.services.read_documents import ReadDocuments
     from mcp_server_paperless.services.removal import DocumentRemoval
@@ -216,6 +217,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "update_mail_rule": "mail",
     "delete_mail_rule": "mail",
     "list_processed_mail": "mail",
+    "get_processed_mail": "mail",
     "paperless_api_get": "raw",
     "list_workflows": "workflows",
     "get_workflow": "workflows",
@@ -612,6 +614,12 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
     ),
     "list_processed_mail": ToolAnnotations(
         title="List processed mail",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_processed_mail": ToolAnnotations(
+        title="Get processed mail",
         read_only_hint=True,
         idempotent_hint=True,
         open_world_hint=False,
@@ -1189,6 +1197,7 @@ class Services:
     insertion: PageInserter
     sharing: SharingService
     mail: MailService
+    processed_mail: ProcessedMailService
     accounts: AccountAdmin
     system: SystemAdmin
     raw: RawApiService

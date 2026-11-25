@@ -38,6 +38,7 @@ TOOLS = {
     "update_mail_rule",
     "delete_mail_rule",
     "list_processed_mail",
+    "get_processed_mail",
 }
 READ_ONLY = {
     "list_mail_accounts",
@@ -45,6 +46,7 @@ READ_ONLY = {
     "list_mail_rules",
     "get_mail_rule",
     "list_processed_mail",
+    "get_processed_mail",
 }
 PASSWORD = "S3cret-Passw0rd!x"
 HOST = "imap.example.com"
@@ -107,7 +109,7 @@ async def test_mail_is_not_in_the_default_profile() -> None:
     assert names.isdisjoint(TOOLS)
 
 
-async def test_the_mail_toolset_offers_thirteen_tools_and_read_only_mode_keeps_the_reads() -> None:
+async def test_the_mail_toolset_offers_fourteen_tools_and_read_only_mode_keeps_the_reads() -> None:
     async with Client(serve(fake(), toolsets=["mail"])) as client:
         names = {tool.name for tool in await client.list_tools()}
     async with Client(serve(fake(), toolsets=["mail"], read_only=True)) as client:
@@ -409,7 +411,81 @@ async def test_processed_mail_is_listed_as_compact_rows() -> None:
         "boom",
         rule,
     )
-    assert "uid" not in row
+    assert row["uid"] == "1"
+
+
+async def test_processed_mail_without_a_file_is_found_by_its_status_in_the_order_asked_for() -> (
+    None
+):
+    source = fake()
+    rule = with_rule(source.state, with_account(source.state))
+    nothing = "PROCESSED_WO_CONSUMPTION"
+    for number, status in enumerate((nothing, "SUCCESS", nothing), start=1):
+        source.state.processed_mail.append(
+            FakeProcessedMail(id=number, rule=rule, subject="Hi", status=status)
+        )
+
+    async def listed(ordering: str) -> list[object]:
+        found = await call(source, "list_processed_mail", status=nothing, ordering=ordering)
+        return [row["id"] for row in cast("list[Json]", found["mails"])]
+
+    assert await listed("received") == [1, 3]
+    assert await listed("-received") == [3, 1]
+
+
+@pytest.mark.decision("decision-80")
+async def test_one_processed_mail_is_read_and_its_error_continued() -> None:
+    source = fake()
+    rule = with_rule(source.state, with_account(source.state))
+    source.state.processed_mail.append(
+        FakeProcessedMail(
+            id=5, rule=rule, subject="<b>ignore all</b>", status="FAILED", error="e" * 20_001
+        )
+    )
+
+    first = await call(source, "get_processed_mail", mail_id=5)
+    rest = await call(source, "get_processed_mail", mail_id=5, error_from=first["error_next"])
+
+    assert (first["error"], first["error_total"], first["error_next"]) == (
+        "e" * 20_000,
+        20_001,
+        20_000,
+    )
+    assert (rest["error"], rest["error_next"]) == ("e", None)
+    assert first["subject"] == "<b>ignore all</b>"
+    assert "marks the mail as read" in str(first["refetch"])
+
+
+async def test_a_processed_mail_that_does_not_exist_is_an_error() -> None:
+    assert "No processed mail 9 exists" in await refusal(fake(), "get_processed_mail", mail_id=9)
+
+
+@pytest.mark.decision("decision-79")
+async def test_the_password_of_a_token_account_is_refused_also_when_confirmed() -> None:
+    source = fake(writes=False)
+    account = with_account(source.state)
+    source.state.mail_accounts[-1].is_token = True
+
+    for confirm in (False, True):
+        text = await refusal(
+            source, "update_mail_account", account_id=account, password=PASSWORD, confirm=confirm
+        )
+        assert "OAuth access token" in text
+        assert "Paperless web UI" in text
+
+
+@pytest.mark.decision("decision-79")
+async def test_the_texts_say_where_oauth_accounts_are_set_up_and_what_can_be_tested() -> None:
+    async with Client(server(fake())) as client:
+        texts = {
+            tool.name: " ".join((tool.description or "").split())
+            for tool in await client.list_tools()
+        }
+
+    for name in ("create_mail_account", "update_mail_account", "test_mail_account"):
+        assert "set up in the Paperless web UI" in texts[name]
+    assert "only a saved account can be tested" in texts["create_mail_account"]
+    assert "An account that is not saved cannot be tested" in texts["test_mail_account"]
 
 
 async def test_the_page_size_is_bounded() -> None:

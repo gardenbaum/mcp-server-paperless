@@ -70,6 +70,7 @@ from mcp_server_paperless.services.pdf_insert import PageInserter
 from mcp_server_paperless.services.pdf_parts import Parts
 from mcp_server_paperless.services.pdf_replacing import Replacing
 from mcp_server_paperless.services.permissions import PermissionService
+from mcp_server_paperless.services.processed_mail import ProcessedMailService
 from mcp_server_paperless.services.raw import RawApiService
 from mcp_server_paperless.services.read_documents import ReadDocuments
 from mcp_server_paperless.services.removal import DocumentRemoval
@@ -551,6 +552,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.sharing, adapters.sharing_writes, adapters.documents, web_url=web_url
                 ),
                 mail=MailService(adapters.mail, adapters.mail_writes, taxonomy, adapters.instance),
+                processed_mail=ProcessedMailService(adapters.mail),
                 raw=RawApiService(adapters.raw),
                 workflows=(
                     flows := WorkflowService(adapters.workflows, adapters.workflow_writes, taxonomy)

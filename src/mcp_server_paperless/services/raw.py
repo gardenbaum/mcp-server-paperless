@@ -323,7 +323,7 @@ def _result(path: str, reply: RawReply) -> RawApiResult:
 def _redaction_note(redacted: int, urls: int) -> str | None:
     notes = [f"{redacted} secret value(s) were replaced with {REDACTED}."] if redacted else []
     if urls:
-        notes.append(f"{urls} URL(s) or log line(s) are shown without credentials.")
+        notes.append(f"{urls} URL(s), error(s) or log line(s) are shown without credentials.")
     return " ".join(notes) or None
 
 

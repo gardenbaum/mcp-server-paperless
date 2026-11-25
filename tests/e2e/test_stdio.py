@@ -99,7 +99,7 @@ async def test_the_environment_selects_the_tools_over_stdio(stack: Stack) -> Non
     views = {"list_saved_views", "get_saved_view"}
     mail = {
         *("list_mail_accounts", "get_mail_account", "list_mail_rules", "get_mail_rule"),
-        "list_processed_mail",
+        *("list_processed_mail", "get_processed_mail"),
     }
     listings = {
         *("list_document_versions", "list_share_links", "list_share_bundles"),

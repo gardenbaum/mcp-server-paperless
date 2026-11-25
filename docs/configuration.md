@@ -339,11 +339,18 @@ users or groups needs the `view_user` or `view_group` permission in Paperless.
 Off by default. Manages the mail import: `list_mail_accounts`, `get_mail_account`,
 `create_mail_account`, `update_mail_account`, `delete_mail_account`, `test_mail_account`,
 `process_mail_account`, `list_mail_rules`, `get_mail_rule`, `create_mail_rule`,
-`update_mail_rule`, `delete_mail_rule` and `list_processed_mail` (compact rows).
+`update_mail_rule`, `delete_mail_rule`, `list_processed_mail` (compact rows) and
+`get_processed_mail` (one mail with its whole error, in parts of 20,000 characters, and whether it
+would be fetched again without its record).
 
 - Passwords are write-only: they are accepted when an account is created or changed and are
-  never returned, quoted or logged, nor is any OAuth token (Gmail and Outlook accounts are set up
-  in the Paperless web UI).
+  never returned, quoted or logged, nor is any OAuth token. Gmail and Outlook accounts are set up
+  in the Paperless web UI, where the token is renewed as well; `update_mail_account` changes their
+  other settings, such as the username, which is empty after the setup. Only a saved account can be
+  tested.
+- What a mail server answers to a login, which may repeat the password, is not shown, neither in
+  the error of a processed mail nor in a log; all that follows it in that error goes with it, and
+  so does the rest of a log record whose start was not read.
 - Rules take tags, correspondent, document type and owner by name or id.
 - `confirm` is needed to delete an account or a rule, to fetch an account now with
   `process_mail_account` (its rules can delete or move mail on the mail server, which cannot be
@@ -354,7 +361,7 @@ Off by default. Manages the mail import: `list_mail_accounts`, `get_mail_account
 - `test_mail_account` logs in with the saved password and changes nothing; a failed login is a
   result, not an error.
 - `process_mail_account` only queues the fetch: follow it with `list_processed_mail` and the
-  Paperless task list.
+  Paperless task list. While another fetch runs, Paperless skips it without an error.
 
 ### `workflows`
 

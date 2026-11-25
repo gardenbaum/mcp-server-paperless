@@ -48,6 +48,7 @@ from mcp_server_paperless.domain.mail import (
     ProcessedMailRow,
     Reference,
     check_password,
+    token_account,
 )
 from mcp_server_paperless.services.documents import owner_id
 from mcp_server_paperless.services.sharing import plural
@@ -64,6 +65,7 @@ if TYPE_CHECKING:
         MailRule,
         MailRuleSettings,
         ProcessedMail,
+        ProcessedOrdering,
         ProcessedStatus,
         RuleAction,
         RuleClearable,
@@ -144,10 +146,10 @@ def _connection(server: str, port: int, security: ImapSecurity) -> str:
 def _mailbox(account: MailAccount) -> object:
     """Where an account reads and as whom; not its token's expiry, which renews by itself."""
     place = (account.imap_server, account.imap_port, account.imap_security)
-    return (account.id, *place, account.username, account.account_type)
+    return (account.id, *place, account.username, account.account_type, account.is_token)
 
 
-def _does(action: RuleAction, parameter: str | None) -> str:
+def does(action: RuleAction, parameter: str | None) -> str:
     """What a rule does to a mail on the mail server, as a verb phrase."""
     shown = both_ends(parameter or "", DESTINATION_LIMIT)
     return {
@@ -303,8 +305,8 @@ class MailService:
             ConfirmationRequired: The change points the account at another server, port or
                 security setting without a new password, or turns encryption off, and
                 ``confirm`` is false. Nothing was changed.
-            Validation: Nothing to change, a blank or asterisk-only password, or Paperless
-                rejects a value.
+            Validation: Nothing to change, a blank or asterisk-only password, a password for an
+                account that signs in with an OAuth access token, or Paperless rejects a value.
             NotFound: No such account.
             PermissionDenied: The user may not change this account.
         """
@@ -322,6 +324,8 @@ class MailService:
         if password is not None:
             self._check_password(password)
         current = await self._reader.get_mail_account(account_id)
+        if password is not None and current.is_token:
+            raise token_account()
         changes = {
             key: value for key, value in given.items() if value not in {None, getattr(current, key)}
         }
@@ -344,6 +348,7 @@ class MailService:
         port = int(str(changes.get("imap_port", current.imap_port)))
         security: ImapSecurity = changes.get("imap_security", current.imap_security)  # pyright: ignore[reportAssignmentType] -- the changes come from typed arguments
         label = f"mail account {quoted(current.name)} (id {current.id})"
+        secret = "access token" if current.is_token else "password"
         effects: list[str] = []
         moved = {"imap_server", "imap_port", "imap_security"} & set(changes)
         # A stored host stays as it is when only its encryption is switched on or it is left, so
@@ -355,13 +360,13 @@ class MailService:
             new = destination(server, "mail server") if goes else stored
             moving = (
                 f"point {label} at {_connection(new, port, security)} instead of {old}: "
-                "Paperless keeps the saved password and sends it to the new server from its "
+                f"Paperless keeps the saved {secret} and sends it to the new server from its "
                 "next fetch on"
             )
             effects.append(moving)
         if security == "none" and current.imap_security != "none":
             plain = (
-                f"turn off the encryption of {label}: the password and the mail then travel "
+                f"turn off the encryption of {label}: the {secret} and the mail then travel "
                 f"as plain text to {destination(server, 'mail server')} port {port}"
             )
             effects.append(plain)
@@ -452,7 +457,8 @@ class MailService:
         message = (
             f"Paperless queued a fetch of the mail of account {label}. It runs in the "
             "background: new documents appear after consumption (check the Paperless task list) "
-            "and list_processed_mail shows the mails it handled."
+            "and list_processed_mail shows the mails it handled. While another fetch runs, "
+            "Paperless skips this one without an error; then call this again after that one ended."
         )
         return MailFetchStarted(id=account_id, message=message)
 
@@ -470,7 +476,7 @@ class MailService:
         verb = "matches" if len(enabled) == 1 else "match"
         count = plural(len(enabled), "enabled rule")
         doing = "; ".join(
-            f"rule {quoted(rule.name)} (id {rule.id}) {_does(rule.action, rule.action_parameter)}"
+            f"rule {quoted(rule.name)} (id {rule.id}) {does(rule.action, rule.action_parameter)}"
             for rule in enabled
         )
         text = (
@@ -855,6 +861,7 @@ class MailService:
             rule_id=mail.rule_id,
             subject=mail.subject,
             folder=mail.folder,
+            uid=mail.uid,
             received=mail.received,
             processed=mail.processed,
             status=mail.status,
@@ -862,16 +869,22 @@ class MailService:
         )
 
     async def list_processed(
-        self, *, rule_id: int | None, status: ProcessedStatus | None, page: int, page_size: int
+        self,
+        *,
+        rule_id: int | None,
+        status: ProcessedStatus | None,
+        page: int,
+        page_size: int,
+        ordering: ProcessedOrdering = "-processed",
     ) -> ProcessedMailListing:
-        """One page of the mails Paperless handled, newest first, as compact rows.
+        """One page of the mails Paperless handled, as compact rows.
 
         Raises:
             NotFound: ``page`` is beyond the last page.
             PermissionDenied: The user may not view processed mail.
         """
         found = await self._reader.list_processed_mail(
-            rule_id=rule_id, status=status, page=page, page_size=page_size
+            rule_id=rule_id, status=status, ordering=ordering, page=page, page_size=page_size
         )
         return ProcessedMailListing(
             count=found.count,
