@@ -142,6 +142,7 @@ from mcp_server_paperless.tools._shared import (
     Services,
 )
 from mcp_server_paperless.tools.confirmation import DIALOGS, Dialogs
+from mcp_server_paperless.tools.passages import HiddenNames
 from mcp_server_paperless.tools.selection import (
     guide_text,
     hidden_tools,
@@ -766,6 +767,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
             CallLogging(),
             *([PathRefusal(UPLOAD_TOOLS & selected)] if path_hint else []),
         ],
+        transforms=[HiddenNames(hidden)],
         lifespan=start,
         auth=auth,
         # Longer than a dialog: one that expired is told so, instead of a refused state.

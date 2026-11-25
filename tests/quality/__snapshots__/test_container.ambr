@@ -101,9 +101,39 @@
         }),
         'timeout-minutes': 20,
       }),
+      'e2e': dict({
+        'if': "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
+        'permissions': dict({
+          'actions': 'read',
+        }),
+        'runs-on': 'ubuntu-latest',
+        'steps': list([
+          dict({
+            'env': dict({
+              'GH_REPO': '${{ github.repository }}',
+              'GH_TOKEN': '${{ github.token }}',
+              'TAGGED_SHA': '${{ github.sha }}',
+            }),
+            'name': 'Require a passed live suite on the tagged commit',
+            'run': '''
+              # Not `--status success`: with a commit GitHub's filter finds no run.
+              passed="$(gh run list --workflow e2e-full.yml --commit "$TAGGED_SHA" --limit 100 --json conclusion --jq 'map(select(.conclusion == "success")) | length')"
+              if [[ "$passed" -lt 1 ]]; then
+                echo "::error::no passed run of e2e-full.yml on $TAGGED_SHA" >&2
+                exit 1
+              fi
+  
+            ''',
+          }),
+        ]),
+        'timeout-minutes': 5,
+      }),
       'publish': dict({
         'if': "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
-        'needs': 'build',
+        'needs': list([
+          'build',
+          'e2e',
+        ]),
         'permissions': dict({
           'contents': 'read',
           'packages': 'write',

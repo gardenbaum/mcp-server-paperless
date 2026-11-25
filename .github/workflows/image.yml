@@ -107,6 +107,28 @@ jobs:
       - name: Smoke test the stdio target (refusal, read-only, non-root, initialize and tools/list)
         run: scripts/image_stdio_smoke.sh mcp-server-paperless-stdio:ci
 
+  # Version tags only: the whole live suite (e2e-full.yml) has passed on the tagged commit, else
+  # nothing is published (decision-112). Dispatch it on main, wait for it, then push the tag.
+  e2e:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Require a passed live suite on the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAGGED_SHA: ${{ github.sha }}
+        run: |
+          # Not `--status success`: with a commit GitHub's filter finds no run.
+          passed="$(gh run list --workflow e2e-full.yml --commit "$TAGGED_SHA" --limit 100 --json conclusion --jq 'map(select(.conclusion == "success")) | length')"
+          if [[ "$passed" -lt 1 ]]; then
+            echo "::error::no passed run of e2e-full.yml on $TAGGED_SHA" >&2
+            exit 1
+          fi
+
   # Version tags only. Pushes the image under its digest alone, scans and smoke-tests exactly that
   # digest; the `tag` job gives the digests of all platforms their version tags only after each
   # passed, so what is tagged is what was scanned. Each push carries a provenance and an SBOM
@@ -114,7 +136,7 @@ jobs:
   # Recommended repository settings (not set here): a tag ruleset limiting who may create `v*`
   # tags, and a protected environment for this job.
   publish:
-    needs: build
+    needs: [build, e2e]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     # Each platform on a runner of its own: no emulation, and the smoke test runs the real thing.
     strategy:

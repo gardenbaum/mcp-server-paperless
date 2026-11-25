@@ -119,7 +119,7 @@ sources, not run; ❌ means not found; open an issue if something is wrong or ha
 
 | | Tools by default / in total | Toolsets and read-only mode | Names instead of ids | Confirms what is final | Runs saved views | Notices misread full-text syntax | HTTP | Tested on a real Paperless |
 |---|---|---|---|---|---|---|---|---|
-| **mcp-server-paperless** | 20 / 91 | ✅ opt-in | ✅ tags, types, people, views | ✅ with a preview | ✅ | ✅ | bearer, OIDC | 3.5.1 after every merge, newest 3.x weekly |
+| **mcp-server-paperless** | 20 / 91 | ✅ opt-in | ✅ tags, types, people, views | ✅ with a preview | ✅ | ✅ | bearer, OIDC | 3.5.1 before every release, newest 3.x weekly |
 | [OrellBuehler/paperless-mcp](https://github.com/OrellBuehler/paperless-mcp) | 123 / 126 | ✅ all on by default | ❌ | hints only | ❌ | ❌ | bearer, OAuth | ❌ |
 | [freeformz/paperless-ngx-mcp](https://github.com/freeformz/paperless-ngx-mcp) | 123 / 123 | ❌ | ❌ | ❌ | ❌ | ❌ | stdio only | ❌ |
 | [cubinet-code/paperless-ngx-mcp](https://github.com/cubinet-code/paperless-ngx-mcp) | 109 / 109 | ❌ | in results | ✅ | ❌ | ❌ | no auth | 3.2.1 on every change |
@@ -329,7 +329,7 @@ them.
 
 | | |
 |---|---|
-| **paperless-ngx** | 3.5.1 or later (API version 10). Pull requests run a fast E2E tier against 3.5.1, the whole suite runs after every merge and nightly, and the latest 3.x release weekly. 3.4.x, 3.5.0 and 2.x are not supported: the server warns about an older release in its log and in `get_instance_overview` |
+| **paperless-ngx** | 3.5.1 or later (API version 10). The whole E2E suite runs against 3.5.1 before every release, and against the latest 3.x release weekly. 3.4.x, 3.5.0 and 2.x are not supported: the server warns about an older release in its log and in `get_instance_overview` |
 | **Clients** | Claude Code and Claude Desktop over stdio, claude.ai custom connectors and other MCP clients over Streamable HTTP |
 | **Runtime** | Python 3.14 or later (`uvx` fetches it for you), or the container image |
 
