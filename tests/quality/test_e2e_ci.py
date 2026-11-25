@@ -427,6 +427,7 @@ HOSTED_SECONDS = {
     "tests/e2e/test_pages.py": 109,
     "tests/contract/test_pdf_steps.py": 106,
     "tests/e2e/test_versions.py": 102,
+    "tests/contract/test_workflow_steps.py": 94,
     "tests/contract/test_bulk_limits.py": 90,
     "tests/contract/test_bulk_items.py": 83,
     "tests/contract/test_document_reader.py": 72,
