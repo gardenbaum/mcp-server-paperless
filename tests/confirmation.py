@@ -176,6 +176,11 @@ CALLS: Final[dict[str, Json]] = {
     },
     "update_workflow": {"workflow": "Filing", "enabled": True},
     "delete_workflow": {"workflow": "Filing"},
+    "update_workflow_part": {
+        "workflow": "By hand",
+        "operation": "add",
+        "action": {"type": "move_to_trash"},
+    },
     "run_workflow": {"workflow": "By hand", "document_ids": [10, 11], "apply_filters": False},
     "upload_document": {
         "content_base64": base64.b64encode(KNOWN).decode(),

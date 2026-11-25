@@ -24,6 +24,7 @@ TOOLS = {
     "create_workflow",
     "update_workflow",
     "delete_workflow",
+    "update_workflow_part",
     "run_workflow",
 }
 NEVER = {"type": "consumption", "filename": "never-*.pdf"}
@@ -71,7 +72,7 @@ async def test_the_workflows_are_not_in_the_default_profile() -> None:
     assert names.isdisjoint(TOOLS)
 
 
-async def test_the_workflows_toolset_offers_six_tools_and_read_only_mode_keeps_two() -> None:
+async def test_the_workflows_toolset_offers_seven_tools_and_read_only_mode_keeps_two() -> None:
     async with Client(serve(fake(), toolsets=["workflows"])) as client:
         names = {tool.name for tool in await client.list_tools()}
     async with Client(serve(fake(), toolsets=["workflows"], read_only=True)) as client:
@@ -262,7 +263,12 @@ async def test_the_confirm_parameter_is_the_shared_one_and_off_by_default() -> N
     async with Client(serve(fake(), toolsets=["workflows"])) as client:
         tools = {tool.name: tool for tool in await client.list_tools()}
 
-    for name in ("create_workflow", "update_workflow", "delete_workflow"):
+    for name in (
+        "create_workflow",
+        "update_workflow",
+        "update_workflow_part",
+        "delete_workflow",
+    ):
         schema = tools[name].input_schema
         properties = cast("dict[str, Json]", schema["properties"])
         assert properties["confirm"]["default"] is False
@@ -285,6 +291,7 @@ async def test_the_annotations_mark_workflows_open_world_and_delete_destructive(
 
     assert hints("create_workflow") == (False, False, True)
     assert hints("update_workflow") == (False, True, True)
+    assert hints("update_workflow_part") == (True, False, True)
     assert hints("delete_workflow") == (True, True, False)
 
 
@@ -450,6 +457,102 @@ async def test_a_single_action_shows_no_hidden_value() -> None:
     assert all("planted" not in str(output) for output in outputs)
     shown = cast("Json", cast("Json", outputs[0]["part"])["action"])
     assert shown["shown_in_part"] == ["webhook.url"]
+
+
+@pytest.mark.decision("decision-82")
+async def test_one_action_is_added_changed_and_removed_and_hidden_values_stay() -> None:
+    state = with_workflow()
+    hook = {"url": "https://user:planted@h.example/x", "headers": {"X-Token": "planted"}}
+    secret = WorkflowAction.model_validate({"id": 8, "type": 4, "settings": {"webhook": hook}})
+    locked = WorkflowAction(id=9, type=5, settings={"passwords": ["planted"]})
+    plain = WorkflowAction(id=2, type=1, settings={"assign_tags": [4]})
+    state.workflows[0] = state.workflows[0].model_copy(
+        update={"enabled": False, "actions": (plain, secret, locked)}
+    )
+    state.workflow_object_id[0] = 20
+    part = "update_workflow_part"
+
+    added = await call(
+        fake(state),
+        part,
+        workflow="Filing",
+        operation="add",
+        action={"type": "assignment", "assign_title": "x"},
+        position=1,
+    )
+    changed = await call(
+        fake(state),
+        part,
+        workflow="Filing",
+        operation="change",
+        action_id=2,
+        action={"type": "assignment", "assign_correspondent": "e2e-acme"},
+        clear=["assign_tags"],
+    )
+    text = await refusal(
+        fake(state, writes=False), part, workflow="Filing", operation="remove", action_id=8
+    )
+    removed = await call(
+        fake(state), part, workflow="Filing", operation="remove", action_id=8, confirm=True
+    )
+
+    assert [a["type"] for a in cast("list[Json]", added["actions"])] == [1, 1, 4, 5]
+    assert cast("list[Json]", changed["actions"])[1]["settings"] == {
+        "assign_correspondent": "e2e-acme"
+    }
+    assert "lose for good what is stored hidden: of the webhook action 8 the value of" in text
+    assert [a["type"] for a in cast("list[Json]", removed["actions"])] == [1, 1, 5]
+    assert state.workflows[0].actions[2] == locked
+    assert all("planted" not in str(output) for output in (added, changed, text, removed))
+
+
+@pytest.mark.decision("decision-82")
+async def test_one_trigger_is_changed_and_a_wrong_call_is_an_error() -> None:
+    state = with_workflow()
+    part = "update_workflow_part"
+
+    output = await call(
+        fake(state),
+        part,
+        workflow=1,
+        operation="change",
+        trigger_id=1,
+        trigger={"type": "added", "filename": None, "match": "x", "matching_algorithm": "any"},
+    )
+    nothing = await refusal(fake(state), part, workflow=1, operation="change", trigger_id=1)
+    unknown = await refusal(fake(state), part, workflow=1, operation="replace", trigger_id=1)
+    foreign = await refusal(fake(state), part, workflow=1, operation="remove", trigger_id=77)
+
+    [trigger] = cast("list[Json]", output["triggers"])
+    assert trigger["settings"] == {
+        "has_tags": ["e2e-finance"],
+        "match": "x",
+        "matching_algorithm": "any",
+    }
+    assert "no setting was named" in nothing
+    assert "'add', 'change' or 'remove'" in unknown
+    assert "holds no trigger 77" in foreign
+
+
+@pytest.mark.decision("decision-82")
+async def test_replacing_a_list_without_its_hidden_values_is_confirmed_while_disabled() -> None:
+    state = with_workflow()
+    hook = {"url": "https://user:planted@h.example/x", "headers": {"X-Token": "planted"}}
+    secret = WorkflowAction.model_validate({"id": 8, "type": 4, "settings": {"webhook": hook}})
+    state.workflows[0] = state.workflows[0].model_copy(
+        update={"enabled": False, "actions": (secret,)}
+    )
+
+    text = await refusal(
+        fake(state, writes=False),
+        "update_workflow",
+        workflow=1,
+        actions=[{"type": "assignment", "assign_title": "x"}],
+    )
+
+    assert "change the workflow 'Filing' (id 1) and lose for good what is stored hidden" in text
+    assert "of the webhook action 8 the value of 'X-Token', the credentials of its URL" in text
+    assert "planted" not in text
 
 
 @pytest.mark.decision("decision-81")

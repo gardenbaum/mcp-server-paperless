@@ -10,12 +10,15 @@ write guard), so `paperless.py` does not grow further. What the contract tests p
   e-mail data, a webhook action a webhook with a URL that has a scheme; remote OCR needs a
   consumption trigger in the workflow. Settings that belong to another type of action are stored
   as sent (Paperless does not check them).
+- `update_workflow_parts`: a part sent with an id keeps what is not sent, wherever it is held; an
+  id that is gone is made anew (a trigger with the defaults of the model, which match everything),
+  and one of another workflow is changed there too. Parts no workflow holds are pruned.
 - The triggers and actions of a deleted workflow stay until the next update of any workflow.
 - Names are unique and not blank; the list is ordered by `order`, then id.
 """
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fakes.document_values import reject
 from mcp_server_paperless.domain.errors import PermissionDenied
@@ -35,12 +38,12 @@ from mcp_server_paperless.domain.workflows import (
 from mcp_server_paperless.paperless.workflows import unseen_part, unseen_workflow
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
     from pydantic import JsonValue
 
     from mcp_server_paperless.domain.taxonomy import TaxonomyKind
-    from mcp_server_paperless.domain.workflows import WorkflowValues
+    from mcp_server_paperless.domain.workflows import PartKind, PartWrite, WorkflowValues
 
 # What 3.4.2 fills in for a trigger and an action that leave a setting out.
 TRIGGER_DEFAULTS: dict[str, JsonValue] = {
@@ -116,7 +119,7 @@ WEBHOOK_DEFAULTS: dict[str, JsonValue] = {
     "headers": None,
     "include_document": False,
 }
-CONSUMPTION, SCHEDULED, EMAIL, WEBHOOK, REMOTE_OCR = 1, 4, 3, 4, 7
+CONSUMPTION, SCHEDULED, EMAIL, WEBHOOK, REMOTE_OCR, SUGGEST = 1, 4, 3, 4, 7, 8
 MAX_NAME = 256
 
 
@@ -238,6 +241,94 @@ def update_workflow(
     return new
 
 
+# What the model of 3.5.1 fills in for a trigger that is made without a type.
+MODEL_TRIGGER: dict[str, JsonValue] = {"sources": [1, 2, 3, 4]}
+
+
+def update_workflow_parts(
+    data: WorkflowData, user: Actor, workflow_id: int, kind: PartKind, parts: Sequence[PartWrite]
+) -> None:
+    """`WorkflowWriter.update_workflow_parts`."""
+    _allow(user, "change")
+    old = _find(data, workflow_id)
+    _check_sent(old, kind, parts)
+    if kind == "triggers":
+        known = {t.id: t for w in data.workflows for t in w.triggers}
+        known |= {t.id: t for t in data.loose_triggers}
+        triggers = tuple(_merged_trigger(data, user, p, known.get(p.id)) for p in parts)
+        new = old.model_copy(update={"triggers": tuple(sorted(triggers, key=lambda t: t.id or 0))})
+    else:
+        held = {a.id: a for w in data.workflows for a in w.actions}
+        held |= {a.id: a for a in data.loose_actions}
+        actions = tuple(_merged_action(data, user, p, held.get(p.id)) for p in parts)
+        new = old.model_copy(update={"actions": actions})
+    data.workflows[data.workflows.index(old)] = new
+    by_trigger = {t.id: t for t in new.triggers}
+    by_action = {a.id: a for a in new.actions}
+    data.workflows[:] = [
+        w.model_copy(
+            update={
+                "triggers": tuple(by_trigger.get(t.id, t) for t in w.triggers),
+                "actions": tuple(by_action.get(a.id, a) for a in w.actions),
+            }
+        )
+        for w in data.workflows
+    ]
+    data.loose_triggers.clear()
+    data.loose_actions.clear()
+
+
+def _check_sent(old: Workflow, kind: PartKind, parts: Sequence[PartWrite]) -> None:
+    """Paperless looks only at the types that are sent."""
+    for part in parts if kind == "actions" else ():
+        for number, name in ((EMAIL, "email"), (WEBHOOK, "webhook")):
+            if part.type == number and name not in part.settings:
+                reject("actions", f"{name.capitalize()} data is required for {name} actions")
+    given = [part.type for part in parts]
+    triggers = given if kind == "triggers" else [t.type for t in old.triggers]
+    actions = given if kind == "actions" else [a.type for a in old.actions]
+    if REMOTE_OCR in actions and CONSUMPTION not in triggers:
+        reject("non_field_errors", "Remote OCR actions require a consumption started trigger")
+    if SUGGEST in actions and not any(t != CONSUMPTION for t in triggers):
+        reject(
+            "non_field_errors",
+            "Apply AI suggestions actions require a trigger other than consumption started",
+        )
+
+
+def _new(part: PartWrite, held: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """The settings a part changes (Paperless takes any id, the fake knows the visible ones)."""
+    return {k: v for k, v in part.settings.items() if held.get(k) != v}
+
+
+def _merged_trigger(
+    data: WorkflowData, user: Actor, part: PartWrite, held: WorkflowTrigger | None
+) -> WorkflowTrigger:
+    if part.id is None:
+        assert part.type is not None
+        [made] = _triggers(data, user, (WorkflowTrigger(type=part.type, settings=part.settings),))
+        return made
+    base = {**TRIGGER_DEFAULTS, **MODEL_TRIGGER} if held is None else held.settings
+    _check_references(user, _new(part, base), _kinds(TRIGGER_FIELDS.values()))
+    number = part.type or (CONSUMPTION if held is None else held.type)
+    return WorkflowTrigger(id=part.id, type=number, settings={**base, **_once(part.settings)})
+
+
+def _merged_action(
+    data: WorkflowData, user: Actor, part: PartWrite, held: WorkflowAction | None
+) -> WorkflowAction:
+    if part.id is None:
+        assert part.type is not None
+        [made] = _actions(data, user, (WorkflowAction(type=part.type, settings=part.settings),))
+        return made
+    base = ACTION_DEFAULTS if held is None else held.settings
+    _check_references(
+        user, _new(part, base), _kinds(f for g in ACTION_FIELDS.values() for f in g.values())
+    )
+    number = part.type or (1 if held is None else held.type)
+    return WorkflowAction(id=part.id, type=number, settings={**base, **_once(part.settings)})
+
+
 def delete_workflow(data: WorkflowData, user: Actor, workflow_id: int) -> None:
     """`WorkflowWriter.delete_workflow`."""
     _allow(user, "delete")
@@ -259,6 +350,18 @@ def _check_name(data: WorkflowData, name: str, *, except_id: int | None) -> None
 def _next_id(data: WorkflowData) -> int:
     data.last_object_id[0] += 1
     return data.last_object_id[0]
+
+
+def _once(settings: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    """The settings as Paperless stores them: texts trimmed, ids and sources without doubles."""
+    return {
+        name: value.strip()
+        if isinstance(value, str)
+        else [*dict.fromkeys(cast("list[int]", value))]
+        if isinstance(value, list) and all(isinstance(item, int) for item in value)
+        else value
+        for name, value in settings.items()
+    }
 
 
 def _check_references(
@@ -286,7 +389,7 @@ def _triggers(
     for trigger in given:
         if trigger.type not in TRIGGER_TYPES:
             reject("triggers.type", f'"{trigger.type}" is not a valid choice.')
-        settings = {**TRIGGER_DEFAULTS, **trigger.settings}
+        settings = {**TRIGGER_DEFAULTS, **_once(trigger.settings)}
         for source in settings["sources"] if isinstance(settings["sources"], list) else []:
             if source not in SOURCES:
                 reject("sources", f'"{source}" is not a valid choice.')
@@ -315,7 +418,7 @@ def _actions(
     for action in given:
         if action.type not in ACTION_TYPES:
             reject("actions.type", f'"{action.type}" is not a valid choice.')
-        settings = {**ACTION_DEFAULTS, **action.settings}
+        settings = {**ACTION_DEFAULTS, **_once(action.settings)}
         if action.type == EMAIL:
             settings["email"] = _nested(action, "email", EMAIL_DEFAULTS, {"subject", "body", "to"})
         if action.type == WEBHOOK:

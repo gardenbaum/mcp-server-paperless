@@ -78,6 +78,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.version_uploads import VersionUploadService
     from mcp_server_paperless.services.versions import VersionService
     from mcp_server_paperless.services.views import ViewService
+    from mcp_server_paperless.services.workflow_parts import WorkflowParts
     from mcp_server_paperless.services.workflow_runs import WorkflowRuns
     from mcp_server_paperless.services.workflows import WorkflowService
 
@@ -222,6 +223,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "get_workflow": "workflows",
     "create_workflow": "workflows",
     "update_workflow": "workflows",
+    "update_workflow_part": "workflows",
     "delete_workflow": "workflows",
     "run_workflow": "workflows",
     "get_user": "admin",
@@ -987,6 +989,15 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=True,
     ),
+    # Destructive, open world and not idempotent (decision-82): it can remove a part, whose hidden
+    # values cannot be brought back, and adding makes another one each time.
+    "update_workflow_part": ToolAnnotations(
+        title="Update workflow part",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=True,
+    ),
     # Destructive (decision-6): a workflow has no trash. No document is touched. Deleting again
     # leaves the state as it is (idempotent), though the second call fails.
     "delete_workflow": ToolAnnotations(
@@ -1153,6 +1164,7 @@ class Services:
     """The use cases tools call, one field per service; built by the composition root."""
 
     workflows: WorkflowService
+    workflow_parts: WorkflowParts
     workflow_runs: WorkflowRuns
 
     instance: InstanceService

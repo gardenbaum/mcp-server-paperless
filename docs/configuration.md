@@ -366,10 +366,10 @@ would be fetched again without its record).
 ### `workflows`
 
 Off by default: `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow`,
-`delete_workflow`, `run_workflow`. Manages the workflows Paperless runs by itself, with triggers and actions as
+`update_workflow_part`, `delete_workflow`, `run_workflow`. Manages the workflows Paperless runs by itself, with triggers and actions as
 nested objects and tags, correspondents, document types, storage paths, custom fields, users and
 groups given by name. An enabled workflow keeps acting on every matching document, so
-`create_workflow` and `update_workflow` need `confirm` when it moves documents to the trash,
+`create_workflow`, `update_workflow` and `update_workflow_part` need `confirm` when it moves documents to the trash,
 e-mails them, calls a webhook, removes tags or other values, or changes owner or permissions
 (disabled workflows and plain filing, such as tags and titles, need none), and `delete_workflow`
 always does. Password removal and applying AI suggestions are not written by these tools (they
@@ -381,6 +381,12 @@ does not belong to its trigger or action type is an error.
   names the trigger or action and the setting. Names inside templates are not searched, nor parent
   and child tags that come along. `get_workflow` also reads one trigger or action by its id, with
   the workflows that hold it.
+- `update_workflow_part` adds, changes, moves or removes one trigger or action and leaves the others
+  as they are, hidden values and types this server does not write included. It reads the workflow
+  right before and after the change, refuses it if someone else changed the workflow, and reports a
+  difference instead of repeating anything. Losing webhook header values, URL
+  credentials or passwords needs `confirm` even while the workflow is disabled, with
+  `update_workflow` too.
 - Webhook URLs are returned without the user name and password in them (a query string is
   returned; a URL in which they cannot be told apart is not); `shown_in_part` of the action says
   so. Written back as returned, on an action with the id it has now, the URL keeps what is stored;
