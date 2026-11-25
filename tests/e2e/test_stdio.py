@@ -94,7 +94,7 @@ async def test_the_environment_selects_the_tools_over_stdio(stack: Stack) -> Non
         "delete_taxonomy_item",
     }
     # `all` adds the toolsets that are off by default: of versions, trash, sharing, permissions,
-    # mail, workflows, bulk and admin only the listings and reads are read-only, of views the
+    # mail, workflows, bulk, tasks and admin only the listings and reads are read-only, of views the
     # listing and the read (running a view is in core, decision-34).
     views = {"list_saved_views", "get_saved_view"}
     mail = {

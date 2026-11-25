@@ -49,6 +49,10 @@ from fakes.paperless import (
     counted_pages,
     seeded,
 )
+from mcp_server_paperless.paperless.task_lists import (
+    PaperlessTaskListReader,
+    PaperlessTaskListWriter,
+)
 
 from mcp_server_paperless.domain.bulk import ObjectPermissions
 from mcp_server_paperless.domain.ports import (  # noqa: TC001 -- Ports' annotations are introspected
@@ -67,6 +71,8 @@ from mcp_server_paperless.domain.ports import (  # noqa: TC001 -- Ports' annotat
     RawReader,
     SharingReader,
     SharingWriter,
+    TaskListReader,
+    TaskListWriter,
     TaskReader,
     TaxonomyReader,
     TaxonomyWriter,
@@ -161,6 +167,8 @@ class Ports:
     workflow_writes: WorkflowWriter
     management: AdminReader
     management_writes: AdminWriter
+    task_lists: TaskListReader
+    task_list_writes: TaskListWriter
 
 
 def fake_ports(state: FakeState, user: str) -> Ports:
@@ -192,6 +200,8 @@ def fake_ports(state: FakeState, user: str) -> Ports:
         workflow_writes=writer,
         management=fake,
         management_writes=writer,
+        task_lists=fake,
+        task_list_writes=writer,
     )
 
 
@@ -222,6 +232,8 @@ def live_ports(client: PaperlessClient) -> Ports:
         workflow_writes=PaperlessWorkflowWriter(client),
         management=PaperlessAdminReader(client),
         management_writes=PaperlessAdminWriter(client),
+        task_lists=PaperlessTaskListReader(client),
+        task_list_writes=PaperlessTaskListWriter(client),
     )
 
 
@@ -331,13 +343,18 @@ class Backend:
 def fake_consume(state: FakeState) -> Consume:
     def consume_fake(*, succeed: bool) -> str:
         now = datetime.now(UTC)
+        [owner] = [user.id for user in state.users if user.username == ADMIN[0]]
         task = FakeTask(
             id=len(state.tasks) + 1,
             task_id=str(uuid.uuid4()),
             task_type="consume_file",
             status="success" if succeed else "failure",
+            owner=owner,
+            file_name=f"contract-task-{uuid.uuid4().hex}.pdf",
             created=now,
             finished=now,
+            wait_time_seconds=0.5,
+            duration_seconds=1.0,
             document_ids=(len(state.documents) + 1,) if succeed else (),
             message=None if succeed else "broken.pdf: Error occurred while consuming document",
         )

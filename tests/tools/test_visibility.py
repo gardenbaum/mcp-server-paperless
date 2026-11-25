@@ -83,9 +83,11 @@ SHIPPED_PERMISSIONS = {name for name, toolset in TOOL_TOOLSETS.items() if toolse
 MAIL = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "mail"}
 ADMIN = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "admin"}
 READ_ADMIN = {
-    *("get_user", "get_group", "get_app_config", "list_logs", "get_log", "list_tasks"),
+    *("get_user", "get_group", "get_app_config", "list_logs", "get_log"),
     "bulk_download",
 }
+TASKS = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "tasks"}
+READ_TASKS = {"list_tasks"}
 RAW = {"paperless_api_get"}
 READ_PDF = {"inspect_pdf"}
 READ_BULK = {"read_documents"}
@@ -138,6 +140,7 @@ async def test_all_offers_every_toolset_the_server_may_offer() -> None:
         | RAW
         | WORKFLOWS
         | ADMIN
+        | TASKS
     )
     assert await names(server) == shipped | SHIPPED_PDF | SHIPPED_PERMISSIONS | {
         "ask_something",
@@ -187,6 +190,7 @@ async def test_read_only_mode_offers_only_tools_with_the_read_only_hint() -> Non
         | RAW
         | READ_WORKFLOWS
         | READ_ADMIN
+        | READ_TASKS
         | {"ask_something", "scratch_preview"}
     )
     assert await names(server) == expected

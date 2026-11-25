@@ -658,6 +658,18 @@ async def test_the_administration_takes_every_argument() -> None:
     await sweep("list_users", {"name_contains": "e2e", "page": 1, "page_size": 10}, ())
     await sweep("list_groups", {"name_contains": "e2e", "page": 1, "page_size": 10}, ())
     await sweep("list_tasks", {"acknowledged": False, "page": 1, "page_size": 10})
+    await sweep(
+        "list_tasks",
+        {
+            "is_complete": True,
+            "owner": "admin",
+            "name": "scan",
+            "result": "error",
+            "created_from": "2026-11-01T00:00:00Z",
+            "created_to": "2026-11-30T00:00:00+01:00",
+            "ordering": "-finished",
+        },
+    )
     await sweep("run_task", {"task_type": "sanity_check"})
     config: Json = {}
     for name in CONFIG_SETTINGS:
