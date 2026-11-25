@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T12:22:10Z'
-updated_date: '2026-11-25T15:19:06Z'
+updated_date: '2026-11-25T16:26:22Z'
 labels: []
 dependencies: []
 parent_task_id: PLMCP-90
@@ -26,7 +26,7 @@ First part of PLMCP-90: reading mail rules, workflows or views means either offe
 - [x] #2 all:read, all with exceptions, an unknown suffix, a toolset both with and without suffix and an unknown name stop the server with a message that says what to write; server-wide read-only mode wins
 - [ ] #3 What the assistant is told marks a read-only toolset and the value to set keeps :read; nothing of it is named that is hidden; prompts that need a hidden tool are not offered
 - [x] #4 A decision records the setting and how it extends decisions 4 and 6; README, configuration, container docs and server.json say it
-- [x] #5 Contract tests on the fake and Paperless 3.5.1, tool tests over stdio and HTTP on both protocol eras and E2E cover mixed selections, downloads, prompts and the error messages
+- [ ] #5 Contract tests on the fake and Paperless 3.5.1, tool tests over stdio and HTTP on both protocol eras and E2E cover mixed selections, downloads, prompts and the error messages
 <!-- AC:END -->
 
 ## Definition of Done
@@ -34,7 +34,7 @@ First part of PLMCP-90: reading mail rules, workflows or views means either offe
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -69,4 +69,6 @@ Owner, 2026-11-25 (relayed by the main agent): 'alles wie von dir empfohlen' (al
 Merged main de956f5: guide 3118 to 3135 (+17), instructions 1474 measured with the toolset tasks, exactly the approved maximum; no byte is left for PLMCP-89.2 and later toolset texts.
 
 AC 5: full hosted E2E 45639073065 on 2bec926 green in all ten jobs (live contract, stdio and HTTP, e2e-imap included). The head after it only adds the merge of main 58c792a (guide 3175, instructions 1474 unchanged, 391 targeted tests) and records; the full E2E was not repeated on it.
+
+Cleanup 2026-11-25, criteria read literally (every item at every named level). Merged as 205e78f (#170). Runs: full hosted E2E 45639073065 on 2bec926 green in all ten jobs, CI 45646896491 of 205e78f green. AC 3 stays open (PLMCP-90.3). AC 5, missing: contract tests of downloads, prompts and the error messages of a wrong selection; E2E of the downloads of a read-only toolset. Proven: mixed selections at every level; downloads and prompts in tool tests over stdio and HTTP on both eras; prompts and error messages in E2E. DoD 2 stays open: no local run of the whole just check is recorded, and the check jobs of the last head of #170 were cancelled by its merge.
 <!-- SECTION:NOTES:END -->
