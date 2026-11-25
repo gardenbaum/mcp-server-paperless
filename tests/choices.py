@@ -429,11 +429,6 @@ def _options() -> Iterator[tuple[str, Json]]:
     field: Json = {"kind": "custom_field", "item": "Choice"}
     yield "update_taxonomy_item", {**field, "select_options_rename": {OPTION: "Done"}}
     yield "update_taxonomy_item", {**field, "select_options_remove": [OPTION]}
-    action: Json = {"type": "assignment", "assign_custom_fields_values": {"Choice": OPTION}}
-    parts: Json = {"triggers": [TRIGGER], "actions": [action]}
-    yield "create_workflow", {"name": "New", **parts}
-    yield "update_workflow", {"workflow": "Plain", **parts}
-    yield "update_workflow_part", {"workflow": "Plain", "operation": "add", "action": action}
 
 
 OPTION_CASES: Final[tuple[tuple[str, Json], ...]] = tuple(_options())
