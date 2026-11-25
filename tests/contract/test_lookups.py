@@ -170,10 +170,10 @@ async def test_paperless_renders_hidden_names_so_the_server_does_not_try(backend
     [document] = backend.new_documents(1)
     name = f"contract-tag-{uuid.uuid4().hex}"
     tag = (await ports.taxonomy_writes.create_tag(name)).id
+    viewer = backend.restricted(frozenset({"view_document", "view_tag"}), view=[document])
     _ = await ports.document_writes.update_document(
         document, DocumentPatch(tags=(tag,), owner=None)
     )
-    viewer = backend.restricted(frozenset({"view_document", "view_tag"}), view=[document])
     resolver = TaxonomyResolver(viewer.taxonomy, StaticTokenProvider("t"), ttl=60.0)
     service = Lookups(viewer.documents, viewer.taxonomy, resolver)
 

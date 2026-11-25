@@ -69,7 +69,7 @@ from mcp_server_paperless.services.duplicate_resolution import DuplicateResolver
 from mcp_server_paperless.services.duplicates import DuplicateFinder
 from mcp_server_paperless.services.file_sink import NO_SINK, FileSink
 from mcp_server_paperless.services.files import FileService
-from mcp_server_paperless.services.instance import InstanceService
+from mcp_server_paperless.services.instance import InstanceService, SystemReportService
 from mcp_server_paperless.services.lookups import Lookups
 from mcp_server_paperless.services.mail import MailService
 from mcp_server_paperless.services.mail_explanation import MailExplanations
@@ -176,6 +176,7 @@ if TYPE_CHECKING:
         RawReader,
         SharingReader,
         SharingWriter,
+        SystemReportReader,
         TaskListReader,
         TaskListWriter,
         TaskReader,
@@ -330,6 +331,7 @@ class Ports:
     workflow_writes: WorkflowWriter
     management: AdminReader
     management_writes: AdminWriter
+    reports: SystemReportReader
     task_lists: TaskListReader
     task_list_writes: TaskListWriter
 
@@ -363,6 +365,7 @@ def paperless_ports(client: PaperlessClient) -> Ports:
         workflow_writes=PaperlessWorkflowWriter(client),
         management=PaperlessAdminReader(client),
         management_writes=PaperlessAdminWriter(client),
+        reports=PaperlessInstanceReader(client),
         task_lists=PaperlessTaskListReader(client),
         task_list_writes=PaperlessTaskListWriter(client),
     )
@@ -623,6 +626,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     max_bytes=settings.max_download_bytes,
                     sink=sink,
                 ),
+                reports=SystemReportService(adapters.reports),
                 task_lists=TaskListService(
                     adapters.task_lists, adapters.task_list_writes, taxonomy
                 ),

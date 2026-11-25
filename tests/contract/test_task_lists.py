@@ -20,8 +20,12 @@ pytestmark = [
     pytest.mark.anyio,
     pytest.mark.decision("decision-8"),
     pytest.mark.decision("decision-93"),
+    pytest.mark.decision("decision-94"),
 ]
 LIST_TASKS = "TaskListReader.list_tasks"
+COUNT, ACTIVE = "TaskListReader.count_tasks", "TaskListReader.list_active_tasks"
+SUMMARY, VIEWER = "TaskListReader.summarize_tasks", "TaskListReader.get_viewer"
+ACKNOWLEDGE_ALL = "TaskListWriter.acknowledge_all_tasks"
 ACKNOWLEDGE, RUN = "TaskListWriter.acknowledge_tasks", "TaskListWriter.run_task"
 UNKNOWN = 999_999
 # What POST /api/tasks/run/ lists in its schema and refuses.
@@ -236,3 +240,148 @@ async def test_a_superuser_without_the_staff_flag_sees_no_more(backend: Backend)
 async def test_paperless_starts_no_other_type_by_hand(backend: Backend, kind: str) -> None:
     with pytest.raises(Validation, match="cannot be manually triggered"):
         _ = await backend.admin.task_list_writes.run_task(cast("RunnableTask", kind))
+
+
+# --- counts, running tasks and the summary (PLMCP-89.2)
+
+
+@pytest.mark.contract(COUNT)
+async def test_the_counts_take_the_filters_and_add_up(backend: Backend) -> None:
+    listing = backend.admin.task_lists
+    good, bad = backend.consume(succeed=True), backend.consume(succeed=False)
+    everything = await rows(listing, TaskFilters())
+    owner, name = everything[good].owner, everything[bad].file_name
+
+    total = await listing.count_tasks(TaskFilters())
+    uploads = await listing.count_tasks(
+        TaskFilters(task_types=("consume_file",), trigger_sources=("api_upload",), owner=owner)
+    )
+    [one, other, none] = [
+        await listing.count_tasks(filters)
+        for filters in (
+            TaskFilters(name=name, acknowledged=False),
+            TaskFilters(name=name, created_from=everything[bad].created),
+            TaskFilters(name=name, created_to=everything[good].created),
+        )
+    ]
+
+    assert total.total == total.needs_attention + total.in_progress + total.completed
+    assert uploads.total >= 2
+    assert uploads.total <= total.total
+    assert (one.total, one.needs_attention, one.completed) == (1, 1, 0)
+    assert other == one
+    assert none.total == 0
+    by_error = await listing.count_tasks(TaskFilters(name=name, result="no such words here"))
+    assert by_error.total == 0
+
+
+@pytest.mark.contract(ACTIVE)
+async def test_the_running_tasks_are_not_ended(backend: Backend) -> None:
+    good = backend.consume(succeed=True)
+    _ = await backend.admin.task_list_writes.run_task("sanity_check")
+
+    active = await backend.admin.task_lists.list_active_tasks()
+
+    assert len(active) <= 50
+    assert {row.state for row in active} <= {"pending", "started"}
+    assert good not in {row.task_id for row in active}
+
+
+@pytest.mark.contract(SUMMARY)
+async def test_the_summary_has_the_types_of_the_last_days(backend: Backend) -> None:
+    _ = backend.consume(succeed=True), backend.consume(succeed=False)
+
+    found = {s.task_type: s for s in await backend.admin.task_lists.summarize_tasks(days=1)}
+
+    uploads = found["consume_file"]
+    assert uploads.total >= 2
+    assert uploads.success >= 1
+    assert uploads.failure >= 1
+    assert uploads.last_run is not None
+    assert uploads.last_success is not None
+    assert uploads.last_failure is not None
+
+
+@pytest.mark.contract(VIEWER)
+@pytest.mark.contract(SUMMARY)
+@pytest.mark.contract(COUNT)
+async def test_the_summary_is_wider_than_the_list_for_who_may_view_the_status(
+    backend: Backend,
+) -> None:
+    _ = backend.consume(succeed=True)
+    plain = backend.restricted(frozenset({"view_paperlesstask", "view_uisettings"}))
+    monitor = backend.restricted(frozenset({"view_system_monitoring", "view_uisettings"}))
+
+    async def uploads(listing: TaskListReader) -> int:
+        found = {s.task_type: s.total for s in await listing.summarize_tasks(days=1)}
+        return found.get("consume_file", 0)
+
+    viewers = [await ports.task_lists.get_viewer() for ports in (backend.admin, plain, monitor)]
+    assert [(v.sees_all, v.summary_of_all) for v in viewers] == [
+        (True, True),
+        (False, False),
+        (False, True),
+    ]
+    assert len({v.id for v in viewers}) == 3
+    assert await uploads(backend.admin.task_lists) >= 1
+    assert await uploads(monitor.task_lists) == await uploads(backend.admin.task_lists)
+    assert await uploads(plain.task_lists) < await uploads(backend.admin.task_lists)
+    with pytest.raises(PermissionDenied):
+        _ = await monitor.task_lists.count_tasks(TaskFilters())
+
+
+@pytest.mark.contract(VIEWER)
+@pytest.mark.contract(SUMMARY)
+async def test_the_summary_of_a_superuser_without_the_staff_flag_is_of_every_user(
+    backend: Backend,
+) -> None:
+    _ = backend.consume(succeed=True)
+    superuser = backend.restricted(frozenset(), superuser=True)
+
+    viewer = await superuser.task_lists.get_viewer()
+    of_all, seen = [
+        {s.task_type: s.total for s in await ports.task_lists.summarize_tasks(days=1)}
+        for ports in (backend.admin, superuser)
+    ]
+
+    assert (viewer.sees_all, viewer.summary_of_all) == (False, True)
+    assert seen["consume_file"] == of_all["consume_file"]
+
+
+@pytest.mark.contract(COUNT)
+@pytest.mark.contract(ACTIVE)
+@pytest.mark.contract(SUMMARY)
+@pytest.mark.contract(VIEWER)
+@pytest.mark.contract(ACKNOWLEDGE_ALL)
+async def test_the_aggregates_need_their_permissions(backend: Backend) -> None:
+    nothing = backend.restricted(frozenset({"view_document"}))
+    viewer = backend.restricted(frozenset({"view_paperlesstask"}))
+
+    for call in (
+        nothing.task_lists.count_tasks(TaskFilters()),
+        nothing.task_lists.list_active_tasks(),
+        nothing.task_lists.summarize_tasks(days=1),
+        nothing.task_lists.get_viewer(),
+        viewer.task_list_writes.acknowledge_all_tasks(),
+    ):
+        with pytest.raises(PermissionDenied):
+            _ = await call
+
+
+@pytest.mark.contract(ACKNOWLEDGE_ALL)
+async def test_a_user_acknowledges_own_and_unowned_tasks_only_and_staff_every_one(
+    backend: Backend,
+) -> None:
+    good = backend.consume(succeed=True)
+    check = await backend.admin.task_list_writes.run_task("sanity_check")
+    user = backend.restricted(frozenset({"view_paperlesstask", "change_paperlesstask"}))
+    new = TaskFilters(acknowledged=False)
+
+    assert await user.task_list_writes.acknowledge_all_tasks() >= 1
+
+    left = await rows(backend.admin.task_lists, new)
+    assert good in left
+    assert check not in left
+    assert await backend.admin.task_list_writes.acknowledge_all_tasks() >= 1
+    seen = await rows(backend.admin.task_lists, TaskFilters(acknowledged=True))
+    assert {good, check} <= seen.keys()

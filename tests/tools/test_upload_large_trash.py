@@ -40,6 +40,7 @@ class Trash(FakePaperless):
 
     def __init__(self, error: PaperlessMcpError) -> None:
         super().__init__(world(), user="admin", allow_writes=True)
+        self.state.tasks.clear()  # only what the upload starts counts here
         self.error: PaperlessMcpError = error
 
     @override

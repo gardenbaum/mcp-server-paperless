@@ -159,3 +159,45 @@ async def test_only_an_older_release_is_called_too_old(
         assert (output["too_old"] or "").startswith(notice)
     else:
         assert output["too_old"] is None
+
+
+REPORT = "SystemReportReader.get_system_report"
+
+
+@pytest.mark.contract(REPORT)
+@pytest.mark.decision("decision-95")
+async def test_the_report_of_a_superuser_says_more_than_the_overview(backend: Backend) -> None:
+    report = await backend.admin.reports.get_system_report()
+    overview = await backend.admin.instance.get_overview()
+
+    statistics, status = report.statistics, report.status
+    assert statistics.documents >= sum(SEEDED_OBJECTS["documents"])
+    assert sum(kind.documents for kind in statistics.file_types) == statistics.documents
+    assert statistics.characters > 0
+    assert statistics.inbox_tags
+    assert status is not None
+    assert status.paperless_version == backend.expected_version
+    assert overview.system_status is not None
+    assert status.install_type == overview.system_status.install_type
+    assert (status.database.type, status.database.unapplied_migrations) == ("sqlite", ())
+    assert status.database.latest_migration
+    assert status.redis.address
+    assert status.server_os
+    assert status.search_index.status == "OK"
+    assert status.tasks.days == 30
+    assert status.tasks.total >= status.tasks.success + status.tasks.failure
+
+
+@pytest.mark.contract(REPORT)
+@pytest.mark.decision("decision-95")
+async def test_the_report_follows_the_rights_of_the_user(backend: Backend) -> None:
+    monitor = backend.restricted(frozenset({"view_system_monitoring"}))
+    everything = await backend.admin.reports.get_system_report()
+
+    seen = await monitor.reports.get_system_report()
+    restricted = await backend.reader.reports.get_system_report()
+
+    assert seen.status is not None
+    assert restricted.status is None
+    assert restricted.statistics.documents < everything.statistics.documents
+    assert seen.statistics.documents < everything.statistics.documents

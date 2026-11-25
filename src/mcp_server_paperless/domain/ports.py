@@ -54,7 +54,7 @@ if TYPE_CHECKING:
     )
     from mcp_server_paperless.domain.duplicates import DuplicateRecord
     from mcp_server_paperless.domain.files import OpenedFile
-    from mcp_server_paperless.domain.instance import InstanceOverview
+    from mcp_server_paperless.domain.instance import InstanceOverview, SystemReport
     from mcp_server_paperless.domain.mail import (
         MailAccount,
         MailAccountTestResult,
@@ -87,9 +87,13 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.sharing import FileVersionKind, ShareBundle, ShareLink
     from mcp_server_paperless.domain.task_lists import (
         RunnableTask,
+        TaskCounts,
         TaskFilters,
         TaskOrdering,
+        TaskRow,
         TaskRowPage,
+        TaskTypeSummary,
+        TaskViewer,
     )
     from mcp_server_paperless.domain.tasks import TaskStatus, Unconfirmed
     from mcp_server_paperless.domain.taxonomy import (
@@ -120,6 +124,17 @@ class InstanceReader(Protocol):
         """Versions, statistics, system status, current user and capabilities.
 
         What the user may not see is None in the result (see ``InstanceOverview``).
+        """
+        ...
+
+
+class SystemReportReader(Protocol):
+    """Statistics and system status in full, as the current user sees them."""
+
+    async def get_system_report(self) -> SystemReport:
+        """Both answers in full; the status is None for a user who may not view it.
+
+        Paperless asks its workers for a sign of life, which can take seconds.
         """
         ...
 
@@ -278,11 +293,14 @@ class DocumentReader(Protocol):
     async def list_document_history(self, document_id: int) -> tuple[HistoryEntry, ...]:
         """The audit log of a document, newest first; ``content`` is only ``TEXT_CHANGED``.
 
+        Paperless builds and sends all of it: each wait for its next bytes may take 60 seconds.
+
         Raises:
             NotFound: No such document.
             PermissionDenied: The user may not view the audit log (it needs ``view_logentry``
                 and a document that is unowned or the user's own; a view grant is not enough).
             FeatureUnavailable: The instance has the audit log switched off.
+            AnswerTooLarge: The answer, with every corrected text, is over 64 MiB.
         """
         ...
 
@@ -1747,6 +1765,39 @@ class TaskListReader(Protocol):
         """
         ...
 
+    async def count_tasks(self, filters: TaskFilters) -> TaskCounts:
+        """How many tasks ``filters`` leaves; Paperless ignores ``states`` and ``is_complete``.
+
+        Raises:
+            Validation: No user has the id ``filters.owner``.
+            PermissionDenied: The user lacks the ``view_paperlesstask`` permission.
+        """
+        ...
+
+    async def list_active_tasks(self) -> tuple[TaskRow, ...]:
+        """The newest 50 tasks that wait or run.
+
+        Raises:
+            PermissionDenied: The user lacks the ``view_paperlesstask`` permission.
+        """
+        ...
+
+    async def summarize_tasks(self, *, days: int) -> tuple[TaskTypeSummary, ...]:
+        """The tasks of the last ``days`` (1 to 365) by type; see ``TaskViewer.summary_of_all``.
+
+        Raises:
+            PermissionDenied: The user may view neither tasks nor the system status.
+        """
+        ...
+
+    async def get_viewer(self) -> TaskViewer:
+        """Whose tasks Paperless shows the current user.
+
+        Raises:
+            PermissionDenied: The user lacks the ``view_uisettings`` permission.
+        """
+        ...
+
 
 class TaskListWriter(Protocol):
     """Starts background tasks and marks them as seen."""
@@ -1756,6 +1807,14 @@ class TaskListWriter(Protocol):
 
         Raises:
             Validation: A task does not exist or is listed twice; nothing is marked.
+            PermissionDenied: The user lacks the ``change_paperlesstask`` permission.
+        """
+        ...
+
+    async def acknowledge_all_tasks(self) -> int:
+        """Mark every new task the user may see as seen and return how many. Never retried.
+
+        Raises:
             PermissionDenied: The user lacks the ``change_paperlesstask`` permission.
         """
         ...

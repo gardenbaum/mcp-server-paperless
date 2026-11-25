@@ -1,10 +1,13 @@
 """PaperlessInstanceReader on responses recorded from the Paperless 3.4.2 E2E stack."""
 
+import json
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 import httpx2
 import pytest
 
+from adapter.conftest import streaming
 from mcp_server_paperless.domain.errors import (
     AuthenticationFailed,
     PaperlessMcpError,
@@ -13,9 +16,17 @@ from mcp_server_paperless.domain.errors import (
 from mcp_server_paperless.domain.instance import (
     ComponentStatus,
     CurrentUser,
+    DatabaseStatus,
+    FileTypeCount,
     InstanceOverview,
     InstanceStatistics,
+    ServiceStatus,
+    StatisticsReport,
+    StatusReport,
+    SystemReport,
     SystemStatus,
+    TaskTotals,
+    TimedStatus,
 )
 from mcp_server_paperless.paperless.client import RetryPolicy
 from mcp_server_paperless.paperless.instance import PaperlessInstanceReader
@@ -27,6 +38,8 @@ pytestmark = pytest.mark.anyio
 
 type Json = dict[str, object]
 
+# How the names of the moments in the status end.
+MOMENTS = ("last_modified", "last_trained", "last_run")
 VERSION_HEADERS = {"X-Api-Version": "10", "X-Version": "3.4.2"}
 STATISTICS: Json = {
     "documents_total": 2,
@@ -324,3 +337,155 @@ async def test_every_component_keeps_its_own_error_message(make_client: ClientFa
         "sanity down",
         "llm down",
     ]
+
+
+# --- the system report (PLMCP-89.3)
+
+REPORT_STATUS: Json = {
+    **STATUS,
+    "database": {
+        **cast("Json", STATUS["database"]),
+        "migration_status": {
+            "latest_migration": "documents.0099_x",
+            "unapplied_migrations": ["documents.0100_y"],
+        },
+    },
+    "tasks": {
+        **cast("Json", STATUS["tasks"]),
+        "classifier_last_trained": "2026-11-09T20:00:00Z",
+        "sanity_check_last_run": "2026-11-09T19:00:00Z",
+        "llmindex_last_modified": "2026-11-09T18:00:00Z",
+    },
+}
+
+
+@pytest.mark.decision("decision-95")
+async def test_the_report_has_everything_statistics_and_status_give(
+    make_client: ClientFactory,
+) -> None:
+    responses = instance(status=httpx2.Response(200, json=REPORT_STATUS))
+
+    report = await reader(make_client, responses).get_system_report()
+
+    assert report == SystemReport(
+        statistics=StatisticsReport(
+            documents=2,
+            inbox_documents=1,
+            inbox_tags=(4,),
+            file_types=(FileTypeCount(mime_type="application/pdf", documents=2),),
+            characters=55,
+            tags=4,
+            correspondents=1,
+            document_types=1,
+            storage_paths=1,
+            highest_serial_number=0,
+        ),
+        status=StatusReport(
+            paperless_version="3.4.2",
+            server_os="Linux-6.0-x86_64-with-glibc2.41",
+            install_type="docker",
+            storage_total_bytes=53217329152,
+            storage_available_bytes=42602811392,
+            database=DatabaseStatus(
+                status="OK",
+                error=None,
+                type="sqlite",
+                name="/usr/src/paperless/data/db.sqlite3",
+                latest_migration="documents.0099_x",
+                unapplied_migrations=("documents.0100_y",),
+            ),
+            redis=ServiceStatus(status="OK", error=None, address="redis://broker:6379"),
+            celery=ServiceStatus(status="OK", error=None, address="celery@9464bd509d18"),
+            search_index=TimedStatus(
+                status="OK", error=None, last=datetime(2026, 11, 9, 21, 43, 38, 159239, tzinfo=UTC)
+            ),
+            classifier=TimedStatus(
+                status="WARNING",
+                error="No classifier training tasks found",
+                last=datetime(2026, 11, 9, 20, tzinfo=UTC),
+            ),
+            sanity_check=TimedStatus(
+                status="WARNING",
+                error="No sanity check tasks found",
+                last=datetime(2026, 11, 9, 19, tzinfo=UTC),
+            ),
+            llm_index=TimedStatus(
+                status="DISABLED", error=None, last=datetime(2026, 11, 9, 18, tzinfo=UTC)
+            ),
+            tasks=TaskTotals(days=30, total=3, pending=0, success=3, failure=0),
+        ),
+    )
+
+
+@pytest.mark.decision("decision-95")
+async def test_the_report_of_a_user_without_the_status_permission_has_no_status(
+    make_client: ClientFactory,
+) -> None:
+    statistics = {**STATISTICS, "documents_inbox": None, "inbox_tag": None, "inbox_tags": None}
+    responses = instance(status=STATUS_FORBIDDEN, statistics=httpx2.Response(200, json=statistics))
+
+    report = await reader(make_client, responses).get_system_report()
+
+    assert report.status is None
+    assert (report.statistics.inbox_documents, report.statistics.inbox_tags) == (None, ())
+
+
+@pytest.mark.decision("decision-95")
+@pytest.mark.parametrize("failing", ["statistics", "status"])
+async def test_a_report_that_cannot_be_read_is_an_error(
+    make_client: ClientFactory, failing: str
+) -> None:
+    responses = instance(**{failing: httpx2.Response(503, text="Service Unavailable")})
+
+    with pytest.raises(UpstreamUnavailable):
+        _ = await reader(make_client, responses).get_system_report()
+
+
+def texts(value: object, path: tuple[str, ...] = ()) -> list[tuple[str, ...]]:
+    """The paths of every text, or null where one can be, of the status."""
+    if isinstance(value, dict):
+        found: list[tuple[str, ...]] = []
+        for key, inner in cast("Json", value).items():
+            found += texts(inner, (*path, key))
+        return found
+    named = path and ("error" in path[-1] or path[-1] == "unapplied_migrations")
+    return [path] if named or isinstance(value, str) else []
+
+
+TEXTS = [path for path in texts(REPORT_STATUS) if not path[-1].endswith(MOMENTS)]
+
+
+@pytest.mark.decision("decision-95")
+@pytest.mark.decision("decision-66")
+@pytest.mark.parametrize("path", TEXTS, ids=".".join)
+async def test_no_text_of_the_status_shows_the_credentials_of_a_url(
+    path: tuple[str, ...],
+) -> None:
+    planted = "see redis://user:planted@broker:6379/0 now"
+    status = cast("Json", json.loads(json.dumps(REPORT_STATUS)))
+    inner = status
+    for key in path[:-1]:
+        inner = cast("Json", inner[key])
+    inner[path[-1]] = [planted] if path[-1] == "unapplied_migrations" else planted
+    client, _ = streaming(
+        lambda request: httpx2.Response(
+            200,
+            json=STATISTICS if request.url.path == "/api/statistics/" else status,
+            headers=VERSION_HEADERS,
+        )
+    )
+
+    report = await PaperlessInstanceReader(client).get_system_report()
+
+    assert "planted" not in report.model_dump_json()
+
+
+def test_the_planted_texts_are_those_of_every_part() -> None:
+    assert len(TEXTS) >= 20
+    assert {path[0] for path in TEXTS} == {
+        "pngx_version",
+        "server_os",
+        "install_type",
+        "database",
+        "tasks",
+    }

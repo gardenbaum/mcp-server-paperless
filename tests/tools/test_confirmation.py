@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Literal, cast, override
 import anyio
 import anyio.lowlevel
 import pytest
-from confirmation import CALLS, NOT_AGAIN, NOTE, PASSWORD, YES, answering, source, world
+from confirmation import CALLS, HINTS, NOT_AGAIN, NOTE, PASSWORD, YES, answering, source, world
 from fakes.paperless import FakeDocument, FakePaperless
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
@@ -94,8 +94,9 @@ async def test_a_tool_shows_the_refusal_and_runs_only_after_the_user_accepts(
 
     assert refused.is_error
     assert text(refused).startswith("Nothing was changed. Confirming would ")
-    assert text(refused).endswith(HINT)
-    assert declined == accepted == [text(refused).removesuffix(HINT)]
+    hint = HINTS.get(tool, HINT)
+    assert text(refused).endswith(hint)
+    assert declined == accepted == [text(refused).removesuffix(hint)]
     assert no.is_error
     assert text(no) == f"Nothing was changed: the user declined. Hint: {NOT_AGAIN}"
     assert not yes.is_error, text(yes)

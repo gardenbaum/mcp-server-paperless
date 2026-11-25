@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:07Z'
-updated_date: '2026-11-25T14:05:25Z'
+updated_date: '2026-11-25T14:53:14Z'
 labels:
   - workflows
 dependencies:
@@ -26,7 +26,7 @@ Fourth part of PLMCP-87: why a workflow did not run on a document can only be gu
 <!-- AC:BEGIN -->
 - [x] #1 explain_workflow compares settings, document, history, consume task and logs and says what is inferred and what cannot be known
 - [x] #2 Log lines show no text or names of other documents
-- [x] #3 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover matching, not matching and restricted users
+- [ ] #3 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover matching, not matching and restricted users
 <!-- AC:END -->
 
 ## Definition of Done
@@ -34,7 +34,7 @@ Fourth part of PLMCP-87: why a workflow did not run on a document can only be gu
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -62,4 +62,6 @@ Second review of #161 (d3b3378): N1 to N4 done, tests first (4 red; the others o
 Owner, 2026-11-25: 'Alles wie empfohlen' (everything as recommended), answering 'gröbere Gründe aus dem Log in Ordnung (the tags do not fit)?' (are coarser reasons from the log all right). Two holes Codex found in mail_explanation were real here too, fixed with a failing test first: a log that is empty or begins after the document arrived is named; the pages of names and workflows end 40 seconds after the call began. Full E2E 45603789273 on cba61ab green; 45611182400 on fd5e78a red only in two tests of PLMCP-81.4 (test_mail_import rule action, contract test_mail log lines).
 
 Codex threads on 2cb483c: (1) did_run from the cut list was already fixed in 32efef25. (2) True: the adapter dropped content, so last_change of the text was always null. The history now keeps a marker (TEXT_CHANGED, time and actor of the entry) in place of the text, in adapter and fake; get_document include=history shows it, too (deliberate change; the contract assertion that content is absent became: only the marker, never the text). An added version counts as a change of the text. Not checked live: whether an edit of the text of a newer version is in the history. Tests red first (8), 8 mutants by hand in a copy, all killed. No snapshot changed.
+
+Reopened 2026-11-25: a criterion that names several test levels is read literally, every item at every named level. Merged as 1efb5cd (#161); full E2E 45630847369 of that commit green in all ten jobs. AC 3, missing: contract tests (fake and 3.5.1) of explain_workflow for matching, not matching and restricted users; a tool test of a matching workflow and of a restricted user who gets an answer with gaps (the tool test has a refusal only). E2E has all three. DoD 1 stays open: code before tests. DoD 2 stays open: just check was not run as a whole locally; check jobs green: 45630847344 (main 1efb5cd).
 <!-- SECTION:NOTES:END -->

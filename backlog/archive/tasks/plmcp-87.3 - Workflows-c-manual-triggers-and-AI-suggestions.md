@@ -1,11 +1,11 @@
 ---
 id: PLMCP-87.3
 title: 'Workflows c: manual triggers and AI suggestions'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:06Z'
-updated_date: '2026-11-25T11:07:58Z'
+updated_date: '2026-11-25T14:46:41Z'
 labels:
   - workflows
 dependencies:
@@ -34,7 +34,7 @@ Third part of PLMCP-87: run_workflow runs manual triggers, but only the web UI c
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -56,3 +56,9 @@ First review of #160 (F1 to F8) fixed; run_workflow's AI wording is truer too, i
 
 Owner, 2026-11-25, question dialog: 'Beides ja' (yes to both): filename on other triggers stays refused, AI without a backend stays a documented limit (decision-86).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Manual triggers and applying AI suggestions can be created and changed, the latter confirmed while enabled; password removal is an owner-approved exclusion (decision-86). Merged as 8e28c3c (#160). Full E2E 45578885550 (f238efc); CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. Limit: the AI backend is not checked when writing. DoD 2 stays open: just check was not run as a whole locally. On GitHub the check jobs run its recipes one by one: 45591255060 (587fcf5).
+<!-- SECTION:FINAL_SUMMARY:END -->
