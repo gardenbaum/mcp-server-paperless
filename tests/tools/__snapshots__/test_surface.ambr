@@ -4514,8 +4514,30 @@
           'id': dict({
             'type': 'integer',
           }),
+          'in_sidebar': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
+          }),
           'name': dict({
             'type': 'string',
+          }),
+          'on_dashboard': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
           }),
           'owner': dict({
             'anyOf': list([
@@ -4596,6 +4618,8 @@
           'icon',
           'display_mode',
           'display_fields',
+          'on_dashboard',
+          'in_sidebar',
           'owner',
           'can_change',
           'rules',
@@ -12857,7 +12881,7 @@
         'title': 'Get saved view',
       }),
       'description': '''
-        Read one saved view with its filter rules, sort order and display settings.
+        Read one saved view with its filter rules, sort order, display settings, owner and grants.
         
         The view matches by exact name, then ignoring case and accents, or by id; an unknown or
         ambiguous name is an error that lists the closest names or candidates.
@@ -12884,8 +12908,133 @@
       }),
       'name': 'get_saved_view',
       'outputSchema': dict({
-        'description': 'A saved view as tools show it.',
+        'description': 'One saved view with its owner and grants.',
         'properties': dict({
+          'access': dict({
+            'anyOf': list([
+              dict({
+                'description': 'Who owns an object and who may view or change it, by name.',
+                'properties': dict({
+                  'change_groups': dict({
+                    'description': 'Groups who may view and change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'change_users': dict({
+                    'description': 'Users who may view and change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'owner': dict({
+                    'anyOf': list([
+                      dict({
+                        'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                        'properties': dict({
+                          'id': dict({
+                            'type': 'integer',
+                          }),
+                          'name': dict({
+                            'type': 'string',
+                          }),
+                        }),
+                        'required': list([
+                          'id',
+                          'name',
+                        ]),
+                        'type': 'object',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null: no owner, every user may use it.',
+                  }),
+                  'view_groups': dict({
+                    'description': 'Groups who may view it but not change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'view_users': dict({
+                    'description': 'Users who may view it but not change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                }),
+                'required': list([
+                  'owner',
+                  'view_users',
+                  'view_groups',
+                  'change_users',
+                  'change_groups',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Null: not readable now. Change it with set_permissions (kind saved_view).',
+          }),
           'can_change': dict({
             'description': 'Whether the current user may change it.',
             'type': 'boolean',
@@ -12943,8 +13092,30 @@
           'id': dict({
             'type': 'integer',
           }),
+          'in_sidebar': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
+          }),
           'name': dict({
             'type': 'string',
+          }),
+          'on_dashboard': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
           }),
           'owner': dict({
             'anyOf': list([
@@ -13025,9 +13196,12 @@
           'icon',
           'display_mode',
           'display_fields',
+          'on_dashboard',
+          'in_sidebar',
           'owner',
           'can_change',
           'rules',
+          'access',
         ]),
         'type': 'object',
       }),
@@ -16238,8 +16412,30 @@
                 'id': dict({
                   'type': 'integer',
                 }),
+                'in_sidebar': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'boolean',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Of the current user; null: cannot be read.',
+                }),
                 'name': dict({
                   'type': 'string',
+                }),
+                'on_dashboard': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'boolean',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Of the current user; null: cannot be read.',
                 }),
                 'owner': dict({
                   'anyOf': list([
@@ -16320,6 +16516,8 @@
                 'icon',
                 'display_mode',
                 'display_fields',
+                'on_dashboard',
+                'in_sidebar',
                 'owner',
                 'can_change',
                 'rules',
@@ -18634,6 +18832,109 @@
         'type': 'object',
       }),
       'title': 'Read a Paperless API path',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
+            'views',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': False,
+        'idempotentHint': True,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Pin saved view',
+      }),
+      'description': '''
+        Show a saved view on the dashboard or in the sidebar of the web UI, or take it away.
+        
+        Applies only to the Paperless user this server signs in as. Works for every view that user
+        sees; the view itself does not change. What is left out stays. An open Paperless tab shows it
+        only after a reload and can undo it with its next save: tell the user to reload. The other
+        settings of the user are written back as they were and compared; a difference is an error.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'dashboard': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: show it on the dashboard; false: take it away.',
+          }),
+          'sidebar': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'default': None,
+            'description': 'true: show it in the sidebar; false: take it away.',
+          }),
+          'view': dict({
+            'anyOf': list([
+              dict({
+                'type': 'string',
+              }),
+              dict({
+                'type': 'integer',
+              }),
+            ]),
+            'description': 'The saved view: its name or id.',
+          }),
+        }),
+        'required': list([
+          'view',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'pin_saved_view',
+      'outputSchema': dict({
+        'description': 'Where the current user has a saved view after pin_saved_view.',
+        'properties': dict({
+          'changed': dict({
+            'description': 'false: it already was as asked.',
+            'type': 'boolean',
+          }),
+          'id': dict({
+            'type': 'integer',
+          }),
+          'in_sidebar': dict({
+            'type': 'boolean',
+          }),
+          'message': dict({
+            'type': 'string',
+          }),
+          'name': dict({
+            'type': 'string',
+          }),
+          'on_dashboard': dict({
+            'type': 'boolean',
+          }),
+        }),
+        'required': list([
+          'id',
+          'name',
+          'on_dashboard',
+          'in_sidebar',
+          'changed',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Pin saved view',
     }),
     dict({
       '_meta': dict({
@@ -23397,7 +23698,7 @@
         'title': 'Set permissions',
       }),
       'description': '''
-        Share documents, taxonomy objects, mail accounts or mail rules, or hand them over.
+        Share documents, taxonomy objects, saved views, mail accounts or rules, or hand them over.
         
         Sets who owns the objects and which users and groups may view or change them, by name or id.
         A change grant includes view. Lists you leave out are never touched in either mode, so a
@@ -23491,7 +23792,7 @@
             'type': 'array',
           }),
           'kind': dict({
-            'description': 'What the objects are: document, tag, correspondent, document_type, storage_path, mail_account or mail_rule.',
+            'description': 'What the objects are: document, tag, correspondent, document_type, storage_path, mail_account, mail_rule or saved_view.',
             'enum': list([
               'document',
               'tag',
@@ -23500,6 +23801,7 @@
               'storage_path',
               'mail_account',
               'mail_rule',
+              'saved_view',
             ]),
             'type': 'string',
           }),
@@ -23598,6 +23900,7 @@
               'storage_path',
               'mail_account',
               'mail_rule',
+              'saved_view',
             ]),
             'type': 'string',
           }),
@@ -27538,8 +27841,30 @@
           'id': dict({
             'type': 'integer',
           }),
+          'in_sidebar': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
+          }),
           'name': dict({
             'type': 'string',
+          }),
+          'on_dashboard': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
           }),
           'owner': dict({
             'anyOf': list([
@@ -27620,6 +27945,8 @@
           'icon',
           'display_mode',
           'display_fields',
+          'on_dashboard',
+          'in_sidebar',
           'owner',
           'can_change',
           'rules',
@@ -41664,7 +41991,7 @@
         'title': 'Get saved view',
       }),
       'description': '''
-        Read one saved view with its filter rules, sort order and display settings.
+        Read one saved view with its filter rules, sort order, display settings, owner and grants.
         
         The view matches by exact name, then ignoring case and accents, or by id; an unknown or
         ambiguous name is an error that lists the closest names or candidates.
@@ -41691,8 +42018,133 @@
       }),
       'name': 'get_saved_view',
       'outputSchema': dict({
-        'description': 'A saved view as tools show it.',
+        'description': 'One saved view with its owner and grants.',
         'properties': dict({
+          'access': dict({
+            'anyOf': list([
+              dict({
+                'description': 'Who owns an object and who may view or change it, by name.',
+                'properties': dict({
+                  'change_groups': dict({
+                    'description': 'Groups who may view and change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'change_users': dict({
+                    'description': 'Users who may view and change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'owner': dict({
+                    'anyOf': list([
+                      dict({
+                        'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                        'properties': dict({
+                          'id': dict({
+                            'type': 'integer',
+                          }),
+                          'name': dict({
+                            'type': 'string',
+                          }),
+                        }),
+                        'required': list([
+                          'id',
+                          'name',
+                        ]),
+                        'type': 'object',
+                      }),
+                      dict({
+                        'type': 'null',
+                      }),
+                    ]),
+                    'description': 'Null: no owner, every user may use it.',
+                  }),
+                  'view_groups': dict({
+                    'description': 'Groups who may view it but not change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                  'view_users': dict({
+                    'description': 'Users who may view it but not change it.',
+                    'items': dict({
+                      'description': 'A user or group by id and name (``#id`` if the caller may not list them).',
+                      'properties': dict({
+                        'id': dict({
+                          'type': 'integer',
+                        }),
+                        'name': dict({
+                          'type': 'string',
+                        }),
+                      }),
+                      'required': list([
+                        'id',
+                        'name',
+                      ]),
+                      'type': 'object',
+                    }),
+                    'type': 'array',
+                  }),
+                }),
+                'required': list([
+                  'owner',
+                  'view_users',
+                  'view_groups',
+                  'change_users',
+                  'change_groups',
+                ]),
+                'type': 'object',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Null: not readable now. Change it with set_permissions (kind saved_view).',
+          }),
           'can_change': dict({
             'description': 'Whether the current user may change it.',
             'type': 'boolean',
@@ -41750,8 +42202,30 @@
           'id': dict({
             'type': 'integer',
           }),
+          'in_sidebar': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
+          }),
           'name': dict({
             'type': 'string',
+          }),
+          'on_dashboard': dict({
+            'anyOf': list([
+              dict({
+                'type': 'boolean',
+              }),
+              dict({
+                'type': 'null',
+              }),
+            ]),
+            'description': 'Of the current user; null: cannot be read.',
           }),
           'owner': dict({
             'anyOf': list([
@@ -41832,9 +42306,12 @@
           'icon',
           'display_mode',
           'display_fields',
+          'on_dashboard',
+          'in_sidebar',
           'owner',
           'can_change',
           'rules',
+          'access',
         ]),
         'type': 'object',
       }),
@@ -44594,8 +45071,30 @@
                 'id': dict({
                   'type': 'integer',
                 }),
+                'in_sidebar': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'boolean',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Of the current user; null: cannot be read.',
+                }),
                 'name': dict({
                   'type': 'string',
+                }),
+                'on_dashboard': dict({
+                  'anyOf': list([
+                    dict({
+                      'type': 'boolean',
+                    }),
+                    dict({
+                      'type': 'null',
+                    }),
+                  ]),
+                  'description': 'Of the current user; null: cannot be read.',
                 }),
                 'owner': dict({
                   'anyOf': list([
@@ -44676,6 +45175,8 @@
                 'icon',
                 'display_mode',
                 'display_fields',
+                'on_dashboard',
+                'in_sidebar',
                 'owner',
                 'can_change',
                 'rules',

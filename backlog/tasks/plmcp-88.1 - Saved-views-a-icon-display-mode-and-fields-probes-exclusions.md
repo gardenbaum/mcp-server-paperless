@@ -23,17 +23,17 @@ First part of PLMCP-88: icon, display_mode and display_fields of a saved view ca
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Probes P1 to P5 ran against Paperless 3.5.1 on GitHub and their results are recorded
-- [ ] #2 icon, display_mode and display_fields can be read, set on creation and changed, and the last two cleared; wrong values are refused before anything is sent
-- [ ] #3 The owner-approved exclusions (PUT, ordering and full_perms of the list, owner and set_permissions on POST) are recorded with quote and date
-- [ ] #4 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover each field and clearing
+- [x] #1 Probes P1 to P5 ran against Paperless 3.5.1 on GitHub and their results are recorded
+- [x] #2 icon, display_mode and display_fields can be read, set on creation and changed, and the last two cleared; wrong values are refused before anything is sent
+- [x] #3 The owner-approved exclusions (PUT, ordering and full_perms of the list, owner and set_permissions on POST) are recorded with quote and date
+- [x] #4 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover each field and clearing
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -55,6 +55,8 @@ Probes: CI run 45594222648, job 139135939753, commit c549208 (tests/e2e/test_vie
 Red first: domain, service and contract modules failed to import, adapter 8, tool 2 tests red, then green; the contract test for deleted custom fields red on the fake. E2E written before its first hosted run. 26 hand mutants, 1 survived (a duplicate check, deleted).
 Deliberate: surface and message snapshots; hint of "Nothing to change". Guide limit unchanged.
 just check was not run as a whole locally.
+
+CI run 45596307049 on 65cd16b: live contract (test_views 25) and E2E (test_views 5) green on Paperless 3.5.1.
 
 Review: custom fields only looked up when shown (test), echoed icon and field cut and on one line, contradictory arguments refused before anything is read. Tests first (6 red); 5 mutants, none survived.
 <!-- SECTION:NOTES:END -->

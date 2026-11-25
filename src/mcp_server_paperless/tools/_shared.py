@@ -176,6 +176,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "get_saved_view": "views",
     "create_saved_view": "views",
     "update_saved_view": "views",
+    "pin_saved_view": "views",
     "delete_saved_view": "views",
     "run_saved_view": "core",  # decision-34: the default profile runs saved views
     "list_trash": "trash",
@@ -494,6 +495,14 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
     ),
     "update_saved_view": ToolAnnotations(
         title="Update saved view",
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Only the own dashboard and sidebar change, and back again (decision-92): no confirm.
+    "pin_saved_view": ToolAnnotations(
+        title="Pin saved view",
         read_only_hint=False,
         destructive_hint=False,
         idempotent_hint=True,

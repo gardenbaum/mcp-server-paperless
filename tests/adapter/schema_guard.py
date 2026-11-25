@@ -71,6 +71,7 @@ UNDECLARED_QUERY_PARAMETERS: Mapping[tuple[str, str], Mapping[str, str]] = {
         for method in ("GET", "PATCH")
         for path in ("/api/mail_accounts/", "/api/mail_rules/")
     },
+    ("PATCH", "/api/saved_views/{id}/"): {"full_perms": FULL_PERMS_REASON},
 }
 # Query parameters the schema declares with the wrong type: (method, path template) ->
 # {parameter: reason}. Their value is not type-checked (the name must still be declared).
@@ -254,6 +255,9 @@ WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
     ("GET", "/api/ui_settings/", 200): (
         "3.5.1 answers {user, settings, permissions}; the schema has {id, settings} (PLMCP-7)"
     ),
+    ("POST", "/api/ui_settings/", 200): (
+        "3.5.1 answers {success: true}; the schema has {id, settings} (PLMCP-88.2)"
+    ),
 }
 # Responses that lack a property the schema requires, which is filled in (as an empty object)
 # before the body is validated, so that the rest of the body is still checked: (method, path
@@ -290,7 +294,7 @@ FULL_PERMS_RESPONSES: frozenset[tuple[str, str, int]] = frozenset(
     | {
         (method, f"{path}{{id}}/", 200)
         for method in ("GET", "PATCH")
-        for path in ("/api/mail_accounts/", "/api/mail_rules/")
+        for path in ("/api/mail_accounts/", "/api/mail_rules/", "/api/saved_views/")
     }
 )
 # Responses with a property that is null although the schema allows only an object there: the

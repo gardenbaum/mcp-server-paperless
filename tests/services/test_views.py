@@ -21,6 +21,7 @@ from mcp_server_paperless.domain.errors import (
     Ambiguous,
     ConfirmationRequired,
     NotFound,
+    PaperlessMcpError,
     PermissionDenied,
     UpstreamUnavailable,
     Validation,
@@ -36,9 +37,13 @@ from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.filter_rules import translate
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.view_pins import ViewPins
 from mcp_server_paperless.services.views import ViewService
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from mcp_server_paperless.domain.permissions import ObjectAccess, PermissionKind
     from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
     from mcp_server_paperless.domain.views import SavedView, ViewValues
 
@@ -107,7 +112,14 @@ class Setup:
         self.documents: DocumentService = DocumentService(
             self.fake, self.fake, self.resolver, web_url=WEB
         )
-        self.views: ViewService = ViewService(self.fake, self.fake, self.resolver, self.documents)
+        self.views: ViewService = ViewService(
+            self.fake,
+            self.fake,
+            self.resolver,
+            self.documents,
+            ViewPins(self.fake, self.fake),
+            permissions=self.fake,
+        )
 
     def view(self, name: str) -> FakeSavedView:
         return next(v for v in self.state.saved_views if v.name == name)
@@ -549,7 +561,8 @@ async def test_a_created_view_keeps_its_display_settings_and_names_custom_fields
         ("title", None),
         ("custom_field_1", "e2e-string"),
     ]
-    assert await setup.views.get("shown") == made
+    read = await setup.views.get("shown")
+    assert read.model_dump(exclude={"access"}) == made.model_dump()
     assert made in (await setup.views.list()).views
 
 
@@ -668,7 +681,9 @@ async def test_a_write_is_reported_also_when_the_names_of_custom_fields_cannot_b
     setup.view("e2e-view").display_fields = ("custom_field_1",)
     fake = Unreadable(setup.state, user=ADMIN[0], writes=True)
     resolver = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
-    views = ViewService(fake, fake, resolver, setup.documents)
+    views = ViewService(
+        fake, fake, resolver, setup.documents, ViewPins(fake, fake), permissions=fake
+    )
 
     after = await views.update("e2e-view", ViewEdit(icon="heart"))
 
@@ -690,17 +705,47 @@ async def test_a_deleted_custom_field_is_shown_without_a_name_and_does_not_block
     ]
 
 
+@pytest.mark.parametrize("view", ["e2e-view", 1])
+async def test_one_view_is_shown_with_its_owner_and_grants_by_name(view: str | int) -> None:
+    setup = Setup()
+    setup.view("e2e-view").viewers = {3}
+
+    found = await setup.views.get(view)
+
+    assert found.access is not None
+    assert found.access.owner is not None
+    assert found.access.owner.name == "admin"
+    assert [who.name for who in found.access.view_users] == [READER[0]]
+    [listed] = (await setup.views.list()).views
+    assert found.model_dump(exclude={"access"}) == listed.model_dump()
+    assert "access" not in listed.model_dump()
+
+
+async def test_who_may_only_see_a_view_sees_its_grants_and_ids_where_users_are_hidden() -> None:
+    setup = Setup(READER[0], grant=("view_savedview",))
+    setup.fake.user = replace(
+        setup.fake.user, permissions=setup.fake.user.permissions - {"view_user", "view_group"}
+    )
+    setup.view("e2e-view").viewers = {3}
+
+    found = await setup.views.get(1)
+
+    assert found.access is not None
+    assert [who.name for who in found.access.view_users] == ["#3"]
+    assert found.can_change is False
+
+
 async def test_custom_fields_are_only_looked_up_if_a_view_shows_one() -> None:
     setup = Setup()
     setup.view("e2e-view").display_fields = ("title", "asn")
 
     _ = await setup.views.list()
     _ = await setup.views.get(1)
-    assert setup.fake.taxonomy == []
+    assert "custom_field" not in setup.fake.taxonomy
     setup.view("e2e-view").display_fields = ("title", "custom_field_1")
     _ = await setup.views.list()
 
-    assert setup.fake.taxonomy == ["custom_field"]
+    assert setup.fake.taxonomy.count("custom_field") == 1
 
 
 @pytest.mark.parametrize("wrong", ["x" * 5000, "y\n\u202e" + "z" * 5000])
@@ -737,3 +782,52 @@ async def test_a_contradiction_is_refused_before_anything_is_read(edit: ViewEdit
         _ = await setup.views.update("no such view", edit)
 
     assert setup.fake.view_reads == 0
+
+
+class NoAccess(Recording):
+    """The grants, or the users they name, cannot be read."""
+
+    error: PaperlessMcpError = UpstreamUnavailable("down")
+    users: bool = False
+
+    @override
+    async def get_permissions(
+        self, kind: PermissionKind, object_ids: Sequence[int]
+    ) -> list[ObjectAccess]:
+        if not self.users:
+            raise self.error
+        return await super().get_permissions(kind, object_ids)
+
+    @override
+    async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
+        if self.users and kind == "user":
+            raise self.error
+        return await super().list_taxonomy(kind)
+
+
+def without_access(*, users: bool = False) -> tuple[NoAccess, ViewService]:
+    setup = Setup()
+    fake = NoAccess(setup.state, user=ADMIN[0], writes=False)
+    fake.users = users
+    resolver = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
+    pins = ViewPins(fake, fake)
+    return fake, ViewService(fake, fake, resolver, setup.documents, pins, permissions=fake)
+
+
+@pytest.mark.parametrize("users", [True, False])
+async def test_a_view_is_shown_also_when_its_access_cannot_be_read(
+    users: bool,  # noqa: FBT001 -- the case
+) -> None:
+    _, views = without_access(users=users)
+
+    found = await views.get(1)
+
+    assert (found.name, found.access) == ("e2e-view", None)
+
+
+async def test_a_refusal_to_read_the_access_is_passed_on() -> None:
+    fake, views = without_access()
+    fake.error = PermissionDenied("no")
+
+    with pytest.raises(PermissionDenied):
+        _ = await views.get(1)

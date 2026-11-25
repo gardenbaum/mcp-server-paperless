@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Annotated, ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from mcp_server_paperless.domain.permissions import AccessView
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -303,9 +305,26 @@ class SavedViewInfo(BaseModel):
         tuple[DisplayField, ...] | None,
         Field(description="What the web UI shows of each document; null: the default."),
     ]
+    on_dashboard: Annotated[
+        bool | None, Field(description="Of the current user; null: cannot be read.")
+    ]
+    in_sidebar: Annotated[
+        bool | None, Field(description="Of the current user; null: cannot be read.")
+    ]
     owner: Annotated[int | None, Field(description="User id of the owner; null: shared by all.")]
     can_change: Annotated[bool, Field(description="Whether the current user may change it.")]
     rules: tuple[RuleInfo, ...]
+
+
+class SavedViewDetail(SavedViewInfo):
+    """One saved view with its owner and grants."""
+
+    access: Annotated[
+        AccessView | None,
+        Field(
+            description="Null: not readable now. Change it with set_permissions (kind saved_view)."
+        ),
+    ]
 
 
 class SavedViewListing(BaseModel):
@@ -325,3 +344,16 @@ class ViewDeletion(BaseModel):
     id: int
     name: str
     message: Annotated[str, Field(description="What was deleted.")]
+
+
+class PinnedView(BaseModel):
+    """Where the current user has a saved view after pin_saved_view."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    name: str
+    on_dashboard: bool
+    in_sidebar: bool
+    changed: Annotated[bool, Field(description="false: it already was as asked.")]
+    message: str
