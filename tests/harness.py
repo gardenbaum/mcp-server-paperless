@@ -61,6 +61,7 @@ if TYPE_CHECKING:
         RawReader,
         SharingReader,
         SharingWriter,
+        SystemReportReader,
         TaskListReader,
         TaskListWriter,
         TaskReader,
@@ -208,6 +209,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
     workflow_writes: WorkflowWriter | None = None,
     management: AdminReader | None = None,
     management_writes: AdminWriter | None = None,
+    reports: SystemReportReader | None = None,
     task_lists: TaskListReader | None = None,
     task_list_writes: TaskListWriter | None = None,
     renderer: PageRenderer | None = None,
@@ -286,6 +288,7 @@ def serve(  # noqa: PLR0913 -- one keyword per seam of the server
                 workflow_writes=workflow_writes or fake,
                 management=management or fake,
                 management_writes=management_writes or fake,
+                reports=reports or fake,
                 task_lists=task_lists or fake,
                 task_list_writes=task_list_writes or fake,
             )

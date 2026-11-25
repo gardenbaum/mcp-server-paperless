@@ -1108,6 +1108,8 @@ async def test_documents_are_read_with_every_section_and_slice() -> None:
         },
         (),
     )
+    await sweep("get_document", {"document_id": 1, "include": ["history"], "history_page": 1}, ())
+    await sweep("get_system_report", {}, ())
     await sweep(
         "get_document_content",
         {"document_id": 1, "offset": 1, "max_chars": 10, "version_id": 1},

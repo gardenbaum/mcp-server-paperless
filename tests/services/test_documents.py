@@ -4,9 +4,19 @@ from datetime import UTC, date, datetime
 
 import pytest
 from fakes.accounts import ADMIN, PUBLIC_NOTE, READER
-from fakes.paperless import FakeFile, FakePaperless, FakeTaxonomy, FakeUser, seeded
+from fakes.paperless import (
+    FakeFile,
+    FakePaperless,
+    FakeState,
+    FakeTaxonomy,
+    FakeUser,
+    seeded,
+)
+from hypothesis import given
+from hypothesis import strategies as st
 
 from mcp_server_paperless.domain.documents import (
+    DocumentHistory,
     DocumentQuery,
     FieldValue,
     HistoryEntry,
@@ -698,3 +708,98 @@ async def test_a_clean_search_has_no_notices() -> None:
     found = await admin().search(NameFilters(), DocumentQuery(query="acme"), page=1, page_size=25)
 
     assert found.notices == ()
+
+
+# --- the history page by page (PLMCP-89.3)
+
+
+async def history_page(state: FakeState, page: int) -> DocumentHistory:
+    fake = FakePaperless(state, user=ADMIN[0])
+    detail = await service(fake).get(1, ("history",), history_page=page)
+    assert detail.history is not None
+    return detail.history
+
+
+@pytest.mark.decision("decision-95")
+@pytest.mark.parametrize(
+    ("count", "page", "shown", "following"),
+    [
+        (0, 1, [], None),
+        (1, 1, [1000], None),
+        (50, 1, [*range(1000, 950, -1)], None),
+        (51, 1, [*range(1000, 950, -1)], 2),
+        (51, 2, [950], None),
+        (101, 2, [*range(950, 900, -1)], 3),
+        (101, 3, [900], None),
+    ],
+)
+async def test_the_history_has_fifty_entries_a_page(
+    count: int, page: int, shown: list[int], following: int | None
+) -> None:
+    state = seeded()
+    state.documents[0].history = [history_entry(number) for number in range(count)]
+
+    found = await history_page(state, page)
+
+    assert (found.total, found.page, found.next_page) == (count, page, following)
+    assert found.truncated is (following is not None)
+    assert [entry.id for entry in found.entries] == shown
+
+
+@pytest.mark.decision("decision-95")
+@pytest.mark.parametrize(
+    ("count", "page", "last"), [(0, 2, 1), (50, 2, 1), (51, 3, 2), (101, 99, 3)]
+)
+async def test_a_page_past_the_end_names_the_last_one(count: int, page: int, last: int) -> None:
+    state = seeded()
+    state.documents[0].history = [history_entry(number) for number in range(count)]
+
+    with pytest.raises(Validation) as raised:
+        _ = await history_page(state, page)
+
+    assert raised.value.describe() == (
+        f"Page {page} of the history does not exist. Hint: The last page is {last}."
+    )
+
+
+@pytest.mark.decision("decision-95")
+async def test_a_page_of_the_history_without_the_history_is_refused() -> None:
+    for include in ((), ("notes",)):
+        with pytest.raises(Validation) as raised:
+            _ = await admin().get(1, include, history_page=2)
+        assert raised.value.describe() == (
+            "history_page is only for include history. Hint: Add history to include."
+        )
+
+
+@pytest.mark.decision("decision-95")
+async def test_a_history_the_user_may_not_read_is_unavailable_on_every_page() -> None:
+    reader = service(FakePaperless(seeded(), user=READER[0]))
+
+    assert (await reader.get(1, ("history",), history_page=7)).unavailable == ("history",)
+
+
+@pytest.mark.decision("decision-95")
+@given(count=st.integers(min_value=0, max_value=260))
+async def test_the_pages_hold_every_entry_once_and_never_the_text(count: int) -> None:
+    state = seeded()
+    state.documents[0].history = [
+        history_entry(n).model_copy(
+            update={
+                "actor": None,
+                "changes": {"content": ["old", "SECRET TEXT"], "title": ["a", n]},
+            }
+        )
+        for n in range(count)
+    ]
+
+    seen: list[HistoryEntry] = []
+    page: int | None = 1
+    while page is not None:
+        found = await history_page(state, page)
+        seen += found.entries
+        page = found.next_page
+
+    assert [entry.id for entry in seen] == [1000 - n for n in range(count)]
+    assert all("content" not in entry.changes for entry in seen)
+    assert "SECRET TEXT" not in repr(seen)

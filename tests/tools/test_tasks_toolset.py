@@ -20,8 +20,8 @@ pytestmark = [
 
 type Json = dict[str, object]
 
-TOOLS = {"list_tasks", "get_task_overview", "acknowledge_tasks", "run_task"}
-READS = {"list_tasks", "get_task_overview"}
+READS = {"list_tasks", "get_task_overview", "get_system_report"}
+TOOLS = READS | {"acknowledge_tasks", "run_task"}
 
 
 def fake(
@@ -206,3 +206,21 @@ async def test_run_task_says_what_paperless_starts_and_what_the_index_sends() ->
     assert "Paperless starts only these three by hand and one per call; call once per type" in text
     assert "new or changed" in text
     assert "rebuild" not in text
+
+
+# --- the system report (PLMCP-89.3)
+
+
+@pytest.mark.decision("decision-95")
+async def test_the_system_report_shows_everything_to_who_may_see_it() -> None:
+    report = await call(fake(writes=False), "get_system_report")
+    restricted = await call(fake(user="e2e-reader"), "get_system_report")
+
+    statistics = cast("Json", report["statistics"])
+    status = cast("Json", report["status"])
+    assert statistics["documents"] == 2
+    assert statistics["file_types"] == [{"mime_type": "application/pdf", "documents": 2}]
+    assert cast("Json", status["database"])["type"] == "sqlite"
+    assert cast("Json", status["tasks"])["days"] == 30
+    assert restricted["status"] is None
+    assert cast("Json", restricted["statistics"])["documents"] == 1

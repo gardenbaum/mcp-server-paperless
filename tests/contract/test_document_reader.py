@@ -732,3 +732,34 @@ async def test_the_original_and_the_archive_of_a_pdf_can_be_inspected(backend: B
     hidden = PageService(backend.reader.documents, ChildRenderer(), web_url="http://paperless/")
     with pytest.raises(NotFound):
         _ = await hidden.inspect((await document(backend.admin, PRIVATE)).id, "1-")
+
+
+@pytest.mark.contract("DocumentReader.list_document_history")
+@pytest.mark.decision("decision-95")
+async def test_the_history_holds_every_correction_without_its_text(backend: Backend) -> None:
+    document_id = backend.new_document()
+    writes = backend.admin.document_writes
+    for number in range(3):
+        corrected = f"contract corrected text {number}"
+        _ = await writes.set_document_text(document_id, document_id, corrected)
+
+    entries = await backend.admin.documents.list_document_history(document_id)
+
+    assert len({entry.id for entry in entries}) == len(entries)
+    assert "contract corrected text" not in repr(entries)
+    stamps = [entry.timestamp for entry in entries]
+    assert stamps == sorted(stamps, reverse=True)
+
+
+@pytest.mark.contract("DocumentReader.list_document_history")
+@pytest.mark.decision("decision-95")
+async def test_the_history_of_another_user_s_document_is_refused_and_an_unowned_one_is_not(
+    backend: Backend,
+) -> None:
+    public = await document(backend.reader, PUBLIC)
+    private = await document(backend.admin, PRIVATE)
+    user = backend.restricted(frozenset({"view_document", "view_logentry"}))
+
+    assert await user.documents.list_document_history(public.id)
+    with pytest.raises(PermissionDenied):
+        _ = await user.documents.list_document_history(private.id)

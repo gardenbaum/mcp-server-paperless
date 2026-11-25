@@ -87,7 +87,7 @@ READ_ADMIN = {
     "bulk_download",
 }
 TASKS = {name for name, toolset in TOOL_TOOLSETS.items() if toolset == "tasks"}
-READ_TASKS = {"list_tasks", "get_task_overview"}
+READ_TASKS = {"list_tasks", "get_task_overview", "get_system_report"}
 RAW = {"paperless_api_get"}
 READ_PDF = {"inspect_pdf"}
 READ_BULK = {"read_documents"}

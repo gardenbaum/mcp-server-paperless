@@ -1,5 +1,7 @@
 """PaperlessDocumentReader on responses recorded from the Paperless 3.4.2 E2E stack."""
 
+import gzip
+import json
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -14,6 +16,7 @@ from mcp_server_paperless.domain.documents import (
     DocumentQuery,
 )
 from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
     FeatureUnavailable,
     NotFound,
     PaperlessMcpError,
@@ -23,6 +26,7 @@ from mcp_server_paperless.domain.errors import (
 )
 from mcp_server_paperless.paperless.documents import (
     FIELDS,
+    HISTORY_BYTES,
     THUMBNAIL_LIMIT,
     PaperlessDocumentReader,
 )
@@ -1182,3 +1186,52 @@ async def test_rights_that_cannot_be_read_are_unknown(make_client: ClientFactory
     server = Resource({"detail": "no"}, status=403)
 
     assert await PaperlessDocumentReader(make_client(server)).may_delete([2]) is None
+
+
+# --- the history (PLMCP-89.3)
+
+
+@pytest.mark.decision("decision-95")
+@pytest.mark.parametrize("encoding", ["identity", "gzip"])
+async def test_a_history_over_the_limit_is_refused_with_the_reason(encoding: str) -> None:
+    """Corrections of the text are in it in full; a compressed answer counts unpacked."""
+    sent: list[str] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        sent.append(request.headers["Accept-Encoding"])
+        body = b"[" + b" " * HISTORY_BYTES + b"]"
+        if encoding == "gzip":
+            return httpx2.Response(
+                200,
+                content=gzip.compress(body),
+                headers={"Content-Type": "application/json", "Content-Encoding": "gzip"},
+            )
+        return httpx2.Response(200, content=body, headers={"Content-Type": "application/json"})
+
+    client, _ = streaming(answer)
+    with pytest.raises(AnswerTooLarge) as raised:
+        _ = await PaperlessDocumentReader(client).list_document_history(1)
+
+    assert raised.value.describe() == (
+        "The history of document 1 is over 64 MiB, because Paperless sends every corrected text "
+        "with it. Hint: Leave history out of include, or look at it in the Paperless web UI."
+    )
+    assert HISTORY_BYTES == 64 * 1024 * 1024
+    assert "gzip" in sent[0]
+
+
+@pytest.mark.decision("decision-95")
+async def test_a_compressed_history_is_read() -> None:
+    body = json.dumps(HISTORY).encode()
+
+    def answer(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            content=gzip.compress(body),
+            headers={"Content-Type": "application/json", "Content-Encoding": "gzip"},
+        )
+
+    client, _ = streaming(answer)
+    entries = await PaperlessDocumentReader(client).list_document_history(1)
+
+    assert [entry.id for entry in entries] == [55, 17]

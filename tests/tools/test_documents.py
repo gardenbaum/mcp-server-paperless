@@ -364,3 +364,31 @@ async def test_a_resource_domain_error_is_logged_at_info_by_type(
     logged = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
     assert "document failed: NotFound" in logged
     assert "No document 999" not in caplog.text
+
+
+@pytest.mark.decision("decision-95")
+async def test_the_history_is_read_page_by_page() -> None:
+    state = seeded()
+    entry = state.documents[0].history[0]
+    state.documents[0].history = [entry.model_copy(update={"id": 900 - n}) for n in range(60)]
+    fake = FakePaperless(state, user="admin")
+    ask = {"document_id": 1, "include": ["history"]}
+
+    first = cast("Json", (await get("get_document", ask, fake))["history"])
+    second = cast("Json", (await get("get_document", {**ask, "history_page": 2}, fake))["history"])
+
+    assert (first["page"], first["next_page"], first["total"]) == (1, 2, 60)
+    assert (second["page"], second["next_page"], second["truncated"]) == (2, None, False)
+    ids = [e["id"] for page in (first, second) for e in cast("list[Json]", page["entries"])]
+    assert ids == [900 - n for n in range(60)]
+
+
+@pytest.mark.decision("decision-95")
+@pytest.mark.parametrize("arguments", [{"history_page": 0}, {"history_page": 3}])
+async def test_a_page_of_the_history_that_is_not_there_is_refused(arguments: Json) -> None:
+    ask = {"document_id": 1, "include": ["history"], **arguments}
+
+    async with Client(serve(FakePaperless(seeded(), user="admin"))) as client:
+        result = await client.call_tool("get_document", ask, raise_on_error=False)
+
+    assert result.is_error
