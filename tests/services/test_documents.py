@@ -20,6 +20,7 @@ from mcp_server_paperless.domain.documents import (
     DocumentQuery,
     FieldValue,
     HistoryEntry,
+    Include,
     NameFilters,
     Ref,
     SuggestionNames,
@@ -764,7 +765,8 @@ async def test_a_page_past_the_end_names_the_last_one(count: int, page: int, las
 
 @pytest.mark.decision("decision-95")
 async def test_a_page_of_the_history_without_the_history_is_refused() -> None:
-    for include in ((), ("notes",)):
+    without: tuple[tuple[Include, ...], ...] = ((), ("notes",))
+    for include in without:
         with pytest.raises(Validation) as raised:
             _ = await admin().get(1, include, history_page=2)
         assert raised.value.describe() == (

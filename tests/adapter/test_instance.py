@@ -435,7 +435,7 @@ def texts(value: object, path: tuple[str, ...] = ()) -> list[tuple[str, ...]]:
         for key, inner in cast("Json", value).items():
             found += texts(inner, (*path, key))
         return found
-    named = path and ("error" in path[-1] or path[-1] in {"unapplied_migrations"})
+    named = path and ("error" in path[-1] or path[-1] == "unapplied_migrations")
     return [path] if named or isinstance(value, str) else []
 
 

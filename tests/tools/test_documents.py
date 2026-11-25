@@ -372,7 +372,7 @@ async def test_the_history_is_read_page_by_page() -> None:
     entry = state.documents[0].history[0]
     state.documents[0].history = [entry.model_copy(update={"id": 900 - n}) for n in range(60)]
     fake = FakePaperless(state, user="admin")
-    ask = {"document_id": 1, "include": ["history"]}
+    ask: Json = {"document_id": 1, "include": ["history"]}
 
     first = cast("Json", (await get("get_document", ask, fake))["history"])
     second = cast("Json", (await get("get_document", {**ask, "history_page": 2}, fake))["history"])

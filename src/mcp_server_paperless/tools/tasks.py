@@ -1,4 +1,4 @@
-"""The tasks toolset: the list of background tasks, marking them as seen, starting some by hand.
+"""The tasks toolset: background tasks and how Paperless is doing.
 
 Opt-in (``PAPERLESS_MCP_TOOLSETS=core,tasks``) and apart from user administration (decision-93).
 Following one task by its task_id is ``get_task`` of the core toolset. The tasks that retrain or
@@ -12,6 +12,7 @@ from fastmcp.server.providers import LocalProvider
 from pydantic import AwareDatetime, Field
 
 from mcp_server_paperless.domain.documents import NameOrId
+from mcp_server_paperless.domain.instance import SystemReport
 from mcp_server_paperless.domain.task_lists import (
     Acknowledged,
     RunnableTask,
@@ -154,6 +155,20 @@ async def get_task_overview(  # noqa: PLR0913 -- one filter each, described for 
         name=name,
         result=result,
     )
+
+
+@provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["get_system_report"])
+@boundary
+async def get_system_report(ctx: Context) -> SystemReport:
+    """Read all of Paperless's statistics and system status, to find out why something is wrong.
+
+    More than get_instance_overview: file types, characters, highest serial number, inbox tags;
+    host, database and its migrations, Redis and worker addresses, when the search index, the
+    classifier, the sanity check and the AI index last ran, and task totals. URLs come without user
+    name and password. status is null without the view_system_monitoring permission (staff and
+    superusers have it). Takes a few seconds while no worker answers.
+    """
+    return await services(ctx).reports.report()
 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["acknowledge_tasks"])

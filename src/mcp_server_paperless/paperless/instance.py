@@ -6,6 +6,7 @@ error. ``/api/remote_version/`` (an update check) and ``/api/profile/`` (it retu
 token) are deliberately not used.
 """
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -14,15 +15,28 @@ from mcp_server_paperless.domain.errors import PermissionDenied
 from mcp_server_paperless.domain.instance import (
     ComponentStatus,
     CurrentUser,
+    DatabaseStatus,
+    FileTypeCount,
     InstanceOverview,
     InstanceStatistics,
+    ServiceStatus,
+    StatisticsReport,
+    StatusReport,
+    SystemReport,
     SystemStatus,
+    TaskTotals,
+    TimedStatus,
 )
 from mcp_server_paperless.domain.urls import text_without_credentials
 from mcp_server_paperless.paperless.client import parse, unexpected
 
 if TYPE_CHECKING:
     from mcp_server_paperless.paperless.client import PaperlessClient
+
+
+class _FileType(BaseModel):
+    mime_type: str
+    mime_type_count: int
 
 
 class _Statistics(BaseModel):
@@ -32,6 +46,13 @@ class _Statistics(BaseModel):
     correspondent_count: int
     document_type_count: int
     storage_path_count: int
+
+
+class _FullStatistics(_Statistics):
+    inbox_tags: list[int] | None
+    document_file_type_counts: list[_FileType]
+    character_count: int
+    current_asn: int
 
 
 class _Storage(BaseModel):
@@ -64,6 +85,44 @@ class _Status(BaseModel):
     storage: _Storage
     database: _Database
     tasks: _Tasks
+
+
+class _Migrations(BaseModel):
+    latest_migration: str | None
+    unapplied_migrations: list[str]
+
+
+class _FullDatabase(_Database):
+    type: str
+    url: str
+    migration_status: _Migrations
+
+
+class _Summary(BaseModel):
+    days: int
+    total_count: int
+    pending_count: int
+    success_count: int
+    failure_count: int
+
+
+class _FullTasks(_Tasks):
+    redis_url: str | None
+    celery_url: str | None
+    index_last_modified: datetime | None
+    classifier_last_trained: datetime | None
+    sanity_check_last_run: datetime | None
+    llmindex_last_modified: datetime | None
+    summary: _Summary
+
+
+class _FullStatus(BaseModel):
+    pngx_version: str
+    server_os: str
+    install_type: str
+    storage: _Storage
+    database: _FullDatabase
+    tasks: _FullTasks
 
 
 class _User(BaseModel):
@@ -102,8 +161,58 @@ def _system_status(wire: _Status) -> SystemStatus:
     )
 
 
+def _status_report(wire: _FullStatus) -> StatusReport:
+    database, tasks = wire.database, wire.tasks
+    return StatusReport(
+        paperless_version=wire.pngx_version,
+        server_os=wire.server_os,
+        install_type=wire.install_type,
+        storage_total_bytes=wire.storage.total,
+        storage_available_bytes=wire.storage.available,
+        database=DatabaseStatus(
+            status=database.status,
+            error=database.error,
+            type=database.type,
+            name=database.url,
+            latest_migration=database.migration_status.latest_migration,
+            unapplied_migrations=tuple(database.migration_status.unapplied_migrations),
+        ),
+        redis=ServiceStatus(
+            status=tasks.redis_status, error=tasks.redis_error, address=tasks.redis_url
+        ),
+        celery=ServiceStatus(
+            status=tasks.celery_status, error=tasks.celery_error, address=tasks.celery_url
+        ),
+        search_index=TimedStatus(
+            status=tasks.index_status, error=tasks.index_error, last=tasks.index_last_modified
+        ),
+        classifier=TimedStatus(
+            status=tasks.classifier_status,
+            error=tasks.classifier_error,
+            last=tasks.classifier_last_trained,
+        ),
+        sanity_check=TimedStatus(
+            status=tasks.sanity_check_status,
+            error=tasks.sanity_check_error,
+            last=tasks.sanity_check_last_run,
+        ),
+        llm_index=TimedStatus(
+            status=tasks.llmindex_status,
+            error=tasks.llmindex_error,
+            last=tasks.llmindex_last_modified,
+        ),
+        tasks=TaskTotals(
+            days=tasks.summary.days,
+            total=tasks.summary.total_count,
+            pending=tasks.summary.pending_count,
+            success=tasks.summary.success_count,
+            failure=tasks.summary.failure_count,
+        ),
+    )
+
+
 class PaperlessInstanceReader:
-    """``InstanceReader`` over the Paperless REST API."""
+    """``InstanceReader`` and ``SystemReportReader`` over the Paperless REST API."""
 
     def __init__(self, client: PaperlessClient) -> None:
         """Read through ``client``."""
@@ -138,6 +247,29 @@ class PaperlessInstanceReader:
                 else None
             ),
             ai_enabled=ui_settings.settings.ai_enabled if ui_settings else None,
+        )
+
+    async def get_system_report(self) -> SystemReport:
+        """See ``SystemReportReader.get_system_report``."""
+        found = await self._client.get("/api/statistics/", _FullStatistics)
+        status = await self._unless_forbidden("/api/status/", _FullStatus)
+        return SystemReport(
+            statistics=StatisticsReport(
+                documents=found.documents_total,
+                inbox_documents=found.documents_inbox,
+                inbox_tags=tuple(found.inbox_tags or ()),
+                file_types=tuple(
+                    FileTypeCount(mime_type=row.mime_type, documents=row.mime_type_count)
+                    for row in found.document_file_type_counts
+                ),
+                characters=found.character_count,
+                tags=found.tag_count,
+                correspondents=found.correspondent_count,
+                document_types=found.document_type_count,
+                storage_paths=found.storage_path_count,
+                highest_serial_number=found.current_asn,
+            ),
+            status=_status_report(status) if status else None,
         )
 
     async def _unless_forbidden[M: BaseModel](self, path: str, model: type[M]) -> M | None:

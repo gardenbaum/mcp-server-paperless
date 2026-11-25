@@ -149,8 +149,8 @@ Limits.
 | `POST /api/share_links/` | `create_share_link` |  |
 | `DELETE /api/share_links/{id}/` | `delete_share_link` |  |
 | `GET /api/share_links/{id}/` | `delete_share_link` |  |
-| `GET /api/statistics/` | `get_instance_overview` |  |
-| `GET /api/status/` | `get_instance_overview` |  |
+| `GET /api/statistics/` | `get_instance_overview`, `get_system_report` |  |
+| `GET /api/status/` | `get_instance_overview`, `get_system_report` |  |
 | `GET /api/storage_paths/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_workflow`, `delete_taxonomy_item`, `get_document` and 12 more |  |
 | `POST /api/storage_paths/` | `create_taxonomy_item` |  |
 | `POST /api/storage_paths/test/` |  | PLMCP-83 |
@@ -246,7 +246,7 @@ TOML file.
 | `GET /api/documents/{id}/` | `query:full_perms` | PLMCP-83 |
 | `PATCH /api/documents/{id}/` | `body:created_date`, `body:remove_inbox_tags` | PLMCP-83 |
 | `GET /api/documents/{id}/download/` | `query:follow_formatting` | PLMCP-83 |
-| `GET /api/documents/{id}/history/` | `query:page`, `query:page_size` | PLMCP-89 |
+| `GET /api/documents/{id}/history/` | `query:page`, `query:page_size` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-95 - Document-history-is-paged-here-and-the-system-report-shows-what-Paperless-shows-the-user.md) |
 | `GET /api/documents/{id}/notes/` | `query:id` | PLMCP-83 |
 | `POST /api/documents/{id}/notes/` | `body:format`, `query:id` | PLMCP-83 |
 | `GET /api/documents/{id}/thumb/` | `query:version` | PLMCP-83 |

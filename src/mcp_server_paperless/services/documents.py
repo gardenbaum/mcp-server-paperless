@@ -8,6 +8,7 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import math
 import re
 from typing import TYPE_CHECKING, Final, cast
 
@@ -54,6 +55,7 @@ if TYPE_CHECKING:
         DuplicateKind,
         FileMetadata,
         FileVersion,
+        HistoryEntry,
         Include,
         NameFilters,
         NameOrId,
@@ -74,7 +76,7 @@ REFERRED: tuple[TaxonomyKind, ...] = (
 )
 # Characters of the OCR text per slice unless the caller asks otherwise (design 7).
 DEFAULT_SLICE = 20_000
-# Newest audit log entries returned with include history; the rest is counted.
+# Audit log entries on a page of include history.
 HISTORY_LIMIT = 50
 # Most distinct linked documents whose titles a document read looks up.
 LINK_LIMIT = 100
@@ -284,6 +286,26 @@ async def known_items(taxonomy: TaxonomyResolver, kind: TaxonomyKind) -> dict[in
         return {}
 
 
+def _history(entries: tuple[HistoryEntry, ...], page: int) -> DocumentHistory:
+    """A page of the history; Paperless sends all of it every time (decision-95).
+
+    Raises:
+        Validation: ``page`` is past the last one.
+    """
+    last = max(1, math.ceil(len(entries) / HISTORY_LIMIT))
+    if page > last:
+        message = f"Page {page} of the history does not exist."
+        raise Validation(message, hint=f"The last page is {last}.")
+    end = page * HISTORY_LIMIT
+    return DocumentHistory(
+        total=len(entries),
+        truncated=page < last,
+        page=page,
+        next_page=page + 1 if page < last else None,
+        entries=entries[end - HISTORY_LIMIT : end],
+    )
+
+
 class DocumentService:
     """Finds documents for the current user."""
 
@@ -392,7 +414,9 @@ class DocumentService:
     def _link(self, document_id: int) -> str:
         return document_link(self._web_url, document_id)
 
-    async def get(self, document_id: int, include: Collection[Include] = ()) -> DocumentRead:
+    async def get(
+        self, document_id: int, include: Collection[Include] = (), *, history_page: int = 1
+    ) -> DocumentRead:
         """One document with names, readable custom fields and the sections in ``include``.
 
         A section the user may not read in Paperless (notes and the audit log need their own
@@ -401,12 +425,17 @@ class DocumentService:
 
         Raises:
             NotFound: No such document, or the user may not see it.
+            Validation: ``history_page`` is past the end, or given without the history.
             PermissionDenied: The user may not view documents at all.
         """
-        return await self.detail(await self._reader.get_document(document_id), include)
+        if history_page != 1 and "history" not in include:
+            message = "history_page is only for include history."
+            raise Validation(message, hint="Add history to include.")
+        record = await self._reader.get_document(document_id)
+        return await self.detail(record, include, history_page=history_page)
 
     async def detail(
-        self, record: DocumentRecord, include: Collection[Include] = ()
+        self, record: DocumentRecord, include: Collection[Include] = (), *, history_page: int = 1
     ) -> DocumentRead:
         """The detail of ``record`` as ``get`` returns it: names, readable fields, sections."""
         kinds: tuple[TaxonomyKind, ...] = (*REFERRED, "user")
@@ -418,7 +447,7 @@ class DocumentService:
         unavailable: list[Include] = []
         for section in wanted:
             try:
-                sections.update(await self._section(section, record, known))
+                sections.update(await self._section(section, record, known, history_page))
             except PermissionDenied, FeatureUnavailable:
                 unavailable.append(section)
         return DocumentRead(
@@ -473,6 +502,7 @@ class DocumentService:
         section: Include,
         record: DocumentRecord,
         known: dict[TaxonomyKind, dict[int, TaxonomyItem]],
+        history_page: int,
     ) -> dict[str, object]:
         """The fields of the detail one ``include`` section fills."""
         reader, number = self._reader, record.id
@@ -481,12 +511,7 @@ class DocumentService:
                 return {"notes": await reader.list_document_notes(number)}
             case "history":
                 entries = await reader.list_document_history(number)
-                shown = entries[:HISTORY_LIMIT]
-                return {
-                    "history": DocumentHistory(
-                        total=len(entries), truncated=len(shown) < len(entries), entries=shown
-                    )
-                }
+                return {"history": _history(entries, history_page)}
             case "metadata":
                 return {"file_metadata": await reader.get_document_metadata(number)}
             case "versions":

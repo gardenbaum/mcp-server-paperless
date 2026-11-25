@@ -212,6 +212,7 @@ async def test_a_history_of_sixty_changes_is_read_page_by_page(stack: Stack) -> 
                 f"/api/documents/{document}/", json={"content": f"corrected words {number}"}
             ).raise_for_status()
         entries: list[Json] = []
+        history: Json = {}
         page: object = 1
         pages = 0
         while page is not None:

@@ -514,12 +514,14 @@ class SuggestionNames(BaseModel):
 
 
 class DocumentHistory(BaseModel):
-    """The newest changes of a document, newest first."""
+    """A page of the changes of a document, newest first."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     total: Annotated[int, Field(description="How many changes the document has in total.")]
     truncated: Annotated[bool, Field(description="Older changes exist beyond the entries.")]
+    page: int
+    next_page: Annotated[int | None, Field(description="history_page of older ones.")]
     entries: tuple[HistoryEntry, ...]
 
 

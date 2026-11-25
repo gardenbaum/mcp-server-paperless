@@ -6,9 +6,12 @@ flag (UI settings) only to holders of ``view_uisettings``.
 """
 
 import re
+from datetime import datetime
 from typing import Annotated, ClassVar, Final
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+
+from mcp_server_paperless.domain.urls import text_without_credentials
 
 # Output models are tool output schemas: a one-line class docstring each, and field descriptions
 # (``Field(description=...)``) only where the name does not say enough. Docstrings of these
@@ -101,6 +104,97 @@ class InstanceOverview(_Frozen):
                 "UI settings), not disabled."
             )
         ),
+    ]
+
+
+class FileTypeCount(_Frozen):
+    """How many documents have files of this type."""
+
+    mime_type: str
+    documents: int
+
+
+class StatisticsReport(_Frozen):
+    """Counts of the objects the user may see, or of all with the right to global statistics."""
+
+    documents: int
+    inbox_documents: Annotated[int | None, Field(description="Null: no inbox tag is visible.")]
+    inbox_tags: Annotated[tuple[int, ...], Field(description="Ids of the inbox tags.")]
+    file_types: tuple[FileTypeCount, ...]
+    characters: Annotated[int, Field(description="Of the text of all documents.")]
+    tags: int
+    correspondents: int
+    document_types: int
+    storage_paths: int
+    highest_serial_number: Annotated[
+        int, Field(description="Highest archive serial number outside the trash; 0: none.")
+    ]
+
+
+# What the host says of itself; a URL in it is shown without its credentials.
+type _Told = Annotated[str, AfterValidator(text_without_credentials)]
+
+
+class _Status(_Frozen):
+    status: Annotated[_Told, Field(description="OK, WARNING, ERROR or DISABLED.")]
+    error: _Told | None
+
+
+class DatabaseStatus(_Status):
+    """The database."""
+
+    type: _Told
+    name: _Told
+    latest_migration: _Told | None
+    unapplied_migrations: tuple[_Told, ...]
+
+
+class ServiceStatus(_Status):
+    """A service Paperless talks to."""
+
+    address: Annotated[_Told | None, Field(description="Without credentials.")]
+
+
+class TimedStatus(_Status):
+    """A component and when it last changed, was trained or ran."""
+
+    last: datetime | None
+
+
+class TaskTotals(_Frozen):
+    """Every user's tasks of the last days."""
+
+    days: int
+    total: int
+    pending: int
+    success: int
+    failure: int
+
+
+class StatusReport(_Frozen):
+    """Version, host, storage and every component of the instance."""
+
+    paperless_version: _Told
+    server_os: _Told
+    install_type: _Told
+    storage_total_bytes: int
+    storage_available_bytes: int
+    database: DatabaseStatus
+    redis: ServiceStatus
+    celery: Annotated[ServiceStatus, Field(description="The task workers.")]
+    search_index: Annotated[TimedStatus, Field(description="last: when the index was written.")]
+    classifier: Annotated[TimedStatus, Field(description="last: when it was trained.")]
+    sanity_check: Annotated[TimedStatus, Field(description="last: when it ran.")]
+    llm_index: Annotated[TimedStatus, Field(description="last: when it was updated.")]
+    tasks: TaskTotals
+
+
+class SystemReport(_Frozen):
+    """All that Paperless's statistics and system status tell this user."""
+
+    statistics: StatisticsReport
+    status: Annotated[
+        StatusReport | None, Field(description="Null if the user may not view the system status.")
     ]
 
 

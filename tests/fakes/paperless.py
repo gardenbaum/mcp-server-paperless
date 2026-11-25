@@ -24,6 +24,7 @@ import functools
 import re
 import sys
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from itertools import dropwhile, takewhile
@@ -114,9 +115,17 @@ from mcp_server_paperless.domain.files import OpenedFile, missing_file, missing_
 from mcp_server_paperless.domain.instance import (
     ComponentStatus,
     CurrentUser,
+    DatabaseStatus,
+    FileTypeCount,
     InstanceOverview,
     InstanceStatistics,
+    ServiceStatus,
+    StatisticsReport,
+    StatusReport,
+    SystemReport,
     SystemStatus,
+    TaskTotals,
+    TimedStatus,
 )
 from mcp_server_paperless.domain.pdf import CopiedFiles, FoundCopies, RotationSearch, StartedTasks
 from mcp_server_paperless.domain.permissions import (
@@ -914,12 +923,78 @@ class FakePaperless:
             ai_enabled=self.state.ai_enabled if may_view_settings else None,
         )
 
-    def _statistics(self) -> InstanceStatistics:
+    async def get_system_report(self) -> SystemReport:
+        """`SystemReportReader.get_system_report` (StatisticsView, SystemStatusView)."""
+        counts = self._statistics()
+        documents = self._counted(self.state.documents)
+        kinds = Counter(d.mime_type for d in documents)
+        return SystemReport(
+            statistics=StatisticsReport(
+                documents=counts.documents,
+                inbox_documents=counts.inbox_documents,
+                inbox_tags=tuple(t.id for t in self._counted(self.state.tags) if t.is_inbox),
+                file_types=tuple(
+                    FileTypeCount(mime_type=kind, documents=number)
+                    for kind, number in kinds.most_common()
+                ),
+                characters=sum(len(d.content) for d in documents),
+                tags=counts.tags,
+                correspondents=counts.correspondents,
+                document_types=counts.document_types,
+                storage_paths=counts.storage_paths,
+                highest_serial_number=max(
+                    (d.archive_serial_number or 0 for d in documents), default=0
+                ),
+            ),
+            status=self._status_report() if self._task_viewer().summary_of_all else None,
+        )
+
+    def _status_report(self) -> StatusReport:
+        health = self.state.system_status
+        states = [t.status for t in self.state.tasks]
+
+        def timed(component: ComponentStatus) -> TimedStatus:
+            return TimedStatus(status=component.status, error=component.error, last=None)
+
+        return StatusReport(
+            paperless_version=VERSION,
+            server_os="Linux-6.0-x86_64-with-glibc2.41",
+            install_type=health.install_type,
+            storage_total_bytes=health.storage_total_bytes,
+            storage_available_bytes=health.storage_available_bytes,
+            database=DatabaseStatus(
+                status=health.database.status,
+                error=health.database.error,
+                type="sqlite",
+                name="/usr/src/paperless/data/db.sqlite3",
+                latest_migration="paperless_mail.0001_squashed",
+                unapplied_migrations=(),
+            ),
+            redis=ServiceStatus(
+                status=health.redis.status, error=health.redis.error, address="redis://broker:6379"
+            ),
+            celery=ServiceStatus(
+                status=health.celery.status, error=health.celery.error, address="celery@fake"
+            ),
+            search_index=timed(health.search_index),
+            classifier=timed(health.classifier),
+            sanity_check=timed(health.sanity_check),
+            llm_index=timed(health.llm_index),
+            tasks=TaskTotals(
+                days=30,
+                total=len(states),
+                pending=states.count("pending"),
+                success=states.count("success"),
+                failure=states.count("failure"),
+            ),
+        )
+
+    def _counted[O: Owned](self, objects: list[O]) -> list[O]:
         everything = self.user.has("view_global_statistics")
+        return [o for o in objects if everything or o.visible_to(self.user)]
 
-        def visible[O: Owned](objects: list[O]) -> list[O]:
-            return [o for o in objects if everything or o.visible_to(self.user)]
-
+    def _statistics(self) -> InstanceStatistics:
+        visible = self._counted
         documents = visible(self.state.documents)
         inbox = {tag.id for tag in visible(self.state.tags) if tag.is_inbox}
         return InstanceStatistics(
