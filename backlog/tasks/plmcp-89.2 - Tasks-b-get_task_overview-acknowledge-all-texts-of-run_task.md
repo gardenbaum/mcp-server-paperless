@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:39Z'
-updated_date: '2026-11-25T12:10:48Z'
+updated_date: '2026-11-25T12:25:35Z'
 labels:
   - admin
 dependencies:
@@ -33,7 +33,7 @@ Second part of PLMCP-89: how many tasks need attention, what runs now and how ea
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 Tests written first (red, then green) at every test level the change touches
+- [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
@@ -46,3 +46,9 @@ Second part of PLMCP-89: how many tasks need attention, what runs now and how ea
 2. Ports, adapter, service, tool get_task_overview, acknowledge_tasks with all; texts of run_task by P4.
 3. decision-94, coverage, exclusions, guide limit +20, docs.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Red first (commit 'red'), then green. 34 hand mutants on a git archive copy: 2 survived; one was a redundant part of the scope (removed), one closed by a test. Deviations: a fourth GET (ui_settings) says whose tasks the summary counts and how many of those to acknowledge are not the user's own; a row of acknowledge by ids sends all=false. Limit: the guide +20 of the approved 89. Not proven: what came in between the second read and the POST on 3.5.1 (only on the fake).
+<!-- SECTION:NOTES:END -->

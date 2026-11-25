@@ -264,8 +264,9 @@ class TaskListService:
             if dry_run:
                 message = f"{NOTHING_CHANGED} This would {effect}."
                 return Acknowledged(acknowledged=0, dry_run=True, message=message)
+            # The text tells the counts, the scope which task is the newest.
             newest = await self._reader.list_tasks(NEW, page=1, page_size=1)
-            ConfirmationRequired.require(effect, scope=(before, [row.id for row in newest.rows]))
+            ConfirmationRequired.require(effect, scope=[row.id for row in newest.rows])
         try:
             count = await self._writer.acknowledge_all_tasks()
         except UpstreamUnreachable:

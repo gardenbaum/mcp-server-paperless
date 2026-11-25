@@ -660,6 +660,18 @@ async def test_the_summary_of_a_user_without_rights_covers_own_and_unowned_tasks
     assert (await Setup.of(state, user="viewer").overview()).by_type_of == "own_and_unowned"
 
 
+async def test_the_summary_of_a_user_who_may_view_the_status_covers_every_user() -> None:
+    state = recent().state
+    permissions = frozenset({"view_paperlesstask", "view_uisettings", "view_system_monitoring"})
+    state.users.append(FakeUser(id=9, username="monitor", permissions=permissions))
+
+    found = await Setup.of(state, user="monitor").overview()
+
+    assert found.by_type_of == "every_user"
+    assert found.counts is not None
+    assert found.counts.total == 1
+
+
 async def test_a_user_who_may_see_no_part_gets_the_error() -> None:
     with pytest.raises(PermissionDenied) as raised:
         _ = await Setup.of(seeded(), user=READER[0]).overview()
