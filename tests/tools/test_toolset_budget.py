@@ -57,8 +57,9 @@ INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut 
 # (2943 to 3010) the owner approved on 2026-11-24; 24 of delete_processed_mail (PLMCP-81.3) and 22
 # of explain_mail_import (PLMCP-81.4). And 23 of update_workflow_part (PLMCP-87.2) and 19 of
 # explain_workflow (PLMCP-87.4), the 42 of PLMCP-87 (3010 to 3052), and 17 of pin_saved_view
-# (PLMCP-88.2, 3052 to 3069), in the steps up to 3229 the owner approved on 2026-11-24.
-OVERVIEW_GUIDE_LIMIT = 3069
+# (PLMCP-88.2, 3052 to 3069), in the steps up to 3229 the owner approved on 2026-11-24. And 49 of
+# the toolset tasks (PLMCP-89.1), of the 89 of PLMCP-89 (3069 to 3158) in the same steps.
+OVERVIEW_GUIDE_LIMIT = 3118
 # Measured 879: 747 before, plus 132 of too_old (PLMCP-101); the rise from 750 was approved by the
 # owner on 2026-11-24.
 DEFINITION_ADDED_LIMIT = 879

@@ -39,9 +39,6 @@ TOOLS = {
     "update_app_config",
     "list_logs",
     "get_log",
-    "list_tasks",
-    "acknowledge_tasks",
-    "run_task",
     "bulk_download",
 }
 READ_ONLY = {
@@ -50,7 +47,6 @@ READ_ONLY = {
     "get_app_config",
     "list_logs",
     "get_log",
-    "list_tasks",
     "bulk_download",
 }
 PASSWORD = "S3cret-Passw0rd!x"
@@ -92,14 +88,14 @@ async def test_admin_is_not_in_the_default_profile() -> None:
     assert names.isdisjoint(TOOLS)
 
 
-async def test_the_toolset_offers_sixteen_tools_and_read_only_mode_keeps_the_reads() -> None:
+async def test_the_toolset_offers_thirteen_tools_and_read_only_mode_keeps_the_reads() -> None:
     async with Client(server(fake())) as client:
         offered = {tool.name for tool in await client.list_tools()}
     async with Client(serve(fake(), toolsets=["admin"], read_only=True)) as client:
         reads = {tool.name for tool in await client.list_tools()}
 
     assert offered >= TOOLS
-    assert len(TOOLS) == 16
+    assert len(TOOLS) == 13
     assert reads == READ_ONLY
 
 
@@ -313,24 +309,6 @@ async def test_logs_are_listed_and_read() -> None:
     assert read["truncated"] is False
 
 
-async def test_tasks_are_run_listed_and_acknowledged() -> None:
-    state = seeded()
-    started = await call(fake(state), "run_task", task_type="sanity_check")
-
-    listed = await call(fake(state), "list_tasks", task_type="sanity_check")
-    [row] = cast("list[Json]", listed["tasks"])
-    done = await call(fake(state), "acknowledge_tasks", task_ids=[row["id"]])
-
-    assert row["task_id"] == started["task_id"]
-    assert done["acknowledged"] == 1
-
-
-async def test_retraining_needs_confirm() -> None:
-    text = await refusal(fake(writes=False), "run_task", task_type="train_classifier")
-
-    assert "train the classifier again" in text
-
-
 async def test_documents_come_as_an_embedded_archive() -> None:
     async with Client(server(fake())) as client:
         result = await client.call_tool("bulk_download", {"document_ids": [1, 2]})
@@ -359,8 +337,6 @@ async def test_a_user_without_the_permission_gets_a_hint() -> None:
     text = await refusal(fake(user="e2e-reader"), "list_logs")
 
     assert "Only staff users may read the logs." in text
-    other = await refusal(fake(user="e2e-reader"), "run_task", task_type="sanity_check")
-    assert "Only a superuser may start tasks." in other
 
 
 async def test_a_password_user_and_a_group_with_permissions_are_refused_until_confirmed() -> None:

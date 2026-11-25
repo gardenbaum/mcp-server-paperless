@@ -1,4 +1,4 @@
-"""SystemAdmin: configuration, logs, tasks and bulk download.
+"""SystemAdmin: configuration, logs and bulk download.
 
 Fakes of "nothing may be written" cases are created without `allow_writes`. Seeded: documents 1
 (public) and 2 (private, owned by the admin), users admin 2, reader 3.
@@ -6,12 +6,11 @@ Fakes of "nothing may be written" cases are created without `allow_writes`. Seed
 
 import io
 import zipfile
-from datetime import UTC, datetime
 from typing import final
 
 import pytest
 from fakes.accounts import ADMIN, READER
-from fakes.paperless import FakePaperless, FakeState, FakeTask, seeded
+from fakes.paperless import FakePaperless, FakeState, seeded
 from pydantic import SecretStr
 
 from mcp_server_paperless.domain.admin import NotText
@@ -598,103 +597,6 @@ async def test_a_log_that_does_not_exist_is_not_found_and_lines_are_bounded() ->
 async def test_logs_are_for_staff_only() -> None:
     with pytest.raises(PermissionDenied) as raised:
         _ = await Setup(READER[0]).service.list_logs()
-
-    assert raised.value.hint
-
-
-# --- tasks
-
-
-def task(number: int, **fields: object) -> FakeTask:
-    return FakeTask(
-        id=number,
-        task_id=f"uuid-{number}",
-        created=datetime(2026, 11, 17, 8, number, tzinfo=UTC),
-        **fields,  # pyright: ignore[reportArgumentType] -- test data built from dicts
-    )
-
-
-async def test_tasks_are_listed_newest_first_with_filters_and_paging() -> None:
-    setup = Setup()
-    setup.state.tasks = [
-        task(1, status="success"),
-        task(2, status="failure", message="boom"),
-        task(3, status="failure", task_type="sanity_check"),
-    ]
-
-    everything = await setup.service.list_tasks(page=1, page_size=2)
-    failed = await setup.service.list_tasks(state="failure", task_type="consume_file")
-
-    assert (everything.count, everything.page, everything.next_page) == (3, 1, 2)
-    assert [t.id for t in everything.tasks] == [3, 2]
-    assert [t.id for t in failed.tasks] == [2]
-    assert failed.tasks[0].message == "boom"
-    open_ones = await setup.service.list_tasks(acknowledged=False)
-    assert open_ones.count == 3
-
-
-async def test_a_page_past_the_end_is_not_found() -> None:
-    with pytest.raises(NotFound):
-        _ = await Setup().service.list_tasks(page=9)
-
-
-async def test_tasks_are_acknowledged_without_confirm() -> None:
-    setup = Setup()
-    setup.state.tasks = [task(1), task(2)]
-
-    outcome = await setup.service.acknowledge_tasks([1, 2])
-
-    assert outcome.acknowledged == 2
-    assert "2 tasks" in outcome.message
-    assert all(t.acknowledged for t in setup.state.tasks)
-
-
-async def test_acknowledging_one_task_and_unknown_or_repeated_ids() -> None:
-    setup = Setup()
-    setup.state.tasks = [task(1)]
-
-    assert "1 task " in (await setup.service.acknowledge_tasks([1])).message
-    with pytest.raises(Validation):
-        _ = await setup.service.acknowledge_tasks([1, 1])
-    with pytest.raises(Validation):
-        _ = await setup.service.acknowledge_tasks([99])
-
-
-async def test_a_sanity_check_runs_without_confirm() -> None:
-    setup = Setup()
-
-    started = await setup.service.run_task("sanity_check")
-
-    [created] = setup.state.tasks
-    assert (started.task_id, started.task_type) == (created.task_id, "sanity_check")
-    assert created.trigger_source == "manual"
-    assert "get_task" in started.message
-
-
-@pytest.mark.parametrize(
-    ("kind", "words"),
-    [
-        ("train_classifier", ["train the classifier again", "automatic matching"]),
-        ("llm_index", ["rebuild the AI index", "sends the text of every document"]),
-    ],
-)
-async def test_the_other_tasks_need_confirm_and_say_what_they_do(
-    kind: str, words: list[str]
-) -> None:
-    setup = Setup(writes=False)
-
-    message = await refusal(setup.service.run_task(kind))  # pyright: ignore[reportArgumentType] -- test data built from dicts
-
-    for word in words:
-        assert word in message
-    assert setup.state.tasks == []
-    confirmed = await Setup().service.run_task(kind, confirm=True)  # pyright: ignore[reportArgumentType] -- test data built from dicts
-    assert confirmed.task_type == kind
-
-
-async def test_only_a_superuser_starts_tasks() -> None:
-    with pytest.raises(PermissionDenied) as raised:
-        _ = await Setup(READER[0]).service.run_task("sanity_check")
 
     assert raised.value.hint
 

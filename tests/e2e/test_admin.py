@@ -1,8 +1,7 @@
 """The admin toolset through the assembled server on the E2E Paperless, on objects of its own.
 
 Users and groups are created by the tests and removed again; the only configuration setting
-touched is `app_title`, which the `title` fixture puts back; the only task run is the sanity
-check, which changes nothing, and its row is acknowledged. Names start with `plmcp31-`.
+touched is `app_title`, which the `title` fixture puts back. Names start with `plmcp31-`.
 """
 
 import base64
@@ -176,44 +175,6 @@ async def test_logs_are_listed_and_read(stack: Stack) -> None:
     assert "No log" in await refused(stack, "get_log", name="nope")
 
 
-async def test_a_sanity_check_is_run_listed_and_acknowledged(stack: Stack) -> None:
-    started = await run(stack, "run_task", task_type="sanity_check")
-
-    found = None
-    for page in range(1, 6):
-        listed = await run(
-            stack,
-            "list_tasks",
-            task_type="sanity_check",
-            acknowledged=False,
-            page=page,
-            page_size=100,
-        )
-        found = next(
-            (t for t in cast("list[Json]", listed["tasks"]) if t["task_id"] == started["task_id"]),
-            None,
-        )
-        if found or listed["next_page"] is None:
-            break
-    assert found is not None
-    acknowledged = await run(stack, "acknowledge_tasks", task_ids=[found["id"]])
-    assert acknowledged["acknowledged"] == 1
-
-
-async def test_retraining_is_refused_without_confirm_and_nothing_starts(stack: Stack) -> None:
-    before = num(
-        (await run(stack, "list_tasks", task_type="train_classifier", page_size=1))["count"]
-    )
-
-    text = await refused(stack, "run_task", task_type="train_classifier")
-
-    assert "train the classifier again" in text
-    after = num(
-        (await run(stack, "list_tasks", task_type="train_classifier", page_size=1))["count"]
-    )
-    assert after == before
-
-
 async def test_documents_come_as_one_archive(stack: Stack) -> None:
     ids = [consume_text(stack.admin, f"{PREFIX}zip-{n}-{uuid.uuid4().hex}") for n in range(2)]
     try:
@@ -232,9 +193,7 @@ async def test_documents_come_as_one_archive(stack: Stack) -> None:
 
 async def test_a_user_without_the_permissions_gets_hints(stack: Stack) -> None:
     logs = await refused(stack, "list_logs", token=stack.reader_token)
-    run_ = await refused(stack, "run_task", token=stack.reader_token, task_type="sanity_check")
     users = await refused(stack, "get_user", token=stack.reader_token, user=2)
 
     assert "Only staff users may read the logs." in logs
-    assert "Only a superuser may start tasks." in run_
     assert "view_user" in users
