@@ -7,9 +7,9 @@ id and username leave this module.
 
 from typing import TYPE_CHECKING, Final, Literal
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, RootModel
 
-from mcp_server_paperless.domain.errors import PaperlessMcpError, PermissionDenied
+from mcp_server_paperless.domain.errors import NotFound, PaperlessMcpError, PermissionDenied
 from mcp_server_paperless.domain.taxonomy import (
     MatchingAlgorithm,
     SelectOption,
@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 # MatchingAlgorithm.NONE: the tag is only ever set by hand.
 NO_MATCHING = 0
+# Most bytes of a rendered path that are read: a template can make a text of any size.
+PATH_BYTES: Final = 64 * 1024
 TAG_DELETE_HINT: Final = (
     "Deleting a tag needs the permission to delete it and every child tag below it. Paperless "
     "refuses a deletion that would take child tags of other users with it; ask their owner or "
@@ -79,6 +81,14 @@ class _Row(BaseModel):
     path: str | None = None
 
 
+class _Template(BaseModel):
+    path: str
+
+
+class _Rendered(RootModel[str]):
+    """What a template gives for a document: a bare text."""
+
+
 def _item(kind: TaxonomyKind, row: _Row) -> TaxonomyItem:
     tag = kind == "tag"
     options = row.extra_data.select_options if row.extra_data else None
@@ -119,6 +129,26 @@ class PaperlessTaxonomyReader:
             message = f"Paperless has more than {MAX_ITEMS} {label}s; this server reads up to that."
             raise PaperlessMcpError(message)
         return [_item(kind, row) for row in collected.items]
+
+    async def get_storage_path_template(self, item_id: int) -> str:
+        """See ``TaxonomyReader.get_storage_path_template``."""
+        try:
+            row = await self._client.get(f"{PATHS['storage_path']}{item_id}/", _Template)
+        except NotFound:
+            message = f"No storage path {item_id} exists, or the user may not see it."
+            raise NotFound(message) from None
+        return row.path
+
+    async def render_storage_path(self, document_id: int, template: str) -> str | None:
+        """See ``TaxonomyReader.render_storage_path``."""
+        found = await self._client.post_json(
+            f"{PATHS['storage_path']}test/",
+            _Rendered,
+            json={"document": document_id, "path": template},
+            max_bytes=PATH_BYTES,
+        )
+        # Paperless 3.5.1 sends no body for null.
+        return found.root if found else None
 
 
 class PaperlessTaxonomyWriter:

@@ -140,6 +140,15 @@ async def test_a_bundle_is_built_served_rebuilt_and_deleted(
     fetched = served(stack, made["url"])
     assert fetched.headers["content-type"] == "application/zip"
 
+    for filters, seen in (
+        ({"status": "ready", "document_id": ids[PUBLIC]}, True),
+        ({"status": "failed"}, False),
+        ({"document_id": 999_999_999}, False),
+    ):
+        found = await call(client, "list_share_bundles", page_size=100, **filters)
+        listed = {row["id"] for row in cast("list[Json]", found["bundles"])}
+        assert (made["id"] in listed) is seen, filters
+
     rebuilt = await call(client, "rebuild_share_bundle", bundle_id=made["id"])
     assert (rebuilt["url"], rebuilt["status"]) == (made["url"], "pending")
     assert (await ready_bundle(client, made["id"]))["status"] == "ready"

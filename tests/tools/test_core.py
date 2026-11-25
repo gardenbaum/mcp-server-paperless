@@ -5,7 +5,7 @@ from dataclasses import replace
 from typing import cast
 
 import pytest
-from fakes.accounts import READER
+from fakes.accounts import PRIVATE_ASN, READER
 from fakes.paperless import FakePaperless, seeded
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
@@ -35,6 +35,7 @@ async def test_the_overview_is_the_structured_output_of_the_instance() -> None:
     assert output.pop("too_old") is None
     assert output == (await fake.get_overview()).model_dump(mode="json")
     assert guide["on"] == ["core"]
+    assert output["next_asn"] == PRIVATE_ASN + 1
     assert output["current_user"] == {
         "id": 2,
         "username": "admin",

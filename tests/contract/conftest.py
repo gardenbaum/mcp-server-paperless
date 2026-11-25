@@ -20,7 +20,7 @@ every port is wired and every method has such a test.
 import asyncio
 import contextlib
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -30,6 +30,7 @@ from e2e.helpers import (
     ENCRYPTED_PASSWORD,
     ENCRYPTED_PDF,
     EXPECTED_VERSION,
+    add_second_factor,
     consume,
     consume_text,
     in_container,
@@ -375,6 +376,8 @@ class Backend:
     new_processed: NewProcessed
     # Takes a file of a document with one version away from Paperless, or its file names.
     lose_file: Callable[[int, FilePart], None]
+    # Gives a user a second factor (TOTP), which only a browser could set up.
+    add_second_factor: Callable[[int], None]
     # Writes an error into the mail log, as Paperless itself does.
     log_mail_error: Callable[[str], None]
     # The admin behind something that limits the rate of requests, once `rate_limit` begins.
@@ -639,6 +642,13 @@ def fake_lose_file(state: FakeState) -> Callable[[int, FilePart], None]:
     return lose
 
 
+def fake_add_second_factor(state: FakeState) -> Callable[[int], None]:
+    def enable(user_id: int) -> None:
+        state.users[:] = [replace(u, mfa=True) if u.id == user_id else u for u in state.users]
+
+    return enable
+
+
 def fake_backend(*, ai_enabled: bool = False) -> Backend:
     """The fake's backend; the E2E stack of `just e2e` has AI off, so that is the default."""
     state = seeded()
@@ -664,6 +674,7 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
         new_processed=fake_processed(state),
         new_token_account=fake_token_account(state),
         lose_file=fake_lose_file(state),
+        add_second_factor=fake_add_second_factor(state),
         log_mail_error=fake_log_mail_error(state),
         limited=limited_ports(fake_ports(state, ADMIN[0]), rate_limit),
         rate_limit=rate_limit,
@@ -940,6 +951,7 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
                 new_processed=live_processed,
                 new_token_account=lambda: live_token_account(stack),
                 lose_file=lambda document, part: lose_file(stack.admin, document, part),
+                add_second_factor=add_second_factor,
                 log_mail_error=live_log_mail_error,
                 limited=ports(stack.admin_token, limited=True),
                 rate_limit=rate_limit,

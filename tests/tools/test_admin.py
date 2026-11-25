@@ -8,9 +8,10 @@ import base64
 import io
 import zipfile
 from dataclasses import replace
-from typing import cast
+from typing import Literal, cast
 
 import pytest
+from confirmation import YES, answering
 from fakes.paperless import FakePaperless, FakeState, seeded
 from fastmcp import Client
 from harness import serve
@@ -154,6 +155,7 @@ CONFIRMED: list[tuple[str, Json]] = [
     ("a new password", {"password": PASSWORD}),
     ("groups", {"groups": ["e2e-group"]}),
     ("permissions", {"permissions": ["add_tag"]}),
+    ("removing the second factor", {"remove_second_factor": True}),
 ]
 UNCONFIRMED: list[tuple[str, Json]] = [
     ("First and last name", {"first_name": "Rita"}),
@@ -189,7 +191,7 @@ async def test_update_user_asks_for_exactly_the_changes_its_description_names(
     state = seeded()
     position = next(i for i, u in enumerate(state.users) if u.username == "e2e-reader")
     active = not change.get("is_active", False)
-    before = replace(state.users[position], email=address, is_active=active)
+    before = replace(state.users[position], email=address, is_active=active, mfa=True)
     state.users[position] = before
 
     if asks:
@@ -360,3 +362,35 @@ async def test_every_archive_has_a_uri_of_its_own() -> None:
 
     assert uris[0] != uris[1]
     assert all(u.endswith("/paperless-documents.zip") for u in uris)
+
+
+@pytest.mark.decision("decision-103")
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize(("action", "removed"), [("accept", True), ("decline", False)])
+async def test_a_dialog_asks_before_the_second_factor_is_removed(
+    mode: Literal["auto", "legacy"],
+    action: Literal["accept", "decline"],
+    removed: bool,  # noqa: FBT001 -- a parametrised flag, not a switch
+) -> None:
+    state = seeded()
+    position = next(i for i, u in enumerate(state.users) if u.username == "e2e-reader")
+    state.users[position] = replace(state.users[position], mfa=True)
+    seen: list[str] = []
+    handler = answering(action, YES if action == "accept" else None, seen=seen)
+
+    async with Client(server(fake(state)), mode=mode, elicitation_handler=handler) as client:
+        _ = await client.call_tool(
+            "update_user",
+            {"user": "e2e-reader", "remove_second_factor": True},
+            raise_on_error=False,
+        )
+
+    assert "remove the second factor of 'e2e-reader'" in seen[0]
+    assert state.users[position].mfa is not removed
+
+
+@pytest.mark.decision("decision-103")
+async def test_remove_second_factor_false_is_nothing_to_change() -> None:
+    assert "Nothing to change" in await refusal(
+        fake(writes=False), "update_user", user="e2e-reader", remove_second_factor=False
+    )

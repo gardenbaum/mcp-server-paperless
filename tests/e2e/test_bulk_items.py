@@ -324,6 +324,22 @@ async def test_an_owner_change_by_another_is_refused_beforehand_and_one_by_the_o
     assert f"document {mine}: It does not exist or is hidden from you." in again
 
 
+async def test_the_same_text_as_markdown_is_another_note(
+    stack: Stack, documents: list[int]
+) -> None:
+    chosen = {"document_ids": documents[:2], "note": f"**{uuid.uuid4().hex}**"}
+    admin = stack.admin_token
+
+    plain = await run(stack, admin, "add_notes", **chosen, confirm=True)
+    markdown = await run(stack, admin, "add_notes", **chosen, format="markdown", confirm=True)
+    again = await run(stack, admin, "add_notes", **chosen, format="markdown", confirm=True)
+
+    assert plain["counts"] == markdown["counts"] == {"added": 2}
+    assert again["counts"] == {"already_there": 2}
+    formats = [str(n["format"]) for n in cast("list[Json]", raw(stack, documents[0])["notes"])]
+    assert sorted(formats) == ["markdown", "plain"]
+
+
 async def test_notes_need_the_right_to_add_them_and_to_change_the_document(
     stack: Stack, documents: list[int], user: Callable[..., Signed]
 ) -> None:

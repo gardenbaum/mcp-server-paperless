@@ -344,3 +344,39 @@ async def test_read_only_mode_leaves_only_the_lookups(stack: Stack) -> None:
 
     assert {"list_users", "list_groups"} <= offered
     assert "set_permissions" not in offered
+
+
+@pytest.mark.decision("decision-104")
+async def test_owner_and_grants_are_read_by_name_also_for_a_viewer(
+    stack: Stack, accounts: Accounts, documents: list[int]
+) -> None:
+    admin, number = stack.admin_token, documents[0]
+    _ = await run(
+        stack,
+        admin,
+        "set_permissions",
+        kind="document",
+        items=[number],
+        view_users=[accounts.alice, "e2e-reader"],
+        change_groups=[accounts.team],
+        confirm=True,
+    )
+
+    mine = await run(stack, admin, "get_permissions", kind="document", items=[number, 999_999_999])
+    reader = await run(
+        stack, stack.reader_token, "get_permissions", kind="document", items=documents
+    )
+
+    [row] = cast("list[Json]", mine["objects"])
+    access = cast("Json", row["access"])
+    viewers = cast("list[Json]", access["view_users"])
+    assert {v["name"] for v in viewers} == {accounts.alice, "e2e-reader"}
+    assert access["change_groups"] == [{"id": accounts.team_id, "name": accounts.team}]
+    assert cast("Json", access["owner"])["name"] == "admin"
+    assert mine["missing"] == [999_999_999]
+    # The reader sees this document only, and may not list users.
+    [seen] = cast("list[Json]", reader["objects"])
+    assert seen["id"] == number
+    assert reader["missing"] == documents[1:]
+    shown = cast("list[Json]", cast("Json", seen["access"])["view_users"])
+    assert f"#{accounts.alice_id}" in {v["name"] for v in shown}

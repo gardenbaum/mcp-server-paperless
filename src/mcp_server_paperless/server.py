@@ -71,6 +71,7 @@ from mcp_server_paperless.services.duplicates import DuplicateFinder
 from mcp_server_paperless.services.file_sink import NO_SINK, FileSink
 from mcp_server_paperless.services.files import FileService
 from mcp_server_paperless.services.instance import InstanceService, SystemReportService
+from mcp_server_paperless.services.lookups import Lookups
 from mcp_server_paperless.services.mail import MailService
 from mcp_server_paperless.services.mail_explanation import MailExplanations
 from mcp_server_paperless.services.notes import NoteService
@@ -566,6 +567,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 tasks=tasks,
                 ai=AiService(adapters.ai, taxonomy, web_url=web_url),
                 views=views,
+                lookups=Lookups(adapters.documents, adapters.taxonomy, taxonomy),
                 read_documents=ReadDocuments(
                     adapters.documents,
                     DocumentSelector(

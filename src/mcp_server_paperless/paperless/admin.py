@@ -100,6 +100,10 @@ CHANGE_USER: Final = (
         "change a superuser or the superuser and staff status of anyone."
     ),
 )
+REMOVE_FACTOR: Final = (
+    "remove the second factor of this user",
+    "Only a superuser may, or the user in the web UI.",
+)
 DELETE_USER: Final = (
     "delete this user",
     "It needs the delete_user permission, or must be a superuser.",
@@ -499,6 +503,20 @@ class PaperlessAdminWriter:
                 _ = await self._client.request("DELETE", f"{USERS}{user_id}/", retry=False)
             except NotFound:
                 raise unseen_user(user_id) from None
+
+    async def remove_second_factor(self, user_id: int) -> None:
+        """See ``AdminWriter.remove_second_factor``.
+
+        Paperless 3.5.1 answers an unknown user with a server error, so the user is read first.
+        """
+        with Refused(REMOVE_FACTOR):
+            try:
+                _ = await self._client.request(
+                    "POST", f"{USERS}{user_id}/deactivate_totp/", retry=False
+                )
+            except NotFound:
+                message = f"User {user_id} has no second factor."
+                raise NotFound(message) from None
 
     async def create_group(self, values: GroupValues) -> GroupRecord:
         """See ``AdminWriter.create_group``."""

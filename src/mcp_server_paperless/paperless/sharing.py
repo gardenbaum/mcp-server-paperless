@@ -184,9 +184,16 @@ class PaperlessSharingReader:
         except NotFound:
             raise unseen_link(link_id) from None
 
-    async def list_share_bundles(self) -> tuple[ShareBundle, ...]:
+    async def list_share_bundles(
+        self, *, status: BundleStatus | None = None, document_id: int | None = None
+    ) -> tuple[ShareBundle, ...]:
         """See ``SharingReader.list_share_bundles``."""
-        collected = await collect(self._client, BUNDLES, Page[_BundleRow])
+        params: dict[str, str | int] = {}
+        if status is not None:
+            params["status"] = status
+        if document_id is not None:
+            params["documents"] = document_id
+        collected = await collect(self._client, BUNDLES, Page[_BundleRow], params=params)
         if collected.truncated:
             message = (
                 f"Paperless has more than {MAX_ITEMS} share-link bundles; "

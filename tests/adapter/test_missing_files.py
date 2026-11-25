@@ -314,3 +314,35 @@ async def test_a_failure_of_whoever_reads_an_opened_archive_stays_as_it_is() -> 
             [1], content="archive", compression="none", follow_formatting=False, wait_seconds=1
         ):
             raise error
+
+
+async def test_the_thumbnail_of_a_version_is_asked_for_by_its_id() -> None:
+    server = Server({3: KEPT})
+    sent: list[str] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        sent.append(f"{request.url.path}?{request.url.query.decode()}")
+        if request.url.path.endswith("thumb/"):
+            return httpx2.Response(200, content=b"webp", headers={"Content-Type": "image/webp"})
+        return server(request)
+
+    client, _ = streaming(handler)
+    found = await PaperlessDocumentReader(client).get_document_thumbnail(3, version_id=7)
+
+    assert (found.content, sent) == (b"webp", ["/api/documents/3/thumb/?version=7"])
+
+
+async def test_a_missing_thumbnail_of_a_version_names_the_version() -> None:
+    server = Server({3: KEPT})
+
+    with pytest.raises(NotFound) as raised:
+        _ = await reader(server).get_document_thumbnail(3, version_id=7)
+
+    assert raised.value.message == (
+        "Paperless cannot find the thumbnail of version 7 of document 3."
+    )
+
+
+async def test_a_thumbnail_of_a_version_the_document_lacks_says_so() -> None:
+    with pytest.raises(NotFound, match="No version 7 exists on document 3"):
+        _ = await reader(Server({})).get_document_thumbnail(3, version_id=7)
