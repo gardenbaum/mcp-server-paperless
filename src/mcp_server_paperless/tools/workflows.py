@@ -13,14 +13,19 @@ from fastmcp.server.providers import LocalProvider
 from pydantic import Field
 
 from mcp_server_paperless.domain.documents import NameOrId
+from mcp_server_paperless.domain.errors import Validation
 from mcp_server_paperless.domain.workflows import (
     ActionInput,
     TriggerInput,
+    TriggerTypeName,
+    Usage,
+    UsedKind,
     WorkflowCreate,
     WorkflowDeletion,
     WorkflowEdit,
     WorkflowInfo,
     WorkflowListing,
+    WorkflowRead,
     WorkflowRunReport,
 )
 from mcp_server_paperless.tools._shared import (
@@ -39,6 +44,7 @@ TOOLSET = "workflows"
 
 provider = LocalProvider()
 
+type PositiveId = Annotated[int, Field(ge=1)]
 type Workflow = Annotated[NameOrId, Field(description="The workflow: its name or id.")]
 type Triggers = Annotated[
     list[TriggerInput] | None,
@@ -106,26 +112,64 @@ Returns the workflow as stored.
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["list_workflows"])
 @boundary
-async def list_workflows(ctx: Context) -> WorkflowListing:
-    """List the workflows of Paperless with their triggers and actions.
+async def list_workflows(
+    ctx: Context,
+    *,
+    enabled: Annotated[
+        bool | None, Field(description="Only workflows that are (true) or are not (false) enabled.")
+    ] = None,
+    trigger_type: Annotated[
+        TriggerTypeName | None, Field(description="Only workflows with such a trigger.")
+    ] = None,
+    uses_kind: Annotated[
+        UsedKind | None, Field(description="Only workflows that use one object: its kind.")
+    ] = None,
+    uses: Annotated[
+        NameOrId | None,
+        Field(description="With uses_kind: the object, its name or id (a mail rule: its id)."),
+    ] = None,
+) -> WorkflowListing:
+    """List the workflows of Paperless with their triggers and actions, all or filtered.
+
+    With uses_kind and uses, used_in names the trigger or action and the setting that uses the
+    object (also inside a custom field query, and a setting stored under a type that ignores it).
+    Names inside templates (titles, e-mails, webhooks) are not searched, and neither are parent and
+    child tags, which Paperless adds or removes along with a tag.
 
     Settings show names for tags, correspondents and so on, and only what is not at its default;
     they use the names create_workflow takes. Webhook header values, the user name and password in
     webhook URLs (shown_in_part says where) and passwords are never shown.
     Needs the view permission for workflows in Paperless.
     """
-    return await services(ctx).workflows.list()
+    if (uses is None) != (uses_kind is None):
+        message = "uses and uses_kind go together."
+        raise Validation(message, hint="Give both, e.g. uses_kind='tag', uses='Invoice'.")
+    used = None if uses is None or uses_kind is None else Usage(kind=uses_kind, value=uses)
+    return await services(ctx).workflows.list(enabled=enabled, trigger=trigger_type, uses=used)
 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["get_workflow"])
 @boundary
-async def get_workflow(ctx: Context, workflow: Workflow) -> WorkflowInfo:
+async def get_workflow(
+    ctx: Context,
+    workflow: Annotated[NameOrId | None, Field(description="The workflow: its name or id.")] = None,
+    *,
+    trigger_id: Annotated[
+        PositiveId | None, Field(description="Instead: one trigger, by its id.")
+    ] = None,
+    action_id: Annotated[
+        PositiveId | None, Field(description="Instead: one action, by its id.")
+    ] = None,
+) -> WorkflowRead:
     """Read one workflow with its triggers and actions, as list_workflows shows it.
 
+    Or one trigger or action (part) with the workflows that hold it. Give exactly one argument.
     The workflow matches by exact name, then ignoring case and accents, or by id; an unknown or
     ambiguous name is an error that lists the closest names or candidates.
     """
-    return await services(ctx).workflows.get(workflow)
+    return await services(ctx).workflows.read(
+        workflow=workflow, trigger_id=trigger_id, action_id=action_id
+    )
 
 
 @provider.tool(

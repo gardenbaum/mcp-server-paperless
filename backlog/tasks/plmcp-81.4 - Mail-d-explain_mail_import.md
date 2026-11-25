@@ -4,6 +4,7 @@ title: 'Mail d: explain_mail_import'
 status: To Do
 assignee: []
 created_date: '2026-11-24T22:44:57Z'
+updated_date: '2026-11-25T08:20:37Z'
 labels:
   - mail
 dependencies:
@@ -34,3 +35,9 @@ Fourth part of PLMCP-81: why a mail was not imported must be gathered by hand fr
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner, 2026-11-25: 'Überall wie von dir empfohlen bitte.': mail_fetch tasks say nothing in the API (result_data is null, PLMCP-81.2), so a skipped fetch is taken from paperless.log only, staff only, else 'not known'.
+<!-- SECTION:NOTES:END -->

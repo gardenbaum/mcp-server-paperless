@@ -1,13 +1,14 @@
 ---
+updated_date: '2026-11-25T08:20:36Z'
 id: decision-80
 title: What a mail server answers to a login is not shown
 date: '2026-11-24T22:55:20Z'
-status: proposed
+status: accepted
 ---
 ## Context
 
 <!-- SECTION:CONTEXT:BEGIN -->
-The `error` of a processed mail is a whole Python traceback, and `mail.log` has the same texts. For a login that failed they hold what the mail server answered. A broken or hostile server may repeat what it was sent: the password or access token, also in base64. decision-66 knows credentials in URLs only. The owner approved decision 5a of the design of PLMCP-81 on 2026-11-24 ("Alle wie empfohlen", all as recommended, in the question "Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?"): hide the answer in the mail tools, in `get_log` and in the raw tool. An automated review of the first version found that an answer can forge the end of its error and that a cut log can lack the part that tells of a login; the main agent asked to fail closed (2026-11-24).
+The `error` of a processed mail is a whole Python traceback, and `mail.log` has the same texts. For a login that failed they hold what the mail server answered. A broken or hostile server may repeat what it was sent: the password or access token, also in base64. decision-66 knows credentials in URLs only. The owner approved decision 5a of the design of PLMCP-81 on 2026-11-24 ("Alle wie empfohlen", all as recommended, in the question "Gibst du die Entwürfe 81, 87, 88, 89, 90, 83 und 100 mit allen empfohlenen Optionen frei, samt Guide-Limit 2943 bis 3229, Anweisungsgrenze 1465 und Definitionsgrenze 1010?"): hide the answer in the mail tools, in `get_log` and in the raw tool. An automated review of the first version found that an answer can forge the end of its error and that a cut log can lack the part that tells of a login; the main agent asked to fail closed (2026-11-24). The owner approved on 2026-11-25 that more is hidden than decision 5a names (the rest after a mail error, the undated head of a log, and what follows "Error while retrieving mailbox NAME:"): "Überall wie von dir empfohlen bitte." (everywhere as you recommend, please).
 <!-- SECTION:CONTEXT:END -->
 
 ## Decision
@@ -35,12 +36,14 @@ Supplements decision-66; its functions (`text_without_credentials`, `lines_witho
 <!-- SECTION:CONSEQUENCES:END -->
 
 ## Alternatives
+<!-- SECTION:ALTERNATIVES:BEGIN -->
 
 - Hiding only up to the next chained error: an answer of several lines forges it.
 - Showing the rest when it ends with the error of Paperless: the same.
 - Hiding it in the mail tools only: the same words are in `get_log` and `/api/logs/`.
 - Showing it: AC 1 of PLMCP-81 to the letter, and the password with it.
 
+<!-- SECTION:ALTERNATIVES:END -->
 ## Enforcement
 
 - `tests/domain/test_login_answers.py`: tracebacks, forged ends, log records, cut heads, planted secrets, linear time.
