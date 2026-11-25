@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Final
 from mcp_server_paperless.domain.errors import (
     DESTINATION_LIMIT,
     NotFound,
+    PaperlessMcpError,
     PermissionDenied,
     both_ends,
     quoted,
@@ -30,11 +31,17 @@ NEXT: Final = "the next fetch (every 10 minutes by default, or process_mail_acco
 AGAIN: Final = "a second time, unless Paperless rejects duplicates"
 CAVEAT: Final = (
     "The rule's settings of now count, not those of then; whether the mail still exists on the "
-    "server is not known here."
+    "server, and records you may not see, are not known here."
 )
 BOUNDED: Final = (
     f"Only the newest {MAX_RECORDS:,} records of the rule were looked at for others of the same "
     "mail."
+)
+OTHERS: Final = (
+    "Other records with the folder and uid of this mail keep it out until they are deleted too"
+)
+ANEW: Final = (
+    "(unless the folder was made anew on the server since: then a uid can mean another mail)"
 )
 NO_RULE: Final = (
     "Not known: you may not see the rule of this mail, which decides whether it is fetched again "
@@ -143,14 +150,14 @@ class ProcessedMailService:
                 f"The rule now reads folder {folders}: it does not look at this mail while so."
             )
         last = [CAVEAT]
-        # Only a rule that takes the mail and its attachments writes several records of one mail.
-        if rule.consumption_scope == "eml_and_attachments":
+        try:
             others, complete = await self._others(mail)
+        except PaperlessMcpError:
+            last.append("Other records of the same mail could not be looked for.")
+        else:
             if others:
                 ids = ", ".join(map(str, others))
-                first.append(
-                    f"Other records of the same mail keep it out until they are deleted too: {ids}."
-                )
+                first.append(f"{OTHERS}: {ids} {ANEW}.")
             if not complete:
                 last.append(BOUNDED)
         outcome = _outcome(mail.status, rule)
