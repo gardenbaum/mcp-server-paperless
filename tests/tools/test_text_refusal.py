@@ -4,6 +4,7 @@ The places come from the schemas the server offers, so a new tool or argument is
 the place itself is filled: a tool that did not refuse first would name its missing arguments.
 """
 
+import contextlib
 import json
 import re
 import subprocess
@@ -24,7 +25,7 @@ from test_confirmation_http import ANNA, META, SESSIONLESS, Handshake, app, runn
 from mcp_server_paperless.domain.texts import REFUSED_TEXT
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator, Iterator
 
 pytestmark = pytest.mark.anyio
 
@@ -270,69 +271,118 @@ START: Json = {
 }
 
 
-@pytest.mark.decision("decision-110")
-def test_every_text_is_refused_on_the_wire_of_stdio_too(tmp_path: Path) -> None:
-    """JSON.stringify sends a lone surrogate as an escape, which the SDK drops without an answer."""
-    tests = str(Path(__file__).parents[1])
-    log = tmp_path / "log"
+class Wire:
+    """A stdio server and the lines written to it."""
+
+    def __init__(self, process: subprocess.Popen[bytes]) -> None:
+        self.process: subprocess.Popen[bytes] = process
+        self.seen: set[object] = set()
+
+    def send(self, line: bytes) -> None:
+        assert self.process.stdin
+        _ = self.process.stdin.write(line + b"\n")
+        self.process.stdin.flush()
+
+    def ask(self, message: Json) -> Json:
+        self.send(json.dumps(message).encode())
+        assert self.process.stdout
+        for line in self.process.stdout:
+            answer = cast("Json", json.loads(line))
+            self.seen.add(answer.get("id"))
+            if answer.get("id") == message["id"]:
+                return answer
+        pytest.fail(f"no answer to {message}")
+
+    def request(self, method: str, params: Json, number: object = "x") -> Json:
+        return self.ask({"jsonrpc": "2.0", "id": number, "method": method, "params": params})
+
+    def call(self, number: object, name: str, arguments: Json, **more: object) -> Json:
+        return self.request("tools/call", {"name": name, "arguments": arguments, **more}, number)
+
+
+@contextlib.contextmanager
+def stdio_server(tmp_path: Path) -> Generator[Wire]:
+    """A started stdio server; it ends with its input, and logs the tools that asked Paperless."""
+    code = STDIO.format(tests=str(Path(__file__).parents[1]), root=str(tmp_path))
     with (
-        log.open("w") as stderr,
+        (tmp_path / "log").open("w") as stderr,
         subprocess.Popen(  # noqa: S603 -- this interpreter and a script of this file
-            [sys.executable, "-c", STDIO.format(tests=tests, root=str(tmp_path))],
+            [sys.executable, "-c", code],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=stderr,
-            text=True,
         ) as process,
     ):
         # Without an answer there is nothing to read: the end of the process ends the wait.
         limit = threading.Timer(90, process.kill)
         limit.start()
-
-        def ask(message: Json) -> Json:
-            assert process.stdin
-            assert process.stdout
-            _ = process.stdin.write(json.dumps(message) + "\n")
-            process.stdin.flush()
-            for line in cast("Iterator[str]", process.stdout):
-                answer = cast("Json", json.loads(line))
-                if answer.get("id") == message["id"]:
-                    return answer
-            pytest.fail(f"no answer to {message}")
-
-        def call(number: object, name: str, arguments: Json, **more: object) -> Json:
-            params = {"name": name, "arguments": arguments, **more}
-            return ask({"jsonrpc": "2.0", "id": number, "method": "tools/call", "params": params})
-
         try:
-            _ = ask(START)
+            wire = Wire(process)
+            _ = wire.ask(START)
+            wire.send(b'{"jsonrpc": "2.0", "method": "notifications/initialized"}')
+            yield wire
             assert process.stdin
-            _ = process.stdin.write('{"jsonrpc": "2.0", "method": "notifications/initialized"}\n')
-            listed = cast(
-                "Json", ask({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]
-            )
-            tools = [
-                (str(t["name"]), cast("Json", t["inputSchema"]))
-                for t in cast("list[Json]", listed["tools"])
-            ]
-            swept = calls(tools)
-            for number, (name, arguments) in enumerate(swept, 10):
-                result = cast("Json", call(number, name, arguments)["result"])
-                assert result["isError"], (name, arguments)
-                assert REASON in str(result["content"]), (name, arguments, result)
-            # What is no argument is replaced, so it has an answer, too.
-            unknown = call("unknown", BAD, {}, _meta={"x": BAD})
-            _ = process.stdin.write("no json \\ud800\n")
-            fine = call("fine", "add_note", {"document_id": 1, "note": "\U0001f9fe \\ud800"})
             process.stdin.close()
             _ = process.wait(20)
         finally:
             limit.cancel()
             process.kill()
 
+
+def asked(tmp_path: Path) -> list[str]:
+    log = (tmp_path / "log").read_text(encoding="utf-8")
+    return [line for line in log.splitlines() if "CALLS" in line]
+
+
+def note_of(answer: Json) -> Json:
+    return cast("Json", cast("Json", cast("Json", answer["result"])["structuredContent"])["note"])
+
+
+@pytest.mark.decision("decision-110")
+def test_every_text_is_refused_on_the_wire_of_stdio_too(tmp_path: Path) -> None:
+    """JSON.stringify sends a lone surrogate as an escape, which the SDK drops without an answer."""
+    with stdio_server(tmp_path) as wire:
+        listed = cast("Json", wire.request("tools/list", {})["result"])
+        tools = [
+            (str(t["name"]), cast("Json", t["inputSchema"]))
+            for t in cast("list[Json]", listed["tools"])
+        ]
+        swept = calls(tools)
+        for number, (name, arguments) in enumerate(swept, 10):
+            result = cast("Json", wire.call(number, name, arguments)["result"])
+            assert result["isError"], (name, arguments)
+            assert REASON in str(result["content"]), (name, arguments, result)
+        fine = wire.call("fine", "add_note", {"document_id": 1, "note": "\U0001f9fe \\ud800"})
+
     assert len(swept) > 300
-    assert "Unknown tool" in str(unknown)
-    assert "\U0001f9fe \\ud800" in json.dumps(fine["result"], ensure_ascii=False).replace(
-        "\\\\", "\\"
-    )
-    assert [line for line in log.read_text().splitlines() if "CALLS" in line] == ["CALLS add_note"]
+    assert note_of(fine)["note"] == "\U0001f9fe \\ud800"
+    assert asked(tmp_path) == ["CALLS add_note"]
+
+
+@pytest.mark.decision("decision-110")
+def test_what_the_sdk_rejects_is_refused_or_dropped_over_stdio_and_never_run(
+    tmp_path: Path,
+) -> None:
+    arguments: Json = {"document_id": 1, "note": "run"}
+    params: Json = {"name": "add_note", "arguments": arguments}
+    note = json.dumps({"jsonrpc": "2.0", "id": "broken", "method": "tools/call", "params": params})
+    with stdio_server(tmp_path) as wire:
+        # The surrogate is in no argument: the call would run without it.
+        unknown = wire.call("unknown", BAD, {}, _meta={"x": BAD})
+        meta = wire.call("meta", "add_note", arguments, _meta={"x": BAD})
+        prompt = wire.request("prompts/get", {"name": "x", "arguments": {"a": BAD}})
+        # The parser refuses these for another reason, so they have no answer.
+        for broken in ("\\ud8zz", '\\ud8\\"x\\"', "\\ud800\x01", "\\ud800\n", "\\ud800\r"):
+            wire.send(note.replace("run", "run" + broken).encode())
+        # A byte that is no UTF-8 is none of the reasons.
+        data = note.replace("broken", "bytes").encode().replace(b"run", b"run\\ud800\xff")
+        wire.send(data)
+        fine = wire.call("fine", "add_note", {"document_id": 1, "note": "the only one"})
+
+    assert "The name is not valid text." in str(unknown)
+    assert "The _meta.x is not valid text." in str(meta)
+    assert "lone surrogate" in str(prompt["error"])
+    assert "broken" not in wire.seen
+    assert "bytes" in wire.seen
+    assert note_of(fine)["id"] == 2  # the first is of the seed
+    assert asked(tmp_path) == ["CALLS add_note"]

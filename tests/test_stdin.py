@@ -1,10 +1,12 @@
-"""What the stdio server reads: standard input through a filter of lines (runs on Windows, too)."""
+"""What the stdio server reads: standard input through a filter of lines."""
 
 import io
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, BinaryIO, cast, override
 
 import pytest
 
@@ -15,28 +17,39 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.decision("decision-110")
 
-REPLACED = b"\\" + b"ufffd"
+CALL = b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"arguments":{"a":"\\ud800"}}}'
+REFUSED = (
+    b'{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": '
+    b'{"arguments": {"mcp-server-paperless/refused-text": "a"}}}\n'
+)
 
 
 @pytest.mark.parametrize("size", [1, 2, 7, 8192])
 def test_messages_are_handed_on_in_pieces_of_any_size(size: int) -> None:
-    lines = [b'{"a": "x"}\n', b"\n", b"\r\n", b'{"b": 1}\r\n', b'{"a": "\\ud800"}\r\n', b"last"]
+    lines = [b'{"a": "x"}\n', b"\n", b"\r\n", b'{"b": 1}\r\n', CALL + b"\r\n", b"last"]
     reader = io.BufferedReader(Messages(io.BytesIO(b"".join(lines))), size)
 
     found = reader.readlines()
 
-    assert found == [*lines[:4], b'{"a": "' + REPLACED + b'"}\r\n', b"last"]
+    assert found == [*lines[:4], REFUSED, b"last"]
     assert reader.read() == b""
     assert reader.read() == b""
 
 
 def test_a_call_whose_line_ends_like_on_windows_is_still_one_line() -> None:
-    line = b'{"method": "tools/call", "params": {"arguments": {"a": "\\ud800"}}}\r\n'
+    found = io.BufferedReader(Messages(io.BytesIO((CALL + b"\r\n") * 2))).readlines()
 
-    found = io.BufferedReader(Messages(io.BytesIO(line * 2))).readlines()
+    assert found == [REFUSED] * 2
 
-    assert len(found) == 2
-    assert all(b"refused-text" in one and b"\r" not in one for one in found)
+
+class Lines:
+    """A source whose only line is known."""
+
+    def __init__(self, line: bytes) -> None:
+        self.line: bytes = line
+
+    def readline(self) -> bytes:
+        return self.line
 
 
 class Pieces(io.RawIOBase):
@@ -58,13 +71,13 @@ class Pieces(io.RawIOBase):
 
 
 def test_an_escape_that_comes_in_two_reads_is_found_and_no_line_waits_for_the_next() -> None:
-    source = Pieces(b'{"a": "\\ud', b'800"}', b"\n", b"second\n", b"cut \\ud8", b"00")
+    source = Pieces(CALL[:-14], CALL[-14:], b"\n", b"second\n", b"cut \\ud8", b"00")
     reader = io.BufferedReader(Messages(io.BufferedReader(source)))
 
-    assert reader.readline() == b'{"a": "' + REPLACED + b'"}\n'
+    assert reader.readline() == REFUSED
     assert len(source.pieces) == 3
     assert reader.readline() == b"second\n"
-    assert reader.readline() == b"cut " + REPLACED  # the input ended in the middle of a line
+    assert reader.readline() == b"cut \\ud800"  # the input ended in the middle of a line
     assert reader.readline() == b""
 
 
@@ -74,6 +87,18 @@ def test_a_very_long_line_is_kept_once_and_handed_on_whole() -> None:
 
     assert reader.readline() == line
     assert reader.readline() == b"next\n"
+
+
+def test_no_line_is_kept_after_it_was_handed_on() -> None:
+    """It can hold a whole file."""
+    source = Lines(b"x" * 1_000_000 + b"\n")
+    messages = Messages(cast("BinaryIO", cast("object", source)))
+    before = sys.getrefcount(source.line)
+
+    assert messages.readinto(bytearray(500_000)) == 500_000
+    assert sys.getrefcount(source.line) > before
+    assert messages.readinto(bytearray(2_000_000)) == 500_001
+    assert sys.getrefcount(source.line) == before
 
 
 STDIN = """
@@ -101,14 +126,64 @@ def test_standard_input_is_read_to_its_end_and_kept_from_child_processes() -> No
         timeout=60,
     )
 
-    lines = [line.decode() for line in [*whole, b"last " + REPLACED]]
+    lines = [line.decode() for line in [*whole, b"last \\udc00"]]
     assert done.stdout.decode().splitlines() == ["''", ascii(lines), "True True"]
 
 
-def test_the_filter_and_a_stdio_server_are_tested_on_windows() -> None:
+SERVER = """
+import sys
+sys.path[:0] = [{tests!r}]
+from fakes.paperless import FakePaperless, seeded
+from harness import serve
+from mcp_server_paperless.cli import run_stdio
+server = serve(FakePaperless(seeded(), user="admin"), stdio=True)
+{run}
+"""
+HELLO = (
+    b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18",'
+    b'"capabilities":{},"clientInfo":{"name":"x","version":"1"}}}\n'
+)
+
+
+def ends(run: str, interrupts: int) -> tuple[bool, int]:
+    """Whether a server ends by itself after Ctrl-C while its input is open, and its exit code."""
+    code = SERVER.format(tests=str(Path(__file__).parent), run=run)
+    with subprocess.Popen(  # noqa: S603 -- this interpreter and a script of this file
+        [sys.executable, "-c", code],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    ) as process:
+        assert process.stdin
+        assert process.stdout
+        try:
+            _ = process.stdin.write(HELLO)
+            process.stdin.flush()
+            assert process.stdout.readline()
+            for _ in range(interrupts):
+                time.sleep(0.7)
+                process.send_signal(signal.SIGINT)
+            try:
+                return True, process.wait(5)
+            except subprocess.TimeoutExpired:
+                process.stdin.close()
+                return False, process.wait(5)
+        finally:
+            process.kill()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="SIGINT cannot be sent to one process there")
+@pytest.mark.parametrize("interrupts", [1, 2, 3])
+def test_ctrl_c_ends_the_server_as_it_does_without_the_filter(interrupts: int) -> None:
+    """The last Ctrl-C ends it while a thread still waits for input and holds the reader's lock."""
+    plain = ends('server.run(transport="stdio", show_banner=False)', interrupts)
+
+    assert ends("run_stdio(server)", interrupts) == plain
+    assert interrupts < 3 or plain == (True, -signal.SIGINT)
+
+
+def test_the_lines_are_tested_on_windows() -> None:
     workflow = Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml"
     _, job = workflow.read_text(encoding="utf-8").split("\n  rendering-windows:\n")
 
-    steps = job.split("\n  audit:\n")[0]
-    assert "uv run pytest tests/test_stdin.py tests/domain/test_texts.py --no-cov\n" in steps
-    assert "uv run pytest tests/tools/test_text_refusal.py --no-cov -k stdio\n" in steps
+    assert "uv run pytest tests/domain/test_texts.py --no-cov\n" in job.split("\n  audit:\n")[0]

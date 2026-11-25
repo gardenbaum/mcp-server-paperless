@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T21:58:48Z'
-updated_date: '2026-11-25T18:22:46Z'
+updated_date: '2026-11-25T18:47:59Z'
 labels:
   - tools
 dependencies: []
@@ -52,4 +52,6 @@ Found: a real stdio client that sends a lone surrogate as a JSON escape (JSON.st
 Deliberate: the messages of PLMCP-108 for a file name and a version label over the tools are now the common one (3 tool tests reworded; the service messages and tests stay); paths with lone surrogates are refused, too (no wire could carry them). Checked by hand: exit codes on SIGINT, SIGTERM and end of input are the same as before; a line of 100 MB takes 3 s through the pipe. 25 hand mutants, 24 killed (4 after better tests), one is the shortcut that returns an unchanged line. Not in an E2E test (no client library sends such a line).
 
 decision-110 (proposed) records the filter of standard input. Its tests moved to tests/test_stdin.py (line ends, partial reads, end of input, long lines, child processes) and run in the hosted Windows job with the stdio sweep; no behaviour changed.
+
+Independent review: a line the SDK rejects is never run (before, a cleaned line could be: an invalid byte, escapes without hex digits, a surrogate outside the arguments). A property test compares with the SDK's own parser, and the wire test sends such lines. Tests that pinned the wrong behaviour were corrected. Other requests are refused by a method nobody has. Ctrl-C three times deadlocked; the stream is not closed any more (compared with the server without the filter, 1 to 3 times). Lines without a surrogate escape skip the callbacks, none is kept. Found: the server does not start on Windows on main (os.O_CLOEXEC in services/upload_listing.py), so only the line logic is tested there. PLMCP-121 is the follow-up of PLMCP-117.
 <!-- SECTION:NOTES:END -->

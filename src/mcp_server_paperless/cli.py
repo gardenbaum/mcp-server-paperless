@@ -74,8 +74,19 @@ class Messages(io.RawIOBase):
         view = memoryview(buffer).cast("B")
         self._rest = self._rest or memoryview(parseable(self._source.readline()))
         size = min(len(view), len(self._rest))
-        view[:size], self._rest = self._rest[:size], self._rest[size:]
+        view[:size] = self._rest[:size]
+        # An empty part would keep the whole line.
+        self._rest = self._rest[size:] if size < len(self._rest) else memoryview(b"")
         return size
+
+
+@final
+class _Input(io.TextIOWrapper):
+    """Text over a buffer that is not closed with it, as in the SDK."""
+
+    @override
+    def close(self) -> None:
+        """Nothing: closing waits for the thread that reads, for ever if no input comes (Ctrl-C)."""
 
 
 @contextlib.contextmanager
@@ -89,7 +100,8 @@ def parseable_stdin() -> Generator[None]:
     private = os.dup(0)
     with Path(os.devnull).open("rb") as nothing:
         _ = os.dup2(nothing.fileno(), 0)
-    sys.stdin = io.TextIOWrapper(io.BufferedReader(Messages(os.fdopen(private, "rb"))))
+    source = os.fdopen(private, "rb", closefd=False)
+    sys.stdin = _Input(io.BufferedReader(Messages(source)))
     try:
         yield
     finally:

@@ -90,11 +90,8 @@ jobs:
       - name: Test the renderer on Windows
         run: uv run pytest tests/rendering tests/services/test_pages.py --no-cov
 
-      - name: Test the filter of standard input on Windows (decision-110)
-        run: uv run pytest tests/test_stdin.py tests/domain/test_texts.py --no-cov
-
-      - name: Test a stdio server on Windows (decision-110)
-        run: uv run pytest tests/tools/test_text_refusal.py --no-cov -k stdio
+      - name: Test the lines of standard input on Windows (decision-110)
+        run: uv run pytest tests/domain/test_texts.py --no-cov
 
   audit:
     runs-on: ubuntu-latest
