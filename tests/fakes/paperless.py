@@ -2233,7 +2233,7 @@ class FakePaperless:
             t.task_type == "consume_file"
             and t.created >= own.started
             and t.file_name.startswith(own.family)
-            for t in self.state.tasks
+            for t in self._own_tasks()
         ):
             return FoundCopies(ids=nothing, doubt=TASKED)
         hour = own.started - timedelta(hours=1)
@@ -2285,7 +2285,7 @@ class FakePaperless:
     def _rotated_else(self, search: RotationSearch, own: FakeCopying, *, whole: bool) -> str | None:
         """Why the versions may be another request's of this user."""
         names = {f"{number}_rotated.pdf" for number in search.hidden}
-        if any(t.file_name in names and t.created >= own.started for t in self.state.tasks):
+        if any(t.file_name in names and t.created >= own.started for t in self._own_tasks()):
             return TASKED
         others = [
             c
@@ -3785,6 +3785,10 @@ class FakePaperless:
         """The tasks this user may see: staff all, others their own and those without an owner."""
         mine = {None, self.user.id}  # a superuser without the staff flag sees no more
         return [t for t in self.state.tasks if self.user.is_staff or t.owner in mine]
+
+    def _own_tasks(self) -> list[FakeTask]:
+        """What the list answers the owner filter (tasks made here without an owner included)."""
+        return [t for t in self.state.tasks if t.owner in {None, self.user.id}]
 
     async def list_tasks(
         self,
