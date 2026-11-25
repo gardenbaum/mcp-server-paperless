@@ -274,6 +274,7 @@ is too large, slow or fails, at 100), and `truncated` says when there are more; 
 beyond them. A page of the list, too, is at most 64 MiB, unpacked: a larger one is an error that
 asks for a smaller `page_size`. Of a document in the trash Paperless shows the text, thumbnail and
 file of its first version and no notes or custom field values: restore it to read the rest.
+`get_document_thumbnail` does not show what is in the trash; `get_trashed_file` does.
 
 `restore_from_trash` and `empty_trash` take `document_ids` or a `filter`. A filter never acts by
 itself: it lists its matches, and only ids that were shown are acted on, by a dialog or a second
