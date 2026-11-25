@@ -8,6 +8,7 @@ import contextlib
 import io
 import os
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO, NoReturn, final, override
 
 from pydantic import ValidationError
@@ -53,22 +54,25 @@ def _load[S: BaseSettings](kind: type[S], problems: list[str]) -> S | None:
 
 
 @final
-class _Messages(io.RawIOBase):
+class Messages(io.RawIOBase):
     """The lines of a stream as ``parseable`` has them."""
 
     def __init__(self, source: BinaryIO) -> None:
+        """Read ``source``, which stays open."""
         super().__init__()
         self._source: BinaryIO = source
-        self._rest: bytes = b""
+        self._rest: memoryview = memoryview(b"")
 
     @override
     def readable(self) -> bool:
+        """It is."""
         return True
 
     @override
     def readinto(self, buffer: WriteableBuffer, /) -> int:
+        """The next bytes of the current line, or the first of the next one."""
         view = memoryview(buffer).cast("B")
-        self._rest = self._rest or parseable(self._source.readline())
+        self._rest = self._rest or memoryview(parseable(self._source.readline()))
         size = min(len(view), len(self._rest))
         view[:size], self._rest = self._rest[:size], self._rest[size:]
         return size
@@ -83,13 +87,13 @@ def parseable_stdin() -> Generator[None]:
     """
     given = sys.stdin
     private = os.dup(0)
-    with open(os.devnull, "rb") as nothing:
-        os.dup2(nothing.fileno(), 0)
-    sys.stdin = io.TextIOWrapper(io.BufferedReader(_Messages(os.fdopen(private, "rb"))))
+    with Path(os.devnull).open("rb") as nothing:
+        _ = os.dup2(nothing.fileno(), 0)
+    sys.stdin = io.TextIOWrapper(io.BufferedReader(Messages(os.fdopen(private, "rb"))))
     try:
         yield
     finally:
-        os.dup2(private, 0)
+        _ = os.dup2(private, 0)
         sys.stdin = given
 
 

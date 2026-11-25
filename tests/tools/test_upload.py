@@ -239,12 +239,11 @@ async def test_a_file_name_that_is_no_text_is_refused_with_a_reason(tmp_path: Pa
     fake = writer()
     sent = {"content_base64": b64(pdf("x")), "filename": "x\udcff.pdf"}
 
-    by_schema = await failure(remote(fake), **sent)
-    by_service = await failure(local(tmp_path, fake), **sent)
+    over_http = await failure(remote(fake), **sent)
+    over_stdio = await failure(local(tmp_path, fake), **sent)
 
-    assert "filename" in by_schema
-    assert "unicode" in by_schema
-    assert "The file name is not valid text. Hint: Rename the file" in by_service
+    for text in (over_http, over_stdio):
+        assert "The filename is not valid text. Hint: Give the filename" in text
     assert fake.state.tasks == []
 
 

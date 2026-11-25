@@ -11,11 +11,8 @@ from typing import Final, cast
 REFUSED_TEXT: Final = "mcp-server-paperless/refused-text"
 # Every escape of JSON; a pair of surrogates is one character, the rest of them are lone.
 _ESCAPES: Final = re.compile(
-    rb"\\(?:u[dD][89abAB][0-9a-fA-F]{2}\\u[dD][c-fC-F][0-9a-fA-F]{2}"
-     rb"|(?P<lone>u[dD][89a-fA-F][0-9a-fA-F]{2})|.)",
-    re.DOTALL,
+    rb"\\(?:u[dD][89abAB]..\\u[dD][c-fC-F]..|(?P<lone>u[dD][89a-fA-F]..)|.)", re.DOTALL
 )
-
 _REPLACEMENT: Final = b"\\" + b"ufffd"
 
 

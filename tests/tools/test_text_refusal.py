@@ -5,18 +5,21 @@ the place itself is filled: a tool that did not refuse first would name its miss
 """
 
 import json
+import re
 import subprocess
 import sys
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+import httpx2
 import observation
 import pytest
 from fakes.paperless import FakePaperless, seeded
 from fastmcp import Client, FastMCP
 from harness import serve
 from mcp.types import TextContent, Tool
+from test_confirmation_http import ANNA, META, SESSIONLESS, Handshake, app, running
 
 from mcp_server_paperless.domain.texts import REFUSED_TEXT
 
@@ -28,6 +31,7 @@ pytestmark = pytest.mark.anyio
 type Json = dict[str, object]
 
 BAD = "a\ud800b"
+BAD_KEY = re.compile(re.escape(f"{BAD!r}: "))
 REASON = "is not valid text. Hint: Give the "
 
 
@@ -62,13 +66,13 @@ def in_object(schema: Json, defs: Json) -> Iterator[Json]:
     more = schema.get("additionalProperties", False)
     if more is not False:
         yield {BAD: 1}
-        inner = more if isinstance(more, dict) else {}
+        inner = cast("Json", more) if isinstance(more, dict) else {}
         yield from ({"key": value} for value in places(inner, defs))
 
 
 def calls(tools: list[tuple[str, Json]]) -> list[tuple[str, Json]]:
     return [
-        (name, cast("Json", arguments))
+        (name, arguments)
         for name, schema in tools
         for arguments in in_object(schema, cast("Json", schema.get("$defs", {})))
     ]
@@ -95,11 +99,9 @@ async def unrefused(offered: FastMCP) -> list[str]:
         async with Client(offered) as client:
             for name, arguments in calls(surface(await client.list_tools())):
                 observation.PORT_CALLS.clear()
-                try:
-                    result = await client.call_tool(name, arguments, raise_on_error=False)
-                except UnicodeEncodeError:  # an answer that quotes the text cannot be sent either
-                    found.append(f"{name} {arguments!r}: no answer")
-                    continue
+                if BAD_KEY.search(repr(arguments)):
+                    continue  # the client library cannot send such a name; the wire test does
+                result = await client.call_tool(name, arguments, raise_on_error=False)
                 text = " ".join(c.text for c in result.content if isinstance(c, TextContent))
                 if not result.is_error or REASON not in text or observation.PORT_CALLS:
                     found.append(f"{name} {arguments!r}: {text[:150]} {observation.PORT_CALLS}")
@@ -137,8 +139,20 @@ async def test_the_sweep_knows_the_places_the_task_names(tmp_path: Path) -> None
         ("upload_documents", {"paths": [BAD]}),
     ):
         assert wanted in swept, [a for n, a in swept if n == wanted[0]]
-    # Write tools without any text: these take ids, flags and choices only.
-    assert writes - {name for name, _ in swept} == set()
+    # The write tools that are not in the sweep hold no text anywhere, however deep.
+    without = writes - {name for name, _ in swept}
+    assert "rotate_documents" in without
+    assert [t.name for t in tools if t.name in without and free_text(t.input_schema)] == []
+
+
+def free_text(schema: object) -> bool:
+    """Whether a string that is no choice is anywhere in ``schema``; looks at everything in it."""
+    if isinstance(schema, dict):
+        part = cast("Json", schema)
+        if part.get("type") == "string" and not {"enum", "const"} & set(part):
+            return True
+        return any(free_text(inner) for inner in part.values())
+    return isinstance(schema, list) and any(map(free_text, cast("list[object]", schema)))
 
 
 async def test_a_new_tool_that_does_not_refuse_is_found() -> None:
@@ -155,11 +169,7 @@ async def test_a_new_tool_that_does_not_refuse_is_found() -> None:
 
     found = await unrefused(offered)
 
-    assert [line.split(":")[0] for line in found] == [
-        "plain {'name'",
-        r"nested {'rows'",
-        r"nested {'rows'",
-    ]
+    assert [line.split(":")[0] for line in found] == ["plain {'name'", "nested {'rows'"]
 
 
 async def test_the_refusal_names_the_place_and_repeats_nothing_of_the_text() -> None:
@@ -167,8 +177,6 @@ async def test_the_refusal_names_the_place_and_repeats_nothing_of_the_text() -> 
         for arguments, where in (
             ({"title": "secret \udfff"}, "title"),
             ({"title": "fine", "custom_fields": {"Amount": ["x", BAD]}}, "custom_fields.Amount.1"),
-            ({"custom_fields": {BAD: 1}}, "name of a value in custom_fields"),
-            ({BAD: 1}, "name of an argument"),
             ({REFUSED_TEXT: "title"}, "title"),
         ):
             result = await client.call_tool("update_document", arguments, raise_on_error=False)
@@ -182,6 +190,51 @@ async def test_the_refusal_names_the_place_and_repeats_nothing_of_the_text() -> 
 async def test_whole_characters_outside_the_basic_plane_are_text() -> None:
     async with Client(server()) as client:
         _ = await client.call_tool("add_note", {"document_id": 1, "note": "\U0001f9fe � \0x"[:5]})
+
+
+# --- the wire of HTTP -------------------------------------------------------------------------
+
+
+async def test_a_call_over_http_is_refused_by_the_tool_or_by_the_parser() -> None:
+    fake = FakePaperless(seeded(), user="admin", allow_writes=True)
+    notes = len(fake.state.documents[0].notes)
+    call: Json = {"name": "add_note", "arguments": {"document_id": 1, "note": BAD}}
+    async with httpx2.AsyncClient(timeout=30) as http:
+        with running(app(fake)) as url:
+            session = await Handshake.open(http, url)
+            answers: list[str] = []
+            for headers, params in (
+                (session.headers(ANNA, session.session), call),
+                (
+                    {
+                        **session.headers(ANNA),
+                        "MCP-Protocol-Version": SESSIONLESS,
+                        "Mcp-Method": "tools/call",
+                        "Mcp-Name": "add_note",
+                    },
+                    {
+                        **call,
+                        "_meta": {
+                            f"{META}protocolVersion": SESSIONLESS,
+                            f"{META}clientInfo": {"name": "t", "version": "1"},
+                            f"{META}clientCapabilities": {},
+                        },
+                    },
+                ),
+            ):
+                body = {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": params}
+                # Not json=: it would not escape the text.
+                response = await http.post(
+                    url,
+                    headers={**headers, "Content-Type": "application/json"},
+                    content=json.dumps(body),
+                )
+                answers.append(response.text)
+
+    assert "Parse error" in answers[0]
+    assert "surrogate" in answers[0] or "hex escape" in answers[0]
+    assert REASON in answers[1]
+    assert len(fake.state.documents[0].notes) == notes
 
 
 # --- the wire of a real stdio server --------------------------------------------------------------
@@ -229,7 +282,6 @@ def test_every_text_is_refused_on_the_wire_of_stdio_too(tmp_path: Path) -> None:
             stdout=subprocess.PIPE,
             stderr=stderr,
             text=True,
-            env={},
         ) as process,
     ):
         # Without an answer there is nothing to read: the end of the process ends the wait.
@@ -279,5 +331,7 @@ def test_every_text_is_refused_on_the_wire_of_stdio_too(tmp_path: Path) -> None:
 
     assert len(swept) > 300
     assert "Unknown tool" in str(unknown)
-    assert "\U0001f9fe \\ud800" in str(cast("Json", fine["result"])["structuredContent"])
+    assert "\U0001f9fe \\ud800" in json.dumps(fine["result"], ensure_ascii=False).replace(
+        "\\\\", "\\"
+    )
     assert [line for line in log.read_text().splitlines() if "CALLS" in line] == ["CALLS add_note"]
