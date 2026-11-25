@@ -104,6 +104,7 @@ MODULE_SECONDS: dict[str, float] = {
     "tests/contract/test_raw.py": 1,
     "tests/contract/test_taxonomy_writer.py": 1,
     "tests/e2e/test_client.py": 0,
+    "tests/e2e/test_mail_import.py": 0,
     "tests/e2e/test_rejected_duplicates.py": 0,
     "tests/e2e/test_trash_order.py": 0,
 }
@@ -237,7 +238,8 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "taxonomy_edits": ("test_taxonomy_edits",),
     "instance": ("test_instance_reader", "test_minimum_release", "test_toolset_guide"),
     "ai": ("test_ai_reader",),
-    "processed_mail": ("test_mail",),
+    "mail": ("test_mail_import",),
+    "processed_mail": ("test_mail", "test_mail_import"),
     "principals": ("test_admin", "test_permissions"),
     "admin_accounts": ("test_admin", "test_permissions"),
     "admin_system": ("test_admin",),
