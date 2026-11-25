@@ -2,14 +2,12 @@
 
 Users and groups get a unique name per test; the `people` fixture deletes what a test made, also
 when it failed (the stack is shared). The configuration is shared by every test of the stack: the
-`config` fixture restores the two settings these tests touch. Tasks are started only as
-`sanity_check`, which changes nothing; its row is acknowledged afterwards.
+`config` fixture restores the two settings these tests touch.
 """
 
 import io
 import uuid
 import zipfile
-from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -27,7 +25,7 @@ if TYPE_CHECKING:
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
 GET_USER, GET_GROUP = "AdminReader.get_user", "AdminReader.get_group"
 GET_CONFIG, LIST_LOGS = "AdminReader.get_config", "AdminReader.list_logs"
-GET_LOG, LIST_TASKS = "AdminReader.get_log", "AdminReader.list_tasks"
+GET_LOG = "AdminReader.get_log"
 DOWNLOAD = "AdminReader.download_documents"
 OPEN = "AdminReader.open_archive"
 CURRENT = "AdminReader.get_current_user_id"
@@ -35,7 +33,6 @@ CREATE_USER, UPDATE_USER = "AdminWriter.create_user", "AdminWriter.update_user"
 DELETE_USER = "AdminWriter.delete_user"
 CREATE_GROUP, UPDATE_GROUP = "AdminWriter.create_group", "AdminWriter.update_group"
 DELETE_GROUP, UPDATE_CONFIG = "AdminWriter.delete_group", "AdminWriter.update_config"
-ACKNOWLEDGE, RUN = "AdminWriter.acknowledge_tasks", "AdminWriter.run_task"
 UNKNOWN = 999_999
 PASSWORD = "Contract-Passw0rd-4711"
 SETTINGS = ("app_title", "barcode_string")
@@ -420,86 +417,6 @@ async def test_logs_are_for_staff_only(backend: Backend) -> None:
         assert raised.value.hint
 
 
-# --- tasks
-
-
-@pytest.mark.contract(RUN)
-@pytest.mark.contract(LIST_TASKS)
-@pytest.mark.contract(ACKNOWLEDGE)
-async def test_a_task_is_started_listed_and_acknowledged(backend: Backend) -> None:
-    management, writes = backend.admin.management, backend.admin.management_writes
-
-    task_id = await writes.run_task("sanity_check")
-
-    found = None
-    for page in range(1, 6):
-        listed = await management.list_tasks(
-            state=None, task_type="sanity_check", acknowledged=False, page=page, page_size=100
-        )
-        found = next((row for row in listed.rows if row.task_id == task_id), None)
-        if found or listed.next_page is None:
-            break
-    assert found is not None
-    assert (found.task_type, found.trigger_source, found.acknowledged) == (
-        "sanity_check",
-        "manual",
-        False,
-    )
-    assert await writes.acknowledge_tasks([found.id]) == 1
-    after = await management.list_tasks(
-        state=None, task_type=None, acknowledged=True, page=1, page_size=100
-    )
-    assert found.id in {row.id for row in after.rows}
-    with pytest.raises(Validation):
-        _ = await writes.acknowledge_tasks([found.id, found.id])
-    with pytest.raises(Validation):
-        _ = await writes.acknowledge_tasks([UNKNOWN * 1000])
-
-
-@pytest.mark.contract(LIST_TASKS)
-async def test_tasks_are_paged_newest_first_and_filtered(backend: Backend) -> None:
-    management = backend.admin.management
-    _ = backend.consume(succeed=True)
-    _ = backend.consume(succeed=False)
-
-    first = await management.list_tasks(
-        state=None, task_type=None, acknowledged=None, page=1, page_size=2
-    )
-    failed = await management.list_tasks(
-        state="failure", task_type="consume_file", acknowledged=None, page=1, page_size=100
-    )
-
-    assert len(first.rows) == 2
-    assert first.count >= 2
-    assert [r.created for r in first.rows] == sorted((r.created for r in first.rows), reverse=True)
-    assert failed.rows
-    assert {r.state for r in failed.rows} == {"failure"}
-    assert any(r.message for r in failed.rows)
-    with pytest.raises(NotFound):
-        _ = await management.list_tasks(
-            state=None, task_type=None, acknowledged=None, page=UNKNOWN, page_size=2
-        )
-
-
-@pytest.mark.contract(LIST_TASKS)
-@pytest.mark.contract(ACKNOWLEDGE)
-@pytest.mark.contract(RUN)
-async def test_tasks_need_their_permissions_and_say_so(backend: Backend) -> None:
-    nothing = backend.restricted(frozenset({"view_uisettings"}))
-    viewer = backend.restricted(frozenset({"view_paperlesstask"}))
-
-    for call in (
-        nothing.management.list_tasks(
-            state=None, task_type=None, acknowledged=None, page=1, page_size=1
-        ),
-        viewer.management_writes.acknowledge_tasks([1]),
-        viewer.management_writes.run_task("sanity_check"),
-    ):
-        with pytest.raises(PermissionDenied) as raised:
-            await call
-        assert raised.value.hint
-
-
 # --- bulk download
 
 
@@ -652,30 +569,3 @@ async def test_a_user_shows_what_its_groups_grant(backend: Backend, people: Peop
 
     assert found.permissions == ("add_tag",)
     assert "view_tag" in found.inherited_permissions
-
-
-@pytest.mark.decision("decision-88")
-@pytest.mark.contract(LIST_TASKS)
-async def test_tasks_are_found_by_the_time_they_were_created(backend: Backend) -> None:
-    management = backend.admin.management
-    task_id = backend.consume(succeed=True)
-    listed = await management.list_tasks(
-        state=None, task_type="consume_file", acknowledged=None, page=1, page_size=100
-    )
-    found = next(row for row in listed.rows if row.task_id == task_id)
-
-    async def within(start: datetime, end: datetime) -> bool:
-        rows = await management.list_tasks(
-            state=None,
-            task_type="consume_file",
-            acknowledged=None,
-            page=1,
-            page_size=100,
-            created=(start, end),
-        )
-        return task_id in {row.task_id for row in rows.rows}
-
-    second = timedelta(seconds=1)
-    assert await within(found.created - second, found.created + second)
-    assert not await within(found.created - 2 * second, found.created - second)
-    assert not await within(found.created + second, found.created + 2 * second)

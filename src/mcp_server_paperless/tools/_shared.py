@@ -69,6 +69,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.read_documents import ReadDocuments
     from mcp_server_paperless.services.removal import DocumentRemoval
     from mcp_server_paperless.services.sharing import SharingService
+    from mcp_server_paperless.services.task_lists import TaskListService
     from mcp_server_paperless.services.tasks import TaskService
     from mcp_server_paperless.services.taxonomy import TaxonomyResolver
     from mcp_server_paperless.services.taxonomy_edits import TaxonomyEditor
@@ -100,6 +101,7 @@ TOOLSETS: Final = frozenset(
         "raw",
         "workflows",
         "admin",
+        "tasks",
     }
 )
 
@@ -118,7 +120,8 @@ TOOLSET_SUMMARIES: Final[Mapping[str, str]] = {
     "mail": "mail accounts and rules",
     "raw": "other API endpoints, read-only",
     "workflows": "workflows",
-    "admin": "users, groups, settings, logs, tasks",
+    "admin": "users, groups, settings, logs",
+    "tasks": "background tasks",
 }
 
 # What the prompts, the server instructions and every core tool and resource that can return such
@@ -244,10 +247,10 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "update_app_config": "admin",
     "list_logs": "admin",
     "get_log": "admin",
-    "list_tasks": "admin",
-    "acknowledge_tasks": "admin",
-    "run_task": "admin",
     "bulk_download": "admin",
+    "list_tasks": "tasks",
+    "acknowledge_tasks": "tasks",
+    "run_task": "tasks",
 }
 
 # Tools that exist only over stdio with upload directories (decision-50): beside the table above,
@@ -1238,6 +1241,7 @@ class Services:
     mail_explanations: MailExplanations
     accounts: AccountAdmin
     system: SystemAdmin
+    task_lists: TaskListService
     raw: RawApiService
 
 

@@ -236,7 +236,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "wire": ("test_pages", "test_pages_files", "test_pdf_insert"),
     "limits": ("test_pages", "test_pages_files", "test_pdf_insert"),
     "task_outcome": ("test_tasks", "test_task_reader"),
-    "tasks": ("test_task_reader",),
+    "tasks": ("test_task_lists", "test_task_reader"),
     "tag_hierarchy": ("test_taxonomy_edits",),
     "sharing": ("test_left_out_operations",),
     "taxonomy": (
@@ -255,6 +255,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "principals": ("test_admin", "test_permissions"),
     "admin_accounts": ("test_admin", "test_permissions"),
     "admin_system": ("test_admin",),
+    "task_lists": ("test_rejected_duplicates",),
 }
 
 # Shared plumbing every toolset goes through: such a change runs the smoke set and the modules its

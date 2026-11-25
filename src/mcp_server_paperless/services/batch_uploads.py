@@ -103,7 +103,7 @@ NOT_TAKEN: Final = (
 )
 UNKNOWN: Final = (
     "It is not known whether Paperless accepted the file ({reason}). Look for it in Paperless, or "
-    "with list_tasks, before it is uploaded again."
+    "with list_tasks (tasks toolset), before it is uploaded again."
 )
 CHANGED: Final = "The file changed while it was checked; it was not sent."
 UNEXPECTED: Final = "Unexpected error; the server log has the type. It was not sent."

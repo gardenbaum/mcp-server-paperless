@@ -12,7 +12,7 @@ import httpx2
 import pytest
 
 from adapter.conftest import streaming
-from adapter.test_admin import TASK_WIRE
+from adapter.test_task_lists import TASK_WIRE
 from adapter.test_tasks import FAILED, UUID, Tasks
 from adapter.test_trash import DOCUMENT, VERSION, Chunks, Recorded, listing
 from mcp_server_paperless.domain.documents import DocumentQuery
@@ -23,9 +23,10 @@ from mcp_server_paperless.domain.errors import (
     UpstreamTimeout,
     UpstreamUnavailable,
 )
+from mcp_server_paperless.domain.task_lists import TaskFilters
 from mcp_server_paperless.domain.tasks import REJECTED
-from mcp_server_paperless.paperless.admin import PaperlessAdminReader
 from mcp_server_paperless.paperless.documents import PaperlessDocumentReader
+from mcp_server_paperless.paperless.task_lists import PaperlessTaskListReader
 from mcp_server_paperless.paperless.tasks import PaperlessTaskReader
 from mcp_server_paperless.paperless.trash import PaperlessTrashReader
 from mcp_server_paperless.services.duplicates import Bounds, DuplicateFinder
@@ -195,8 +196,8 @@ async def test_the_admin_list_does_not_show_the_existing_document(
     }
     server = Recorded({"count": 1, "next": None, "previous": None, "results": [rejected]})
 
-    page = await PaperlessAdminReader(make_client(server)).list_tasks(
-        state=None, task_type=None, acknowledged=None, page=1, page_size=25
+    page = await PaperlessTaskListReader(make_client(server)).list_tasks(
+        TaskFilters(), page=1, page_size=25
     )
 
     [task] = page.rows
