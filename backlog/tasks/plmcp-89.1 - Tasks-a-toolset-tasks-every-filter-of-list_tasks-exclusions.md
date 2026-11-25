@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:38Z'
-updated_date: '2026-11-25T12:04:40Z'
+updated_date: '2026-11-25T13:49:03Z'
 labels:
   - admin
 dependencies: []
@@ -26,15 +26,15 @@ First part of PLMCP-89: the task tools are in admin, beside user administration,
 - [x] #1 list_tasks, acknowledge_tasks and run_task are in the opt-in toolset tasks, no longer in admin; a decision says why, and release notes, configuration and README name the break
 - [x] #2 list_tasks takes every filter and ordering of GET /api/tasks/, several states, types and sources, and rows show file name, owner and waiting time, nothing else of input_data
 - [x] #3 The probes of the design are run on Paperless 3.5.1 and their results recorded
-- [ ] #4 Coverage: the filters are covered; GET /api/tasks/{id}/ and the ten task types Paperless refuses are owner-approved exclusions, quoted with their date
-- [ ] #5 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover each filter, the orderings, the moved toolset and the refused types
+- [x] #4 Coverage: the filters are covered; GET /api/tasks/{id}/ and the ten task types Paperless refuses are owner-approved exclusions, quoted with their date
+- [x] #5 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover each filter, the orderings, the moved toolset and the refused types
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -54,4 +54,12 @@ Owner approval of 2026-11-24: 'Alle wie empfohlen' (all as recommended), for the
 
 Probes P1 to P6: CI run 45604535090, job 139171854815 (e2e 1/6), all as the design says; recorded in decision-93 (P1 list, P2, P6), 94 and 95. Guide limit 2987 to 3036 (49 of the approved 89). 23 hand mutants on a git archive copy, 2 survived first and were closed by tests. Deviation: the ports are TaskListReader and TaskListWriter instead of methods of the admin ports; rows show the owner as id. #161 (explain_workflow) calls AdminReader.list_tasks with a time window: at the merge it takes TaskListReader.list_tasks(TaskFilters(...)) with created_from and created_to.
 Release notes draft: BREAKING: list_tasks, acknowledge_tasks and run_task moved from the toolset admin to the new toolset tasks. If PAPERLESS_MCP_TOOLSETS names admin, add tasks (all needs no change). list_tasks takes every filter and ordering of Paperless.
+
+Green on d4f9fcf: every check of #167. Full hosted E2E of the stack 45618698199 (9c536a1): tests/contract/test_task_lists.py 26, tests/e2e/test_task_lists.py 12 passed; only e2e-imap red, on a test that is red on main too (runs 45609667829, 45615009952).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The task tools have the toolset tasks; list_tasks takes every filter and ordering; exclusions recorded (decision-93). Probes P1 to P6 done.
+<!-- SECTION:FINAL_SUMMARY:END -->
