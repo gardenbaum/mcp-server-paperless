@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T17:37:39Z'
-updated_date: '2026-11-25T17:38:05Z'
+updated_date: '2026-11-25T17:44:42Z'
 labels:
   - tools
 dependencies: []
@@ -51,3 +51,10 @@ First part of PLMCP-100: an ambiguous name costs a turn, and the assistant can p
 5. Boundary: asks on Ambiguous for tools that are not read-only and not dry_run; state carries picks and the original error.
 6. Registry-wide tests over every write tool, HTTP tests, E2E, decision, docs.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Probes (hosted, run 45666927531, part 1 of 6; temporary module deleted): P1: FastMCP's client gets oneOf and enumNames unchanged on 2026-07-28 and handshake; over HTTP 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05 carry both unchanged and answers come back; 8 rounds work on both eras, 11 end in InputRequiredRoundsExceededError on 2026-07-28. So clients before 2025-11-25 get enum and enumNames (owner decision 5a).
+P2 (3.5.1): tags, correspondents, document types, storage paths and saved views hold one exact name once per owner and once without owner, and any other case; custom fields, workflows, users and groups differ in case only. Two objects of one exact name therefore always differ by owner: owner decision 6, 'b if P2 shows that most doubles differ only by owner', takes effect, the title names the owner.
+<!-- SECTION:NOTES:END -->

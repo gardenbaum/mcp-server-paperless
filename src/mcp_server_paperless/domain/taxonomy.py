@@ -7,6 +7,7 @@ the object; what a user may not see does not exist for this server.
 from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 type TaxonomyKind = Literal[
     "tag",
@@ -64,6 +65,8 @@ class TaxonomyItem(BaseModel):
         tuple[SelectOption, ...] | None,
         Field(description="Custom fields of type select: the options, ids and labels."),
     ] = None
+    # For telling two objects of one name apart (decision-109); no tool returns it.
+    owner: Annotated[SkipJsonSchema[int | None], Field(exclude=True)] = None
 
 
 class TaxonomyListing(BaseModel):

@@ -127,6 +127,12 @@ this; no dialog is shown then. A client that declares dialogs but cannot show th
 run without a person) is told "no" every time, so this is its only way. Dialogs need one server
 process: with several behind one address, an answer that reaches another process changes nothing.
 
+Where a name in a write matches several objects, a client that can show dialogs lets you pick the
+one you mean: you see name, id, number of documents and owner of up to 20 matches. The call goes on
+only with your pick. If you pick none, nothing changes, and the assistant gets the list of matches
+and is told to ask you. A pick confirms nothing: what needs a confirmation asks for it afterwards.
+Reading tools and previews (`dry_run`) do not ask; they list the matches.
+
 Which clients were seen to show the dialog: none yet. According to their documentation
 [Claude Code](https://code.claude.com/docs/en/mcp) and
 [VS Code](https://code.visualstudio.com/api/extension-guides/ai/mcp) show such dialogs.

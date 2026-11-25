@@ -366,7 +366,9 @@ class ViewService:
 
     async def _find(self, view: NameOrId) -> SavedView:
         views = await self._reader.list_saved_views()
-        rows = [TaxonomyItem(id=v.id, name=v.name, document_count=None) for v in views]
+        rows = [
+            TaxonomyItem(id=v.id, name=v.name, document_count=None, owner=v.owner) for v in views
+        ]
         try:
             wanted = pick("saved_view", rows, view).id
         except NotFound as error:

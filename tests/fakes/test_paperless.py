@@ -20,6 +20,7 @@ from fakes.paperless import (
     seeded,
     write,
 )
+from mcp_server_paperless.domain.choices import picking
 from mcp_server_paperless.domain.documents import DocumentUpload
 from mcp_server_paperless.domain.errors import (
     FeatureUnavailable,
@@ -431,3 +432,14 @@ async def test_the_search_by_name_doubts_listed_tasks_and_earlier_requests_of_th
         "a task of its own makes a file of one of these names",
         (None,),
     )
+
+
+@pytest.mark.decision("decision-109")
+async def test_a_write_of_the_fake_is_noted_and_a_read_is_not() -> None:
+    fake = FakePaperless(seeded(), user="admin", allow_writes=True)
+
+    with picking([]) as run:
+        _ = await fake.list_taxonomy("tag")
+        assert not run.written
+        _ = await fake.create_tag("new")
+        assert run.written

@@ -158,13 +158,15 @@ async def test_two_views_with_one_name_are_ambiguous() -> None:
     setup = Setup()
     setup.state.saved_views += [
         FakeSavedView(id=5, name="Same", owner=2),
-        FakeSavedView(id=6, name="SAME", owner=2),
+        FakeSavedView(id=6, name="SAME", owner=3),
     ]
 
     with pytest.raises(Ambiguous, match="2 saved views match") as raised:
         _ = await setup.views.get("same")
 
     assert raised.value.hint == "Pass the id of the one you mean."
+    assert raised.value.question is not None
+    assert [(c.value, c.owner) for c in raised.value.question.choices] == [("5", 2), ("6", 3)]
 
 
 async def test_a_user_without_the_view_permission_is_denied() -> None:

@@ -21,6 +21,7 @@ from adapter.conftest import (
     streaming,
     tag,
 )
+from mcp_server_paperless.domain.choices import picking
 from mcp_server_paperless.domain.errors import (
     AuthenticationFailed,
     Conflict,
@@ -1361,3 +1362,50 @@ async def test_any_other_version_is_not_logged(
     _ = await make_client(Script(answer(200, TAG_PAGE, **headers))).request("GET", "/api/tags/")
 
     assert caplog.records == []
+
+
+# --- the mark of a write (decision-109) -----------------------------------------------------------
+
+
+@pytest.mark.decision("decision-109")
+@pytest.mark.parametrize(
+    ("method", "writes"),
+    [
+        ("GET", False),
+        ("HEAD", False),
+        ("OPTIONS", True),
+        ("POST", True),
+        ("PUT", True),
+        ("PATCH", True),
+        ("DELETE", True),
+    ],
+)
+async def test_every_method_but_get_and_head_is_noted_as_a_write(
+    method: Method, *, writes: bool
+) -> None:
+    client, _ = streaming(Script(answer(200, tag(1, "inbox"))))
+
+    with picking([]) as run:
+        _ = await client.request(method, "/api/tags/1/")
+
+    assert run.written is writes
+
+
+@pytest.mark.decision("decision-109")
+async def test_a_write_is_noted_before_it_is_sent_and_if_it_fails(
+    make_client: ClientFactory,
+) -> None:
+    for script in (raising(httpx2.ConnectError), Script(answer(400, {"name": ["taken"]}))):
+        with picking([]) as run, pytest.raises(PaperlessMcpError):
+            _ = await make_client(script).request("POST", "/api/tags/", json={"name": "new"})
+        assert run.written
+
+
+@pytest.mark.decision("decision-109")
+async def test_a_streamed_post_is_noted_and_a_download_is_not() -> None:
+    for verb, written in (("GET", False), ("POST", True)):
+        client, _ = streaming(Script(answer(200, {})))
+        with picking([]) as run:
+            async with client.stream(cast("Method", verb), "/api/documents/1/download/"):
+                pass
+        assert run.written is written

@@ -86,6 +86,7 @@ from mcp_server_paperless.domain.bulk import (
     TagsChange,
     TrashDocuments,
 )
+from mcp_server_paperless.domain.choices import note_write
 from mcp_server_paperless.domain.documents import (
     TEXT_CHANGED,
     CustomFieldValue,
@@ -886,6 +887,8 @@ def write[F: FakePaperless, **P, R](
                 "allow_writes=True in tests that mean to write."
             )
             raise WriteNotAllowedError(message)
+        note_write()  # as the client does
+        self.writes.append((method.__name__, args, kwargs))
         return await method(self, *args, **kwargs)
 
     _WRITES.add(guarded)
@@ -913,6 +916,8 @@ class FakePaperless:
             raise LookupError(message)
         self.user: FakeUser = found[0]
         self.allow_writes: bool = allow_writes
+        # Every write this user sent, in order: the method and its arguments.
+        self.writes: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
 
     async def get_overview(self) -> InstanceOverview:
         """`InstanceReader.get_overview` (StatisticsView, SystemStatusView, UiSettingsView)."""
@@ -1043,6 +1048,7 @@ class FakePaperless:
                     document_count=count(lambda d, t=t: t.id in d.tags),
                     colour=t.colour,
                     parent=t.parent,
+                    owner=t.owner,
                 )
                 for t in state.tags
                 if t.visible_to(user)
@@ -1053,7 +1059,10 @@ class FakePaperless:
         ) -> Callable[[], list[TaxonomyItem]]:
             return lambda: [
                 TaxonomyItem(
-                    id=o.id, name=o.name, document_count=count(lambda d, o=o: link(d) == o.id)
+                    id=o.id,
+                    name=o.name,
+                    document_count=count(lambda d, o=o: link(d) == o.id),
+                    owner=o.owner,
                 )
                 for o in objects
                 if o.visible_to(user)
@@ -1071,10 +1080,14 @@ class FakePaperless:
                 for f in state.custom_fields
             ]
 
-        def names(rows: list[tuple[int, str]]) -> Callable[[], list[TaxonomyItem]]:
-            return lambda: [TaxonomyItem(id=i, name=n, document_count=None) for i, n in rows]
+        def names(
+            rows: list[tuple[int, str, int | None]],
+        ) -> Callable[[], list[TaxonomyItem]]:
+            return lambda: [
+                TaxonomyItem(id=i, name=n, document_count=None, owner=o) for i, n, o in rows
+            ]
 
-        views = [(v.id, v.name) for v in state.saved_views if v.visible_to(user)]
+        views = [(v.id, v.name, v.owner) for v in state.saved_views if v.visible_to(user)]
         kinds: dict[TaxonomyKind, Callable[[], list[TaxonomyItem]]] = {
             "tag": tags,
             "correspondent": owned(state.correspondents, lambda d: d.correspondent),
@@ -1082,8 +1095,8 @@ class FakePaperless:
             "storage_path": owned(state.storage_paths, lambda d: d.storage_path),
             "custom_field": custom_fields,
             "saved_view": names(views),
-            "user": names([(u.id, u.username) for u in state.users]),
-            "group": names([(g.id, g.name) for g in state.groups]),
+            "user": names([(u.id, u.username, None) for u in state.users]),
+            "group": names([(g.id, g.name, None) for g in state.groups]),
         }
         return kinds[kind]()
 

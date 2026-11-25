@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Literal
 import httpx2
 import pydantic
 
+from mcp_server_paperless.domain.choices import note_write
 from mcp_server_paperless.domain.errors import (
     AnswerCompressed,
     AnswerTooLarge,
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.credentials import CredentialProvider
 
 ACCEPT = "application/json; version=10"
+READ_METHODS = frozenset({"GET", "HEAD"})
 IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
 RETRY_STATUSES = frozenset({429, 502, 503, 504})
 
@@ -499,6 +501,8 @@ class PaperlessClient:
         With ``stream`` the body is not read yet: the caller reads and closes the response.
         """
         method, path = outgoing.method, outgoing.url.path
+        if method not in READ_METHODS:
+            note_write()
         attempt, waited = 1, 0.0
         while True:
             response = await self._send(outgoing, stream=stream)
