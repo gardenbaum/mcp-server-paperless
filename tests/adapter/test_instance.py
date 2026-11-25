@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING, cast
 
 import httpx2
 import pytest
-from hypothesis import given
-from hypothesis import strategies as st
 
 from adapter.conftest import streaming
 from mcp_server_paperless.domain.errors import (
@@ -444,11 +442,11 @@ TEXTS = [path for path in texts(REPORT_STATUS) if not path[-1].endswith(MOMENTS)
 
 @pytest.mark.decision("decision-95")
 @pytest.mark.decision("decision-66")
-@given(path=st.sampled_from(TEXTS), word=st.from_regex(r"[a-z]{6,12}", fullmatch=True))
+@pytest.mark.parametrize("path", TEXTS, ids=".".join)
 async def test_no_text_of_the_status_shows_the_credentials_of_a_url(
-    path: tuple[str, ...], word: str
+    path: tuple[str, ...],
 ) -> None:
-    planted = f"see redis://user:pw-{word}@broker:6379/0 now"
+    planted = "see redis://user:planted@broker:6379/0 now"
     status = cast("Json", json.loads(json.dumps(REPORT_STATUS)))
     inner = status
     for key in path[:-1]:
@@ -464,7 +462,7 @@ async def test_no_text_of_the_status_shows_the_credentials_of_a_url(
 
     report = await PaperlessInstanceReader(client).get_system_report()
 
-    assert f"pw-{word}" not in report.model_dump_json()
+    assert "planted" not in report.model_dump_json()
 
 
 def test_the_planted_texts_are_those_of_every_part() -> None:
