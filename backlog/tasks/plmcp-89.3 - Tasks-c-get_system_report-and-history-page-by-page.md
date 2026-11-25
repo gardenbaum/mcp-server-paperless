@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:40Z'
-updated_date: '2026-11-25T13:49:04Z'
+updated_date: '2026-11-25T14:08:06Z'
 labels:
   - admin
 dependencies:
@@ -52,6 +52,8 @@ Third part of PLMCP-89: history older than the newest 50 entries is not readable
 Red first (commit 'red'), then green. 23 hand mutants on a git archive copy: 1 survived, closed by testing every text of the status instead of a sample. Deviation: the report is a port of its own (SystemReportReader), so that the readers of the overview in the tests stay. No open coverage row of PLMCP-89 is left. Guide limit +20, the last of the approved 89 (49 + 20 + 20).
 
 Full hosted E2E 45618698199 on 9c536a1; tests/contract/test_document_reader.py 33, test_instance_reader.py 15 live. The audit log switched off is tested on the fake and in the adapter only.
+
+Review: the hint for a too large history comes from its caller (L5), the port names the 60 s wait; equivalent mutants of DocumentService.detail renumbered (one parameter more, checked against mutmut's generated source, not run).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

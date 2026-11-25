@@ -246,6 +246,8 @@ class DocumentReader(Protocol):
     async def list_document_history(self, document_id: int) -> tuple[HistoryEntry, ...]:
         """The audit log of a document, newest first, without the OCR text.
 
+        Paperless builds and sends all of it: each wait for its next bytes may take 60 seconds.
+
         Raises:
             NotFound: No such document.
             PermissionDenied: The user may not view the audit log (it needs ``view_logentry``

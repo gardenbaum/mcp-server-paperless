@@ -26,6 +26,7 @@ from mcp_server_paperless.domain.documents import (
     SuggestionNames,
 )
 from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
     FeatureUnavailable,
     NotFound,
     PaperlessMcpError,
@@ -425,6 +426,7 @@ class DocumentService:
 
         Raises:
             NotFound: No such document, or the user may not see it.
+            AnswerTooLarge: The history is over the limit.
             Validation: ``history_page`` is past the end, or given without the history.
             PermissionDenied: The user may not view documents at all.
         """
@@ -510,7 +512,11 @@ class DocumentService:
             case "notes":
                 return {"notes": await reader.list_document_notes(number)}
             case "history":
-                entries = await reader.list_document_history(number)
+                try:
+                    entries = await reader.list_document_history(number)
+                except AnswerTooLarge as error:
+                    hint = "Leave history out of include, or look at it in the Paperless web UI."
+                    raise AnswerTooLarge(error.message, hint=hint) from None
                 return {"history": _history(entries, history_page)}
             case "metadata":
                 return {"file_metadata": await reader.get_document_metadata(number)}

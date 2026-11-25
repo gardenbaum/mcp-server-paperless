@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:22:03Z'
-updated_date: '2026-11-25T13:49:06Z'
+updated_date: '2026-11-25T14:08:06Z'
 labels: []
 dependencies:
   - PLMCP-91
@@ -24,7 +24,7 @@ The task list is in the admin toolset (off by default), beside user administrati
 <!-- AC:BEGIN -->
 - [x] #1 Reading: active tasks, summary and status counts are readable
 - [x] #2 list_tasks takes the API's remaining filters (dates, owner, trigger source, name, result, is_complete, ordering)
-- [x] #3 Writing: acknowledge_tasks can acknowledge all, after a preview; every task type Paperless lets a user start can be started (confirm as in decision-26); that the API starts one type per call is stated, with one call per type as the closest way to start several
+- [ ] #3 Writing: acknowledge_tasks can acknowledge all, after a preview; every task type Paperless lets a user start can be started (confirm as in decision-26); that the API starts one type per call is stated, with one call per type as the closest way to start several
 - [x] #4 A decision settles whether the task tools get a toolset that does not need user administration
 - [x] #5 Document history older than the newest 50 entries is readable page by page, without OCR text
 - [x] #6 The statistics needed for troubleshooting beyond get_instance_overview (task summary and status counts, and what else statistics and status give) are readable

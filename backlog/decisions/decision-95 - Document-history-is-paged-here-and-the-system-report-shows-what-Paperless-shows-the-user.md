@@ -35,6 +35,7 @@ Probed on Paperless 3.5.1 (CI run 45604535090, job 139171854815 "e2e (1/6)", tem
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
 - Every page transfers the whole history, with every corrected text.
+- A read of the history waits up to 60 seconds for the next bytes. The port says only that a history is too large; what to leave out is the caller's hint.
 - The definition of `get_document` (default profile) grows; the number of tools of that profile does not.
 - The guide to the toolsets is 20 bytes longer (the last of the approved 89).
 - `status` can take seconds while no worker answers.

@@ -4312,7 +4312,7 @@ class FakePaperless:
             raise PermissionDenied(message)
         if not self.state.audit_log_enabled:
             message = "The Paperless audit log is disabled on this instance."
-            raise FeatureUnavailable(message)
+            raise FeatureUnavailable(message, hint="Leave history out of include.")
         document = self._document(document_id)
         owns = document.owner in {None, user.id} or user.is_superuser
         if not (user.has("view_logentry") and owns):

@@ -648,8 +648,7 @@ class PaperlessDocumentReader:
                 f"The history of document {document_id} is over 64 MiB, because Paperless sends "
                 "every corrected text with it."
             )
-            hint = "Leave history out of include, or look at it in the Paperless web UI."
-            raise AnswerTooLarge(message, hint=hint) from None
+            raise AnswerTooLarge(message) from None
         except Validation:
             message = "The Paperless audit log is disabled on this instance."
             raise FeatureUnavailable(message, hint="Leave history out of include.") from None

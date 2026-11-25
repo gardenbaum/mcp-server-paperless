@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:39Z'
-updated_date: '2026-11-25T13:49:04Z'
+updated_date: '2026-11-25T14:08:06Z'
 labels:
   - admin
 dependencies:
@@ -25,7 +25,7 @@ Second part of PLMCP-89: how many tasks need attention, what runs now and how ea
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 get_task_overview reads status counts, active tasks and the summary, says what the filters and the rights apply to, and names refused parts
-- [x] #2 acknowledge_tasks can acknowledge all after a preview and a yes bound to the counts and the newest task, and reports what slipped in
+- [ ] #2 acknowledge_tasks can acknowledge all after a preview and a yes bound to the counts and the newest task, and reports what slipped in
 - [x] #3 run_task says that Paperless starts three types by hand, one per call, and what llm_index does as probed
 - [x] #4 Coverage: active, summary and status_counts are covered; filters Paperless ignores are owner-approved exclusions
 - [x] #5 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover the aggregates, acknowledge all as staff and user, and every startable type
@@ -53,6 +53,8 @@ Second part of PLMCP-89: how many tasks need attention, what runs now and how ea
 Red first (commit 'red'), then green. 34 hand mutants on a git archive copy: 2 survived; one was a redundant part of the scope (removed), one closed by a test. Deviations: a fourth GET (ui_settings) says whose tasks the summary counts and how many of those to acknowledge are not the user's own; a row of acknowledge by ids sends all=false. Limit: the guide +20 of the approved 89. Not proven: what came in between the second read and the POST on 3.5.1 (only on the fake).
 
 Green: every check of #168; full hosted E2E of the stack 45618698199.
+
+Review: M3 (at least), L1 to L4, L6, L8 and the Codex thread (a broken connection counts as a lost answer) fixed, tests first (14 red); 12 hand mutants, all killed. M2 (binding confirm=true for clients without dialogs) was put to the owner; AC 2 is not narrowed and is unchecked until it is built.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

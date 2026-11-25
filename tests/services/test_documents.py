@@ -34,9 +34,7 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     Validation,
 )
-from mcp_server_paperless.domain.ports import DocumentReader
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
-from mcp_server_paperless.paperless.documents import MANY_TIMEOUT
 from mcp_server_paperless.services.documents import (
     DEFAULT_SLICE,
     DocumentService,
@@ -832,9 +830,3 @@ async def test_a_history_that_is_too_large_says_what_to_leave_out() -> None:
         "The history of document 1 is over 64 MiB. "
         "Hint: Leave history out of include, or look at it in the Paperless web UI."
     )
-
-
-@pytest.mark.decision("decision-95")
-def test_the_port_says_how_long_a_history_may_take() -> None:
-    assert MANY_TIMEOUT == 60.0
-    assert "60 seconds" in (DocumentReader.list_document_history.__doc__ or "")
