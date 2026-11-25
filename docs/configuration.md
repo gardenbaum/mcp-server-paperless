@@ -230,7 +230,8 @@ became of each. Repeating the call goes on with the rest;
 leave out documents whose owner was changed: one you may no longer see refuses the repeated call. A serial number can move to another document
 if the one that releases it comes first; a swap takes two calls. `add_notes` adds a note to many documents,
 chosen like those of `bulk_edit_documents`, or a note of its own to each (at most 100 a call). A note
-whose text is there already is skipped, so it needs the permission to view notes (decision-73).
+whose text is there already in the same format (`plain` or `markdown`) is skipped, so it needs the
+permission to view notes (decision-73, decision-102).
 
 `resolve_duplicates` keeps one document and moves its duplicates to the trash or merges them into
 it as versions (at most 20 a call). `search_documents` with `has_duplicates` finds such documents

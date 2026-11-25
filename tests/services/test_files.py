@@ -1,6 +1,6 @@
 """FileService: thumbnails and downloads with a size limit, decided before the bytes are read."""
 
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, final, override
 
 import pytest
 from fakes.accounts import ADMIN, READER
@@ -154,8 +154,10 @@ async def test_the_thumbnail_of_what_is_in_the_trash_is_refused_and_that_is_said
 async def test_a_document_deleted_while_its_thumbnail_is_read_is_not_shown() -> None:
     class Deleting(FakePaperless):
         @override
-        async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
-            found = await super().get_document_thumbnail(document_id)
+        async def get_document_thumbnail(
+            self, document_id: int, *, version_id: int | None = None
+        ) -> DocumentFile:
+            found = await super().get_document_thumbnail(document_id, version_id=version_id)
             await FakePaperless(self.state, user=ADMIN[0], allow_writes=True).delete_document(1)
             return found
 
@@ -172,8 +174,12 @@ class Versioned(FakePaperless):
     asked: tuple[str, ...] = ()
 
     @override
-    async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
-        return await super().get_document_thumbnail(1 if document_id == 70 else document_id)
+    async def get_document_thumbnail(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> DocumentFile:
+        return await super().get_document_thumbnail(
+            1 if document_id == 70 else document_id, version_id=version_id
+        )
 
     @override
     async def get_document_titles(self, document_ids: Collection[int]) -> dict[int, str]:
@@ -391,7 +397,9 @@ async def test_a_missing_or_hidden_document_is_an_error_before_anything_is_read(
 async def test_an_empty_thumbnail_is_an_error() -> None:
     class Empty(Recording):
         @override
-        async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
+        async def get_document_thumbnail(
+            self, document_id: int, *, version_id: int | None = None
+        ) -> DocumentFile:
             found = await super().get_document_thumbnail(document_id)
             return found.model_copy(update={"content": b""})
 
@@ -429,3 +437,42 @@ async def test_an_archive_over_the_limit_is_a_pdf_whatever_the_original_was() ->
     delivery = await files(fake).download(7, "archive")
 
     assert (delivery.report.filename, delivery.report.mime_type) == ("photo.pdf", "application/pdf")
+
+
+async def with_a_version(state: FakeState) -> int:
+    """The id of a new version of document 1."""
+    writer = FakePaperless(state, user=ADMIN[0], allow_writes=True)
+    upload = VersionUpload(filename="v.txt", mime_type="text/plain", content=b"v")
+    made = await writer.get_task(await writer.upload_document_version(1, upload))
+    return made.document_ids[0]
+
+
+async def test_the_thumbnail_of_a_listed_version_names_it() -> None:
+    state = seeded()
+    version = await with_a_version(state)
+    fake = FakePaperless(state, user=ADMIN[0])
+
+    delivery = await files(fake).thumbnail(1, version_id=1)
+
+    assert delivery.report.version_id == 1
+    assert delivery.data == (await fake.get_document_thumbnail(1, version_id=1)).content
+    assert (await files(fake).thumbnail(1, version_id=version)).data != delivery.data
+    assert (await files(fake).thumbnail(1)).report.version_id is None
+
+
+async def test_the_thumbnail_of_a_deleted_version_is_refused() -> None:
+    state = seeded()
+    _, _, version = await trashed(state)
+
+    @final
+    class Serving(FakePaperless):
+        """Paperless could still answer the image of a version deleted meanwhile."""
+
+        @override
+        async def get_document_thumbnail(
+            self, document_id: int, *, version_id: int | None = None
+        ) -> DocumentFile:
+            return await super().get_document_thumbnail(document_id)
+
+    with pytest.raises(NotFound, match=f"version {version}"):
+        _ = await files(Serving(state, user=ADMIN[0])).thumbnail(1, version_id=version)

@@ -1,9 +1,11 @@
 ---
 id: PLMCP-83.3
 title: 'Rest of the API c: note format, thumbnail version, search and bundle filters'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-25T14:42:18Z'
+updated_date: '2026-11-25T15:22:21Z'
 labels: []
 dependencies:
   - PLMCP-83.2
@@ -33,3 +35,9 @@ Third part of PLMCP-83: fields of covered operations that no tool sends. Design 
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Tests first per level. 2. Note format (add_note, add_notes, notes read back); thumbnail version through listed versions; five filters in DocumentQuery and SelectionFilters (so in every choice by filter); status and document of list_share_bundles. 3. Coverage rows, docs, snapshots.
+<!-- SECTION:PLAN:END -->

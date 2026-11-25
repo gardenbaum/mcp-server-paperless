@@ -101,6 +101,7 @@ from mcp_server_paperless.domain.documents import (
     FileMetadata,
     HistoryEntry,
     Note,
+    NoteFormat,
     SignedIn,
     Suggestions,
 )
@@ -250,7 +251,12 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.permissions import AccessChange, PermissionKind
     from mcp_server_paperless.domain.raw import RawReply
     from mcp_server_paperless.domain.selection import CountedKind, ReadField
-    from mcp_server_paperless.domain.sharing import FileVersionKind, ShareBundle, ShareLink
+    from mcp_server_paperless.domain.sharing import (
+        BundleStatus,
+        FileVersionKind,
+        ShareBundle,
+        ShareLink,
+    )
     from mcp_server_paperless.domain.task_lists import RunnableTask, TaskFilters, TaskOrdering
     from mcp_server_paperless.domain.taxonomy import (
         MatchingAlgorithm,
@@ -832,6 +838,7 @@ def seeded() -> FakeState:
                     Note(
                         id=1,
                         note=PUBLIC_NOTE,
+                        format="plain",
                         created=datetime(2026, 11, 11, 20, 0, tzinfo=UTC),
                         user="admin",
                     )
@@ -1685,7 +1692,9 @@ class FakePaperless:
         return TaxonomyItem(id=tag.id, name=tag.name, document_count=0, colour=tag.colour)
 
     @write
-    async def add_note(self, document_id: int, text: str) -> Note:
+    async def add_note(
+        self, document_id: int, text: str, note_format: NoteFormat = "plain"
+    ) -> Note:
         """`DocumentWriter.add_note` (the `notes` action, POST).
 
         Order in Paperless 3.4.2: the global `view_document`, `add_note` and `change_document`
@@ -1707,6 +1716,7 @@ class FakePaperless:
         note = Note(
             id=state.last_note_id,
             note=text.strip(),
+            format=note_format,
             created=datetime.now(UTC),
             user=self.user.username,
         )
@@ -3617,9 +3627,16 @@ class FakePaperless:
         """`SharingReader.get_share_link`."""
         return sharing.get_link(self._sharing(), self._viewer(), link_id)
 
-    async def list_share_bundles(self) -> tuple[ShareBundle, ...]:
+    async def list_share_bundles(
+        self, *, status: BundleStatus | None = None, document_id: int | None = None
+    ) -> tuple[ShareBundle, ...]:
         """`SharingReader.list_share_bundles`."""
-        return sharing.list_bundles(self._sharing(), self._viewer())
+        return tuple(
+            bundle
+            for bundle in sharing.list_bundles(self._sharing(), self._viewer())
+            if status in {None, bundle.status}
+            and (document_id is None or document_id in bundle.document_ids)
+        )
 
     async def get_email_enabled(self) -> bool | None:
         """`SharingReader.get_email_enabled` (UiSettingsView; 403 without `view_uisettings`)."""
@@ -4483,7 +4500,9 @@ class FakePaperless:
             ),
         )
 
-    async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
+    async def get_document_thumbnail(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> DocumentFile:
         """`DocumentReader.get_document_thumbnail` (the `thumb` action: WebP, numbered name).
 
         It finds documents and versions in the trash, too (`include_deleted`); what is missing of
@@ -4492,13 +4511,19 @@ class FakePaperless:
         document = self._sub(document_id, trashed=True)
         trashed = any(d is document for d in self.state.trash)
         shown = document.id if trashed else document.versions[0].id
+        if version_id is not None:
+            if version_id not in {v.id for v in document.versions}:
+                raise unseen_version(document_id, version_id)
+            shown = version_id
         if (shown, "thumbnail") in self.state.missing:
             if trashed:
                 raise unseen_document(document_id)
-            message = f"Paperless cannot find the thumbnail of document {document_id}."
+            version = "" if version_id is None else f"version {version_id} of "
+            message = f"Paperless cannot find the thumbnail of {version}document {document_id}."
             raise NotFound(message, hint=NO_THUMBNAIL_HINT)
         return DocumentFile(
-            content=document.thumbnail,
+            # The image of a later version differs from that of the first one.
+            content=document.thumbnail + (b"" if shown == document.id else f"{shown}".encode()),
             mime_type="image/webp",
             filename=f"{document.id:07d}.webp",
         )
@@ -4698,6 +4723,32 @@ def _filters(query: DocumentQuery, state: FakeState) -> list[_Match]:
             lambda d: query.added_from is None or d.added.date() >= query.added_from,
         ),
         (query.added_to, lambda d: query.added_to is None or d.added.date() <= query.added_to),
+        (
+            query.modified_from,
+            lambda d: query.modified_from is None or d.modified.date() >= query.modified_from,
+        ),
+        (
+            query.modified_to,
+            lambda d: query.modified_to is None or d.modified.date() <= query.modified_to,
+        ),
+        (
+            query.asn_from,
+            lambda d: (
+                d.archive_serial_number is not None
+                and d.archive_serial_number >= (query.asn_from or 0)
+            ),
+        ),
+        (
+            query.asn_to,
+            lambda d: (
+                d.archive_serial_number is not None
+                and d.archive_serial_number <= (query.asn_to or 0)
+            ),
+        ),
+        (
+            query.file_name_contains,
+            lambda d: (query.file_name_contains or "").lower() in (d.file_name or "").lower(),
+        ),
         (query.owner, lambda d: d.owner == query.owner),
         (query.inbox, lambda d: bool(inbox & set(d.tags)) == query.inbox),
         (query.ids, lambda d: d.id in query.ids),

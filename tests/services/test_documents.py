@@ -130,6 +130,12 @@ async def test_an_ambiguous_name_names_the_candidates() -> None:
             "added_from is after added_to",
         ),
         (
+            NameFilters(),
+            DocumentQuery(modified_from=date(2026, 2, 1), modified_to=date(2026, 1, 1)),
+            "modified_from is after modified_to",
+        ),
+        (NameFilters(), DocumentQuery(asn_from=1, asn_to=0), "asn_from is after asn_to"),
+        (
             NameFilters(tags_all=("e2e-finance",), tags_none=(1,)),
             DocumentQuery(),
             "both required and excluded: 'e2e-finance'",
@@ -577,6 +583,9 @@ BOTH = ["e2e-private-note", "e2e-public-invoice"]
         (DocumentQuery(created_from=date(2026, 11, 11)), BOTH),
         (DocumentQuery(created_from=date(2026, 11, 11), created_to=date(2026, 11, 11)), BOTH),
         (DocumentQuery(added_from=date(2026, 11, 11), added_to=date(2026, 11, 11)), BOTH),
+        (DocumentQuery(modified_from=date(2026, 11, 11), modified_to=date(2026, 11, 11)), BOTH),
+        (DocumentQuery(asn_from=2, asn_to=2), ["e2e-public-invoice"]),
+        (DocumentQuery(asn_from=0), BOTH),
         (DocumentQuery(created_to=date(2026, 11, 10)), []),
         (DocumentQuery(created_from=date(2026, 11, 12)), []),
     ],

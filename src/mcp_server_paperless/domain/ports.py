@@ -49,6 +49,7 @@ if TYPE_CHECKING:
         FileVersion,
         HistoryEntry,
         Note,
+        NoteFormat,
         SignedIn,
         Suggestions,
     )
@@ -84,7 +85,12 @@ if TYPE_CHECKING:
     )
     from mcp_server_paperless.domain.raw import RawReply
     from mcp_server_paperless.domain.selection import CountedKind, DocumentRow, ReadField
-    from mcp_server_paperless.domain.sharing import FileVersionKind, ShareBundle, ShareLink
+    from mcp_server_paperless.domain.sharing import (
+        BundleStatus,
+        FileVersionKind,
+        ShareBundle,
+        ShareLink,
+    )
     from mcp_server_paperless.domain.task_lists import (
         RunnableTask,
         TaskCounts,
@@ -329,11 +335,15 @@ class DocumentReader(Protocol):
         """
         ...
 
-    async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
+    async def get_document_thumbnail(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> DocumentFile:
         """The thumbnail image of a document (WebP), also in the trash (of its first version).
 
+        ``version_id`` names a version of the document (default: the newest).
+
         Raises:
-            NotFound: No such document, or Paperless cannot find the thumbnail.
+            NotFound: No such document or version, or Paperless cannot find the thumbnail.
             PermissionDenied: The user may not see the document.
         """
         ...
@@ -475,7 +485,9 @@ class DocumentWriter(Protocol):
         """
         ...
 
-    async def add_note(self, document_id: int, text: str) -> Note:
+    async def add_note(
+        self, document_id: int, text: str, note_format: NoteFormat = "plain"
+    ) -> Note:
         """Add a note authored by the user and return it.
 
         Paperless answers with all notes of the document; the new one is the one with the
@@ -1149,8 +1161,12 @@ class SharingReader(Protocol):
         """
         ...
 
-    async def list_share_bundles(self) -> tuple[ShareBundle, ...]:
+    async def list_share_bundles(
+        self, *, status: BundleStatus | None = None, document_id: int | None = None
+    ) -> tuple[ShareBundle, ...]:
         """Every share-link bundle the user may see, over all pages, in Paperless order.
+
+        Only those with ``status``, and only those that hold the document, if given.
 
         Raises:
             PermissionDenied: The user lacks the global ``view_sharelinkbundle`` permission.

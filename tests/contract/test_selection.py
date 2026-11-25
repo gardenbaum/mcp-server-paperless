@@ -1,6 +1,6 @@
 """Contract of a whole selection in one request and of rows with chosen fields (decision-69)."""
 
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -68,6 +68,8 @@ async def test_every_filter_selects_what_it_searches_and_leaves_something_out(
     first, last = min(hit.created for hit in found), max(hit.created for hit in found)
     added = [hit.added.date() for hit in found]
     day = timedelta(days=1)
+    # Later tests may change a seeded document on the live stack; nothing is changed tomorrow.
+    today = max(date.today(), *added)  # noqa: DTZ011 -- two days are far enough apart
     cases: dict[str, tuple[object, set[str]]] = {
         "query": ("acme", {PUBLIC}),
         "more_like_id": (private, {PUBLIC}),
@@ -84,6 +86,11 @@ async def test_every_filter_selects_what_it_searches_and_leaves_something_out(
         "tags_none": (["e2e-private"], {PUBLIC}),
         "created_from": (last + day, set()),
         "created_to": (first - day, set()),
+        "modified_from": (today + day, set()),
+        "modified_to": (min(added) - day, set()),
+        "asn_from": (PUBLIC_ASN + 1, {PRIVATE}),
+        "asn_to": (PUBLIC_ASN, {PUBLIC}),
+        "file_name_contains": ("PUBLIC-inv", {PUBLIC}),
         "added_from": (max(added) + day, set()),
         "added_to": (min(added) - day, set()),
         "owner": ("admin", {PRIVATE}),

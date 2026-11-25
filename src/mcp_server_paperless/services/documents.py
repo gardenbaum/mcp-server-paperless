@@ -220,8 +220,8 @@ def document_link(web_url: str, document_id: int) -> str:
     return f"{web_url.rstrip('/')}/documents/{document_id}/details"
 
 
-def _check_range(name: str, start: date | None, end: date | None) -> None:
-    if start and end and start > end:
+def _check_range[T: (date, int)](name: str, start: T | None, end: T | None) -> None:
+    if start is not None and end is not None and start > end:
         message = f"{name}_from is after {name}_to."
         raise Validation(message, hint=f"Swap them, or leave one out for an open {name} range.")
 
@@ -361,6 +361,8 @@ class DocumentService:
             raise Validation(message, hint=hint)
         _check_range("created", query.created_from, query.created_to)
         _check_range("added", query.added_from, query.added_to)
+        _check_range("modified", query.modified_from, query.modified_to)
+        _check_range("asn", query.asn_from, query.asn_to)
         _check_absent(names, query)
         # Names are optional: the ids a query already holds (a saved view's) stay unless named.
         given = {k: v for k, v in (await self._ids(names)).items() if v not in {None, ()}}
