@@ -1079,7 +1079,7 @@ async def test_the_refusal_names_unknown_trigger_types_and_every_filter() -> Non
             "w", WorkflowEdit(actions=(ActionInput(type="move to trash"),)), confirm=False
         )
 
-    assert "(unknown type 9; document added, filtered by match, has_tags)" in raised.value.message
+    assert "(unknown type 9; document added, filtered by has_tags)" in raised.value.message
 
 
 async def test_a_hidden_header_on_a_new_action_with_an_id_has_nothing_to_keep() -> None:
@@ -1350,7 +1350,7 @@ async def test_a_hidden_header_keeps_the_value_stored_for_the_action_with_that_i
     hook = WebhookSettings(url="https://h.example/b", headers={"X-Token": "(hidden)", "X-New": "n"})
 
     done = await setup.workflows.update(
-        "w", WorkflowEdit(actions=(ActionInput(type=4, id=7, webhook=hook),)), confirm=False
+        "w", WorkflowEdit(actions=(ActionInput(type=4, id=7, webhook=hook),)), confirm=True
     )
 
     assert headers(setup.stored("w").actions[0].settings) == {"X-Token": "real", "X-New": "n"}
@@ -1570,3 +1570,17 @@ async def test_an_unknown_source_number_is_shown_as_the_number() -> None:
     [workflow] = (await setup.workflows.list()).workflows
 
     assert workflow.triggers[0].settings == {"sources": ["consume_folder", 9]}
+
+
+@pytest.mark.decision("decision-82")
+@pytest.mark.parametrize("name", ["filename", "path"])
+async def test_a_blank_filter_is_refused_when_a_workflow_is_created_or_changed(name: str) -> None:
+    setup = Setup()
+    _ = setup.seed("w", enabled=False)
+    blank = TriggerInput.model_validate({"type": "consumption", name: "  "})
+
+    with pytest.raises(Validation, match=f"'{name}' is blank"):
+        _ = await setup.workflows.create(WorkflowCreate(name="n", triggers=(blank,)), confirm=True)
+    with pytest.raises(Validation, match=f"'{name}' is blank"):
+        _ = await setup.workflows.update("w", WorkflowEdit(triggers=(blank,)), confirm=True)
+    assert setup.fake.writes == []

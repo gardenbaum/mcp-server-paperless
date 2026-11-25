@@ -199,7 +199,7 @@ async def test_the_placeholder_is_never_written() -> None:
 async def test_an_empty_user_name_removes_the_credentials(empty: str, number: int | None) -> None:
     service, state = seeding(hooked(7, SECRET))
 
-    done = await write(service, given(f"https://{empty}h.example/x?k=1", number))
+    done = await write(service, given(f"https://{empty}h.example/x?k=1", number), confirm=True)
 
     assert url(state.workflows[0].actions[0]) == SHOWN
     assert done.note == (
@@ -213,7 +213,7 @@ async def test_an_empty_user_name_removes_the_credentials(empty: str, number: in
 async def test_an_empty_user_name_is_not_written_where_the_path_holds_an_at() -> None:
     service, state = seeding(hooked(7, "https://u:pw@h.example/@x"))
 
-    _ = await write(service, given("https://@h.example/@x", 7))
+    _ = await write(service, given("https://@h.example/@x", 7), confirm=True)
 
     assert url(state.workflows[0].actions[0]) == "https://h.example/@x"
 
@@ -226,6 +226,7 @@ async def test_another_url_never_gets_the_stored_credentials_and_the_result_says
         given("https://h.example/y", 7),
         given("https://new:n@h.example/z", 7),
         ActionInput(type="trash", id=8),
+        confirm=True,
     )
 
     actions = state.workflows[0].actions
@@ -311,7 +312,7 @@ async def test_the_confirmation_does_not_claim_credentials_that_cannot_be_told(
 async def test_the_note_does_not_claim_credentials_that_cannot_be_told() -> None:
     service, _ = seeding(hooked(7, NAME))
 
-    done = await write(service, given("https://n.example/x", 7))
+    done = await write(service, given("https://n.example/x", 7), confirm=True)
 
     assert done.note == "Removed any credentials of: the webhook URL of action 1."
 
@@ -345,7 +346,7 @@ async def test_another_spelling_of_the_shown_url_keeps_what_its_id_stored(spelli
 async def test_a_path_in_other_letters_is_another_url() -> None:
     service, state = seeding(hooked(7, SECRET))
 
-    _ = await write(service, given("https://h.example/X?k=1", 7))
+    _ = await write(service, given("https://h.example/X?k=1", 7), confirm=True)
 
     assert url(state.workflows[0].actions[0]) == "https://h.example/X?k=1"
 
@@ -421,7 +422,7 @@ async def test_nothing_is_said_where_no_webhook_could_be_the_stored_one(
 
     if sent[-1].id == 8 and len(sent) == 2:
         service, _ = seeding(hooked(7, SECRET), hooked(8, OTHER))
-    done = await write(service, *sent)
+    done = await write(service, *sent, confirm=True)
 
     assert "Removed" not in str(done.note)
 
@@ -601,6 +602,178 @@ async def test_an_empty_user_name_alone_is_not_called_credentials(stored: str) -
 async def test_an_unclear_url_after_an_empty_user_name_may_hold_credentials() -> None:
     service, _ = seeding(hooked(7, "https://@us/er:pw@h.example/x"))
 
-    done = await write(service, given("https://n.example/x", 7))
+    done = await write(service, given("https://n.example/x", 7), confirm=True)
 
     assert done.note == "Removed any credentials of: the webhook URL of action 1."
+
+
+@pytest.mark.decision("decision-82")
+@pytest.mark.parametrize(
+    ("sent", "lost"),
+    [
+        ((), "of the webhook action 7 the value of 'A', the credentials of its URL"),
+        ((given("https://n.example/", 7),), "the value of 'A', the credentials of its URL"),
+        ((given(SECRET, 7),), "of the webhook action 7 the value of 'A'"),
+        ((given(SHOWN, 7),), "of the webhook action 7 the value of 'A'"),
+    ],
+    ids=["all", "other", "url-given", "url-kept"],
+)
+async def test_hidden_values_lost_while_disabled_are_confirmed(
+    sent: tuple[ActionInput, ...], lost: str
+) -> None:
+    hook = {"url": SECRET, "headers": {"A": "planted"}}
+    service, state = seeding(
+        WorkflowAction.model_validate({"id": 7, "type": 4, "settings": {"webhook": hook}})
+    )
+    before = list(state.workflows)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await write(service, *sent)
+
+    assert f"lose for good what is stored hidden: {lost}" in raised.value.message or (
+        sent and lost in raised.value.message
+    )
+    assert "planted" not in raised.value.message
+    assert state.workflows == before
+    _ = await write(service, *sent, confirm=True)
+
+
+@pytest.mark.decision("decision-82")
+async def test_hidden_values_written_back_or_given_again_need_no_yes_while_disabled() -> None:
+    hook = {"url": SECRET, "headers": {"A": "planted"}}
+    stored = WorkflowAction.model_validate({"id": 7, "type": 4, "settings": {"webhook": hook}})
+    kept = given(SHOWN, 7)
+    assert kept.webhook is not None
+    with_header = kept.webhook.model_copy(update={"headers": {"A": "(hidden)"}})
+    again = with_header.model_copy(update={"url": SECRET, "headers": {"A": "planted"}})
+    for number, webhook in ((7, with_header), (None, again)):
+        service, _ = seeding(stored)
+        _ = await write(service, ActionInput(type=4, id=number, webhook=webhook))
+
+
+@pytest.mark.decision("decision-82")
+async def test_an_enabled_workflow_says_what_else_is_lost_and_credentials_once() -> None:
+    hook = {"url": SECRET, "headers": {"A": "planted"}}
+    service, _ = seeding(
+        WorkflowAction.model_validate({"id": 7, "type": 4, "settings": {"webhook": hook}}),
+        enabled=True,
+    )
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await write(service, given("https://n.example/", 7))
+
+    message = raised.value.message
+    assert (
+        "lose for good what is stored hidden: of the webhook action 7 the value of 'A'," in message
+    )
+    assert message.count("credentials") == 1
+
+
+@pytest.mark.decision("decision-82")
+async def test_an_acceptance_does_not_cover_other_hidden_values() -> None:
+    found: list[str] = []
+    for value in ("one", "two"):
+        hook = {"url": "https://h.example/x", "headers": {"A": value}}
+        service, _ = seeding(
+            WorkflowAction.model_validate({"id": 7, "type": 4, "settings": {"webhook": hook}})
+        )
+        with pytest.raises(ConfirmationRequired) as raised:
+            _ = await write(service)
+        found.append(raised.value.fingerprint)
+
+    assert found[0] != found[1]
+
+
+def hidden(number: int, url_: str, **headers: str) -> WorkflowAction:
+    hook = {"url": url_, "headers": headers}
+    return WorkflowAction.model_validate({"id": number, "type": 4, "settings": {"webhook": hook}})
+
+
+@pytest.mark.decision("decision-82")
+async def test_every_lost_credential_is_named_also_beside_one_that_is_told_otherwise() -> None:
+    other = "https://b:planted@b.example/"
+    service, _ = seeding(hidden(7, SECRET), hidden(8, other), enabled=True)
+
+    # 7 gets another URL (decision-66 says so), 8 becomes an assignment under its own id.
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await write(
+            service,
+            given("https://n.example/", 7),
+            ActionInput(type=1, id=8, assign_title="x"),
+        )
+
+    message = raised.value.message
+    told = message.count("credentials of the stored URL") + message.count("credentials of its URL")
+    assert "remove the credentials of the stored URL" in message
+    assert "of the webhook action 8 the credentials of its URL" in message
+    assert told == 2
+
+
+@pytest.mark.decision("decision-82")
+async def test_credentials_no_action_keeps_are_told_once() -> None:
+    service, _ = seeding(hidden(7, SECRET), enabled=True)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await write(service, given("https://n.example/"))
+
+    assert "the stored credentials of 1 webhook URL" in raised.value.message
+    assert "lose for good" not in raised.value.message
+
+
+@pytest.mark.decision("decision-82")
+async def test_hidden_values_another_workflow_keeps_are_not_lost() -> None:
+    service, state = seeding(hidden(7, SECRET, A="planted"))
+    state.workflows.append(
+        state.workflows[0].model_copy(update={"id": 2, "name": "Other", "enabled": False})
+    )
+
+    _ = await write(service, ActionInput(type=1, assign_title="x"))
+
+
+@pytest.mark.decision("decision-82")
+async def test_credentials_counted_as_kept_by_no_action_are_not_named_again() -> None:
+    other = "https://b:planted@b.example/"
+    service, _ = seeding(hidden(7, SECRET), hidden(8, other), enabled=True)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await write(
+            service,
+            given("https://n.example/"),
+            ActionInput(type=1, id=8, assign_title="x"),
+        )
+
+    assert "the stored credentials of 2 webhook URLs" in raised.value.message
+    assert "credentials of its URL" not in raised.value.message
+
+
+@pytest.mark.decision("decision-82")
+async def test_credentials_of_an_action_of_another_type_are_named() -> None:
+    odd = WorkflowAction.model_validate(
+        {"id": 8, "type": 1, "settings": {"webhook": {"url": "https://b:planted@b.example/"}}}
+    )
+    service, _ = seeding(hidden(7, SECRET), odd, enabled=True)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await write(service, given("https://n.example/"))
+
+    assert "the stored credentials of 1 webhook URL" in raised.value.message
+    assert "of the assignment action 8 the credentials of its URL" in raised.value.message
+
+
+@pytest.mark.decision("decision-82")
+async def test_only_the_action_with_the_id_keeps_what_is_hidden() -> None:
+    service, _ = seeding(hidden(7, "https://h.example/x", A="planted"))
+    kept = WebhookSettings(url="https://h.example/x", headers={"A": "planted"})
+    other = WebhookSettings(url="https://h.example/x", headers={})
+
+    # Another action holds the same values, but the one with the id has lost them.
+    with pytest.raises(ConfirmationRequired):
+        _ = await write(
+            service,
+            ActionInput(type=4, id=7, webhook=other),
+            ActionInput(type=4, webhook=kept),
+        )
+    # Of two actions with the id, one keeps them.
+    _ = await write(
+        service, ActionInput(type=4, id=7, webhook=other), ActionInput(type=4, id=7, webhook=kept)
+    )

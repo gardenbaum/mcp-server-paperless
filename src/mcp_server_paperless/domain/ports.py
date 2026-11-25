@@ -97,6 +97,8 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.versions import VersionPage, VersionUpload
     from mcp_server_paperless.domain.views import SavedView, ViewValues
     from mcp_server_paperless.domain.workflows import (
+        PartKind,
+        PartWrite,
         Workflow,
         WorkflowAction,
         WorkflowRun,
@@ -1420,6 +1422,22 @@ class WorkflowWriter(Protocol):
             NotFound: No such workflow.
             PermissionDenied: The user may not change workflows.
             Validation: Paperless rejected a value.
+        """
+        ...
+
+    async def update_workflow_parts(
+        self, workflow_id: int, kind: PartKind, parts: Sequence[PartWrite]
+    ) -> None:
+        """Make ``parts`` the triggers or the actions of the workflow, in this order.
+
+        The other list is left alone, and so is what a part does not send. Read the workflow
+        afterwards: what Paperless answers does not have the actions in their order. Paperless
+        checks no ids: one that is gone is made anew, one of another workflow is changed there too.
+
+        Raises:
+            NotFound: No such workflow.
+            PermissionDenied: The user may not change workflows.
+            Validation: Paperless rejects a part or the lists together.
         """
         ...
 

@@ -327,7 +327,7 @@ task = "PLMCP-83"
 
 [[open_fields]]
 operation = "PATCH /api/workflows/{id}/"
-fields = ["body:actions[].ai_create_missing", "body:actions[].ai_overwrite_existing", "body:actions[].ai_suggestion_fields", "body:actions[].id", "body:actions[].passwords", "body:triggers[].id"]
+fields = ["body:actions[].ai_create_missing", "body:actions[].ai_overwrite_existing", "body:actions[].ai_suggestion_fields", "body:actions[].passwords"]
 task = "PLMCP-87"
 
 [[open_fields]]
