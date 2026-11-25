@@ -606,7 +606,10 @@ Limits.
   to want are `[[plumbing]]` (a projection, a flag that reads the grants, a constant of a list
   helper): they are shown apart, below, as no feature.
 - A covered GET does not mean that the whole answer is shown: a tool may read an answer and show
-  only part of it (for example the view visibility in `GET /api/ui_settings/`, PLMCP-88).
+  only part of it (`GET /api/ui_settings/`: of the settings the pins of saved views).
+- A covered POST does not mean that all of its content can be chosen: `POST /api/ui_settings/` sends
+  the settings back as read, and `pin_saved_view` chooses the pins of saved views only. The rest of
+  the settings belongs to PLMCP-83.
 - Requests of streamed bodies are recorded but not checked against the schema; the adapter tests
   check the others.
 

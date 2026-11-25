@@ -36,6 +36,7 @@ from mcp_server_paperless.domain.views import (
 )
 from mcp_server_paperless.services.filter_rules import check_sort, translate
 from mcp_server_paperless.services.taxonomy import fold, pick
+from mcp_server_paperless.services.view_pins import DASHBOARD, SIDEBAR, pinned
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -43,9 +44,16 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.documents import DocumentQuery, DocumentSearchResult, NameOrId
     from mcp_server_paperless.domain.ports import ViewReader, ViewWriter
     from mcp_server_paperless.domain.taxonomy import TaxonomyKind
-    from mcp_server_paperless.domain.views import RuleInput, SavedView, ViewCreate, ViewEdit
+    from mcp_server_paperless.domain.views import (
+        PinnedView,
+        RuleInput,
+        SavedView,
+        ViewCreate,
+        ViewEdit,
+    )
     from mcp_server_paperless.services.documents import DocumentService
     from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+    from mcp_server_paperless.services.view_pins import Settings, ViewPins
 
 # The taxonomy kind whose objects the value of each rule type names.
 VALUE_KINDS: Final[Mapping[int, TaxonomyKind]] = {
@@ -79,8 +87,10 @@ def _described(view: SavedView) -> str:
     return f"saved view {quoted(view.name)} (id {view.id})"
 
 
-def info(view: SavedView, field_names: Mapping[int, str]) -> SavedViewInfo:
-    """The view as tools show it, its rule types with labels, custom fields with their names."""
+def info(
+    view: SavedView, field_names: Mapping[int, str], settings: Settings | None
+) -> SavedViewInfo:
+    """The view as tools show it, with labels, names of custom fields and where it is pinned."""
     fields = view.display_fields
     return SavedViewInfo(
         id=view.id,
@@ -95,6 +105,8 @@ def info(view: SavedView, field_names: Mapping[int, str]) -> SavedViewInfo:
         else tuple(
             DisplayField(field=f, name=field_names.get(display_field_id(f) or 0)) for f in fields
         ),
+        on_dashboard=None if settings is None else pinned(settings, DASHBOARD, view.id),
+        in_sidebar=None if settings is None else pinned(settings, SIDEBAR, view.id),
         owner=view.owner,
         can_change=view.user_can_change,
         rules=tuple(
@@ -154,12 +166,14 @@ class ViewService:
         writer: ViewWriter,
         taxonomy: TaxonomyResolver,
         documents: DocumentService,
+        pins: ViewPins,
     ) -> None:
         """Read through ``reader``, write through ``writer``, search with ``documents``."""
         self._reader: ViewReader = reader
         self._writer: ViewWriter = writer
         self._taxonomy: TaxonomyResolver = taxonomy
         self._documents: DocumentService = documents
+        self._pins: ViewPins = pins
 
     async def list(self) -> SavedViewListing:
         """Every saved view the user may see, with its rules.
@@ -240,6 +254,17 @@ class ViewService:
         [shown] = await self._infos(made)
         return shown
 
+    async def pin(
+        self, view: NameOrId, *, dashboard: bool | None, sidebar: bool | None
+    ) -> PinnedView:
+        """Put a view the user sees on the dashboard or into the sidebar; see ``ViewPins.pin``.
+
+        Raises:
+            NotFound: No such view.
+            Ambiguous: The name matches several views.
+        """
+        return await self._pins.pin(await self._find(view), dashboard=dashboard, sidebar=sidebar)
+
     async def delete(self, view: NameOrId, *, confirm: bool) -> ViewDeletion:
         """Delete a view for good; without ``confirm`` refuse and say what deleting it does.
 
@@ -293,7 +318,8 @@ class ViewService:
             # What was written stays written: a failed lookup costs only the names.
             with contextlib.suppress(PaperlessMcpError):
                 names = {item.id: item.name for item in await self._taxonomy.items("custom_field")}
-        return tuple(info(view, names) for view in views)
+        settings = await self._pins.settings()
+        return tuple(info(view, names, settings) for view in views)
 
     async def _check_display(self, given: ViewCreate | ViewEdit) -> None:
         """Refuse an icon or display fields Paperless rejects, fails on or stores for nothing."""

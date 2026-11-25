@@ -1,9 +1,11 @@
 ---
 id: PLMCP-88.2
 title: 'Saved views b: pin_saved_view for dashboard and sidebar'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-25T10:18:27Z'
+updated_date: '2026-11-25T10:48:35Z'
 labels:
   - views
 dependencies:
@@ -35,3 +37,20 @@ Second part of PLMCP-88: in API 10 the dashboard and the sidebar of a user live 
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Tests first: adapter (GET bounded, computed keys stripped, POST body), contract on fake and live, service (matrix, other writer, lost answer, malformed, parallel calls, property), tool, E2E stdio and HTTP.
+2. UiSettingsReader/Writer, paperless/ui_settings.py, services/view_pins.py, pin_saved_view, on_dashboard/in_sidebar.
+3. decision-92, coverage, docs, snapshots, guide limit +17 (approved).
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented, decision-92. Red first: adapter and service modules failed to import, contract 4 and tool 4 tests red on the fake, then green; E2E (memory, stdio, HTTP) written before its first hosted run. 35 hand mutants, 10 survived first (9 closed by tests, one by deleting code), then none.
+Beyond the design: calls of one server wait for each other (parallel tool calls would undo each other); an answer to create or update also shows where the view is (one request more).
+For PLMCP-83: POST /api/ui_settings/ counts as covered in the table; the other settings stay open there (Limits text of api-coverage.md).
+just check was not run as a whole locally.
+<!-- SECTION:NOTES:END -->
