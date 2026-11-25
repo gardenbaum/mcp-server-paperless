@@ -1,15 +1,14 @@
 """Helpers behind the e2e CI check (PLMCP-39, decision-30): here, not in shell, to be tested.
 
-Three workflows run the live suite. On a pull request the `e2e` job (ci.yml, not a required check:
-decision-24) runs a fast tier chosen from the changed paths; after a merge and nightly,
-`e2e-full.yml` runs everything in parallel shards; weekly, `e2e-latest.yml` runs the same shards
-against the latest paperless-ngx 3.x, resolved once by its `resolve` job (PLMCP-45).
+Two workflows run the live suite: `e2e-full.yml` in parallel shards, dispatched before a release
+(decision-112), and weekly `e2e-latest.yml` the same shards against the latest paperless-ngx 3.x,
+resolved once by its `resolve` job (PLMCP-45). No pull request and no merge runs it.
 
 * ``scope``: reads the NUL-separated changed paths on stdin and prints ``mode=skip|fast`` and
   ``targets=<pytest paths>``. Skip only when every path is documentation or project management.
   Otherwise the tier is the stdio smoke test plus the live contract and e2e modules of the
   toolsets the change touches; a change outside the toolset map adds a small smoke set instead of
-  the whole suite, which the full run covers after the merge.
+  the whole suite. No workflow calls it any more; it picks modules for `just e2e-paths` by hand.
 * The shards: `just e2e-shard K/N` runs the part of the live suite that ``assign_shards`` gives
   shard K; the pytest option ``--e2e-shard K/N`` (tests/conftest.py) applies it.
 * ``workflow_problems`` guards the wiring and the hang guards (timeouts) of the three workflows.
@@ -22,7 +21,7 @@ import sys
 from collections.abc import Collection, Mapping, Sequence  # noqa: TC003 -- the CI jobs run this file on the runner's python 3.12, which evaluates annotations
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TextIO, cast
+from typing import TextIO
 
 # The number of parallel jobs of the full run. Its matrix lists the same shards (a test checks it).
 SHARDS = 6
@@ -115,16 +114,15 @@ MODULE_SECONDS: dict[str, float] = {
     "tests/e2e/test_trash_order.py": 0,
 }
 
-# The hang guards of the two workflows in minutes (a test reads the real files): the fast tier is
-# expected in a few minutes, a shard of the full run in about 15 on a hosted runner. They bound a
-# stuck run; they are no quality gate and must not creep up again to hide a slow suite.
-PR_TIMEOUT_MINUTES = 20
+# The hang guard of the two workflows in minutes (a test reads the real files): a shard is expected
+# in about 15 on a hosted runner. It bounds a stuck run; it is no quality gate and must not creep up
+# again to hide a slow suite.
 SHARD_TIMEOUT_MINUTES = 25
 
 # A tier heavier than this (recorded seconds) is split over up to TIER_PARTS parallel jobs of the
 # `e2e` matrix (a cross-cutting change would pass the 20-minute guard on a hosted runner). Weights
 # and budget are hosted-runner seconds (decision-30); the number of shards and parts is
-# decision-76's. The full run covers everything after the merge.
+# decision-76's. No workflow runs a tier any more (decision-112).
 TIER_BUDGET_SECONDS = 450.0
 TIER_PARTS = 6
 
@@ -416,11 +414,7 @@ def assign_shards(
 _JOBS = re.compile(r"^jobs:[ \t]*$", re.MULTILINE)
 _JOB = re.compile(r"^  ([\w-]+):[ \t]*$", re.MULTILINE)
 _KEY = re.compile(r"^    ([\w-]+):[ \t]*(.*?)[ \t]*$", re.MULTILINE)
-_STEP_IF = re.compile(r"^(?:      - |        )if:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
 _SHARD_LIST = re.compile(r"^\s+shard:\s*\[(.*)\]\s*$", re.MULTILINE)
-_PART_LIST = re.compile(r"^\s+part:\s*\[(.*)\]\s*$", re.MULTILINE)
-_ON_PULL_REQUEST = "github.event_name == 'pull_request'"
-_NOT_SKIPPED = "steps.scope.outputs.mode != 'skip'"
 
 
 def _jobs(workflow: str) -> dict[str, str]:
@@ -444,36 +438,9 @@ def _timeout_problems(name: str, keys: Mapping[str, str], limit: int) -> list[st
 
 
 def _pull_request_problems(workflow: str) -> list[str]:
-    job = _jobs(workflow).get("e2e")
-    if job is None:
-        return ["no job `e2e` in ci.yml: the pull request would get no live signal"]
-    keys = _keys(job)
-    problems: list[str] = []
-    if keys.get("if", _ON_PULL_REQUEST) != _ON_PULL_REQUEST:
-        problems.append(f"`e2e` may have no `if` but `{_ON_PULL_REQUEST}`: a skipped job passes")
-    if "name" in keys and not keys["name"].startswith("e2e"):
-        problems.append("`e2e` must keep a name starting with `e2e` (decision-23)")
-    if "continue-on-error" in job:
-        problems.append("`e2e` sets continue-on-error: a failure would not fail the check")
-    if "id: scope" not in job or "e2e_ci.py scope" not in job:
-        problems.append("`e2e` needs the scope step (`id: scope`, scripts/e2e_ci.py scope)")
-    listed = _PART_LIST.search(job)
-    parts = [item.strip().strip("\"'") for item in listed[1].split(",")] if listed else []
-    if parts != [f"{n}/{TIER_PARTS}" for n in range(1, TIER_PARTS + 1)]:
-        problems.append(
-            f"the matrix of `e2e` must list the parts 1/{TIER_PARTS} to {TIER_PARTS}/{TIER_PARTS}"
-        )
-    if "scope --part" not in job:
-        problems.append("`e2e` must give the scope its matrix part (`scope --part`)")
-    if "just e2e-paths" not in job:
-        problems.append("`e2e` must run the tier with `just e2e-paths`")
-    problems += _timeout_problems("e2e", keys, PR_TIMEOUT_MINUTES)
-    problems += [
-        f"a step of `e2e` has `if: {condition}`; only `{_NOT_SKIPPED}` may skip a step on mode"
-        for condition in cast("list[str]", _STEP_IF.findall(job))
-        if condition not in {_NOT_SKIPPED, f"failure() && {_NOT_SKIPPED}"}
-    ]
-    return problems
+    if "e2e" in _jobs(workflow) or "just e2e" in workflow:
+        return ["ci.yml runs live tests: they run before a release only (decision-112)"]
+    return []
 
 
 def _full_run_problems(workflow: str, shards: int) -> list[str]:
@@ -490,10 +457,10 @@ def _full_run_problems(workflow: str, shards: int) -> list[str]:
     found = [item.strip().strip("\"'") for item in listed[1].split(",")] if listed else []
     if found != [f"{n}/{shards}" for n in range(1, shards + 1)]:
         problems.append(f"the matrix of `e2e-shard` must list 1/{shards} to {shards}/{shards}")
-    if not re.search(r"^  push:\s*\n\s+branches:\s*\[main\]", workflow, re.MULTILINE):
-        problems.append("e2e-full.yml must run on every push to main")
-    if not re.search(r"^  schedule:", workflow, re.MULTILINE):
-        problems.append("e2e-full.yml must run on a schedule")
+    if not re.search(r"^  workflow_dispatch:", workflow, re.MULTILINE):
+        problems.append("e2e-full.yml must offer workflow_dispatch: a release needs a run")
+    if re.search(r"^  (push|schedule|pull_request):", workflow, re.MULTILINE):
+        problems.append("e2e-full.yml may run only when dispatched (decision-112)")
     return problems
 
 
