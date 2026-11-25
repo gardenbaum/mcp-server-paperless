@@ -1517,7 +1517,7 @@ class AdminReader(Protocol):
         """
         ...
 
-    async def list_tasks(
+    async def list_tasks(  # noqa: PLR0913 -- one parameter per filter
         self,
         *,
         state: TaskState | None,
@@ -1525,8 +1525,9 @@ class AdminReader(Protocol):
         acknowledged: bool | None,
         page: int,
         page_size: int,
+        created: tuple[datetime, datetime] | None = None,
     ) -> TaskRowPage:
-        """One page of tasks, newest first, optionally filtered.
+        """One page of tasks, newest first, optionally filtered, also to those created between two moments.
 
         Raises:
             NotFound: ``page`` is beyond the last page.

@@ -778,3 +778,71 @@ class PartEdit(BaseModel):
     action: ActionInput | None = None
     clear: tuple[str, ...] = ()
     position: int | None = None
+
+
+type CheckResult = Literal["ok", "no", "unknown"]
+type Verdict = Literal["yes", "no", "unknown"]
+
+
+class FilterCheck(BaseModel):
+    """One filter of a trigger, compared with a document."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    filter: Annotated[str, Field(description="The setting, named as create_workflow takes it.")]
+    result: CheckResult
+    why: str
+    last_change: Annotated[
+        str | None, Field(description="When the document's value last changed, by its history.")
+    ] = None
+
+
+class TriggerExplanation(BaseModel):
+    """A trigger of a workflow, compared with a document in the order Paperless checks."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int | None
+    type_name: str
+    fires: Annotated[str, Field(description="When Paperless looks at it.")]
+    matches: Verdict
+    checks: tuple[FilterCheck, ...]
+
+
+class LogFinding(BaseModel):
+    """What a record of the log says of a workflow, in this server's words."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    time: Annotated[str, Field(description="As the log has it, in the time zone of Paperless.")]
+    said: str
+    whose: Annotated[
+        Literal["this document", "perhaps this document"],
+        Field(description="Certain by the consume task only; perhaps: by the time."),
+    ]
+
+
+class WorkflowExplanation(BaseModel):
+    """Why a workflow ran on a document or did not, as far as stored facts tell."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    note: Annotated[str, Field(description="What this is: an inference, not a record of runs.")]
+    workflow_id: int
+    workflow: str
+    enabled: bool
+    order: int
+    document_id: int
+    would_match_now: Verdict
+    did_run: Annotated[
+        Literal["yes", "unknown"], Field(description="yes only with a log record of this document.")
+    ]
+    message: str
+    triggers: tuple[TriggerExplanation, ...]
+    log: tuple[LogFinding, ...]
+    log_from: Annotated[
+        str | None, Field(description="Time of the oldest log record that was read.")
+    ] = None
+    not_checked: Annotated[
+        tuple[str, ...], Field(description="What could not be looked at, and why.")
+    ] = ()

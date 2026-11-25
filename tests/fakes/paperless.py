@@ -3717,7 +3717,7 @@ class FakePaperless:
             raise unseen_log(name)
         return tuple(self.state.logs[name][-limit:])
 
-    async def list_tasks(
+    async def list_tasks(  # noqa: PLR0913 -- one parameter per filter
         self,
         *,
         state: TaskState | None,
@@ -3725,6 +3725,7 @@ class FakePaperless:
         acknowledged: bool | None,
         page: int,
         page_size: int,
+        created: tuple[datetime, datetime] | None = None,
     ) -> TaskRowPage:
         """`AdminReader.list_tasks` (TasksViewSet list, newest first)."""
         self._need("view_paperlesstask", VIEW_TASKS)
@@ -3746,6 +3747,7 @@ class FakePaperless:
             )
             for t in tasks
             if (state is None or t.status == state)
+            and (created is None or created[0] <= t.created <= created[1])
             and (task_type is None or t.task_type == task_type)
             and (acknowledged is None or t.acknowledged == acknowledged)
         )
