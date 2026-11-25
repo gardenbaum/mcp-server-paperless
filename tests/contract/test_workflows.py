@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
 
 LIST, GET = "WorkflowReader.list_workflows", "WorkflowReader.get_workflow"
+TRIGGER, ACTION = "WorkflowReader.get_trigger", "WorkflowReader.get_action"
 CREATE, UPDATE, DELETE = (
     "WorkflowWriter.create_workflow",
     "WorkflowWriter.update_workflow",
@@ -368,3 +369,109 @@ async def test_a_missing_workflow_cannot_be_deleted_and_a_viewer_cannot_either(
         await viewer.workflow_writes.delete_workflow(made.id)
 
     assert await backend.admin.workflows.get_workflow(made.id) == made
+
+
+@pytest.mark.decision("decision-81")
+@pytest.mark.contract(LIST)
+async def test_the_list_is_filtered_by_enabled_and_by_trigger_type(backend: Backend) -> None:
+    writer = backend.admin.workflow_writes
+    by_hand = WorkflowTrigger(type=5)
+    off = await writer.create_workflow(scratch(), safe())
+    on = await writer.create_workflow(scratch(), safe(enabled=True))
+    twice = await writer.create_workflow(scratch(), safe(triggers=(by_hand, NEVER, by_hand)))
+    mine = {off.id, on.id, twice.id}
+
+    async def listed(*, enabled: bool | None = None, trigger_type: int | None = None) -> list[int]:
+        found = await backend.admin.workflows.list_workflows(
+            enabled=enabled, trigger_type=trigger_type
+        )
+        return sorted(w.id for w in found if w.id in mine)
+
+    assert await listed() == [off.id, on.id, twice.id]
+    assert await listed(enabled=True) == [on.id]
+    assert await listed(enabled=False) == [off.id, twice.id]
+    assert await listed(trigger_type=5) == [twice.id]
+    assert await listed(trigger_type=1) == [off.id, on.id, twice.id]
+    assert await listed(enabled=True, trigger_type=5) == []
+    assert await listed(trigger_type=99) == []
+
+
+@pytest.mark.decision("decision-81")
+@pytest.mark.contract(TRIGGER)
+@pytest.mark.contract(ACTION)
+async def test_a_single_part_is_what_its_workflow_holds(backend: Backend) -> None:
+    mail: dict[str, JsonValue] = {"subject": "s", "body": "b", "to": "a@example.org"}
+    hook: dict[str, JsonValue] = {
+        "url": "https://user:pw@example.org/hook",
+        "params": {},
+        "headers": {"X-Token": "secret"},
+    }
+    made = await backend.admin.workflow_writes.create_workflow(
+        scratch(),
+        safe(
+            triggers=(NEVER, WorkflowTrigger(type=5)),
+            actions=(
+                RETITLE,
+                WorkflowAction(type=3, settings={"email": mail}),
+                WorkflowAction(type=4, settings={"webhook": hook}),
+            ),
+        ),
+    )
+    # The permission for workflows is not needed, the one for the parts is.
+    viewer = backend.restricted(frozenset({"view_workflowtrigger", "view_workflowaction"}))
+
+    for ports in (backend.admin, viewer):
+        for trigger in made.triggers:
+            assert trigger.id is not None
+            assert await ports.workflows.get_trigger(trigger.id) == trigger
+        for action in made.actions:
+            assert action.id is not None
+            assert await ports.workflows.get_action(action.id) == action
+
+
+@pytest.mark.decision("decision-81")
+@pytest.mark.contract(TRIGGER)
+@pytest.mark.contract(ACTION)
+async def test_a_missing_part_is_not_found_and_the_view_permission_is_needed(
+    backend: Backend,
+) -> None:
+    made = await backend.admin.workflow_writes.create_workflow(scratch(), safe())
+    trigger, action = made.triggers[0].id, made.actions[0].id
+    assert trigger is not None
+    assert action is not None
+    viewer = backend.restricted(VIEWING)
+
+    with pytest.raises(NotFound, match="No workflow trigger 999999"):
+        _ = await backend.admin.workflows.get_trigger(999_999)
+    with pytest.raises(NotFound, match="No workflow action 999999"):
+        _ = await backend.admin.workflows.get_action(999_999)
+    for number in (trigger, 999_999):
+        with pytest.raises(PermissionDenied):
+            _ = await viewer.workflows.get_trigger(number)
+    for number in (action, 999_999):
+        with pytest.raises(PermissionDenied):
+            _ = await viewer.workflows.get_action(number)
+
+
+@pytest.mark.decision("decision-81")
+@pytest.mark.contract(TRIGGER)
+@pytest.mark.contract(ACTION)
+async def test_the_parts_of_a_deleted_workflow_stay_until_the_next_update_of_any_workflow(
+    backend: Backend,
+) -> None:
+    writer, reader = backend.admin.workflow_writes, backend.admin.workflows
+    other = await writer.create_workflow(scratch(), safe())
+    gone = await writer.create_workflow(scratch(), safe())
+    trigger, action = gone.triggers[0].id, gone.actions[0].id
+    assert trigger is not None
+    assert action is not None
+
+    await writer.delete_workflow(gone.id)
+
+    assert await reader.get_trigger(trigger) == gone.triggers[0]
+    assert await reader.get_action(action) == gone.actions[0]
+    _ = await writer.update_workflow(other.id, WorkflowValues(order=4))
+    with pytest.raises(NotFound):
+        _ = await reader.get_trigger(trigger)
+    with pytest.raises(NotFound):
+        _ = await reader.get_action(action)
