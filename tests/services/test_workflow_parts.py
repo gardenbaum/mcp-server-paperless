@@ -1324,3 +1324,41 @@ async def test_a_new_copied_url_is_told_at_its_place() -> None:
     info = await setup.do(operation="add", action=shown)
 
     assert "the webhook URL of action 2" in str(info.note)
+
+
+async def test_fields_are_not_cleared_beside_values_that_add_them() -> None:
+    setup = Setup(writes=False)
+    _ = setup.seed()
+    values = ActionInput(type=1, assign_custom_fields_values={"1": "x"})
+
+    with pytest.raises(Validation, match="assign_custom_fields_values adds its fields") as raised:
+        _ = await setup.do(**CHANGE, action_id=11, action=values, clear=("assign_custom_fields",))
+
+    assert "Give assign_custom_fields" in str(raised.value.hint)
+
+
+async def test_a_refusal_that_wrote_a_part_is_told_and_one_that_wrote_nothing_passes() -> None:
+    refusal = Validation("Paperless rejected it.")
+    for unwritten, said in (
+        (True, r"^Paperless rejected it\.$"),
+        (False, r"rejected it\. Read again: the workflow was changed in part: .*not planned"),
+    ):
+        setup = Setup()
+        _ = setup.seed([BY_HAND], [TITLE])
+        setup.fake.unwritten, setup.fake.fails = unwritten, refusal
+        with pytest.raises(PaperlessMcpError, match=said):
+            _ = await setup.do(operation="add", action=RETITLE)
+
+    unread = Setup()
+    _ = unread.seed([BY_HAND], [TITLE])
+    unread.fake.unwritten, unread.fake.fails, unread.fake.unread = True, refusal, LOST
+    with pytest.raises(PaperlessMcpError, match="whether a part of it was written is not known"):
+        _ = await unread.do(operation="add", action=RETITLE)
+
+
+async def test_one_broken_rule_does_not_allow_another_to_be_broken() -> None:
+    setup = Setup(writes=False)
+    _ = setup.seed([trigger(2)], [READS, SUGGESTS])
+
+    with pytest.raises(Validation, match="applying AI suggestions needs a trigger other"):
+        _ = await setup.do(operation="remove", trigger_id=2)
