@@ -37,7 +37,7 @@ removes `X-Api-Version` too, the server does not start against it.
 
 | Variable | Meaning |
 |---|---|
-| `PAPERLESS_MCP_TOOLSETS` | Toolsets to offer, comma-separated, or `all` (default `core,ai`). See [Toolsets](#toolsets) |
+| `PAPERLESS_MCP_TOOLSETS` | Toolsets to offer, comma-separated, or `all` (default `core,ai`); `name:read` offers a toolset [only for reading](#a-toolset-only-for-reading). See [Toolsets](#toolsets) |
 | `PAPERLESS_MCP_READ_ONLY` | `true` to offer only tools that change nothing (default `false`). See [What the model can do](#what-the-model-can-do) |
 | `PAPERLESS_MCP_REQUIRE_DIALOG` | `true` to let only an accepted dialog confirm; `confirm=true` then confirms nothing (default `false`). See [Only dialogs confirm](#only-dialogs-confirm) |
 | `PAPERLESS_MCP_DISABLED_TOOLS` | Tools never offered, whatever the toolsets say, e.g. `ask_paperless_ai,get_ai_suggestions` |
@@ -48,7 +48,7 @@ removes `X-Api-Version` too, the server does not start against it.
 | `PAPERLESS_MCP_LOG_LEVEL` | `DEBUG`, `INFO` (default), `WARNING`, `ERROR` or `CRITICAL` |
 | `PAPERLESS_MCP_STARTUP_TIMEOUT` | Seconds the startup check may take (default 5) |
 
-A misspelt toolset or tool name stops the server at startup with a message that names the known
+A misspelt toolset, suffix or tool name stops the server at startup with a message that names the known
 ones; so does a selection that leaves no tool.
 
 A variable that is set but empty stops the server too, so that an empty `PAPERLESS_MCP_READ_ONLY`
@@ -70,6 +70,8 @@ Three settings narrow the tools a client is offered. A tool that is not offered 
   in Paperless or on this machine, from whichever toolsets are selected: searching, reading,
   listing, downloading. Downloads are then never saved, whatever `PAPERLESS_MCP_DOWNLOAD_DIRS` says.
   The prompts that need a writing tool are not offered either.
+  To read only some toolsets, write `name:read` (see [A toolset only for
+  reading](#a-toolset-only-for-reading)).
 - **Disabled tools** (`PAPERLESS_MCP_DISABLED_TOOLS`). Takes single tools away by name.
 
 Whatever is offered, the Paperless permissions of the token's user still apply, and tools that
@@ -77,6 +79,30 @@ can lose data or widen access have a [confirmation step](#confirmation). Every
 tool also tells the client whether it only reads or may change or remove data (its MCP
 annotations), which clients use for their own approval prompts. The [tool
 reference](tools.md) lists the kind of every tool.
+
+### A toolset only for reading
+
+`name:read` in `PAPERLESS_MCP_TOOLSETS` offers only the tools of that toolset that change nothing,
+whatever the other toolsets may do:
+
+```sh
+PAPERLESS_MCP_TOOLSETS=core,ai,mail:read,workflows:read
+```
+
+- The tools left are the ones the [tool reference](tools.md) marks as reading, the same that
+  read-only mode leaves. Of `mail` that leaves out `test_mail_account`, which contacts a mail server.
+- A read-only `core` or `admin` never saves a download, whatever `PAPERLESS_MCP_DOWNLOAD_DIRS` says: its
+  download tool only attaches. The other one still saves.
+- `run_saved_view` belongs to `core`, so `views:read` does not touch it. Prompts that need a writing tool of a
+  read-only toolset are not offered.
+- `PAPERLESS_MCP_READ_ONLY=true` wins: then everything is read-only. `all` stands alone: list every
+  toolset to make some of them read-only, and use `PAPERLESS_MCP_READ_ONLY` instead of `all:read`.
+  Another suffix, or a toolset both with and without it, stops the server.
+- The assistant is told that the toolset is read-only, and the setting it names keeps the suffix.
+- It is about what these tools change in Paperless and on this machine. A reading tool can still cost
+  money (`ai`) or show much (`raw`), and what the Paperless token may do stays: give the server the
+  token of a restricted user where that matters.
+- Releases up to 0.4.0 do not know the suffix and refuse to start.
 
 ### Confirmation
 
@@ -130,7 +156,9 @@ Only you can: the assistant cannot change the selection, neither for the server 
 (decision-41), and is told to ask you. It is told which toolsets are off and what each adds, so
 that it can say what to set instead of calling a feature missing. The instructions give the
 setting first, as `PAPERLESS_MCP_TOOLSETS=core,ai,<name>` (what is on now plus the toolset needed,
-never `all`, which offers every tool), then the list of toolsets that are off. Nothing is listed
+never `all`, which offers every tool; a `:read` stays in it), then the list of toolsets that are off.
+A toolset that is [only read](#a-toolset-only-for-reading) is marked "read-only" among those that are
+on, unless read-only mode is on. Nothing is listed
 that read-only mode, disabled tools or a Paperless without the capability (Paperless AI for `ai`)
 leaves out, and a toolset that read-only mode or disabled tools cut down is said to offer "some of
 its tools" (the overview names them). When Paperless did not say whether AI is on (the user may
@@ -546,7 +574,8 @@ ranges and the server keeps nothing between calls, so every part reads the file 
 (and `save_as`): the file is saved on the machine the server runs on, and only a report comes back.
 
 - Directories are named as for uploads by path, with the same entries refused. Only the stdio
-  transport offers it, and not in read-only mode; over HTTP nothing is ever saved. Where it is
+  transport offers it, and not in read-only mode or for a [read-only
+  toolset](#a-toolset-only-for-reading); over HTTP nothing is ever saved. Where it is
   offered, the two tools no longer count as read-only, so a client may ask before each call of them,
   also when nothing is saved.
 - `save_dir` is an existing directory inside these directories; none is created. Symlinks are

@@ -6,7 +6,9 @@ about four bytes a token). The limits are tight on purpose: a longer guide has t
 with a reason, instead of growing unnoticed. They are measured on the worst case, which is built
 from the real catalogue and searched, not sampled:
 
-- Instructions: every toolset but one is listed, so the selection is each single toolset in turn;
+- Instructions: every toolset but one is listed, so the selection is each single toolset in turn,
+  also read-only (PLMCP-90: its mark and the suffix in the value), and from there every read-only
+  toolset whose mark and suffix are longer than its line among those that are off (``grown``);
   a toolset is described by its summary, or by ``PARTIAL`` where that is longer and a disabled
   tool cuts it down; Paperless AI is unknown (its gap is named); the overview tool is on or off.
   The instructions name no tool, so the count of tools does not matter.
@@ -44,7 +46,11 @@ BASE_OVERVIEW_DEFINITION = 4442
 # The limits, in bytes: the instructions as a whole (so the guide adds at most the difference to
 # BASE_INSTRUCTIONS), the guide in a call of the overview, and the growth of the overview's
 # definition in tools/list (its output schema).
-INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut down)
+#
+# Measured 1423 at most before PLMCP-90 (core alone, AI unknown, cut down), 1440 with core:read, and
+# 1451 with core, views, pdf and workflows all read-only, whose lines among those that are off are
+# shorter. The owner approved up to 1465 on 2026-11-24 (PLMCP-89 and 90); this is what was measured.
+INSTRUCTIONS_LIMIT = 1451
 # Measured 2943 (core alone, nothing cut, stdio with upload directories): 19 bytes of
 # upload_documents (PLMCP-85) and 21 of resolve_duplicates (PLMCP-86) over the 2758 of HTTP before,
 # both approved by the owner on 2026-11-23; and 37 of get_trash_entry and get_trashed_file
@@ -56,8 +62,8 @@ INSTRUCTIONS_LIMIT = 1450  # measured 1423 at most (core alone, AI unknown, cut 
 # 2026-11-24. And 21 of get_processed_mail (PLMCP-81.1), of the 67 for the three names of PLMCP-81
 # (2943 to 3010) the owner approved on 2026-11-24; and 24 of delete_processed_mail (PLMCP-81.3). And
 # 23 of update_workflow_part (PLMCP-87.2), of the 42 of PLMCP-87 (3010 to 3052) in the steps up to
-# 3229 the owner approved on 2026-11-24.
-OVERVIEW_GUIDE_LIMIT = 3011
+# 3229 the owner approved on 2026-11-24. And 17 of the mark and the suffix of core:read (PLMCP-90).
+OVERVIEW_GUIDE_LIMIT = 3028
 # Measured 879: 747 before, plus 132 of too_old (PLMCP-101); the rise from 750 was approved by the
 # owner on 2026-11-24.
 DEFINITION_ADDED_LIMIT = 879
@@ -112,18 +118,43 @@ async def measure(
         return len((client.instructions or "").encode()), guide
 
 
+def others(selection: Sequence[str]) -> list[str]:
+    """``cut_down`` without the selected toolsets: there it changes no text, and may leave none."""
+    on = {entry.removesuffix(":read") for entry in selection}
+    return [tool for tool in cut_down() if TOOL_TOOLSETS[tool] not in on]
+
+
+async def grown(selection: list[str]) -> tuple[list[str], int]:
+    """The selection with every read-only toolset that makes the instructions longer, their size.
+
+    Each toolset adds its own words only, so one after the other finds the longest.
+    """
+    longest, _ = await measure(selection, others(selection))
+    for name in TOOLSETS:
+        if name not in {entry.removesuffix(":read") for entry in selection}:
+            wider = [*selection, f"{name}:read"]
+            size_of_wider, _ = await measure(wider, others(wider))
+            if size_of_wider > longest:
+                selection, longest = wider, size_of_wider
+    return selection, longest
+
+
 async def worst() -> tuple[int, int]:
-    """The longest instructions over every single-toolset selection, and the longest guide."""
+    """The longest instructions over the selections above, and the longest guide."""
     instructions = guide = 0
     readers = (unknown_ai, lambda: admin(ai_enabled=True))
     directories = (None, (), ("/srv/scans",))  # HTTP, stdio, stdio with upload directories
+    entries = [f"{name}{suffix}" for name in TOOLSETS for suffix in ("", ":read")]
     for name, cut, overview, reader, dirs in itertools.product(
-        TOOLSETS, (False, True), (True, False), readers, directories
+        entries, (False, True), (True, False), readers, directories
     ):
-        disabled = [*(cut_down() if cut else []), *([] if overview else [OVERVIEW])]
+        disabled = [*(others([name]) if cut else []), *([] if overview else [OVERVIEW])]
         text, listed = await measure([name], disabled, reader(), dirs)
         instructions = max(instructions, text)
         guide = max(guide, listed or 0)
+    for name in TOOLSETS:
+        _, text = await grown([f"{name}:read"])
+        instructions = max(instructions, text)
     return instructions, guide
 
 

@@ -5,6 +5,7 @@ so that every rule is proven for toolsets of any size. The shipped ai, bulk and 
 covered in test_ai.py, test_bulk.py and test_pdf.py.
 """
 
+from copy import deepcopy
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -17,9 +18,18 @@ from mcp.types import ToolAnnotations
 
 from mcp_server_paperless.domain.errors import InvalidConfiguration
 from mcp_server_paperless.server import CATALOGUE, create_server
-from mcp_server_paperless.tools._shared import ANNOTATIONS, TOOL_TOOLSETS, boundary
+from mcp_server_paperless.tools._shared import (
+    ANNOTATIONS,
+    LOCAL_TOOLSETS,
+    TOOL_TOOLSETS,
+    TOOLSETS,
+    boundary,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from pathlib import Path
+
     from fastmcp import FastMCP
 
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-4")]
@@ -298,3 +308,143 @@ async def test_one_server_follows_the_capability_of_each_start() -> None:
         True,
         False,
     )
+
+
+# --- A toolset read-only (PLMCP-90) --------------------------------------------------------------
+
+READING = {name for name, hints in ANNOTATIONS.items() if hints.read_only_hint}
+
+
+def all_but(toolset: str) -> list[str]:
+    """Every toolset, this one read-only."""
+    return [f"{name}:read" if name == toolset else name for name in sorted(TOOLSETS)]
+
+
+@pytest.mark.decision("decision-97")
+@pytest.mark.parametrize("local", [False, True])
+@pytest.mark.parametrize("toolset", sorted(TOOLSETS))
+async def test_a_read_only_toolset_keeps_its_reading_tools_and_the_others_keep_all(
+    tmp_path: Path, toolset: str, *, local: bool
+) -> None:
+    """Over stdio with directories the local tool and the saving downloads are there, too."""
+    directories = [str(tmp_path)] if local else []
+    table = {**TOOL_TOOLSETS, **(LOCAL_TOOLSETS if local else {})}
+    server = serve(
+        with_ai(enabled=True),
+        toolsets=all_but(toolset),
+        stdio=local,
+        upload_dirs=directories,
+        download_dirs=directories,
+    )
+
+    async with Client(server) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+
+    assert set(tools) == {n for n, name in table.items() if name != toolset or n in READING}
+    for name, tool in tools.items():
+        if table[name] == toolset:  # what the client is told, not what the table says
+            assert tool.annotations is not None
+            assert tool.annotations.read_only_hint, name
+
+
+@pytest.mark.decision("decision-97")
+async def test_a_read_only_toolset_is_selected_alone_and_beside_others() -> None:
+    alone = serve(admin(), catalogue=SYNTHETIC, toolsets=["scratch:read"])
+    mixed = serve(admin(), catalogue=SYNTHETIC, toolsets=["core", "scratch:read"])
+
+    assert await names(alone) == {"scratch_preview"}
+    assert await names(mixed) == CORE | {"scratch_preview"}
+
+
+@pytest.mark.decision("decision-97")
+async def test_server_wide_read_only_mode_wins_over_the_suffixes() -> None:
+    selections: list[list[str]] = [
+        ["core", "mail", "bulk"],
+        ["core", "mail:read", "bulk"],
+        ["core:read", "mail:read", "bulk:read"],
+    ]
+    offered = [
+        await names(serve(admin(), toolsets=toolsets, read_only=True)) for toolsets in selections
+    ]
+
+    assert offered[0] == offered[1] == offered[2]
+    assert offered[0] <= READING
+
+
+@pytest.mark.decision("decision-97")
+async def test_disabled_tools_work_on_top_of_a_read_only_toolset() -> None:
+    server = serve(
+        admin(), toolsets=["core:read", "mail:read"], disabled_tools=["get_mail_rule", "get_task"]
+    )
+
+    assert await names(server) == ((CORE | MAIL) & READING) - {"get_mail_rule", "get_task"}
+
+
+@pytest.mark.decision("decision-97")
+async def test_a_read_only_toolset_without_a_reading_tool_counts_as_none() -> None:
+    writing_only = replace(
+        SYNTHETIC, annotations={**SYNTHETIC.annotations, "scratch_preview": WRITE}
+    )
+
+    with pytest.raises(InvalidConfiguration, match="No tools are left"):
+        _ = serve(admin(), catalogue=writing_only, toolsets=["scratch:read"])
+    mixed = serve(admin(), catalogue=writing_only, toolsets=["core", "scratch:read"])
+
+    async with Client(mixed) as client:
+        assert {tool.name for tool in await client.list_tools()} == CORE
+        assert "Toolsets on: core." in (client.instructions or "")
+
+
+@pytest.mark.decision("decision-97")
+async def test_a_tool_missing_from_the_table_of_toolsets_stops_a_read_only_selection() -> None:
+    """A writing tool whose toolset is not known can not be told to be outside the selection."""
+    unplaced = replace(SYNTHETIC, annotations={**SYNTHETIC.annotations, "unplaced": WRITE})
+
+    with pytest.raises(KeyError, match="unplaced"):
+        _ = serve(admin(), catalogue=unplaced, toolsets=["scratch:read"])
+
+
+@pytest.mark.decision("decision-97")
+@pytest.mark.parametrize(
+    "toolsets", [["core:ro"], ["core", "mail:"], ["all:read"], ["core", "core:read"]]
+)
+async def test_a_misspelt_read_only_selection_stops_the_server_from_being_built(
+    toolsets: Sequence[str],
+) -> None:
+    with pytest.raises(InvalidConfiguration, match="PAPERLESS_MCP_TOOLSETS"):
+        _ = serve(admin(), toolsets=toolsets)
+
+
+@pytest.mark.decision("decision-97")
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+async def test_calling_a_hidden_tool_is_refused_and_nothing_reaches_paperless(mode: str) -> None:
+    """Also for a client that still has the list of a server that offered it."""
+    fake = FakePaperless(seeded(), user="admin", allow_writes=True)
+    before = deepcopy(fake.state)
+    calls: list[tuple[str, dict[str, object]]] = [
+        ("create_taxonomy_item", {"kind": "tag", "name": "x"}),
+        ("delete_document", {"document_id": 1, "confirm": True}),
+    ]
+
+    async with Client(serve(fake, toolsets=["core:read", "bulk"]), mode=mode) as client:
+        for name, arguments in calls:
+            refused = await client.call_tool(name, arguments, raise_on_error=False)
+            assert refused.is_error
+            assert "Unknown tool" in str(refused.content)
+
+    assert fake.state == before
+    async with Client(serve(fake, toolsets=["core"]), mode=mode) as client:
+        for name, arguments in calls:  # the arguments are right: it is the selection that refuses
+            _ = await client.call_tool(name, arguments)
+    assert fake.state != before
+
+
+@pytest.mark.decision("decision-97")
+async def test_resources_of_a_read_only_toolset_stay() -> None:
+    async with Client(serve(admin(), toolsets=["core:read"])) as client:
+        reading = await client.list_resource_templates()
+    async with Client(serve(admin(), toolsets=["core"])) as client:
+        everything = await client.list_resource_templates()
+
+    assert reading != []
+    assert [t.name for t in reading] == [t.name for t in everything]

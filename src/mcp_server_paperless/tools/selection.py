@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from mcp_server_paperless.domain.errors import InvalidConfiguration
 from mcp_server_paperless.domain.instance import OffToolset, ToolsetGuide
 from mcp_server_paperless.domain.toolsets import ALL_TOOLSETS as ALL
+from mcp_server_paperless.domain.toolsets import READ_SUFFIX
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping
@@ -32,6 +33,9 @@ ENABLE = (
 # What a toolset is said to be when read-only mode or disabled tools cut it down: its summary
 # would promise tools that are not there, and the instructions name no tool (the overview does).
 PARTIAL = "some of its tools"
+# What follows the name of a toolset that is selected read-only, so that the assistant does not
+# call its writing missing.
+READ_ONLY_MARK = " (read-only)"
 CAPABILITY_LABELS = {"ai": "Paperless AI"}
 
 
@@ -46,24 +50,61 @@ def _suggestions(unknown: Collection[str], known: Collection[str]) -> str:
 
 
 def selected_toolsets(names: Collection[str], known: Collection[str]) -> frozenset[str]:
-    """The toolsets named by ``PAPERLESS_MCP_TOOLSETS``; ``all`` selects every known one."""
-    if ALL in names:
-        return frozenset(known)
-    unknown = sorted(set(names) - set(known))
-    if unknown:
+    """The toolsets named by ``PAPERLESS_MCP_TOOLSETS``; ``all`` selects every known one.
+
+    An entry is a name or ``name:read`` (see ``read_only_toolsets``). Anything else stops the
+    server: a suffix that is not understood must never mean writable (decision-97).
+    """
+    if f"{ALL}{READ_SUFFIX}" in names:
         message = (
-            f"Unknown toolset in PAPERLESS_MCP_TOOLSETS: {', '.join(unknown)}."
-            f"{_suggestions(unknown, known)}"
-            f" Known toolsets: {', '.join(sorted(known))}, or {ALL}."
+            f"{ALL}{READ_SUFFIX} is not a selection of PAPERLESS_MCP_TOOLSETS. To offer every "
+            f"toolset only for reading, set PAPERLESS_MCP_TOOLSETS={ALL} and "
+            "PAPERLESS_MCP_READ_ONLY=true."
         )
         raise InvalidConfiguration(message)
-    return frozenset(names)
+    if ALL in names:
+        return frozenset(known)
+    reading = {f"{name}{READ_SUFFIX}" for name in known}
+    unknown = sorted(set(names) - set(known) - reading)
+    if unknown:
+        # What was written with some suffix is never suggested without one: that is writable.
+        suffixed = {name for name in unknown if not name.isalpha()}
+        message = (
+            f"Unknown toolset in PAPERLESS_MCP_TOOLSETS: {', '.join(unknown)}."
+            f"{_suggestions(suffixed, reading)}"
+            f"{_suggestions(set(unknown) - suffixed, reading | set(known))}"
+            f" Known toolsets: {', '.join(sorted(known))}, or {ALL}; "
+            f"name{READ_SUFFIX} offers only the tools of a toolset that change nothing."
+        )
+        raise InvalidConfiguration(message)
+    read_only = read_only_toolsets(names)
+    both = sorted(read_only & set(names))
+    if both:
+        message = (
+            f"PAPERLESS_MCP_TOOLSETS names a toolset both with and without {READ_SUFFIX}: "
+            f"{', '.join(both)}. Write it once."
+        )
+        raise InvalidConfiguration(message)
+    return frozenset(names) - reading | read_only
+
+
+def read_only_toolsets(names: Collection[str]) -> frozenset[str]:
+    """The toolsets ``PAPERLESS_MCP_TOOLSETS`` selects read-only (``name:read``)."""
+    return frozenset(name.removesuffix(READ_SUFFIX) for name in names if name.endswith(READ_SUFFIX))
 
 
 def hidden_tools(
-    annotations: Mapping[str, ToolAnnotations], *, read_only: bool, disabled: Collection[str]
+    annotations: Mapping[str, ToolAnnotations],
+    *,
+    read_only: bool,
+    disabled: Collection[str],
+    read_only_toolsets: Collection[str],
+    tool_toolsets: Mapping[str, str],
 ) -> frozenset[str]:
-    """Tools never offered: the disabled ones, and in read-only mode all that may change data."""
+    """Tools never offered: the disabled ones, and those that may change data where that is off.
+
+    It is off for every toolset in read-only mode, else for ``read_only_toolsets``.
+    """
     unknown = sorted(set(disabled) - set(annotations))
     if unknown:
         message = (
@@ -72,11 +113,12 @@ def hidden_tools(
             f" Known tools: {', '.join(sorted(annotations))}."
         )
         raise InvalidConfiguration(message)
-    changing = (
-        {name for name, hints in annotations.items() if not hints.read_only_hint}
-        if read_only
-        else set[str]()
-    )
+    changing = {
+        name
+        for name, hints in annotations.items()
+        if not hints.read_only_hint
+        and (read_only or (read_only_toolsets and tool_toolsets[name] in read_only_toolsets))
+    }
     return frozenset(changing | set(disabled))
 
 
@@ -107,6 +149,8 @@ def toolset_guide(  # noqa: PLR0913 -- the tables and the states a toolset can b
     unavailable: Collection[str],
     unchecked: Collection[str],
     missing_now: Collection[str] | None = None,
+    read_only: Collection[str] = (),
+    mark: bool = True,
 ) -> ToolsetGuide:
     """The toolsets on and the ones the operator could switch on, as far as that adds a tool.
 
@@ -116,13 +160,20 @@ def toolset_guide(  # noqa: PLR0913 -- the tables and the states a toolset can b
     by what it is for. A toolset whose capability could not be checked, on, offered or off, is
     listed in ``unchecked``. ``unavailable`` is what the start found missing and decides what is
     on; ``missing_now`` (default: the same) is what Paperless says now and decides what a restart
-    would deliver, so what is off.
+    would deliver, so what is off. A selected toolset in ``read_only`` is marked so (unless not
+    ``mark``: in read-only mode, where marking one would say that the others write), and the value
+    to set keeps its suffix, so that following it makes nothing writable (decision-97).
     """
     now = unavailable if missing_now is None else missing_now
     order = list(dict.fromkeys(tool_toolsets.values()))
     every = {name: [t for t, ts in tool_toolsets.items() if ts == name] for name in order}
     left = {name: tuple(t for t in tools if t not in hidden) for name, tools in every.items()}
     chosen = [name for name in order if name in selected]
+
+    def shown_as(name: str) -> str:
+        return f"{name}{READ_ONLY_MARK}" if mark and name in read_only else name
+
+    entries = [f"{name}{READ_SUFFIX}" if name in read_only else name for name in chosen]
     on = tuple(name for name in chosen if left[name] and name not in unavailable)
     off = tuple(
         OffToolset(
@@ -138,10 +189,10 @@ def toolset_guide(  # noqa: PLR0913 -- the tables and the states a toolset can b
     )
     shown = {*on, *offered, *(t.toolset for t in off)}
     return ToolsetGuide(
-        on=on,
-        offered_after_restart=offered,
+        on=tuple(map(shown_as, on)),
+        offered_after_restart=tuple(map(shown_as, offered)),
         off=off,
-        switch_on=ENABLE.format(value=",".join((*chosen, "<name>"))) if off else None,
+        switch_on=ENABLE.format(value=",".join((*entries, "<name>"))) if off else None,
         unchecked={
             name: CAPABILITY_LABELS.get(requires[name], requires[name])
             for name in order
@@ -156,13 +207,19 @@ def guide_text(guide: ToolsetGuide, *, overview: bool) -> str:
     The setting comes before the list of toolsets, so that a cut text loses the list. No tool is
     named, so nothing that is excluded can be: the overview lists the tools.
     """
-    if not guide.off and not guide.unchecked:
+    reading = {name for name in guide.on if name.endswith(READ_ONLY_MARK)}
+    if not guide.off and not guide.unchecked and not reading:
         return ""
 
     def gap(name: str) -> str:
         return f"needs {guide.unchecked[name]}, not checked" if name in guide.unchecked else ""
 
-    on = ", ".join(f"{name} ({gap(name)})" if gap(name) else name for name in guide.on)
+    def state(shown: str) -> str:
+        name = shown.removesuffix(READ_ONLY_MARK)
+        notes = "; ".join(filter(None, ("read-only" if shown in reading else "", gap(name))))
+        return f"{name} ({notes})" if notes else name
+
+    on = ", ".join(map(state, guide.on))
     parts = [f"Toolsets on: {on}."]
     if guide.switch_on:
         parts.append(guide.switch_on)

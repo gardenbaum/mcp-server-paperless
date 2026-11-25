@@ -9,6 +9,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field, replace
+from functools import partial
 from typing import TYPE_CHECKING, Final
 
 from fastmcp import FastMCP
@@ -130,6 +131,7 @@ from mcp_server_paperless.tools.confirmation import DIALOGS, Dialogs
 from mcp_server_paperless.tools.selection import (
     guide_text,
     hidden_tools,
+    read_only_toolsets,
     selected_toolsets,
     toolset_guide,
     unavailable_toolsets,
@@ -211,9 +213,11 @@ class Catalogue:
             over stdio with an upload allowlist: the same tools in their form with a path.
         stdio_providers: Providers added instead when it runs over stdio without an allowlist:
             the form for HTTP, with the hint how a path is enabled.
-        plain_downloads: Providers of the download tools when the server saves nothing.
-        saving_downloads: Providers added instead of ``plain_downloads`` when the server runs over
-            stdio with download directories and without read-only mode (decision-45).
+        plain_downloads: The provider of the download tool of each toolset that has one, in its
+            form that saves nothing.
+        saving_downloads: The providers used instead when the server runs over stdio with
+            download directories, without read-only mode, and the toolset is not read-only
+            (decision-45, decision-97).
         annotations: The central annotation table, keyed by tool name.
         tool_toolsets: The toolset of every tool, keyed by tool name.
         toolsets: Every toolset name.
@@ -236,8 +240,8 @@ class Catalogue:
     remote_providers: Sequence[Provider] = ()
     local_providers: Sequence[Provider] = ()
     stdio_providers: Sequence[Provider] = ()
-    plain_downloads: Sequence[Provider] = ()
-    saving_downloads: Sequence[Provider] = ()
+    plain_downloads: Mapping[str, Provider] = field(default_factory=dict[str, "Provider"])
+    saving_downloads: Mapping[str, Provider] = field(default_factory=dict[str, "Provider"])
     local_annotations: Mapping[str, ToolAnnotations] = field(
         default_factory=dict[str, "ToolAnnotations"]
     )
@@ -274,8 +278,11 @@ CATALOGUE: Final = Catalogue(
     local_annotations=LOCAL_ANNOTATIONS,
     local_tool_toolsets=LOCAL_TOOLSETS,
     stdio_providers=(upload.hinted, versions.hinted),
-    plain_downloads=(downloads.remote,),
-    saving_downloads=(downloads_stdio.local,),
+    plain_downloads={downloads.CORE: downloads.document, downloads.ADMIN: downloads.archive},
+    saving_downloads={
+        downloads.CORE: downloads_stdio.document,
+        downloads.ADMIN: downloads_stdio.archive,
+    },
     prompt_specs=prompts.SPECS,
     summaries=TOOLSET_SUMMARIES,
 )
@@ -341,13 +348,15 @@ def paperless_ports(client: PaperlessClient) -> Ports:
     )
 
 
-def describe_toolsets(
+def describe_toolsets(  # noqa: PLR0913 -- the selection and what Paperless says
     catalogue: Catalogue,
     enabled: frozenset[str],
     hidden: frozenset[str],
     *,
     started: bool | None,
     now: bool | None,
+    read_only: frozenset[str],
+    mark: bool,
 ) -> tuple[str, ToolsetGuide]:
     """The server instructions and the guide to the toolsets: the one place both are composed.
 
@@ -355,7 +364,7 @@ def describe_toolsets(
     decides what is on; ``now`` is what Paperless says now, which decides what is off, so that
     nothing is promised that a restart would not deliver. Nothing is described that the
     selection, read-only mode, disabled tools or a missing capability exclude; a capability that
-    could not be checked is named as a gap.
+    could not be checked is named as a gap. ``read_only`` and ``mark`` are as in ``toolset_guide``.
     """
     requires = catalogue.requires
     unavailable = unavailable_toolsets(ai_enabled=started, requires=requires)
@@ -368,6 +377,8 @@ def describe_toolsets(
         unavailable=unavailable,
         unchecked=unchecked_toolsets(ai_enabled=now, requires=requires),
         missing_now=unavailable_toolsets(ai_enabled=now, requires=requires),
+        read_only=read_only,
+        mark=mark,
     )
     overview = OVERVIEW in visible_tools(catalogue.tool_toolsets, enabled - unavailable, hidden)
     parts = (INTRO, START if overview else "", DOCUMENT_TEXT, guide_text(guide, overview=overview))
@@ -422,22 +433,30 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     in_process = catalogue.local_providers if by_path else catalogue.stdio_providers
     uploads = in_process if stdio else catalogue.remote_providers
     known_tools = {**catalogue.annotations, **catalogue.local_annotations}
+    known_toolsets = {**catalogue.tool_toolsets, **catalogue.local_tool_toolsets}
     if by_path:
-        toolsets = {**catalogue.tool_toolsets, **catalogue.local_tool_toolsets}
-        catalogue = replace(catalogue, tool_toolsets=toolsets)
+        catalogue = replace(catalogue, tool_toolsets=known_toolsets)
     path_hint = PATH_OFF if stdio and not by_path else ""
-    saving = stdio and bool(settings.download_dirs) and not settings.read_only
-    variants = [
-        *uploads,
-        *(catalogue.saving_downloads if saving else catalogue.plain_downloads),
-    ]
-    sink = FileSink(settings.download_dirs) if saving else NO_SINK
 
     # Allowlist the selected toolsets (resources carry the tags too), then take out tools:
     # later visibility rules override earlier ones.
     enabled = selected_toolsets(settings.toolsets, catalogue.toolsets)
+    read_only = read_only_toolsets(settings.toolsets)
     hidden = hidden_tools(
-        known_tools, read_only=settings.read_only, disabled=settings.disabled_tools
+        known_tools,
+        read_only=settings.read_only,
+        disabled=settings.disabled_tools,
+        read_only_toolsets=read_only,
+        tool_toolsets=known_toolsets,
+    )
+    saving = _saving_toolsets(catalogue, settings, read_only, stdio=stdio)
+    describe = partial(
+        describe_toolsets,
+        catalogue,
+        enabled,
+        hidden,
+        read_only=read_only,
+        mark=not settings.read_only,
     )
     selected = visible_tools(catalogue.tool_toolsets, enabled, hidden)
     if not selected:
@@ -502,7 +521,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.documents,
                     web_url=web_url,
                     max_bytes=settings.max_download_bytes,
-                    sink=sink,
+                    sink=_sink(settings, saves=downloads.CORE in saving),
                 ),
                 pages=PageService(adapters.documents, drawing, web_url=web_url, turn=turn),
                 edits=edits,
@@ -576,7 +595,7 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.management,
                     adapters.management_writes,
                     max_bytes=settings.max_download_bytes,
-                    sink=sink,
+                    sink=_sink(settings, saves=downloads.ADMIN in saving),
                 ),
                 uploads=uploading,
                 upload_batches=BatchUploadService(
@@ -674,19 +693,23 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                 (capability_rule, prompt_rule),
                 catalogue,
                 overview,
+                describe=describe,
                 enabled=enabled,
-                hidden=hidden,
                 selected=selected,
             )
             yield {SERVICES: services, GUIDE: guide_for, DIALOGS: dialogs}
 
     # Until Paperless answers no capability is known; the start replaces these instructions.
-    instructions, _ = describe_toolsets(catalogue, enabled, hidden, started=None, now=None)
+    instructions, _ = describe(started=None, now=None)
     server = FastMCP(
         name="mcp-server-paperless",
         instructions=instructions,
         version=__version__,
-        providers=[*catalogue.providers, *variants],
+        providers=[
+            *catalogue.providers,
+            *uploads,
+            *{**catalogue.plain_downloads, **saving}.values(),
+        ],
         middleware=[
             CallLogging(),
             *([PathRefusal(UPLOAD_TOOLS & selected)] if path_hint else []),
@@ -706,14 +729,28 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
     return server
 
 
+def _saving_toolsets(
+    catalogue: Catalogue, settings: ServerSettings, read_only: frozenset[str], *, stdio: bool
+) -> dict[str, Provider]:
+    """The toolsets whose download tool may save, with its provider (decision-45, decision-97)."""
+    if not stdio or not settings.download_dirs or settings.read_only:
+        return {}
+    return {t: p for t, p in catalogue.saving_downloads.items() if t not in read_only}
+
+
+def _sink(settings: ServerSettings, *, saves: bool) -> FileSink:
+    """Where a service saves: nowhere if its tool does not, so that it never speaks of saving."""
+    return FileSink(settings.download_dirs) if saves else NO_SINK
+
+
 async def _hide_unavailable(  # noqa: PLR0913 -- the rules, the catalogue and what the start learned
     server: FastMCP,
     rules: tuple[Visibility, Visibility],
     catalogue: Catalogue,
     overview: InstanceOverview | None,
     *,
+    describe: Callable[..., tuple[str, ToolsetGuide]],
     enabled: frozenset[str],
-    hidden: frozenset[str],
     selected: frozenset[str],
 ) -> GuideFor:
     """Hide toolsets whose capability Paperless lacks and the prompts that need what is hidden.
@@ -733,9 +770,7 @@ async def _hide_unavailable(  # noqa: PLR0913 -- the rules, the catalogue and wh
             logger.warning("Toolset %s is hidden: Paperless does not offer what it needs", toolset)
     if not await server.list_tools():
         raise InvalidConfiguration(NO_TOOLS)
-    server.instructions, _ = describe_toolsets(
-        catalogue, enabled, hidden, started=ai_enabled, now=ai_enabled
-    )
+    server.instructions, _ = describe(started=ai_enabled, now=ai_enabled)
     # From the catalogue, not from a listing: what a caller may list can depend on who asks.
     callable_tools = {name for name in selected if catalogue.tool_toolsets[name] not in unavailable}
     # Reset first: the listing below skips what the previous start hid.
@@ -749,6 +784,6 @@ async def _hide_unavailable(  # noqa: PLR0913 -- the rules, the catalogue and wh
     }
 
     def guide_for(*, now: bool | None) -> ToolsetGuide:
-        return describe_toolsets(catalogue, enabled, hidden, started=ai_enabled, now=now)[1]
+        return describe(started=ai_enabled, now=now)[1]
 
     return guide_for

@@ -40,7 +40,8 @@ services:
 ```
 
 To offer more than the default toolsets, add `PAPERLESS_MCP_TOOLSETS: core,ai,pdf,trash` (or `all`, which offers every tool)
-to `environment`. The selection is read at startup and `docker restart` keeps the old
+to `environment`; `name:read` offers a toolset
+[only for reading](configuration.md#a-toolset-only-for-reading). The selection is read at startup and `docker restart` keeps the old
 environment, so recreate the container (`docker compose up -d`) after a change; the assistant is
 told this when toolsets are off.
 

@@ -19,7 +19,7 @@ from fastmcp.client.transports import ClientTransport
 from harness import serve
 
 from mcp_server_paperless.domain.errors import InvalidConfiguration
-from mcp_server_paperless.tools._shared import TOOL_TOOLSETS, TOOLSETS
+from mcp_server_paperless.tools._shared import ANNOTATIONS, TOOL_TOOLSETS, TOOLSETS
 from mcp_server_paperless.tools.selection import PARTIAL
 
 if TYPE_CHECKING:
@@ -36,9 +36,17 @@ DEFAULT = ["core", "ai"]
 
 
 def resolved(selection: Sequence[str] | None) -> list[str]:
-    """The toolsets a setting selects, in the catalogue's order."""
+    """The entries a setting selects (``name`` or ``name:read``), in the catalogue's order."""
     chosen = DEFAULT if selection is None else list(selection)
-    return CANONICAL if "all" in chosen else [name for name in CANONICAL if name in chosen]
+    if "all" in chosen:
+        return CANONICAL
+    return [e for name in CANONICAL for e in (name, f"{name}:read") if e in chosen]
+
+
+def everything(selection: Sequence[str] | None) -> list[str]:
+    """Every toolset, the ones the selection has read-only still read-only."""
+    chosen = resolved(selection)
+    return [f"{name}:read" if f"{name}:read" in chosen else name for name in CANONICAL]
 
 
 # The settings every combination is made of: what PAPERLESS_MCP_TOOLSETS selects (None: not set),
@@ -50,6 +58,11 @@ SELECTIONS: dict[str, list[str] | None] = {
     "all": ["all"],
     "trash": ["trash"],
     "raw": ["raw"],
+    # Read-only toolsets (PLMCP-90).
+    "mixed": ["core", "ai:read", "trash:read", "mail:read", "workflows"],
+    "core-read": ["core:read"],
+    "trash-read": ["trash:read"],
+    "every-one-read": [f"{name}:read" for name in CANONICAL],
 }
 DISABLED = {
     "none": (),
@@ -62,7 +75,7 @@ COMBINATIONS = list(itertools.product(SELECTIONS, DISABLED, (False, True)))
 
 def refused(selection: str, disabled: str) -> bool:
     """Whether the settings leave no tool at all: only the trash toolset, every tool disabled."""
-    return (selection, disabled) == ("trash", "all-of-trash")
+    return selection in {"trash", "trash-read"} and disabled == "all-of-trash"
 
 
 @dataclass(frozen=True)
@@ -97,14 +110,19 @@ async def observe(server: FastMCP, *, overview: bool = True) -> Seen | None:
         return None  # the capability of this Paperless leaves no tool
 
 
-def verify(  # noqa: C901 -- one check per statement of the guide
-    current: Seen, ceiling: Seen, *, capability: str, selected: Sequence[str]
+def verify(  # noqa: C901, PLR0912 -- one check per statement of the guide
+    current: Seen,
+    ceiling: Seen,
+    *,
+    capability: str,
+    selected: Sequence[str],
+    read_only: bool = False,
 ) -> None:
     """Check the guide of ``current`` against ``ceiling``, the same server with every toolset.
 
     ``capability`` is what Paperless reported for AI: present, missing, unknown (the user may not
     see it) or silent (Paperless did not answer at startup). ``selected`` is what the setting
-    selects (see ``resolved``).
+    selects (see ``resolved``), ``read_only`` whether read-only mode is on.
     """
     text = current.instructions
     gain = ceiling.tools - current.tools
@@ -113,11 +131,21 @@ def verify(  # noqa: C901 -- one check per statement of the guide
     off = [n for n in CANONICAL if any(TOOL_TOOLSETS[t] == n for t in gain)]
     gap = "needs Paperless AI, not checked"
     unchecked = capability in {"unknown", "silent"} and bool({"ai"} & {*on, *off})
-    shown = [f"{n} ({gap})" if unchecked and n == "ai" else n for n in on]
-    if gain or unchecked:
+    # In read-only mode nothing is marked: marking one toolset would say that the others write.
+    marked = {n for n in on if f"{n}:read" in selected and not read_only}
+    labels = [f"{n} (read-only)" if n in marked else n for n in on]
+    shown = [
+        f"{n} ({'read-only; ' if n in marked else ''}{gap})" if unchecked and n == "ai" else label
+        for n, label in zip(on, labels, strict=True)
+    ]
+    # A read-only toolset never offers a tool that may change something.
+    for tool in current.tools:
+        if f"{TOOL_TOOLSETS[tool]}:read" in selected:
+            assert ANNOTATIONS[tool].read_only_hint, tool
+    if gain or unchecked or marked:
         assert f"Toolsets on: {', '.join(shown)}." in text
     if gain:
-        assert f"PAPERLESS_MCP_TOOLSETS={','.join(resolved(selected))},<name>" in text
+        assert f"PAPERLESS_MCP_TOOLSETS={','.join(selected)},<name>" in text
         assert text.index("PAPERLESS_MCP_TOOLSETS=") < text.index("Off: ")
         assert "restart" in text
     else:  # nothing to switch on: the guide says nothing about switching
@@ -131,7 +159,7 @@ def verify(  # noqa: C901 -- one check per statement of the guide
         assert (f"{name} (" in listed) is (name in off), name
     assert (gap in listed) is (unchecked and "ai" in off)
     if current.guide is not None:
-        assert current.guide["on"] == on
+        assert current.guide["on"] == labels
         assert (
             current.guide["offered_after_restart"] == []
         )  # the start and the answer now are the same here
@@ -177,13 +205,14 @@ async def check(
     *,
     capability: str,
     combination: tuple[str, str, bool],
-    ceilings: dict[tuple[str, bool], Seen | None] | None = None,
+    ceilings: dict[tuple[object, ...], Seen | None] | None = None,
 ) -> None:
     """Start the server on a fresh reader for one combination of settings and verify its guide.
 
     ``capability`` is as in ``verify``; the overview is not called while Paperless is silent.
-    The server with every toolset depends only on the disabled tools and read-only mode: pass one
-    ``ceilings`` dict for the combinations on the same answer of Paperless to start it once.
+    The server with every toolset depends only on the disabled tools, read-only mode and the
+    toolsets that are read-only: pass one ``ceilings`` dict for the combinations on the same answer
+    of Paperless to start it once.
     """
     selection, disabled, read_only = combination
     kept = DISABLED[disabled]
@@ -192,12 +221,20 @@ async def check(
         reader(), SELECTIONS[selection], read_only=read_only, disabled_tools=kept, overview=overview
     )
     cache = {} if ceilings is None else ceilings
-    if (disabled, read_only) not in cache:
-        cache[disabled, read_only] = await started(
-            reader(), ["all"], read_only=read_only, disabled_tools=kept, overview=overview
+    wide = everything(SELECTIONS[selection])
+    key = (disabled, read_only, *wide)
+    if key not in cache:
+        cache[key] = await started(
+            reader(), wide, read_only=read_only, disabled_tools=kept, overview=overview
         )
-    ceiling = cache[disabled, read_only]
+    ceiling = cache[key]
     assert (current is None) is refused(selection, disabled), combination
     if current is not None:
         assert ceiling is not None
-        verify(current, ceiling, capability=capability, selected=resolved(SELECTIONS[selection]))
+        verify(
+            current,
+            ceiling,
+            capability=capability,
+            selected=resolved(SELECTIONS[selection]),
+            read_only=read_only,
+        )
