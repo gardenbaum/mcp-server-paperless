@@ -122,8 +122,10 @@ class TaskTypeSummary(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     task_type: str
-    total: int
-    pending: int
+    total: Annotated[
+        int, Field(description="Also running and cancelled ones, which no other count holds.")
+    ]
+    pending: Annotated[int, Field(description="Waiting.")]
     success: int
     failure: int
     avg_duration_seconds: float | None
@@ -160,6 +162,9 @@ class TaskOverview(BaseModel):
     active: Annotated[
         tuple[TaskRow, ...] | None,
         Field(description="The newest 50 waiting or running, whatever the filters."),
+    ]
+    active_truncated: Annotated[
+        bool, Field(description="true: there may be more, Paperless sends 50 at most.")
     ]
     by_type: Annotated[
         tuple[TaskTypeSummary, ...] | None,

@@ -15,7 +15,6 @@ from mcp_server_paperless.domain.errors import (
     PermissionDenied,
     UnexpectedAnswer,
     UpstreamUnavailable,
-    UpstreamUnreachable,
     Validation,
     quoted,
 )
@@ -51,6 +50,8 @@ NEW: Final = TaskFilters(acknowledged=False)
 NOTHING_CHANGED: Final = "Nothing was changed."
 # Failures a preview names; the rest are counted.
 SHOWN_FAILURES: Final = 10
+# Paperless sends no more waiting and running tasks.
+MAX_ACTIVE: Final = 50
 # Paperless silently cuts a longer summary to this.
 MAX_DAYS: Final = 365
 TASK_EFFECTS: Final[dict[str, str]] = {
@@ -92,8 +93,8 @@ def _check_text(field: str, value: str | None) -> None:
 
 
 def _done(count: int, more: int = 0) -> Acknowledged:
-    """The result; ``more`` is how many came in between preview and call."""
-    late = f" {more} of them came in after the preview." if more > 0 else ""
+    """The result; at least ``more`` came in between, what left meanwhile hides as many."""
+    late = f" At least {more} of them came in after the preview." if more > 0 else ""
     message = f"Acknowledged {_plural(count, 'task')} (they no longer show as new).{late}"
     return Acknowledged(acknowledged=count, dry_run=False, message=message)
 
@@ -105,12 +106,21 @@ def _named(row: TaskRow) -> str:
     return f"{row.task_type}{file} (id {row.id}, {at:%Y-%m-%d %H:%M} UTC)"
 
 
-async def _unless_denied[T](call: Awaitable[T]) -> T | PermissionDenied:
-    """What the call answers, or the refusal."""
+async def _or_error[T](call: Awaitable[T]) -> T | PaperlessMcpError:
+    """What the call answers, or its error, so that no call beside it is left running."""
     try:
         return await call
-    except PermissionDenied as error:
+    except PaperlessMcpError as error:
         return error
+
+
+def _unless_denied[T](found: T | PaperlessMcpError) -> T | None:
+    """The answer, None if it was refused; any other error is raised."""
+    if not isinstance(found, PaperlessMcpError):
+        return found
+    if isinstance(found, PermissionDenied):
+        return None
+    raise found
 
 
 class TaskListService:
@@ -205,25 +215,27 @@ class TaskListService:
             created_to=created_to,
         )
         counts, active, by_type, viewer = await asyncio.gather(
-            _unless_denied(self._reader.count_tasks(filters)),
-            _unless_denied(self._reader.list_active_tasks()),
-            _unless_denied(self._reader.summarize_tasks(days=days)),
-            _unless_denied(self._reader.get_viewer()),
+            _or_error(self._reader.count_tasks(filters)),
+            _or_error(self._reader.list_active_tasks()),
+            _or_error(self._reader.summarize_tasks(days=days)),
+            _or_error(self._reader.get_viewer()),
         )
         parts = {"counts": counts, "active": active, "by_type": by_type}
-        refused = [part for part in parts.values() if isinstance(part, PermissionDenied)]
-        if len(refused) == len(parts):
-            raise refused[0]
+        refused = [name for name, part in parts.items() if isinstance(part, PermissionDenied)]
+        if len(refused) == len(parts) and isinstance(counts, PermissionDenied):
+            raise counts
+        running = _unless_denied(active)
         of: Literal["every_user", "own_and_unowned", "unknown"] = "unknown"
         if isinstance(viewer, TaskViewer):
             of = "every_user" if viewer.summary_of_all else "own_and_unowned"
         return TaskOverview(
-            counts=None if isinstance(counts, PermissionDenied) else counts,
-            active=None if isinstance(active, PermissionDenied) else active,
-            by_type=None if isinstance(by_type, PermissionDenied) else by_type,
+            counts=_unless_denied(counts),
+            active=running,
+            active_truncated=len(running or ()) >= MAX_ACTIVE,
+            by_type=_unless_denied(by_type),
             days=days,
             by_type_of=of,
-            unavailable=tuple(n for n, p in parts.items() if isinstance(p, PermissionDenied)),
+            unavailable=tuple(refused),
         )
 
     async def acknowledge_tasks(
@@ -250,7 +262,10 @@ class TaskListService:
             message = "A task id is listed twice."
             raise Validation(message, hint="List every id once.")
         if dry_run:
-            message = f"{NOTHING_CHANGED} This would mark {_plural(len(task_ids), 'task')} as seen."
+            message = (
+                f"{NOTHING_CHANGED} This would ask Paperless to mark "
+                f"{_plural(len(task_ids), 'task')} as seen; the ids were not looked up."
+            )
             return Acknowledged(acknowledged=0, dry_run=True, message=message)
         return _done(await self._writer.acknowledge_tasks(task_ids))
 
@@ -269,8 +284,6 @@ class TaskListService:
             ConfirmationRequired.require(effect, scope=[row.id for row in newest.rows])
         try:
             count = await self._writer.acknowledge_all_tasks()
-        except UpstreamUnreachable:
-            raise
         except UpstreamUnavailable, UnexpectedAnswer:
             return await self._looked_up(before)
         return _done(count, more=count - before.total)
@@ -297,10 +310,14 @@ class TaskListService:
 
     async def _others(self, before: TaskCounts) -> str:
         """How many of the tasks are not the user's own."""
-        viewer = await _unless_denied(self._reader.get_viewer())
-        if isinstance(viewer, PermissionDenied):
-            return "; whether tasks of others are among them is not known"
-        own = await self._reader.count_tasks(NEW.model_copy(update={"owner": viewer.id}))
+        unknown = "; whether tasks of others are among them is not known"
+        viewer = await _or_error(self._reader.get_viewer())
+        if isinstance(viewer, PaperlessMcpError):
+            return unknown
+        mine = NEW.model_copy(update={"owner": viewer.id})
+        own = await _or_error(self._reader.count_tasks(mine))
+        if isinstance(own, PaperlessMcpError):
+            return unknown
         others = before.total - own.total
         if others <= 0:
             return ""

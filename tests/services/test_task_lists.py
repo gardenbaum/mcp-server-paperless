@@ -35,7 +35,7 @@ from mcp_server_paperless.services.task_lists import TaskListService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable
+    from collections.abc import Coroutine
 
 pytestmark = [
     pytest.mark.anyio,
@@ -707,9 +707,9 @@ class Shaky(FakePaperless):
     failing: str = "get_viewer"
     answered: list[str] = []  # noqa: RUF012 -- a test spy, one instance per test
 
-    async def _answer[T](self, name: str, call: Awaitable[T]) -> T:
+    async def _answer[T](self, name: str, call: Coroutine[object, object, T]) -> T:
         if name == self.failing:
-            call.close()  # pyright: ignore[reportAttributeAccessIssue] -- a coroutine
+            call.close()
             message = "Paperless did not answer in time."
             raise UpstreamTimeout(message)
         await asyncio.sleep(0.01)

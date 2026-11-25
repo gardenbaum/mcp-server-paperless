@@ -13724,6 +13724,10 @@
             ]),
             'description': 'The newest 50 waiting or running, whatever the filters.',
           }),
+          'active_truncated': dict({
+            'description': 'true: there may be more, Paperless sends 50 at most.',
+            'type': 'boolean',
+          }),
           'by_type': dict({
             'anyOf': list([
               dict({
@@ -13787,6 +13791,7 @@
                       ]),
                     }),
                     'pending': dict({
+                      'description': 'Waiting.',
                       'type': 'integer',
                     }),
                     'success': dict({
@@ -13796,6 +13801,7 @@
                       'type': 'string',
                     }),
                     'total': dict({
+                      'description': 'Also running and cancelled ones, which no other count holds.',
                       'type': 'integer',
                     }),
                   }),
@@ -13879,6 +13885,7 @@
         'required': list([
           'counts',
           'active',
+          'active_truncated',
           'by_type',
           'days',
           'by_type_of',
@@ -43260,6 +43267,10 @@
             ]),
             'description': 'The newest 50 waiting or running, whatever the filters.',
           }),
+          'active_truncated': dict({
+            'description': 'true: there may be more, Paperless sends 50 at most.',
+            'type': 'boolean',
+          }),
           'by_type': dict({
             'anyOf': list([
               dict({
@@ -43323,6 +43334,7 @@
                       ]),
                     }),
                     'pending': dict({
+                      'description': 'Waiting.',
                       'type': 'integer',
                     }),
                     'success': dict({
@@ -43332,6 +43344,7 @@
                       'type': 'string',
                     }),
                     'total': dict({
+                      'description': 'Also running and cancelled ones, which no other count holds.',
                       'type': 'integer',
                     }),
                   }),
@@ -43415,6 +43428,7 @@
         'required': list([
           'counts',
           'active',
+          'active_truncated',
           'by_type',
           'days',
           'by_type_of',
