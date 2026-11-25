@@ -38,7 +38,7 @@ claude mcp add paperless --env PAPERLESS_URL=https://paperless.example.org \
 
 mcp-server-paperless is a [Model Context Protocol](https://modelcontextprotocol.io) server for
 paperless-ngx 3.x, built on FastMCP 4. It gives Claude Code, Claude Desktop, claude.ai, Cursor, VS
-Code and any other MCP client 106 tools in 14 toolsets that cover most of what the Paperless API
+Code and any other MCP client 108 tools in 14 toolsets that cover most of what the Paperless API
 can do, from a search to saved views, mail rules and workflows. Every operation of the Paperless API
 is covered by a tool, listed as an exclusion the owner approved, or still open under a task
 ([API coverage](https://github.com/gardenbaum/mcp-server-paperless/blob/main/docs/api-coverage.md)).
@@ -101,7 +101,7 @@ people who want all of the following in one server:
 - 🛡️ **Nothing final without your yes.** Before a tool deletes, overwrites, publishes or shares
   anything, it reports what would happen and waits for your confirmation. Changes to many
   documents at once can be previewed first.
-- 🪶 **Small to start with.** Only 20 tools by default out of the 106, so the assistant starts
+- 🪶 **Small to start with.** Only 20 tools by default out of the 108, so the assistant starts
   with the essentials and you decide what else it may do. Search results are short lists and long
   documents are read piece by piece, so a conversation does not fill up with text it does not
   need.
@@ -253,7 +253,7 @@ variables: [Connect claude.ai](https://github.com/gardenbaum/mcp-server-paperles
 
 ## Toolsets
 
-The 106 tools are grouped into toolsets, and only two are on by default, so the model is not
+The 108 tools are grouped into toolsets, and only two are on by default, so the model is not
 handed tools you never use. Switch more on with `PAPERLESS_MCP_TOOLSETS=core,ai,pdf,trash` or
 `all`, and restart the server. The assistant is told which toolsets are off, what each adds and how to
 switch them on (never for a session: only you decide, see
@@ -273,7 +273,7 @@ switch them on (never for a session: only you decide, see
 | `mail` | 16 | | Mail accounts and rules for the mail import, and what it processed |
 | `workflows` | 8 | | The workflows Paperless runs by itself: triggers and actions; run one by hand on chosen documents |
 | `admin` | 13 | | Users, groups, application configuration, logs, bulk download |
-| `tasks` | 3 | | Background tasks: list and filter, mark as seen, start by hand |
+| `tasks` | 5 | | Background tasks: how they stand, list and filter, mark as seen, start by hand (in `admin` up to 0.4); the full system status |
 | `raw` | 1 | | A read-only escape hatch: GET any path of the Paperless API the other tools do not cover |
 
 Every tool with its kind and a one-line description is in the [tool

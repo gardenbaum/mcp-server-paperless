@@ -4,8 +4,10 @@ Fakes of "nothing may be written" cases are created without `allow_writes`. Seed
 (superuser), reader 3.
 """
 
-from datetime import UTC, datetime, timedelta
-from typing import final
+import asyncio
+import re
+from datetime import UTC, datetime, timedelta, timezone
+from typing import TYPE_CHECKING, TypedDict, final, override
 
 import pytest
 from fakes.accounts import ADMIN, READER
@@ -15,18 +17,36 @@ from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
     ConfirmationRequired,
     NotFound,
+    PaperlessMcpError,
     PermissionDenied,
+    UnexpectedAnswer,
+    UpstreamTimeout,
+    UpstreamUnreachable,
     Validation,
+    accepting,
+)
+from mcp_server_paperless.domain.task_lists import (
+    TaskCounts,
+    TaskFilters,
+    TaskOrdering,
+    TaskRow,
+    TaskRowPage,
+    TaskTypeSummary,
+    TaskViewer,
 )
 from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.task_lists import TaskListService
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+
+if TYPE_CHECKING:
+    from collections.abc import Coroutine
 
 pytestmark = [
     pytest.mark.anyio,
     pytest.mark.decision("decision-15"),
     pytest.mark.decision("decision-26"),
     pytest.mark.decision("decision-93"),
+    pytest.mark.decision("decision-94"),
 ]
 
 
@@ -38,11 +58,20 @@ class Setup:
         taxonomy = TaxonomyResolver(self.fake, StaticTokenProvider("t"), ttl=3600.0)
         self.service: TaskListService = TaskListService(self.fake, self.fake, taxonomy)
 
+    @staticmethod
+    def over(fake: FakePaperless) -> TaskListService:
+        taxonomy = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
+        return TaskListService(fake, fake, taxonomy)
 
-async def refusal(call: object) -> str:
+    @staticmethod
+    def of(state: FakeState, user: str = ADMIN[0], *, writes: bool = False) -> TaskListService:
+        return Setup.over(FakePaperless(state, user=user, allow_writes=writes))
+
+
+async def refusal(call: object, hint: str = CONFIRM_HINT) -> str:
     with pytest.raises(ConfirmationRequired) as raised:
         await call  # pyright: ignore[reportGeneralTypeIssues] -- test data built from dicts
-    assert raised.value.hint == CONFIRM_HINT
+    assert raised.value.hint == hint
     assert raised.value.message.startswith("Nothing was changed. Confirming would ")
     return raised.value.message
 
@@ -57,7 +86,7 @@ def task(number: int, **fields: object) -> FakeTask:
     return FakeTask(
         id=number,
         task_id=f"uuid-{number}",
-        created=datetime(2026, 11, 17, 8, number, tzinfo=UTC),
+        created=datetime(2026, 11, 17, 8, tzinfo=UTC) + timedelta(minutes=number),
         **fields,  # pyright: ignore[reportArgumentType] -- test data built from dicts
     )
 
@@ -123,7 +152,15 @@ async def test_a_sanity_check_runs_without_confirm() -> None:
     ("kind", "words"),
     [
         ("train_classifier", ["train the classifier again", "automatic matching"]),
-        ("llm_index", ["rebuild the AI index", "sends the text of every document"]),
+        (
+            "llm_index",
+            [
+                "update the AI index",
+                "new or changed since its last update",
+                "of every document if there is no index yet or the embedding model changed",
+                "does nothing while the index is off",
+            ],
+        ),
     ],
 )
 async def test_the_other_tasks_need_confirm_and_say_what_they_do(
@@ -269,3 +306,670 @@ async def test_a_user_without_the_right_to_list_users_gives_the_id_of_an_owner()
     with pytest.raises(PermissionDenied) as raised:
         _ = await service.list_tasks(owner="viewer")
     assert raised.value.hint == "Pass the owner's user id instead of the username."
+
+
+# --- acknowledging all (PLMCP-89.2)
+
+
+def unseen() -> Setup:
+    """Five new tasks of the admin, the reader and nobody, and one that was seen."""
+    setup = Setup()
+    setup.state.tasks = [
+        task(1, status="success", owner=2, finished=AT),
+        task(2, status="failure", owner=2, file_name="two.pdf"),
+        task(3, status="revoked", owner=3, file_name="three.pdf"),
+        task(4, status="started", task_type="sanity_check"),
+        task(5, status="pending", owner=2),
+        task(6, status="failure", owner=2, acknowledged=True),
+    ]
+    return setup
+
+
+class Confirmed(TypedDict):
+    all_unacknowledged: bool
+    confirm: bool
+    expected: str
+
+
+# What the preview of the tasks of `unseen` ends with: the counts, then the newest task.
+SEEN = "5-2-2-1-5"
+CONFIRMED: Confirmed = {"all_unacknowledged": True, "confirm": True, "expected": SEEN}
+EXPECTED = r"confirm=true and expected=\d+-\d+-\d+-\d+-\d+ "
+
+
+async def previewed(call: object) -> str:
+    """The refusal of a call that names the value of its preview in the hint."""
+    with pytest.raises(ConfirmationRequired) as raised:
+        await call  # pyright: ignore[reportGeneralTypeIssues] -- test data built from dicts
+    assert raised.value.hint
+    assert re.search(EXPECTED, raised.value.hint)
+    return raised.value.message
+
+
+async def ask(setup: Setup) -> str:
+    return await previewed(setup.service.acknowledge_tasks(all_unacknowledged=True))
+
+
+async def test_all_tasks_are_acknowledged_only_after_a_preview_that_says_which() -> None:
+    setup = unseen()
+
+    message = await previewed(Setup.of(setup.state).acknowledge_tasks(all_unacknowledged=True))
+
+    assert message == (
+        "Nothing was changed. Confirming would mark all 5 tasks nobody acknowledged yet as seen, "
+        "which cannot be taken back: 2 failed or cancelled, 2 waiting or running, 1 completed; 2 "
+        "of them are not yours (another user's or nobody's); the newest failures: consume_file "
+        "'three.pdf' (id 3, 2026-11-17 08:03 UTC), consume_file 'two.pdf' (id 2, 2026-11-17 08:02 "
+        "UTC). Tasks that come in until it is done are marked, too."
+    )
+    assert not setup.state.tasks[0].acknowledged
+
+
+async def test_a_dry_run_shows_the_same_and_changes_nothing() -> None:
+    service = Setup.of(unseen().state, writes=False)
+
+    shown = await service.acknowledge_tasks(all_unacknowledged=True, dry_run=True)
+
+    assert (shown.dry_run, shown.acknowledged) == (True, 0)
+    assert shown.message.startswith("Nothing was changed. This would mark all 5 tasks")
+    assert shown.message.endswith(
+        "are marked, too. Pass confirm=true and expected=5-2-2-1-5 to go ahead."
+    )
+
+
+async def test_a_dry_run_with_ids_names_how_many() -> None:
+    service = Setup.of(unseen().state, writes=False)
+
+    shown = await service.acknowledge_tasks([1, 2], dry_run=True)
+
+    assert (shown.dry_run, shown.acknowledged) == (True, 0)
+    assert shown.message == (
+        "Nothing was changed. This would ask Paperless to mark 2 tasks as seen; the ids were not "
+        "looked up."
+    )
+
+
+async def test_confirmed_every_task_is_acknowledged() -> None:
+    setup = unseen()
+
+    done = await setup.service.acknowledge_tasks(
+        all_unacknowledged=True, confirm=True, expected=SEEN
+    )
+
+    assert (done.acknowledged, done.dry_run) == (5, False)
+    assert done.message == "Acknowledged 5 tasks (they no longer show as new)."
+    assert all(t.acknowledged for t in setup.state.tasks)
+
+
+async def test_nothing_new_is_no_call() -> None:
+    service = Setup.of(seeded(), writes=False)
+
+    for done in (
+        await service.acknowledge_tasks(all_unacknowledged=True, confirm=True),
+        await service.acknowledge_tasks(all_unacknowledged=True),
+    ):
+        assert (done.acknowledged, done.message) == (
+            0,
+            "Nothing to do: every task you may see was acknowledged before.",
+        )
+
+
+@pytest.mark.parametrize("ids", [None, [1]])
+async def test_exactly_one_of_ids_and_all_is_given(ids: list[int] | None) -> None:
+    service = Setup.of(unseen().state, writes=False)
+
+    call = service.acknowledge_tasks(ids, all_unacknowledged=ids is not None, confirm=True)
+
+    assert await failure(call, Validation) == (
+        "Give either task_ids or all_unacknowledged=true. "
+        "Hint: Ids are in list_tasks (the id field)."
+    )
+
+
+async def test_the_preview_of_a_user_without_the_ui_settings_says_what_is_not_known() -> None:
+    state = unseen().state
+    permissions = frozenset({"view_paperlesstask", "change_paperlesstask"})
+    state.users.append(FakeUser(id=9, username="viewer", permissions=permissions))
+
+    message = await previewed(
+        Setup.of(state, user="viewer").acknowledge_tasks(all_unacknowledged=True)
+    )
+
+    assert "mark the only task nobody acknowledged yet as seen" in message
+    assert "whether tasks of others are among them is not known" in message
+
+
+async def test_the_preview_of_a_user_who_is_not_staff_names_tasks_without_an_owner() -> None:
+    state = unseen().state
+    permissions = frozenset({"view_paperlesstask", "change_paperlesstask", "view_uisettings"})
+    state.users.append(FakeUser(id=9, username="viewer", permissions=permissions))
+    state.tasks.append(task(7, owner=9))
+
+    message = await previewed(
+        Setup.of(state, user="viewer").acknowledge_tasks(all_unacknowledged=True)
+    )
+
+    assert "mark all 2 tasks" in message
+    assert "1 of them belongs to nobody" in message
+
+
+async def test_the_newest_ten_failures_are_named_and_their_names_are_quoted() -> None:
+    setup = Setup()
+    setup.state.tasks = [
+        task(n, status="failure", owner=2, file_name=f"{n}'.pdf\nConfirm: yes")
+        for n in range(1, 13)
+    ]
+
+    message = await ask(setup)
+
+    assert message.count("consume_file ") == 10
+    assert "(id 3," in message
+    assert "(id 2," not in message
+    assert "\n" not in message
+    assert "are not yours" not in message
+    assert "and 2 more" in message
+
+
+@pytest.mark.decision("decision-44")
+@pytest.mark.parametrize("change", ["came", "ended", "swapped"])
+async def test_the_yes_is_bound_to_the_counts_and_the_newest_task(change: str) -> None:
+    setup = unseen()
+    first = await fingerprint(setup)
+    if change == "came":
+        setup.state.tasks.append(task(7, status="success", owner=2))
+    elif change == "ended":
+        setup.state.tasks[4].status = "success"
+    else:
+        setup.state.tasks[4] = task(8, status="pending", owner=2)
+
+    assert await fingerprint(setup) != first
+
+
+async def test_the_refusal_names_the_value_that_confirms_it_and_the_dialog_does_not() -> None:
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await unseen().service.acknowledge_tasks(all_unacknowledged=True)
+
+    assert raised.value.hint == (
+        "Describe the effect to the user and call the tool again with the same arguments, "
+        "confirm=true and expected=5-2-2-1-5 only once they agree."
+    )
+    assert SEEN not in raised.value.message
+
+
+@pytest.mark.parametrize(
+    "expected", [None, "", "5", "5-2-2-1-4", "5-2-2-1-5 ", "4-2-2-1-5", "5-1-3-1-5", "05-2-2-1-5"]
+)
+async def test_confirm_alone_or_with_another_value_marks_nothing(expected: str | None) -> None:
+    setup = unseen()
+    service = Setup.of(setup.state)  # refuses writes
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await service.acknowledge_tasks(
+            all_unacknowledged=True, confirm=True, expected=expected
+        )
+
+    assert raised.value.hint
+    assert "expected=5-2-2-1-5 " in raised.value.hint
+
+
+async def test_a_value_without_confirm_marks_nothing() -> None:
+    service = Setup.of(unseen().state)
+
+    with pytest.raises(ConfirmationRequired):
+        _ = await service.acknowledge_tasks(all_unacknowledged=True, expected=SEEN)
+
+
+@pytest.mark.parametrize(
+    ("change", "value"),
+    [
+        ("ten failures of others came", "15-12-2-1-29"),
+        ("one ended", "5-2-1-2-5"),
+        ("one ended and another came", "5-2-1-2-8"),
+        ("one was swapped for another", "5-2-2-1-8"),
+    ],
+)
+async def test_the_value_of_a_preview_does_not_confirm_what_changed_since(
+    change: str, value: str
+) -> None:
+    setup = unseen()
+    tasks = setup.state.tasks
+    if change == "ten failures of others came":
+        tasks += [task(n, status="failure", owner=3) for n in range(20, 30)]
+    elif change == "one ended":
+        tasks[4].status = "success"
+    else:
+        tasks[4] = task(8, status="pending", owner=2)
+        if change == "one ended and another came":
+            tasks[3].status = "success"
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await Setup.of(setup.state).acknowledge_tasks(
+            all_unacknowledged=True, confirm=True, expected=SEEN
+        )
+
+    assert raised.value.hint
+    assert f"expected={value} " in raised.value.hint
+
+
+async def test_an_accepted_dialog_needs_no_value() -> None:
+    setup = unseen()
+    with accepting(await fingerprint(setup)):
+        done = await setup.service.acknowledge_tasks(all_unacknowledged=True)
+
+    assert done.acknowledged == 5
+
+
+@pytest.mark.parametrize("confirm", [False, True])
+async def test_without_the_newest_task_nothing_is_marked(*, confirm: bool) -> None:
+    class NoList(FakePaperless):
+        @override
+        async def list_tasks(
+            self,
+            filters: TaskFilters,
+            *,
+            ordering: TaskOrdering = "-created",
+            page: int,
+            page_size: int,
+        ) -> TaskRowPage:
+            message = "Paperless did not answer in time."
+            raise UpstreamTimeout(message)
+
+    service = Setup.over(NoList(unseen().state, user=ADMIN[0]))  # refuses writes
+
+    with pytest.raises(UpstreamTimeout):
+        _ = await service.acknowledge_tasks(all_unacknowledged=True, confirm=confirm, expected=SEEN)
+
+
+async def test_tasks_that_were_acknowledged_meanwhile_are_confirmed_by_no_value() -> None:
+    """The counts were read, then the last task was acknowledged elsewhere."""
+
+    class Emptied(FakePaperless):
+        @override
+        async def count_tasks(self, filters: TaskFilters) -> TaskCounts:
+            found = await super().count_tasks(filters)
+            for one in self.state.tasks:
+                one.acknowledged = True
+            return found
+
+    service = Setup.over(Emptied(unseen().state, user=ADMIN[0]))
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await service.acknowledge_tasks(**CONFIRMED)
+
+    assert raised.value.hint
+    assert "expected=5-2-2-1-0 " in raised.value.hint
+
+
+async def fingerprint(setup: Setup) -> str:
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.acknowledge_tasks(all_unacknowledged=True)
+    return raised.value.fingerprint
+
+
+class Between(FakePaperless):
+    """Two more tasks come in right before everything is acknowledged."""
+
+    @override
+    async def acknowledge_all_tasks(self) -> int:
+        self.state.tasks += [task(20), task(21)]
+        return await super().acknowledge_all_tasks()
+
+
+async def test_the_result_says_how_many_came_in_between() -> None:
+    state = unseen().state
+    service = Setup.over(Between(state, user=ADMIN[0], allow_writes=True))
+
+    done = await service.acknowledge_tasks(**CONFIRMED)
+
+    assert done.acknowledged == 7
+    assert "At least 2 of them came in after the preview." in done.message
+
+
+class Lost(FakePaperless):
+    """The answer is lost, after the tasks were acknowledged or before."""
+
+    works: bool = True
+    error: PaperlessMcpError = UpstreamTimeout("Paperless did not answer in time.")
+
+    @override
+    async def acknowledge_all_tasks(self) -> int:
+        if self.works:
+            _ = await super().acknowledge_all_tasks()
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        UpstreamTimeout("Paperless did not answer in time."),
+        UnexpectedAnswer("Paperless answered something that cannot be read."),
+        # Also a connection that broke after the request was sent.
+        UpstreamUnreachable("Paperless is unreachable."),
+    ],
+)
+async def test_a_lost_answer_is_looked_up_and_nothing_is_sent_again(
+    error: PaperlessMcpError,
+) -> None:
+    state = unseen().state
+    fake = Lost(state, user=ADMIN[0], allow_writes=True)
+    fake.error = error
+
+    done = await Setup.over(fake).acknowledge_tasks(
+        all_unacknowledged=True, confirm=True, expected=SEEN
+    )
+
+    assert done.acknowledged is None
+    assert done.message == (
+        "Paperless's answer was lost; no task is new any more, so it was done (5 at the preview)."
+    )
+
+
+async def test_a_lost_answer_with_tasks_left_is_unknown() -> None:
+    fake = Lost(unseen().state, user=ADMIN[0], allow_writes=True)
+    fake.works = False
+
+    done = await Setup.over(fake).acknowledge_tasks(
+        all_unacknowledged=True, confirm=True, expected=SEEN
+    )
+
+    assert done.acknowledged is None
+    assert done.message == (
+        "Paperless's answer was lost; 5 tasks are new now (5 at the preview), so it is not known "
+        "whether it was done. Do not call again on your own: look at list_tasks."
+    )
+
+
+class Gone(Lost):
+    """After the lost answer nothing can be read either."""
+
+    @override
+    async def count_tasks(self, filters: TaskFilters) -> TaskCounts:
+        if filters.owner is None and all(t.acknowledged for t in self.state.tasks):
+            raise self.error
+        return await super().count_tasks(filters)
+
+
+async def test_a_lost_answer_after_which_nothing_can_be_read_is_unknown() -> None:
+    fake = Gone(unseen().state, user=ADMIN[0], allow_writes=True)
+
+    done = await Setup.over(fake).acknowledge_tasks(
+        all_unacknowledged=True, confirm=True, expected=SEEN
+    )
+
+    assert done.acknowledged is None
+    assert done.message == (
+        "Paperless's answer was lost and the tasks cannot be read now, so it is not known "
+        "whether it was done. Do not call again on your own: look at list_tasks."
+    )
+
+
+class Fewer(FakePaperless):
+    """Somebody else acknowledges one right before."""
+
+    @override
+    async def acknowledge_all_tasks(self) -> int:
+        self.state.tasks[0].acknowledged = True
+        return await super().acknowledge_all_tasks()
+
+
+async def test_fewer_than_previewed_is_what_paperless_says() -> None:
+    fake = Fewer(unseen().state, user=ADMIN[0], allow_writes=True)
+
+    done = await Setup.over(fake).acknowledge_tasks(
+        all_unacknowledged=True, confirm=True, expected=SEEN
+    )
+
+    assert done.message == "Acknowledged 4 tasks (they no longer show as new)."
+
+
+async def test_a_dry_run_without_new_tasks_is_a_dry_run() -> None:
+    shown = await Setup.of(seeded()).acknowledge_tasks(all_unacknowledged=True, dry_run=True)
+
+    assert (shown.dry_run, shown.acknowledged) == (True, 0)
+
+
+async def test_a_time_is_shown_in_utc_and_an_only_task_is_named_so() -> None:
+    setup = Setup()
+    setup.state.tasks = [task(1, status="failure", owner=2, task_type="mail_fetch")]
+    setup.state.tasks[0].created = datetime(2026, 11, 17, 9, 5, tzinfo=timezone(timedelta(hours=1)))
+
+    message = await ask(setup)
+
+    assert "mark the only task nobody" in message
+    assert "mail_fetch (id 1, 2026-11-17 08:05 UTC). Tasks" in message
+
+
+class Swapped(FakePaperless):
+    """One is acknowledged elsewhere and another comes in right before."""
+
+    @override
+    async def acknowledge_all_tasks(self) -> int:
+        self.state.tasks[0].acknowledged = True
+        self.state.tasks.append(task(20))
+        return await super().acknowledge_all_tasks()
+
+
+async def test_what_came_in_is_a_lower_bound() -> None:
+    """Paperless says one number: what left meanwhile hides as many that came."""
+    fake = Swapped(unseen().state, user=ADMIN[0], allow_writes=True)
+
+    done = await Setup.over(fake).acknowledge_tasks(
+        all_unacknowledged=True, confirm=True, expected=SEEN
+    )
+
+    assert done.message == "Acknowledged 5 tasks (they no longer show as new)."
+
+
+async def test_a_refused_call_is_an_error() -> None:
+    fake = Lost(unseen().state, user=ADMIN[0], allow_writes=True)
+    fake.works, fake.error = False, PermissionDenied("No.", hint="Ask.")
+
+    with pytest.raises(PermissionDenied):
+        _ = await Setup.over(fake).acknowledge_tasks(
+            all_unacknowledged=True, confirm=True, expected=SEEN
+        )
+
+
+# --- the overview (PLMCP-89.2)
+
+
+def recent() -> Setup:
+    """The same tasks, of the last minutes: the summary counts from today."""
+    setup = unseen()
+    for one in setup.state.tasks:
+        one.created = datetime.now(UTC) - timedelta(minutes=10 - one.id)
+    return setup
+
+
+async def test_the_overview_counts_lists_and_summarises() -> None:
+    found = await recent().service.overview(days=365)
+
+    assert found.counts == TaskCounts(total=6, needs_attention=3, in_progress=2, completed=1)
+    assert found.active is not None
+    assert [row.id for row in found.active] == [5, 4]
+    assert found.by_type is not None
+    assert [(s.task_type, s.total) for s in found.by_type] == [
+        ("consume_file", 5),
+        ("sanity_check", 1),
+    ]
+    assert (found.days, found.by_type_of, found.unavailable) == (365, "every_user", ())
+
+
+@pytest.mark.parametrize(
+    ("given", "total"),
+    [
+        ({"acknowledged": True}, 1),
+        ({"task_type": "sanity_check"}, 1),
+        ({"task_type": ["sanity_check", "mail_fetch"]}, 1),
+        ({"trigger_source": ["manual"]}, 0),
+        ({"owner": "e2e-reader"}, 1),
+        ({"created_from": AT + timedelta(minutes=5)}, 2),
+        ({"created_to": AT + timedelta(minutes=1)}, 1),
+        ({"name": "two"}, 1),
+        ({"result": "boom"}, 0),
+    ],
+)
+async def test_the_filters_apply_to_the_counts_only(given: dict[str, object], total: int) -> None:
+    found = await unseen().service.overview(**given)  # pyright: ignore[reportArgumentType] -- test data built from dicts
+
+    assert found.counts is not None
+    assert found.counts.total == total
+    assert found.active is not None
+    assert len(found.active) == 2
+
+
+async def test_parts_the_user_may_not_see_are_named() -> None:
+    state = recent().state
+    for number, permissions in enumerate(({"view_system_monitoring"}, {"view_paperlesstask"}), 8):
+        state.users.append(
+            FakeUser(id=number, username=f"u{number}", permissions=frozenset(permissions))
+        )
+
+    monitor = await Setup.of(state, user="u8").overview()
+    viewer = await Setup.of(state, user="u9").overview()
+
+    assert (monitor.counts, monitor.active) == (None, None)
+    assert monitor.unavailable == ("counts", "active")
+    assert monitor.by_type is not None
+    assert sum(s.total for s in monitor.by_type) == 6
+    assert viewer.unavailable == ()
+    assert (monitor.by_type_of, viewer.by_type_of) == ("unknown", "unknown")
+    assert viewer.counts is not None
+    assert viewer.counts.total == 1
+
+
+async def test_the_summary_of_a_user_without_rights_covers_own_and_unowned_tasks() -> None:
+    state = unseen().state
+    permissions = frozenset({"view_paperlesstask", "view_uisettings"})
+    state.users.append(FakeUser(id=9, username="viewer", permissions=permissions))
+
+    assert (await Setup.of(state, user="viewer").overview()).by_type_of == "own_and_unowned"
+
+
+async def test_the_summary_of_a_user_who_may_view_the_status_covers_every_user() -> None:
+    state = recent().state
+    permissions = frozenset({"view_paperlesstask", "view_uisettings", "view_system_monitoring"})
+    state.users.append(FakeUser(id=9, username="monitor", permissions=permissions))
+
+    found = await Setup.of(state, user="monitor").overview()
+
+    assert found.by_type_of == "every_user"
+    assert found.counts is not None
+    assert found.counts.total == 1
+
+
+class Shaky(FakePaperless):
+    """One read fails for a moment; what else is asked is recorded when it is answered."""
+
+    failing: str = "get_viewer"
+    answered: list[str] = []  # noqa: RUF012 -- a test spy, one instance per test
+
+    async def _answer[T](self, name: str, call: Coroutine[object, object, T]) -> T:
+        if name == self.failing:
+            call.close()
+            message = "Paperless did not answer in time."
+            raise UpstreamTimeout(message)
+        await asyncio.sleep(0.01)
+        found = await call
+        self.answered.append(name)
+        return found
+
+    @override
+    async def count_tasks(self, filters: TaskFilters) -> TaskCounts:
+        own = "count_own" if filters.owner is not None else "count_tasks"
+        return await self._answer(own, super().count_tasks(filters))
+
+    @override
+    async def list_active_tasks(self) -> tuple[TaskRow, ...]:
+        return await self._answer("list_active_tasks", super().list_active_tasks())
+
+    @override
+    async def summarize_tasks(self, *, days: int) -> tuple[TaskTypeSummary, ...]:
+        return await self._answer("summarize_tasks", super().summarize_tasks(days=days))
+
+    @override
+    async def get_viewer(self) -> TaskViewer:
+        return await self._answer("get_viewer", super().get_viewer())
+
+
+def shaky(failing: str) -> Shaky:
+    fake = Shaky(recent().state, user=ADMIN[0])
+    fake.failing, fake.answered = failing, []
+    return fake
+
+
+async def test_the_overview_does_without_the_viewer() -> None:
+    found = await Setup.over(shaky("get_viewer")).overview()
+
+    assert found.by_type_of == "unknown"
+    assert found.unavailable == ()
+    assert found.counts is not None
+    assert found.counts.total == 6
+
+
+@pytest.mark.parametrize("failing", ["count_tasks", "list_active_tasks", "summarize_tasks"])
+async def test_a_part_that_fails_is_an_error_and_leaves_nothing_running(failing: str) -> None:
+    fake = shaky(failing)
+
+    with pytest.raises(UpstreamTimeout):
+        _ = await Setup.over(fake).overview()
+
+    assert len(fake.answered) == 3
+
+
+@pytest.mark.parametrize("failing", ["get_viewer", "count_own"])
+async def test_the_preview_does_without_whose_tasks_they_are(failing: str) -> None:
+    service = Setup.over(shaky(failing))
+
+    shown = await service.acknowledge_tasks(all_unacknowledged=True, dry_run=True)
+
+    assert "whether tasks of others are among them is not known" in shown.message
+
+
+@pytest.mark.parametrize(("count", "cut"), [(0, False), (49, False), (50, True), (51, True)])
+async def test_running_tasks_that_may_be_cut_are_marked(count: int, *, cut: bool) -> None:
+    """Paperless sends at most 50 and does not say whether there are more."""
+    setup = Setup()
+    setup.state.tasks = [task(n, status="pending") for n in range(1, count + 1)]
+
+    found = await setup.service.overview()
+
+    assert found.active is not None
+    assert (len(found.active), found.active_truncated) == (min(count, 50), cut)
+
+
+async def test_a_user_who_may_see_no_part_gets_the_error() -> None:
+    with pytest.raises(PermissionDenied) as raised:
+        _ = await Setup.of(seeded(), user=READER[0]).overview()
+
+    assert raised.value.hint
+    assert "view_paperlesstask" in raised.value.hint
+
+
+async def test_a_blank_text_or_an_empty_list_is_refused_in_the_overview_too() -> None:
+    service = unseen().service
+
+    assert "name must not be blank" in await failure(service.overview(name=" "), Validation)
+    assert "task_type must name" in await failure(service.overview(task_type=[]), Validation)
+
+
+async def test_the_summary_leaves_out_what_is_older_than_the_days() -> None:
+    setup = Setup()
+    setup.state.tasks = [task(1), task(2, task_type="mail_fetch")]
+    now = datetime.now(UTC)
+    setup.state.tasks[0].created, setup.state.tasks[1].created = (
+        now - timedelta(days=3),
+        now - timedelta(days=40),
+    )
+
+    for days, types in ((2, []), (30, ["consume_file"]), (60, ["consume_file", "mail_fetch"])):
+        found = await setup.service.overview(days=days)
+        assert found.by_type is not None
+        assert [s.task_type for s in found.by_type] == types
+
+
+@pytest.mark.parametrize("days", [0, 366])
+async def test_days_paperless_would_silently_change_are_refused(days: int) -> None:
+    text = await failure(unseen().service.overview(days=days), Validation)
+
+    assert text == "days must be between 1 and 365. Hint: The default is 30."

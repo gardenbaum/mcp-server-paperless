@@ -6,8 +6,20 @@ from typing import TYPE_CHECKING
 from mcp_server_paperless.domain.errors import UpstreamUnavailable
 
 if TYPE_CHECKING:
-    from mcp_server_paperless.domain.instance import InstanceOverview
-    from mcp_server_paperless.domain.ports import InstanceReader
+    from mcp_server_paperless.domain.instance import InstanceOverview, SystemReport
+    from mcp_server_paperless.domain.ports import InstanceReader, SystemReportReader
+
+
+class SystemReportService:
+    """What Paperless's statistics and system status tell."""
+
+    def __init__(self, reader: SystemReportReader) -> None:
+        """Read through ``reader``."""
+        self._reader: SystemReportReader = reader
+
+    async def report(self) -> SystemReport:
+        """Both in full, as far as the user may see them."""
+        return await self._reader.get_system_report()
 
 
 class InstanceService:

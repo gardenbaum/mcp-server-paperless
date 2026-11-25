@@ -152,8 +152,8 @@ Limits.
 | `POST /api/share_links/` | `create_share_link` |  |
 | `DELETE /api/share_links/{id}/` | `delete_share_link` |  |
 | `GET /api/share_links/{id}/` | `delete_share_link` |  |
-| `GET /api/statistics/` | `get_instance_overview` |  |
-| `GET /api/status/` | `get_instance_overview` |  |
+| `GET /api/statistics/` | `get_instance_overview`, `get_system_report` |  |
+| `GET /api/status/` | `get_instance_overview`, `get_system_report` |  |
 | `GET /api/storage_paths/` | `bulk_edit_documents`, `bulk_edit_taxonomy`, `create_workflow`, `delete_taxonomy_item`, `get_document` and 12 more |  |
 | `POST /api/storage_paths/` | `create_taxonomy_item` |  |
 | `POST /api/storage_paths/test/` |  | PLMCP-83 |
@@ -167,19 +167,19 @@ Limits.
 | `GET /api/tags/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/tags/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/tags/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
-| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `explain_mail_import`, `explain_workflow` and 15 more |  |
+| `GET /api/tasks/` | `acknowledge_tasks`, `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `explain_mail_import` and 16 more |  |
 | `POST /api/tasks/acknowledge/` | `acknowledge_tasks` |  |
-| `GET /api/tasks/active/` |  | PLMCP-89 |
+| `GET /api/tasks/active/` | `get_task_overview` |  |
 | `POST /api/tasks/run/` | `run_task` |  |
-| `GET /api/tasks/status_counts/` |  | PLMCP-89 |
-| `GET /api/tasks/summary/` |  | PLMCP-89 |
+| `GET /api/tasks/status_counts/` | `acknowledge_tasks`, `get_task_overview` |  |
+| `GET /api/tasks/summary/` | `get_task_overview` |  |
 | `GET /api/tasks/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-93 - The-task-tools-have-a-toolset-of-their-own-and-show-of-a-tasks-input-only-the-file-name.md) |
 | `POST /api/token/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `GET /api/trash/` | `empty_trash`, `get_trash_entry`, `get_trashed_file`, `list_trash`, `restore_from_trash` and 3 more |  |
 | `POST /api/trash/` | `empty_trash`, `restore_from_trash` |  |
-| `GET /api/ui_settings/` | `create_saved_view`, `delete_pages`, `delete_processed_mail`, `delete_user`, `edit_pdf` and 15 more |  |
+| `GET /api/ui_settings/` | `create_saved_view`, `delete_pages`, `delete_processed_mail`, `delete_user`, `edit_pdf` and 16 more |  |
 | `POST /api/ui_settings/` | `pin_saved_view` |  |
-| `GET /api/users/` | `create_mail_rule`, `create_workflow`, `delete_user`, `get_document`, `get_saved_view` and 12 more |  |
+| `GET /api/users/` | `create_mail_rule`, `create_workflow`, `get_document`, `get_saved_view`, `get_task_overview` and 12 more |  |
 | `POST /api/users/` | `create_user` |  |
 | `DELETE /api/users/{id}/` | `delete_user` |  |
 | `GET /api/users/{id}/` | `delete_user`, `get_user`, `update_user` |  |
@@ -250,7 +250,7 @@ TOML file.
 | `GET /api/documents/{id}/` | `query:full_perms` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `PATCH /api/documents/{id}/` | `body:created_date`, `body:remove_inbox_tags` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `GET /api/documents/{id}/download/` | `query:follow_formatting` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
-| `GET /api/documents/{id}/history/` | `query:page`, `query:page_size` | PLMCP-89 |
+| `GET /api/documents/{id}/history/` | `query:page`, `query:page_size` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-95 - Document-history-is-paged-here-and-the-system-report-shows-what-Paperless-shows-the-user.md) |
 | `GET /api/documents/{id}/notes/` | `query:id` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `POST /api/documents/{id}/notes/` | `body:format` | PLMCP-83 |
 | `POST /api/documents/{id}/notes/` | `query:id` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
@@ -273,8 +273,9 @@ TOML file.
 | `GET /api/tags/` | `query:id`, `query:is_root`, `query:name__icontains`, `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `POST /api/tags/` | `body:owner`, `body:set_permissions` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `GET /api/tags/{id}/` | `query:full_perms` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
-| `POST /api/tasks/acknowledge/` | `body:all` | PLMCP-89 |
+| `GET /api/tasks/active/` | `query:acknowledged`, `query:date_created_after`, `query:date_created_before`, `query:is_complete`, `query:name`, `query:ordering`, `query:owner`, `query:result`, `query:status`, `query:task_type`, `query:trigger_source` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-94 - Acknowledging-all-tasks-needs-a-yes-after-a-preview-and-the-task-overview-says-what-each-part-counts.md) |
 | `POST /api/tasks/run/` | `body:task_type=apply_ai_suggestions`, `body:task_type=build_share_link`, `body:task_type=bulk_delete`, `body:task_type=bulk_update`, `body:task_type=check_workflows`, `body:task_type=consume_file`, `body:task_type=empty_trash`, `body:task_type=index_optimize`, `body:task_type=mail_fetch`, `body:task_type=reprocess_document` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-93 - The-task-tools-have-a-toolset-of-their-own-and-show-of-a-tasks-input-only-the-file-name.md) |
+| `GET /api/tasks/summary/` | `query:acknowledged`, `query:date_created_after`, `query:date_created_before`, `query:is_complete`, `query:name`, `query:ordering`, `query:owner`, `query:result`, `query:status`, `query:task_type`, `query:trigger_source` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-94 - Acknowledging-all-tasks-needs-a-yes-after-a-preview-and-the-task-overview-says-what-each-part-counts.md) |
 | `GET /api/users/` | `query:ordering`, `query:username__iendswith`, `query:username__iexact`, `query:username__istartswith` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `POST /api/users/` | `body:date_joined` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |
 | `PATCH /api/users/{id}/` | `body:date_joined` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-99 - Left-out-of-the-rest-of-the-Paperless-API-what-another-way-does-what-the-server-must-not-touch-and-what-does-nothing.md) |

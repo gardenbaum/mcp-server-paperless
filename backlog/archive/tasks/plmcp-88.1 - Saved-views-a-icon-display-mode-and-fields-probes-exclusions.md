@@ -1,11 +1,11 @@
 ---
 id: PLMCP-88.1
 title: 'Saved views a: icon, display mode and fields, probes, exclusions'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T10:18:26Z'
-updated_date: '2026-11-25T11:12:02Z'
+updated_date: '2026-11-25T14:46:42Z'
 labels:
   - views
 dependencies: []
@@ -34,7 +34,7 @@ First part of PLMCP-88: icon, display_mode and display_fields of a saved view ca
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -60,3 +60,9 @@ CI run 45596307049 on 65cd16b: live contract (test_views 25) and E2E (test_views
 
 Review: custom fields only looked up when shown (test), echoed icon and field cut and on one line, contradictory arguments refused before anything is read. Tests first (6 red); 5 mutants, none survived.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+icon, display_mode and display_fields are read, set on creation, changed and the last two cleared; wrong values are refused before anything is sent (decision-91, with the owner-approved exclusions). Probes P1 to P5: run 45594222648. Merged as 3b7abc6 (#164). Live: 45596307049 (65cd16b); CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 2 stays open: just check was not run as a whole locally. On GitHub the check jobs run its recipes one by one: 45602215324 (1383a47).
+<!-- SECTION:FINAL_SUMMARY:END -->

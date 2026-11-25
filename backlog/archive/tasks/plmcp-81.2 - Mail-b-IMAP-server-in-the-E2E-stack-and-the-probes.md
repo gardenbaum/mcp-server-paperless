@@ -1,11 +1,11 @@
 ---
 id: PLMCP-81.2
 title: 'Mail b: IMAP server in the E2E stack and the probes'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:55Z'
-updated_date: '2026-11-25T08:23:48Z'
+updated_date: '2026-11-25T14:46:40Z'
 labels:
   - mail
 dependencies:
@@ -24,17 +24,17 @@ Second part of PLMCP-81, test only: the E2E stack has no IMAP server, so a fetch
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A job of its own runs the live mail tests against a real IMAP server, pinned by digest and followed by Renovate
-- [ ] #2 P1 to P4 of the design are answered by live tests, with the texts of Paperless; a probe that fails stops the part that needs it
-- [ ] #3 The redaction of login answers is proven against a real failed login
+- [x] #1 A job of its own runs the live mail tests against a real IMAP server, pinned by digest and followed by Renovate
+- [x] #2 P1 to P4 of the design are answered by live tests, with the texts of Paperless; a probe that fails stops the part that needs it
+- [x] #3 The redaction of login answers is proven against a real failed login
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -56,3 +56,9 @@ Owner, 2026-11-25: 'Überall wie von dir empfohlen bitte.': the job e2e-imap sta
 
 Review round 1, tests first: servers that repeat the credentials (LOGIN, AUTHENTICATE PLAIN for a password that is not ASCII, XOAUTH2 for a token; NO, untagged BYE with a carriage return, NO to LOGOUT; also in the record of an action), a stub in the tests beside Dovecot; a live test of every order; the log tail test first proves that the answer is in the tail.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+A job of its own (e2e-imap) runs the live mail tests against Dovecot 2.4.5, pinned by digest with a Renovate rule. P1 to P4 are answered by live tests (notes); P3 found that mail_fetch tasks have no text in the API, which 81.4 takes into account. Real failed logins prove the redaction of decision-80. Merged as 257fdb1 (#156). e2e-imap: 39 tests green in 45630847369 (main 1efb5cd), 60 in 45632136477. DoD 1 stays open: test-only part, the probes were not seen red. DoD 2 stays open: no local run of the whole just check is recorded. On GitHub the check jobs run its recipes one by one: 45583889907 (290e2e5).
+<!-- SECTION:FINAL_SUMMARY:END -->

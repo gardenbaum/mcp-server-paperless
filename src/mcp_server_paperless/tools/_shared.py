@@ -56,7 +56,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.documents import DocumentService
     from mcp_server_paperless.services.duplicate_resolution import DuplicateResolver
     from mcp_server_paperless.services.files import FileService
-    from mcp_server_paperless.services.instance import InstanceService
+    from mcp_server_paperless.services.instance import InstanceService, SystemReportService
     from mcp_server_paperless.services.mail import MailService
     from mcp_server_paperless.services.mail_explanation import MailExplanations
     from mcp_server_paperless.services.notes import NoteService
@@ -249,6 +249,8 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "get_log": "admin",
     "bulk_download": "admin",
     "list_tasks": "tasks",
+    "get_task_overview": "tasks",
+    "get_system_report": "tasks",
     "acknowledge_tasks": "tasks",
     "run_task": "tasks",
 }
@@ -960,6 +962,18 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    "get_task_overview": ToolAnnotations(
+        title="Get task overview",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_system_report": ToolAnnotations(
+        title="Get system report",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     "acknowledge_tasks": ToolAnnotations(
         title="Acknowledge tasks",
         read_only_hint=False,
@@ -1241,6 +1255,7 @@ class Services:
     mail_explanations: MailExplanations
     accounts: AccountAdmin
     system: SystemAdmin
+    reports: SystemReportService
     task_lists: TaskListService
     raw: RawApiService
 
