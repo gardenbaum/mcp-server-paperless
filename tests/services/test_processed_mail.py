@@ -4,6 +4,7 @@ The rows of `refetch` are those of the table in the design of PLMCP-81 (2.2); th
 PLMCP-81.2 prove them against a mail server.
 """
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Final, final, override
 
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
 
     from mcp_server_paperless.domain.documents import SignedIn
     from mcp_server_paperless.domain.mail import (
+        MailAccount,
         MailRule,
         ProcessedMail,
         ProcessedMailDeletion,
@@ -46,11 +48,24 @@ if TYPE_CHECKING:
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-80")]
 
 DAY = datetime(2026, 11, 10, 8, 0, tzinfo=UTC)
-NEXT: Final = "the next fetch (every 10 minutes by default, or process_mail_account)"
+NEXT: Final = (
+    "the next fetch (every 10 minutes by default, or process_mail_account; an earlier rule of the "
+    "account can stop it or take the mail first)"
+)
 MATCHING: Final = "if it still matches the rule's folder, age and filters"
+HIDDEN: Final = (
+    "You may not see the rule of this mail: without this record it may be imported again and then "
+    "deleted or moved on the mail server"
+)
+TAKEN: Final = (
+    "the files the rule takes from it are imported, also those imported before (a second time, "
+    "unless Paperless rejects duplicates), and if every one of them is consumed"
+)
 NOT_KNOWN: Final = (
     "The rule's settings of now count, not those of then; whether the mail still exists on the "
-    "server, and records you may not see, are not known here."
+    "server, and records you may not see, are not known here. A record keeps out the mail with its "
+    "folder and uid: one stored without the folder's UIDVALIDITY any such mail, one with an older "
+    "UIDVALIDITY none; which it is is not shown."
 )
 
 
@@ -191,10 +206,7 @@ async def test_a_rule_the_user_may_not_see_is_its_id_and_the_rest_not_known(
     found = await setup.get()
 
     assert found.rule == Reference(id=1, name=None)
-    assert found.refetch == (
-        "Not known: you may not see the rule of this mail, which decides whether it is fetched "
-        "again without this record."
-    )
+    assert found.refetch == (f"{HIDDEN}. {NOT_KNOWN}")
 
 
 @pytest.mark.parametrize(
@@ -215,8 +227,7 @@ async def test_a_mail_that_was_taken_stays_out_by_what_the_rule_did_to_it(
 
     assert await setup.refetch() == (
         f"Without this record the mail is not fetched while it is {state} on the mail server. If "
-        f"it is not, {NEXT} takes it again {MATCHING}: its documents are imported again (a second "
-        f"time, unless Paperless rejects duplicates), then the rule {again}. {NOT_KNOWN}"
+        f"it is not, {NEXT} takes it again {MATCHING}: {TAKEN}, the rule then {again}. {NOT_KNOWN}"
     )
 
 
@@ -237,8 +248,7 @@ async def test_a_mail_that_was_taken_away_is_only_taken_again_if_it_is_there(
     assert await setup.refetch() == (
         f"The rule {gone}, so it should not be in the folder any more; a mail that was put back "
         f"has a new uid and is fetched with or without this record. If it is still there, {NEXT} "
-        f"takes it again {MATCHING}: its documents are imported again (a second time, unless "
-        f"Paperless rejects duplicates), then the rule {again}. {NOT_KNOWN}"
+        f"takes it again {MATCHING}: {TAKEN}, the rule then {again}. {NOT_KNOWN}"
     )
 
 
@@ -257,9 +267,8 @@ async def test_a_failed_mail_is_fetched_again_and_the_rule_then_acts(
     setup.mail(status="FAILED")
 
     assert await setup.refetch() == (
-        f"Without this record {NEXT} takes the mail again {MATCHING}{condition}: all its files "
-        "are imported, also those that were imported before the failure (a second time, unless "
-        f"Paperless rejects duplicates), then the rule {then}. {NOT_KNOWN}"
+        f"Without this record {NEXT} takes the mail again {MATCHING}{condition}: {TAKEN}, the rule "
+        f"then {then}. {NOT_KNOWN}"
     )
 
 
@@ -292,8 +301,8 @@ async def test_a_disabled_rule_and_another_folder_are_said_first() -> None:
 
     start = (
         "The rule is disabled: it fetches nothing until it is switched on. The rule now reads "
-        "folder 'Bills', not 'INBOX': it does not look at this mail while so. Otherwise: "
-        "without this record the next fetch"
+        "folder 'Bills', not 'INBOX': it does not look at this mail while so. Once that "
+        "no longer holds: without this record the next fetch"
     )
     assert text.startswith(start)
 
@@ -312,9 +321,8 @@ async def test_other_records_of_the_same_mail_that_keep_it_out_are_named() -> No
 
     start = (
         "Other records with the folder and uid of this mail keep it out until they are deleted "
-        "too: 2, 6 (unless the folder was made anew on the server since: then a uid can mean "
-        "another mail). "
-        "Otherwise: without this record the next fetch"
+        "too: 2, 6. "
+        "Once that no longer holds: without this record the next fetch"
     )
     assert text.startswith(start)
 
@@ -395,13 +403,12 @@ async def test_the_confirmation_names_each_record_and_what_follows() -> None:
         "which cannot be brought back; documents and the mail itself stay. "
         "2 with status FAILED: 1 'Invoice' (received 2026-11-10 08:00 UTC, rule 'Bills', id 1), "
         "2 'Invoice' (received 2026-11-10 08:00 UTC, rule 'Bills', id 1). For each: without this "
-        f"record {NEXT} takes the mail again {MATCHING}: all its files are imported, also those "
-        "that were imported before the failure (a second time, unless Paperless rejects "
-        "duplicates), then the rule DELETES the mail on the mail server. "
+        f"record {NEXT} takes the mail again {MATCHING}: {TAKEN}, the rule then DELETES the mail "
+        "on the mail server. "
         "1 with status SUCCESS: 3 'Taken' (received 2026-11-10 08:00 UTC, rule 'Other', id 2). "
         "For it: without this record the mail is not fetched while it is read on the mail server. "
-        f"If it is not, {NEXT} takes it again {MATCHING}: its documents are imported again (a "
-        "second time, unless Paperless rejects duplicates), then the rule marks the mail as read. "
+        f"If it is not, {NEXT} takes it again {MATCHING}: {TAKEN}, the rule then marks the mail as "
+        "read. "
         f"{NOT_KNOWN}"
     )
     assert setup.left() == [1, 2, 3]
@@ -420,7 +427,7 @@ async def test_a_preview_says_the_same_and_deletes_nothing() -> None:
     assert report.message.startswith(
         f"{DRY_RUN} Confirming would permanently delete 1 record of processed mail,"
     )
-    assert report.message.endswith(f"not known here. {TO_GO_AHEAD}")
+    assert report.message.endswith(f"is not shown. {TO_GO_AHEAD}")
     assert setup.left() == [1]
 
 
@@ -500,9 +507,9 @@ async def test_other_records_that_stay_are_named_and_those_that_go_are_not() -> 
         _ = await setup.delete(1, 2, 8, confirm=False)
 
     text = raised.value.message
-    kept = "kept out by the records 3, 4, 5 and 2 more with its uid, which stay"
+    kept = "kept out by the records 3, 4, 5 and 2 more with its uid, which stay for now"
     assert f"1 'Invoice' (received 2026-11-10 08:00 UTC, rule 'Bills', id 1; {kept})" in text
-    assert "A record with the same uid keeps a mail out (unless the folder was made anew" in text
+    assert "one with an older UIDVALIDITY none" in text
     assert "8 'Invoice' (received 2026-11-10 08:00 UTC, rule 'Bills', id 1)." in text
 
 
@@ -542,7 +549,7 @@ async def test_a_record_of_a_hidden_rule_is_shown_with_its_id_and_not_known() ->
     report = await setup.delete(1, dry_run=True)
 
     assert "1 'Invoice' (received 2026-11-10 08:00 UTC, rule id 1)" in report.message
-    assert "For it: not known: you may not see the rule" in report.message
+    assert f"For it: {HIDDEN[0].lower()}{HIDDEN[1:]}." in report.message
 
 
 @pytest.mark.decision("decision-83")
@@ -747,8 +754,9 @@ async def test_after_forty_seconds_nothing_is_started() -> None:
 
     fake = SlowRule(setup.state, user=ADMIN[0])
     service = ProcessedMailService(fake, fake, fake, clock=lambda: setup.now)
-    with pytest.raises(PaperlessMcpError, match="Nothing was deleted"):
+    with pytest.raises(PaperlessMcpError) as late_rule:
         _ = await service.delete([1, 2], dry_run=False, confirm=True)
+    assert late_rule.value.message.endswith("Nothing was deleted.")
 
     reading = Setup(writes=True)
     reading.rule()
@@ -766,6 +774,7 @@ async def test_after_forty_seconds_nothing_is_started() -> None:
     report = await service.delete([1, 2], dry_run=False, confirm=True)
     assert outcomes(report) == [(1, "unknown"), (2, "unknown")]
     assert "40 seconds have passed." in report.message
+    assert report.message.endswith("Delete fewer records per call.")
 
 
 @pytest.mark.decision("decision-83")
@@ -830,8 +839,9 @@ async def test_nothing_is_sent_when_the_last_read_took_too_long() -> None:
 
     fake = Slow(setup.state, user=ADMIN[0])
     service = ProcessedMailService(fake, fake, fake, clock=lambda: setup.now)
-    with pytest.raises(PaperlessMcpError, match="Nothing was deleted"):
+    with pytest.raises(PaperlessMcpError) as raised:
         _ = await service.delete([1], dry_run=False, confirm=True)
+    assert raised.value.message.endswith("Nothing was deleted.")
 
 
 @pytest.mark.decision("decision-83")
@@ -872,3 +882,248 @@ async def test_a_hidden_account_does_not_stop_the_deletion() -> None:
     setup.mail(owner=None, status="FAILED")
 
     assert outcomes(await setup.delete(1)) == [(1, "deleted")]
+
+
+@pytest.mark.parametrize("scope", ["eml", "eml_and_attachments"])
+async def test_a_mail_without_attachments_that_was_imported_itself_is_imported_again(
+    scope: str,
+) -> None:
+    """The mail itself is queued before Paperless finds no attachment (PROCESSED_WO_CONSUMPTION)."""
+    setup = Setup()
+    setup.rule(action="delete", consumption_scope=scope)
+    setup.mail(status="PROCESSED_WO_CONSUMPTION")
+
+    assert await setup.refetch() == (
+        f"Without this record {NEXT} takes the mail again {MATCHING}: the mail itself is imported "
+        "(a second time, unless Paperless rejects duplicates) with the files the rule takes from "
+        f"it, and if every one of them is consumed, the rule then DELETES the mail on the mail "
+        f"server. {NOT_KNOWN}"
+    )
+
+
+async def test_the_inbox_is_the_same_in_any_case() -> None:
+    setup = Setup()
+    setup.rule(folder="inbox")
+    setup.mail(status="FAILED", folder="INBOX")
+    other = Setup()
+    other.rule(folder="bills")
+    other.mail(status="FAILED", folder="Bills")
+
+    assert (await setup.refetch()).startswith("Without this record")
+    assert (await other.refetch()).startswith("The rule now reads folder 'bills', not 'Bills'")
+
+
+async def test_other_records_of_a_hidden_rule_are_named_as_well() -> None:
+    setup = Setup("mailman", permissions={"view_processedmail", "delete_processedmail"})
+    setup.mail(owner=None)
+    setup.mail(owner=None)
+
+    read = await setup.refetch()
+    asked = (await setup.delete(1, dry_run=True)).message
+
+    assert read.startswith("Other records with the folder and uid of this mail keep it out")
+    assert f"{HIDDEN[0].lower()}{HIDDEN[1:]}" in read
+    assert "kept out by the records 2 with its uid, which stay for now" in asked
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_row_two_pages_show_is_one_record() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.mail(status="FAILED")
+    setup.mail(status="FAILED")
+
+    @final
+    class Doubling(FakePaperless):
+        @override
+        async def list_processed_mail(self, **given: object) -> ProcessedMailPage:
+            found = await super().list_processed_mail(**given)  # pyright: ignore[reportArgumentType] -- passed on
+            return found.model_copy(update={"mails": found.mails * 2})
+
+    fake = Doubling(setup.state, user=ADMIN[0])
+    service = ProcessedMailService(fake, fake, fake)
+
+    assert "until they are deleted too: 2. " in (await service.get(1, error_from=0)).refetch
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_page_that_vanishes_is_told_as_a_change() -> None:
+    setup = Setup()
+    setup.rule()
+    failed_mails(setup, 101)
+
+    @final
+    class Shrinking(FakePaperless):
+        @override
+        async def list_processed_mail(self, **given: object) -> ProcessedMailPage:
+            found = await super().list_processed_mail(**given)  # pyright: ignore[reportArgumentType] -- passed on
+            del self.state.processed_mail[1:]
+            return found
+
+    fake = Shrinking(setup.state, user=ADMIN[0])
+    service = ProcessedMailService(fake, fake, fake, clock=lambda: 0.0)
+    with pytest.raises(PaperlessMcpError) as raised:
+        _ = await service.delete([1], dry_run=True, confirm=False)
+
+    assert raised.value.describe() == (
+        "The records of rule 1 changed while they were read. Nothing was deleted. "
+        "Hint: Call this again."
+    )
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_failed_read_before_the_deletion_says_that_nothing_was_deleted() -> None:
+    setup = Setup()
+    setup.rule()
+    failed_mails(setup)
+
+    @final
+    class Silent(FakePaperless):
+        @override
+        async def get_mail_rule(self, rule_id: int) -> MailRule:
+            message = "Paperless did not respond in time."
+            raise UpstreamTimeout(message)
+
+    fake = Silent(setup.state, user=ADMIN[0])
+    service = ProcessedMailService(fake, fake, fake, clock=lambda: 0.0)
+    with pytest.raises(UpstreamTimeout) as raised:
+        _ = await service.delete([1], dry_run=False, confirm=True)
+
+    assert raised.value.message == "Paperless did not respond in time. Nothing was deleted."
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_missing_permission_is_told_before_the_records_are_read() -> None:
+    rights = {"view_processedmail", "view_uisettings"}
+    setup = Setup("mailman", permissions=rights)
+
+    with pytest.raises(PermissionDenied, match="delete_processedmail"):
+        _ = await setup.delete(1, 2, 3)
+
+
+@pytest.mark.decision("decision-83")
+async def test_records_of_another_user_are_told_before_rules_and_lists_are_read() -> None:
+    rights = {"view_processedmail", "view_uisettings", "delete_processedmail"}
+    setup = Setup("mailman", permissions=rights)
+    setup.mail(owner=None)
+
+    @final
+    class Foreign(FakePaperless):
+        @override
+        async def get_processed_mail(self, mail_id: int) -> ProcessedMail:
+            read = await super().get_processed_mail(mail_id)
+            return read.model_copy(update={"owner": 2})
+
+        @override
+        async def get_mail_rule(self, rule_id: int) -> MailRule:
+            raise AssertionError
+
+    fake = Foreign(setup.state, user="mailman")
+    service = ProcessedMailService(fake, fake, fake, clock=lambda: 0.0)
+    with pytest.raises(PermissionDenied, match="You do not own the records 1"):
+        _ = await service.delete([1], dry_run=False, confirm=True)
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_visible_rule_after_a_hidden_one_is_explained() -> None:
+    setup = Setup("mailman", permissions={"view_processedmail", "view_mailrule"})
+    setup.rule(id=1, owner=2)
+    setup.rule(id=2, owner=None, action="delete")
+    setup.mail(owner=None, rule=1, status="FAILED")
+    setup.mail(owner=None, rule=2, status="FAILED")
+
+    text = (await setup.delete(1, 2, dry_run=True)).message
+
+    assert "the rule then DELETES the mail" in text
+    assert f"{HIDDEN[0].lower()}{HIDDEN[1:]}" in text
+
+
+@pytest.mark.decision("decision-83")
+@pytest.mark.parametrize("changed", [0, 1])
+async def test_the_mailboxes_of_all_accounts_are_bound(changed: int) -> None:
+    setup = Setup()
+    second = replace(setup.state.mail_accounts[0], id=2, name="Second")
+    setup.state.mail_accounts.append(second)
+    setup.rule()
+    setup.rule(id=2, account=2)
+    setup.mail(status="FAILED")
+    setup.mail(status="FAILED", rule=2)
+
+    async def asked() -> str:
+        with pytest.raises(ConfirmationRequired) as raised:
+            _ = await setup.delete(1, 2, confirm=False)
+        return raised.value.fingerprint
+
+    before = await asked()
+    setup.state.mail_accounts[changed].imap_port = 143
+
+    assert await asked() != before
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_refusal_of_paperless_is_passed_on_as_it_is() -> None:
+    setup = Setup(make=Failing)
+    assert isinstance(setup.fake, Failing)
+    setup.fake.error = PermissionDenied("Not you. Nothing was deleted.", hint="Ask.")
+    setup.rule()
+    failed_mails(setup)
+
+    with pytest.raises(PermissionDenied) as raised:
+        _ = await setup.delete(1)
+
+    assert raised.value.describe() == "Not you. Nothing was deleted. Hint: Ask."
+
+
+SLOW: Final = (
+    *("get_signed_in", "get_processed_mail", "get_mail_rule", "get_mail_account"),
+    "list_processed_mail",
+)
+
+
+@pytest.mark.decision("decision-83")
+@pytest.mark.parametrize("slow", SLOW)
+async def test_the_next_request_is_not_sent_after_forty_seconds(slow: str) -> None:
+    """Each kind of request checks the time before it is sent."""
+    setup = Setup()
+    setup.rule()
+    failed_mails(setup)
+    sent: list[str] = []
+
+    @final
+    class Slow(FakePaperless):
+        def _note(self, name: str) -> None:
+            sent.append(name)
+            if name == slow:
+                setup.now += 40
+
+        @override
+        async def get_signed_in(self) -> SignedIn | None:
+            self._note("get_signed_in")
+            return await super().get_signed_in()
+
+        @override
+        async def get_processed_mail(self, mail_id: int) -> ProcessedMail:
+            self._note("get_processed_mail")
+            return await super().get_processed_mail(mail_id)
+
+        @override
+        async def get_mail_rule(self, rule_id: int) -> MailRule:
+            self._note("get_mail_rule")
+            return await super().get_mail_rule(rule_id)
+
+        @override
+        async def get_mail_account(self, account_id: int) -> MailAccount:
+            self._note("get_mail_account")
+            return await super().get_mail_account(account_id)
+
+        @override
+        async def list_processed_mail(self, **given: object) -> ProcessedMailPage:
+            self._note("list_processed_mail")
+            return await super().list_processed_mail(**given)  # pyright: ignore[reportArgumentType] -- passed on
+
+    fake = Slow(setup.state, user=ADMIN[0])
+    service = ProcessedMailService(fake, fake, fake, clock=lambda: setup.now)
+    with pytest.raises(PaperlessMcpError, match="within 40 seconds"):
+        _ = await service.delete([1], dry_run=False, confirm=True)
+
+    assert tuple(sent) == SLOW[: SLOW.index(slow) + 1]

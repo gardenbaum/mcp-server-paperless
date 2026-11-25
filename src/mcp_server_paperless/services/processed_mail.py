@@ -35,6 +35,7 @@ from mcp_server_paperless.domain.mail import (
 )
 from mcp_server_paperless.services.bulk_documents import DRY_RUN, TO_GO_AHEAD
 from mcp_server_paperless.services.document_runner import (
+    OUT_OF_TIME,
     RUN_SECONDS,
     Ended,
     cut,
@@ -48,6 +49,7 @@ from mcp_server_paperless.services.sharing import plural
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
+    from mcp_server_paperless.domain.documents import SignedIn
     from mcp_server_paperless.domain.mail import MailRule, ProcessedMail, RecordOutcome
     from mcp_server_paperless.domain.ports import DocumentReader, MailReader, MailWriter
 
@@ -61,12 +63,19 @@ KNOWN: Final = frozenset({"SUCCESS", "FAILED", "PROCESSED_WO_CONSUMPTION"})
 # subject.
 MAX_DELETED: Final = 100
 NAMED: Final = 3
+FEWER: Final = "Delete fewer records per call."
+NOTHING: Final = "Nothing was deleted."
 SUBJECT: Final = 60
-NEXT: Final = "the next fetch (every 10 minutes by default, or process_mail_account)"
+NEXT: Final = (
+    "the next fetch (every 10 minutes by default, or process_mail_account; an earlier rule of the "
+    "account can stop it or take the mail first)"
+)
 AGAIN: Final = "a second time, unless Paperless rejects duplicates"
 CAVEAT: Final = (
     "The rule's settings of now count, not those of then; whether the mail still exists on the "
-    "server, and records you may not see, are not known here."
+    "server, and records you may not see, are not known here. A record keeps out the mail with its "
+    "folder and uid: one stored without the folder's UIDVALIDITY any such mail, one with an older "
+    "UIDVALIDITY none; which it is is not shown."
 )
 BOUNDED: Final = (
     f"Only the newest {MAX_RECORDS:,} records of the rule were looked at for others of the same "
@@ -75,12 +84,14 @@ BOUNDED: Final = (
 OTHERS: Final = (
     "Other records with the folder and uid of this mail keep it out until they are deleted too"
 )
-ANEW: Final = (
-    "(unless the folder was made anew on the server since: then a uid can mean another mail)"
+NO_LONGER: Final = "Once that no longer holds: "
+TAKEN: Final = (
+    f"the files the rule takes from it are imported, also those imported before ({AGAIN}), and if "
+    "every one of them is consumed"
 )
-NO_RULE: Final = (
-    "Not known: you may not see the rule of this mail, which decides whether it is fetched again "
-    "without this record."
+HIDDEN: Final = (
+    "you may not see the rule of this mail: without this record it may be imported again and then "
+    "deleted or moved on the mail server"
 )
 
 
@@ -107,24 +118,25 @@ def _outcome(status: str, rule: MailRule) -> str:
     marked = _marked(rule)
     matching = "if it still matches the rule's folder, age and filters"
     unmarked = matching + (f" and is not {marked}" if marked else "")
+    taken = f"{TAKEN}, the rule then {_then(rule)}"
     if status == "FAILED":
-        return (
-            f"without this record {NEXT} takes the mail again {unmarked}: all its files are "
-            f"imported, also those that were imported before the failure ({AGAIN}), then the rule "
-            f"{_then(rule)}."
-        )
-    if status == "PROCESSED_WO_CONSUMPTION":
+        return f"without this record {NEXT} takes the mail again {unmarked}: {taken}"
+    if status == "PROCESSED_WO_CONSUMPTION" and rule.consumption_scope == "attachments":
         return (
             f"without this record {NEXT} looks at the mail again {unmarked}. Nothing happens to "
             "it unless the rule or the mail now gives a file: then that is imported and the rule "
-            f"{_then(rule)}."
+            f"{_then(rule)}"
+        )
+    if status == "PROCESSED_WO_CONSUMPTION":
+        # The mail itself is queued before its attachments are looked at.
+        return (
+            f"without this record {NEXT} takes the mail again {unmarked}: the mail itself is "
+            f"imported ({AGAIN}) with the files the rule takes from it, and if every one of them "
+            f"is consumed, the rule then {_then(rule)}"
         )
     if status != "SUCCESS":
-        return f"not known for the status {_status(status)}."
-    again = (
-        f"{NEXT} takes it again {matching}: its documents are imported again ({AGAIN}), then the "
-        f"rule {_then(rule)}."
-    )
+        return f"not known for the status {_status(status)}"
+    again = f"{NEXT} takes it again {matching}: {taken}"
     if marked:
         return (
             f"without this record the mail is not fetched while it is {marked} on the mail "
@@ -137,12 +149,17 @@ def _outcome(status: str, rule: MailRule) -> str:
     )
 
 
+def _same_folder(one: str, other: str) -> bool:
+    """Whether a mail server means the same folder: INBOX has no case, the others may."""
+    return one == other or one.upper() == other.upper() == "INBOX"
+
+
 def _obstacles(mail: ProcessedMail, rule: MailRule) -> str:
     """What keeps the rule from the mail as it is now."""
     said = ""
     if not rule.enabled:
         said += "The rule is disabled: it fetches nothing until it is switched on. "
-    if rule.folder != mail.folder:
+    if not _same_folder(rule.folder, mail.folder):
         folders = f"{quoted(rule.folder)}, not {quoted(mail.folder)}"
         said += f"The rule now reads folder {folders}: it does not look at this mail while so. "
     return said
@@ -151,9 +168,11 @@ def _obstacles(mail: ProcessedMail, rule: MailRule) -> str:
 def _others(mail: ProcessedMail, rows: Sequence[ProcessedMail]) -> list[int]:
     """Ids of the other records of the same mail among the records of its rule."""
     return sorted(
-        row.id
-        for row in rows
-        if row.id != mail.id and (row.folder, row.uid) == (mail.folder, mail.uid)
+        {
+            row.id
+            for row in rows
+            if row.id != mail.id and (row.folder, row.uid) == (mail.folder, mail.uid)
+        }
     )
 
 
@@ -180,17 +199,18 @@ class _Plan:
         kept = ""
         if stay:
             more = f" and {len(stay) - NAMED} more" if len(stay) > NAMED else ""
-            kept = f"; kept out by the records {_ids(stay[:NAMED])}{more} with its uid, which stay"
+            which = f"{_ids(stay[:NAMED])}{more}"
+            kept = f"; kept out by the records {which} with its uid, which stay for now"
         received = f"{mail.received.astimezone(UTC):%Y-%m-%d %H:%M} UTC"
         return f"{mail.id} {quoted(mail.subject)} (received {received}, {name}{kept})"
 
     def _follows(self, mail: ProcessedMail) -> str:
         rule = self.rules[mail.rule_id]
         if rule is None:
-            return NO_RULE[0].lower() + NO_RULE[1:].removesuffix(".")
+            return HIDDEN
         said = _obstacles(mail, rule)
-        outcome = _outcome(mail.status, rule).removesuffix(".")
-        return f"{said[0].lower()}{said[1:]}Otherwise: {outcome}" if said else outcome
+        outcome = _outcome(mail.status, rule)
+        return f"{said[0].lower()}{said[1:]}{NO_LONGER}{outcome}" if said else outcome
 
     @property
     def effect(self) -> str:
@@ -203,8 +223,6 @@ class _Plan:
             items = ", ".join(map(self._item, mails))
             which = "it" if len(mails) == 1 else "each"
             parts.append(f"{len(mails)} with status {status}: {items}. For {which}: {follows}.")
-        if self.staying:
-            parts.append(f"A record with the same uid keeps a mail out {ANEW}.")
         for number in self.bounded:
             rule = self.rules[number]
             name = f" {quoted(rule.name)} (id {number})" if rule else ""
@@ -263,7 +281,7 @@ class ProcessedMailService:
             error_from=error_from,
             error_total=len(error),
             error_next=end if end < len(error) else None,
-            refetch=NO_RULE if rule is None else await self._refetch(mail, rule),
+            refetch=await self._refetch(mail, rule),
         )
 
     async def _rule(self, rule_id: int) -> MailRule | None:
@@ -272,32 +290,36 @@ class ProcessedMailService:
         except NotFound, PermissionDenied:
             return None
 
-    async def _refetch(self, mail: ProcessedMail, rule: MailRule) -> str:
+    async def _refetch(self, mail: ProcessedMail, rule: MailRule | None) -> str:
         """Whether and when the mail is fetched again without its record, and what follows."""
-        first, last = _obstacles(mail, rule), CAVEAT
+        first, last = _obstacles(mail, rule) if rule else "", CAVEAT
         try:
-            rows, complete = await self._records(rule)
+            rows, complete = await self._records(mail.rule_id)
         except PaperlessMcpError:
             last += " Other records of the same mail could not be looked for."
         else:
             if others := _others(mail, rows):
-                first += f"{OTHERS}: {_ids(others)} {ANEW}. "
+                first += f"{OTHERS}: {_ids(others)}. "
             if not complete:
                 last += f" {BOUNDED}"
-        outcome = _outcome(mail.status, rule)
-        said = f"Otherwise: {outcome}" if first else outcome[0].upper() + outcome[1:]
-        return f"{first}{said} {last}"
+        outcome = _outcome(mail.status, rule) if rule else HIDDEN
+        said = f"{NO_LONGER}{outcome}" if first else outcome[0].upper() + outcome[1:]
+        return f"{first}{said}. {last}"
 
     async def _records(
-        self, rule: MailRule, until: float = math.inf
+        self, rule_id: int, until: float = math.inf
     ) -> tuple[list[ProcessedMail], bool]:
         """The newest records of the rule, and whether these are all."""
         rows: list[ProcessedMail] = []
         for page in range(1, MAX_RECORDS // PAGE + 1):
             self._in_time(until)
-            found = await self._reader.list_processed_mail(
-                rule_id=rule.id, status=None, ordering="-processed", page=page, page_size=PAGE
-            )
+            try:
+                found = await self._reader.list_processed_mail(
+                    rule_id=rule_id, status=None, ordering="-processed", page=page, page_size=PAGE
+                )
+            except NotFound:  # the list got shorter meanwhile
+                message = f"The records of rule {rule_id} changed while they were read."
+                raise PaperlessMcpError(message, hint="Call this again.") from None
             rows += found.mails
             if found.next_page is None:
                 return rows, True
@@ -305,11 +327,8 @@ class ProcessedMailService:
 
     def _in_time(self, until: float) -> None:
         if self._clock() >= until:
-            message = (
-                f"The records could not be read within {RUN_SECONDS:g} seconds. Nothing was "
-                "deleted."
-            )
-            raise PaperlessMcpError(message, hint="Delete fewer records per call.")
+            message = f"The records could not be read within {RUN_SECONDS:g} seconds."
+            raise PaperlessMcpError(message, hint=FEWER)
 
     # --- deleting
 
@@ -327,22 +346,23 @@ class ProcessedMailService:
             PaperlessMcpError: The records could not be read in time; nothing was deleted.
         """
         until = self._clock() + RUN_SECONDS
-        plan = await self._plan(mail_ids, until)
-        await self._check_rights(plan.mails)
+        try:
+            plan = await self._plan(mail_ids, until)
+            self._in_time(until)
+        except PaperlessMcpError as error:
+            _not_done(error)
+            raise
         if dry_run:
             said = f"{DRY_RUN} Confirming would {plan.effect}. {TO_GO_AHEAD}"
             return _report(plan.mails, {}, said, dry_run=True)
         if not confirm:
             ConfirmationRequired.require(plan.effect, scope=plan.scope)
-        self._in_time(until)
         failure = ""
         try:
             await self._writer.delete_processed_mail(mail_ids)
-        except PermissionDenied:
-            raise  # it says that nothing was deleted
         except PaperlessMcpError as error:
             if refused(error):
-                error.message = f"{error.message.removesuffix('.')}. Nothing was deleted."
+                _not_done(error)
                 raise
             failure = f" Paperless did not confirm the deletion: {error.message}"
         return await self._read_back(plan.mails, failure, until)
@@ -352,9 +372,11 @@ class ProcessedMailService:
             message = f"Pass 1 to {MAX_DELETED} ids of processed mail."
             raise Validation(message, hint="list_processed_mail shows them.")
         if len(set(mail_ids)) != len(mail_ids):
-            message = "An id is listed twice. Nothing was deleted."
+            message = "An id is listed twice."
             raise Validation(message, hint="List every id once.")
+        user = await self._caller(until)
         mails = await self._mails(mail_ids, until)
+        _check_owners(mails, user)
         rules: dict[int, MailRule | None] = {}
         mailboxes: dict[int, object] = {}
         staying: dict[int, list[int]] = {}
@@ -362,12 +384,10 @@ class ProcessedMailService:
         for number in dict.fromkeys(mail.rule_id for mail in mails):
             self._in_time(until)
             rule = rules[number] = await self._rule(number)
-            if rule is None:
-                continue
-            if rule.account_id not in mailboxes:
+            if rule is not None and rule.account_id not in mailboxes:
                 self._in_time(until)
                 mailboxes[rule.account_id] = await self._mailbox(rule.account_id)
-            rows, complete = await self._records(rule, until)
+            rows, complete = await self._records(number, until)
             if not complete:
                 bounded.append(number)
             for mail in mails:
@@ -387,10 +407,7 @@ class ProcessedMailService:
             except NotFound:
                 missing.append(number)
         if missing:
-            message = (
-                f"No processed mail {_ids(missing)} exists that this user may see. Nothing was "
-                "deleted."
-            )
+            message = f"No processed mail {_ids(missing)} exists that this user may see."
             hint = "Leave them out; list_processed_mail shows the records."
             raise NotFound(message, hint=hint)
         return mails
@@ -401,25 +418,20 @@ class ProcessedMailService:
         except NotFound, PermissionDenied:
             return None
 
-    async def _check_rights(self, mails: Sequence[ProcessedMail]) -> None:
-        """Say beforehand what Paperless is known to refuse.
+    async def _caller(self, until: float) -> SignedIn | None:
+        """The user of the call, if known.
 
         Raises:
-            PermissionDenied: The user lacks the permission, or a record belongs to another user.
+            PermissionDenied: The user is known to lack the permission.
         """
+        self._in_time(until)
         user = await self._documents.get_signed_in()
-        if user is None or user.is_superuser:
-            return
-        if user.permissions is not None and "delete_processedmail" not in user.permissions:
-            message = "You lack the permission delete_processedmail. Nothing was deleted."
+        if user is None or user.is_superuser or user.permissions is None:
+            return user
+        if "delete_processedmail" not in user.permissions:
+            message = "You lack the permission delete_processedmail."
             raise PermissionDenied(message, hint="Ask an administrator for it.")
-        foreign = [mail.id for mail in mails if mail.owner not in {None, user.id}]
-        if foreign:
-            message = (
-                f"You do not own the records {_ids(foreign)}, and they have an owner: Paperless "
-                "would refuse all. Nothing was deleted."
-            )
-            raise PermissionDenied(message, hint="Leave them out.")
+        return user
 
     async def _read_back(
         self, mails: Sequence[ProcessedMail], failure: str, until: float
@@ -455,7 +467,32 @@ class ProcessedMailService:
             said += (
                 " It is not repeated: check with list_processed_mail before you call this again."
             )
+        if stopped == OUT_OF_TIME:
+            said += f" {FEWER}"
         return _report(mails, outcomes, said, dry_run=False)
+
+
+def _check_owners(mails: Sequence[ProcessedMail], user: SignedIn | None) -> None:
+    """Say beforehand what Paperless is known to refuse.
+
+    Raises:
+        PermissionDenied: A record belongs to another user.
+    """
+    if user is None or user.is_superuser:
+        return
+    foreign = [mail.id for mail in mails if mail.owner not in {None, user.id}]
+    if foreign:
+        message = (
+            f"You do not own the records {_ids(foreign)}, and they have an owner: Paperless would "
+            "refuse all."
+        )
+        raise PermissionDenied(message, hint="Leave them out.")
+
+
+def _not_done(error: PaperlessMcpError) -> None:
+    """Add to ``error`` that nothing was deleted."""
+    if not error.message.endswith(NOTHING):
+        error.message = f"{error.message.removesuffix('.')}. {NOTHING}"
 
 
 def _report(
