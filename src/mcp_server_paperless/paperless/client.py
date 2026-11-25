@@ -296,6 +296,8 @@ class PaperlessClient:
             # the caller can ask again, and a retry would read the file from the start.
             logger.warning("GET %s failed: %s", outgoing.url.path, type(error).__name__)
             raise error_for_transport(error) from error
+        except httpx2.DecodingError as error:
+            raise unexpected(response) from error
         finally:
             await response.aclose()
 
@@ -478,6 +480,8 @@ class PaperlessClient:
                         if len(chunk) > room:
                             truncated = True
                             break
+                except httpx2.DecodingError as error:
+                    raise unexpected(response, reading=True) from error
                 finally:
                     await response.aclose()
         except TimeoutError:

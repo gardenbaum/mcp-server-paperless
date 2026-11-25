@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T21:58:47Z'
-updated_date: '2026-11-25T17:48:08Z'
+updated_date: '2026-11-25T17:57:19Z'
 labels:
   - safety
 dependencies: []
@@ -51,4 +51,6 @@ Cause: httpx2's gzip and deflate decoders keep data after the end in zlib's unus
 decoded() in paperless/unpacking.py replaces aiter_bytes() in every streamed read: gzip and deflate end at the end of their stream in every layer of Content-Encoding, one piece more is read so that the connection of an answer that is over can be kept (checked with a real server: 4 reads, 1 connection). zstd and br stay with httpx2. Files are read as before in 11 packings and 4 cuts; a stream without an end still gives what arrived. Error bodies are cut to the 64 KiB that arrive, now also in stream_post (read whole before); one that cannot be unpacked is still the error of its status.
 
 Deliberate changes: stream and download no longer read on after the end; a raw deflate body whose first piece is one byte is read (was an error). Not changed: time is not bounded (empty blocks in a download, layered bombs in an error body); non-streamed request(); download() and stream_post() let DecodingError through (internal error) as before. No decision: decision-77 names this as open. Memory tests use 8 MiB on the wire and a bound of 8 MB.
+
+main merged (PLMCP-83.2 to 83.4): post_json shares the error body path, in the memory cases with its error body. A 200 body that cannot be unpacked is a typed unexpected answer in download and stream_post too (was an internal error; 10 tests red first).
 <!-- SECTION:NOTES:END -->

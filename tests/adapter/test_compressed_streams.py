@@ -16,7 +16,7 @@ from adapter.test_client import Chunks
 from mcp_server_paperless.domain.errors import (
     FeatureUnavailable,
     NotFound,
-    PaperlessMcpError,
+    UnexpectedAnswer,
     UpstreamUnavailable,
     Validation,
 )
@@ -57,7 +57,7 @@ BODIES = {
 }
 read, how = sys.argv[1:3]
 pieces, encoding = BODIES[how]
-read, _, error = read.partition(" ")
+read, error = read.removesuffix(" error"), read.endswith(" error")
 
 
 class Body(httpx2.AsyncByteStream):
@@ -81,6 +81,8 @@ async def get(client, path):
         return (await client.download(path, max_bytes=1000)).content
     if read == "post":
         return (await client.stream_post(path, json={}, max_bytes=1000, max_seconds=50)).content
+    if read == "post json":
+        return await client.post_json(path, pydantic.BaseModel, json={}, max_bytes=1000)
     if read == "json":
         return await client.read_json(path, pydantic.BaseModel, max_bytes=1000)
     async with client.stream("GET", path) as response:
@@ -124,7 +126,10 @@ asyncio.run(main())
 )
 @pytest.mark.parametrize(
     "read",
-    ["download", "stream", "post", "download error", "stream error", "post error", "json error"],
+    [
+        *("download", "stream", "post", "json", "post json"),
+        *("download error", "stream error", "post error", "json error", "post json error"),
+    ],
 )
 def test_a_hostile_compressed_body_takes_little_memory_of_the_process(read: str, how: str) -> None:
     done = subprocess.run(  # noqa: S603 -- this interpreter and a script of this file
@@ -140,6 +145,8 @@ def test_a_hostile_compressed_body_takes_little_memory_of_the_process(read: str,
     assert int(grown) * unit < 8_000_000, (grown, told)
     if "error" in read:
         assert told == "UpstreamUnavailable"
+    elif "json" in read:
+        assert told == "AnswerCompressed"
     elif how in {"gzip", "deflate", "members", "inner", "outer", "inner of zstd", "skipped"}:
         assert told == "a small file"  # what follows the end is not read, as before
 
@@ -255,6 +262,7 @@ async def test_a_file_whose_end_is_missing_gives_what_arrived_as_before(
     assert b"text" * 9 in await READS[read](client)
 
 
+@pytest.mark.parametrize("read", list(READS))
 @pytest.mark.parametrize(
     ("encoding", "data"),
     [
@@ -262,16 +270,17 @@ async def test_a_file_whose_end_is_missing_gives_what_arrived_as_before(
         ("gzip," * 5 + "gzip", gzip.compress(five(b"six layers"))),
     ],
 )
-async def test_a_broken_body_of_a_stream_is_an_unexpected_answer(
-    encoding: str, data: bytes
+async def test_a_broken_body_is_an_unexpected_answer_not_an_internal_error(
+    read: str, encoding: str, data: bytes
 ) -> None:
     body = Chunks(data)
     answer = httpx2.Response(200, headers={"Content-Encoding": encoding}, stream=body)
     client, _ = streaming(lambda _: answer)
 
-    with pytest.raises(PaperlessMcpError, match="unexpected response for GET"):
-        _ = await stream(client)
+    with pytest.raises(UnexpectedAnswer, match="unexpected response for") as raised:
+        _ = await READS[read](client)
 
+    assert raised.value.hint is None  # a POST that only reads: nothing may have been applied
     assert body.closed
 
 
