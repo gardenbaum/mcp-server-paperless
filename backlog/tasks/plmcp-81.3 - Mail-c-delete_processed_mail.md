@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:56Z'
-updated_date: '2026-11-25T14:46:40Z'
+updated_date: '2026-11-25T14:53:18Z'
 labels:
   - mail
 dependencies:
@@ -58,4 +58,6 @@ Review round 2, tests first: when the rule acts follows from what it takes (eml_
 Confirmations above 100,000 characters (whole text with its hint) are refused, also with confirm=true, never cut; the preview stays whole and says so (owner, 2026-11-25, question dialog: "Ja, ablehnen (Recommended)", yes, refuse). Tests first. MAX_CONFIRMATION moved to domain/errors.py. Snapshot and tool text adapted.
 
 Cleanup 2026-11-25, merged as b0ca817 (#158). AC 3 stays open. Proven: the refetch (E2E with the mail server), a restricted user (contract, E2E), an id that is none (contract on fake and 3.5.1), all records refused (contract, E2E). Missing: partial outcomes of delete_processed_mail (some records deleted, some still there) and unknown outcomes (lost answer, records that cannot be read again) in a tool or E2E test; they are tested on service level only (tests/services/test_processed_mail.py), no contract, tool or E2E test has an unknown outcome. CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 1 stays open: the PR records red runs for adapter to tool level, not for the live contract and E2E tests. DoD 2 stays open: no local run of the whole just check is recorded. On GitHub the check jobs run its recipes one by one: 45602324190 (4816fe3).
+
+Read literally (2026-11-25), AC 3 misses: contract tests of the refetch and of unknown outcomes; tool tests of the refetch, partial and unknown outcomes and a restricted user; E2E with the IMAP server of partial and unknown outcomes. This replaces the list above.
 <!-- SECTION:NOTES:END -->

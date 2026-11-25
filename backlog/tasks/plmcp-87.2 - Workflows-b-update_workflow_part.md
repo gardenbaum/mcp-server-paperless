@@ -1,11 +1,11 @@
 ---
 id: PLMCP-87.2
 title: 'Workflows b: update_workflow_part'
-status: Done
+status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:05Z'
-updated_date: '2026-11-25T14:46:41Z'
+updated_date: '2026-11-25T14:53:14Z'
 labels:
   - workflows
 dependencies:
@@ -27,7 +27,7 @@ Second part of PLMCP-87: one trigger or action cannot be changed without resendi
 - [x] #1 One trigger or action can be added, changed or removed while the others keep ids, settings and hidden values
 - [x] #2 Every operation keeps decision-21 and decision-66; removing a part with hidden values is confirmed, also while the workflow is disabled, in update_workflow too
 - [x] #3 The answer is compared with the plan and a difference or a lost answer is reported, never repeated
-- [x] #4 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover the writes, refusals and hidden values
+- [ ] #4 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover the writes, refusals and hidden values
 <!-- AC:END -->
 
 ## Definition of Done
@@ -61,10 +61,6 @@ Owner, 2026-11-25: 'Überall wie von dir empfohlen bitte.' (everywhere as you re
 Independent review of #159 (efaadb0..bb58f15): H1, M1 to M5, L1, L3 to L6 and the survivors fixed, tests first (28 red). 26 further hand mutants, 4 survived and were closed (two by deleting code, two by tests). For the owner: M4 values of custom fields are merged, the result says how many stay; M5 the workflow is read again right before the PATCH and a difference refuses the call (one request more); the milliseconds after it remain.
 
 Second review of #159 (N1 to N3, L2, L6 to L8, survivors) fixed, tests first. N1: values of fields no longer assigned are dropped from what is written.
+
+Reopened 2026-11-25: a criterion that names several test levels is read literally, every item at every named level. Merged as 15b5f4c (#159). AC 4, missing: contract tests of removing one trigger by the write of parts and of the decision-21 and decision-66 refusals of the part operations; tool tests of adding, removing and moving triggers and of moving an action; E2E of changing a trigger with update_workflow_part (only its refusal is there). Hidden values are covered. CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 2 stays open: just check was not run as a whole locally; check jobs green: 45586010679 (055e4a8).
 <!-- SECTION:NOTES:END -->
-
-## Final Summary
-
-<!-- SECTION:FINAL_SUMMARY:BEGIN -->
-update_workflow_part adds, changes, moves or removes one trigger or action; the others keep ids, settings and hidden values, every write is compared with a fresh read and never repeated (decision-82). Merged as 15b5f4c (#159). Full E2E 45578660467 (ddd2d72); CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 2 stays open: just check was not run as a whole locally. On GitHub the check jobs run its recipes one by one: 45586010679 (055e4a8).
-<!-- SECTION:FINAL_SUMMARY:END -->

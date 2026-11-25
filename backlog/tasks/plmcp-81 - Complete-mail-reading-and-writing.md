@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-23T12:14:51Z'
-updated_date: '2026-11-25T14:46:41Z'
+updated_date: '2026-11-25T14:53:18Z'
 labels: []
 dependencies:
   - PLMCP-91
@@ -45,4 +45,6 @@ The toolset mail (off by default) already reads and writes accounts and rules, l
 Owner approval (2026-11-24, question dialog, recommended options chosen): designs 81, 87, 88, 89, 90, 83, 100 all as recommended, with the guide limit in steps (2943 to 3010 for 81). Here design-plmcp-81.md, decisions 1 to 12: 1 leave out PUT and ignored bodies, 2a, 3a, 4a, 5a, 6a, 7a, 8a, 9a, 10 raise to at most 3010, 11a, 12 five parts (PLMCP-81.1 to 81.5).
 
 Cleanup 2026-11-25: all five parts are merged (#155, #156, #158, #162, #163, #171); 81.2, 81.4 and 81.5 are Done. Open: 81.1 (AC 4) and 81.3 (AC 3), and for the same reasons AC 7: that no credential appears (the residual of decision-80: a forged log record) and the missing tests named in 81.3. DoD 1 and 2 are open in the parts; DoD 4: merged through the parts' pull requests, no own one. CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green.
+
+Correction (2026-11-25): 81.4 and 81.5 are open again (AC 3 each); only 81.2 is Done. AC 7 also misses what they list.
 <!-- SECTION:NOTES:END -->

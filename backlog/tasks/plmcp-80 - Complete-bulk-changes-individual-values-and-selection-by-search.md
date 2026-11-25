@@ -1,10 +1,11 @@
 ---
 id: PLMCP-80
 title: 'Complete bulk changes: individual values and selection by search'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T12:14:50Z'
-updated_date: '2026-11-25T14:46:43Z'
+updated_date: '2026-11-25T14:53:19Z'
 labels: []
 dependencies:
   - PLMCP-91
@@ -41,4 +42,6 @@ The toolset bulk (off by default) applies one operation with the same values to 
 
 <!-- SECTION:NOTES:BEGIN -->
 Cleanup 2026-11-25: all parts (80.1 to 80.4) are merged and archived; CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. AC 6 stays open: the rate (HTTP 429 ends a bulk call and sends nothing more; design section 7) is tested on adapter and service level only, in no contract, tool or E2E test. Limits, partial failures, a changed set and a restricted user are covered. AC 5: from_webui of bulk_edit and delete stays a field of PLMCP-83 (decision-72); every endpoint and method is covered or excluded. DoD 1 and 2 are open in the parts; DoD 4: merged through the parts' pull requests, no own one.
+
+Read literally (2026-11-25), AC 6 misses: the rate in contract tests, tool tests and E2E, and a changed set between preview and confirm in contract tests.
 <!-- SECTION:NOTES:END -->

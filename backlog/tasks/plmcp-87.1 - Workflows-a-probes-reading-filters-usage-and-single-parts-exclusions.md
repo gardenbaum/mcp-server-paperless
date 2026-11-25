@@ -1,11 +1,11 @@
 ---
 id: PLMCP-87.1
 title: 'Workflows a: probes, reading filters, usage and single parts, exclusions'
-status: Done
+status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:04Z'
-updated_date: '2026-11-25T14:46:41Z'
+updated_date: '2026-11-25T14:53:13Z'
 labels:
   - workflows
 dependencies:
@@ -29,7 +29,7 @@ First part of PLMCP-87. How Paperless 3.5.1 treats parts sent with ids decides h
 - [x] #3 get_workflow reads one trigger or action and the workflows that hold it, also without the permission to view parts where the workflows may be viewed
 - [x] #4 Hidden values (webhook headers, URL credentials, passwords) are not shown on any new path
 - [x] #5 The owner-approved exclusions 2 and 3 are recorded with quote and date, and the covered rows are covered
-- [x] #6 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover each new read
+- [ ] #6 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover each new read
 <!-- AC:END -->
 
 ## Definition of Done
@@ -63,10 +63,6 @@ Full hosted E2E 45507183680 on 6d12e49 green: tests/e2e/test_workflow_parts.py 6
 Probe log: https://github.com/gardenbaum/mcp-server-paperless/actions/runs/45503786740/job/138833596559 (raw log of the job): P2 from line 2469 ('patch email': 500, 'post webhook': 500, 'patch consumption sources': 400, 'delete held': 204, rights per permission), P3 from line 2562 (orphans true until 'after another update'), P4 from line 2592 ('vanished trigger id-only' sources 1 to 4 without a filter, 'victim after': thief, 'post trigger id' 47/47, 'post action id' 63/62, rules 400/400/200), P5 from line 2799 ('ai enabled' 201, 'ai consumption' 400, list counts).
 
 Review of #154: M1 (digits as a name, note for every kind), L1 (the live P1 test proves what was sent is stored), L2 (WorkflowRead.note removed), L3 (ids from 1, too many workflows leave the holders unknown) fixed, tests first. Surface snapshot: get_workflow only.
+
+Reopened 2026-11-25: a criterion that names several test levels is read literally, every item at every named level. Merged as 738ee5a (#154). AC 6, missing: contract tests of the search for used objects and of the workflows that hold a part; tool tests of that search for correspondent, document type, storage path, custom field, user and group; E2E of it for correspondent, document type, storage path, user, group and mail rule (a match). CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 2 stays open: just check was not run as a whole locally; check jobs green: 45568792562 (efaadb0).
 <!-- SECTION:NOTES:END -->
-
-## Final Summary
-
-<!-- SECTION:FINAL_SUMMARY:BEGIN -->
-list_workflows filters by enabled, trigger type and a used object and names the place; get_workflow reads one trigger or action and the workflows that hold it, hidden values stay hidden (decision-81). Probes P1 to P5: run 45503786740. Merged as 738ee5a (#154). Full E2E 45507183680 (6d12e49); CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 2 stays open: just check was not run as a whole locally. On GitHub the check jobs run its recipes one by one: 45568792562 (efaadb0).
-<!-- SECTION:FINAL_SUMMARY:END -->

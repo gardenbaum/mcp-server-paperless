@@ -1,11 +1,11 @@
 ---
 id: PLMCP-88.2
 title: 'Saved views b: pin_saved_view for dashboard and sidebar'
-status: Done
+status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T10:18:27Z'
-updated_date: '2026-11-25T14:46:42Z'
+updated_date: '2026-11-25T14:53:16Z'
 labels:
   - views
 dependencies:
@@ -27,7 +27,7 @@ Second part of PLMCP-88: in API 10 the dashboard and the sidebar of a user live 
 - [x] #1 Whether a view is on the dashboard and in the sidebar of the current user can be read and written, also for views one may only see, and the tool says it applies to that user only
 - [x] #2 Every other UI setting survives a write, the settings are compared afterwards, a difference names keys and never values, and nothing is repeated
 - [x] #3 POST /api/ui_settings/ is covered for its saved-view part; the rest stays open under PLMCP-83
-- [x] #4 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E (stdio and HTTP) cover pinning, unpinning, missing permissions and surviving settings
+- [ ] #4 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E (stdio and HTTP) cover pinning, unpinning, missing permissions and surviving settings
 <!-- AC:END -->
 
 ## Definition of Done
@@ -57,10 +57,6 @@ just check was not run as a whole locally.
 CI run 45598528336 on 7061254: e2e parts green on Paperless 3.5.1 (contract of ui_settings and views, E2E of view_pins over memory, stdio and HTTP).
 
 Review: a refused second read, the texts and foreign answers (redirect, login page) tested and named truly; what a late POST would do is said (NOT_THERE, decision-92); a call waits at most 40 s for another; configuration.md wrapped. Tests first (7 red); 44 mutants, none survives.
+
+Reopened 2026-11-25: a criterion that names several test levels is read literally, every item at every named level. Merged as 769fea7 (#165). AC 4, missing: contract tests of pinning and unpinning a view (the port tests write and read settings only); a tool test of unpinning; E2E of missing permissions over stdio and over HTTP (in memory only now). Surviving settings are covered at every level. CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 2 stays open: just check was not run as a whole locally; check jobs green: 45616084339 (6193c23).
 <!-- SECTION:NOTES:END -->
-
-## Final Summary
-
-<!-- SECTION:FINAL_SUMMARY:BEGIN -->
-pin_saved_view puts a view on the dashboard or in the sidebar of the current user and takes it off; every other UI setting is sent back and compared, nothing is repeated (decision-92). Merged as 769fea7 (#165). Live over memory, stdio and HTTP: 45598528336 (7061254); CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 2 stays open: just check was not run as a whole locally. On GitHub the check jobs run its recipes one by one: 45616084339 (6193c23).
-<!-- SECTION:FINAL_SUMMARY:END -->

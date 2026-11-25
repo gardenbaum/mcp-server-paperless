@@ -1,11 +1,11 @@
 ---
 id: PLMCP-81.5
 title: 'Mail e: owner and grants of mail accounts and rules'
-status: Done
+status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:58Z'
-updated_date: '2026-11-25T14:46:40Z'
+updated_date: '2026-11-25T14:53:12Z'
 labels:
   - mail
 dependencies: []
@@ -25,7 +25,7 @@ Fifth part of PLMCP-81: owner and grants of mail accounts and rules cannot be re
 <!-- AC:BEGIN -->
 - [x] #1 set_permissions takes mail accounts and mail rules by id with the confirmation of decision-19 and says what a grant on an account gives
 - [x] #2 The remaining rows of mail_accounts and mail_rules in docs/api-coverage.toml are covered
-- [x] #3 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover owner, non-owner with a change grant and superuser
+- [ ] #3 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover owner, non-owner with a change grant and superuser
 <!-- AC:END -->
 
 ## Definition of Done
@@ -50,10 +50,6 @@ Review round 1, tests first: the note for accounts (POST mail_accounts/test/ sen
 Review round 2, tests first: a refused named owner sets no grants (DRF's unique-together check runs first), only removing the owner beside an unowned twin sets them and then answers 400 (contract tests both ways, fake the same); the owner is compared after a 400; survivors of the read-back killed; the rule note names whole mails and attachments apart; a change grant on a rule is enough to make it delete mail (contract); the 40 seconds start with the call. Suppressions added in this task: PLR0913 on PermissionService.__init__ (the ports it uses) and on _halfway (what a failure leaves behind).
 
 The rule note and the partial stop after 40 seconds are approved by the owner (2026-11-25, question dialog: "Ja, alles", yes, all of it).
+
+Reopened 2026-11-25: a criterion that names several test levels is read literally, every item at every named level. Merged as f1c2cf2 (#162). AC 3, missing: tool tests and E2E of set_permissions on mail accounts and rules as an owner who is no superuser and as a non-owner with a change grant; a tool test for mail rules as superuser. Proven: contract tests (fake and 3.5.1) for all; superuser in tool tests (account) and E2E (both). CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 1 stays open: the PR records red runs for adapter to tool level, not for the live contract and E2E tests. DoD 2 stays open: no local run of the whole just check is recorded; check jobs green: 45609771854 (80c28a1).
 <!-- SECTION:NOTES:END -->
-
-## Final Summary
-
-<!-- SECTION:FINAL_SUMMARY:BEGIN -->
-set_permissions takes mail accounts and rules by id with the confirmation of decision-19 and says what a change grant gives (decision-87). No row of mail_accounts or mail_rules is open in docs/api-coverage.toml. Owner, non-owner with a change grant, superuser and unowned objects: contract tests on the fake and 3.5.1 (tests/contract/test_permissions.py); the confirmation, sharing and handing over: tool tests and tests/e2e/test_mail.py (as superuser); what a grantee can do: tests/e2e/test_mail_import.py. Merged as f1c2cf2 (#162). CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 1 stays open: the PR records red runs for adapter to tool level, not for the live contract and E2E tests. DoD 2 stays open: no local run of the whole just check is recorded. On GitHub the check jobs run its recipes one by one: 45609771854 (80c28a1).
-<!-- SECTION:FINAL_SUMMARY:END -->
