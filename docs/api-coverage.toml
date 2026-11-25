@@ -213,11 +213,6 @@ fields = ["query:follow_formatting"]
 task = "PLMCP-83"
 
 [[open_fields]]
-operation = "GET /api/documents/{id}/history/"
-fields = ["query:page", "query:page_size"]
-task = "PLMCP-89"
-
-[[open_fields]]
 operation = "GET /api/documents/{id}/notes/"
 fields = ["query:id"]
 task = "PLMCP-83"
@@ -671,3 +666,10 @@ fields = ["query:acknowledged", "query:date_created_after", "query:date_created_
 quote = "Alle wie empfohlen"
 date = "2026-11-24"
 source = "backlog/decisions/decision-94 - Acknowledging-all-tasks-needs-a-yes-after-a-preview-and-the-task-overview-says-what-each-part-counts.md"
+
+[[exclusion]]
+operation = "GET /api/documents/{id}/history/"
+fields = ["query:page", "query:page_size"]
+quote = "Alle wie empfohlen"
+date = "2026-11-24"
+source = "backlog/decisions/decision-95 - Document-history-is-paged-here-and-the-system-report-shows-what-Paperless-shows-the-user.md"

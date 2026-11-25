@@ -466,6 +466,8 @@ training and the rest. `list_tasks` lists them with every filter Paperless has (
 source, seen or not, ended or not, owner, file name, result, time) and in any of its orders,
 `get_task_overview` counts them, shows what runs and how each type did, `acknowledge_tasks` marks
 them as seen, and `run_task` starts one. `get_task` of `core` follows one task by its `task_id`.
+`get_system_report` returns all of Paperless's statistics and system status, more than
+`get_instance_overview` of `core`.
 
 - `list_tasks`, `acknowledge_tasks` and `run_task` were in `admin` up to version 0.4: an operator
   who offered `admin` for them adds `tasks` (decision-93). User administration is not needed for
@@ -479,6 +481,9 @@ them as seen, and `run_task` starts one. `get_task` of `core` follows one task b
   shows the same). Without a dialog `confirm` counts only together with the `expected` value that
   preview names, so a task that came in or ended asks again. Tasks that come in while Paperless
   does it are marked too.
+- The system status (host, database, Redis, workers, when each component last ran) is for staff,
+  superusers and holders of `view_system_monitoring`; others get the statistics alone. URLs in it
+  come without user name and password.
 - In `get_task_overview` the filters apply to the counts only: Paperless offers none for the
   running tasks and the record by type. The record counts every user's tasks for who may view the
   system status, and says so.

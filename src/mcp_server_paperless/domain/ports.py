@@ -54,7 +54,7 @@ if TYPE_CHECKING:
     )
     from mcp_server_paperless.domain.duplicates import DuplicateRecord
     from mcp_server_paperless.domain.files import OpenedFile
-    from mcp_server_paperless.domain.instance import InstanceOverview
+    from mcp_server_paperless.domain.instance import InstanceOverview, SystemReport
     from mcp_server_paperless.domain.mail import (
         MailAccount,
         MailAccountTestResult,
@@ -124,6 +124,17 @@ class InstanceReader(Protocol):
         """Versions, statistics, system status, current user and capabilities.
 
         What the user may not see is None in the result (see ``InstanceOverview``).
+        """
+        ...
+
+
+class SystemReportReader(Protocol):
+    """Statistics and system status in full, as the current user sees them."""
+
+    async def get_system_report(self) -> SystemReport:
+        """Both answers in full; the status is None for a user who may not view it.
+
+        Paperless asks its workers for a sign of life, which can take seconds.
         """
         ...
 
@@ -238,11 +249,14 @@ class DocumentReader(Protocol):
     async def list_document_history(self, document_id: int) -> tuple[HistoryEntry, ...]:
         """The audit log of a document, newest first; ``content`` is only ``TEXT_CHANGED``.
 
+        Paperless builds and sends all of it: each wait for its next bytes may take 60 seconds.
+
         Raises:
             NotFound: No such document.
             PermissionDenied: The user may not view the audit log (it needs ``view_logentry``
                 and a document that is unowned or the user's own; a view grant is not enough).
             FeatureUnavailable: The instance has the audit log switched off.
+            AnswerTooLarge: The answer, with every corrected text, is over 64 MiB.
         """
         ...
 

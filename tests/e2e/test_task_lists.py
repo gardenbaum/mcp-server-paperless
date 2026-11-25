@@ -9,10 +9,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
 import pytest
+from contract.conftest import delete_and_empty_trash
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import consume, num, obj, parse, results
+from e2e.helpers import consume, consume_text, num, obj, parse, results
 from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
@@ -223,3 +224,52 @@ async def test_every_type_paperless_starts_by_hand_is_started(stack: Stack, kind
     ended = await run(stack, "get_task", task_id=started["task_id"], wait_seconds=60)
 
     assert (ended["task_type"], ended["state"]) == (kind, "success")
+
+
+@pytest.mark.decision("decision-95")
+async def test_the_system_report_follows_the_rights_of_the_user(stack: Stack) -> None:
+    report = await run(stack, "get_system_report")
+    restricted = await run(stack, "get_system_report", token=stack.reader_token)
+
+    status = cast("Json", report["status"])
+    assert cast("Json", status["database"])["type"] == "sqlite"
+    assert cast("Json", status["redis"])["address"] == "redis://broker:6379"
+    assert num(cast("Json", report["statistics"])["characters"]) > 0
+    assert restricted["status"] is None
+
+
+@pytest.mark.decision("decision-95")
+async def test_a_history_of_sixty_changes_is_read_page_by_page(stack: Stack) -> None:
+    document = consume_text(stack.admin, f"{PREFIX}{uuid.uuid4().hex}")
+    try:
+        for number in range(60):
+            _ = stack.admin.patch(
+                f"/api/documents/{document}/", json={"content": f"corrected words {number}"}
+            ).raise_for_status()
+        entries: list[Json] = []
+        history: Json = {}
+        page: object = 1
+        pages = 0
+        while page is not None:
+            read = await run(
+                stack,
+                "get_document",
+                None,
+                document_id=document,
+                include=["history"],
+                history_page=page,
+            )
+            history = cast("Json", read["history"])
+            entries += cast("list[Json]", history["entries"])
+            page, pages = history["next_page"], pages + 1
+        past = await refused(
+            stack, "get_document", document_id=document, include=["history"], history_page=pages + 1
+        )
+    finally:
+        delete_and_empty_trash(stack, [document])
+
+    assert pages == 2
+    assert len({entry["id"] for entry in entries}) == len(entries) == history["total"]
+    assert len(entries) >= 60
+    assert "corrected words" not in repr(entries)
+    assert f"The last page is {pages}." in past

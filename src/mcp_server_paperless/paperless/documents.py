@@ -31,6 +31,7 @@ from mcp_server_paperless.domain.documents import (
 )
 from mcp_server_paperless.domain.duplicates import DuplicateRecord
 from mcp_server_paperless.domain.errors import (
+    AnswerTooLarge,
     FeatureUnavailable,
     NotFound,
     PaperlessMcpError,
@@ -78,6 +79,8 @@ DETAIL_FIELDS = (
 SENT_AS: Final[dict[ReadField, str]] = {"version_count": "versions"}
 # Seconds for an answer with many documents.
 MANY_TIMEOUT: Final = 60.0
+# The most of a document's history, which holds every corrected text, that is read.
+HISTORY_BYTES: Final = 64 * 1024 * 1024
 # The text of one version, and what identifies it.
 TEXT_FIELDS = "content,title,versions,user_can_change"
 
@@ -631,10 +634,25 @@ class PaperlessDocumentReader:
 
         The endpoint answers a bare list although the schema says paginated, and 400 "Audit log
         is disabled" when the instance runs with PAPERLESS_AUDIT_LOG_ENABLED=false (the only
-        400 this endpoint has).
+        400 this endpoint has). It holds every corrected text twice, and Paperless ignores the
+        paging the schema has.
         """
         try:
-            found = await self._one(document_id, "history/", _History)
+            found = await self._client.read_json(
+                f"{PATH}{document_id}/history/",
+                _History,
+                max_bytes=HISTORY_BYTES,
+                timeout=MANY_TIMEOUT,
+                compressed=True,
+            )
+        except NotFound:
+            raise unseen_document(document_id) from None
+        except AnswerTooLarge:
+            message = (
+                f"The history of document {document_id} is over 64 MiB, because Paperless sends "
+                "every corrected text with it."
+            )
+            raise AnswerTooLarge(message) from None
         except Validation:
             message = "The Paperless audit log is disabled on this instance."
             raise FeatureUnavailable(message, hint="Leave history out of include.") from None

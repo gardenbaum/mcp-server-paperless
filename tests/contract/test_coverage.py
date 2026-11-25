@@ -35,6 +35,7 @@ from mcp_server_paperless.domain.ports import (
     RawReader,
     SharingReader,
     SharingWriter,
+    SystemReportReader,
     TaskListReader,
     TaskListWriter,
     TaskReader,
@@ -210,6 +211,7 @@ def test_ports_are_found_by_introspection() -> None:
         "workflow_writes": WorkflowWriter,
         "management": AdminReader,
         "management_writes": AdminWriter,
+        "reports": SystemReportReader,
         "task_lists": TaskListReader,
         "task_list_writes": TaskListWriter,
     }
