@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:55Z'
-updated_date: '2026-11-24T23:39:40Z'
+updated_date: '2026-11-25T08:23:37Z'
 labels:
   - mail
 dependencies:
@@ -51,4 +51,6 @@ P1: every row of the table of the design (2.2) is proven, so is what get_process
 P2: T1 as read; empty list and 1,001 unknown ids are 200; a foreign id is 403 for all and nothing is deleted; a user with delete_processedmail only deletes an unowned record and may not read records (403), so delete_processed_mail (81.3) needs view_processedmail as well.
 P3: the tracebacks, mail.log and paperless.log are as the redaction of decision-80 expects; nothing of a real failed login (during a fetch and during the action) is shown by get_processed_mail, list_processed_mail, get_log or paperless_api_get. DIFFERENT from the design: result_data of a mail_fetch task is null in the API, so the texts of T5 ('Skipped', 'No new documents were added.', 'Added n document(s).') cannot be read; only paperless.log tells. This concerns the tasks part of explain_mail_import (81.4). A failed file gives an error that starts with the chain of a ChordError or of the parser.
 P4: Dovecot signs in without setup and has UIDVALIDITY, keywords and MOVE; the whole job took 5 to 8 minutes (design: 1 to 2).
+
+Owner, 2026-11-25: 'Überall wie von dir empfohlen bitte.': the job e2e-imap stays complete at 4 to 5 minutes.
 <!-- SECTION:NOTES:END -->
