@@ -1017,9 +1017,7 @@ async def test_a_refusal_of_whoever_reads_an_opened_archive_stays_as_it_is() -> 
 
 
 async def test_the_second_factor_is_removed_once(make_client: ClientFactory) -> None:
-    server = Recording(
-        httpx2.Response(200, json=True)
-    )
+    server = Recording(httpx2.Response(200, json=True))
 
     await PaperlessAdminWriter(make_client(server)).remove_second_factor(5)
 

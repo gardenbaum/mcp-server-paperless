@@ -183,6 +183,7 @@ async def test_read_only_mode_offers_only_tools_with_the_read_only_hint() -> Non
             "get_trashed_file",
             "list_users",
             "list_groups",
+            "get_permissions",
         }
         | READ_SHARING
         | READ_MAIL
