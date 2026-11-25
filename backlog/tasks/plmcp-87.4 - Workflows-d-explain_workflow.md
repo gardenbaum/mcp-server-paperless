@@ -1,9 +1,11 @@
 ---
 id: PLMCP-87.4
 title: 'Workflows d: explain_workflow'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T22:43:07Z'
+updated_date: '2026-11-25T09:24:55Z'
 labels:
   - workflows
 dependencies:
