@@ -460,6 +460,7 @@ HOSTED_SECONDS = {
     "tests/e2e/test_files.py": 16,
     "tests/e2e/test_mail.py": 16,
     "tests/contract/test_selection.py": 15,
+    "tests/contract/test_view_steps.py": 15,
     "tests/e2e/test_notes_and_trash.py": 15,
     "tests/e2e/test_http.py": 14,
     "tests/e2e/test_stdio.py": 14,
