@@ -12,6 +12,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import StdioTransport
 from guide_oracle import Seen, look
+from hidden_names import EVERY, READING, named
 
 from e2e.helpers import EXPECTED_VERSION
 from mcp_server_paperless.tools._shared import ANNOTATIONS, TOOL_TOOLSETS
@@ -139,7 +140,12 @@ async def offered(stack: Stack, mode: str = "auto", **env: str) -> tuple[Seen, s
         env={"PAPERLESS_URL": stack.base_url, "PAPERLESS_TOKEN": stack.admin_token, **env},
         keep_alive=False,
     )
+    entries = env["PAPERLESS_MCP_TOOLSETS"].split(",")
+    hidden = {n for n in EVERY - READING if f"{TOOL_TOOLSETS.get(n)}:read" in entries}
     async with Client(transport, mode=mode) as client:
+        for tool in await client.list_tools():  # nothing hidden is named (decision-111)
+            if tool.name in READING:
+                assert named(tool, hidden) == set(), tool.name
         return await look(client), {prompt.name for prompt in await client.list_prompts()}
 
 

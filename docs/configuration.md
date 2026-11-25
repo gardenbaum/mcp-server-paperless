@@ -98,7 +98,8 @@ PAPERLESS_MCP_TOOLSETS=core,ai,mail:read,workflows:read
 - The other selected toolsets keep their writing tools, also for the same objects: with
   `mail:read,permissions` the assistant can still share mail accounts and rules or hand them over, with
   `core:read,bulk` it can still change documents. Select every toolset that writes them read-only, too.
-- Descriptions of tools that are offered may still name a tool that is not; it cannot be called.
+- Reading tools name no tool that is hidden. The texts of writing tools, results and confirmations may
+  still name one; it cannot be called.
 - `PAPERLESS_MCP_READ_ONLY=true` wins: then everything is read-only. `all` stands alone: list every
   toolset to make some of them read-only, and use `PAPERLESS_MCP_READ_ONLY` instead of `all:read`.
   Another suffix, or a toolset both with and without it, stops the server.

@@ -11,6 +11,7 @@ from fastmcp import Client
 from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
 from guide_oracle import look
 from harness import serve
+from hidden_names import READING, named
 from test_http_uploads import DEFAULT, http_settings, listening
 
 from mcp_server_paperless.app import build_app
@@ -80,7 +81,8 @@ async def test_a_mixed_selection_offers_tells_and_refuses_the_same(
     with transport(kind, tmp_path) as connection:
         async with Client(connection, mode=mode) as client:
             seen = await look(client)
-            hints = {tool.name: tool.annotations for tool in await client.list_tools()}
+            tools = await client.list_tools()
+            hints = {tool.name: tool.annotations for tool in tools}
             prompts = {prompt.name for prompt in await client.list_prompts()}
             read = await client.call_tool("list_mail_rules", raise_on_error=False)
             written = await client.call_tool(
@@ -107,6 +109,10 @@ async def test_a_mixed_selection_offers_tells_and_refuses_the_same(
         if toolset in {"core", "workflows"}
         or (toolset in READ_ONLY and tool in ANNOTATIONS and ANNOTATIONS[tool].read_only_hint)
     }
+    gone = {t for t in table if table[t] in READ_ONLY} - seen.tools
+    for tool in tools:  # what is hidden is not named either (decision-111)
+        if tool.name in READING:
+            assert named(tool, gone) == set(), tool.name
     # Only core still saves, and only over stdio.
     saving = SAVING_ANNOTATIONS if kind == "stdio" else ANNOTATIONS
     assert hints["download_document"] == saving["download_document"]
