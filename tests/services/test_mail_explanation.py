@@ -79,7 +79,8 @@ class Setup:
         return await self.service.explain(1, MailFacts.model_validate(facts), rule_id=rule_id)
 
     async def check(self, what: str, **facts: object) -> tuple[str, str]:
-        [rule] = (await self.explain(**facts)).rules
+        found = await self.service.explain(1, MailFacts.model_validate(facts), rule_id=None)
+        [rule] = found.rules
         [check] = [check for check in rule.checks if check.what == what]
         return check.result, check.why
 
@@ -238,6 +239,7 @@ async def test_the_body_is_never_known() -> None:
         ("*.pdf, *.txt", None, ["a.txt"], "no"),  # Paperless does not strip the pattern
         ("pdf", None, ["a.pdf"], "no"),  # the whole name
         (",", None, ["a.pdf"], "no"),
+        (",", None, [""], "no"),  # an empty pattern is none
         (None, "*.txt", ["a.txt"], "no"),
         (None, "*.txt", ["a.txt", "b.pdf"], "ok"),
         ("*.pdf", "b*", ["b.pdf"], "no"),
@@ -407,7 +409,15 @@ async def test_the_newest_fetches_and_failed_files_from_mail_are_shown() -> None
                 trigger_source="email_consume",
             ),
         ]
-    setup.state.tasks.append(FakeTask(id=99, task_id="x", status="failure", message="an upload"))
+    setup.state.tasks.append(
+        FakeTask(
+            id=99,
+            task_id="x",
+            status="failure",
+            message="an upload",
+            created=NOW + timedelta(days=1),
+        )
+    )
 
     tasks = (await setup.explain()).tasks
 
@@ -456,6 +466,20 @@ async def test_staff_see_the_lines_about_the_account_its_rules_and_skipped_fetch
     ]
     assert found.logs_from == "2026-11-25 10:00:00"
     assert not any("Rule Work.R1" in line for line in one.logs)
+
+
+async def test_the_rest_of_a_record_whose_start_was_not_read_is_left_out() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [
+        "Rule Work.R1: of an older record",
+        LOG.format(1, "Rule Work.R1: whole"),
+        "with a second line",
+    ]
+
+    found = await setup.explain()
+
+    assert found.logs == ("2026-11-25 10:00:01 Rule Work.R1: whole with a second line",)
 
 
 async def test_lines_about_another_mail_are_left_out_when_the_subject_is_known() -> None:
@@ -608,3 +632,60 @@ async def test_an_answer_with_everything_read_is_complete() -> None:
     setup.rule()
 
     assert (await setup.explain(subject="x")).complete
+
+
+async def test_a_rule_of_the_same_number_and_one_that_stops_nothing_before_it() -> None:
+    setup = Setup()
+    setup.rule(order=1, folder="Other")
+    setup.rule(order=1, folder="Same")
+    setup.rule(order=1, folder="Same")
+
+    found = {rule.rule_id: rule for rule in (await setup.explain()).rules}
+
+    [tied] = [c.why for c in found[2].checks if c.what == "earlier rules"]
+    assert "rule 'R3' (id 3) reads the same folder first" in tied
+    assert [c for c in found[1].checks if c.what == "earlier rules"] == []
+
+
+async def test_at_most_twenty_lines_in_the_order_of_time() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [LOG.format(5, f"Rule Work.R1: {n}") for n in range(MAX_LOGS)]
+    setup.state.logs["paperless"] = [
+        LOG.format(1, "No rules enabled for account Work. Skipping."),
+        LOG.format(9, "Error while processing mail account Work"),
+    ]
+
+    found = await setup.explain()
+
+    assert len(found.logs) == MAX_LOGS
+    assert found.logs[-1] == "2026-11-25 10:00:09 Error while processing mail account Work"
+    assert "2 older log lines about the account" in found.not_checked
+    assert found.logs_from == "2026-11-25 10:00:01"
+
+
+async def test_only_the_log_paperless_tells_of_skipped_fetches() -> None:
+    @final
+    class Half(FakePaperless):
+        @override
+        async def get_log(self, name: str, *, limit: int) -> tuple[str, ...]:
+            if name == "mail":
+                message = "silent"
+                raise UpstreamTimeout(message)
+            return await super().get_log(name, limit=limit)
+
+    found = await Setup(make=Half).explain()
+
+    assert "the log mail: silent" in found.not_checked
+    assert "whether a fetch was skipped is not known" not in found.not_checked
+
+
+async def test_exactly_as_many_records_as_are_shown_leave_none_out() -> None:
+    setup = Setup()
+    setup.rule()
+    for _ in range(MAX_PROCESSED):
+        setup.record("Hi")
+
+    found = await setup.explain(subject="Hi")
+
+    assert (len(found.processed), found.not_checked) == (MAX_PROCESSED, ())
