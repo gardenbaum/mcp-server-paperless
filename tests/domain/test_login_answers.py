@@ -262,8 +262,8 @@ def test_a_planted_secret_is_in_no_shown_text(
 FORGED = [
     "] Error while authenticating account Fake: bad",
     "] Error while retrieving mailbox Fake: bad",
-    "[2026-11-24 10:00:00,1] [ERROR] [paperless_mail] Error while authenticating account F: x",
-    "[2026-11-24 10:00:00,1] [INFO] [paperless] all is well",
+    "[2026-11-24 10:00:00,001] [ERROR] [paperless_mail] Error while authenticating account F: x",
+    "[2026-11-24 10:00:00,001] [INFO] [paperless] all is well",
     "The above exception was the direct cause of the following exception:",
     "During handling of the above exception, another exception occurred:",
     HEADER.strip(),
@@ -310,3 +310,57 @@ def test_a_hostile_text_is_read_in_linear_time(part: str) -> None:
     _ = text_without_credentials(f"{START}Error while authenticating account " + part * 60_000)
 
     assert time.process_time() - started < 10  # quadratic would take minutes
+
+
+STAMP = "[2026-11-24 10:00:01,123]"
+
+
+@pytest.mark.decision("decision-66")
+@pytest.mark.parametrize(
+    "start",
+    [
+        f"{STAMP} ",
+        f"{STAMP} [ERROR] ",
+        f"{STAMP} [ERROR] [] ",
+        f"{STAMP} [error] [paperless_mail] ",
+        f"{STAMP} [] [paperless_mail] ",
+        f"{STAMP} [ERROR] [paperless mail] ",
+        f"{STAMP} [ERROR] [paperless_mail]",
+        f"{STAMP} [ERROR]  [paperless_mail] ",
+        "[2026-11-24T10:00:01,123] [ERROR] [paperless_mail] ",
+        "[2026-11-24 10:00:01] [ERROR] [paperless_mail] ",
+        "[2026-11-24 10:00:01,12] [ERROR] [paperless_mail] ",
+        "[2026-11-24 10:00:01,1234] [ERROR] [paperless_mail] ",
+        "[2026-11-24 10:00,123] [ERROR] [paperless_mail] ",
+        " [2026-11-24 10:00:01,123] [ERROR] [paperless_mail] ",
+        "x [2026-11-24 10:00:01,123] [ERROR] [paperless_mail] ",
+    ],
+)
+def test_only_the_whole_start_that_paperless_writes_ends_a_record(start: str) -> None:
+    line = f"{start}{PASSWORD}"
+
+    shown = lines_without_credentials([f"{LOGGED}NO", line, f"{START}Next"])
+
+    assert shown == [LOGGED + ANSWER_NOT_SHOWN, ANSWER_NOT_SHOWN, f"{START}Next"]
+    assert lines_without_credentials([line, f"{START}Next"]) == [REST_NOT_SHOWN, f"{START}Next"]
+
+
+@pytest.mark.parametrize("name", ["_granian", "paperless.parsing.tesseract", "celery.app.trace"])
+@pytest.mark.parametrize("level", ["DEBUG", "CRITICAL"])
+def test_a_record_without_a_message_is_one_too(name: str, level: str) -> None:
+    """Paperless cuts what is blank at the end of a line it reads."""
+    lines = [f"{STAMP} [{level}] [{name}]", f"{STAMP} [{level}] [{name}] message"]
+
+    assert lines_without_credentials(lines) == lines
+    logged = [f"{LOGGED}NO", *lines]
+    assert lines_without_credentials(logged) == [LOGGED + ANSWER_NOT_SHOWN, *lines]
+
+
+@pytest.mark.decision("decision-106")
+def test_what_is_not_protected_is_a_forged_whole_start_and_a_window_behind_the_real_one() -> None:
+    """The two holes that are known: nothing in a line tells a forged start from a real one."""
+    forged = f"{START}{PASSWORD}"
+
+    assert lines_without_credentials([f"{LOGGED}NO", forged])[1] == forged
+    window = [PASSWORD, forged]
+    assert lines_without_credentials(window) == [REST_NOT_SHOWN, forged]

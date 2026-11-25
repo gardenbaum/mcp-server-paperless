@@ -16,8 +16,8 @@ import pytest
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
+from e2e.echo_server import FORGED, echo_server
 from e2e.echo_server import HOST as ECHO
-from e2e.echo_server import echo_server
 from e2e.helpers import API_VERSION, in_container, num, obj, parse, results
 from e2e.mailbox import BROKEN, PASSWORD, Mailbox, note, wait
 from mcp_server_paperless.domain.urls import ANSWER_NOT_SHOWN
@@ -773,6 +773,36 @@ async def test_a_server_that_repeats_the_credentials_leaks_none(
     assert told["logs"], "the failed login is not among the lines"
     for form in forms:
         assert form not in str(told)
+
+
+@pytest.mark.decision("decision-106")
+@pytest.mark.parametrize("how", ["dated", "record"])
+@pytest.mark.parametrize("login", ["login", "plain"])
+async def test_a_server_that_forges_the_start_of_a_log_record(
+    box: Mailbox, client: Connected, how: How, login: str
+) -> None:
+    """A part of a start hides nothing from the redaction; a whole one is the known residual."""
+    _ = box.rule()
+    # Of its own: what the last case shows must not be taken for that of another test.
+    password = f"f0rged-{box.name}{'ü' if login == 'plain' else ''}"
+    plain = base64.b64encode(f"\0{box.name}\0{password}".encode()).decode()
+    secret = plain if login == "plain" else password
+    with echo_server(how) as port:
+        box.change_account(imap_server=ECHO, imap_port=port, password=password)
+        assert box.fetch() == 0
+    forged = [line for line in box.log("mail") if line.startswith(FORGED[how]) and secret in line]
+    assert forged, "the carriage return no longer makes a line of its own"
+
+    for name in ("mail", "paperless"):
+        shown = await call(client, "get_log", name=name, lines=1000)
+        read = await call(
+            client, "paperless_api_get", path=f"/api/logs/{name}/", params={"limit": 60}
+        )
+        for result in (shown, read):
+            # A real server could do the same, so this is named in decision-106, not protected.
+            assert (secret in json.dumps(result)) is (how == "record")
+    told = await call(client, "explain_mail_import", account_id=box.account)
+    assert secret not in json.dumps(told)
 
 
 @pytest.mark.parametrize("how", ["no", "bye"])

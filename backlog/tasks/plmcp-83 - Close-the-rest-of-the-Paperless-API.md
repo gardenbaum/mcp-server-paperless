@@ -1,10 +1,11 @@
 ---
 id: PLMCP-83
 title: Close the rest of the Paperless API
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-23T12:14:53Z'
-updated_date: '2026-11-23T19:32:26Z'
+updated_date: '2026-11-25T14:42:51Z'
 labels: []
 dependencies:
   - PLMCP-91

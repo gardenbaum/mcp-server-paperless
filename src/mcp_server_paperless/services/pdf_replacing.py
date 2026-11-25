@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.domain.pdf import PdfResult, PdfTask, StartedTasks
     from mcp_server_paperless.domain.ports import DocumentReader, DocumentWriter
     from mcp_server_paperless.services.removal import DocumentRemoval
+    from mcp_server_paperless.services.trash_scan import TrashScan
 
 # No step of a composed call starts later than this after its beginning.
 LATEST_START: Final = 45.0
@@ -61,6 +62,11 @@ UNKNOWN_PLACE: Final = (
     "It is not known where archive serial number {number} is: look at documents {original} and "
     "{product}."
 )
+# How long the look into the trash may take, which is what the call can be late by.
+TRASH_SECONDS: Final = 10.0
+NOT_IN_TRASH: Final = "it is not in the trash this user may see"
+NOT_IN_TIME: Final = "the trash could not be read in time"
+TRASH_UNREAD: Final = "the trash could not be read ({cause})"
 UNEXPECTED: Final = "unexpected error"
 FIND: Final = "find the new documents with search_documents (newest added first) and check them"
 # Answers that say that nothing was deleted; any other error leaves that open.
@@ -265,18 +271,23 @@ def _check_tasks(result: PdfResult, started: StartedTasks, wanted: Replacement) 
 class Replacing:
     """Verifies what an operation made and trashes the originals, for the current user."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 -- one port or service per concern
         self,
         reader: DocumentReader,
         writer: DocumentWriter,
         removal: DocumentRemoval,
+        trash: TrashScan,
         *,
         clock: Callable[[], float] = time.monotonic,
+        trash_seconds: float = TRASH_SECONDS,
     ) -> None:
         """Read through ``reader``, move serial numbers through ``writer``, trash with ``removal``.
 
-        ``clock`` bounds how late the last step may start.
+        ``trash`` finds what is not found any more, for at most ``trash_seconds``. ``clock`` bounds
+        how late the last step may start.
         """
+        self._trash_scan: TrashScan = trash
+        self._trash_seconds: float = trash_seconds
         self._reader: DocumentReader = reader
         self._writer: DocumentWriter = writer
         self._removal: DocumentRemoval = removal
@@ -471,12 +482,25 @@ class Replacing:
             try:
                 _ = await self._reader.get_document(original.id)
             except NotFound:
-                return None
+                # Trashed, or hidden from this user meanwhile: only the trash can tell.
+                seen = await self._in_trash(original.id)
+                return None if seen is None else _Stayed(f"{cause(error)}; {seen}", unknown=True)
             except PaperlessMcpError:
                 pass
             # Still there says nothing: without an answer Paperless may delete it yet.
             return _Stayed(cause(error), unknown=True)
         return None
+
+    async def _in_trash(self, document_id: int) -> str | None:
+        """None if the trash holds the document, else why that is not known."""
+        try:
+            async with asyncio.timeout(self._trash_seconds):
+                found, _ = await self._trash_scan.locate([document_id])
+        except TimeoutError:
+            return NOT_IN_TIME
+        except PaperlessMcpError as error:
+            return TRASH_UNREAD.format(cause=cause(error))
+        return None if document_id in found else NOT_IN_TRASH
 
     async def _hand_over(
         self, wanted: Replacement, product: DocumentRecord, done: _Done
