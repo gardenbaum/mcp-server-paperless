@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:56Z'
-updated_date: '2026-11-25T09:42:49Z'
+updated_date: '2026-11-25T10:59:37Z'
 labels:
   - mail
 dependencies:
@@ -54,4 +54,6 @@ After the review of 81.1 other records are always looked for; dialog of 100 meas
 Review round 1 (independent), tests first: the sentence for PROCESSED_WO_CONSUMPTION of rules that import the mail itself, the UIDVALIDITY caveat always, hidden rules, texts softened, rights before the long reads, vanished pages, doubled rows, INBOX in any case, tests for the survivors (each request checks the time, every account is bound). Dialog of 100 measured: 11,330 ordinary; 17,830 with a staying record each; 20,117 long subjects; not hostile 132,122 (100 rules, SUCCESS, move to long folders) and 171,922 (also staying records and other folders); hostile 307,322. No bound built (with the owner).
 
 Review round 2, tests first: when the rule acts follows from what it takes (eml_and_attachments: one half is enough), other records by the rule's folder, UIDVALIDITY of a server that names none. Dialog of 100 measured: 11,341 ordinary, 17,920 with a staying record each, 20,128 long subjects; not hostile 130,252 and 170,052; hostile 305,452. No bound built (with the owner).
+
+Confirmations above 100,000 characters (whole text with its hint) are refused, also with confirm=true, never cut; the preview stays whole and says so (owner, 2026-11-25, question dialog: "Ja, ablehnen (Recommended)", yes, refuse). Tests first. MAX_CONFIRMATION moved to domain/errors.py. Snapshot and tool text adapted.
 <!-- SECTION:NOTES:END -->

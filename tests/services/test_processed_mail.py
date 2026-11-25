@@ -23,11 +23,13 @@ from mcp_server_paperless.domain.errors import (
     UpstreamTimeout,
     UpstreamUnavailable,
     Validation,
+    accepting,
 )
 from mcp_server_paperless.domain.mail import Reference
 from mcp_server_paperless.services.bulk_documents import DRY_RUN, TO_GO_AHEAD
 from mcp_server_paperless.services.processed_mail import (
     ERROR_SLICE,
+    FEWER,
     MAX_RECORDS,
     ProcessedMailService,
 )
@@ -774,7 +776,7 @@ async def test_after_forty_seconds_nothing_is_started() -> None:
     report = await service.delete([1, 2], dry_run=False, confirm=True)
     assert outcomes(report) == [(1, "unknown"), (2, "unknown")]
     assert "40 seconds have passed." in report.message
-    assert report.message.endswith("Delete fewer records per call.")
+    assert report.message.endswith(FEWER)
 
 
 @pytest.mark.decision("decision-83")
@@ -1184,3 +1186,98 @@ async def test_a_deletion_names_the_records_of_the_folder_as_the_rule_writes_it(
     setup.mail(status="FAILED", folder="INBOX")
 
     assert "kept out by the records 2 with its uid" in (await setup.delete(1, dry_run=True)).message
+
+
+LIMIT: Final = 100_000
+
+
+async def confirmation_of(above: int) -> Setup:
+    """100 records whose confirmation is ``above`` characters longer than the limit."""
+    setup = Setup(writes=True)
+    for number in range(1, 101):
+        folder = f"{number:0>254}"
+        scope = "eml_and_attachments"
+        setup.rule(
+            id=number,
+            name="n",
+            action="move",
+            action_parameter=folder,
+            consumption_scope=scope,
+            enabled=False,
+        )
+        setup.mail(rule=number, subject="s", status="FAILED", received=DAY)
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.delete(*range(1, 101), confirm=False)
+    missing = LIMIT + above - len(raised.value.describe())
+    for rule in setup.state.mail_rules:
+        added = min(missing, 59)
+        rule.name += "n" * added
+        missing -= added
+    for mail in setup.state.processed_mail:
+        added = min(missing, 59)
+        mail.subject += "s" * added
+        missing -= added
+    assert missing == 0
+    return setup
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_confirmation_at_the_limit_is_shown_whole_and_can_be_accepted() -> None:
+    setup = await confirmation_of(0)
+    ids = range(1, 101)
+
+    preview = await setup.delete(*ids, dry_run=True)
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.delete(*ids, confirm=False)
+    with accepting(raised.value.fingerprint):
+        accepted = await setup.delete(*ids, confirm=False)
+
+    assert len(raised.value.describe()) == LIMIT
+    assert "refused" not in preview.message
+    assert accepted.message == "100 of 100 records were deleted."
+    assert setup.left() == []
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_confirmation_at_the_limit_can_be_confirmed_with_the_argument() -> None:
+    setup = await confirmation_of(0)
+
+    _ = await setup.delete(*range(1, 101), confirm=True)
+
+    assert setup.left() == []
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_confirmation_above_the_limit_is_refused_also_when_confirmed_or_accepted() -> None:
+    setup = await confirmation_of(1)
+    ids = range(1, 101)
+    effect = (await setup.delete(*ids, dry_run=True)).message
+    said = (
+        "confirmation would be longer than what can be shown: 100001 characters (at most 100000) "
+        "for 100 records"
+    )
+
+    for confirm in (False, True):
+        with pytest.raises(Validation) as raised:
+            _ = await setup.delete(*ids, confirm=confirm)
+        assert raised.value.message == f"The {said}. Nothing was deleted."
+        assert raised.value.hint == FEWER
+    assert setup.left() == list(ids)
+    refused = f"{DRY_RUN} This call would be refused: the {said}. {FEWER} Confirmed, it would "
+    assert effect.startswith(f"{refused}permanently delete 100 records of processed mail,")
+    assert effect.endswith("which it is is not shown.")
+    assert TO_GO_AHEAD not in effect
+
+
+@pytest.mark.decision("decision-83")
+async def test_an_accepted_confirmation_that_has_become_too_long_is_refused() -> None:
+    setup = await confirmation_of(0)
+    ids = range(1, 101)
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.delete(*ids, confirm=False)
+    setup.state.processed_mail[99].subject += "s"
+
+    with accepting(raised.value.fingerprint), pytest.raises(Validation):
+        _ = await setup.delete(*ids, confirm=False)
+
+    assert setup.left() == list(ids)

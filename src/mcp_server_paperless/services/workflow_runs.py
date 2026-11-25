@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Final
 from mcp_server_paperless.domain.bulk import MAX_DOCUMENTS
 from mcp_server_paperless.domain.errors import (
     CONFIRM_HINT,
+    MAX_CONFIRMATION,
     ConfirmationRequired,
     PaperlessMcpError,
     PermissionDenied,
@@ -67,7 +68,6 @@ BLOCKED_HINT: Final = (
     "owner."
 )
 # Characters of a confirmation; above that a run is refused, never cut (owner, 2026-11-24).
-MAX_CONFIRMATION: Final = 100_000
 FEWER: Final = "Choose fewer documents per call."
 SPLIT: Final = (
     "Fewer documents do not help: split the workflow into several, or run it in the Paperless web "
