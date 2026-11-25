@@ -229,7 +229,7 @@ class DocumentReader(Protocol):
         ...
 
     async def list_document_history(self, document_id: int) -> tuple[HistoryEntry, ...]:
-        """The audit log of a document, newest first, without the OCR text.
+        """The audit log of a document, newest first; ``content`` is only ``TEXT_CHANGED``.
 
         Raises:
             NotFound: No such document.

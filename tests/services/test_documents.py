@@ -308,6 +308,7 @@ async def test_include_adds_notes_history_metadata_versions_and_suggestions() ->
     assert detail.history is not None
     assert (detail.history.total, detail.history.truncated) == (2, False)
     assert [entry.action for entry in detail.history.entries] == ["update", "create"]
+    assert detail.history.entries[1].changes["content"] == "changed, the text is not shown"
     assert "ACME" not in repr(detail.history)
     assert detail.file_metadata is not None
     assert detail.file_metadata.original_filename == "e2e-public-invoice.pdf"

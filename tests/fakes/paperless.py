@@ -88,6 +88,7 @@ from mcp_server_paperless.domain.bulk import (
     TrashDocuments,
 )
 from mcp_server_paperless.domain.documents import (
+    TEXT_CHANGED,
     CustomFieldValue,
     DocumentFile,
     DocumentHit,
@@ -4133,7 +4134,7 @@ class FakePaperless:
         Order in Paperless 3.4.2: `view_document` (viewset), audit log enabled (400), the
         document exists (404, even without `view_logentry`), then `view_logentry` and ownership:
         an object-level view grant is not enough, the document must be unowned, the user's own,
-        or the user a superuser (403). The create entry's `content` (OCR text) is dropped.
+        or the user a superuser (403). The OCR text in `content` is never told.
         """
         user = self.user
         if not user.has("view_document"):
@@ -4151,7 +4152,9 @@ class FakePaperless:
         return tuple(
             entry.model_copy(
                 update={
-                    "changes": {k: v for k, v in entry.changes.items() if k != "content"},
+                    "changes": {
+                        k: TEXT_CHANGED if k == "content" else v for k, v in entry.changes.items()
+                    },
                 }
             )
             for entry in entries

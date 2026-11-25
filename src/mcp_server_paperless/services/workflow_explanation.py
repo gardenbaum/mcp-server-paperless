@@ -216,8 +216,10 @@ class _Checks:
     def _changed(self, attribute: str | None) -> str | None:
         if attribute is None:
             return None
+        # A document shows the text of its newest version.
+        keys = {"content", "Version Added"} if attribute == "content" else {attribute}
         for entry in self._facts.history:
-            if attribute in entry.changes:
+            if not keys.isdisjoint(entry.changes):
                 by = (
                     quoted(entry.actor)
                     if entry.actor

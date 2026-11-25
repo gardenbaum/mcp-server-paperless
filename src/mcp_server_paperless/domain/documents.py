@@ -359,6 +359,10 @@ class DocumentVersion(BaseModel):
     ] = None
 
 
+# What a history entry says in place of the old and the new OCR text.
+TEXT_CHANGED: Final = "changed, the text is not shown"
+
+
 class HistoryEntry(BaseModel):
     """One change of a document in its audit log; the OCR text is never part of it."""
 

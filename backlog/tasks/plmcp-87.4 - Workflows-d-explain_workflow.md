@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:07Z'
-updated_date: '2026-11-25T13:56:22Z'
+updated_date: '2026-11-25T14:05:25Z'
 labels:
   - workflows
 dependencies:
@@ -60,4 +60,6 @@ Commit 'fix: what the review of explain_workflow found' held a leftover mutant (
 Second review of #161 (d3b3378): N1 to N4 done, tests first (4 red; the others of N2 pin behaviour that was there). Corrections of earlier notes: E2E 45588369857 ran on 87f27da, before the logger rules and the first review round, so it says nothing of them (45596824462 on d7b07b2 does); mutants: 39 of the first version (4 survived, closed), 39 after the first review (4 survived, 3 closed, 1 equivalent), 27 now in a copy outside the worktree (none survived). Taking 81d's test_log_records.py dropped two tests of mine (redaction with a cut first record, reading the end of a log); 81d restores the redaction one.
 
 Owner, 2026-11-25: 'Alles wie empfohlen' (everything as recommended), answering 'gröbere Gründe aus dem Log in Ordnung (the tags do not fit)?' (are coarser reasons from the log all right). Two holes Codex found in mail_explanation were real here too, fixed with a failing test first: a log that is empty or begins after the document arrived is named; the pages of names and workflows end 40 seconds after the call began. Full E2E 45603789273 on cba61ab green; 45611182400 on fd5e78a red only in two tests of PLMCP-81.4 (test_mail_import rule action, contract test_mail log lines).
+
+Codex threads on 2cb483c: (1) did_run from the cut list was already fixed in 32efef25. (2) True: the adapter dropped content, so last_change of the text was always null. The history now keeps a marker (TEXT_CHANGED, time and actor of the entry) in place of the text, in adapter and fake; get_document include=history shows it, too (deliberate change; the contract assertion that content is absent became: only the marker, never the text). An added version counts as a change of the text. Not checked live: whether an edit of the text of a newer version is in the history. Tests red first (8), 8 mutants by hand in a copy, all killed. No snapshot changed.
 <!-- SECTION:NOTES:END -->

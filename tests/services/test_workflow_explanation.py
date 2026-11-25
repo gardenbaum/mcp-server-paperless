@@ -468,6 +468,37 @@ async def test_the_last_change_of_a_value_is_told_by_the_history() -> None:
     assert name.last_change is None
 
 
+@pytest.mark.parametrize(
+    ("changes", "wanted"),
+    [
+        ({"content": ["old OCTOPUS", "new ZEBRA"]}, "2026-11-22T00:00:00+00:00 by 'bob'"),
+        ({"Version Added": ["None", 7]}, "2026-11-22T00:00:00+00:00 by 'bob'"),
+        ({"title": ["a", "b"]}, None),
+    ],
+)
+@pytest.mark.parametrize("match", ["ACME", "absent"])
+async def test_the_last_change_of_the_text_is_told_without_the_text(
+    changes: dict[str, JsonValue], wanted: str | None, match: str
+) -> None:
+    setup = Setup()
+    setup.document.history = [
+        HistoryEntry(
+            id=3,
+            timestamp=datetime(2026, 11, 22, tzinfo=UTC),
+            action="update",
+            actor="bob",
+            changes=changes,
+        )
+    ]
+
+    [check] = await setup.checks(trigger(matching_algorithm=1, match=match))
+    answer = await setup.explain()
+
+    assert (check.filter, check.last_change) == ("match", wanted)
+    assert "OCTOPUS" not in repr(answer)
+    assert "ZEBRA" not in repr(answer)
+
+
 async def test_names_the_user_may_not_see_are_numbers() -> None:
     setup = Setup(READER[0], grant=("view_workflow",))
     setup.document.tags = [3, 1]

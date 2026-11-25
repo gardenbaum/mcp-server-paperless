@@ -34,7 +34,7 @@ Probe P6 on Paperless 3.5.1 (CI run 45585312563, job 139105284889 "e2e (1/6)", t
 ## Consequences
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
-- The answer can mislead where document or workflow changed since: the first sentence and `last_change` are the guard.
+- The answer can mislead where document or workflow changed since: the first sentence and `last_change` are the guard. For the text, `last_change` is the last change of the text of the first version or the last added version, as far as the history tells: the adapter keeps a marker in place of the old and the new text, also for `get_document`, and never the text. Whether a later edit of the text of a newer version is in the history was not checked on a live instance.
 - Runs after a change, on a schedule or by hand write no task into the log, so they are at most "perhaps".
 - A clock of this server that differs from that of Paperless shifts what a schedule has reached.
 - Log records under a former name of the workflow are not found (the log has names only); the answer says so.
