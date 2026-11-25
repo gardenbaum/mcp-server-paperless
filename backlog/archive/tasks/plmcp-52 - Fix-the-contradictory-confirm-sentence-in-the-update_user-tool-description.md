@@ -1,11 +1,11 @@
 ---
 id: PLMCP-52
 title: Fix the contradictory confirm sentence in the update_user tool description
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-22T21:20:29Z'
-updated_date: '2026-11-24T21:07:04Z'
+updated_date: '2026-11-24T22:42:47Z'
 labels:
   - tools
 dependencies: []
@@ -22,16 +22,16 @@ Found while writing the docs (PLMCP-51): the description of update_user (src/pap
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The update_user description states the confirm rule once and matches the behaviour and decision-26; a test pins the cases it names (rename, new e-mail, cleared e-mail, first and last name)
-- [ ] #2 The surface snapshot change is stated in the PR; docs/tools.md is regenerated
+- [x] #1 The update_user description states the confirm rule once and matches the behaviour and decision-26; a test pins the cases it names (rename, new e-mail, cleared e-mail, first and last name)
+- [x] #2 The surface snapshot change is stated in the PR; docs/tools.md is regenerated
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -49,4 +49,12 @@ Found while writing the docs (PLMCP-51): the description of update_user (src/pap
 PLMCP-98 (#111) corrected the description of update_user and the snapshot; open is the test that pins the named cases (criterion 1).
 
 The description named deactivating but not reactivating, which needs confirm (decision-26 and the service). It now names both. New tool test test_update_user_asks_for_exactly_the_changes_its_description_names: 13 cases (rename, set and changed e-mail, cleared e-mail, first and last name, access changes), each run through the tool and looked up in the description, which states the rule once; red on reactivating before the text changed. Surface snapshot changed deliberately (this description only); docs/tools.md regenerated, unchanged because it holds first sentences only. No decision changed.
+
+Merged in #148; review: all seven service mutants killed, nothing above nit.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+update_user names every confirmed change once; a test pins 13 cases.
+<!-- SECTION:FINAL_SUMMARY:END -->
