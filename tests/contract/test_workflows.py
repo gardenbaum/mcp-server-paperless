@@ -689,6 +689,57 @@ async def test_the_permission_to_change_workflows_is_enough(backend: Backend) ->
     assert (after.triggers, after.actions) == (made.triggers, made.actions[1:])
 
 
+@pytest.mark.decision("decision-86")
+@pytest.mark.contract(CREATE)
+@pytest.mark.contract(UPDATE)
+async def test_manual_triggers_and_ai_suggestions_keep_their_settings(backend: Backend) -> None:
+    writer = backend.admin.workflow_writes
+    tag = next(t for t in await backend.admin.taxonomy.list_taxonomy("tag") if t.name)
+    filters: dict[str, JsonValue] = {
+        "filter_filename": "*.pdf",
+        "filter_has_tags": [tag.id],
+        "match": "x",
+        "matching_algorithm": 1,
+    }
+    manual = WorkflowTrigger(type=5, settings=filters)
+    suggested: dict[str, JsonValue] = {
+        "ai_suggestion_fields": [
+            *("title", "tags", "correspondent", "document_type", "storage_path", "created")
+        ],
+        "ai_create_missing": True,
+        "ai_overwrite_existing": True,
+    }
+    ai = WorkflowAction(type=8, settings=suggested)
+
+    made = await writer.create_workflow(scratch(), safe(triggers=(manual,), actions=(ai,)))
+    less = WorkflowAction(type=8, settings={"ai_suggestion_fields": ["title"]})
+    changed = await writer.update_workflow(made.id, WorkflowValues(actions=(less,)))
+
+    assert {k: made.triggers[0].settings[k] for k in filters} == filters
+    assert {k: made.actions[0].settings[k] for k in suggested} == suggested
+    assert changed.actions[0].settings["ai_suggestion_fields"] == ["title"]
+    assert changed.actions[0].settings["ai_create_missing"] is False
+
+
+@pytest.mark.decision("decision-86")
+@pytest.mark.contract(CREATE)
+async def test_ai_suggestions_without_fields_or_a_trigger_for_them_are_refused(
+    backend: Backend,
+) -> None:
+    writer = backend.admin.workflow_writes
+    ai = WorkflowAction(type=8, settings={"ai_suggestion_fields": ["title"]})
+
+    with pytest.raises(Validation, match="AI suggestions"):
+        _ = await writer.create_workflow(scratch(), safe(actions=(ai,)))
+    wrong: list[JsonValue] = [[], ["content"], None]
+    for fields in wrong:
+        bad = WorkflowAction(type=8, settings={"ai_suggestion_fields": fields})
+        with pytest.raises(Validation, match="valid field"):
+            _ = await writer.create_workflow(
+                scratch(), safe(triggers=(WorkflowTrigger(type=5),), actions=(bad,))
+            )
+
+
 @pytest.mark.decision("decision-82")
 @pytest.mark.contract(PARTS)
 async def test_doubles_in_a_list_are_stored_once(backend: Backend) -> None:
