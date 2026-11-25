@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T12:22:10Z'
-updated_date: '2026-11-25T12:36:20Z'
+updated_date: '2026-11-25T12:52:07Z'
 labels: []
 dependencies: []
 parent_task_id: PLMCP-90
@@ -56,4 +56,6 @@ Red first: test_selection failed to import; 58 tests red in settings, CLI, visib
 Limits: guide 3011 to 3028 (+17, as approved). Instructions 1450 to 1451: the design's 1440 (core alone, read-only) is not the worst case. A read-only toolset whose line among those that are off is short (views, pdf, workflows) makes the text longer; the budget test now searches for that. 1451 is measured and below the approved 1465, but that was approved for once PLMCP-89 is in; with 89 the worst case is computed at 1474, above 1465: put to the owner.
 Deliberate: no test or snapshot weakened; in the budget test tools of the selected toolset itself are no longer disabled (it changes no text). hidden_tools takes the read-only toolsets and the table as required arguments. Smoke tests of the two images start with core:read.
 Part b (PLMCP-90.2) waits for a release that contains this and a pin of it; nothing is prepared.
+
+30 hand mutants: 28 killed at once, 1 survivor killed by a new case (bulk-ro), 1 equivalent (another reading of the suffix: anything but :read was refused before).
 <!-- SECTION:NOTES:END -->

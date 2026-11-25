@@ -99,7 +99,15 @@ def test_an_unknown_name_before_the_suffix_is_suggested_like_any_other() -> None
 
     assert "Unknown toolset in PAPERLESS_MCP_TOOLSETS: cor:read." in caught.value.message
     assert "Did you mean core:read?" in caught.value.message  # never the writable one
-    for entry in ("bulk:", "bulk:ro", "bulk:write", "bulk-read", "bulk\uff1aread", "bulkread"):
+    for entry in (
+        "bulk:",
+        "bulk:ro",
+        "bulk:write",
+        "bulk-read",
+        "bulk-ro",
+        "bulk\uff1aread",
+        "bulkread",
+    ):
         with pytest.raises(InvalidConfiguration, match="Did you mean bulk:read"):
             _ = selected_toolsets((entry,), KNOWN)
 
