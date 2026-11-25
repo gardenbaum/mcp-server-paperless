@@ -97,7 +97,12 @@ class Setup:
             self.fake, self.fake, self.resolver, web_url=WEB
         )
         self.views: ViewService = ViewService(
-            self.fake, self.fake, self.resolver, self.documents, ViewPins(self.fake, self.fake)
+            self.fake,
+            self.fake,
+            self.resolver,
+            self.documents,
+            ViewPins(self.fake, self.fake),
+            permissions=self.fake,
         )
 
     def view(self, name: str) -> FakeSavedView:
@@ -540,7 +545,8 @@ async def test_a_created_view_keeps_its_display_settings_and_names_custom_fields
         ("title", None),
         ("custom_field_1", "e2e-string"),
     ]
-    assert await setup.views.get("shown") == made
+    read = await setup.views.get("shown")
+    assert read.model_dump(exclude={"access"}) == made.model_dump()
     assert made in (await setup.views.list()).views
 
 
@@ -659,7 +665,9 @@ async def test_a_write_is_reported_also_when_the_names_of_custom_fields_cannot_b
     setup.view("e2e-view").display_fields = ("custom_field_1",)
     fake = Unreadable(setup.state, user=ADMIN[0], writes=True)
     resolver = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
-    views = ViewService(fake, fake, resolver, setup.documents, ViewPins(fake, fake))
+    views = ViewService(
+        fake, fake, resolver, setup.documents, ViewPins(fake, fake), permissions=fake
+    )
 
     after = await views.update("e2e-view", ViewEdit(icon="heart"))
 
@@ -679,3 +687,33 @@ async def test_a_deleted_custom_field_is_shown_without_a_name_and_does_not_block
         ("custom_field_99", None),
         ("title", None),
     ]
+
+
+@pytest.mark.parametrize("view", ["e2e-view", 1])
+async def test_one_view_is_shown_with_its_owner_and_grants_by_name(view: str | int) -> None:
+    setup = Setup()
+    setup.view("e2e-view").viewers = {3}
+
+    found = await setup.views.get(view)
+
+    assert found.access is not None
+    assert found.access.owner is not None
+    assert found.access.owner.name == "admin"
+    assert [who.name for who in found.access.view_users] == [READER[0]]
+    [listed] = (await setup.views.list()).views
+    assert found.model_dump(exclude={"access"}) == listed.model_dump()
+    assert "access" not in listed.model_dump()
+
+
+async def test_who_may_only_see_a_view_sees_its_grants_and_ids_where_users_are_hidden() -> None:
+    setup = Setup(READER[0], grant=("view_savedview",))
+    setup.fake.user = replace(
+        setup.fake.user, permissions=setup.fake.user.permissions - {"view_user", "view_group"}
+    )
+    setup.view("e2e-view").viewers = {3}
+
+    found = await setup.views.get(1)
+
+    assert found.access is not None
+    assert [who.name for who in found.access.view_users] == ["#3"]
+    assert found.can_change is False

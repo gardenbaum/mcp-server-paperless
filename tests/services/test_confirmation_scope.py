@@ -362,7 +362,7 @@ def create_workflow(state: FakeState) -> Callable[[], Awaitable[object]]:
 def delete_view(state: FakeState) -> Callable[[], Awaitable[object]]:
     fake, taxonomy = fakes(state)
     documents = DocumentService(fake, fake, taxonomy, web_url=WEB)
-    service = ViewService(fake, fake, taxonomy, documents, ViewPins(fake, fake))
+    service = ViewService(fake, fake, taxonomy, documents, ViewPins(fake, fake), permissions=fake)
     return lambda: service.delete("e2e-view", confirm=False)
 
 

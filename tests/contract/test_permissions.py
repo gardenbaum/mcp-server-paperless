@@ -18,11 +18,13 @@ import pytest
 from fakes.accounts import ADMIN, BLIND, READER
 from pydantic import SecretStr
 
+from contract.conftest import SCRATCH_VIEW
 from mcp_server_paperless.domain.bulk import ObjectPermissions
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 from mcp_server_paperless.domain.mail import MailAccountValues, MailRuleValues
 from mcp_server_paperless.domain.permissions import AccessChange
 from mcp_server_paperless.domain.taxonomy import TaxonomyValues
+from mcp_server_paperless.domain.views import ViewValues
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -619,3 +621,149 @@ async def test_grants_of_a_tag_are_not_set_when_its_new_owner_is_refused(backend
 
     [after] = await ports.permissions.get_permissions("tag", [twin])
     assert after.permissions.view_users == ()
+
+
+# --- saved views (PLMCP-88.3)
+
+VIEWING = frozenset({"view_savedview", "change_savedview", "add_savedview"})
+
+
+async def make_view(ports: Ports, name: str | None = None) -> int:
+    name = name or f"{SCRATCH_VIEW}{uuid.uuid4().hex}"
+    return (await ports.view_writes.create_saved_view(name, ViewValues())).id
+
+
+@pytest.mark.decision("decision-91")
+@pytest.mark.contract(GET)
+@pytest.mark.contract(SET)
+async def test_saved_views_take_owner_and_grants_and_show_them(backend: Backend) -> None:
+    ports = backend.admin
+    first, second = await make_view(ports), await make_view(ports)
+    reader, admin = await user_id(ports, READER[0]), await user_id(ports, ADMIN[0])
+    group = await group_id(ports)
+    grants = ObjectPermissions(
+        view_users=(reader,), view_groups=(group,), change_users=(reader,), change_groups=()
+    )
+
+    changed = await ports.permission_writes.set_permissions(
+        "saved_view", second, AccessChange(permissions=grants)
+    )
+    read = await ports.permissions.get_permissions("saved_view", [second, MISSING, first])
+
+    assert [row.id for row in read] == [second, first]
+    assert read[0] == changed
+    assert (changed.owner, changed.permissions) == (admin, grants)
+    assert read[1].permissions == ObjectPermissions()
+    handed = await ports.permission_writes.set_permissions(
+        "saved_view", second, AccessChange(owner=reader)
+    )
+    assert (handed.owner, handed.permissions) == (reader, grants)
+    cleared = await ports.permission_writes.set_permissions(
+        "saved_view", second, AccessChange(owner=None, permissions=ObjectPermissions())
+    )
+    assert (cleared.owner, cleared.permissions) == (None, ObjectPermissions())
+
+
+@pytest.mark.decision("decision-91")
+@pytest.mark.contract(GET)
+@pytest.mark.contract(SET)
+async def test_a_change_grant_on_a_view_lets_change_settings_but_not_grants(
+    backend: Backend,
+) -> None:
+    name = f"contract-user-{uuid.uuid4().hex[:12]}"
+    user = backend.restricted(VIEWING, name=name)
+    view = await make_view(backend.admin)
+    grantee = await user_id(backend.admin, name)
+    admin = backend.admin.permission_writes
+
+    assert await user.permissions.get_permissions("saved_view", [view]) == []
+    with pytest.raises(NotFound):
+        _ = await user.permission_writes.set_permissions(
+            "saved_view", view, AccessChange(owner=grantee)
+        )
+    _ = await admin.set_permissions(
+        "saved_view", view, AccessChange(permissions=ObjectPermissions(view_users=(grantee,)))
+    )
+    assert (await user.views.get_saved_view(view)).user_can_change is False
+    with pytest.raises(PermissionDenied):
+        _ = await user.view_writes.update_saved_view(view, ViewValues(icon="heart"))
+    _ = await admin.set_permissions(
+        "saved_view", view, AccessChange(permissions=ObjectPermissions(change_users=(grantee,)))
+    )
+
+    [seen] = await user.permissions.get_permissions("saved_view", [view])
+    changed = await user.view_writes.update_saved_view(view, ViewValues(icon="heart"))
+
+    assert seen.permissions.change_users == (grantee,)
+    assert (changed.icon, changed.user_can_change) == ("heart", True)
+    for change in (AccessChange(owner=grantee), AccessChange(permissions=ObjectPermissions())):
+        with pytest.raises(PermissionDenied):
+            _ = await user.permission_writes.set_permissions("saved_view", view, change)
+
+
+@pytest.mark.decision("decision-91")
+@pytest.mark.contract(SET)
+async def test_the_owner_of_a_view_and_anyone_on_an_unowned_one_may_grant(
+    backend: Backend,
+) -> None:
+    name = f"contract-user-{uuid.uuid4().hex[:12]}"
+    user = backend.restricted(VIEWING, name=name)
+    view = await make_view(user)
+    reader = await user_id(backend.admin, READER[0])
+    grants = ObjectPermissions(view_users=(reader,))
+
+    owned = await user.permission_writes.set_permissions(
+        "saved_view", view, AccessChange(permissions=grants)
+    )
+    _ = await backend.admin.permission_writes.set_permissions(
+        "saved_view", view, AccessChange(owner=None, permissions=ObjectPermissions())
+    )
+    unowned = await user.permission_writes.set_permissions(
+        "saved_view", view, AccessChange(permissions=grants)
+    )
+
+    assert owned.permissions == grants
+    assert (unowned.owner, unowned.permissions) == (None, grants)
+
+
+@pytest.mark.decision("decision-91")
+@pytest.mark.contract(GET)
+@pytest.mark.contract(SET)
+async def test_grants_of_a_view_need_the_permissions_for_views_and_known_users(
+    backend: Backend,
+) -> None:
+    view = await make_view(backend.admin)
+    change = AccessChange(permissions=ObjectPermissions(view_users=(MISSING,)))
+
+    with pytest.raises(PermissionDenied):
+        _ = await backend.blind.permissions.get_permissions("saved_view", [view])
+    with pytest.raises(PermissionDenied):
+        _ = await backend.blind.permission_writes.set_permissions("saved_view", view, change)
+    with pytest.raises(Validation):
+        _ = await backend.admin.permission_writes.set_permissions("saved_view", view, change)
+    with pytest.raises(NotFound):
+        _ = await backend.admin.permission_writes.set_permissions(
+            "saved_view", MISSING, AccessChange(owner=None)
+        )
+
+
+@pytest.mark.decision("decision-91")
+@pytest.mark.contract(SET)
+async def test_grants_of_a_view_stay_set_when_its_new_owner_has_one_of_that_name(
+    backend: Backend,
+) -> None:
+    name = f"contract-user-{uuid.uuid4().hex[:12]}"
+    other = backend.restricted(VIEWING, name=name)
+    ports = backend.admin
+    title = f"{SCRATCH_VIEW}{uuid.uuid4().hex}"
+    _ = await make_view(other, title)
+    mine = await make_view(ports, title)
+    owner, reader = await user_id(ports, name), await user_id(ports, READER[0])
+    change = AccessChange(owner=owner, permissions=ObjectPermissions(view_users=(reader,)))
+
+    with pytest.raises(Validation, match="unique constraint"):
+        _ = await ports.permission_writes.set_permissions("saved_view", mine, change)
+
+    [after] = await ports.permissions.get_permissions("saved_view", [mine])
+    assert after.owner == await user_id(ports, ADMIN[0])
+    assert after.permissions.view_users == (reader,)

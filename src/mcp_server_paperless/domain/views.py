@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Annotated, ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from mcp_server_paperless.domain.permissions import AccessView
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -312,6 +314,14 @@ class SavedViewInfo(BaseModel):
     owner: Annotated[int | None, Field(description="User id of the owner; null: shared by all.")]
     can_change: Annotated[bool, Field(description="Whether the current user may change it.")]
     rules: tuple[RuleInfo, ...]
+
+
+class SavedViewDetail(SavedViewInfo):
+    """One saved view with its owner and grants."""
+
+    access: Annotated[
+        AccessView | None, Field(description="Change it with set_permissions (kind saved_view).")
+    ]
 
 
 class SavedViewListing(BaseModel):
