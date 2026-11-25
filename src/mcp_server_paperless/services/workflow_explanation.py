@@ -22,6 +22,7 @@ from mcp_server_paperless.domain.errors import (
     Validation,
     quoted,
 )
+from mcp_server_paperless.domain.task_lists import TaskFilters
 from mcp_server_paperless.domain.workflows import (
     MATCHING_ALGORITHMS,
     SOURCES,
@@ -41,9 +42,9 @@ if TYPE_CHECKING:
 
     from pydantic import JsonValue
 
-    from mcp_server_paperless.domain.admin import TaskRow
     from mcp_server_paperless.domain.documents import DocumentRecord, HistoryEntry, NameOrId
-    from mcp_server_paperless.domain.ports import AdminReader, DocumentReader
+    from mcp_server_paperless.domain.ports import AdminReader, DocumentReader, TaskListReader
+    from mcp_server_paperless.domain.task_lists import TaskRow
     from mcp_server_paperless.domain.taxonomy import TaxonomyKind
     from mcp_server_paperless.domain.workflows import (
         CheckResult,
@@ -527,6 +528,7 @@ class WorkflowExplanations:
         self,
         documents: DocumentReader,
         management: AdminReader,
+        task_lists: TaskListReader,
         workflows: WorkflowService,
         taxonomy: TaxonomyResolver,
         *,
@@ -536,6 +538,7 @@ class WorkflowExplanations:
         """Read through the ports; ``workflows`` finds the workflow, ``taxonomy`` knows names."""
         self._documents: DocumentReader = documents
         self._management: AdminReader = management
+        self._task_lists: TaskListReader = task_lists
         self._workflows: WorkflowService = workflows
         self._taxonomy: TaxonomyResolver = taxonomy
         self._clock: Callable[[], float] = clock
@@ -673,14 +676,12 @@ class WorkflowExplanations:
     def _consumed(self, facts: _Facts) -> Callable[[], Awaitable[None]]:
         async def task() -> None:
             added = facts.document.added
-            page = await self._management.list_tasks(
-                state=None,
-                task_type="consume_file",
-                acknowledged=None,
-                page=1,
-                page_size=MAX_TASKS,
-                created=(added - timedelta(days=1), added),
+            consumed = TaskFilters(
+                task_types=("consume_file",),
+                created_from=added - timedelta(days=1),
+                created_to=added,
             )
+            page = await self._task_lists.list_tasks(consumed, page=1, page_size=MAX_TASKS)
             facts.tasks = [t for t in page.rows if facts.document.id in t.document_ids]
             if page.next_page is not None:
                 said = f"only the newest {MAX_TASKS} consume tasks of that day were looked at"

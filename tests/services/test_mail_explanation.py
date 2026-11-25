@@ -73,7 +73,7 @@ class Setup:
         self.fake: FakePaperless = make(self.state, user=user)
         self.now: float = 0.0
         self.service: MailExplanations = MailExplanations(
-            self.fake, self.fake, clock=lambda: self.now, now=lambda: NOW
+            self.fake, self.fake, self.fake, clock=lambda: self.now, now=lambda: NOW
         )
 
     def rule(self, **fields: object) -> None:
@@ -903,7 +903,31 @@ async def test_only_failed_files_of_mails_count_and_what_is_left_out_is_said() -
     assert not found.complete
 
 
-async def test_more_failed_tasks_than_are_read_are_said() -> None:
+async def test_failed_files_of_mails_are_counted_exactly_and_uploads_are_not() -> None:
+    setup = Setup()
+    setup.rule()
+    setup.state.logs["mail"] = [LOG.format(0, "x")]
+    setup.state.logs["paperless"] = [RUN.format(0, "x")]
+    for number in range(130):
+        mail = number < 31
+        setup.state.tasks.append(
+            FakeTask(
+                id=number,
+                task_id=f"t{number}",
+                status="failure",
+                message=f"file {number}",
+                trigger_source="email_consume" if mail else "api_upload",
+            )
+        )
+
+    found = await setup.explain(subject="x")
+
+    assert [t.message for t in found.tasks] == [f"file {n}" for n in range(30, 25, -1)]
+    assert "26 more files from mails that could not be consumed" in found.not_checked
+    assert not found.complete
+
+
+async def test_failed_uploads_alone_leave_the_answer_complete() -> None:
     setup = Setup()
     setup.rule()
     setup.state.logs["mail"] = [LOG.format(0, "x")]
@@ -913,10 +937,8 @@ async def test_more_failed_tasks_than_are_read_are_said() -> None:
 
     found = await setup.explain(subject="x")
 
-    assert "files that could not be consumed: only the newest 25 of 26 were looked at" in (
-        found.not_checked
-    )
-    assert not found.complete
+    assert found.tasks == ()
+    assert found.complete
 
 
 async def test_a_record_with_the_subject_may_keep_the_mail_out() -> None:

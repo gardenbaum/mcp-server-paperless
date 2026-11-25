@@ -39,7 +39,7 @@ from mcp_server_paperless.paperless.pagination import Page
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
 
-    from mcp_server_paperless.paperless.client import PaperlessClient, Params
+    from mcp_server_paperless.paperless.client import PaperlessClient
 
     type Json = dict[str, object]
 
@@ -237,7 +237,7 @@ class PaperlessTrashReader:
         self, document_id: int, *, page: int, page_size: int, max_bytes: int
     ) -> TrashLookup:
         """See ``TrashReader.look_up_in_trash``."""
-        params: Params = {"page": page, "page_size": page_size}
+        params: dict[str, str | int] = {"page": page, "page_size": page_size}
         row, following = await self._one(_Full, document_id, params, max_bytes)
         return TrashLookup(entry=None if row is None else _detail(row), next_page=following)
 
@@ -249,7 +249,7 @@ class PaperlessTrashReader:
         With ``full_perms`` Paperless sends ``permissions`` in place of ``user_can_change`` and
         ``is_shared_by_requester``, so it takes a request of its own.
         """
-        params: Params = {"page": page, "page_size": page_size, "full_perms": "true"}
+        params: dict[str, str | int] = {"page": page, "page_size": page_size, "full_perms": "true"}
         row, _ = await self._one(_Granted, document_id, params, max_bytes)
         if row is None:
             return None
@@ -262,7 +262,7 @@ class PaperlessTrashReader:
         )
 
     async def _one[M: BaseModel](
-        self, model: type[M], document_id: int, params: Params, max_bytes: int
+        self, model: type[M], document_id: int, params: dict[str, str | int], max_bytes: int
     ) -> tuple[M | None, int | None]:
         """The row of one entry if it is on the page, and the next page."""
 
