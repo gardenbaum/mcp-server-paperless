@@ -5,6 +5,7 @@ and what Paperless answers and logs (probes P1 to P4). The tests run on a stack 
 (`just e2e-imap`, marker `imap_e2e`) and skip elsewhere.
 """
 
+import base64
 import json
 import os
 from typing import TYPE_CHECKING, cast
@@ -14,6 +15,8 @@ import pytest
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
+from e2e.echo_server import HOST as ECHO
+from e2e.echo_server import echo_server
 from e2e.helpers import API_VERSION, in_container, num, obj, parse, results
 from e2e.mailbox import BROKEN, PASSWORD, Mailbox, note
 from mcp_server_paperless.domain.urls import ANSWER_NOT_SHOWN
@@ -24,6 +27,7 @@ if TYPE_CHECKING:
 
     from fastmcp.client.transports import FastMCPTransport
 
+    from e2e.echo_server import How
     from e2e.helpers import Json, Stack
 
 IMAP = os.environ.get("PAPERLESS_E2E_IMAP") == "1"
@@ -216,13 +220,33 @@ async def test_a_mail_with_two_records_is_blocked_by_either(
     rows = box.records(rule, 2)
     assert {row["uid"] for row in rows} == {uid}
     shown = await record(client, rows[0])
-    assert f"until they are deleted too: {rows[1]['id']}." in str(shown["refetch"])
+    assert f"until they are deleted too: {rows[1]['id']} " in str(shown["refetch"])
     box.unflag(uid, FLAGGED)
     box.forget(num(rows[0]["id"]))
     assert box.fetch() == 0
     box.forget(num(rows[1]["id"]))
     assert box.fetch() == 2
     assert len(box.records(rule, 2)) == 2
+
+
+async def test_records_are_listed_in_the_order_asked_for(box: Mailbox, client: Connected) -> None:
+    """Received and processed differ: the mail that was sent later is fetched first."""
+    rule = box.rule()
+    _ = box.put("New")
+    _ = box.fetch()
+    _ = box.records(rule, 1)
+    _ = box.put("Old", age=3600)
+    _ = box.fetch()
+    _ = box.records(rule, 2)
+
+    async def listed(ordering: str) -> list[str]:
+        found = await call(client, "list_processed_mail", rule_id=rule, ordering=ordering)
+        return [str(row["subject"])[-3:] for row in cast("list[Json]", found["mails"])]
+
+    assert await listed("processed") == ["New", "Old"]
+    assert await listed("-processed") == ["Old", "New"]
+    assert await listed("received") == ["Old", "New"]
+    assert await listed("-received") == ["New", "Old"]
 
 
 async def test_every_rule_has_a_record_of_its_own_and_skips_what_another_took_in_the_run(
@@ -248,10 +272,7 @@ async def test_the_answer_to_a_failed_login_is_in_no_result_and_no_log(
 ) -> None:
     """The texts the redaction of decision-80 knows are those Paperless 3.5.1 writes."""
     _ = box.rule()
-    wrong = box.stack.admin.patch(
-        f"/api/mail_accounts/{box.account}/", json={"password": "wr0ng-Passw0rd"}
-    )
-    assert wrong.is_success
+    box.change_account(password="wr0ng-Passw0rd")
     assert box.fetch() == 0
 
     raw = {name: box.log(name) for name in ("mail", "paperless", "celery")}
@@ -264,11 +285,76 @@ async def test_the_answer_to_a_failed_login_is_in_no_result_and_no_log(
         text = "\n".join(cast("list[str]", shown["lines"]))
         assert "AUTHENTICATIONFAILED" not in text
         assert "wr0ng" not in text
-        if any("AUTHENTICATIONFAILED" in line for line in lines[-50:]):
+        if name != "celery":
+            assert any("AUTHENTICATIONFAILED" in line for line in lines[-50:])
             assert ANSWER_NOT_SHOWN in text
     for path in ("/api/logs/mail/", "/api/logs/paperless/"):
-        read = await call(client, "paperless_api_get", path=path, params={"limit": 60})
+        tail = {"limit": 60}
+        assert "AUTHENTICATIONFAILED" in box.stack.admin.get(path, params=tail).text
+        read = await call(client, "paperless_api_get", path=path, params=tail)
         assert "AUTHENTICATIONFAILED" not in json.dumps(read)
+        assert ANSWER_NOT_SHOWN in json.dumps(read)
+
+
+SENT = "wr0ng-Passw0rd-0815"
+
+
+@pytest.mark.parametrize("how", ["no", "bye", "logout"])
+@pytest.mark.parametrize("login", ["login", "plain", "xoauth2"])
+async def test_a_server_that_repeats_the_credentials_leaks_none(
+    box: Mailbox, client: Connected, how: How, login: str
+) -> None:
+    """LOGIN for an ASCII password, AUTHENTICATE PLAIN for another one, XOAUTH2 for a token."""
+    _ = box.rule()
+    password = f"{SENT}ü" if login == "plain" else SENT
+    token = {"is_token": True, "account_type": 2, "expiration": "2099-01-01T00:00:00Z"}
+    forms = [
+        SENT,
+        base64.b64encode(f"\0{box.name}\0{password}".encode()).decode(),
+        base64.b64encode(f"user={box.name}\1auth=Bearer {password}\1\1".encode()).decode(),
+    ]
+    raw: dict[str, list[str]] = {}
+    with echo_server(how) as port:
+        box.change_account(
+            imap_server=ECHO,
+            imap_port=port,
+            password=password,
+            **(token if login == "xoauth2" else {}),
+        )
+        assert box.fetch() == 0
+        raw = {name: box.log(name) for name in ("mail", "paperless")}
+    written = "\n".join("\n".join(lines[-60:]) for lines in raw.values())
+    assert any(form in written for form in forms), "the server's answer is not in the logs"
+
+    for name in raw:
+        shown = await call(client, "get_log", name=name, lines=1000)
+        read = await call(
+            client, "paperless_api_get", path=f"/api/logs/{name}/", params={"limit": 60}
+        )
+        for form in forms:
+            assert form not in str(shown)
+            assert form not in str(read)
+
+
+@pytest.mark.parametrize("how", ["no", "bye"])
+async def test_the_record_of_a_login_that_repeats_the_credentials_shows_none(
+    box: Mailbox, client: Connected, how: How
+) -> None:
+    rule = box.rule("flag")
+    _ = box.put("Echo", {f"{n}.txt": note() for n in range(8)})
+    with echo_server(how) as port:
+        assert box.fetch() == 8
+        box.change_account(imap_server=ECHO, imap_port=port, password=SENT)
+        [failed] = box.records(rule, 1)
+
+    assert SENT in str(failed["error"])
+    shown = await record(client, failed)
+    listed = await call(client, "list_processed_mail", rule_id=rule)
+    raw = await call(
+        client, "paperless_api_get", path="/api/processed_mail/", params={"rule": rule}
+    )
+    for result in (shown, listed, raw):
+        assert SENT not in str(result)
 
 
 async def test_a_login_that_fails_when_the_rule_acts_shows_no_answer(
@@ -278,10 +364,7 @@ async def test_a_login_that_fails_when_the_rule_acts_shows_no_answer(
     rule = box.rule("flag")
     uid = box.put("Late", {f"{n}.txt": note() for n in range(8)})
     assert box.fetch() == 8
-    wrong = box.stack.admin.patch(
-        f"/api/mail_accounts/{box.account}/", json={"password": "wr0ng-Passw0rd"}
-    )
-    assert wrong.is_success
+    box.change_account(password="wr0ng-Passw0rd")
 
     [failed] = box.records(rule, 1)
     shown = await record(client, failed)

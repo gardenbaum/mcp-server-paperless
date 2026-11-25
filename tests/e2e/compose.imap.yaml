@@ -14,6 +14,9 @@ services:
   paperless:
     depends_on:
       - imap
+    # The tests' own mail server that repeats what it is sent (tests/e2e/echo_server.py).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # The tests start every fetch themselves.
       PAPERLESS_EMAIL_TASK_CRON: disable
