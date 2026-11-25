@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T14:42:18Z'
-updated_date: '2026-11-25T15:22:21Z'
+updated_date: '2026-11-25T15:38:24Z'
 labels: []
 dependencies:
   - PLMCP-83.2
@@ -41,3 +41,9 @@ Third part of PLMCP-83: fields of covered operations that no tool sends. Design 
 <!-- SECTION:PLAN:BEGIN -->
 1. Tests first per level. 2. Note format (add_note, add_notes, notes read back); thumbnail version through listed versions; five filters in DocumentQuery and SelectionFilters (so in every choice by filter); status and document of list_share_bundles. 3. Coverage rows, docs, snapshots.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Red first at every level (94 tests of 17 modules), then green; 34 hand mutants: one equivalent (the format stands in the confirmation text too), one in the tool killed by a new test. decision-102 supplements decision-73. The five filters are in search_documents and, as SelectionFilters must equal them, in every choice by filter (read_documents, bulk, run_workflow).
+<!-- SECTION:NOTES:END -->
