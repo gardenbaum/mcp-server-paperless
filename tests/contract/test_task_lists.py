@@ -219,6 +219,18 @@ async def test_a_user_sees_own_and_unowned_tasks_only(backend: Backend) -> None:
     assert good not in found
 
 
+@pytest.mark.contract(LIST_TASKS)
+async def test_a_superuser_without_the_staff_flag_sees_no_more(backend: Backend) -> None:
+    good = backend.consume(succeed=True)
+    check = await backend.admin.task_list_writes.run_task("sanity_check")
+    superuser = backend.restricted(frozenset(), superuser=True)
+
+    found = await rows(superuser.task_lists, TaskFilters())
+
+    assert check in found
+    assert good not in found
+
+
 @pytest.mark.contract(RUN)
 @pytest.mark.parametrize("kind", REFUSED)
 async def test_paperless_starts_no_other_type_by_hand(backend: Backend, kind: str) -> None:

@@ -257,7 +257,7 @@ class Restricted(Protocol):
     every other document of the admin stays hidden from it. Grants replace those a document had, so
     a second user on the same document takes it from the first: use it before making the next. The
     live one deletes the user again
-    when the test ends.
+    when the test ends. A `superuser` is made without the staff flag.
     """
 
     def __call__(
@@ -267,6 +267,7 @@ class Restricted(Protocol):
         view: Sequence[int] = (),
         change: Sequence[int] = (),
         name: str | None = None,
+        superuser: bool = False,
     ) -> Ports: ...
 
 
@@ -429,11 +430,13 @@ def fake_restricted(state: FakeState) -> Restricted:
         view: Sequence[int] = (),
         change: Sequence[int] = (),
         name: str | None = None,
+        superuser: bool = False,
     ) -> Ports:
         user = FakeUser(
             id=max(u.id for u in state.users) + 1,
             username=name or f"contract-user-{uuid.uuid4().hex[:12]}",
             permissions=permissions,
+            is_superuser=superuser,
         )
         state.users.append(user)
         [admin] = [u for u in state.users if u.username == ADMIN[0]]
@@ -728,10 +731,16 @@ def live_restricted(
         view: Sequence[int] = (),
         change: Sequence[int] = (),
         name: str | None = None,
+        superuser: bool = False,
     ) -> Ports:
         name = name or f"contract-user-{uuid.uuid4().hex[:12]}"
         password = f"pw-{uuid.uuid4().hex}"
-        body = {"username": name, "password": password, "user_permissions": sorted(permissions)}
+        body = {
+            "username": name,
+            "password": password,
+            "user_permissions": sorted(permissions),
+            "is_superuser": superuser,
+        }
         created = stack.admin.post("/api/users/", json=body).raise_for_status()
         user = int(cast("int", cast("dict[str, object]", created.json())["id"]))
         users.append(user)

@@ -9,6 +9,8 @@ from fastmcp import Client
 from harness import serve
 
 from mcp_server_paperless.server import CATALOGUE
+from mcp_server_paperless.services.batch_uploads import UNKNOWN
+from mcp_server_paperless.tools import bulk_stdio as stdio
 
 pytestmark = [
     pytest.mark.anyio,
@@ -132,3 +134,8 @@ async def test_a_user_without_the_permission_gets_a_hint() -> None:
 
     assert "view_paperlesstask" in await refusal(reader, "list_tasks")
     assert "Only a superuser" in await refusal(reader, "run_task", task_type="sanity_check")
+
+
+@pytest.mark.parametrize("told", [UNKNOWN, (stdio.upload_documents.__doc__ or "")])
+def test_what_points_to_the_task_list_names_its_toolset(told: str) -> None:
+    assert "list_tasks (tasks toolset)" in " ".join(told.split())
