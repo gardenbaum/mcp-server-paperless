@@ -256,6 +256,10 @@ WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
         "3.5.1 nests index, classifier and sanity check under `tasks` and sends null errors; "
         "the schema has them top-level and non-nullable (PLMCP-7)"
     ),
+    ("POST", "/api/users/{id}/deactivate_totp/", 404): (
+        "a user without one is answered with HttpResponseNotFound('TOTP not found'), text/html "
+        "(PLMCP-83.4)"
+    ),
     ("GET", "/api/status/", 403): (
         "SystemStatusView answers HttpResponseForbidden('Insufficient permissions'), text/html "
         "(PLMCP-7)"
@@ -265,6 +269,13 @@ WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
     ),
     ("POST", "/api/ui_settings/", 200): (
         "3.5.1 answers {success: true}; the schema has {id, settings} (PLMCP-88.2)"
+    ),
+}
+# Responses that may have no body at all: (method, path template, status) -> reason. One with a body
+# is checked as usual.
+EMPTY_RESPONSES: Mapping[tuple[str, str, int], str] = {
+    ("POST", "/api/storage_paths/test/", 200): (
+        "3.5.1 answers null with an empty body; the schema has a string (PLMCP-83.2)"
     ),
 }
 # Responses that lack a property the schema requires, which is filled in (as an empty object)
@@ -663,6 +674,9 @@ def check_response(request: httpx2.Request, response: httpx2.Response) -> None:
         _check_file_response(request, response)
         return
     if (request.method, template, response.status_code) in WRONG_RESPONSE_SCHEMAS:
+        return
+    empty = (request.method, template, response.status_code) in EMPTY_RESPONSES
+    if empty and not response.content:
         return
     operation = cast("Json", _PATHS[template][request.method.lower()])
     documented = str(response.status_code) in cast("Json", operation["responses"])

@@ -277,7 +277,9 @@ async def test_a_file_bug_is_masked_and_logged_by_type_only(
 ) -> None:
     class Broken(FakePaperless):
         @override
-        async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
+        async def get_document_thumbnail(
+            self, document_id: int, *, version_id: int | None = None
+        ) -> DocumentFile:
             message = f"secret-detail of {document_id}"
             raise RuntimeError(message)
 
@@ -328,7 +330,9 @@ async def test_a_file_without_a_name_has_no_filename_in_its_metadata() -> None:
 async def test_an_empty_thumbnail_is_an_error_not_an_empty_image() -> None:
     class Empty(FakePaperless):
         @override
-        async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
+        async def get_document_thumbnail(
+            self, document_id: int, *, version_id: int | None = None
+        ) -> DocumentFile:
             found = await super().get_document_thumbnail(document_id)
             return found.model_copy(update={"content": b""})
 
@@ -345,3 +349,9 @@ def blob_of(content: object) -> BlobResourceContents:
     assert isinstance(content, EmbeddedResource)
     assert isinstance(content.resource, BlobResourceContents)
     return content.resource
+
+
+async def test_the_thumbnail_of_a_version_is_asked_for_by_its_id() -> None:
+    _, report = await call("get_document_thumbnail", {"document_id": 1, "version_id": 1})
+
+    assert report["version_id"] == 1

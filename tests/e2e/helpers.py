@@ -637,3 +637,13 @@ def in_container(*command: str) -> None:
         timeout=REINDEX_TIMEOUT,
     )
     assert ran.returncode == 0, f"{command} failed: {ran.stderr[-500:]}"
+
+
+def add_second_factor(user_id: int) -> None:
+    """Give a user a TOTP in Paperless itself: only a browser could set one up."""
+    code = (
+        "from allauth.mfa.totp.internal.auth import TOTP, generate_totp_secret; "
+        "from django.contrib.auth.models import User; "
+        f"TOTP.activate(User.objects.get(pk={user_id}), generate_totp_secret())"
+    )
+    in_container("python", "manage.py", "shell", "-c", code)

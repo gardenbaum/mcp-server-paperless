@@ -301,3 +301,16 @@ async def test_the_id_lists_and_recipients_are_bounded_by_the_schema() -> None:
                 "email_documents", {**mail, "recipients": recipients}, raise_on_error=False
             )
             assert result.is_error
+
+
+async def test_bundles_are_listed_by_status_and_document() -> None:
+    source = fake()
+    for documents in ([1], [2]):
+        _ = await call(source, "create_share_bundle", document_ids=documents, confirm=True)
+
+    of_two = await call(source, "list_share_bundles", document_id=2)
+    failed = await call(source, "list_share_bundles", status="failed")
+    wrong = await refusal(source, "list_share_bundles", status="nope")
+
+    assert [b["id"] for b in cast("list[Json]", of_two["bundles"])] == [2]
+    assert (failed["count"], "status" in wrong) == (0, True)

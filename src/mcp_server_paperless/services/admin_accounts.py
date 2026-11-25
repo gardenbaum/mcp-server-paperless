@@ -24,6 +24,7 @@ from mcp_server_paperless.domain.admin import (
 )
 from mcp_server_paperless.domain.errors import (
     ConfirmationRequired,
+    NotFound,
     PaperlessMcpError,
     Validation,
     destination,
@@ -63,6 +64,9 @@ CANNOT_TELL_HINT: Final = (
 )
 RENAME_TAIL: Final = "they sign in under the new name"
 EMAIL_TAIL: Final = "whoever controls it can reset the password and take the account over"
+ALONE: Final = "The second factor is removed in a call of its own."
+READ_AGAIN: Final = "Read the user with get_user before trying again."
+STILL_HINT: Final = "Read the user again with get_user; another kind of second factor may be left."
 SELF_HINT: Final = "Ask another administrator to do this in the Paperless web UI."
 NOTHING_GIVEN: Final = "Nothing to change: no field was given."
 
@@ -236,9 +240,12 @@ class AccountAdmin:
         is_superuser: bool | None = None,
         groups: Sequence[NameOrId] | None = None,
         permissions: Sequence[str] | None = None,
+        remove_second_factor: bool = False,
         confirm: bool = False,
     ) -> UserOutcome:
         """Change the fields given; access changes need ``confirm``.
+
+        The second factor is removed in a call of its own, so that nothing is half done.
 
         Raises:
             ConfirmationRequired: The change gives or takes access without ``confirm``.
@@ -262,9 +269,14 @@ class AccountAdmin:
             "is_staff": is_staff,
             "is_superuser": is_superuser,
         }
-        if all(v is None for v in given.values()) and (
+        nothing = all(v is None for v in given.values()) and (
             password is None and group_ids is None and permissions is None
-        ):
+        )
+        if remove_second_factor:
+            if not nothing:
+                raise Validation(ALONE, hint="Make the other changes in another call.")
+            return await self._remove_second_factor(current, confirm=confirm)
+        if nothing:
             raise Validation(NOTHING_GIVEN, hint="Pass at least one field to change.")
         if (is_superuser is False or is_active is False) and await self._caller() == number:
             what = "removing its superuser status or deactivating it"
@@ -288,6 +300,48 @@ class AccountAdmin:
             user=await self._detail(made),
             changed=True,
             message=f"Updated user {quoted(made.username)}: {shown}.",
+        )
+
+    async def _remove_second_factor(self, current: UserRecord, *, confirm: bool) -> UserOutcome:
+        who = quoted(current.username)
+        if await self._caller() == current.id:
+            message = SELF_MESSAGE.format(name=who, what="removing its second factor")
+            raise Validation(message, hint=SELF_HINT)
+        if not current.mfa_enabled:
+            return UserOutcome(
+                user=await self._detail(current),
+                changed=False,
+                message=f"User {who} has no second factor; nothing was changed.",
+            )
+        if not confirm:
+            rank = "; the user is a superuser" if current.is_superuser else ""
+            effect = (
+                f"remove the second factor of {who}, who then signs in with the password alone"
+                f"{rank}"
+            )
+            ConfirmationRequired.require(effect, scope=current)
+        removed = True
+        try:
+            await self._writer.remove_second_factor(current.id)
+        except NotFound:  # gone meanwhile
+            removed = False
+        try:
+            now = await self._reader.get_user(current.id)
+        except PaperlessMcpError as error:
+            message = (
+                f"The removal of the second factor of {who} may have been applied: the user could "
+                f"not be read again. {error.message}"
+            )
+            raise PaperlessMcpError(message, hint=READ_AGAIN) from None
+        if now.mfa_enabled:
+            message = f"User {who} still has a second factor."
+            raise PaperlessMcpError(message, hint=STILL_HINT)
+        return UserOutcome(
+            user=await self._detail(now),
+            changed=removed,
+            message=f"Removed the second factor of {who}."
+            if removed
+            else f"User {who} has no second factor any more; nothing was changed.",
         )
 
     async def _user_changes(  # noqa: PLR0913, PLR0912, C901 -- one diff per field

@@ -393,3 +393,25 @@ async def test_a_page_of_the_history_that_is_not_there_is_refused(arguments: Jso
         result = await client.call_tool("get_document", ask, raise_on_error=False)
 
     assert result.is_error
+
+
+@pytest.mark.parametrize(
+    "none",
+    [
+        {"modified_from": "2026-11-12"},
+        {"modified_to": "2026-11-10"},
+        {"asn_from": 11},
+        {"asn_to": 1},
+        {"file_name_contains": "no such file"},
+    ],
+    ids=["modified_from", "modified_to", "asn_from", "asn_to", "file_name_contains"],
+)
+async def test_each_filter_of_the_change_the_serial_number_and_the_file_name_is_passed_on(
+    none: dict[str, object],
+) -> None:
+    async with Client(serve(admin())) as client:
+        every = await client.call_tool("search_documents", {})
+        found = await client.call_tool("search_documents", none)
+
+    assert (every.structured_content or {})["count"] == 2
+    assert (found.structured_content or {})["count"] == 0
