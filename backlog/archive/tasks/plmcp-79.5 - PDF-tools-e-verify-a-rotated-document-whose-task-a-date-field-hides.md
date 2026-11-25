@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-24T13:42:49Z'
-updated_date: '2026-11-24T21:03:32Z'
+updated_date: '2026-11-25T07:49:51Z'
 labels:
   - pdf
 dependencies:
@@ -62,6 +62,8 @@ Second review of 9fef620. Correction of the note above: point (6) was NOT closed
 Live evidence: full hosted E2E 45465564080 (9fef620) and 45470371956 (9952784) green. Three review rounds, the last without a code finding. The restrictions of decision-74 are presented to the owner; main with PLMCP-80.3 merged.
 
 Owner, 2026-11-24: "Alles wie von dir empfohlen." The ten restrictions are accepted. Merged in #144; full hosted E2E 45475365377 on the merged head: shard 1 of 4 was cancelled by the 25-minute guard without a failed test, all other parts green; the same tests were green on 9952784.
+
+Translation of the owner quote "Alles wie von dir empfohlen.": "Everything as you recommend."
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
