@@ -365,6 +365,41 @@ async def test_the_saving_variants_exist_only_over_stdio_with_directories_and_wr
     assert ("save_dir" in str(report["note"])) is saves
 
 
+@pytest.mark.decision("decision-97")
+@pytest.mark.parametrize("stdio", [True, False])
+@pytest.mark.parametrize("admin", ["admin", "admin:read"])
+@pytest.mark.parametrize("core", ["core", "core:read"])
+async def test_a_read_only_toolset_only_attaches_and_the_other_still_saves(
+    tmp_path: Path, core: str, admin: str, *, stdio: bool
+) -> None:
+    """Saving changes this machine (decision-45): per toolset, with its own hints and notes."""
+    server = serve(
+        fake(),
+        toolsets=[core, admin],
+        stdio=stdio,
+        download_dirs=[str(tmp_path)],
+        max_download_bytes=LIMIT,
+    )
+    tools = {t.name: t for t in await server.list_tools()}
+    saves = {
+        "download_document": stdio and core == "core",
+        "bulk_download": stdio and admin == "admin",
+    }
+
+    for name, arguments in (("download_document", DOCUMENT), ("bulk_download", ARCHIVE)):
+        properties = cast("Json", tools[name].parameters["properties"])
+        assert ({"save_dir", "save_as", "confirm"} <= set(properties)) is saves[name]
+        assert ("save_dir" in properties) is saves[name]
+        assert tools[name].annotations == (SAVING_ANNOTATIONS if saves[name] else ANNOTATIONS)[name]
+        report, _ = await call(server, name, arguments)
+        assert report["delivered"] is False
+        assert ("save_dir" in str(report["note"])) is saves[name]  # no hint to what is not there
+        if not saves[name]:
+            message = await refused(server, name, {**arguments, "save_dir": str(tmp_path)})
+            assert "save_dir" in message
+            assert list(tmp_path.iterdir()) == []  # noqa: ASYNC240 -- a test looking at its directory
+
+
 def test_saving_is_not_read_only_and_may_replace() -> None:
     assert set(SAVING_ANNOTATIONS) == {"download_document", "bulk_download"}
     for name, hints in SAVING_ANNOTATIONS.items():

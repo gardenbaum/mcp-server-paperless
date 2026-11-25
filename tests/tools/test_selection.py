@@ -7,14 +7,19 @@ exist yet (``ai``, ``bulk``): the mechanism is proven for the toolsets later tas
 from typing import TYPE_CHECKING
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from mcp.types import ToolAnnotations
 
 from mcp_server_paperless.domain.errors import InvalidConfiguration
+from mcp_server_paperless.tools._shared import ANNOTATIONS
+from mcp_server_paperless.tools._shared import TOOL_TOOLSETS as REAL_TOOLSETS
 from mcp_server_paperless.tools.selection import (
     ENABLE,
     PARTIAL,
     guide_text,
     hidden_tools,
+    read_only_toolsets,
     selected_toolsets,
     toolset_guide,
     unavailable_toolsets,
@@ -52,25 +57,200 @@ def test_an_unknown_toolset_is_an_error_naming_it_and_the_known_ones() -> None:
     assert "PAPERLESS_MCP_TOOLSETS" in caught.value.message
 
 
+@pytest.mark.decision("decision-97")
+def test_an_entry_with_the_suffix_selects_the_toolset_read_only() -> None:
+    entries = ("core", "bulk:read")
+
+    assert selected_toolsets(entries, KNOWN) == {"core", "bulk"}
+    assert read_only_toolsets(entries) == {"bulk"}
+    assert read_only_toolsets(("core", "all")) == frozenset()
+
+
+@pytest.mark.decision("decision-97")
+@pytest.mark.parametrize(
+    "entry",
+    [
+        *("bulk:ro", "bulk:", "bulk:readonly", "bulk:read:read", "bulk: read", "bulk :read"),
+        *(
+            "bulk:write",
+            "bulk::read",
+            ":read",
+            "bulk:read ",
+            "all:ro",
+            "bulk\u200b:read",
+            "bulk\uff1aread",
+        ),
+    ],
+)
+def test_what_is_neither_a_name_nor_name_read_stops_the_server(entry: str) -> None:
+    """Nothing is guessed: a suffix that is not understood must never mean writable."""
+    with pytest.raises(InvalidConfiguration) as caught:
+        _ = selected_toolsets(("core", entry), KNOWN)
+
+    assert entry in caught.value.message
+    assert "PAPERLESS_MCP_TOOLSETS" in caught.value.message
+    assert "name:read" in caught.value.message  # how it is written
+
+
+@pytest.mark.decision("decision-97")
+def test_an_unknown_name_before_the_suffix_is_suggested_like_any_other() -> None:
+    with pytest.raises(InvalidConfiguration) as caught:
+        _ = selected_toolsets(("cor:read",), KNOWN)
+
+    assert "Unknown toolset in PAPERLESS_MCP_TOOLSETS: cor:read." in caught.value.message
+    assert "Did you mean core:read?" in caught.value.message  # never the writable one
+    for entry in (
+        "bulk:",
+        "bulk:ro",
+        "bulk:write",
+        "bulk-read",
+        "bulk-ro",
+        "bulk\uff1aread",
+        "bulkread",
+    ):
+        with pytest.raises(InvalidConfiguration, match="Did you mean bulk:read"):
+            _ = selected_toolsets((entry,), KNOWN)
+
+
+@pytest.mark.decision("decision-97")
+@pytest.mark.parametrize(
+    "entry",
+    [
+        *("bulkro", "bulkr", "bulkread", "bulk-", "bulk_ro", "bulkk"),
+        *("mailro", "mailr", "pdfro", "workflowsro", "airo", "corer", "corero"),
+    ],
+)
+def test_what_starts_with_a_toolset_is_never_suggested_writable(entry: str) -> None:
+    known = frozenset(REAL_TOOLSETS.values())
+    [name] = [name for name in known if entry.startswith(name)]
+
+    with pytest.raises(InvalidConfiguration) as caught:
+        _ = selected_toolsets((entry,), known)
+
+    assert f" Did you mean {name}:read?" in caught.value.message
+    assert caught.value.message.count("Did you mean") == 1
+
+
+@pytest.mark.decision("decision-97")
+def test_a_plain_typo_is_suggested_as_the_name_and_beside_others_each_gets_its_own() -> None:
+    known = frozenset(REAL_TOOLSETS.values())
+
+    with pytest.raises(InvalidConfiguration, match=r"Did you mean mail\?"):
+        _ = selected_toolsets(("mial",), known)
+    with pytest.raises(InvalidConfiguration) as caught:
+        _ = selected_toolsets(("mial", "corero", "trsh:read"), known)
+
+    assert "Did you mean core:read, mail, trash:read?" in caught.value.message
+    with pytest.raises(InvalidConfiguration, match="Did you mean mail:read"):
+        _ = selected_toolsets(("mialread",), known)
+    with pytest.raises(InvalidConfiguration) as punctuated:
+        _ = selected_toolsets(("mial-",), known)
+    assert "Did you mean" not in punctuated.value.message  # not letters only: never the bare name
+    with pytest.raises(InvalidConfiguration, match="Did you mean corework:read"):
+        _ = selected_toolsets(("coreworkx",), frozenset({"core", "corework"}))
+
+
+@pytest.mark.decision("decision-97")
+def test_all_read_only_is_refused_and_names_the_setting_for_it() -> None:
+    for entries in (("all:read",), ("all:read", "core"), ("all:read", "all")):
+        with pytest.raises(InvalidConfiguration, match="PAPERLESS_MCP_READ_ONLY=true"):
+            _ = selected_toolsets(entries, KNOWN)
+
+
+@pytest.mark.decision("decision-97")
+def test_a_toolset_with_and_without_the_suffix_is_refused() -> None:
+    with pytest.raises(InvalidConfiguration) as caught:
+        _ = selected_toolsets(("bulk", "core", "bulk:read"), KNOWN)
+
+    assert "both" in caught.value.message
+    assert "bulk" in caught.value.message
+    assert "core" not in caught.value.message
+
+
+@pytest.mark.decision("decision-97")
+def test_a_read_only_toolset_hides_its_tools_without_the_hint_and_no_others() -> None:
+    toolsets = {"find": "core", "change": "core", "plain": "bulk"}
+
+    def hidden(*read_only: str, everywhere: bool = False, disabled: tuple[str, ...] = ()) -> object:
+        return hidden_tools(
+            TABLE,
+            read_only=everywhere,
+            disabled=disabled,
+            read_only_toolsets=read_only,
+            tool_toolsets=toolsets,
+        )
+
+    assert hidden() == set()
+    assert hidden("core") == {"change"}
+    assert hidden("bulk") == {"plain"}
+    assert hidden("core", disabled=("find",)) == {"find", "change"}
+    assert hidden("core", everywhere=True) == {"change", "plain"}
+
+
+@pytest.mark.decision("decision-97")
+@given(
+    selection=st.dictionaries(
+        st.sampled_from(sorted(set(REAL_TOOLSETS.values()))), st.booleans(), min_size=1
+    ),
+    everywhere=st.booleans(),
+    disabled=st.sets(st.sampled_from(sorted(REAL_TOOLSETS)), max_size=5),
+)
+def test_a_tool_is_offered_exactly_when_nothing_takes_it_away(
+    *, selection: dict[str, bool], everywhere: bool, disabled: set[str]
+) -> None:
+    entries = [f"{name}:read" if read else name for name, read in selection.items()]
+    chosen = selected_toolsets(entries, frozenset(REAL_TOOLSETS.values()))
+    hidden = hidden_tools(
+        ANNOTATIONS,
+        read_only=everywhere,
+        disabled=disabled,
+        read_only_toolsets=read_only_toolsets(entries),
+        tool_toolsets=REAL_TOOLSETS,
+    )
+
+    assert visible_tools(REAL_TOOLSETS, chosen, hidden) == {
+        tool
+        for tool, toolset in REAL_TOOLSETS.items()
+        if toolset in selection
+        and tool not in disabled
+        and (ANNOTATIONS[tool].read_only_hint or not (everywhere or selection[toolset]))
+    }
+
+
 def test_read_only_hides_every_tool_without_the_read_only_hint() -> None:
-    assert hidden_tools(TABLE, read_only=True, disabled=()) == {"change", "plain"}
+    assert hidden_tools(
+        TABLE, read_only=True, disabled=(), read_only_toolsets=(), tool_toolsets={}
+    ) == {"change", "plain"}
 
 
 def test_without_read_only_nothing_is_hidden() -> None:
-    assert hidden_tools(TABLE, read_only=False, disabled=()) == frozenset()
+    assert (
+        hidden_tools(TABLE, read_only=False, disabled=(), read_only_toolsets=(), tool_toolsets={})
+        == frozenset()
+    )
 
 
 def test_disabled_tools_are_hidden() -> None:
-    assert hidden_tools(TABLE, read_only=False, disabled=("find",)) == {"find"}
+    assert hidden_tools(
+        TABLE, read_only=False, disabled=("find",), read_only_toolsets=(), tool_toolsets={}
+    ) == {"find"}
 
 
 def test_disabled_and_read_only_combine() -> None:
-    assert hidden_tools(TABLE, read_only=True, disabled=("find",)) == {"find", "change", "plain"}
+    assert hidden_tools(
+        TABLE, read_only=True, disabled=("find",), read_only_toolsets=(), tool_toolsets={}
+    ) == {"find", "change", "plain"}
 
 
 def test_an_unknown_disabled_tool_is_an_error_naming_it() -> None:
     with pytest.raises(InvalidConfiguration) as caught:
-        _ = hidden_tools(TABLE, read_only=False, disabled=("find", "fnid"))
+        _ = hidden_tools(
+            TABLE,
+            read_only=False,
+            disabled=("find", "fnid"),
+            read_only_toolsets=(),
+            tool_toolsets={},
+        )
 
     assert "fnid" in caught.value.message
     assert "PAPERLESS_MCP_DISABLED_TOOLS" in caught.value.message
@@ -99,7 +279,9 @@ def test_an_unreachable_paperless_leaves_every_toolset_visible() -> None:
 
 def test_an_unknown_name_suggests_the_close_match_and_lists_the_known_ones() -> None:
     with pytest.raises(InvalidConfiguration) as tool:
-        _ = hidden_tools(TABLE, read_only=False, disabled=("fnid",))
+        _ = hidden_tools(
+            TABLE, read_only=False, disabled=("fnid",), read_only_toolsets=(), tool_toolsets={}
+        )
     with pytest.raises(InvalidConfiguration) as toolset:
         _ = selected_toolsets(("cor",), KNOWN)
 
@@ -139,13 +321,15 @@ GUIDE_TOOLSETS = {
 SUMMARIES = {"core": "the basics", "bulk": "many at once", "trash": "the bin", "ai": "AI answers"}
 
 
-def guide(
+def guide(  # noqa: PLR0913 -- the arguments of toolset_guide
     *,
     selected: set[str] | None = None,
     hidden: set[str] | None = None,
     unavailable: set[str] | None = None,
     unchecked: set[str] | None = None,
     missing_now: set[str] | None = None,
+    read_only: set[str] | None = None,
+    mark: bool = True,
 ) -> ToolsetGuide:
     return toolset_guide(
         GUIDE_TOOLSETS,
@@ -156,6 +340,8 @@ def guide(
         unavailable=frozenset(unavailable or set()),
         unchecked=frozenset(unchecked or set()),
         missing_now=None if missing_now is None else frozenset(missing_now),
+        read_only=frozenset(read_only or set()),
+        mark=mark,
     )
 
 
@@ -359,3 +545,72 @@ def test_the_gap_of_a_toolset_offered_after_a_restart_is_shown() -> None:
 
     assert result.offered_after_restart == ("ai",)
     assert result.unchecked == {"ai": "Paperless AI"}
+
+
+@pytest.mark.decision("decision-97")
+def test_a_read_only_toolset_is_marked_where_it_is_on_and_keeps_its_suffix_in_the_value() -> None:
+    result = guide(selected={"core", "bulk"}, hidden={"change_bulk"}, read_only={"bulk"})
+    text = guide_text(result, overview=True)
+
+    assert result.on == ("core", "bulk (read-only)")
+    assert "Toolsets on: core, bulk (read-only)." in text
+    # An operator who follows the text must not make the toolset writable.
+    assert "PAPERLESS_MCP_TOOLSETS=core,bulk:read,<name>" in (result.switch_on or "")
+    assert "bulk" not in [t.toolset for t in result.off]
+    assert "change_bulk" not in result.model_dump_json()
+
+
+@pytest.mark.decision("decision-97")
+def test_a_read_only_toolset_with_a_gap_says_both() -> None:
+    result = guide(selected={"core", "ai"}, read_only={"ai"}, unchecked={"ai"})
+
+    assert result.on == ("core", "ai (read-only)")
+    assert result.unchecked == {"ai": "Paperless AI"}
+    assert "Toolsets on: core, ai (read-only; needs Paperless AI, not checked)." in guide_text(
+        result, overview=True
+    )
+
+
+@pytest.mark.decision("decision-97")
+def test_a_read_only_toolset_offered_after_a_restart_is_marked() -> None:
+    result = guide(
+        selected={"core", "ai"},
+        read_only={"ai"},
+        unavailable={"ai"},
+        missing_now=set(),
+        unchecked={"ai"},
+    )
+
+    assert (result.on, result.offered_after_restart) == (("core",), ("ai (read-only)",))
+    assert result.unchecked == {"ai": "Paperless AI"}
+    assert "PAPERLESS_MCP_TOOLSETS=core,ai:read,<name>" in (result.switch_on or "")
+
+
+@pytest.mark.decision("decision-97")
+def test_with_nothing_off_a_read_only_toolset_is_still_named() -> None:
+    result = guide(
+        selected={"core", "bulk", "trash", "ai"}, hidden={"change_bulk"}, read_only={"bulk"}
+    )
+
+    assert (result.off, result.switch_on) == ((), None)
+    assert guide_text(result, overview=True) == ("Toolsets on: core, bulk (read-only), trash, ai.")
+
+
+@pytest.mark.decision("decision-97")
+def test_in_read_only_mode_no_single_toolset_is_marked_but_the_value_keeps_the_suffix() -> None:
+    """Marking one would say that the others write."""
+    result = guide(
+        selected={"core", "bulk"}, hidden={"change_bulk"}, read_only={"bulk"}, mark=False
+    )
+
+    assert result.on == ("core", "bulk")
+    assert "PAPERLESS_MCP_TOOLSETS=core,bulk:read,<name>" in (result.switch_on or "")
+
+
+@pytest.mark.decision("decision-97")
+def test_a_read_only_toolset_left_without_a_tool_is_not_on_but_stays_in_the_value() -> None:
+    result = guide(selected={"core", "trash"}, hidden={"empty_bin"}, read_only={"trash"})
+
+    assert result.on == ("core",)
+    assert "trash" not in [t.toolset for t in result.off]
+    assert "PAPERLESS_MCP_TOOLSETS=core,trash:read,<name>" in (result.switch_on or "")
