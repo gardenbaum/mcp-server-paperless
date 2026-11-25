@@ -28,12 +28,14 @@ ADMIN: Json = {"id": 2, "username": "admin", "first_name": "", "last_name": ""}
 FIRST: Json = {
     "id": 2,
     "note": "first note",
+    "format": "plain",
     "created": "2026-11-12T22:13:06.976346Z",
     "user": ADMIN,
 }
 SECOND: Json = {
     "id": 3,
     "note": "second note",
+    "format": "plain",
     "created": "2026-11-12T22:13:07.094018Z",
     "user": ADMIN,
 }
@@ -64,7 +66,9 @@ async def test_a_note_is_posted_as_text_and_the_new_one_is_picked_from_the_answe
 
     note = await PaperlessDocumentWriter(make_client(server)).add_note(1, "second note")
 
-    assert server.sent == [("POST", "/api/documents/1/notes/", {}, {"note": "second note"})]
+    assert server.sent == [
+        ("POST", "/api/documents/1/notes/", {}, {"note": "second note", "format": "plain"})
+    ]
     assert (note.id, note.note, note.user) == (3, "second note", "admin")
     assert note.created == datetime(2026, 11, 12, 22, 13, 7, 94018, tzinfo=UTC)
 
@@ -259,3 +263,26 @@ async def test_the_whitespace_paperless_drops_around_a_note_is_no_other_text() -
     note = await PaperlessDocumentWriter(client).add_note(1, "\n  second note\u00a0\t")
 
     assert note.id == 3
+
+
+async def test_a_markdown_note_is_told_apart_from_a_plain_one_of_the_same_text(
+    make_client: ClientFactory,
+) -> None:
+    newer = {**SECOND, "id": 9, "format": "plain"}
+    server = Recorded([FIRST, {**SECOND, "format": "markdown"}, newer])
+
+    note = await PaperlessDocumentWriter(make_client(server)).add_note(1, "second note", "markdown")
+
+    assert server.sent == [
+        ("POST", "/api/documents/1/notes/", {}, {"note": "second note", "format": "markdown"})
+    ]
+    assert (note.id, note.format) == (3, "markdown")
+
+
+async def test_an_answer_without_a_note_of_that_format_is_unexpected(
+    make_client: ClientFactory,
+) -> None:
+    writer = PaperlessDocumentWriter(make_client(Recorded([FIRST, SECOND])))
+
+    with pytest.raises(PaperlessMcpError, match="unexpected response"):
+        _ = await writer.add_note(1, "second note", "markdown")

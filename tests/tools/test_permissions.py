@@ -25,7 +25,7 @@ pytestmark = [
 
 type Json = dict[str, object]
 
-TOOLS = frozenset({"set_permissions", "list_users", "list_groups"})
+TOOLS = frozenset({"set_permissions", "get_permissions", "list_users", "list_groups"})
 CONFIRM_DESCRIPTION = (
     "Must be true to go ahead at once. Without it a client that can show dialogs asks the "
     "user, and the tool runs only if they accept; with any other nothing changes and the "
@@ -64,9 +64,7 @@ def objects(output: Json) -> list[Json]:
 # --- the toolset -------------------------------------------------------------------------------
 
 
-async def test_the_permissions_toolset_is_off_by_default_and_has_three_tools_when_selected() -> (
-    None
-):
+async def test_the_permissions_toolset_is_off_by_default_and_has_four_tools_when_selected() -> None:
     async with Client(serve(fake())) as client:
         default = {t.name for t in await client.list_tools()}
     async with Client(server(fake())) as client:
@@ -80,7 +78,7 @@ async def test_read_only_mode_leaves_only_the_lookups() -> None:
     async with Client(serve(fake(), toolsets=["permissions"], read_only=True)) as client:
         offered = {t.name for t in await client.list_tools()}
 
-    assert offered == {"list_users", "list_groups"}
+    assert offered == {"get_permissions", "list_users", "list_groups"}
 
 
 async def test_the_annotations_tell_which_tool_changes_things_and_which_can_repeat() -> None:
@@ -94,6 +92,7 @@ async def test_the_annotations_tell_which_tool_changes_things_and_which_can_repe
     }
     assert hints == {
         "set_permissions": (False, True, True, False),
+        "get_permissions": (True, None, True, False),
         "list_users": (True, None, True, False),
         "list_groups": (True, None, True, False),
     }
@@ -367,3 +366,61 @@ async def test_a_client_with_dialogs_is_asked_before_a_view_is_shared(
     assert "\u202e" not in message
     assert result.is_error is (action == "decline")
     assert (state.saved_views[0].owner == READER_ID) is (action == "accept")
+
+
+# --- get_permissions
+
+
+@pytest.mark.decision("decision-104")
+async def test_grants_are_read_without_changing_them() -> None:
+    state = seeded()
+    state.documents[0].viewers = {READER_ID}
+
+    output = await call(
+        fake(state, writes=False), "get_permissions", kind="document", items=[PUBLIC, 99]
+    )
+
+    [row] = objects(output)
+    assert set(row) == {"id", "name", "web_url", "access"}
+    assert cast("Json", row["access"])["view_users"] == [{"id": 3, "name": "e2e-reader"}]
+    assert (output["kind"], output["missing"], output["left"]) == ("document", [99], [])
+
+
+@pytest.mark.decision("decision-104")
+@pytest.mark.parametrize(
+    ("kind", "item"),
+    [
+        ("tag", "e2e-private"),
+        ("correspondent", "e2e-acme"),
+        ("document_type", "e2e-invoice"),
+        ("storage_path", "e2e-archive"),
+        ("saved_view", "e2e-view"),
+    ],
+)
+async def test_every_kind_is_read_by_name(kind: str, item: str) -> None:
+    output = await call(fake(writes=False), "get_permissions", kind=kind, items=[item])
+
+    assert [row["name"] for row in objects(output)] == [item]
+
+
+@pytest.mark.decision("decision-104")
+async def test_a_mail_account_is_read_by_id_without_its_password() -> None:
+    state = seeded()
+    state.mail_accounts.append(
+        FakeMailAccount(
+            id=1,
+            name="mail",
+            imap_server="h",
+            imap_port=1,
+            username="u",
+            password="pa55-x",
+            owner=2,
+        )
+    )
+
+    output = await call(
+        fake(state, writes=False), "get_permissions", kind="mail_account", items=[1]
+    )
+
+    assert "pa55" not in str(output)
+    assert cast("Json", objects(output)[0]["access"])["owner"] == {"id": 2, "name": "admin"}

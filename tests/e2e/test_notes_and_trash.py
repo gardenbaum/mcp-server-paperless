@@ -92,6 +92,20 @@ async def test_a_note_is_added_listed_and_deleted_only_with_confirm(
     assert detail["notes_count"] == 1
 
 
+async def test_a_markdown_note_is_stored_and_read_back_as_one(stack: Stack, document: int) -> None:
+    admin = stack.admin_token
+    _ = await run(
+        stack, admin, "add_note", document_id=document, note="**paid**", format="markdown"
+    )
+    _ = await run(stack, admin, "add_note", document_id=document, note="**paid**")
+
+    detail = await run(stack, admin, "get_document", document_id=document, include=["notes"])
+
+    assert [n["format"] for n in raw_notes(stack, document)] == ["markdown", "plain"]
+    formats = [cast("Json", n)["format"] for n in cast("list[object]", detail["notes"])]
+    assert formats == ["markdown", "plain"]
+
+
 async def test_an_empty_note_and_an_unknown_note_are_refused_without_a_change(
     stack: Stack, document: int
 ) -> None:

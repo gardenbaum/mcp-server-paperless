@@ -12,6 +12,7 @@ from mcp_server_paperless.domain.errors import ConfirmationRequired, NotFound, V
 from mcp_server_paperless.services.documents import document_link
 
 if TYPE_CHECKING:
+    from mcp_server_paperless.domain.documents import NoteFormat
     from mcp_server_paperless.domain.ports import DocumentReader, DocumentWriter
 
 # Most characters of one note: Paperless sets no limit, but a note is a remark, not a document.
@@ -45,7 +46,9 @@ class NoteService:
         self._writer: DocumentWriter = writer
         self._web_url: str = web_url
 
-    async def add(self, document_id: int, text: str) -> NoteAdded:
+    async def add(
+        self, document_id: int, text: str, note_format: NoteFormat = "plain"
+    ) -> NoteAdded:
         """Add a note with ``text`` to a document.
 
         Raises:
@@ -54,7 +57,7 @@ class NoteService:
             PermissionDenied: The user may not add notes, or not to this document.
         """
         check_note(text)
-        note = await self._writer.add_note(document_id, text)
+        note = await self._writer.add_note(document_id, text, note_format)
         return NoteAdded(
             document_id=document_id, note=note, web_url=document_link(self._web_url, document_id)
         )
