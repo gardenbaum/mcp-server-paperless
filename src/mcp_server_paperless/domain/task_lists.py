@@ -105,6 +105,76 @@ class TaskRowPage(BaseModel):
     rows: tuple[TaskRow, ...]
 
 
+class TaskCounts(BaseModel):
+    """How many tasks there are, by how they stand."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    total: int
+    needs_attention: Annotated[int, Field(description="Failed or cancelled.")]
+    in_progress: Annotated[int, Field(description="Waiting or running.")]
+    completed: int
+
+
+class TaskTypeSummary(BaseModel):
+    """What became of the tasks of one type."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    task_type: str
+    total: int
+    pending: int
+    success: int
+    failure: int
+    avg_duration_seconds: float | None
+    avg_wait_time_seconds: float | None
+    last_run: datetime | None
+    last_success: datetime | None
+    last_failure: datetime | None
+
+
+class TaskViewer(BaseModel):
+    """The current user, and whose tasks Paperless shows them.
+
+    Attributes:
+        sees_all: The list holds every user's tasks, not only own and unowned ones.
+        summary_of_all: The summary by type counts every user's tasks.
+    """
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    sees_all: bool
+    summary_of_all: bool
+
+
+class TaskOverview(BaseModel):
+    """How the background tasks stand."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    counts: Annotated[
+        TaskCounts | None,
+        Field(description="Of the tasks you may see that match every filter; null: unavailable."),
+    ]
+    active: Annotated[
+        tuple[TaskRow, ...] | None,
+        Field(description="The newest 50 waiting or running, whatever the filters."),
+    ]
+    by_type: Annotated[
+        tuple[TaskTypeSummary, ...] | None,
+        Field(description="Of the last days by type, whatever the filters."),
+    ]
+    days: Annotated[int, Field(description="What by_type covers.")]
+    by_type_of: Annotated[
+        Literal["every_user", "own_and_unowned", "unknown"],
+        Field(description="Whose tasks by_type counts; every_user may be more than the others."),
+    ]
+    unavailable: Annotated[
+        tuple[str, ...], Field(description="Parts this user may not see; they are null.")
+    ]
+
+
 class TaskList(BaseModel):
     """One page of tasks, newest first."""
 
@@ -121,7 +191,10 @@ class Acknowledged(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
-    acknowledged: int
+    acknowledged: Annotated[
+        int | None, Field(description="Null: Paperless's answer was lost (see message).")
+    ]
+    dry_run: bool
     message: str
 
 

@@ -243,6 +243,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "get_log": "admin",
     "bulk_download": "admin",
     "list_tasks": "tasks",
+    "get_task_overview": "tasks",
     "acknowledge_tasks": "tasks",
     "run_task": "tasks",
 }
@@ -926,6 +927,12 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
     ),
     "list_tasks": ToolAnnotations(
         title="List tasks",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    "get_task_overview": ToolAnnotations(
+        title="Get task overview",
         read_only_hint=True,
         idempotent_hint=True,
         open_world_hint=False,
