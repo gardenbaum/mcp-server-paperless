@@ -42,6 +42,7 @@ from e2e.helpers import (
 from fakes.accounts import ADMIN, BLIND, READER
 from fakes.mail import FakeMailAccount, FakeProcessedMail
 from fakes.paperless import (
+    BROKEN_PDF,
     VERSION,
     FakeDocument,
     FakePaperless,
@@ -51,6 +52,7 @@ from fakes.paperless import (
     counted_pages,
     seeded,
 )
+from ratelimit import LimitingTransport, RateLimit, limited
 
 from mcp_server_paperless.domain.bulk import ObjectPermissions
 from mcp_server_paperless.domain.ports import (  # noqa: TC001 -- Ports' annotations are introspected
@@ -374,6 +376,9 @@ class Backend:
     lose_file: Callable[[int, FilePart], None]
     # Gives a user a second factor (TOTP), which only a browser could set up.
     add_second_factor: Callable[[int], None]
+    # The admin behind something that limits the rate of requests, once `rate_limit` begins.
+    limited: Ports
+    rate_limit: RateLimit
 
 
 def fake_consume(state: FakeState) -> Consume:
@@ -629,6 +634,7 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
     """The fake's backend; the E2E stack of `just e2e` has AI off, so that is the default."""
     state = seeded()
     state.ai_enabled = ai_enabled
+    rate_limit = RateLimit()
     return Backend(
         admin=fake_ports(state, ADMIN[0]),
         reader=fake_ports(state, READER[0]),
@@ -650,6 +656,8 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
         new_token_account=fake_token_account(state),
         lose_file=fake_lose_file(state),
         add_second_factor=fake_add_second_factor(state),
+        limited=limited(fake_ports(state, ADMIN[0]), rate_limit),
+        rate_limit=rate_limit,
     )
 
 
@@ -717,7 +725,7 @@ def live_task(stack: Stack, *, succeed: bool) -> tuple[str, int | None]:
     """
     title = f"contract-task-{uuid.uuid4().hex}"
     if not succeed:
-        return consume(stack.admin, title, b"%PDF-1.4 broken")
+        return consume(stack.admin, title, BROKEN_PDF)
     return consume(
         stack.admin, title, title.encode(), filename=f"{title}.txt", mime_type="text/plain"
     )
@@ -886,13 +894,19 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
             json={"owner": user_id(stack.admin), "set_permissions": permissions},
         ).raise_for_status()
 
+    rate_limit = RateLimit()
     try:
-        async with httpx2.AsyncClient(base_url=stack.base_url, timeout=30.0) as http:
+        async with (
+            httpx2.AsyncClient(base_url=stack.base_url, timeout=30.0) as http,
+            httpx2.AsyncClient(
+                base_url=stack.base_url, timeout=30.0, transport=LimitingTransport(rate_limit)
+            ) as limited_http,
+        ):
 
-            def ports(token: str) -> Ports:
+            def ports(token: str, way: httpx2.AsyncClient = http) -> Ports:
                 credentials = StaticTokenProvider(token)
                 return live_ports(
-                    PaperlessClient(http, credentials, retry=RetryPolicy(), upload_timeout=60.0)
+                    PaperlessClient(way, credentials, retry=RetryPolicy(), upload_timeout=60.0)
                 )
 
             yield Backend(
@@ -916,6 +930,8 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
                 new_token_account=lambda: live_token_account(stack),
                 lose_file=lambda document, part: lose_file(stack.admin, document, part),
                 add_second_factor=add_second_factor,
+                limited=ports(stack.admin_token, limited_http),
+                rate_limit=rate_limit,
             )
     finally:
         cleanup(stack, created, users)

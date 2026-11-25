@@ -343,8 +343,8 @@ def test_the_scope_command_prints_the_job_outputs_for_a_toolset_change() -> None
     assert code == 0
     lines = out.splitlines()
     assert lines[0] == "mode=fast"
-    names = [contract("test_pdf"), contract("test_pdf_insert")]
-    names += [e2e("test_pages"), e2e("test_pdf"), e2e("test_pdf_insert")]
+    names = [contract("test_pdf"), contract("test_pdf_insert"), contract("test_pdf_steps")]
+    names += [e2e("test_pages"), e2e("test_pdf"), e2e("test_pdf_insert"), e2e("test_pdf_steps")]
     assert lines[1] == f"targets={STDIO} {' '.join(names)}"
 
 
@@ -425,16 +425,20 @@ HOSTED_SECONDS = {
     "tests/e2e/test_confirmation.py": 113,
     "tests/e2e/test_pdf_insert.py": 113,
     "tests/e2e/test_pages.py": 109,
+    "tests/contract/test_pdf_steps.py": 106,
     "tests/e2e/test_versions.py": 102,
+    "tests/contract/test_bulk_limits.py": 90,
     "tests/contract/test_bulk_items.py": 83,
     "tests/contract/test_document_reader.py": 72,
     "tests/contract/test_trash.py": 67,
     "tests/contract/test_admin.py": 64,
+    "tests/e2e/test_pdf_steps.py": 62,
     "tests/e2e/test_text_edits.py": 61,
     "tests/contract/test_document_upload.py": 60,
     "tests/e2e/test_upload_duplicates.py": 60,
     "tests/e2e/test_update_document.py": 58,
     "tests/e2e/test_toolset_guide.py": 54,
+    "tests/e2e/test_bulk_limits.py": 52,
     "tests/contract/test_notes_and_trash.py": 50,
     "tests/contract/test_text_edits.py": 50,
     "tests/e2e/test_read_documents.py": 49,
@@ -467,6 +471,7 @@ HOSTED_SECONDS = {
     "tests/contract/test_mail.py": 6,
     "tests/e2e/test_views.py": 6,
     "tests/e2e/test_workflows.py": 6,
+    "tests/e2e/test_left_out_operations.py": 4,
     "tests/e2e/test_tasks.py": 4,
     "tests/contract/test_taxonomy_reader.py": 2,
     "tests/contract/test_view_filters.py": 2,

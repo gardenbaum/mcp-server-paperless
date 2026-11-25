@@ -14,7 +14,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import pytest
-from e2e.helpers import pdf
+from e2e.helpers import CONSUME_POLL, pdf
 
 from mcp_server_paperless.domain.documents import CustomFieldValue, DocumentUpload
 from mcp_server_paperless.domain.errors import PermissionDenied, Validation
@@ -58,7 +58,7 @@ async def ended(backend: Backend, task_id: str) -> TaskStatus:
         if status.is_final:
             break
         assert time.monotonic() < deadline, f"Task {task_id} took too long"
-        await asyncio.sleep(1)
+        await asyncio.sleep(CONSUME_POLL)
     for document in status.document_ids:
         backend.track_document(document)
     return status

@@ -33,6 +33,7 @@ SHARDS = 6
 # 30 s of stack seeding taken off the first module of a shard. The Celery-bound modules (bulk,
 # writer, pdf, sharing, versions, duplicates) vary 1.5 to 2x between runs (the median ignores one
 # fast or slow runner).
+# test_*_steps, test_bulk_limits and test_left_out_operations: one run of 2026-11-25, 45656414763.
 # The weight the split balances; a module not listed counts as the average of the listed ones, so a
 # new module lands in some shard without anyone editing this table; refresh the numbers when the
 # balance drifts (a test checks the split of the current table against the measured seconds). Keys
@@ -54,16 +55,20 @@ MODULE_SECONDS: dict[str, float] = {
     "tests/e2e/test_confirmation.py": 113,
     "tests/e2e/test_pdf_insert.py": 113,
     "tests/e2e/test_pages.py": 109,
+    "tests/contract/test_pdf_steps.py": 106,
     "tests/e2e/test_versions.py": 102,
+    "tests/contract/test_bulk_limits.py": 90,
     "tests/contract/test_bulk_items.py": 83,
     "tests/contract/test_document_reader.py": 72,
     "tests/contract/test_trash.py": 67,
     "tests/contract/test_admin.py": 64,
+    "tests/e2e/test_pdf_steps.py": 62,
     "tests/e2e/test_text_edits.py": 61,
     "tests/contract/test_document_upload.py": 60,
     "tests/e2e/test_upload_duplicates.py": 60,
     "tests/e2e/test_update_document.py": 58,
     "tests/e2e/test_toolset_guide.py": 54,
+    "tests/e2e/test_bulk_limits.py": 52,
     "tests/contract/test_notes_and_trash.py": 50,
     "tests/contract/test_text_edits.py": 50,
     "tests/e2e/test_read_documents.py": 49,
@@ -96,6 +101,7 @@ MODULE_SECONDS: dict[str, float] = {
     "tests/contract/test_mail.py": 6,
     "tests/e2e/test_views.py": 6,
     "tests/e2e/test_workflows.py": 6,
+    "tests/e2e/test_left_out_operations.py": 4,
     "tests/e2e/test_tasks.py": 4,
     "tests/contract/test_taxonomy_reader.py": 2,
     "tests/contract/test_view_filters.py": 2,
@@ -209,9 +215,9 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "filter_rules": ("test_search", "test_view_filters", "test_views"),
     "bulk_documents": ("test_bulk",),
     "bulk_operations": ("test_bulk",),
-    "bulk_updates": ("test_bulk_items",),
-    "bulk_notes": ("test_bulk_items",),
-    "document_runner": ("test_bulk_items",),
+    "bulk_updates": ("test_bulk_items", "test_bulk_limits"),
+    "bulk_notes": ("test_bulk_items", "test_bulk_limits"),
+    "document_runner": ("test_bulk_items", "test_bulk_limits"),
     "bulk_taxonomy": ("test_bulk",),
     "workflows": ("test_run_workflow", "test_workflow_parts", "test_workflow_runs"),
     "workflow_runs": ("test_run_workflow",),
@@ -226,8 +232,10 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "bulk": ("test_bulk_items", "test_read_documents", "test_selection"),
     "page_ranges": ("test_pages", "test_pdf"),
     "pages": ("test_pages_files",),
-    # inspect_pdf and insert_pages.
-    "pdf": ("test_pages", "test_pdf_insert"),
+    # inspect_pdf, insert_pages, and the steps of the composed operations.
+    "pdf": ("test_pages", "test_pdf_insert", "test_pdf_steps"),
+    "pdf_insert": ("test_pdf_steps",),
+    "pdf_parts": ("test_pdf", "test_pdf_steps"),
     # The renderer (rendering/ and domain/rendering.py).
     "rendering": ("test_pages", "test_pages_files", "test_pdf_insert"),
     "fields": ("test_pages", "test_pages_files", "test_pdf_insert"),

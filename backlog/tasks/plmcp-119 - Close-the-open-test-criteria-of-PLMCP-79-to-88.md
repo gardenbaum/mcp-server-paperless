@@ -1,9 +1,11 @@
 ---
 id: PLMCP-119
 title: Close the open test criteria of PLMCP-79 to 88
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-25T14:53:39Z'
+updated_date: '2026-11-25T15:10:32Z'
 labels:
   - testing
 dependencies: []
@@ -58,3 +60,9 @@ The code of PLMCP-79, 80, 81, 87 and 88 is merged, but these tasks stay open bec
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+One PR per area, one at a time, each from main: 79 (AC 1-3), 80 (4-6), 81 (7-13), 87 (14-22), 88 (23-29). Failing steps and other people's changes are made by a port wrapper (constructor seam) that acts on the same Paperless just before a named call: the same assertions on the fake and 3.5.1. Every PR: hand mutants on an archive copy, full hosted E2E, ticks after the live run.
+<!-- SECTION:PLAN:END -->
