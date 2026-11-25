@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T10:18:28Z'
-updated_date: '2026-11-25T11:00:01Z'
+updated_date: '2026-11-25T11:28:49Z'
 labels:
   - views
 dependencies:
@@ -54,4 +54,6 @@ Red first: adapter 2, contract 5, service (import error and 3), tool 6 red, then
 Deviation: no ViewReader.get_access; get_saved_view reads through PermissionReader, so there is one way to read grants. The helpers that show access moved to services/access.py (an import cycle).
 Fake: a change grant now lets its holder change the view, as in Paperless.
 Deliberate: five tests compare get_saved_view without its new field access.
+
+Review: get_saved_view shows access null where reading it fails with anything but a refusal; an unseen view points to list_saved_views; the confirmation says what a change grant on a view gives (the note was asked for by the main agent, the owner's answer is open; not written into decision-91, which belongs to #164). Views are read one by one and a call stops after the 40 s of PLMCP-81.5. Tests first (7 red); 4 mutants, none survives.
 <!-- SECTION:NOTES:END -->

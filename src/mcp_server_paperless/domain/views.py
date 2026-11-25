@@ -322,7 +322,7 @@ class SavedViewDetail(SavedViewInfo):
     access: Annotated[
         AccessView | None,
         Field(
-            description="Null: cannot be read now. Change it with set_permissions (kind saved_view)."
+            description="Null: not readable now. Change it with set_permissions (kind saved_view)."
         ),
     ]
 
