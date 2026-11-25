@@ -8,7 +8,7 @@ knows what the settings mean (and turns names into ids).
 """
 
 from collections.abc import Mapping
-from typing import Annotated, ClassVar, Final, Literal, NamedTuple
+from typing import Annotated, ClassVar, Final, Literal, NamedTuple, cast, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -72,6 +72,10 @@ type UsedKind = Literal[
 ]
 # What applying AI suggestions can fill in (WorkflowAction.AISuggestionField).
 type AiField = Literal["title", "tags", "correspondent", "document_type", "storage_path", "created"]
+AI_FIELDS: Final = cast(
+    "tuple[str, ...]",
+    get_args(AiField.__value__),  # pyright: ignore[reportAny] -- a type alias has no typed value
+)
 type PartKind = Literal["triggers", "actions"]
 type FieldShape = Literal["one", "list", "text", "flag", "number", "json"]
 

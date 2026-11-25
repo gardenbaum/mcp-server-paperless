@@ -10,6 +10,7 @@ import pytest
 from mcp_server_paperless.domain.workflows import (
     ACTION_FIELDS,
     ACTION_TYPES,
+    AI_FIELDS,
     MATCHING_ALGORITHMS,
     SCHEDULE_DATE_FIELDS,
     SOURCES,
@@ -156,3 +157,14 @@ def test_a_misspelt_setting_is_an_error_not_dropped(
 ) -> None:
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         _ = cast("type[TriggerInput]", model).model_validate(given)
+
+
+def test_the_ai_fields_are_those_of_the_vendored_schema_or_source() -> None:
+    assert AI_FIELDS == (
+        "title",
+        "tags",
+        "correspondent",
+        "document_type",
+        "storage_path",
+        "created",
+    )

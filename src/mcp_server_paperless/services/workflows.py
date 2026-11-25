@@ -36,6 +36,7 @@ from mcp_server_paperless.domain.urls import (
 from mcp_server_paperless.domain.workflows import (
     ACTION_FIELDS,
     ACTION_TYPES,
+    AI_FIELDS,
     MATCHING_ALGORITHMS,
     SCHEDULE_DATE_FIELDS,
     SOURCES,
@@ -118,9 +119,13 @@ TRASH_ACTION: Final = 6
 # E-mail, webhook, password removal and AI suggestions: Paperless tells no one whether they worked.
 UNSEEN_ACTIONS: Final = frozenset({3, 4, 5, 8})
 ASSIGNMENT, REMOVAL, REMOTE_OCR, SUGGEST = 1, 2, 7, 8
-AI_FIELDS: Final = frozenset(
-    {"title", "tags", "correspondent", "document_type", "storage_path", "created"}
-)
+# What applying AI suggestions creates where the suggestion does not exist.
+MADE: Final[Mapping[str, str]] = {
+    "tags": "tags",
+    "correspondent": "correspondents",
+    "document_type": "document types",
+}
+ANY_BUT_CONSUMPTION: Final = "every document that matches a trigger other than consumption"
 STORED: Final = (
     "It is stored in the workflow: change that with update_workflow, or run the workflow in the "
     "Paperless web UI."
@@ -569,7 +574,8 @@ def _told(
     """The stored actions whose URL credentials a confirmation speaks of by place or number."""
     told = {specs[place - 1].id for place in lost}
     if gone:
-        told |= {action.id for action in found.actions}  # one that is claimed is kept or in lost
+        # A webhook that is claimed is kept, or in lost.
+        told |= {action.id for action in found.actions if webhook_url(action)}
     return told
 
 
@@ -634,7 +640,7 @@ def far_acts(
         if action.type in FIXED_ACTS or action.type not in ACTION_TYPES:
             found.append(FIXED_ACTS.get(action.type, f"run an action of type {action.type}"))
         elif action.type == SUGGEST:
-            found.append(_suggestions(settings, "every matching document"))
+            found.append(_suggestions(settings, ANY_BUT_CONSUMPTION))
         elif action.type == EMAIL:
             mail = as_object(settings.get("email"))
             attached = " with the document attached" if mail.get("include_document") else ""
@@ -659,16 +665,24 @@ def far_acts(
     return found
 
 
-def check_match(settings: Mapping[str, JsonValue]) -> None:
-    """Refuse a content filter Paperless ignores.
+def check_match(settings: Mapping[str, JsonValue], number: int) -> None:
+    """Refuse a content filter Paperless ignores, or one no document matches.
 
     Raises:
-        Validation: There is a match, and no algorithm that applies it.
+        Validation: There is a match and no algorithm that applies it, or a manual trigger (of type
+            ``number``) has an algorithm and no match.
     """
     if not is_empty(settings.get("match")) and not settings.get("matching_algorithm"):
         message = "A match needs a matching_algorithm other than none to restrict anything."
         hint = "Use any, all, exact, regex or fuzzy; with none Paperless ignores the match."
         raise Validation(message, hint=hint)
+    if number == MANUAL and _alone(settings):
+        message = "A matching_algorithm without a match would match no document."
+        raise Validation(message, hint="Give a match, or use matching_algorithm none.")
+
+
+def _alone(settings: Mapping[str, JsonValue]) -> bool:
+    return is_empty(settings.get("match")) and bool(settings.get("matching_algorithm"))
 
 
 def trigger_filters(trigger: WorkflowTrigger) -> list[str]:
@@ -1160,6 +1174,8 @@ class WorkflowService:
             return await self._ids(field.kind, cast("list[NameOrId]", value))
         if field.kind is not None:
             return await self._id(field.kind, cast("NameOrId", value))
+        if name == "ai_suggestion_fields":
+            value = [*dict.fromkeys(cast("list[str]", value))]
         return cast("JsonValue", value)
 
     async def build_trigger(self, spec: TriggerInput, *, change: bool = False) -> WorkflowTrigger:
@@ -1188,7 +1204,7 @@ class WorkflowService:
                 raise Validation(message, hint="Use a document added or updated trigger.")
             settings[field.wire] = await self._setting(name, field, value)
         if not change:
-            check_match(settings)
+            check_match(settings, number)
         return WorkflowTrigger(type=number, settings=settings)
 
     async def build_action(
@@ -1524,19 +1540,24 @@ def _suggestions(settings: Mapping[str, JsonValue], which: str) -> str:
     told = ", ".join(
         name.replace("_", " ") if name in AI_FIELDS else quoted(name) for name in fields
     )
-    over = "only where there is no value"
-    if settings.get("ai_overwrite_existing"):
-        over = "over existing values"
-    if "tags" in fields:
-        over += " (tags are only added)"
-    makes = (
-        "creating tags, correspondents and document types that do not exist"
-        if settings.get("ai_create_missing")
-        else "without creating anything"
-    )
+    over = "over existing values"
+    notes = ["tags are only added"] if "tags" in fields else []
+    if not settings.get("ai_overwrite_existing"):
+        over = "only where there is no value"
+        full = [name for name in ("title", "created") if name in fields]
+        if full:
+            has, stay = ("has", "it stays") if len(full) == 1 else ("have", "they stay")
+            notes.insert(0, f"{' and '.join(full)} always {has} one, so {stay}")
+    if notes:
+        over += f" ({'; '.join(notes)})"
+    objects = [MADE[name] for name in MADE if name in fields]
+    makes = "without creating anything"
+    if settings.get("ai_create_missing") and objects:
+        listed = " and ".join([", ".join(objects[:-1]), objects[-1]] if objects[1:] else objects)
+        makes = f"creating {listed} that do not exist"
     return (
-        f"ask the AI backend about the text of {which} and apply what it suggests for "
-        f"{told}, {over}, {makes}"
+        f"ask the AI backend, at least once each, about the text of {which} and apply what it "
+        f"suggests for {told}, {over}, {makes}"
     )
 
 

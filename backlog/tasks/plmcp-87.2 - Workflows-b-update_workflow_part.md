@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:05Z'
-updated_date: '2026-11-25T08:42:17Z'
+updated_date: '2026-11-25T09:30:05Z'
 labels:
   - workflows
 dependencies:
@@ -59,4 +59,6 @@ just check was not run as a whole locally.
 Owner, 2026-11-25: 'Überall wie von dir empfohlen bitte.' (everywhere as you recommend, please): asking also on disabled workflows, the order rule for shared actions and an invalid stored trigger blocking the others stay as built (decision-82).
 
 Independent review of #159 (efaadb0..bb58f15): H1, M1 to M5, L1, L3 to L6 and the survivors fixed, tests first (28 red). 26 further hand mutants, 4 survived and were closed (two by deleting code, two by tests). For the owner: M4 values of custom fields are merged, the result says how many stay; M5 the workflow is read again right before the PATCH and a difference refuses the call (one request more); the milliseconds after it remain.
+
+Second review of #159 (N1 to N3, L2, L6 to L8, survivors) fixed, tests first. N1: values of fields no longer assigned are dropped from what is written.
 <!-- SECTION:NOTES:END -->
