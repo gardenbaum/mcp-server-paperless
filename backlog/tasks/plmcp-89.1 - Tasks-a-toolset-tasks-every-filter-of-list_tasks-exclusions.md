@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:38Z'
-updated_date: '2026-11-25T12:04:40Z'
+updated_date: '2026-11-25T14:04:04Z'
 labels:
   - admin
 dependencies: []
@@ -54,4 +54,6 @@ Owner approval of 2026-11-24: 'Alle wie empfohlen' (all as recommended), for the
 
 Probes P1 to P6: CI run 45604535090, job 139171854815 (e2e 1/6), all as the design says; recorded in decision-93 (P1 list, P2, P6), 94 and 95. Guide limit 2987 to 3036 (49 of the approved 89). 23 hand mutants on a git archive copy, 2 survived first and were closed by tests. Deviation: the ports are TaskListReader and TaskListWriter instead of methods of the admin ports; rows show the owner as id. #161 (explain_workflow) calls AdminReader.list_tasks with a time window: at the merge it takes TaskListReader.list_tasks(TaskFilters(...)) with created_from and created_to.
 Release notes draft: BREAKING: list_tasks, acknowledge_tasks and run_task moved from the toolset admin to the new toolset tasks. If PAPERLESS_MCP_TOOLSETS names admin, add tasks (all needs no change). list_tasks takes every filter and ordering of Paperless.
+
+Review fixes: the pointers to list_tasks name the toolset (upload_documents and its unknown outcome; snapshot of upload_documents changed), superuser without staff pinned on fake and 3.5.1, every ordering in the adapter test, hashes of the two moved equivalent mutants recomputed with mutmut's own functions in-process (no run), line breaks in configuration.md.
 <!-- SECTION:NOTES:END -->

@@ -1182,10 +1182,10 @@ reason = "httpx2 upper-cases the request method (Request.method = method.upper()
 
 [[equivalent]]
 mutant = "mcp_server_paperless.paperless.task_lists.xǁPaperlessTaskListWriterǁacknowledge_tasks__mutmut_12"
-function_hash = "f1f27aa9ef68"
+function_hash = "eaa630341253"
 reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
 
 [[equivalent]]
 mutant = "mcp_server_paperless.paperless.task_lists.xǁPaperlessTaskListWriterǁrun_task__mutmut_12"
-function_hash = "0fb4610dbbf7"
+function_hash = "ea3628de796b"
 reason = "httpx2 upper-cases the request method (Request.method = method.upper()), so a lower-case verb sends the same request."
