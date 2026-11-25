@@ -1369,7 +1369,5 @@ async def test_the_objects_behind_a_refused_owner_are_said_to_be_unchanged() -> 
     with pytest.raises(Validation) as raised:
         _ = await service.set_permissions("mail_rule", [6, 7], asked, confirm=True)
 
-    assert raised.value.message.endswith(
-        "The grants of 'Bills' were set all the same; its owner was not changed. The objects after "
-        "it were not changed."
-    )
+    said = "its owner was not changed. The objects after it were not changed."
+    assert raised.value.message.endswith(f"The grants of 'Bills' were set all the same; {said}")
