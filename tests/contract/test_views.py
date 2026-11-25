@@ -8,9 +8,16 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from contract.conftest import SCRATCH_VIEW
+from contract.conftest import SCRATCH_ITEM, SCRATCH_VIEW
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
-from mcp_server_paperless.domain.views import FilterRule, SavedView, ViewValues
+from mcp_server_paperless.domain.taxonomy import TaxonomyValues
+from mcp_server_paperless.domain.views import (
+    DEFAULT_ICON,
+    DISPLAY_FIELDS,
+    FilterRule,
+    SavedView,
+    ViewValues,
+)
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
@@ -225,6 +232,106 @@ async def test_an_update_of_a_bad_value_or_a_missing_view_fails(backend: Backend
         )
     with pytest.raises(NotFound, match="No saved view 999999"):
         _ = await ports.view_writes.update_saved_view(999_999, ViewValues(name="x"))
+
+
+@pytest.mark.contract(CREATE)
+@pytest.mark.contract(GET)
+async def test_a_created_view_keeps_its_display_settings(backend: Backend) -> None:
+    ports = backend.admin
+    [field, *_] = await ports.taxonomy.list_taxonomy("custom_field")
+    values = ViewValues(
+        icon="heart", display_mode="smallCards", display_fields=("asn", f"custom_field_{field.id}")
+    )
+
+    made = await ports.view_writes.create_saved_view(scratch(), values)
+
+    assert (made.icon, made.display_mode, made.display_fields) == (
+        values.icon,
+        values.display_mode,
+        values.display_fields,
+    )
+    assert await ports.views.get_saved_view(made.id) == made
+    plain = await ports.view_writes.create_saved_view(scratch(), ViewValues())
+    assert (plain.icon, plain.display_mode, plain.display_fields) == (DEFAULT_ICON, None, None)
+
+
+@pytest.mark.contract(UPDATE)
+async def test_an_update_sets_each_display_setting_alone_and_clears_them(backend: Backend) -> None:
+    ports = backend.admin
+    made = await ports.view_writes.create_saved_view(scratch(), ViewValues())
+    expected = made
+
+    for change in (
+        {"icon": "bank"},
+        {"display_mode": "largeCards"},
+        {"display_fields": DISPLAY_FIELDS},
+        {"display_mode": None},
+        {"display_fields": None},
+    ):
+        expected = expected.model_copy(update=change)
+        after = await ports.view_writes.update_saved_view(
+            made.id, ViewValues.model_validate(change)
+        )
+        assert after == expected
+    assert await ports.views.get_saved_view(made.id) == expected
+
+
+@pytest.mark.contract(CREATE)
+@pytest.mark.contract(UPDATE)
+async def test_an_empty_field_list_stays_on_create_and_is_cleared_by_an_update(
+    backend: Backend,
+) -> None:
+    ports = backend.admin
+    empty = ViewValues(display_fields=())
+
+    made = await ports.view_writes.create_saved_view(scratch(), empty)
+    assert made.display_fields == ()
+    assert (await ports.view_writes.update_saved_view(made.id, empty)).display_fields is None
+
+
+@pytest.mark.contract(CREATE)
+@pytest.mark.contract(UPDATE)
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        (ViewValues(icon="nope"), "icon"),
+        (ViewValues(display_fields=("nope",)), "Invalid field: nope"),
+        (ViewValues(display_fields=("custom_field_999999",)), "custom_field_999999"),
+    ],
+    ids=["icon", "field", "custom field"],
+)
+async def test_unusable_display_settings_are_rejected(
+    backend: Backend, values: ViewValues, message: str
+) -> None:
+    ports = backend.admin
+    made = await ports.view_writes.create_saved_view(scratch(), ViewValues())
+
+    with pytest.raises(Validation, match=message):
+        _ = await ports.view_writes.create_saved_view(scratch(), values)
+    with pytest.raises(Validation, match=message):
+        _ = await ports.view_writes.update_saved_view(made.id, values)
+    assert await ports.views.get_saved_view(made.id) == made
+
+
+@pytest.mark.contract(GET)
+async def test_a_deleted_custom_field_leaves_the_views_that_show_or_sort_by_it(
+    backend: Backend,
+) -> None:
+    ports = backend.admin
+    field = await ports.taxonomy_writes.create_taxonomy_item(
+        "custom_field", f"{SCRATCH_ITEM}{uuid.uuid4().hex}", TaxonomyValues(data_type="string")
+    )
+    name = f"custom_field_{field.id}"
+    made = await ports.view_writes.create_saved_view(
+        scratch(), ViewValues(sort_field=name, display_fields=(name, "title"))
+    )
+    alone = await ports.view_writes.create_saved_view(scratch(), ViewValues(display_fields=(name,)))
+
+    await ports.taxonomy_writes.delete_taxonomy_item("custom_field", field.id)
+
+    after = await ports.views.get_saved_view(made.id)
+    assert (after.sort_field, after.display_fields) == ("created", ("title",))
+    assert (await ports.views.get_saved_view(alone.id)).display_fields == ()
 
 
 @pytest.mark.contract(DELETE)

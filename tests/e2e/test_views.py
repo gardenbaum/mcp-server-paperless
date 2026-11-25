@@ -7,7 +7,7 @@ import pytest
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import results
+from e2e.helpers import obj, parse, results
 from mcp_server_paperless.server import create_server
 
 if TYPE_CHECKING:
@@ -134,3 +134,49 @@ async def test_a_rule_with_comma_joined_ids_as_the_web_ui_writes_it_runs(
 
     assert PUBLIC in found
     assert PRIVATE not in found
+
+
+async def test_the_display_settings_are_set_shown_changed_and_cleared(
+    client: Connected, stack: Stack
+) -> None:
+    name = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
+    field = f"custom_field_{stack.seeded.custom_fields['string']}"
+    made = await call(
+        client,
+        "create_saved_view",
+        name=name,
+        icon="heart",
+        display_mode="smallCards",
+        display_fields=["title", field],
+    )
+    path = f"/api/saved_views/{made['id']}/"
+    stored = obj(parse(stack.admin.get(path)))
+    assert (stored["icon"], stored["display_mode"], stored["display_fields"]) == (
+        "heart",
+        "smallCards",
+        ["title", field],
+    )
+    assert made["display_fields"] == [
+        {"field": "title", "name": None},
+        {"field": field, "name": "e2e-string"},
+    ]
+
+    changed = await call(client, "update_saved_view", view=name, icon="bank")
+    assert changed == {**made, "icon": "bank"}
+    cleared = await call(
+        client,
+        "update_saved_view",
+        view=name,
+        clear_display_mode=True,
+        clear_display_fields=True,
+    )
+    assert cleared == {**changed, "display_mode": None, "display_fields": None}
+    assert await call(client, "get_saved_view", view=name) == cleared
+
+    refused = await client.call_tool(
+        "update_saved_view",
+        {"view": name, "display_fields": ["xcustom_field_1"]},
+        raise_on_error=False,
+    )
+    assert refused.is_error
+    assert "'xcustom_field_1'" in str(refused.content)

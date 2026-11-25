@@ -163,7 +163,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | Tool | Kind | What it does |
 |---|---|---|
 | `list_saved_views` | read | List the saved views the current user may see, with their filter rules. |
-| `get_saved_view` | read | Read one saved view with its filter rules, sort order and page size. |
+| `get_saved_view` | read | Read one saved view with its filter rules, sort order and display settings. |
 | `create_saved_view` | write | Create a saved view: a named document filter that run_saved_view can run. |
 | `update_saved_view` | write | Change a saved view; only the settings you name change. |
 | `delete_saved_view` | destructive, confirm | Delete a saved view for good: it has no trash. |
