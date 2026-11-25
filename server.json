@@ -36,7 +36,7 @@
         },
         {
           "name": "PAPERLESS_MCP_TOOLSETS",
-          "description": "Toolsets to offer, comma-separated, or all",
+          "description": "Toolsets to offer, comma-separated, or all; name:read offers a toolset only for reading",
           "default": "core,ai"
         },
         {

@@ -110,6 +110,31 @@ def test_a_misspelt_toolset_or_tool_stops_the_start_naming_it(
     assert value.rsplit(",", maxsplit=1)[-1] in err
 
 
+@pytest.mark.decision("decision-97")
+@pytest.mark.parametrize(
+    ("value", "says"),
+    [
+        ("core,mail:ro", "Did you mean mail:read?"),
+        ("core,mial:read", "Did you mean mail:read?"),
+        ("all:read", "PAPERLESS_MCP_READ_ONLY"),
+        ("mail,mail:read", "both"),
+        ("all,mail:read", "list every toolset"),
+    ],
+)
+@pytest.mark.usefixtures("isolated_logging")
+def test_a_wrong_read_only_selection_stops_the_start_and_says_what_to_write(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], value: str, says: str
+) -> None:
+    monkeypatch.setenv("PAPERLESS_URL", "http://paperless.test")
+    monkeypatch.setenv("PAPERLESS_TOKEN", TOKEN)
+    monkeypatch.setenv("PAPERLESS_MCP_TOOLSETS", value)
+
+    err = exit_message(capsys)
+
+    assert "PAPERLESS_MCP_TOOLSETS" in err
+    assert says in err
+
+
 @pytest.mark.decision("decision-4")
 @pytest.mark.usefixtures("isolated_logging")
 def test_filters_that_leave_no_tool_stop_the_start_before_any_request(

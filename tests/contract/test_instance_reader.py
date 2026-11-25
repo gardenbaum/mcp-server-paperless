@@ -1,5 +1,6 @@
 """Contract of InstanceReader: the same assertions against the fake and a live Paperless."""
 
+import uuid
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -8,6 +9,7 @@ from fastmcp import Client
 from guide_oracle import COMBINATIONS, Seen, check
 from harness import Recorded, serve
 
+from contract.conftest import SCRATCH_TAG
 from mcp_server_paperless.domain.instance import MINIMUM
 
 if TYPE_CHECKING:
@@ -95,7 +97,7 @@ async def test_the_guide_follows_what_the_reader_says_about_ai(backend: Backend,
     capability = "unknown" if who == "no-settings" else "missing"
     assert (overview.ai_enabled is None) is (who == "no-settings")
 
-    ceilings: dict[tuple[str, bool], Seen | None] = {}
+    ceilings: dict[tuple[object, ...], Seen | None] = {}
     for combination in COMBINATIONS:
         await check(
             lambda: Recorded(overview),
@@ -127,6 +129,61 @@ async def test_only_an_older_release_is_called_too_old(
         assert (output["too_old"] or "").startswith(notice)
     else:
         assert output["too_old"] is None
+
+
+@pytest.mark.decision("decision-97")
+@pytest.mark.contract("InstanceReader.get_overview")
+async def test_a_mixed_selection_reads_everywhere_and_writes_only_where_it_may(
+    backend: Backend,
+) -> None:
+    """`core,mail:read,workflows`: what is offered works on Paperless, and mail is left alone."""
+    ports = backend.admin
+    server = serve(
+        ports.instance,
+        toolsets=["core", "mail:read", "workflows"],
+        taxonomy=ports.taxonomy,
+        taxonomy_writes=ports.taxonomy_writes,
+        mail=ports.mail,
+        mail_writes=ports.mail_writes,
+        workflows=ports.workflows,
+        workflow_writes=ports.workflow_writes,
+    )
+    rules = await ports.mail.list_mail_rules()
+    accounts = await ports.mail.list_mail_accounts()
+    name = f"{SCRATCH_TAG}{uuid.uuid4().hex}"
+    account = {
+        "name": name,
+        "imap_server": "127.0.0.1",
+        "imap_port": 1,
+        "username": "unset",
+        "password": "unset",
+    }
+
+    async with Client(server) as client:
+        overview = await client.call_tool("get_instance_overview")
+        for tool in ("list_mail_accounts", "list_mail_rules", "list_workflows"):
+            assert not (await client.call_tool(tool)).is_error, tool
+        created = await client.call_tool("create_taxonomy_item", {"kind": "tag", "name": name})
+        refused = [
+            await client.call_tool(tool, arguments, raise_on_error=False)
+            for tool, arguments in (
+                ("create_mail_account", account),
+                ("delete_mail_rule", {"rule_id": 1, "confirm": True}),
+                ("process_mail_account", {"account_id": 1}),
+            )
+        ]
+
+    assert overview.structured_content is not None
+    assert overview.structured_content["toolsets"]["on"] == [
+        "core",
+        "mail (read-only)",
+        "workflows",
+    ]
+    assert not created.is_error
+    assert name in {tag.name for tag in await ports.taxonomy.list_taxonomy("tag")}
+    assert all(result.is_error and "Unknown tool" in str(result.content) for result in refused)
+    assert await ports.mail.list_mail_rules() == rules
+    assert await ports.mail.list_mail_accounts() == accounts
 
 
 REPORT = "SystemReportReader.get_system_report"

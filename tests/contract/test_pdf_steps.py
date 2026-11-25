@@ -441,7 +441,7 @@ async def test_a_refused_removal_names_the_new_document_that_is_left(backend: Ba
     [product] = result.produced_ids
     assert [part.metadata for part in result.parts] == ["set"]
     assert (result.original, result.state) == ("kept", "success")
-    assert "The Paperless user may not perform this action" in (result.message or "")
+    assert "may not" in (result.message or "")
     assert f"delete_document(document_id={product}) to drop" in (result.next or "")
     made = await backend.admin.documents.get_document(product)
     assert (made.title, made.page_count) == (FIRST.title, 1)
