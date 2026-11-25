@@ -3751,8 +3751,8 @@ class FakePaperless:
 
     def _tasks(self) -> list[FakeTask]:
         """The tasks this user may see: staff all, others their own and those without an owner."""
-        staff = self.user.is_staff or self.user.is_superuser
-        return [t for t in self.state.tasks if staff or t.owner in {None, self.user.id}]
+        mine = {None, self.user.id}  # a superuser without the staff flag sees no more
+        return [t for t in self.state.tasks if self.user.is_staff or t.owner in mine]
 
     async def list_tasks(
         self,
