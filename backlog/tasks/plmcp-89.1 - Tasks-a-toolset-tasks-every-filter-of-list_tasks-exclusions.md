@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T11:24:38Z'
-updated_date: '2026-11-25T13:49:03Z'
+updated_date: '2026-11-25T13:51:10Z'
 labels:
   - admin
 dependencies: []
@@ -56,6 +56,8 @@ Probes P1 to P6: CI run 45604535090, job 139171854815 (e2e 1/6), all as the desi
 Release notes draft: BREAKING: list_tasks, acknowledge_tasks and run_task moved from the toolset admin to the new toolset tasks. If PAPERLESS_MCP_TOOLSETS names admin, add tasks (all needs no change). list_tasks takes every filter and ordering of Paperless.
 
 Green on d4f9fcf: every check of #167. Full hosted E2E of the stack 45618698199 (9c536a1): tests/contract/test_task_lists.py 26, tests/e2e/test_task_lists.py 12 passed; only e2e-imap red, on a test that is red on main too (runs 45609667829, 45615009952).
+
+The E2E tests were written before their first hosted run and not run red (no local E2E). The README names the break with 89.3's commit.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

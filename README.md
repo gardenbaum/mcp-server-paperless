@@ -271,7 +271,7 @@ switch them on (never for a session: only you decide, see
 | `mail` | 15 | | Mail accounts and rules for the mail import, and what it processed |
 | `workflows` | 7 | | The workflows Paperless runs by itself: triggers and actions; run one by hand on chosen documents |
 | `admin` | 13 | | Users, groups, application configuration, logs, bulk download |
-| `tasks` | 5 | | Background tasks: how they stand, list and filter, mark as seen, start by hand; the full system status |
+| `tasks` | 5 | | Background tasks: how they stand, list and filter, mark as seen, start by hand (in `admin` up to 0.4); the full system status |
 | `raw` | 1 | | A read-only escape hatch: GET any path of the Paperless API the other tools do not cover |
 
 Every tool with its kind and a one-line description is in the [tool
