@@ -21,6 +21,7 @@ from mcp_server_paperless.domain.errors import (
     Ambiguous,
     ConfirmationRequired,
     NotFound,
+    PaperlessMcpError,
     PermissionDenied,
     UpstreamUnavailable,
     Validation,
@@ -40,6 +41,9 @@ from mcp_server_paperless.services.view_pins import ViewPins
 from mcp_server_paperless.services.views import ViewService
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from mcp_server_paperless.domain.permissions import ObjectAccess, PermissionKind
     from mcp_server_paperless.domain.taxonomy import TaxonomyItem, TaxonomyKind
     from mcp_server_paperless.domain.views import SavedView, ViewValues
 
@@ -778,3 +782,52 @@ async def test_a_contradiction_is_refused_before_anything_is_read(edit: ViewEdit
         _ = await setup.views.update("no such view", edit)
 
     assert setup.fake.view_reads == 0
+
+
+class NoAccess(Recording):
+    """The grants, or the users they name, cannot be read."""
+
+    error: PaperlessMcpError = UpstreamUnavailable("down")
+    users: bool = False
+
+    @override
+    async def get_permissions(
+        self, kind: PermissionKind, object_ids: Sequence[int]
+    ) -> list[ObjectAccess]:
+        if not self.users:
+            raise self.error
+        return await super().get_permissions(kind, object_ids)
+
+    @override
+    async def list_taxonomy(self, kind: TaxonomyKind) -> list[TaxonomyItem]:
+        if self.users and kind == "user":
+            raise self.error
+        return await super().list_taxonomy(kind)
+
+
+def without_access(*, users: bool = False) -> tuple[NoAccess, ViewService]:
+    setup = Setup()
+    fake = NoAccess(setup.state, user=ADMIN[0], writes=False)
+    fake.users = users
+    resolver = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
+    pins = ViewPins(fake, fake)
+    return fake, ViewService(fake, fake, resolver, setup.documents, pins, permissions=fake)
+
+
+@pytest.mark.parametrize("users", [True, False])
+async def test_a_view_is_shown_also_when_its_access_cannot_be_read(
+    users: bool,  # noqa: FBT001 -- the case
+) -> None:
+    _, views = without_access(users=users)
+
+    found = await views.get(1)
+
+    assert (found.name, found.access) == ("e2e-view", None)
+
+
+async def test_a_refusal_to_read_the_access_is_passed_on() -> None:
+    fake, views = without_access()
+    fake.error = PermissionDenied("no")
+
+    with pytest.raises(PermissionDenied):
+        _ = await views.get(1)

@@ -320,7 +320,10 @@ class SavedViewDetail(SavedViewInfo):
     """One saved view with its owner and grants."""
 
     access: Annotated[
-        AccessView | None, Field(description="Change it with set_permissions (kind saved_view).")
+        AccessView | None,
+        Field(
+            description="Null: cannot be read now. Change it with set_permissions (kind saved_view)."
+        ),
     ]
 
 

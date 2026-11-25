@@ -202,7 +202,12 @@ class ViewService:
         """
         found = await self._find(view)
         [shown] = await self._infos(found)
-        access = await read_access(self._permissions, self._taxonomy, "saved_view", found.id)
+        try:
+            access = await read_access(self._permissions, self._taxonomy, "saved_view", found.id)
+        except PermissionDenied:
+            raise
+        except PaperlessMcpError:
+            access = None
         return SavedViewDetail.model_validate({**shown.model_dump(), "access": access})
 
     async def create(self, spec: ViewCreate) -> SavedViewInfo:

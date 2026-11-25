@@ -1456,6 +1456,49 @@ async def test_the_forty_seconds_start_with_the_call() -> None:
 
 # --- saved views (PLMCP-88.3)
 
+VIEW_NOTE = (
+    "Whoever may change a saved view decides which documents run_saved_view and bulk calls that "
+    "name it see"
+)
+
+
+@pytest.mark.decision("decision-91")
+@pytest.mark.parametrize(
+    ("request_", "noted"),
+    [
+        ({"view_users": ["e2e-reader"]}, False),
+        ({"change_groups": ["e2e-group"]}, True),
+        ({"owner": "e2e-reader"}, True),
+        ({"clear_owner": True}, True),
+    ],
+)
+async def test_the_note_stands_where_somebody_may_change_the_view(
+    request_: dict[str, object],
+    noted: bool,  # noqa: FBT001 -- the case
+) -> None:
+    setup = Setup(writes=False)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await setup.service.set_permissions(
+            "saved_view", [1], PermissionsRequest.model_validate(request_)
+        )
+
+    assert (VIEW_NOTE in raised.value.message) == noted
+
+
+@pytest.mark.decision("decision-91")
+async def test_a_view_the_user_sees_no_more_points_to_the_list_of_views() -> None:
+    setup = Setup(writes=False)
+    _ = await setup.taxonomy.items("saved_view")  # cached, then gone
+    setup.state.saved_views.clear()
+
+    with pytest.raises(NotFound) as raised:
+        _ = await setup.run("saved_view", ["e2e-view"], view_users=["e2e-reader"])
+
+    assert raised.value.describe() == (
+        "No saved view with id 1 exists that you may see. Hint: Find the ids with list_saved_views."
+    )
+
 
 @pytest.mark.decision("decision-91")
 async def test_a_view_is_shared_by_name_or_id_after_a_confirmation_and_forgotten() -> None:
@@ -1467,7 +1510,7 @@ async def test_a_view_is_shared_by_name_or_id_after_a_confirmation_and_forgotten
 
     assert raised.value.message == (
         "Nothing was changed. Confirming would change the permissions of 1 saved view 'e2e-view': "
-        "gains change: user 'e2e-reader'."
+        f"gains change: user 'e2e-reader'. {VIEW_NOTE}."
     )
     [row] = by_name.objects
     assert (row.id, row.name, row.web_url, row.changed) == (1, "e2e-view", None, True)

@@ -86,11 +86,12 @@ LABELS: Final[dict[PermissionKind, str]] = {
     "mail_rule": "mail rule",
     "saved_view": "saved view",
 }
-# Where the ids of objects that are chosen by id only are found.
+# Where the ids of objects are found that list_taxonomy does not hold, or not with their rules.
 FINDERS: Final[dict[PermissionKind, str]] = {
     "document": "search_documents",
     "mail_account": "list_mail_accounts",
     "mail_rule": "list_mail_rules",
+    "saved_view": "list_saved_views",
 }
 # What a grant to change, or another owner, gives beyond the object itself.
 NOTES: Final[dict[PermissionKind, str]] = {
@@ -105,9 +106,13 @@ NOTES: Final[dict[PermissionKind, str]] = {
         "imports whole from then on, and attachments where assign_owner_from_rule is on; without "
         "an owner every user with the global permission to view documents sees them"
     ),
+    "saved_view": (
+        "Whoever may change a saved view decides which documents run_saved_view and bulk calls "
+        "that name it see"
+    ),
 }
 # The kinds whose objects are read one by one, so that a call is bounded in time.
-TIMED: Final[frozenset[PermissionKind]] = frozenset({*NOTES, "saved_view"})
+TIMED: Final[frozenset[PermissionKind]] = frozenset(NOTES)
 FEWER: Final = "Choose fewer objects per call."
 NONE_GIVEN = "Nothing to change: no owner and no grants were given."
 NONE_GIVEN_HINT = (
