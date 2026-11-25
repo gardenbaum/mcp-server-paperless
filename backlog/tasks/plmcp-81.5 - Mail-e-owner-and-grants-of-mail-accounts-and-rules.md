@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:58Z'
-updated_date: '2026-11-25T11:00:29Z'
+updated_date: '2026-11-25T14:53:12Z'
 labels:
   - mail
 dependencies: []
@@ -23,8 +23,8 @@ Fifth part of PLMCP-81: owner and grants of mail accounts and rules cannot be re
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 set_permissions takes mail accounts and mail rules by id with the confirmation of decision-19 and says what a grant on an account gives
-- [ ] #2 The remaining rows of mail_accounts and mail_rules in docs/api-coverage.toml are covered
+- [x] #1 set_permissions takes mail accounts and mail rules by id with the confirmation of decision-19 and says what a grant on an account gives
+- [x] #2 The remaining rows of mail_accounts and mail_rules in docs/api-coverage.toml are covered
 - [ ] #3 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover owner, non-owner with a change grant and superuser
 <!-- AC:END -->
 
@@ -32,8 +32,8 @@ Fifth part of PLMCP-81: owner and grants of mail accounts and rules cannot be re
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -50,4 +50,6 @@ Review round 1, tests first: the note for accounts (POST mail_accounts/test/ sen
 Review round 2, tests first: a refused named owner sets no grants (DRF's unique-together check runs first), only removing the owner beside an unowned twin sets them and then answers 400 (contract tests both ways, fake the same); the owner is compared after a 400; survivors of the read-back killed; the rule note names whole mails and attachments apart; a change grant on a rule is enough to make it delete mail (contract); the 40 seconds start with the call. Suppressions added in this task: PLR0913 on PermissionService.__init__ (the ports it uses) and on _halfway (what a failure leaves behind).
 
 The rule note and the partial stop after 40 seconds are approved by the owner (2026-11-25, question dialog: "Ja, alles", yes, all of it).
+
+Reopened 2026-11-25: a criterion that names several test levels is read literally, every item at every named level. Merged as f1c2cf2 (#162). AC 3, missing: tool tests and E2E of set_permissions on mail accounts and rules as an owner who is no superuser and as a non-owner with a change grant; a tool test for mail rules as superuser. Proven: contract tests (fake and 3.5.1) for all; superuser in tool tests (account) and E2E (both). CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 1 stays open: the PR records red runs for adapter to tool level, not for the live contract and E2E tests. DoD 2 stays open: no local run of the whole just check is recorded; check jobs green: 45609771854 (80c28a1).
 <!-- SECTION:NOTES:END -->

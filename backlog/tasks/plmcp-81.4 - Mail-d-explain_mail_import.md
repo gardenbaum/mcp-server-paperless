@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:57Z'
-updated_date: '2026-11-25T14:37:38Z'
+updated_date: '2026-11-25T14:53:11Z'
 labels:
   - mail
 dependencies:
@@ -26,15 +26,15 @@ Fourth part of PLMCP-81: why a mail was not imported must be gathered by hand fr
 <!-- AC:BEGIN -->
 - [x] #1 explain_mail_import explains from settings, processed mail, tasks and logs without a connection of this server, says it is not a dry run and names the closest way
 - [x] #2 Each check says ok, no or unknown; bounds and what could not be read are named
-- [x] #3 Contract, tool and E2E tests cover each check, hidden rules, a user who is not staff, and that no credential appears
+- [ ] #3 Contract, tool and E2E tests cover each check, hidden rules, a user who is not staff, and that no credential appears
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -61,4 +61,6 @@ Owner, 2026-11-25: "Alles wie empfohlen" (everything as recommended): fetches be
 Codex P2 on #163, test first: the rules are read page by page (MailReader.list_mail_rule_page, new), so no page is asked for 40 seconds after the call began; unread rules stand in not_checked, make complete false, and are not said to be missing.
 
 AC 3: every check of a rule (enabled, folder, age, sender, recipient, subject, body, attachments, mark, target, record, earlier rules) in tool and contract tests (tests/explained.py) and in E2E with the mail server, where Paperless then does what was said; hidden rules, no staff and credentials too. Full E2E 45632136477 on 27cf967 green in all ten jobs (60 mail tests in 415 s, before 39 in 328 s). Notes about the account are no check of a rule: service and E2E.
+
+Reopened 2026-11-25: a criterion that names several test levels is read literally, every item at every named level. Merged as 094970f (#163) and 760d3e9 (#171); full E2E 45632136477 on 27cf967 green. AC 3, missing: contract tests (fake and 3.5.1) of explain_mail_import for hidden rules, a user who is not staff, and that no credential appears. Proven: each check at all three levels; the three others in tool tests and E2E. DoD 1 stays open: the service was written before its tests. DoD 2 stays open: no local run of the whole just check is recorded; check jobs green: 45632143936 (27cf967) and 45630847344 (main 1efb5cd).
 <!-- SECTION:NOTES:END -->

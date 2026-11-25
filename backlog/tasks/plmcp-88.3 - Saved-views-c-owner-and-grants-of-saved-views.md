@@ -1,11 +1,11 @@
 ---
 id: PLMCP-88.3
 title: 'Saved views c: owner and grants of saved views'
-status: Done
+status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T10:18:28Z'
-updated_date: '2026-11-25T13:25:28Z'
+updated_date: '2026-11-25T14:53:17Z'
 labels:
   - views
 dependencies:
@@ -27,7 +27,7 @@ Third part of PLMCP-88: owner and grants of a saved view cannot be read or set. 
 - [x] #1 set_permissions takes saved views by name or id with the confirmation of decisions 12 and 19, read one by one
 - [x] #2 get_saved_view shows owner and grants with names
 - [x] #3 The remaining rows of saved_views in docs/api-coverage.toml are covered
-- [x] #4 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover owner, non-owner, superuser and unowned views, with and without confirm
+- [ ] #4 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E cover owner, non-owner, superuser and unowned views, with and without confirm
 <!-- AC:END -->
 
 ## Definition of Done
@@ -35,7 +35,7 @@ Third part of PLMCP-88: owner and grants of a saved view cannot be read or set. 
 - [x] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
 - [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -60,6 +60,10 @@ Review: get_saved_view shows access null where reading it fails with anything bu
 The note of a change grant is decision-96 (proposed, the owner is asked); the number was given by the CLI in a copy of backlog/ outside the repository, because 93 to 95 are taken elsewhere. Full hosted E2E: 45600303375 on 9d33f6f green; 45606044346 on 8629d91 (after it only backlog files, a test marker and the merge of #164).
 
 decision-96 accepted: the owner approved the note on 2026-11-25 with 'Alles wie empfohlen' (all as recommended); this answers the open point above. Evidence of the criteria: full hosted E2E 45606044346 on 8629d91, all jobs green (contract permissions 37 and views 25, E2E permissions 7 and views 6); tests/quality/test_api_coverage.py: no saved_views row is open. Definition of Done: just check was not run as a whole locally, the merge is open.
+
+Cleanup 2026-11-25: merged as d0aa3ea (#166); full E2E 45623896927 of that commit green. Check jobs: 45606858696 (89cc4bf) and 45630847344 (main 1efb5cd) are green; those of the last head of #166 were cancelled by its merge. DoD 2 stays open: just check was not run as a whole locally.
+
+Reopened 2026-11-25: a criterion that names several test levels is read literally, every item at every named level. AC 4, missing: contract tests with and without confirm (the port has no confirmation, so through the service); tool tests and E2E of set_permissions on views as an owner who is no superuser, a non-owner, and on an unowned view. Proven: the four users in contract tests (fake and 3.5.1), with and without confirm as superuser in tool tests and E2E. The final summary above is the implementer's and did not note this.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

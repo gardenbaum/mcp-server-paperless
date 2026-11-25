@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:44:53Z'
-updated_date: '2026-11-25T08:20:37Z'
+updated_date: '2026-11-25T14:46:39Z'
 labels:
   - mail
 dependencies: []
@@ -23,20 +23,20 @@ First part of PLMCP-81: one processed mail and its full error cannot be read, th
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 get_processed_mail reads one processed mail with its full error (20,000 characters a call, continued) and says what would happen if its record were deleted
-- [ ] #2 list_processed_mail filters the status PROCESSED_WO_CONSUMPTION, takes an order and shows the uid
-- [ ] #3 The password of a token account is refused before anything is sent and the tool texts say that OAuth accounts are set up in the web UI and a saved account can be tested
+- [x] #1 get_processed_mail reads one processed mail with its full error (20,000 characters a call, continued) and says what would happen if its record were deleted
+- [x] #2 list_processed_mail filters the status PROCESSED_WO_CONSUMPTION, takes an order and shows the uid
+- [x] #3 The password of a token account is refused before anything is sent and the tool texts say that OAuth accounts are set up in the web UI and a saved account can be tested
 - [ ] #4 What the mail server answered to a login is in no result, error or log line of this server
-- [ ] #5 The owner-approved exclusions of PLMCP-81 are in docs/api-coverage.toml with quote and date
-- [ ] #6 Contract tests on the fake and Paperless 3.5.1 and tool tests cover the new reads and refusals
+- [x] #5 The owner-approved exclusions of PLMCP-81 are in docs/api-coverage.toml with quote and date
+- [x] #6 Contract tests on the fake and Paperless 3.5.1 and tool tests cover the new reads and refusals
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
-- [ ] #4 Merged to main through the task's own pull request
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -58,4 +58,6 @@ Review round 1 (independent), tests first: M1 an answer that starts with a carri
 Codex round: a forged marker on the line of the answer took the place of the real one and left the password before it visible (P1, fixed: the first marker of a line counts; property test with forged markers of every kind). Other records are looked for whatever the scope of the rule (in f103ada).
 
 Owner, 2026-11-25: 'Überall wie von dir empfohlen bitte.' (everywhere as you recommend, please): decision-80 may hide more than 5a; accepted, residuals are in its consequences.
+
+Cleanup 2026-11-25, merged as 99e01fa (#155). AC 4 stays open: decision-80 (consequences) says that a log line a server forges to look like the start of a record, in its answer to a login (carriage return, untagged BYE), is not told from a real one, so such an answer can still be shown. Missing: the owner's explicit word that this residual meets 'in no result, error or log line' (the recorded approval of 2026-11-25 is about hiding more), or code and a test that hide it. The other criteria: tests/services/test_processed_mail.py, tests/tools/test_mail.py, tests/contract/test_mail.py (fake and 3.5.1), docs/api-coverage.toml. CI 45630847344 and full E2E 45630847369 of main 1efb5cd are green. DoD 1 stays open: the PR records red runs for the domain to tool levels, not for the live contract and E2E tests. DoD 2 stays open: no local run of the whole just check is recorded. On GitHub the check jobs run its recipes one by one: 45575809989 (007bdcb).
 <!-- SECTION:NOTES:END -->
