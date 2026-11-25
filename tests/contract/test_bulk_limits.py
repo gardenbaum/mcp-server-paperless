@@ -204,7 +204,7 @@ async def test_ids_that_no_longer_match_their_filter_change_nothing(backend: Bac
         ports, "bulk_edit_documents", filters=filters, operation=operation, dry_run=True
     )
     assert set(cast("list[int]", preview["selected_ids"])) == set(documents)
-    await ports.document_writes.delete_document(documents[0])
+    _ = await ports.document_writes.update_document(documents[0], DocumentPatch(tags=()))
     told = await refusal(
         ports,
         "bulk_edit_documents",
@@ -214,7 +214,7 @@ async def test_ids_that_no_longer_match_their_filter_change_nothing(backend: Bac
         confirm=True,
     )
 
-    assert str(documents[0]) in told
+    assert f"no longer matches: {documents[0]}" in told
     assert added not in await tags(ports, documents[1])
 
 
