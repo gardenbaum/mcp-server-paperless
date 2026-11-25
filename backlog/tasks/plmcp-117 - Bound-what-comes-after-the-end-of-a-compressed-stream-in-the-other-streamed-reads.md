@@ -3,9 +3,11 @@ id: PLMCP-117
 title: >-
   Bound what comes after the end of a compressed stream in the other streamed
   reads
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T21:58:47Z'
+updated_date: '2026-11-25T17:48:08Z'
 labels:
   - safety
 dependencies: []
@@ -33,3 +35,20 @@ httpx2's gzip and deflate decoders keep data after the end of the stream and cop
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Red: memory of a child process for download, stream and stream_post (gzip, deflate, two layers, zstd tails) and their error bodies, then files read as before in every encoding and chunking.
+2. Green: one decoding function in paperless/unpacking.py that ends a gzip or deflate body at the end of its stream, at every layer of Content-Encoding; used by every streamed read; error bodies cut to 64 KiB as they arrive, also in stream_post.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Cause: httpx2's gzip and deflate decoders keep data after the end in zlib's unused_data and copy it with every piece. Measured before the change (32 MiB on the wire): 1.8 GB of process memory in download, stream and stream_post and in their error bodies, 460 MB for a 64 KiB body in two layers; zstd tails and empty blocks took none. 39 of 60 memory cases red first.
+
+decoded() in paperless/unpacking.py replaces aiter_bytes() in every streamed read: gzip and deflate end at the end of their stream in every layer of Content-Encoding, one piece more is read so that the connection of an answer that is over can be kept (checked with a real server: 4 reads, 1 connection). zstd and br stay with httpx2. Files are read as before in 11 packings and 4 cuts; a stream without an end still gives what arrived. Error bodies are cut to the 64 KiB that arrive, now also in stream_post (read whole before); one that cannot be unpacked is still the error of its status.
+
+Deliberate changes: stream and download no longer read on after the end; a raw deflate body whose first piece is one byte is read (was an error). Not changed: time is not bounded (empty blocks in a download, layered bombs in an error body); non-streamed request(); download() and stream_post() let DecodingError through (internal error) as before. No decision: decision-77 names this as open. Memory tests use 8 MiB on the wire and a bound of 8 MB.
+<!-- SECTION:NOTES:END -->

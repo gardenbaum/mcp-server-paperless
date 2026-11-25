@@ -36,7 +36,13 @@ from mcp_server_paperless.paperless.errors import (
     error_for_status,
     error_for_transport,
 )
-from mcp_server_paperless.paperless.unpacking import ENCODINGS, BrokenBodyError, Cut, unpacked
+from mcp_server_paperless.paperless.unpacking import (
+    ENCODINGS,
+    BrokenBodyError,
+    Cut,
+    decoded,
+    unpacked,
+)
 
 if TYPE_CHECKING:
     from mcp_server_paperless.domain.credentials import CredentialProvider
@@ -134,7 +140,7 @@ def opened(response: httpx2.Response) -> OpenedFile:
     return OpenedFile(
         mime_type=response.headers.get("Content-Type", "application/octet-stream"),
         filename=filename(response.headers.get("Content-Disposition")),
-        chunks=response.aiter_bytes(),
+        chunks=decoded(response),
     )
 
 
@@ -175,16 +181,15 @@ COMPRESSED_HINT = (
 ERROR_BODY_LIMIT = 64 * 1024
 
 
-async def _with_capped_body(response: httpx2.Response, *, cut: bool = False) -> httpx2.Response:
+async def _with_capped_body(response: httpx2.Response) -> httpx2.Response:
     """``response`` with at most ``ERROR_BODY_LIMIT`` bytes of its streamed body read.
 
-    With ``cut`` no more than that arrives either, and what cannot be unpacked is left out.
+    No more than that arrives either, and what cannot be unpacked is left out.
     """
-    if cut:
-        response.stream = Cut(response.stream, ERROR_BODY_LIMIT)
+    response.stream = Cut(response.stream, ERROR_BODY_LIMIT)
     body = b""
-    with contextlib.suppress(*([httpx2.DecodingError] if cut else [])):
-        async for chunk in response.aiter_bytes():
+    with contextlib.suppress(httpx2.DecodingError):
+        async for chunk in decoded(response):
             body += chunk
             if len(body) >= ERROR_BODY_LIMIT:
                 body = body[:ERROR_BODY_LIMIT]
@@ -278,7 +283,7 @@ class PaperlessClient:
                 raise error_for_status(await _with_capped_body(response))
             received: list[bytes] = []
             total = 0
-            async for chunk in response.aiter_bytes():
+            async for chunk in decoded(response):
                 received.append(chunk)
                 total += len(chunk)
                 if total > max_bytes:
@@ -329,7 +334,7 @@ class PaperlessClient:
         try:
             encoding = response.headers.get("Content-Encoding", "").strip().lower()
             if response.is_error:
-                raise error_for_status(await _with_capped_body(response, cut=True))
+                raise error_for_status(await _with_capped_body(response))
             if encoding not in {"", "identity", *taken}:
                 message = (
                     f"The answer to GET {outgoing.url.path} was compressed although that was not "
@@ -376,7 +381,7 @@ class PaperlessClient:
         json: object = None,
         timeout: float | None = None,  # noqa: ASYNC109 -- the HTTP request timeout, not a cancel scope
     ) -> AsyncGenerator[httpx2.Response]:
-        """A successful response whose body the caller reads with ``aiter_bytes``; closed on exit.
+        """A successful response whose body the caller reads with ``opened``; closed on exit.
 
         Only a whole body (HTTP 200) is handed over. A GET is retried on a transient status, never
         once its body began; a POST never. ``timeout`` (seconds) is for each wait, so also for
@@ -435,9 +440,8 @@ class PaperlessClient:
                 response = await self._exchange(outgoing, stream=True)
                 try:
                     if response.is_error:
-                        _ = await response.aread()
-                        raise error_for_status(response)
-                    async for chunk in response.aiter_bytes():
+                        raise error_for_status(await _with_capped_body(response))
+                    async for chunk in decoded(response):
                         room = max_bytes - total
                         received.append(chunk[:room])
                         total += len(received[-1])
