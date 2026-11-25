@@ -782,7 +782,7 @@ def counts_of(found: DocumentsRead) -> SelectionCounts:
 async def test_counts_name_what_every_chosen_document_has_and_read_no_row() -> None:
     setup = Setup()
 
-    found = await setup.read(counts=True, document_ids=(PUBLIC, PRIVATE, 99))
+    found = await setup.read(counts=True, page_size=1, document_ids=(PUBLIC, PRIVATE, 99))
 
     assert counts_of(found).model_dump(mode="json")["correspondents"] == {
         "items": [{"id": 1, "name": "e2e-acme", "documents": 1}],

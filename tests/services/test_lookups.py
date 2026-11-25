@@ -127,7 +127,7 @@ async def test_exactly_one_of_path_and_template_is_given(
 
 
 async def test_a_blank_template_is_refused() -> None:
-    with pytest.raises(Validation, match="blank"):
+    with pytest.raises(Validation, match="template is blank"):
         _ = await lookups().test_storage_path(PUBLIC, None, " ")
 
 
@@ -255,3 +255,14 @@ async def test_what_the_user_may_see_is_read_anew() -> None:
 
     with pytest.raises(PermissionDenied, match=REFUSED):
         _ = await reading.test_storage_path(10, None, "x")
+
+
+@pytest.mark.decision("decision-100")
+async def test_an_owner_is_hidden_where_the_user_is_not_known() -> None:
+    state = hiding()
+    state.users[:] = [
+        replace(user, permissions=user.permissions - {"view_uisettings"}) for user in state.users
+    ]
+
+    with pytest.raises(PermissionDenied, match="owner"):
+        _ = await lookups(state, READER[0]).test_storage_path(10, None, "x")

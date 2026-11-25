@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T14:42:17Z'
-updated_date: '2026-11-25T14:53:32Z'
+updated_date: '2026-11-25T15:21:40Z'
 labels: []
 dependencies:
   - PLMCP-83.1
@@ -42,3 +42,9 @@ Second part of PLMCP-83: the next archive serial number, word suggestions, tryin
 <!-- SECTION:PLAN:BEGIN -->
 1. Probes P1 to P4 on 3.5.1 (temporary test). 2. Tests first per level: adapter, contract, service, tool, E2E. 3. Next ASN in InstanceReader.get_overview; DocumentReader.count_selection and suggest_words; TaxonomyReader.get_storage_path_template and render_storage_path; services/lookups.py; counts in ReadDocuments. 4. Decisions for counts and for the next ASN; guide limit +36, definition limit at most 1010; docs, snapshots.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Red first at adapter (10), contract (14), service (import errors), tool (12), then green; the security fix red first too (14). Probes P1 to P8 on 3.5.1: run 45638730209, job 139291151398 (temporary test, deleted). 49 hand mutants: 4 survived, killed by new tests and re-run. decision-100, decision-101. Deviation: field next_asn instead of next_archive_serial_number (definition limit). Security review: a template shows names of hidden objects, so a document that refers to any is refused; suggest_words mirrors Paperless (words of hidden tag names of visible documents) and says so: the owner may accept it.
+<!-- SECTION:NOTES:END -->

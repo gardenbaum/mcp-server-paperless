@@ -1,6 +1,6 @@
 """suggest_words and test_storage_path through the in-memory client."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from fakes.paperless import FakeDocument, FakePaperless, FakeTag, seeded
@@ -57,6 +57,7 @@ async def test_words_are_suggested() -> None:
 
     assert "invoice" in str(output["words"])
     assert output["too_long"] == 0
+    assert len(cast("list[str]", (await call("suggest_words", term="i", limit=1))["words"])) == 1
 
 
 @pytest.mark.parametrize("limit", [0, 51])
