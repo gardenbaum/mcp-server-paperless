@@ -91,7 +91,7 @@ def limited_port[P](port: P, limit: RateLimit) -> P:
     return cast("P", _Limited(port, limit))
 
 
-def limited[P](ports: P, limit: RateLimit) -> P:
+def limited_ports[P](ports: P, limit: RateLimit) -> P:
     """Ports (a dataclass of them) with the limit on every call."""
     given = [f.name for f in fields(cast("type", type(ports)))]
     wrapped = {name: limited_port(cast("object", getattr(ports, name)), limit) for name in given}

@@ -299,7 +299,7 @@ async def test_the_description_of_the_configuration_tool_lists_the_settings() ->
 
 async def test_logs_are_listed_and_read() -> None:
     state = seeded()
-    state.logs["mail"] = ["[2026-11-24 10:00:00,1] one", "two", "three"]
+    state.logs["mail"] = ["[2026-11-24 10:00:00,001] [INFO] [paperless] one", "two", "three"]
 
     listed = await call(fake(state), "list_logs")
     read = await call(fake(state), "get_log", name="mail", lines=2)

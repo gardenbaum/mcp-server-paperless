@@ -33,8 +33,11 @@ _PORT: Final = re.compile(r":[0-9]|@\[")
 # After a colon or two slashes, more than what opens a value: it can be a part of a password.
 _SECRET_BEFORE: Final = re.compile(r"(?::|[/\\]{2})[\"'`(\[{<=]*[^\"'`(\[{<=]")
 _MAILTO: Final = re.compile(r"\bmailto:", flags=re.IGNORECASE)
-# Where a record of a log starts; its other lines have no time.
-_RECORD: Final = re.compile(r"\[[0-9]{4}-[0-9]{2}-[0-9]{2}[ T]")
+# Where a record of a log starts: time, level and logger, as Paperless writes them (decision-106).
+# A line that is read has lost what is blank at its end.
+_RECORD: Final = re.compile(
+    r"\[[0-9]{4}(?:-[0-9]{2}){2} [0-9]{2}(?::[0-9]{2}){2},[0-9]{3}\] \[[A-Z]+\] \[[\w.-]+\](?: |$)"
+)
 # What stands for the answer of a mail server to a login, which can repeat the password.
 ANSWER_NOT_SHOWN: Final = "(answer of the mail server not shown)"
 # What stands for a line of a log record whose start was not read.
