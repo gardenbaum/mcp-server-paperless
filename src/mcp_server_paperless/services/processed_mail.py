@@ -179,7 +179,7 @@ def _others(mail: ProcessedMail, rule: MailRule | None, rows: Sequence[Processed
 
     Paperless compares their folder exactly with the one of the rule.
     """
-    folder = rule.folder if rule and _same_folder(rule.folder, mail.folder) else mail.folder
+    folder = rule.folder if rule and same_folder(rule.folder, mail.folder) else mail.folder
     return sorted(
         {
             row.id

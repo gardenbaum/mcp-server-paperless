@@ -55,6 +55,10 @@ CLOSEST: Final = (
     "rule limited to that folder whose action is mark_read or flag, call process_mail_account, "
     "then list_processed_mail. That imports the mail; the API has no dry run of rules."
 )
+EXPIRED: Final = (
+    "The access token has expired: Paperless renews it at the next fetch, and fetches nothing if "
+    "that fails."
+)
 # Rows of each kind in one answer, and its length.
 MAX_PROCESSED: Final = 20
 MAX_TASKS: Final = 5
@@ -122,8 +126,7 @@ def _attachments(rule: MailRule, mail: MailFacts) -> MailCheck:
     left = [
         name
         for name in mail.attachment_names
-        if not (include and not _matches(include, name))
-        and not (exclude and _matches(exclude, name))
+        if (not include or _matches(include, name)) and not (exclude and _matches(exclude, name))
     ]
     if not left:
         why = "no attachment is left" if mail.attachment_names else "the mail has no attachment"
@@ -154,7 +157,8 @@ def _marked(rule: MailRule, mail: MailFacts) -> list[MailCheck]:
 
 def _earlier(rule: MailRule, rules: Sequence[MailRule]) -> list[MailCheck]:
     """What the rules before it in the same run can do."""
-    before = [r for r in rules if r.enabled and r.order < rule.order]
+    # The order of rules with the same number is not known.
+    before = [r for r in rules if r.enabled and r.id != rule.id and r.order <= rule.order]
     found: list[MailCheck] = []
     stopping = [r for r in before if r.stop_processing]
     if stopping:
@@ -166,7 +170,7 @@ def _earlier(rule: MailRule, rules: Sequence[MailRule]) -> list[MailCheck]:
     taking = [r for r in before if same_folder(r.folder, rule.folder)]
     if taking:
         why = (
-            f"rule {quoted(taking[0].name)} (id {taking[0].id}) reads the same folder first; a mail "
+            f"rule {quoted(taking[0].name)} (id {taking[0].id}) reads the same folder first; what "
             "it queues is left out in that run"
         )
         found.append(_check("earlier rules", "unknown", why))
@@ -200,14 +204,9 @@ def rule_checks(
 def _account_notes(account: MailAccount, now: datetime) -> list[str]:
     notes: list[str] = []
     if account.is_token and account.expiration is not None and account.expiration < now:
-        notes.append(
-            "The access token has expired: Paperless renews it at the next fetch, and fetches "
-            "nothing if that fails."
-        )
+        notes.append(EXPIRED)
     if not account.username:
-        notes.append(
-            "The account has no username, so its login fails: set it with update_mail_account."
-        )
+        notes.append("The account has no username: set it with update_mail_account.")
     return notes
 
 
@@ -240,8 +239,8 @@ def _message(rules: Sequence[MailRule] | None, chosen: Sequence[MailRule]) -> st
     else:
         said = "A check that says no most likely keeps the mail out; ok is no promise."
     return (
-        f"{NO_DRY_RUN} {said} Rules of other users that you may not see can act on the account too, "
-        "and are not checked."
+        f"{NO_DRY_RUN} {said} Rules of other users that you may not see can act on the account "
+        "too, and are not checked."
     )
 
 
@@ -404,9 +403,8 @@ class MailExplanations:
                 page_size=FAILED_READ,
             ),
         )
-        files = (
-            [row for row in failed.rows if row.trigger_source == "email_consume"] if failed else []
-        )
+        rows = failed.rows if failed else ()
+        files = [row for row in rows if row.trigger_source == "email_consume"]
         return tuple(
             ExplainedTask(
                 task_type=row.task_type,
