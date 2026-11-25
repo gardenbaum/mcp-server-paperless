@@ -66,7 +66,7 @@ from fakes.permissions import access_of, check_principals, set_grants
 from fakes.sharing import FakeShareBundle, FakeShareLink, SentEmail, SharingData, Viewer
 from fakes.taxonomy_rules import check_colour, check_match, check_name, check_path, with_ids
 from fakes.view_filters import ONLY_ONE_SEARCH, combines, searches, view_filters
-from fakes.view_rules import check_page_size, check_rules
+from fakes.view_rules import check_display, check_page_size, check_rules
 from fakes.workflows import Actor, WorkflowData
 from mcp_server_paperless.domain.admin import (
     CONFIG_SECRETS,
@@ -140,7 +140,7 @@ from mcp_server_paperless.domain.trash import (
     TrashPage,
 )
 from mcp_server_paperless.domain.versions import VersionPage, VersionRow
-from mcp_server_paperless.domain.views import FilterRule, SavedView
+from mcp_server_paperless.domain.views import DEFAULT_ICON, FilterRule, SavedView
 from mcp_server_paperless.domain.workflows import (
     Workflow,
     WorkflowAction,
@@ -368,6 +368,17 @@ class FakeSavedView(FakeTaxonomy):
     sort_field: str | None = None
     sort_reverse: bool = False
     page_size: int | None = None
+    icon: str = DEFAULT_ICON
+    display_mode: str | None = None
+    display_fields: tuple[str, ...] | None = None
+
+
+def forget_field(view: FakeSavedView, field: str) -> None:
+    """What a view loses when a custom field is deleted."""
+    if view.display_fields is not None:
+        view.display_fields = tuple(f for f in view.display_fields if f != field)
+    if view.sort_field == field:
+        view.sort_field = "created"
 
 
 @dataclass(kw_only=True)
@@ -804,7 +815,7 @@ def seeded() -> FakeState:
     )
 
 
-def _label(obj: FakeDocument | FakeTaxonomy) -> str:
+def _label(obj: FakeDocument | FakeTaxonomy | FakeMailAccount | FakeMailRule) -> str:
     """The title of a document, else the name."""
     return obj.title if isinstance(obj, FakeDocument) else obj.name
 
@@ -2809,6 +2820,8 @@ class FakePaperless:
             state.custom_fields[:] = [f for f in state.custom_fields if f.id != item_id]
             for document in state.documents:
                 _ = document.custom_fields.pop(item_id, None)
+            for view in state.saved_views:  # cleanup_custom_field_deletion
+                forget_field(view, f"custom_field_{item_id}")
             return
         if kind == "tag":
             gone = self._tag_tree(item_id)
@@ -3076,11 +3089,15 @@ class FakePaperless:
 
     # --- PermissionReader and PermissionWriter
 
-    def _permission_objects(self, kind: PermissionKind) -> list[FakeDocument] | list[FakeTaxonomy]:
+    def _permission_objects(
+        self, kind: PermissionKind
+    ) -> list[FakeDocument] | list[FakeTaxonomy] | list[FakeMailAccount] | list[FakeMailRule]:
         state = self.state
         return cast(
-            "list[FakeDocument] | list[FakeTaxonomy]",
+            "list[FakeDocument] | list[FakeTaxonomy] | list[FakeMailAccount] | list[FakeMailRule]",
             {
+                "mail_account": state.mail_accounts,
+                "mail_rule": state.mail_rules,
                 "document": state.documents,
                 "tag": state.tags,
                 "correspondent": state.correspondents,
@@ -3157,6 +3174,30 @@ class FakePaperless:
         more = page + 1 if first + page_size < len(rows) else None
         return rows[first : first + page_size], more
 
+    def _owner_clashes(
+        self,
+        kind: PermissionKind,
+        target: FakeDocument | FakeTaxonomy | FakeMailAccount | FakeMailRule,
+        owner: int | None,
+    ) -> bool:
+        """Whether the new owner has another object of the same name."""
+        return kind != "document" and any(
+            o is not target and o.owner == owner and _label(o) == _label(target)
+            for o in self._permission_objects(kind)
+        )
+
+    def _permission_target(
+        self, kind: PermissionKind, object_id: int
+    ) -> FakeDocument | FakeTaxonomy | FakeMailAccount | FakeMailRule:
+        if not self.user.has(f"change_{kind.replace('_', '')}"):
+            message = "The Paperless user may not perform this action."
+            raise PermissionDenied(message)
+        found = [o for o in self._permission_objects(kind) if o.id == object_id]
+        if not found or not found[0].visible_to(self.user):
+            message = "The Paperless object does not exist or is not visible to this user."
+            raise NotFound(message)
+        return found[0]
+
     @write
     async def set_permissions(
         self, kind: PermissionKind, object_id: int, change: AccessChange
@@ -3166,37 +3207,29 @@ class FakePaperless:
         Order: the global change permission (403), the object among those the user may see (404),
         the values (400: unknown users, groups or owner, and a name another object of the new
         owner already has, as the serializer validates them), then ownership (403: a change
-        grant is not enough).
+        grant is not enough). An unowned rule of the same name is
+        found last, after the grants were set.
         """
-        if not self.user.has(f"change_{kind.replace('_', '')}"):
-            message = "The Paperless user may not perform this action."
-            raise PermissionDenied(message)
-        found = [o for o in self._permission_objects(kind) if o.id == object_id]
-        if not found or not found[0].visible_to(self.user):
-            message = "The Paperless object does not exist or is not visible to this user."
-            raise NotFound(message)
-        target = found[0]
+        target = self._permission_target(kind, object_id)
         state = self.state
-        given = change.permissions
+        given, clashes = change.permissions, False
         if given is not None:
             check_principals(given, state.users, state.groups)
         if "owner" in change.model_fields_set:
             if change.owner not in {None, *(u.id for u in state.users)}:
                 reject("owner", f'Invalid pk "{change.owner}" - object does not exist.')
-            clash = (
-                o
-                for o in self._permission_objects(kind)
-                if o is not target and o.owner == change.owner and _label(o) == _label(target)
-            )
-            if kind != "document" and any(clash):
+            clashes = self._owner_clashes(kind, target, change.owner)
+            if clashes and not (kind == "mail_rule" and change.owner is None):
                 reject("non_field_errors", "The fields name, owner must make a unique set.")
         if not (self.user.is_superuser or target.owner in {None, self.user.id}):
             message = "The Paperless user may not perform this action."
             raise PermissionDenied(message)
-        if "owner" in change.model_fields_set:
-            target.owner = change.owner
         if given is not None:
             set_grants(target, given)
+        if clashes:  # Unowned rules are compared after the grants were set.
+            reject("error", "Object violates owner / name unique constraint")
+        if "owner" in change.model_fields_set:
+            target.owner = change.owner
         return access_of(target, _label(target))
 
     # --- ViewReader and ViewWriter
@@ -3233,6 +3266,7 @@ class FakePaperless:
         name = check_name(name)
         check_rules(values.filter_rules or ())
         check_page_size(values.page_size)
+        check_display(values, {f.id for f in self.state.custom_fields})
         views = self.state.saved_views
         if any(v.name == name and v.owner == self.user.id for v in views):
             reject("error", "Object violates owner / name unique constraint")
@@ -3244,6 +3278,9 @@ class FakePaperless:
             sort_field=values.sort_field,
             sort_reverse=bool(values.sort_reverse),
             page_size=values.page_size,
+            icon=values.icon or DEFAULT_ICON,
+            display_mode=values.display_mode,
+            display_fields=values.display_fields,
         )
         views.append(view)
         return self._saved_view(view)
@@ -3268,6 +3305,7 @@ class FakePaperless:
         name = check_name(values.name) if values.name is not None else view.name
         check_rules(values.filter_rules or ())
         check_page_size(values.page_size)
+        check_display(values, {f.id for f in self.state.custom_fields})
         view.name = name
         if values.filter_rules is not None:
             view.filter_rules = values.filter_rules
@@ -3277,6 +3315,12 @@ class FakePaperless:
             view.sort_reverse = values.sort_reverse
         if "page_size" in sent:
             view.page_size = values.page_size
+        if values.icon is not None:
+            view.icon = values.icon
+        if "display_mode" in sent:
+            view.display_mode = values.display_mode
+        if "display_fields" in sent:
+            view.display_fields = values.display_fields or None  # an update stores no empty list
         return self._saved_view(view)
 
     @write
@@ -3313,6 +3357,9 @@ class FakePaperless:
             sort_field=view.sort_field,
             sort_reverse=view.sort_reverse,
             page_size=view.page_size,
+            icon=view.icon,
+            display_mode=view.display_mode,
+            display_fields=view.display_fields,
             owner=view.owner,
             user_can_change=self.user.may_change_object(view),
             filter_rules=view.filter_rules,
@@ -3427,6 +3474,7 @@ class FakePaperless:
             state.mail_hosts,
             state.mail_silent_hosts,
             state.mail_fetches,
+            state.logs,
         )
 
     def _mail_viewer(self) -> MailViewer:
@@ -3495,6 +3543,11 @@ class FakePaperless:
     async def delete_mail_account(self, account_id: int) -> None:
         """`MailWriter.delete_mail_account`."""
         mail.delete_account(self._mail(), self._mail_viewer(), account_id)
+
+    @write
+    async def delete_processed_mail(self, mail_ids: Sequence[int]) -> None:
+        """`MailWriter.delete_processed_mail`."""
+        mail.delete_processed(self._mail(), self._mail_viewer(), mail_ids)
 
     @write
     async def test_mail_account(self, account_id: int) -> MailAccountTestResult:

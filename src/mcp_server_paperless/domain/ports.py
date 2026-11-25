@@ -697,7 +697,8 @@ class ViewWriter(Protocol):
         Raises:
             PermissionDenied: The user may not add saved views.
             Validation: Paperless rejected a value (blank or taken name, unknown rule type, a
-                rule value over 255 characters, a page size below 1).
+                rule value over 255 characters, a page size below 1, an unknown icon or display
+                field).
         """
         ...
 
@@ -705,7 +706,7 @@ class ViewWriter(Protocol):
         """Change the settings ``values`` sets and return the view as it is afterwards.
 
         Paperless replaces the rule list as a whole and, unlike a create, accepts a name another
-        view of the user already has.
+        view of the user already has and stores an empty list of display fields as none.
 
         Raises:
             NotFound: No such view, or the user may not see it.
@@ -825,7 +826,7 @@ class TrashWriter(Protocol):
 
 
 class PermissionReader(Protocol):
-    """Owners and grants of documents and taxonomy objects, and the users and groups."""
+    """Owners and grants of documents, taxonomy and mail objects, and the users and groups."""
 
     async def get_permissions(
         self, kind: PermissionKind, object_ids: Sequence[int]
@@ -1264,6 +1265,17 @@ class MailWriter(Protocol):
         Raises:
             NotFound: No such account, or the user may not see it.
             PermissionDenied: The user may not delete this account.
+        """
+        ...
+
+    async def delete_processed_mail(self, mail_ids: Sequence[int]) -> None:
+        """Delete records of processed mail: all of them, or none.
+
+        An id that does not exist is skipped without a word, and Paperless says it was deleted:
+        only another read tells what became of a record. The request is never repeated.
+
+        Raises:
+            PermissionDenied: The user may not delete one of the records; nothing was deleted.
         """
         ...
 

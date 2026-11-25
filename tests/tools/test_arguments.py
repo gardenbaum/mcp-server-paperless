@@ -27,7 +27,7 @@ from fastmcp import Client
 from harness import serve
 
 from mcp_server_paperless.domain.admin import CONFIG_READ_ONLY, CONFIG_SETTINGS
-from mcp_server_paperless.domain.views import FilterRule
+from mcp_server_paperless.domain.views import ICONS, FilterRule
 from mcp_server_paperless.domain.workflows import Workflow, WorkflowAction, WorkflowTrigger
 from mcp_server_paperless.services.batch_uploads import cursor
 from mcp_server_paperless.services.documents import text_state
@@ -511,6 +511,11 @@ async def test_permissions_and_bulk_changes_take_every_argument() -> None:
         await sweep(
             "set_permissions", {"kind": kind, "items": [1], "clear_owner": True}, (), prepare=owned
         )
+    for kind in ("mail_account", "mail_rule"):
+        grants = {"view_users": ["admin"], "change_groups": [1], "owner": "e2e-reader"}
+        await sweep(
+            "set_permissions", {"kind": kind, "items": [1], **grants}, (), prepare=with_mail
+        )
     for kind in ("tag", "correspondent", "document_type", "storage_path"):
         await sweep(
             "bulk_edit_taxonomy", {"kind": kind, "items": [1], "operation": {"op": "delete"}}, ()
@@ -744,6 +749,23 @@ async def test_mail_takes_every_argument() -> None:
     await sweep("test_mail_account", {"account_id": 1}, (), prepare=with_mail)
     await sweep("process_mail_account", {"account_id": 1}, (), prepare=with_mail)
     await sweep("list_processed_mail", {}, ("ordering",))
+    await sweep(
+        "explain_mail_import",
+        {
+            "account_id": 1,
+            "rule_id": 1,
+            "sender": "a",
+            "recipient": "b",
+            "subject": "Invoice",
+            "received": "2026-11-25T10:00:00Z",
+            "folder": "INBOX",
+            "attachment_names": ["a.pdf"],
+            "is_read": True,
+            "is_flagged": False,
+        },
+        (),
+        prepare=with_processed_mail,
+    )
     await sweep(
         "get_processed_mail", {"mail_id": 1, "error_from": 0}, (), prepare=with_processed_mail
     )
@@ -987,8 +1009,12 @@ async def test_saved_views_take_every_rule_type_and_are_run() -> None:
     created: list[tuple[Json, Prepare | None]] = []
     updated: list[tuple[Json, Prepare | None]] = []
     ran: list[tuple[Json, Prepare | None]] = []
-    for number, spec in SPECS.items():
+    for position, (number, spec) in enumerate(SPECS.items()):
         value = SAMPLES[spec.kind]
+        shown: Json = {
+            "display_mode": ("table", "smallCards", "largeCards")[position % 3],
+            "display_fields": ["title", "custom_field_1"],
+        }
         rules = [{"rule": number, "value": value}]
         created.append(
             (
@@ -998,6 +1024,7 @@ async def test_saved_views_take_every_rule_type_and_are_run() -> None:
                     "sort_field": "created",
                     "sort_reverse": True,
                     "page_size": 10,
+                    **shown,
                 },
                 None,
             )
@@ -1010,15 +1037,21 @@ async def test_saved_views_take_every_rule_type_and_are_run() -> None:
                     "sort_field": "added",
                     "sort_reverse": True,
                     "page_size": 10,
+                    **shown,
                 },
                 None,
             )
         )
         ran.append(({"view": 2, "page": 1, "page_size": 10}, with_view(number, value)))
+    # More icons than rule types: every one is sent.
+    created.extend(({"name": "New", "icon": icon}, None) for icon in ICONS)
+    updated.extend(({"view": 1, "icon": icon}, None) for icon in ICONS)
     await sweep_cases("create_saved_view", created)
     await sweep_cases("update_saved_view", updated)
     await sweep_cases("run_saved_view", ran)
     await sweep("update_saved_view", {"view": 1, "clear_sort": True, "clear_page_size": True}, ())
+    cleared: Json = {"view": 1, "clear_display_mode": True, "clear_display_fields": True}
+    await sweep("update_saved_view", cleared, ())
     await sweep("list_saved_views", {}, ())
     await sweep("get_saved_view", {"view": 1}, ())
     await sweep("delete_saved_view", {"view": 1}, ())
@@ -1579,6 +1612,12 @@ async def test_the_remaining_tools_have_a_scenario_with_all_their_arguments() ->
     await sweep("get_mail_rule", {"rule_id": 1}, (), prepare=with_mail)
     await sweep("delete_mail_account", {"account_id": 2}, (), prepare=with_mail)
     await sweep("delete_mail_rule", {"rule_id": 1}, (), prepare=with_mail)
+    await sweep(
+        "delete_processed_mail",
+        {"mail_ids": [1], "dry_run": False},
+        (),
+        prepare=with_processed_mail,
+    )
     await sweep("list_mail_accounts", {"page": 1, "page_size": 10}, (), prepare=with_mail)
     await sweep(
         "list_mail_rules", {"account_id": 1, "page": 1, "page_size": 10}, (), prepare=with_mail

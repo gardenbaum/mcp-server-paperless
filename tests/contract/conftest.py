@@ -21,7 +21,7 @@ import asyncio
 import contextlib
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Protocol, cast
 
 import httpx2
@@ -32,13 +32,14 @@ from e2e.helpers import (
     EXPECTED_VERSION,
     consume,
     consume_text,
+    in_container,
     lose_file,
     pdf_pages,
     rebuild_search_index,
     results,
 )
 from fakes.accounts import ADMIN, BLIND, READER
-from fakes.mail import FakeMailAccount
+from fakes.mail import FakeMailAccount, FakeProcessedMail
 from fakes.paperless import (
     VERSION,
     FakeDocument,
@@ -263,6 +264,17 @@ class Share(Protocol):
     def __call__(self, document_id: int) -> None: ...
 
 
+type Processed = tuple[str, str, str, str | None]
+
+
+class NewProcessed(Protocol):
+    """Makes records of processed mail (see `Backend.new_processed`)."""
+
+    def __call__(
+        self, rule_id: int, rows: Sequence[Processed], *, owner: int | None = None
+    ) -> None: ...
+
+
 @dataclass(frozen=True)
 class Grants:
     """Who owns an object and who may view and change it, as ids (users and groups)."""
@@ -324,6 +336,10 @@ class Backend:
     # A new mail account of the admin that signs in with an OAuth access token, as Paperless takes
     # it from anyone (the web UI makes real ones); the test deletes it.
     new_token_account: Callable[[], int]
+    # Records of processed mail of a rule, one per (subject, uid, status, error), processed in this
+    # order; the live one writes them in Paperless itself, because only a fetch makes real ones.
+    # They belong to the owner, or to nobody, and go with the rule.
+    new_processed: NewProcessed
     # Takes a file of a document with one version away from Paperless, or its file names.
     lose_file: Callable[[int, FilePart], None]
 
@@ -413,6 +429,37 @@ def fake_restricted(state: FakeState) -> Restricted:
         return fake_ports(state, user.username)
 
     return restricted
+
+
+def fake_processed(state: FakeState) -> NewProcessed:
+    def new_processed(rule_id: int, rows: Sequence[Processed], *, owner: int | None = None) -> None:
+        for subject, uid, status, error in rows:
+            number = max((row.id for row in state.processed_mail), default=0) + 1
+            state.processed_mail.append(
+                FakeProcessedMail(
+                    id=number,
+                    rule=rule_id,
+                    subject=subject,
+                    uid=uid,
+                    status=status,
+                    error=error,
+                    owner=owner,
+                    processed=EXPIRES + timedelta(seconds=number),
+                )
+            )
+
+    return new_processed
+
+
+def live_processed(rule_id: int, rows: Sequence[Processed], *, owner: int | None = None) -> None:
+    code = (
+        "from paperless_mail.models import ProcessedMail\n"
+        "from django.utils.timezone import now\n"
+        f"for subject, uid, status, error in {list(rows)!r}:\n"
+        f"    ProcessedMail.objects.create(rule_id={rule_id}, owner_id={owner}, folder='INBOX', "
+        "subject=subject, uid=uid, status=status, error=error, received=now())\n"
+    )
+    in_container("python", "manage.py", "shell", "-c", code)
 
 
 def fake_token_account(state: FakeState) -> Callable[[], int]:
@@ -553,6 +600,7 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
         track_document=lambda _document: None,
         expected_version=VERSION,
         rebuild_search_index=lambda: None,
+        new_processed=fake_processed(state),
         new_token_account=fake_token_account(state),
         lose_file=fake_lose_file(state),
     )
@@ -811,6 +859,7 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
                 track_document=created.append,
                 expected_version=EXPECTED_VERSION,
                 rebuild_search_index=lambda: rebuild_search_index(stack.admin),
+                new_processed=live_processed,
                 new_token_account=lambda: live_token_account(stack),
                 lose_file=lambda document, part: lose_file(stack.admin, document, part),
             )

@@ -177,15 +177,22 @@ class Mailbox:
     def log(self, name: str) -> list[str]:
         return cast("list[str]", parse(self.stack.admin.get(f"/api/logs/{name}/")))
 
-    def records(self, rule: int, count: int) -> list[Json]:
-        """The records of the rule, newest first, once there are `count` and nothing is running."""
+    def records(self, rule: int, count: int | None) -> list[Json]:
+        """The records of the rule, newest first, once there are `count` and nothing is running.
+
+        Without a count: at least one, once nothing was running in five looks in a row.
+        """
+        quiet = 0
 
         def look() -> list[Json] | None:
             params = {"rule": rule, "ordering": "-processed", "page_size": 100}
             rows = results(self.stack.admin.get("/api/processed_mail/", params=params))
             active = parse(self.stack.admin.get("/api/tasks/active/"))
             running = obj(cast("object", active))["results"] if isinstance(active, dict) else active
-            return rows if len(rows) == count and not running else None
+            nonlocal quiet
+            quiet = 0 if running else quiet + 1
+            enough = len(rows) == count if count is not None else bool(rows) and quiet > 4
+            return rows if enough and not running else None
 
         return wait(f"{count} records", look)
 

@@ -58,6 +58,7 @@ if TYPE_CHECKING:
     from mcp_server_paperless.services.files import FileService
     from mcp_server_paperless.services.instance import InstanceService
     from mcp_server_paperless.services.mail import MailService
+    from mcp_server_paperless.services.mail_explanation import MailExplanations
     from mcp_server_paperless.services.notes import NoteService
     from mcp_server_paperless.services.pages import PageService
     from mcp_server_paperless.services.pdf import PdfService
@@ -219,6 +220,8 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "delete_mail_rule": "mail",
     "list_processed_mail": "mail",
     "get_processed_mail": "mail",
+    "explain_mail_import": "mail",
+    "delete_processed_mail": "mail",
     "paperless_api_get": "raw",
     "list_workflows": "workflows",
     "get_workflow": "workflows",
@@ -620,10 +623,26 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    # Compares stored settings and reads what Paperless stored; contacts no mail server.
+    "explain_mail_import": ToolAnnotations(
+        title="Explain mail import",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     "get_processed_mail": ToolAnnotations(
         title="Get processed mail",
         read_only_hint=True,
         idempotent_hint=True,
+        open_world_hint=False,
+    ),
+    # Destructive (decision-6, decision-83): the records are gone, and the next fetch can import the
+    # mails again and act on them. Not idempotent: an id that is gone refuses the call.
+    "delete_processed_mail": ToolAnnotations(
+        title="Delete processed mail",
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
         open_world_hint=False,
     ),
     # Storing an account contacts nobody. Updating one needs confirm only to point it at another
@@ -1207,6 +1226,7 @@ class Services:
     sharing: SharingService
     mail: MailService
     processed_mail: ProcessedMailService
+    mail_explanations: MailExplanations
     accounts: AccountAdmin
     system: SystemAdmin
     raw: RawApiService

@@ -3,8 +3,9 @@
 Plain functions on the fake's state and user; `FakePaperless` delegates to them (and carries the
 write guard), so `paperless.py` does not grow further.
 
-- An account or rule belongs to its creator; others see it only as a superuser or when it has no
-  owner. Every action needs the global permission of the model (`view_mailaccount`, ...).
+- An account or rule belongs to its creator; others see it only as a superuser, when it has no
+  owner, or by a grant. A change grant does not let its holder fetch or delete. Every
+  action needs the global permission of the model (`view_mailaccount`, ...).
 - The fake never holds a password anywhere a port can read it: `FakeMailAccount.password` is read
   by `test_account` only, and no row built from an account has a password field.
 - The password of an account with an OAuth access token is refused, like the adapter does.
@@ -21,7 +22,7 @@ write guard), so `paperless.py` does not grow further.
 
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from fakes.document_values import reject
 from mcp_server_paperless.domain.errors import PermissionDenied, Validation
@@ -39,6 +40,7 @@ from mcp_server_paperless.paperless.mail import (
     connected,
     failed_login,
     silent_server,
+    undeletable_processed,
     unreachable_server,
     unseen_account,
     unseen_processed,
@@ -67,11 +69,40 @@ NOW = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
 MAX_AGE = 36500
 
 
+class User(Protocol):
+    """What a row needs to know of a user."""
+
+    @property
+    def id(self) -> int: ...
+
+    @property
+    def is_superuser(self) -> bool: ...
+
+
 @dataclass(kw_only=True)
-class FakeMailAccount:
-    """A mail account; the password is stored but no port ever returns it."""
+class Shareable:
+    """A row with an owner and grants; those of groups give nobody access here."""
 
     id: int
+    owner: int | None = None
+    viewers: set[int] = field(default_factory=set[int])
+    editors: set[int] = field(default_factory=set[int])
+    view_groups: set[int] = field(default_factory=set[int])
+    change_groups: set[int] = field(default_factory=set[int])
+
+    def visible_to(self, user: User) -> bool:
+        """Paperless's object permission to view (a change grant is stored with a view grant)."""
+        return _visible(self.owner, user) or user.id in self.viewers | self.editors
+
+    def changeable_by(self, user: User) -> bool:
+        """Paperless's object permission to change."""
+        return _visible(self.owner, user) or user.id in self.editors
+
+
+@dataclass(kw_only=True)
+class FakeMailAccount(Shareable):
+    """A mail account; the password is stored but no port ever returns it."""
+
     name: str
     imap_server: str
     imap_port: int
@@ -81,18 +112,15 @@ class FakeMailAccount:
     character_set: str = "UTF-8"
     account_type: AccountType = "imap"
     is_token: bool = False
-    owner: int | None = None
     expiration: datetime | None = None
 
 
 @dataclass(kw_only=True)
-class FakeMailRule:
+class FakeMailRule(Shareable):
     """A mail rule with Paperless's defaults."""
 
-    id: int
     name: str
     account: int
-    owner: int | None = None
     enabled: bool = True
     order: int = 0
     folder: str = "INBOX"
@@ -162,6 +190,7 @@ class MailData:
     hosts: set[str]
     silent_hosts: set[str]
     fetches: list[int] = field(default_factory=list[int])
+    logs: dict[str, list[str]] = field(default_factory=dict[str, list[str]])
 
 
 def denied() -> PermissionDenied:
@@ -174,13 +203,8 @@ def _allow(user: Viewer, action: str, model: str) -> None:
         raise denied()
 
 
-def _visible(owner: int | None, user: Viewer) -> bool:
+def _visible(owner: int | None, user: User) -> bool:
     return user.is_superuser or owner in {None, user.id}
-
-
-def _may_change(owner: int | None, user: Viewer) -> bool:
-    """Paperless's `user_can_change` for the row (object permissions only)."""
-    return _visible(owner, user)
 
 
 def _account(row: FakeMailAccount, user: Viewer) -> MailAccount:
@@ -195,7 +219,7 @@ def _account(row: FakeMailAccount, user: Viewer) -> MailAccount:
         account_type=row.account_type,
         is_token=row.is_token,
         owner=row.owner,
-        can_change=_may_change(row.owner, user),
+        can_change=row.changeable_by(user),
         expiration=row.expiration,
     )
 
@@ -228,19 +252,19 @@ def _rule(row: FakeMailRule, user: Viewer) -> MailRule:
         assign_owner_from_rule=row.assign_owner_from_rule,
         stop_processing=row.stop_processing,
         owner=row.owner,
-        can_change=_may_change(row.owner, user),
+        can_change=row.changeable_by(user),
     )
 
 
 def _own_account(data: MailData, user: Viewer, account_id: int) -> FakeMailAccount:
-    found = [r for r in data.accounts if r.id == account_id and _visible(r.owner, user)]
+    found = [r for r in data.accounts if r.id == account_id and r.visible_to(user)]
     if not found:
         raise unseen_account(account_id)
     return found[0]
 
 
 def _own_rule(data: MailData, user: Viewer, rule_id: int) -> FakeMailRule:
-    found = [r for r in data.rules if r.id == rule_id and _visible(r.owner, user)]
+    found = [r for r in data.rules if r.id == rule_id and r.visible_to(user)]
     if not found:
         raise unseen_rule(rule_id)
     return found[0]
@@ -249,7 +273,7 @@ def _own_rule(data: MailData, user: Viewer, rule_id: int) -> FakeMailRule:
 def list_accounts(data: MailData, user: Viewer) -> tuple[MailAccount, ...]:
     """`MailReader.list_mail_accounts` (MailAccountViewSet list)."""
     _allow(user, "view", "mailaccount")
-    return tuple(_account(r, user) for r in data.accounts if _visible(r.owner, user))
+    return tuple(_account(r, user) for r in data.accounts if r.visible_to(user))
 
 
 def get_account(data: MailData, user: Viewer, account_id: int) -> MailAccount:
@@ -261,7 +285,7 @@ def get_account(data: MailData, user: Viewer, account_id: int) -> MailAccount:
 def list_rules(data: MailData, user: Viewer) -> tuple[MailRule, ...]:
     """`MailReader.list_mail_rules` (MailRuleViewSet list, ordered by `order`)."""
     _allow(user, "view", "mailrule")
-    rows = [r for r in data.rules if _visible(r.owner, user)]
+    rows = [r for r in data.rules if r.visible_to(user)]
     return tuple(_rule(r, user) for r in sorted(rows, key=lambda r: (r.order, r.id)))
 
 
@@ -284,6 +308,19 @@ def _processed(row: FakeProcessedMail) -> ProcessedMail:
         status=row.status,
         error=row.error,
     )
+
+
+def delete_processed(data: MailData, user: Viewer, mail_ids: Collection[int]) -> None:
+    """`MailWriter.delete_processed_mail` (ProcessedMailViewSet bulk_delete).
+
+    Ids that do not exist are skipped; one that the user may not delete refuses all. It needs no
+    view permission.
+    """
+    if not user.has("delete_processedmail"):
+        raise undeletable_processed()
+    if any(r.id in mail_ids and not _visible(r.owner, user) for r in data.processed):
+        raise undeletable_processed()
+    data.processed[:] = [r for r in data.processed if r.id not in mail_ids]
 
 
 def list_processed(  # noqa: PLR0913 -- the port's signature
@@ -372,7 +409,7 @@ def update_account(
     """`MailWriter.update_mail_account` (MailAccountViewSet partial_update)."""
     _allow(user, "change", "mailaccount")
     row = _own_account(data, user, account_id)
-    if not _may_change(row.owner, user):
+    if not row.changeable_by(user):
         raise denied()
     if values.password is not None:
         check_password(values.password.get_secret_value())
@@ -405,7 +442,7 @@ def delete_account(data: MailData, user: Viewer, account_id: int) -> None:
     """`MailWriter.delete_mail_account` (MailAccountViewSet destroy); rules cascade."""
     _allow(user, "delete", "mailaccount")
     row = _own_account(data, user, account_id)
-    if not _may_change(row.owner, user):
+    if not _visible(row.owner, user):
         raise denied()
     gone = {r.id for r in data.rules if r.account == account_id}
     data.accounts.remove(row)
@@ -416,7 +453,7 @@ def delete_account(data: MailData, user: Viewer, account_id: int) -> None:
 def test_account(data: MailData, user: Viewer, account_id: int) -> MailAccountTestResult:
     """`MailWriter.test_mail_account` (MailAccountViewSet test, with the saved password)."""
     row = _own_account(data, user, account_id)
-    if not user.has("change_mailaccount") or not _may_change(row.owner, user):
+    if not user.has("change_mailaccount") or not row.changeable_by(user):
         raise denied()
     if row.imap_server in data.silent_hosts:
         return silent_server()
@@ -428,12 +465,24 @@ def test_account(data: MailData, user: Viewer, account_id: int) -> MailAccountTe
 
 
 def process_account(data: MailData, user: Viewer, account_id: int) -> None:
-    """`MailWriter.process_mail_account` (MailAccountViewSet process): queued, nothing fetched."""
+    """`MailWriter.process_mail_account`: queued; of the fetch only the log lines are written."""
     row = _own_account(data, user, account_id)
     _allow(user, "add", "mailaccount")  # a POST: DRF asks for the add permission
-    if not _may_change(row.owner, user):
+    if not _visible(row.owner, user):
         raise denied()
     data.fetches.append(row.id)
+    start = "[2026-11-25 10:00:00,123] [{}] [{}] "
+    if not any(rule.account == row.id and rule.enabled for rule in data.rules):
+        line = f"No rules enabled for account {row.name}. Skipping."
+        data.logs.setdefault("paperless", []).append(
+            start.format("INFO", "paperless.mail.tasks") + line
+        )
+        return
+    lines = data.logs.setdefault("mail", [])
+    lines.append(start.format("DEBUG", "paperless_mail") + f"Processing mail account {row.name}")
+    if row.imap_server not in data.hosts:
+        refused = f"Error while retrieving mailbox {row.name}: [Errno 111] Connection refused"
+        lines.append(start.format("ERROR", "paperless_mail") + refused)
 
 
 def _exists(kind: str, ids: Collection[int | None], known: frozenset[int]) -> None:
@@ -444,10 +493,10 @@ def _exists(kind: str, ids: Collection[int | None], known: frozenset[int]) -> No
 
 def _check_account(user: Viewer, data: MailData, account_id: int) -> None:
     """The rule's account must exist, be visible and be one the user may change."""
-    found = [r for r in data.accounts if r.id == account_id and _visible(r.owner, user)]
+    found = [r for r in data.accounts if r.id == account_id and r.visible_to(user)]
     if not found:
         reject("account", f'Invalid pk "{account_id}" - object does not exist.')
-    if not user.has("change_mailaccount") or not _may_change(found[0].owner, user):
+    if not user.has("change_mailaccount") or not found[0].changeable_by(user):
         message = "Insufficient permissions."
         raise PermissionDenied(message)
 
@@ -515,7 +564,7 @@ def update_rule(data: MailData, user: Viewer, rule_id: int, values: MailRuleValu
     """`MailWriter.update_mail_rule` (MailRuleViewSet partial_update)."""
     _allow(user, "change", "mailrule")
     row = _own_rule(data, user, rule_id)
-    if not _may_change(row.owner, user):
+    if not row.changeable_by(user):
         raise denied()
     changes = _rule_values(user, data, values, creating=False)
     index = data.rules.index(row)
@@ -527,7 +576,7 @@ def delete_rule(data: MailData, user: Viewer, rule_id: int) -> None:
     """`MailWriter.delete_mail_rule` (MailRuleViewSet destroy); processed mail cascades."""
     _allow(user, "delete", "mailrule")
     row = _own_rule(data, user, rule_id)
-    if not _may_change(row.owner, user):
+    if not _visible(row.owner, user):
         raise denied()
     data.rules.remove(row)
     data.processed[:] = [m for m in data.processed if m.rule != rule_id]

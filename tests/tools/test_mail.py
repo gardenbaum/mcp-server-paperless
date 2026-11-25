@@ -9,6 +9,7 @@ import logging
 from typing import cast
 
 import pytest
+from confirmation import YES, answering
 from fakes.mail import FakeMailAccount, FakeMailRule, FakeProcessedMail
 from fakes.paperless import FakePaperless, FakeState, seeded
 from fastmcp import Client
@@ -39,6 +40,8 @@ TOOLS = {
     "delete_mail_rule",
     "list_processed_mail",
     "get_processed_mail",
+    "delete_processed_mail",
+    "explain_mail_import",
 }
 READ_ONLY = {
     "list_mail_accounts",
@@ -47,6 +50,7 @@ READ_ONLY = {
     "get_mail_rule",
     "list_processed_mail",
     "get_processed_mail",
+    "explain_mail_import",
 }
 PASSWORD = "S3cret-Passw0rd!x"
 HOST = "imap.example.com"
@@ -109,7 +113,7 @@ async def test_mail_is_not_in_the_default_profile() -> None:
     assert names.isdisjoint(TOOLS)
 
 
-async def test_the_mail_toolset_offers_fourteen_tools_and_read_only_mode_keeps_the_reads() -> None:
+async def test_the_mail_toolset_offers_sixteen_tools_and_read_only_mode_keeps_the_reads() -> None:
     async with Client(serve(fake(), toolsets=["mail"])) as client:
         names = {tool.name for tool in await client.list_tools()}
     async with Client(serve(fake(), toolsets=["mail"], read_only=True)) as client:
@@ -460,6 +464,93 @@ async def test_a_processed_mail_that_does_not_exist_is_an_error() -> None:
     assert "No processed mail 9 exists" in await refusal(fake(), "get_processed_mail", mail_id=9)
 
 
+def with_records(source: FakePaperless, count: int = 2) -> None:
+    rule = with_rule(source.state, with_account(source.state), action="delete")
+    for number in range(1, count + 1):
+        source.state.processed_mail.append(
+            FakeProcessedMail(id=number, rule=rule, subject=f"Mail {number}", status="FAILED")
+        )
+
+
+@pytest.mark.decision("decision-83")
+async def test_deleting_records_is_shown_first_and_done_once_confirmed() -> None:
+    source = fake()
+    with_records(source)
+
+    preview = await call(source, "delete_processed_mail", mail_ids=[1, 2], dry_run=True)
+    text = await refusal(source, "delete_processed_mail", mail_ids=[1, 2])
+    assert len(source.state.processed_mail) == 2
+    done = await call(source, "delete_processed_mail", mail_ids=[2], confirm=True)
+
+    assert preview["dry_run"] is True
+    effect = str(preview["message"]).split("Confirming would ")[1].split(" not known here.")[0]
+    assert effect in text
+    assert "DELETES the mail on the mail server" in text
+    assert "1 'Mail 1'" in text
+    assert done["mails"] == [
+        {"id": 2, "rule_id": 1, "subject": "Mail 2", "status": "FAILED", "outcome": "deleted"}
+    ]
+    assert [row.id for row in source.state.processed_mail] == [1]
+
+
+@pytest.mark.decision("decision-83")
+@pytest.mark.parametrize("ids", [[], list(range(1, 102)), [True], [0], ["x"]])
+async def test_wrong_lists_of_records_are_refused(ids: list[object]) -> None:
+    _ = await refusal(fake(writes=False), "delete_processed_mail", mail_ids=ids, confirm=True)
+
+
+@pytest.mark.decision("decision-83")
+async def test_the_tool_says_what_it_needs_and_that_it_is_final() -> None:
+    async with Client(server(fake())) as client:
+        [tool] = [t for t in await client.list_tools() if t.name == "delete_processed_mail"]
+
+    assert tool.annotations is not None
+    assert (
+        tool.annotations.read_only_hint,
+        tool.annotations.destructive_hint,
+        tool.annotations.idempotent_hint,
+        tool.annotations.open_world_hint,
+    ) == (False, True, False, False)
+    text = " ".join((tool.description or "").split())
+    for said in ("cannot be brought back", "view_processedmail", "delete_processedmail"):
+        assert said in text
+
+
+@pytest.mark.decision("decision-90")
+async def test_why_a_mail_was_not_imported_is_explained_also_read_only() -> None:
+    source = fake(writes=False)
+    account = with_account(source.state)
+    _ = with_rule(source.state, account, filter_subject="Invoice")
+    async with Client(serve(source, toolsets=["mail"], read_only=True)) as client:
+        [tool] = [t for t in await client.list_tools() if t.name == "explain_mail_import"]
+        result = await client.call_tool(
+            "explain_mail_import",
+            {
+                "account_id": account,
+                "subject": "Reminder" + "x" * 1000,
+                "sender": "a@b",
+                "recipient": "c@d" * 400,
+                "received": "2026-11-25T10:00:00Z",
+                "folder": "INBOX",
+                "attachment_names": ["a.pdf"],
+                "is_read": False,
+                "is_flagged": False,
+            },
+        )
+
+    found = cast("Json", result.structured_content)
+    [rule] = cast("list[Json]", found["rules"])
+    checks = {c["what"]: c["result"] for c in cast("list[Json]", rule["checks"])}
+    assert (checks["subject"], checks["folder"], rule["result"]) == ("no", "ok", "no")
+    assert str(found["message"]).startswith("This is not a dry run")
+    assert "process_mail_account" in str(found["closest_way"])
+    assert PASSWORD not in repr(result)
+    description = " ".join((tool.description or "").split())
+    assert "NOT a dry run: no mail server is contacted" in description
+    assert tool.annotations is not None
+    assert (tool.annotations.read_only_hint, tool.annotations.open_world_hint) == (True, False)
+
+
 @pytest.mark.decision("decision-79")
 async def test_the_password_of_a_token_account_is_refused_also_when_confirmed() -> None:
     source = fake(writes=False)
@@ -504,3 +595,36 @@ async def test_a_user_without_the_mail_permissions_gets_a_permission_error() -> 
     text = await refusal(source, "list_mail_accounts")
 
     assert "may not perform this action" in text
+
+
+@pytest.mark.decision("decision-83")
+@pytest.mark.parametrize("confirm", [False, True])
+async def test_no_dialog_asks_for_a_deletion_that_is_too_long_to_show(*, confirm: bool) -> None:
+    source = fake(writes=False)
+    account = with_account(source.state)
+    for number in range(1, 101):
+        rule = with_rule(
+            source.state,
+            account,
+            name=f"{number:0>60}",
+            action="move",
+            action_parameter=f"{number:0>254}",
+            consumption_scope="eml_and_attachments",
+            enabled=False,
+        )
+        source.state.processed_mail.append(
+            FakeProcessedMail(id=number, rule=rule, subject="s" * 60, status="FAILED")
+        )
+
+    seen: list[str] = []
+    arguments = {"mail_ids": list(range(1, 101)), "confirm": confirm}
+    async with Client(
+        server(source), elicitation_handler=answering("accept", YES, seen=seen)
+    ) as client:
+        result = await client.call_tool("delete_processed_mail", arguments, raise_on_error=False)
+
+    assert result.is_error
+    assert seen == []
+    assert "longer than what can be shown" in str(result.content)
+    assert "Nothing was deleted" in str(result.content)
+    assert len(source.state.processed_mail) == 100

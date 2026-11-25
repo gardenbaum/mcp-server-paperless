@@ -63,6 +63,7 @@ from mcp_server_paperless.services.file_sink import NO_SINK, FileSink
 from mcp_server_paperless.services.files import FileService
 from mcp_server_paperless.services.instance import InstanceService
 from mcp_server_paperless.services.mail import MailService
+from mcp_server_paperless.services.mail_explanation import MailExplanations
 from mcp_server_paperless.services.notes import NoteService
 from mcp_server_paperless.services.pages import PageService
 from mcp_server_paperless.services.pdf import PdfService
@@ -553,7 +554,10 @@ def create_server(  # noqa: PLR0913 -- one keyword per seam, all defaulted
                     adapters.sharing, adapters.sharing_writes, adapters.documents, web_url=web_url
                 ),
                 mail=MailService(adapters.mail, adapters.mail_writes, taxonomy, adapters.instance),
-                processed_mail=ProcessedMailService(adapters.mail),
+                mail_explanations=MailExplanations(adapters.mail, adapters.management),
+                processed_mail=ProcessedMailService(
+                    adapters.mail, adapters.mail_writes, adapters.documents
+                ),
                 raw=RawApiService(adapters.raw),
                 workflows=(
                     flows := WorkflowService(adapters.workflows, adapters.workflow_writes, taxonomy)

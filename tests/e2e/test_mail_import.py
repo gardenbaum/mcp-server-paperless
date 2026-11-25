@@ -220,7 +220,7 @@ async def test_a_mail_with_two_records_is_blocked_by_either(
     rows = box.records(rule, 2)
     assert {row["uid"] for row in rows} == {uid}
     shown = await record(client, rows[0])
-    assert f"until they are deleted too: {rows[1]['id']} " in str(shown["refetch"])
+    assert f"until they are deleted too: {rows[1]['id']}. " in str(shown["refetch"])
     box.unflag(uid, FLAGGED)
     box.forget(num(rows[0]["id"]))
     assert box.fetch() == 0
@@ -249,6 +249,43 @@ async def test_records_are_listed_in_the_order_asked_for(box: Mailbox, client: C
     assert await listed("-received") == ["New", "Old"]
 
 
+async def test_a_mail_without_attachments_is_imported_itself_again(
+    box: Mailbox, client: Connected
+) -> None:
+    """The mail is queued before its attachments are looked at: SUCCESS and "no consumption"."""
+    rule = box.rule("flag", consumption_scope=3)
+    uid = box.put("Alone")
+
+    assert box.fetch() == 1
+    rows = box.records(rule, 2)
+    assert {row["status"] for row in rows} == {"SUCCESS", "PROCESSED_WO_CONSUMPTION"}
+    assert FLAGGED in box.flags(uid)
+    [empty] = [row for row in rows if row["status"] == "PROCESSED_WO_CONSUMPTION"]
+    said = str((await record(client, empty))["refetch"])
+    assert "the mail itself and the files the rule takes from it are imported" in said
+    box.unflag(uid, FLAGGED)
+    box.forget(*(num(row["id"]) for row in rows))
+    assert box.fetch() == 1
+    _ = box.records(rule, 2)
+    assert FLAGGED in box.flags(uid)
+    assert len(box.documents("Alone")) == 2
+
+
+async def test_the_rule_acts_when_the_mail_is_imported_although_its_file_fails(
+    box: Mailbox, client: Connected
+) -> None:
+    """The mail itself and its attachments are queued apart, each with the action behind it."""
+    rule = box.rule("flag", consumption_scope=3)
+    uid = box.put("Half", {"broken.pdf": BROKEN})
+
+    assert box.fetch() == 2
+    [row, *_] = box.records(rule, count=None)
+    assert FLAGGED in box.flags(uid)
+    said = str((await record(client, row))["refetch"])
+    assert "as soon as the mail itself, or every one of the files, is consumed" in said
+    assert len(box.documents("Half")) == 1
+
+
 async def test_every_rule_has_a_record_of_its_own_and_skips_what_another_took_in_the_run(
     box: Mailbox,
 ) -> None:
@@ -262,6 +299,96 @@ async def test_every_rule_has_a_record_of_its_own_and_skips_what_another_took_in
     box.unflag(uid, FLAGGED)
     assert box.fetch() == 1
     assert len(box.records(second, 1)) == 1
+
+
+# --- why a mail was not imported
+
+
+@pytest.mark.decision("decision-90")
+async def test_an_import_that_did_not_happen_is_explained(box: Mailbox, client: Connected) -> None:
+    rule = box.rule(filter_attachment_filename_include="*.pdf")
+    _ = box.put("Excluded", {"a.txt": note()})
+    assert box.fetch() == 0
+    _ = box.records(rule, 1)
+
+    found = await call(
+        client,
+        "explain_mail_import",
+        account_id=box.account,
+        subject=f"{box.name} Excluded",
+        folder="inbox",
+        attachment_names=["a.txt"],
+        is_read=False,
+    )
+
+    [checked] = cast("list[Json]", found["rules"])
+    results = {c["what"]: c["result"] for c in cast("list[Json]", checked["checks"])}
+    assert (results["folder"], results["attachments"], results["mark"]) == ("ok", "no", "ok")
+    assert results["record"] == "unknown"
+    assert checked["result"] == "no"
+    [row] = cast("list[Json]", found["processed"])
+    assert row["status"] == "PROCESSED_WO_CONSUMPTION"
+    logs = "\n".join(cast("list[str]", found["logs"]))
+    assert "does not match pattern *.pdf" in logs
+    assert found["logs_from"]
+    assert "mail_fetch" in {t["task_type"] for t in cast("list[Json]", found["tasks"])}
+
+
+@pytest.mark.decision("decision-90")
+async def test_a_skipped_fetch_and_a_failed_login_are_in_the_explanation(
+    box: Mailbox, client: Connected
+) -> None:
+    _ = box.rule()
+    box.change_account(password="wr0ng-Passw0rd")
+    assert box.fetch() == 0
+    lock("add('paperless_mail_fetch_lock', 'e2e', timeout=300)")
+    try:
+        assert box.fetch() == 0
+    finally:
+        lock("delete('paperless_mail_fetch_lock')")
+
+    found = await call(client, "explain_mail_import", account_id=box.account, subject="x")
+
+    logs = "\n".join(cast("list[str]", found["logs"]))
+    assert "Mail account processing is already running; skipping this run." in logs
+    assert f"Error while authenticating account {box.name}: {ANSWER_NOT_SHOWN}" in logs
+    assert "AUTHENTICATIONFAILED" not in str(found)
+
+
+@pytest.mark.decision("decision-90")
+async def test_a_user_who_is_no_staff_is_told_what_is_not_known(box: Mailbox, stack: Stack) -> None:
+    settings = obj(parse(stack.admin.get("/api/ui_settings/")))
+    # A rule of somebody else, which the user does not see.
+    _ = box.rule(owner=num(obj(settings["user"])["id"]))
+    body = {
+        "username": f"{box.name}-user",
+        "password": "pw-e2e-imap-4711",
+        "user_permissions": ["view_mailaccount", "view_mailrule"],
+    }
+    user = num(obj(parse(stack.admin.post("/api/users/", json=body).raise_for_status()))["id"])
+    box.change_account(owner=user)
+    try:
+        with httpx2.Client(
+            base_url=stack.base_url,
+            auth=(f"{box.name}-user", "pw-e2e-imap-4711"),
+            headers={"Accept": f"application/json; version={API_VERSION}"},
+        ) as other:
+            token = str(parse(other.post("/api/profile/generate_auth_token/")))
+        server = create_server(
+            paperless_settings(stack.base_url, token), server_settings(toolsets=["core", "mail"])
+        )
+        async with Client(server) as limited:
+            found = await call(limited, "explain_mail_import", account_id=box.account)
+    finally:
+        box.change_account(owner=None)
+        _ = stack.admin.delete(f"/api/users/{user}/")
+
+    assert "You see no rule of this account" in str(found["message"])
+    assert "Rules of other users that you may not see" in str(found["message"])
+    gaps = cast("list[str]", found["not_checked"])
+    assert "whether a fetch was skipped is not known" in gaps
+    assert found["complete"] is False
+    assert found["logs"] == []
 
 
 # --- logins that fail
@@ -355,6 +482,54 @@ async def test_the_record_of_a_login_that_repeats_the_credentials_shows_none(
     )
     for result in (shown, listed, raw):
         assert SENT not in str(result)
+
+
+@pytest.mark.decision("decision-87")
+async def test_a_change_grant_sends_the_saved_password_anywhere_without_storing_anything(
+    box: Mailbox, stack: Stack
+) -> None:
+    """What the confirmation of set_permissions says: the account is only tested, not changed."""
+    name, password = f"{box.name}-user", "pw-e2e-imap-4711"
+    body = {
+        "username": name,
+        "password": password,
+        "user_permissions": ["view_mailaccount", "change_mailaccount"],
+    }
+    user = num(obj(parse(stack.admin.post("/api/users/", json=body).raise_for_status()))["id"])
+    box.change_account(
+        set_permissions={
+            "view": {"users": [user], "groups": []},
+            "change": {"users": [user], "groups": []},
+        }
+    )
+    heard: list[str] = []
+    try:
+        with (
+            echo_server("no", heard) as port,
+            httpx2.Client(
+                base_url=stack.base_url,
+                auth=(name, password),
+                headers={"Accept": f"application/json; version={API_VERSION}"},
+                timeout=60.0,
+            ) as grantee,
+        ):
+            body = {
+                "id": box.account,
+                "name": "x",
+                "imap_server": ECHO,
+                "imap_port": port,
+                "imap_security": 1,
+                "username": "me",
+                "password": "*",
+            }
+            tested = grantee.post("/api/mail_accounts/test/", json=body)
+    finally:
+        _ = stack.admin.delete(f"/api/users/{user}/")
+
+    assert tested.status_code == 400
+    assert any(PASSWORD in line for line in heard)
+    stored = obj(parse(stack.admin.get(f"/api/mail_accounts/{box.account}/")))
+    assert stored["imap_server"] == "imap"
 
 
 async def test_a_login_that_fails_when_the_rule_acts_shows_no_answer(
@@ -490,6 +665,102 @@ async def test_one_record_the_caller_may_not_delete_refuses_all(box: Mailbox, st
     assert (alone.status_code, read.status_code) == (200, 403)  # deleting needs no view permission
     assert box.records(free_rule, 0) == []
     assert len(results(stack.admin.get("/api/processed_mail/", params={"rule": owned_rule}))) == 1
+
+
+async def error(client: Connected, tool: str, **arguments: object) -> str:
+    result = await client.call_tool(tool, arguments, raise_on_error=False)
+    assert result.is_error
+    assert PASSWORD not in str(result)
+    return str(result.content)
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_failed_mail_is_taken_again_after_the_tool_deleted_its_record(
+    box: Mailbox, client: Connected
+) -> None:
+    """The whole way: failed, deleted after a confirmation, fetched again, and the rule deletes."""
+    rule = box.rule("delete")
+    _ = box.put("Again", {"good.txt": note(), "broken.pdf": BROKEN})
+    assert box.fetch() == 2
+    [failed] = box.records(rule, 1)
+    box.change_rule(rule, filter_attachment_filename_exclude="broken*")
+
+    preview = await call(client, "delete_processed_mail", mail_ids=[failed["id"]], dry_run=True)
+    asked = await error(client, "delete_processed_mail", mail_ids=[failed["id"]])
+    missing = await error(
+        client, "delete_processed_mail", mail_ids=[failed["id"], 999_999], confirm=True
+    )
+    assert box.records(rule, 1) == [failed]
+    done = await call(client, "delete_processed_mail", mail_ids=[failed["id"]], confirm=True)
+
+    for text in (str(preview["message"]), asked):
+        assert f"{failed['id']} '{box.name} Again'" in text
+        assert "takes the mail again" in text
+        assert "the rule then DELETES the mail on the mail server" in text
+    assert "No processed mail 999999 exists" in missing
+    assert [row["outcome"] for row in cast("list[Json]", done["mails"])] == ["deleted"]
+    assert box.records(rule, 0) == []
+    assert box.fetch() == 1
+    [taken] = box.records(rule, 1)
+    assert taken["status"] == "SUCCESS"
+    assert len(box.documents("Again")) == 2
+    assert box.uids() == []
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_record_of_a_pair_names_the_one_that_keeps_the_mail_out(
+    box: Mailbox, client: Connected
+) -> None:
+    rule = box.rule("flag", consumption_scope=3)
+    _ = box.put("Pair", {"a.txt": note()})
+    assert box.fetch() == 2
+    first, second = box.records(rule, 2)
+
+    one = await call(client, "delete_processed_mail", mail_ids=[first["id"]], dry_run=True)
+    both = await call(
+        client, "delete_processed_mail", mail_ids=[first["id"], second["id"]], confirm=True
+    )
+
+    assert f"kept out by the records {second['id']} with its uid" in str(one["message"])
+    assert both["message"] == "2 of 2 records were deleted."
+    assert box.records(rule, 0) == []
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_restricted_user_is_told_what_is_missing_and_deletes_unowned_records(
+    box: Mailbox, stack: Stack
+) -> None:
+    rule, ids = recorded(box, 1, owner=None)
+    name, password = f"{box.name}-user", "pw-e2e-imap-4711"
+    body = {
+        "username": name,
+        "password": password,
+        "user_permissions": ["view_processedmail", "view_uisettings"],
+    }
+    user = num(obj(parse(stack.admin.post("/api/users/", json=body).raise_for_status()))["id"])
+    try:
+        with httpx2.Client(
+            base_url=stack.base_url,
+            auth=(name, password),
+            headers={"Accept": f"application/json; version={API_VERSION}"},
+        ) as other:
+            token = str(parse(other.post("/api/profile/generate_auth_token/")))
+        server = create_server(
+            paperless_settings(stack.base_url, token), server_settings(toolsets=["core", "mail"])
+        )
+        async with Client(server) as limited:
+            lacking = await error(limited, "delete_processed_mail", mail_ids=ids, confirm=True)
+            rights = [*body["user_permissions"], "delete_processedmail"]
+            _ = stack.admin.patch(
+                f"/api/users/{user}/", json={"user_permissions": rights}
+            ).raise_for_status()
+            done = await call(limited, "delete_processed_mail", mail_ids=ids, confirm=True)
+    finally:
+        _ = stack.admin.delete(f"/api/users/{user}/")
+
+    assert "You lack the permission delete_processedmail. Nothing was deleted." in lacking
+    assert done["message"] == "1 of 1 record was deleted."
+    assert box.records(rule, 0) == []
 
 
 # --- the mail server itself (P4)

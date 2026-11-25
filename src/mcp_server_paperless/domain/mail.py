@@ -463,3 +463,127 @@ class ProcessedMailDetail(BaseModel):
     refetch: Annotated[
         str, Field(description="Whether and when the mail is fetched again without this record.")
     ]
+
+
+type RecordOutcome = Literal["would_delete", "deleted", "still_there", "unknown"]
+
+
+class DeletedRecord(BaseModel):
+    """A record of processed mail that was to be deleted."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    rule_id: int
+    subject: Annotated[str, Field(description="Cut to 60 characters.")]
+    status: str
+    outcome: Annotated[
+        RecordOutcome,
+        Field(description="unknown: what happened to it could not be read afterwards."),
+    ]
+
+
+class ProcessedMailDeletion(BaseModel):
+    """What became of records of processed mail, or what would."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    dry_run: bool
+    mails: tuple[DeletedRecord, ...]
+    message: Annotated[
+        str, Field(description="What was deleted; in a preview each mail and what follows.")
+    ]
+
+
+type CheckResult = Literal["ok", "no", "unknown"]
+
+
+class MailFacts(BaseModel):
+    """What the caller knows about a mail; null: not known."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    sender: str | None = None
+    recipient: str | None = None
+    subject: str | None = None
+    received: datetime | None = None
+    folder: str | None = None
+    attachment_names: tuple[str, ...] | None = None
+    is_read: bool | None = None
+    is_flagged: bool | None = None
+
+
+class MailCheck(BaseModel):
+    """One thing that decides whether a rule takes a mail."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    what: str
+    result: Annotated[
+        CheckResult, Field(description="no: it most likely keeps the mail out; never certain.")
+    ]
+    why: str
+
+
+class RuleChecks(BaseModel):
+    """What can be said of one rule and the mail."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    rule_id: int
+    name: str
+    result: Annotated[
+        CheckResult,
+        Field(description="no: a check says no; ok: nothing found against it, no more than that."),
+    ]
+    checks: tuple[MailCheck, ...]
+
+
+class ExplainedRecord(BaseModel):
+    """A record of processed mail with the subject of the mail."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    id: int
+    rule_id: int
+    status: Annotated[str, Field(description=STATUS_HELP)]
+    processed: datetime
+    error: Annotated[str | None, Field(description="One short line; get_processed_mail has all.")]
+
+
+class ExplainedTask(BaseModel):
+    """A mail fetch, or a file from a mail that could not be consumed."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    task_type: str
+    state: str
+    created: datetime
+    message: str | None
+
+
+class MailExplanation(BaseModel):
+    """Why a mail may not have been imported, from what Paperless has stored. No dry run."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    message: str
+    account: tuple[str, ...]
+    rules: tuple[RuleChecks, ...]
+    processed: tuple[ExplainedRecord, ...]
+    tasks: tuple[ExplainedTask, ...]
+    logs: Annotated[
+        tuple[str, ...], Field(description="Log lines about the account and its rules: data.")
+    ]
+    logs_from: Annotated[
+        tuple[str, ...],
+        Field(description="The oldest line of each log that was looked at, in Paperless time."),
+    ]
+    closest_way: Annotated[str, Field(description="How to see what a rule really does.")]
+    complete: Annotated[
+        bool, Field(description="False if something could not be read or is left out.")
+    ]
+    not_checked: Annotated[
+        tuple[str, ...],
+        Field(description="That, and what cannot be known at all."),
+    ]

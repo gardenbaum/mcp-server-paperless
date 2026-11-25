@@ -50,7 +50,7 @@ Limits.
 | `GET /api/correspondents/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/correspondents/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/correspondents/{id}/` |  | PLMCP-83 |
-| `GET /api/custom_fields/` | `bulk_edit_documents`, `create_workflow`, `delete_taxonomy_item`, `get_document`, `get_trash_entry` and 10 more |  |
+| `GET /api/custom_fields/` | `bulk_edit_documents`, `create_saved_view`, `create_workflow`, `delete_taxonomy_item`, `get_document` and 11 more |  |
 | `POST /api/custom_fields/` | `create_taxonomy_item` |  |
 | `DELETE /api/custom_fields/{id}/` | `delete_taxonomy_item` |  |
 | `GET /api/custom_fields/{id}/` | `update_taxonomy_item` |  |
@@ -104,25 +104,25 @@ Limits.
 | `PATCH /api/groups/{id}/` | `update_group` |  |
 | `PUT /api/groups/{id}/` |  | PLMCP-83 |
 | `GET /api/logs/` | `list_logs` |  |
-| `GET /api/logs/{id}/` | `explain_workflow`, `get_log` |  |
+| `GET /api/logs/{id}/` | `explain_mail_import`, `explain_workflow`, `get_log` |  |
 | `GET /api/mail_accounts/` | `list_mail_accounts` |  |
 | `POST /api/mail_accounts/` | `create_mail_account` |  |
 | `POST /api/mail_accounts/test/` | `test_mail_account` |  |
 | `DELETE /api/mail_accounts/{id}/` | `delete_mail_account` |  |
-| `GET /api/mail_accounts/{id}/` | `create_mail_rule`, `delete_mail_account`, `get_mail_account`, `process_mail_account`, `test_mail_account` and 2 more |  |
-| `PATCH /api/mail_accounts/{id}/` | `update_mail_account` |  |
+| `GET /api/mail_accounts/{id}/` | `create_mail_rule`, `delete_mail_account`, `delete_processed_mail`, `explain_mail_import`, `get_mail_account` and 5 more |  |
+| `PATCH /api/mail_accounts/{id}/` | `set_permissions`, `update_mail_account` |  |
 | `PUT /api/mail_accounts/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `POST /api/mail_accounts/{id}/process/` | `process_mail_account` |  |
-| `GET /api/mail_rules/` | `delete_mail_account`, `list_mail_rules` |  |
+| `GET /api/mail_rules/` | `delete_mail_account`, `explain_mail_import`, `list_mail_rules` |  |
 | `POST /api/mail_rules/` | `create_mail_rule` |  |
 | `DELETE /api/mail_rules/{id}/` | `delete_mail_rule` |  |
-| `GET /api/mail_rules/{id}/` | `delete_mail_rule`, `get_mail_rule`, `get_processed_mail`, `update_mail_rule` |  |
-| `PATCH /api/mail_rules/{id}/` | `update_mail_rule` |  |
+| `GET /api/mail_rules/{id}/` | `delete_mail_rule`, `delete_processed_mail`, `get_mail_rule`, `get_processed_mail`, `set_permissions` and 1 more |  |
+| `PATCH /api/mail_rules/{id}/` | `set_permissions`, `update_mail_rule` |  |
 | `PUT /api/mail_rules/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `GET /api/oauth/callback/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
-| `GET /api/processed_mail/` | `get_processed_mail`, `list_processed_mail` |  |
-| `POST /api/processed_mail/bulk_delete/` |  | PLMCP-81.3 |
-| `GET /api/processed_mail/{id}/` | `get_processed_mail` |  |
+| `GET /api/processed_mail/` | `delete_processed_mail`, `explain_mail_import`, `get_processed_mail`, `list_processed_mail` |  |
+| `POST /api/processed_mail/bulk_delete/` | `delete_processed_mail` |  |
+| `GET /api/processed_mail/{id}/` | `delete_processed_mail`, `get_processed_mail` |  |
 | `GET /api/profile/` |  | PLMCP-83 |
 | `PATCH /api/profile/` |  | PLMCP-83 |
 | `POST /api/profile/disconnect_social_account/` |  | PLMCP-83 |
@@ -137,7 +137,7 @@ Limits.
 | `DELETE /api/saved_views/{id}/` | `delete_saved_view` |  |
 | `GET /api/saved_views/{id}/` |  | PLMCP-88 |
 | `PATCH /api/saved_views/{id}/` | `update_saved_view` |  |
-| `PUT /api/saved_views/{id}/` |  | PLMCP-88 |
+| `PUT /api/saved_views/{id}/` |  | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-91 - Saved-views-display-settings-are-checked-here-grants-go-through-set_permissions-PUT-and-list-options-stay-out.md) |
 | `GET /api/search/` |  | PLMCP-83 |
 | `GET /api/search/autocomplete/` |  | PLMCP-83 |
 | `GET /api/share_link_bundles/` | `list_share_bundles` |  |
@@ -164,7 +164,7 @@ Limits.
 | `GET /api/tags/{id}/` | `update_taxonomy_item` |  |
 | `PATCH /api/tags/{id}/` | `set_permissions`, `update_taxonomy_item` |  |
 | `PUT /api/tags/{id}/` |  | PLMCP-83 |
-| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `explain_workflow`, `extract_pages` and 14 more |  |
+| `GET /api/tasks/` | `bulk_edit_documents`, `delete_pages`, `edit_pdf`, `explain_mail_import`, `explain_workflow` and 15 more |  |
 | `POST /api/tasks/acknowledge/` | `acknowledge_tasks` |  |
 | `GET /api/tasks/active/` |  | PLMCP-89 |
 | `POST /api/tasks/run/` | `run_task` |  |
@@ -174,7 +174,7 @@ Limits.
 | `POST /api/token/` |  | PLMCP-83 |
 | `GET /api/trash/` | `empty_trash`, `get_trash_entry`, `get_trashed_file`, `list_trash`, `restore_from_trash` and 3 more |  |
 | `POST /api/trash/` | `empty_trash`, `restore_from_trash` |  |
-| `GET /api/ui_settings/` | `delete_pages`, `delete_user`, `edit_pdf`, `email_documents`, `extract_pages` and 9 more |  |
+| `GET /api/ui_settings/` | `delete_pages`, `delete_processed_mail`, `delete_user`, `edit_pdf`, `email_documents` and 10 more |  |
 | `POST /api/ui_settings/` |  | PLMCP-88 |
 | `GET /api/users/` | `create_mail_rule`, `create_workflow`, `delete_user`, `get_document`, `get_user` and 10 more |  |
 | `POST /api/users/` | `create_user` |  |
@@ -253,14 +253,12 @@ TOML file.
 | `GET /api/groups/` | `query:name__iendswith`, `query:name__iexact`, `query:name__istartswith`, `query:ordering` | PLMCP-83 |
 | `POST /api/mail_accounts/` | `body:account_type`, `body:expiration`, `body:is_token`, `body:owner`, `body:set_permissions` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `POST /api/mail_accounts/test/` | `body:account_type`, `body:character_set`, `body:expiration`, `body:imap_port`, `body:imap_security`, `body:imap_server`, `body:is_token`, `body:name`, `body:owner`, `body:password`, `body:set_permissions`, `body:username` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
-| `PATCH /api/mail_accounts/{id}/` | `body:owner`, `body:set_permissions` | PLMCP-81.5 |
 | `PATCH /api/mail_accounts/{id}/` | `body:account_type`, `body:expiration`, `body:is_token` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `POST /api/mail_accounts/{id}/process/` | `body:account_type`, `body:expiration`, `body:owner`, `body:set_permissions` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
 | `POST /api/mail_rules/` | `body:set_permissions` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-79 - Token-accounts-keep-their-token-PUT-unsaved-tests-and-OAuth-creation-stay-out-of-the-mail-tools.md) |
-| `PATCH /api/mail_rules/{id}/` | `body:set_permissions` | PLMCP-81.5 |
-| `GET /api/saved_views/` | `query:full_perms`, `query:ordering` | PLMCP-88 |
-| `POST /api/saved_views/` | `body:display_fields`, `body:display_mode`, `body:icon`, `body:owner`, `body:set_permissions` | PLMCP-88 |
-| `PATCH /api/saved_views/{id}/` | `body:display_fields`, `body:display_mode`, `body:icon`, `body:owner`, `body:set_permissions` | PLMCP-88 |
+| `GET /api/saved_views/` | `query:full_perms`, `query:ordering` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-91 - Saved-views-display-settings-are-checked-here-grants-go-through-set_permissions-PUT-and-list-options-stay-out.md) |
+| `POST /api/saved_views/` | `body:owner`, `body:set_permissions` | excluded, "Alle wie empfohlen" (2026-11-24, backlog/decisions/decision-91 - Saved-views-display-settings-are-checked-here-grants-go-through-set_permissions-PUT-and-list-options-stay-out.md) |
+| `PATCH /api/saved_views/{id}/` | `body:owner`, `body:set_permissions` | PLMCP-88 |
 | `GET /api/share_link_bundles/` | `query:created__date__gt`, `query:created__date__gte`, `query:created__date__lt`, `query:created__date__lte`, `query:created__day`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:created__month`, `query:created__year`, `query:documents`, `query:expiration__date__gt`, `query:expiration__date__gte`, `query:expiration__date__lt`, `query:expiration__date__lte`, `query:expiration__day`, `query:expiration__gt`, `query:expiration__gte`, `query:expiration__lt`, `query:expiration__lte`, `query:expiration__month`, `query:expiration__year`, `query:ordering`, `query:status` | PLMCP-83 |
 | `POST /api/share_link_bundles/{id}/rebuild/` | `body:document_ids`, `body:expiration_days`, `body:file_version` | PLMCP-83 |
 | `GET /api/share_links/` | `query:created__date__gt`, `query:created__date__gte`, `query:created__date__lt`, `query:created__date__lte`, `query:created__day`, `query:created__gt`, `query:created__gte`, `query:created__lt`, `query:created__lte`, `query:created__month`, `query:created__year`, `query:expiration__date__gt`, `query:expiration__date__gte`, `query:expiration__date__lt`, `query:expiration__date__lte`, `query:expiration__day`, `query:expiration__gt`, `query:expiration__gte`, `query:expiration__lt`, `query:expiration__lte`, `query:expiration__month`, `query:expiration__year`, `query:ordering` | PLMCP-83 |
