@@ -22,6 +22,7 @@ decision-5 never guesses: an ambiguous name is an error that lists the matches. 
 - A pick answers exactly its question: kind, word and every match with its title and owner. Other matches are another question. If the name became unique while the user was asked and is not what they picked, the call fails.
 - A pick confirms nothing. The confirmation of decision-44 is asked for afterwards, for the picked object; `confirm=true` picks nothing. A pick asked for after an accepted confirmation takes that acceptance back. Under decision-53 a pick that is not made is no `NotConfirmed`.
 - On 2026-07-28 the picks and the error travel in the sealed state of decision-44, which any answer uses up.
+- Two options of a select field with one label are matches like two objects of one name, for a document's value and for an option to rename or remove; their title holds the label and the place in the list. `update_documents` collects what is wrong with its items: it asks, for the first question, only if every refused item is ambiguous.
 - Supplements decision-5 and decision-44; decision-53 is unchanged.
 <!-- SECTION:DECISION:END -->
 
@@ -33,7 +34,7 @@ decision-5 never guesses: an ambiguous name is an error that lists the matches. 
 - A POST that only reads counts as a write here; after one, nobody is asked.
 - The names may be up to the age of the cache old (300 seconds). An object that is gone then fails as with its id.
 - Naming an owner reads the list of users (cached like every list) before the dialog. If that fails, the id is shown.
-- An error without a question, such as one that lists the errors of several items, asks nothing.
+- An error without a question, such as a list of errors of which one is something else, asks nothing.
 <!-- SECTION:CONSEQUENCES:END -->
 
 ## Alternatives

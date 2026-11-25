@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T17:37:40Z'
-updated_date: '2026-11-25T18:13:59Z'
+updated_date: '2026-11-25T18:26:30Z'
 labels:
   - tools
 dependencies:
@@ -45,3 +45,9 @@ Second part of PLMCP-100 (design-plmcp-100.md, approved with all recommendations
 2. update_documents: the collected error carries the first question when every refused item is ambiguous.
 3. Tests at service, tool, stdio, E2E; red against the source of part 1.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Red first: the new tests were written before they ran, with the code; then run against the source of part 1 in an archive copy: 40 failed (service and tool), green with the code. Workflow actions store option values as given and resolve no label (unchanged, outside this task). upload_documents already asked with part 1, because the metadata is resolved once for the whole batch.
+<!-- SECTION:NOTES:END -->
