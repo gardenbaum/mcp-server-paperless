@@ -2,15 +2,15 @@
 # name: test_type_errors
   dict({
     "action 'email'": 'accepted',
-    "action 'shell'": "No workflow action type is called 'shell'. Hint: Use assignment (1), removal (2), email (3), webhook (4), move to trash (6) or remote OCR (7).",
-    'action 0': 'No workflow action type 0. Hint: Use assignment (1), removal (2), email (3), webhook (4), move to trash (6) or remote OCR (7).',
+    "action 'shell'": "No workflow action type is called 'shell'. Hint: Use assignment (1), removal (2), email (3), webhook (4), move to trash (6), remote OCR (7) or apply AI suggestions (8).",
+    'action 0': 'No workflow action type 0. Hint: Use assignment (1), removal (2), email (3), webhook (4), move to trash (6), remote OCR (7) or apply AI suggestions (8).',
     'action 5': "The workflow action type 'password removal' (5) cannot be written by this server: it holds passwords, which this server never shows and so could not keep. Hint: Set it up in the Paperless web UI.",
-    'action 8': "The workflow action type 'apply AI suggestions' (8) cannot be written by this server: it makes Paperless ask its AI backend about every matching document. Hint: Set it up in the Paperless web UI.",
-    'action 99': 'No workflow action type 99. Hint: Use assignment (1), removal (2), email (3), webhook (4), move to trash (6) or remote OCR (7).',
+    'action 8': 'accepted',
+    'action 99': 'No workflow action type 99. Hint: Use assignment (1), removal (2), email (3), webhook (4), move to trash (6), remote OCR (7) or apply AI suggestions (8).',
     "trigger 'added'": 'accepted',
-    "trigger 'hourly'": "No workflow trigger type is called 'hourly'. Hint: Use consumption (1), added (2), updated (3) or scheduled (4), or a label such as 'document added'.",
-    'trigger 0': "No workflow trigger type 0. Hint: Use consumption (1), added (2), updated (3) or scheduled (4), or a label such as 'document added'.",
-    'trigger 9': "No workflow trigger type 9. Hint: Use consumption (1), added (2), updated (3) or scheduled (4), or a label such as 'document added'.",
+    "trigger 'hourly'": "No workflow trigger type is called 'hourly'. Hint: Use consumption (1), added (2), updated (3), scheduled (4) or manual (5), or a label such as 'document added'.",
+    'trigger 0': "No workflow trigger type 0. Hint: Use consumption (1), added (2), updated (3), scheduled (4) or manual (5), or a label such as 'document added'.",
+    'trigger 9': "No workflow trigger type 9. Hint: Use consumption (1), added (2), updated (3), scheduled (4) or manual (5), or a label such as 'document added'.",
   })
 # ---
 # name: test_workflow_service_errors
@@ -37,7 +37,7 @@
     'create, title on trash': "'assign_title' belongs to assignment actions, not to move to trash actions. Hint: Leave it out, or change the action type.",
     'create, trash': "Nothing was changed. Confirming would create the workflow 'n', which is enabled and runs by itself on every document that matches its triggers (consumption started, filtered by filename) and will: move the matching documents to the trash. Hint: Describe the effect to the user and call the tool again with the same arguments and confirm=true only once they agree, or if they already asked for exactly this.",
     'create, unknown tag': "No tag is named 'nope'. Hint: Call list_taxonomy(kind='tag') to see the names.",
-    'create, unknown trigger': "No workflow trigger type 9. Hint: Use consumption (1), added (2), updated (3) or scheduled (4), or a label such as 'document added'.",
+    'create, unknown trigger': "No workflow trigger type 9. Hint: Use consumption (1), added (2), updated (3), scheduled (4) or manual (5), or a label such as 'document added'.",
     'create, webhook': "Nothing was changed. Confirming would create the workflow 'n', which is enabled and runs by itself on every document that matches its triggers (consumption started, filtered by filename) and will: send a POST request to 'https://h.example:8443' with the document, with credentials (not shown). Hint: Describe the effect to the user and call the tool again with the same arguments and confirm=true only once they agree, or if they already asked for exactly this.",
     'create, webhook without settings': 'A webhook action needs webhook settings. Hint: Pass webhook with a url.',
     'delete, empty': "Nothing was changed. Confirming would delete the workflow 'Hook' (id 3) for good: it stops running at once and its 0 triggers and 1 action are lost; no document is touched. Hint: Describe the effect to the user and call the tool again with the same arguments and confirm=true only once they agree, or if they already asked for exactly this.",
@@ -49,7 +49,7 @@
     'update Hook, nothing': 'Nothing to change: no setting was named. Hint: Name a new name, order, enabled, triggers or actions.',
     'update Hook, switch on': "Nothing was changed. Confirming would change the workflow 'Hook' (id 3), which is enabled and runs by itself on every document that matches its triggers (no trigger yet: it does nothing until one is added) and will: send a POST request to 'old.example'. Hint: Describe the effect to the user and call the tool again with the same arguments and confirm=true only once they agree, or if they already asked for exactly this.",
     'update Hook, taken name': "A workflow is already named 'Filing' (id 1). Hint: Choose another name, or update that workflow.",
-    'update Odd, new actions': "The workflow 'Odd' holds actions this server cannot write: password removal (id 3), apply AI suggestions (id 4), unknown type 9 (id 5). Replacing the actions would delete them. Hint: Change the other settings, or edit the actions in the Paperless web UI.",
+    'update Odd, new actions': "The workflow 'Odd' holds actions this server cannot write: password removal (id 3), unknown type 9 (id 5). Replacing the actions would delete them. Hint: Change the other settings, or edit the actions in the Paperless web UI.",
     'update, hidden header': "Header 'X-Token' is shown as '(hidden)' and has no stored value to keep. Hint: Send the real value, or the id of the action that holds the stored one.",
     'update, hidden header moved': "Header 'X-A' cannot keep its stored value: the URL now points to another scheme, host or port than the stored one. Hint: Send the real value of the header for the new URL.",
     'update, missing': "No workflow is named 'nope'. Hint: Call list_workflows to see the names.",

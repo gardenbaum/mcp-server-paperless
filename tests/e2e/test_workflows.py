@@ -8,11 +8,11 @@ import uuid
 from typing import TYPE_CHECKING, cast
 
 import pytest
-from contract.conftest import drop_orphaned_workflow_parts
+from contract.conftest import delete_and_empty_trash, drop_orphaned_workflow_parts
 from fastmcp import Client
 from harness import paperless_settings, server_settings
 
-from e2e.helpers import results
+from e2e.helpers import consume_text, results
 from e2e.test_bulk import make
 from e2e.test_bulk_items import user
 from mcp_server_paperless.server import create_server
@@ -224,30 +224,67 @@ async def test_an_unsupported_type_and_a_misplaced_setting_are_refused_with_an_e
     assert stored(stack, name) == []
 
 
-async def test_a_manual_trigger_is_read_and_kept_and_only_the_web_ui_writes_it(
+@pytest.mark.decision("decision-86")
+async def test_manual_triggers_and_ai_suggestions_are_written(
     client: Connected, stack: Stack
 ) -> None:
-    """A workflow with a manual trigger (type 5, run by hand from the web UI) is read and kept."""
     name = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
-    refusal = await refused(client, "create_workflow", name=name, triggers=[{"type": "manual"}])
-    assert "cannot be written by this server" in refusal
+    ai = {"type": "apply AI suggestions", "ai_suggestion_fields": ["title", "tags"]}
+    given: Json = {
+        "name": name,
+        "triggers": [{"type": "manual", "has_tags": ["e2e-finance"], "filename": "never-*"}],
+        "actions": [ai],
+    }
+
+    text = await refused(client, "create_workflow", **given)
     assert stored(stack, name) == []
-    made = stack.admin.post(
-        "/api/workflows/",
-        json={"name": name, "enabled": False, "triggers": [{"type": 5}], "actions": []},
+    made = await call(client, "create_workflow", **given, confirm=True)
+    [raw] = stored(stack, name)
+
+    assert "runs only when a user runs it by hand (manual, filtered by" in text
+    assert "ask the AI backend, at least once each, about the text of every document" in text
+    [trigger] = cast("list[Json]", raw["triggers"])
+    assert (trigger["type"], trigger["filter_filename"]) == (5, "never-*")
+    [action] = cast("list[Json]", raw["actions"])
+    assert action["ai_suggestion_fields"] == ["title", "tags"]
+    [shown] = cast("list[Json]", made["actions"])
+    assert shown["settings"] == {"ai_suggestion_fields": ["title", "tags"]}
+    off = await call(client, "update_workflow", workflow=name, enabled=False)
+    assert off["enabled"] is False
+    part: Json = {"workflow": name, "operation": "change", "action_id": action["id"]}
+    more = {"type": 8, "ai_create_missing": True}
+    _ = await call(client, "update_workflow_part", **part, action=more)
+    [raw] = stored(stack, name)
+    [action] = cast("list[Json]", raw["actions"])
+    assert (action["ai_suggestion_fields"], action["ai_create_missing"]) == (
+        ["title", "tags"],
+        True,
     )
-    _ = made.raise_for_status()
+    consumed = await refused(client, "update_workflow", workflow=name, triggers=[NEVER])
+    assert "AI suggestions" in consumed
 
-    shown = await call(client, "get_workflow", workflow=name)
-    replaced = await refused(client, "update_workflow", workflow=name, triggers=[NEVER])
-    renamed = await call(client, "update_workflow", workflow=name, order=7)
 
-    assert [(t["type"], t["type_name"]) for t in cast("list[Json]", shown["triggers"])] == [
-        (5, "manual")
-    ]
-    assert "holds triggers this server cannot write" in replaced
-    assert renamed["order"] == 7
-    assert [t["type"] for t in cast("list[Json]", renamed["triggers"])] == [5]
+@pytest.mark.decision("decision-86")
+async def test_a_manual_trigger_written_here_is_run(client: Connected, stack: Stack) -> None:
+    name = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
+    title = f"{SCRATCH}{uuid.uuid4().hex[:8]}"
+    _ = await call(
+        client,
+        "create_workflow",
+        name=name,
+        triggers=[{"type": "manual"}],
+        actions=[{"type": "assignment", "assign_title": f"{title} ran"}],
+    )
+    document = consume_text(stack.admin, title)
+    try:
+        arguments: Json = {"workflow": name, "document_ids": [document], "confirm": True}
+        done = await call(client, "run_workflow", **arguments)
+        row = cast("Json", stack.admin.get(f"/api/documents/{document}/").json())
+    finally:
+        delete_and_empty_trash(stack, [document])
+
+    assert done["started"] is True
+    assert row["title"] == f"{title} ran"
 
 
 @pytest.mark.decision("decision-81")

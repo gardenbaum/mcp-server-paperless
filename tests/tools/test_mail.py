@@ -9,6 +9,7 @@ import logging
 from typing import cast
 
 import pytest
+from confirmation import YES, answering
 from fakes.mail import FakeMailAccount, FakeMailRule, FakeProcessedMail
 from fakes.paperless import FakePaperless, FakeState, seeded
 from fastmcp import Client
@@ -557,3 +558,36 @@ async def test_a_user_without_the_mail_permissions_gets_a_permission_error() -> 
     text = await refusal(source, "list_mail_accounts")
 
     assert "may not perform this action" in text
+
+
+@pytest.mark.decision("decision-83")
+@pytest.mark.parametrize("confirm", [False, True])
+async def test_no_dialog_asks_for_a_deletion_that_is_too_long_to_show(*, confirm: bool) -> None:
+    source = fake(writes=False)
+    account = with_account(source.state)
+    for number in range(1, 101):
+        rule = with_rule(
+            source.state,
+            account,
+            name=f"{number:0>60}",
+            action="move",
+            action_parameter=f"{number:0>254}",
+            consumption_scope="eml_and_attachments",
+            enabled=False,
+        )
+        source.state.processed_mail.append(
+            FakeProcessedMail(id=number, rule=rule, subject="s" * 60, status="FAILED")
+        )
+
+    seen: list[str] = []
+    arguments = {"mail_ids": list(range(1, 101)), "confirm": confirm}
+    async with Client(
+        server(source), elicitation_handler=answering("accept", YES, seen=seen)
+    ) as client:
+        result = await client.call_tool("delete_processed_mail", arguments, raise_on_error=False)
+
+    assert result.is_error
+    assert seen == []
+    assert "longer than what can be shown" in str(result.content)
+    assert "Nothing was deleted" in str(result.content)
+    assert len(source.state.processed_mail) == 100

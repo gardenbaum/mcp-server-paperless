@@ -18,13 +18,16 @@ from datetime import UTC
 from typing import TYPE_CHECKING, Final
 
 from mcp_server_paperless.domain.errors import (
+    CONFIRM_HINT,
     DESTINATION_LIMIT,
+    MAX_CONFIRMATION,
     ConfirmationRequired,
     NotFound,
     PaperlessMcpError,
     PermissionDenied,
     Validation,
     both_ends,
+    confirmation_length,
     quoted,
 )
 from mcp_server_paperless.domain.mail import (
@@ -247,6 +250,17 @@ class _Plan:
         )
 
     @property
+    def too_long(self) -> str:
+        """Why this cannot be confirmed, with the sizes; or nothing."""
+        length = confirmation_length(self.effect, CONFIRM_HINT)
+        if length <= MAX_CONFIRMATION:
+            return ""
+        return (
+            f"the confirmation would be longer than what can be shown: {length} characters (at "
+            f"most {MAX_CONFIRMATION}) for {plural(len(self.mails), 'record')}"
+        )
+
+    @property
     def scope(self) -> object:
         """What the confirmation is for, in the order of the call."""
         return (self.mails, self.rules, self.mailboxes, self.staying, self.bounded)
@@ -353,7 +367,8 @@ class ProcessedMailService:
         Raises:
             ConfirmationRequired: ``confirm`` is false and the user did not accept exactly this.
                 Nothing was changed.
-            Validation: No ids, too many, or one is listed twice.
+            Validation: No ids, too many, or one is listed twice, or the confirmation would
+                be longer than ``MAX_CONFIRMATION``; nothing was deleted.
             NotFound: A record does not exist or is hidden; every one is named.
             PermissionDenied: The user may not view or delete the records; nothing was deleted.
             PaperlessMcpError: The records could not be read in time; nothing was deleted.
@@ -367,7 +382,15 @@ class ProcessedMailService:
             raise
         if dry_run:
             said = f"{DRY_RUN} Confirming would {plan.effect}. {TO_GO_AHEAD}"
+            if plan.too_long:
+                said = (
+                    f"{DRY_RUN} This call would be refused: {plan.too_long}. {FEWER} "
+                    f"Confirmed, it would {plan.effect}."
+                )
             return _report(plan.mails, {}, said, dry_run=True)
+        if plan.too_long:
+            message = f"{plan.too_long[0].upper()}{plan.too_long[1:]}. {NOTHING}"
+            raise Validation(message, hint=FEWER)
         if not confirm:
             ConfirmationRequired.require(plan.effect, scope=plan.scope)
         failure = ""

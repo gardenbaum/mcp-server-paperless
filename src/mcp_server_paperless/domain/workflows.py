@@ -8,7 +8,7 @@ knows what the settings mean (and turns names into ids).
 """
 
 from collections.abc import Mapping
-from typing import Annotated, ClassVar, Final, Literal, NamedTuple
+from typing import Annotated, ClassVar, Final, Literal, NamedTuple, cast, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -53,11 +53,9 @@ MATCHING_ALGORITHMS: Final[Mapping[int, str]] = {
 SCHEDULE_DATE_FIELDS: Final = ("added", "created", "modified", "custom_field")
 
 # The types a tool may write. Password removal stores passwords this server must never echo, so it
-# could neither show nor keep them; applying AI suggestions makes Paperless query its AI backend
-# for every document that matches. A workflow with a manual trigger is run with run_workflow, but
-# the trigger is made in the web UI. All three stay with the Paperless web UI.
-WRITABLE_TRIGGER_TYPES: Final = frozenset({1, 2, 3, 4})
-WRITABLE_ACTION_TYPES: Final = frozenset({1, 2, 3, 4, 6, 7})
+# could neither show nor keep them: it stays with the Paperless web UI (decision-86).
+WRITABLE_TRIGGER_TYPES: Final = frozenset({1, 2, 3, 4, 5})
+WRITABLE_ACTION_TYPES: Final = frozenset({1, 2, 3, 4, 6, 7, 8})
 
 # The trigger types by the short names tools use.
 type TriggerTypeName = Literal["consumption", "added", "updated", "scheduled", "manual"]
@@ -72,6 +70,12 @@ type UsedKind = Literal[
     "group",
     "mail_rule",
 ]
+# What applying AI suggestions can fill in (WorkflowAction.AISuggestionField).
+type AiField = Literal["title", "tags", "correspondent", "document_type", "storage_path", "created"]
+AI_FIELDS: Final = cast(
+    "tuple[str, ...]",
+    get_args(AiField.__value__),  # pyright: ignore[reportAny] -- a type alias has no typed value
+)
 type PartKind = Literal["triggers", "actions"]
 type FieldShape = Literal["one", "list", "text", "flag", "number", "json"]
 
@@ -156,6 +160,11 @@ ACTION_FIELDS: Final[Mapping[int, Mapping[str, Field_]]] = {
     },
     3: {"email": Field_("email", "json")},
     4: {"webhook": Field_("webhook", "json")},
+    8: {
+        "ai_suggestion_fields": Field_("ai_suggestion_fields", "list"),
+        "ai_create_missing": Field_("ai_create_missing", "flag"),
+        "ai_overwrite_existing": Field_("ai_overwrite_existing", "flag"),
+    },
 }
 
 
@@ -242,8 +251,8 @@ class TriggerInput(BaseModel):
         Field(
             description=(
                 "The trigger type: 'consumption' (1, before a document is consumed; has "
-                "sources, path, filename, mailrule), 'added' (2), 'updated' (3) or "
-                "'scheduled' (4; has the schedule_ settings)."
+                "sources, path, filename, mailrule), 'added' (2), 'updated' (3), 'scheduled' (4; "
+                "has the schedule_ settings) or 'manual' (5, run with run_workflow)."
             )
         ),
     ]
@@ -261,7 +270,8 @@ class TriggerInput(BaseModel):
         str | None, Field(description="Consumption only: file path filter, * is a wildcard.")
     ] = None
     filename: Annotated[
-        str | None, Field(description="Consumption only: file name filter, e.g. *invoice*.pdf.")
+        str | None,
+        Field(description="Consumption and manual only: file name filter, e.g. *invoice*.pdf."),
     ] = None
     mailrule: Annotated[
         int | None,
@@ -400,8 +410,8 @@ class ActionInput(BaseModel):
         Field(
             description=(
                 "The action type: 'assignment' (1), 'removal' (2), 'email' (3), 'webhook' (4), "
-                "'move to trash' (6) or 'remote OCR' (7, consumption triggers only). Settings of "
-                "another type than this one are an error."
+                "'move to trash' (6), 'remote OCR' (7, consumption triggers only) or 'apply AI "
+                "suggestions' (8, not consumption). Settings of another type are an error."
             )
         ),
     ]
@@ -480,6 +490,17 @@ class ActionInput(BaseModel):
     )
     webhook: Annotated[
         WebhookSettings | None, Field(description="For type webhook: what to send.")
+    ] = None
+    ai_suggestion_fields: Annotated[
+        list[AiField] | None,
+        Field(min_length=1, description="For type apply AI suggestions: the fields to apply."),
+    ] = None
+    ai_create_missing: Annotated[
+        bool | None,
+        Field(description="Create suggested tags, correspondents and types that do not exist."),
+    ] = None
+    ai_overwrite_existing: Annotated[
+        bool | None, Field(description="Apply suggestions over existing values too.")
     ] = None
 
 
