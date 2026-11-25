@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T14:42:17Z'
-updated_date: '2026-11-25T16:19:53Z'
+updated_date: '2026-11-25T17:48:55Z'
 labels: []
 dependencies:
   - PLMCP-83.1
@@ -22,18 +22,18 @@ Second part of PLMCP-83: the next archive serial number, word suggestions, tryin
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 get_instance_overview shows the next archive serial number, null if refused
-- [ ] #2 suggest_words returns words of the search index that begin with a term, of documents the user sees
-- [ ] #3 test_storage_path returns the file path Paperless would use for a document, or says that the template cannot be rendered
-- [ ] #4 read_documents(counts=true) counts the selected documents by tag, correspondent, type, storage path and custom field; only visible objects are named, the rest is a number
-- [ ] #5 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E over stdio and HTTP
+- [x] #1 get_instance_overview shows the next archive serial number, null if refused
+- [x] #2 suggest_words returns words of the search index that begin with a term, of documents the user sees
+- [x] #3 test_storage_path returns the file path Paperless would use for a document, or says that the template cannot be rendered
+- [x] #4 read_documents(counts=true) counts the selected documents by tag, correspondent, type, storage path and custom field; only visible objects are named, the rest is a number
+- [x] #5 Contract tests on the fake and Paperless 3.5.1, tool tests and E2E over stdio and HTTP
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
 - [ ] #1 Tests written first (red, then green) at every test level the change touches
 - [ ] #2 just check passes locally and all required CI checks are green on the PR
-- [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
+- [x] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
 
@@ -51,4 +51,8 @@ Red first at adapter (10), contract (14), service (import errors), tool (12), th
 Owner, 2026-11-26, asked whether the disclosure of suggest_words (words of hidden correspondent, type and tag names of visible documents, the same words Paperless autocomplete gives) is accepted with the note in the tool description and decision-100: "Alles wie von dir empfohlen." (everything as recommended by you; the recommendation was to accept).
 
 Independent review, closed test first: M1 the rendered path was read unbounded (now PaperlessClient.post_json, 64 KiB, uncompressed, stopped while it arrives; proven with a mock transport that never ends). L2 no row is read once the counts took the 40 s (left, notice). L6 the schema guard exempts only the empty body. L7 a path that is only a dot is a 500 in 3.5.1, told in a note, the fake too. decision-100: size, that Paperless still renders, soft-deleted custom field values.
+
+The owner was asked to accept three points: the field name `next_asn` (instead of `next_archive_serial_number`), that `test_storage_path` refuses documents that refer to anything the caller may not see, and that the update check counts an unset PAPERLESS_ENABLE_UPDATE_CHECK ("default") as allowed. The owner decided on 2026-11-26: "Bitte alles wie von dir empfohlen." (please everything as recommended by you); the recommendation was to accept all three.
+
+Criteria proven: full hosted E2E 45661300031 on 21cdf55c, all ten jobs green (contract tests on Paperless 3.5.1 and E2E of parts b, c and d, which that head contains). Definition of Done: tests first is left open for single tests written with or after their code (guard test, mutant kills); just check was not run as a whole locally; merge open.
 <!-- SECTION:NOTES:END -->

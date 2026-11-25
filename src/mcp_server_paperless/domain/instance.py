@@ -193,6 +193,26 @@ class StatusReport(_Frozen):
     tasks: TaskTotals
 
 
+# Why the newest release is not known.
+SWITCHED_OFF: Final = "unknown: switched off (PAPERLESS_ENABLE_UPDATE_CHECK)"
+NOT_READ: Final = "unknown: whether the check is switched on could not be read; GitHub is not asked"
+NO_ANSWER: Final = "unknown: GitHub did not answer Paperless"
+TOO_SLOW: Final = "unknown: the check took too long"
+
+
+class UpdateCheck(_Frozen):
+    """The newest release of Paperless, as Paperless learns it from GitHub; null: unknown."""
+
+    newest_release: str | None
+    update_available: bool | None
+    note: str | None
+
+    @classmethod
+    def unknown(cls, note: str) -> UpdateCheck:
+        """The newest release is not known, and why."""
+        return cls(newest_release=None, update_available=None, note=note)
+
+
 class SystemReport(_Frozen):
     """All that Paperless's statistics and system status tell this user."""
 
@@ -200,6 +220,7 @@ class SystemReport(_Frozen):
     status: Annotated[
         StatusReport | None, Field(description="Null if the user may not view the system status.")
     ]
+    update: Annotated[UpdateCheck | None, Field(description="Null: not asked for.")] = None
 
 
 class OffToolset(_Frozen):

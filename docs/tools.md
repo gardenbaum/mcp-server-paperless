@@ -2,7 +2,7 @@
 
 <!-- Generated from the tool surface by `just docs-tools`. Do not edit by hand. -->
 
-110 tools in 14 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
+111 tools in 14 toolsets, and 4 prompts. The toolsets `core` and `ai` are offered by
 default; the others are switched on with
 [`PAPERLESS_MCP_TOOLSETS`](configuration.md#toolsets), which also says what each toolset is for.
 
@@ -115,6 +115,7 @@ it would do. **dry run** marks a tool that can preview its effect first.
 | Tool | Kind | What it does |
 |---|---|---|
 | `set_permissions` | destructive, confirm | Share documents, taxonomy objects, saved views, mail accounts or rules, or hand them over. |
+| `get_permissions` | read | Show who owns objects and which users and groups may view or change them; nothing changes. |
 | `list_users` | read | List Paperless users as compact rows: id, username, name, active, superuser, group ids. |
 | `list_groups` | read | List Paperless user groups as compact rows: id and name. |
 

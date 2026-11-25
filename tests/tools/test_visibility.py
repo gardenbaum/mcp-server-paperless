@@ -193,6 +193,7 @@ async def test_read_only_mode_offers_only_tools_with_the_read_only_hint() -> Non
             "get_trashed_file",
             "list_users",
             "list_groups",
+            "get_permissions",
         }
         | READ_SHARING
         | READ_MAIL
@@ -334,7 +335,7 @@ READS = {
     "trash": {"list_trash", "get_trash_entry", "get_trashed_file"},
     "pdf": READ_PDF,
     "sharing": READ_SHARING,
-    "permissions": {"list_users", "list_groups"},
+    "permissions": {"get_permissions", "list_users", "list_groups"},
     "mail": READ_MAIL,
     "raw": RAW,
     "workflows": READ_WORKFLOWS,

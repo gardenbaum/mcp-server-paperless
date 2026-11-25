@@ -211,6 +211,7 @@ TOOL_TOOLSETS: Final[Mapping[str, str]] = {
     "delete_share_bundle": "sharing",
     "email_documents": "sharing",
     "set_permissions": "permissions",
+    "get_permissions": "permissions",
     "list_users": "permissions",
     "list_groups": "permissions",
     "list_mail_accounts": "mail",
@@ -877,6 +878,12 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=False,
         open_world_hint=False,
     ),
+    "get_permissions": ToolAnnotations(
+        title="Get permissions",
+        read_only_hint=True,
+        idempotent_hint=True,
+        open_world_hint=False,
+    ),
     "list_users": ToolAnnotations(
         title="List users",
         read_only_hint=True,
@@ -984,11 +991,12 @@ ANNOTATIONS: Final[Mapping[str, ToolAnnotations]] = {
         idempotent_hint=True,
         open_world_hint=False,
     ),
+    # On request Paperless asks GitHub for its newest release.
     "get_system_report": ToolAnnotations(
         title="Get system report",
         read_only_hint=True,
         idempotent_hint=True,
-        open_world_hint=False,
+        open_world_hint=True,
     ),
     "acknowledge_tasks": ToolAnnotations(
         title="Acknowledge tasks",

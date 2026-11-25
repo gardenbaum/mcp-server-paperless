@@ -16,6 +16,8 @@ Probed on Paperless 3.5.1 (CI run 45638730209, job 139291151398 "e2e (1/6)", a t
 - **selection_data** answers every object of the instance, also those the user may not see, with 0 or a count. It needs only the right to view documents. A document that does not exist or is named twice is a 400, a hidden one a 403. A value taken off a document is not counted.
 - **autocomplete** folds case and accents on both sides; `limit=0` is a 400, `limit=abc` a server error, a term with a space finds nothing. Words come from documents the user sees.
 - **storage_paths/test** needs only the right to view documents. Undefined variables, a syntax error, an unsafe path, an attribute of nothing and a long loop all give null, which comes as an empty body. An empty result is an empty text. A leading slash is cut. The old style `{title}` is not converted. A hidden document and one that does not exist look the same (400).
+
+The owner was asked to accept three points: the field name `next_asn` (instead of `next_archive_serial_number`), that `test_storage_path` refuses documents that refer to anything the caller may not see, and that the update check counts an unset PAPERLESS_ENABLE_UPDATE_CHECK ("default") as allowed. The owner decided on 2026-11-26: "Bitte alles wie von dir empfohlen." (please everything as recommended by you); the recommendation was to accept all three.
 <!-- SECTION:CONTEXT:END -->
 
 ## Decision

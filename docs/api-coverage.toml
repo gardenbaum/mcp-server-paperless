@@ -23,13 +23,6 @@
 #                 (an excluded value of a field that is sent also needs a `reason`)
 # [[undeclared]]  query parameters the generated schema omits (listed by hand)
 
-[[open]]
-task = "PLMCP-83"
-operations = [
-  "GET /api/remote_version/",
-  "POST /api/users/{id}/deactivate_totp/",
-]
-
 [[undeclared]]
 operation = "GET /api/documents/{id}/"
 params = ["version"]

@@ -256,6 +256,10 @@ WRONG_RESPONSE_SCHEMAS: Mapping[tuple[str, str, int], str] = {
         "3.5.1 nests index, classifier and sanity check under `tasks` and sends null errors; "
         "the schema has them top-level and non-nullable (PLMCP-7)"
     ),
+    ("POST", "/api/users/{id}/deactivate_totp/", 404): (
+        "a user without one is answered with HttpResponseNotFound('TOTP not found'), text/html "
+        "(PLMCP-83.4)"
+    ),
     ("GET", "/api/status/", 403): (
         "SystemStatusView answers HttpResponseForbidden('Insufficient permissions'), text/html "
         "(PLMCP-7)"

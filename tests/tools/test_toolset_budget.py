@@ -69,8 +69,9 @@ INSTRUCTIONS_LIMIT = 1474
 # the toolset tasks (PLMCP-89.1), 20 of get_task_overview (PLMCP-89.2) and 20 of get_system_report
 # (PLMCP-89.3), the 89 of PLMCP-89 (3069 to 3158) in the same steps. And
 # 17 of the mark and the suffix of core:read (PLMCP-90, 3158 to 3175), also one of them. And 16 of
-# suggest_words and 20 of test_storage_path (PLMCP-83.2), of the 54 of PLMCP-83 in the same steps.
-OVERVIEW_GUIDE_LIMIT = 3211
+# suggest_words, 20 of test_storage_path (PLMCP-83.2) and 18 of get_permissions (PLMCP-83.4), the
+# 54 of PLMCP-83 in the same steps.
+OVERVIEW_GUIDE_LIMIT = 3229
 # Measured 879: 747 before, plus 132 of too_old (PLMCP-101); the rise from 750 was approved by the
 # owner on 2026-11-24. And 131 of next_asn (PLMCP-83.2): measured 1010, what the owner approved on
 # 2026-11-24.

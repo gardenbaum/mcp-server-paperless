@@ -13,7 +13,7 @@ from harness import Recorded, serve
 from contract.conftest import SCRATCH_TAG
 from mcp_server_paperless.domain.documents import DocumentPatch
 from mcp_server_paperless.domain.errors import Validation
-from mcp_server_paperless.domain.instance import MINIMUM
+from mcp_server_paperless.domain.instance import MINIMUM, NOT_READ, SWITCHED_OFF, UpdateCheck
 
 if TYPE_CHECKING:
     from contract.conftest import Backend, Ports
@@ -258,3 +258,13 @@ async def test_the_report_follows_the_rights_of_the_user(backend: Backend) -> No
     assert restricted.status is None
     assert restricted.statistics.documents < everything.statistics.documents
     assert seen.statistics.documents < everything.statistics.documents
+
+
+@pytest.mark.contract("SystemReportReader.check_for_update")
+@pytest.mark.decision("decision-105")
+async def test_a_check_that_is_switched_off_asks_nobody(backend: Backend) -> None:
+    # PAPERLESS_ENABLE_UPDATE_CHECK is off in the stack, so no test needs GitHub.
+    for ports in (backend.admin, backend.blind):
+        assert await ports.reports.check_for_update() == UpdateCheck.unknown(SWITCHED_OFF)
+    hidden = backend.restricted(frozenset({"view_document"}))
+    assert await hidden.reports.check_for_update() == UpdateCheck.unknown(NOT_READ)
