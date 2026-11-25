@@ -28,7 +28,7 @@ On 2026-11-24 the owner approved the design with its recommended options: "Alle 
 
 <!-- SECTION:CONSEQUENCES:BEGIN -->
 - An assistant can build a workflow that asks the AI backend once per matching document; the user is told before it is enabled.
-- Paperless accepts AI suggestions without a configured backend (decision-81, P5); they then do nothing, which nothing here tells.
+- Paperless accepts AI suggestions without a configured backend (decision-81, P5); they then do nothing. The server does not say so when the action is written: whether AI is on is only in the UI settings, which need a right of their own, and the workflow tools do not read them; `get_instance_overview` shows it (`ai_enabled`).
 - Paperless checks a workflow's AI action against its triggers at every update, also of its name.
 <!-- SECTION:CONSEQUENCES:END -->
 
