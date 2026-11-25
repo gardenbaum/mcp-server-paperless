@@ -667,3 +667,18 @@ async def test_an_enabled_workflow_says_what_else_is_lost_and_credentials_once()
         "lose for good what is stored hidden: of the webhook action 7 the value of 'A'," in message
     )
     assert message.count("credentials") == 1
+
+
+@pytest.mark.decision("decision-82")
+async def test_an_acceptance_does_not_cover_other_hidden_values() -> None:
+    found: list[str] = []
+    for value in ("one", "two"):
+        hook = {"url": "https://h.example/x", "headers": {"A": value}}
+        service, _ = seeding(
+            WorkflowAction.model_validate({"id": 7, "type": 4, "settings": {"webhook": hook}})
+        )
+        with pytest.raises(ConfirmationRequired) as raised:
+            _ = await write(service)
+        found.append(raised.value.fingerprint)
+
+    assert found[0] != found[1]

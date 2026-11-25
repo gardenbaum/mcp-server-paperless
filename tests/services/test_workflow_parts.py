@@ -342,9 +342,9 @@ async def test_values_of_custom_fields_join_the_fields_the_action_assigns() -> N
         "assign_custom_fields_values": {"1": "x"},
         "assign_custom_fields": [2, 1],
     }
-    both = change.model_copy(update={"assign_custom_fields": ["e2e-url"]})
+    both = change.model_copy(update={"assign_custom_fields": [3]})
     _ = await setup.do(operation="change", action_id=11, action=both)
-    assert 2 in cast("list[int]", setup.now.actions[0].settings["assign_custom_fields"])
+    assert setup.now.actions[0].settings["assign_custom_fields"] == [3, 1]
 
 
 async def test_an_action_is_moved_also_one_this_server_cannot_write() -> None:
@@ -705,7 +705,7 @@ async def test_a_changed_webhook_of_an_enabled_workflow_says_what_becomes_of_cre
     hook = WebhookSettings(url="https://new:planted@h.example/x", headers={"X-Token": HIDDEN})
 
     message = await setup.asked(
-        **CHANGE, action_id=14, position=1, action=ActionInput(type=4, webhook=hook)
+        **CHANGE, action_id=14, position=2, action=ActionInput(type=4, webhook=hook)
     )
 
     assert "with credentials (not shown), and replace the credentials of the stored URL" in message
@@ -742,6 +742,42 @@ async def test_a_changed_url_that_another_workflow_stores_with_credentials_is_no
     info = await setup.do(**CHANGE, action_id=14, action=shown)
 
     assert "without the credentials that another workflow stores" in str(info.note)
+
+
+async def test_a_new_header_value_loses_the_stored_one() -> None:
+    setup = Setup(writes=False)
+    _ = setup.seed([trigger(2)], [CALLS])
+    hook = WebhookSettings(url="https://h.example/x", headers={"X-Token": "other"})
+
+    message = await setup.asked(**CHANGE, action_id=14, action=ActionInput(type=4, webhook=hook))
+
+    assert message.endswith("of the webhook action 14 the value of 'X-Token'.")
+
+
+@pytest.mark.parametrize(
+    ("edit", "said"),
+    [
+        ({"action_id": 13, "clear": ("email",)}, "'email' cannot be cleared"),
+        ({"action_id": 14, "clear": ("webhook",)}, "'webhook' cannot be cleared"),
+        ({"action_id": 15, "clear": ("assign_title",)}, "'password removal' is not written"),
+        ({"trigger_id": 4, "clear": ("filename",)}, "'manual' is not written"),
+    ],
+)
+async def test_the_refusal_of_a_change_says_why(edit: dict[str, object], said: str) -> None:
+    setup = Setup(writes=False)
+    _ = setup.seed()
+
+    with pytest.raises(Validation, match=said):
+        _ = await setup.do(**CHANGE, confirm=True, **edit)
+
+
+async def test_a_stored_match_that_restricts_nothing_does_not_stop_another_change() -> None:
+    setup = Setup()
+    _ = setup.seed([trigger(2, match="old")], [])
+
+    _ = await setup.do(**CHANGE, trigger_id=2, trigger=TriggerInput(type=2, has_tags=[1]))
+
+    assert setup.now.triggers[0].settings["filter_has_tags"] == [1]
 
 
 async def test_a_header_value_is_not_carried_to_another_host() -> None:
@@ -948,22 +984,30 @@ NEW = st.sampled_from(
 )
 
 
-@given(data=st.data(), actions=PARTS, new=NEW)
-async def test_no_operation_touches_or_sends_another_action(
-    data: st.DataObject, actions: list[WorkflowAction], new: ActionInput
+@given(
+    actions=PARTS,
+    new=NEW,
+    operation=st.sampled_from(["add", "move", "remove"]),
+    which=st.integers(0, 7),
+    place=st.integers(0, 8),
+    enabled=st.booleans(),
+)
+async def test_no_operation_touches_or_sends_another_action(  # noqa: PLR0913, PLR0917 -- one per choice
+    actions: list[WorkflowAction],
+    new: ActionInput,
+    operation: str,
+    which: int,
+    place: int,
+    enabled: bool,  # noqa: FBT001 -- hypothesis gives it by name
 ) -> None:
     setup = Setup()
-    before = setup.seed(actions=actions, enabled=data.draw(st.booleans()))
-    operation = data.draw(st.sampled_from(["add", "move", "remove"]))
-    chosen = data.draw(st.sampled_from(actions))
+    before = setup.seed(actions=actions, enabled=enabled)
+    chosen = actions[which % len(actions)]
+    edit: dict[str, object] = {"operation": "remove", "action_id": chosen.id}
     if operation == "add":
-        edit: dict[str, object] = {"operation": "add", "action": new}
-        edit["position"] = data.draw(st.integers(1, len(actions) + 1))
+        edit = {"operation": "add", "action": new, "position": place % (len(actions) + 1) + 1}
     elif operation == "move":
-        edit = {"operation": "change", "action_id": chosen.id}
-        edit["position"] = data.draw(st.integers(1, len(actions)))
-    else:
-        edit = {"operation": "remove", "action_id": chosen.id}
+        edit |= {"operation": "change", "position": place % len(actions) + 1}
 
     info = await setup.do(confirm=True, **edit)
 
