@@ -242,7 +242,7 @@ if TYPE_CHECKING:
     )
     from mcp_server_paperless.domain.versions import VersionUpload
     from mcp_server_paperless.domain.views import ViewValues
-    from mcp_server_paperless.domain.workflows import WorkflowValues
+    from mcp_server_paperless.domain.workflows import PartKind, PartWrite, WorkflowValues
 
 # Paperless's max_length of document titles and tag names.
 MAX_TITLE = 128
@@ -3553,6 +3553,14 @@ class FakePaperless:
         """`WorkflowWriter.update_workflow`."""
         data, actor = self._workflows()
         return workflows.update_workflow(data, actor, workflow_id, values)
+
+    @write
+    async def update_workflow_parts(
+        self, workflow_id: int, kind: PartKind, parts: Sequence[PartWrite]
+    ) -> None:
+        """`WorkflowWriter.update_workflow_parts`."""
+        data, actor = self._workflows()
+        workflows.update_workflow_parts(data, actor, workflow_id, kind, parts)
 
     @write
     async def delete_workflow(self, workflow_id: int) -> None:

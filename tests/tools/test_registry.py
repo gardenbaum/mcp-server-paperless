@@ -156,7 +156,7 @@ def destructive(tool: Tool) -> bool:
 PUBLISHING = frozenset({"create_share_link", "create_share_bundle"})
 # Tools that set up workflows, which run by themselves on documents (decision-21): they need
 # confirm for what they act on although they are not destructive.
-ACTING = frozenset({"create_workflow", "update_workflow"})
+ACTING = frozenset({"create_workflow", "update_workflow", "update_workflow_part"})
 
 
 def unconfirmed(tools: list[Tool], publishing: frozenset[str] = PUBLISHING | ACTING) -> list[str]:
@@ -322,6 +322,7 @@ TRASHING_TOOLS = frozenset(
         *("resolve_duplicates", "merge_documents", "split_document", "delete_pages", "edit_pdf"),
         *("remove_document_password", "create_workflow", "update_workflow"),
         "run_workflow",
+        "update_workflow_part",
     }
 )
 

@@ -13,6 +13,7 @@ import pytest
 from contract.conftest import SCRATCH_WORKFLOW
 from mcp_server_paperless.domain.errors import NotFound, PermissionDenied, Validation
 from mcp_server_paperless.domain.workflows import (
+    PartWrite,
     Workflow,
     WorkflowAction,
     WorkflowTrigger,
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
 pytestmark = [pytest.mark.anyio, pytest.mark.decision("decision-8")]
 
 LIST, GET = "WorkflowReader.list_workflows", "WorkflowReader.get_workflow"
+PARTS = "WorkflowWriter.update_workflow_parts"
 TRIGGER, ACTION = "WorkflowReader.get_trigger", "WorkflowReader.get_action"
 CREATE, UPDATE, DELETE = (
     "WorkflowWriter.create_workflow",
@@ -475,3 +477,213 @@ async def test_the_parts_of_a_deleted_workflow_stay_until_the_next_update_of_any
         _ = await reader.get_trigger(trigger)
     with pytest.raises(NotFound):
         _ = await reader.get_action(action)
+
+
+HOOK: dict[str, JsonValue] = {
+    "url": "https://user:pw@example.org/hook",
+    "use_params": False,
+    "as_json": True,
+    "params": None,
+    "body": "x",
+    "headers": {"X-Token": "secret"},
+    "include_document": False,
+}
+MAIL: dict[str, JsonValue] = {
+    "subject": "s",
+    "body": "b",
+    "to": "a@example.org",
+    "include_document": False,
+}
+
+
+def every_action() -> tuple[WorkflowAction, ...]:
+    """An action of each type, 5 and 8 included, which this server does not write."""
+    suggested: dict[str, JsonValue] = {
+        "ai_suggestion_fields": ["title"],
+        "ai_create_missing": True,
+        "ai_overwrite_existing": True,
+    }
+    return (
+        RETITLE,
+        WorkflowAction(type=2, settings={"remove_all_owners": True}),
+        WorkflowAction(type=3, settings={"email": MAIL}),
+        WorkflowAction(type=4, settings={"webhook": HOOK}),
+        WorkflowAction(type=5, settings={"passwords": ["one", "two"]}),
+        WorkflowAction(type=6),
+        WorkflowAction(type=7),
+        WorkflowAction(type=8, settings=suggested),
+    )
+
+
+def kept(part: WorkflowTrigger) -> PartWrite:
+    """A trigger as the server sends one that stays: in full."""
+    return PartWrite(id=part.id, type=part.type, settings=part.settings)
+
+
+@pytest.mark.decision("decision-82")
+@pytest.mark.contract(PARTS)
+async def test_actions_named_by_id_keep_everything_when_one_is_added_moved_or_removed(
+    backend: Backend,
+) -> None:
+    writer, reader = backend.admin.workflow_writes, backend.admin.workflows
+    made = await writer.create_workflow(
+        scratch(), safe(triggers=(NEVER, WorkflowTrigger(type=5)), actions=every_action())
+    )
+    parts = {a.id: a for a in made.actions}
+    order = [a.id for a in made.actions][::-1]
+
+    await writer.update_workflow_parts(made.id, "actions", [PartWrite(id=n) for n in order])
+    assert (await reader.get_workflow(made.id)).actions == tuple(parts[n] for n in order)
+
+    fresh = PartWrite(type=1, settings={"assign_title": "new"})
+    ids = [PartWrite(id=n) for n in order]
+    await writer.update_workflow_parts(made.id, "actions", [*ids[:2], fresh, *ids[2:]])
+    added = (await reader.get_workflow(made.id)).actions
+    assert [*added[:2], *added[3:]] == [parts[n] for n in order]
+    assert (added[2].type, added[2].settings["assign_title"]) == (1, "new")
+    assert added[2].id not in parts
+
+    gone = order.pop(3)
+    assert gone is not None
+    await writer.update_workflow_parts(made.id, "actions", [PartWrite(id=n) for n in order])
+    left = await reader.get_workflow(made.id)
+    assert left.actions == tuple(parts[n] for n in order)
+    assert left.triggers == made.triggers
+    with pytest.raises(NotFound):
+        _ = await reader.get_action(gone)
+
+
+@pytest.mark.decision("decision-82")
+@pytest.mark.contract(PARTS)
+async def test_a_changed_action_gets_what_is_sent_and_the_others_stay(backend: Backend) -> None:
+    writer, reader = backend.admin.workflow_writes, backend.admin.workflows
+    made = await writer.create_workflow(
+        scratch(), safe(triggers=(NEVER, WorkflowTrigger(type=5)), actions=every_action())
+    )
+    changes: list[tuple[int, dict[str, JsonValue]]] = [
+        (0, {"assign_title": "other", "assign_tags": []}),
+        (1, {"remove_all_owners": False}),
+        (2, {"email": {**MAIL, "subject": "t"}}),
+        (3, {"webhook": {**HOOK, "url": "https://example.org/z", "headers": {"A": "b"}}}),
+    ]
+    before = list(made.actions)
+    for place, settings in changes:
+        sent = [PartWrite(id=a.id) for a in before]
+        sent[place] = PartWrite(id=before[place].id, settings=settings)
+
+        await writer.update_workflow_parts(made.id, "actions", sent)
+
+        after = list((await reader.get_workflow(made.id)).actions)
+        whole = {**before[place].settings, **settings}
+        assert after[place] == before[place].model_copy(update={"settings": whole})
+        assert after[:place] + after[place + 1 :] == before[:place] + before[place + 1 :]
+        before = after
+
+
+@pytest.mark.decision("decision-82")
+@pytest.mark.contract(PARTS)
+async def test_triggers_sent_in_full_keep_everything_when_one_is_changed(backend: Backend) -> None:
+    writer, reader = backend.admin.workflow_writes, backend.admin.workflows
+    tag = next(t for t in await backend.admin.taxonomy.list_taxonomy("tag") if t.name)
+    added = WorkflowTrigger(type=2, settings={"filter_has_tags": [tag.id]})
+    timed = WorkflowTrigger(type=4, settings={"schedule_offset_days": -3})
+    made = await writer.create_workflow(
+        scratch(),
+        safe(triggers=(NEVER, added, timed, WorkflowTrigger(type=5)), actions=every_action()),
+    )
+    cleared: dict[str, JsonValue] = {
+        **made.triggers[1].settings,
+        "filter_has_tags": [],
+        "match": "x",
+        "matching_algorithm": 1,
+    }
+    changed = PartWrite(id=made.triggers[1].id, type=2, settings=cleared)
+    others = [kept(t) for t in made.triggers]
+
+    await writer.update_workflow_parts(
+        made.id, "triggers", [others[0], changed, *others[2:], PartWrite(type=3)]
+    )
+
+    after = await reader.get_workflow(made.id)
+    by_id = {t.id: t for t in after.triggers}
+    assert len(by_id) == 5
+    assert by_id[changed.id] == WorkflowTrigger(id=changed.id, type=2, settings=cleared)
+    for trigger in (made.triggers[0], *made.triggers[2:]):
+        assert by_id[trigger.id] == trigger
+    assert after.actions == made.actions
+
+
+@pytest.mark.decision("decision-82")
+@pytest.mark.contract(PARTS)
+async def test_paperless_makes_a_part_whose_id_is_gone_and_changes_one_of_another_workflow(
+    backend: Backend,
+) -> None:
+    """Why the server checks ids before it writes and compares afterwards."""
+    writer, reader = backend.admin.workflow_writes, backend.admin.workflows
+    other = await writer.create_workflow(scratch(), safe())
+    gone = await writer.create_workflow(scratch(), safe())
+    await writer.delete_workflow(gone.id)
+    made = await writer.create_workflow(scratch(), safe())
+    _ = await writer.update_workflow(made.id, WorkflowValues(order=1))  # prunes
+
+    ghost = PartWrite(id=gone.actions[0].id)
+    theirs = PartWrite(id=other.actions[0].id, settings={"assign_title": "taken"})
+    await writer.update_workflow_parts(made.id, "actions", [ghost, theirs])
+    lost = PartWrite(id=gone.triggers[0].id)
+    await writer.update_workflow_parts(made.id, "triggers", [kept(made.triggers[0]), lost])
+
+    after = await reader.get_workflow(made.id)
+    [empty, taken] = after.actions
+    assert (empty.id, empty.type, empty.settings["assign_title"]) == (ghost.id, 1, None)
+    assert taken.settings["assign_title"] == "taken"
+    assert (await reader.get_workflow(other.id)).actions == (taken,)
+    matches_all = next(t for t in after.triggers if t.id == lost.id)
+    assert (matches_all.type, matches_all.settings["filter_filename"]) == (1, None)
+    assert matches_all.settings["sources"] == [1, 2, 3, 4]
+
+
+@pytest.mark.decision("decision-82")
+@pytest.mark.contract(PARTS)
+async def test_parts_paperless_refuses_change_nothing(backend: Backend) -> None:
+    writer, reader = backend.admin.workflow_writes, backend.admin.workflows
+    made = await writer.create_workflow(scratch(), safe(actions=every_action()[:7]))
+    viewer = backend.restricted(VIEWING)
+
+    with pytest.raises(Validation, match="Remote OCR"):
+        await writer.update_workflow_parts(made.id, "triggers", ())
+    with pytest.raises(Validation, match="Remote OCR"):
+        # Paperless does not look up the type of a trigger that is sent by its id alone.
+        await writer.update_workflow_parts(made.id, "triggers", [PartWrite(id=made.triggers[0].id)])
+    with pytest.raises(Validation, match="Email data"):
+        await writer.update_workflow_parts(
+            made.id, "actions", [PartWrite(id=made.actions[2].id, type=3)]
+        )
+    with pytest.raises(NotFound, match="No workflow 999999"):
+        await writer.update_workflow_parts(999_999, "actions", ())
+    with pytest.raises(PermissionDenied):
+        await viewer.workflow_writes.update_workflow_parts(made.id, "actions", ())
+
+    assert await reader.get_workflow(made.id) == made
+
+
+@pytest.mark.decision("decision-82")
+@pytest.mark.contract(PARTS)
+async def test_the_permission_to_change_workflows_is_enough(backend: Backend) -> None:
+    reader = backend.admin.workflows
+    tags = await backend.admin.taxonomy.list_taxonomy("tag")
+    private = next(t.id for t in tags if t.name == "e2e-private")
+    hidden = WorkflowTrigger(type=2, settings={"filter_has_tags": [private]})
+    made = await backend.admin.workflow_writes.create_workflow(
+        scratch(), safe(triggers=(NEVER, hidden), actions=every_action())
+    )
+    changer = backend.restricted(frozenset({"view_workflow", "change_workflow"}))
+
+    await changer.workflow_writes.update_workflow_parts(
+        made.id, "actions", [PartWrite(id=a.id) for a in made.actions[1:]]
+    )
+    await changer.workflow_writes.update_workflow_parts(
+        made.id, "triggers", [kept(t) for t in made.triggers]
+    )
+
+    after = await reader.get_workflow(made.id)
+    assert (after.triggers, after.actions) == (made.triggers, made.actions[1:])

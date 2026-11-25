@@ -1350,7 +1350,7 @@ async def test_a_hidden_header_keeps_the_value_stored_for_the_action_with_that_i
     hook = WebhookSettings(url="https://h.example/b", headers={"X-Token": "(hidden)", "X-New": "n"})
 
     done = await setup.workflows.update(
-        "w", WorkflowEdit(actions=(ActionInput(type=4, id=7, webhook=hook),)), confirm=False
+        "w", WorkflowEdit(actions=(ActionInput(type=4, id=7, webhook=hook),)), confirm=True
     )
 
     assert headers(setup.stored("w").actions[0].settings) == {"X-Token": "real", "X-New": "n"}

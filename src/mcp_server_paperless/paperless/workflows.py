@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
 
     from mcp_server_paperless.domain.tasks import TaskStatus
-    from mcp_server_paperless.domain.workflows import WorkflowValues
+    from mcp_server_paperless.domain.workflows import PartKind, PartWrite, WorkflowValues
     from mcp_server_paperless.paperless.client import PaperlessClient
 
 PATH = "/api/workflows/"
@@ -236,6 +236,25 @@ class PaperlessWorkflowWriter:
         except NotFound:
             raise unseen_workflow(workflow_id) from None
         return _workflow(row)
+
+    async def update_workflow_parts(
+        self, workflow_id: int, kind: PartKind, parts: Sequence[PartWrite]
+    ) -> None:
+        """See ``WorkflowWriter.update_workflow_parts``."""
+        body = {
+            kind: [
+                {
+                    **({} if part.id is None else {"id": part.id}),
+                    **({} if part.type is None else {"type": part.type}),
+                    **part.settings,
+                }
+                for part in parts
+            ]
+        }
+        try:
+            _ = await self._client.request("PATCH", f"{PATH}{workflow_id}/", json=body)
+        except NotFound:
+            raise unseen_workflow(workflow_id) from None
 
     async def delete_workflow(self, workflow_id: int) -> None:
         """See ``WorkflowWriter.delete_workflow``."""

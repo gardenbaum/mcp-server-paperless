@@ -16,6 +16,8 @@ from mcp_server_paperless.domain.documents import NameOrId
 from mcp_server_paperless.domain.errors import Validation
 from mcp_server_paperless.domain.workflows import (
     ActionInput,
+    PartEdit,
+    PartOperation,
     TriggerInput,
     TriggerTypeName,
     Usage,
@@ -102,7 +104,8 @@ action that carries the id it has in get_workflow (only while the URL keeps its 
 and port); headers left out of a webhook are removed. A webhook URL written back as shown, on an
 action that carries that id, keeps its stored user name and password; with an empty user name
 (https://@host/path) it loses them, and a shown URL that cannot be told apart by the id is refused.
-Returns the workflow as stored.
+A list that drops what is hidden needs the user's yes, also while the workflow is disabled.
+update_workflow_part changes a single trigger or action and leaves the others alone.
 
 """
     + REFERENCE
@@ -216,6 +219,62 @@ async def update_workflow(  # noqa: PLR0913 -- one parameter per setting of a wo
         order=order,
     )
     return await services(ctx).workflows.update(workflow, edit, confirm=confirm)
+
+
+@provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["update_workflow_part"])
+@boundary
+async def update_workflow_part(  # noqa: PLR0913 -- one parameter per concept, described for the LLM
+    ctx: Context,
+    workflow: Workflow,
+    operation: PartOperation,
+    *,
+    trigger_id: Annotated[
+        int | None, Field(description="The trigger to change or remove, by its id.")
+    ] = None,
+    action_id: Annotated[
+        int | None, Field(description="The action to change, move or remove, by its id.")
+    ] = None,
+    trigger: Annotated[
+        TriggerInput | None,
+        Field(description="The new trigger, or with trigger_id its type and what changes."),
+    ] = None,
+    action: Annotated[
+        ActionInput | None,
+        Field(description="The new action, or with action_id its type and what changes."),
+    ] = None,
+    clear: Annotated[
+        list[str] | None, Field(description="With change: settings to set back to their default.")
+    ] = None,
+    position: Annotated[
+        int | None,
+        Field(description="Place of the action, from 1 (add: default last; change: moves it)."),
+    ] = None,
+    confirm: Confirm = False,
+) -> WorkflowInfo:
+    """Add, change or remove one trigger or action of a workflow; the others stay as they are.
+
+    Their settings, ids and hidden values are kept, also of types this server cannot write (those
+    can be moved and removed here). add takes a trigger or an action, described in create_workflow;
+    change takes an id and what changes (the type stays; email and webhook are given whole, and
+    '(hidden)' or the URL as shown keep what is stored); remove takes an id. Without confirm a
+    dialog, or an error for you to show the user, comes first if the workflow that results is
+    enabled and moves documents to the trash (undo with restore_from_trash, trash toolset), e-mails,
+    calls a webhook, removes things or changes owner or permissions, and always if hidden values are
+    lost for good (see confirm). Afterwards the workflow is read again: an error that says it is not
+    as planned, or that this is not known, means the change may be there, so read it and ask the
+    user instead of calling again. A trigger or action that another workflow holds, too, is not
+    changed. Needs the permission to change workflows.
+    """
+    edit = PartEdit(
+        operation=operation,
+        trigger_id=trigger_id,
+        action_id=action_id,
+        trigger=trigger,
+        action=action,
+        clear=tuple(clear or ()),
+        position=position,
+    )
+    return await services(ctx).workflow_parts.update(workflow, edit, confirm=confirm)
 
 
 @provider.tool(tags={TOOLSET}, annotations=ANNOTATIONS["delete_workflow"])

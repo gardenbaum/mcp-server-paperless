@@ -1,9 +1,11 @@
 ---
 id: PLMCP-87.2
 title: 'Workflows b: update_workflow_part'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-24T22:43:05Z'
+updated_date: '2026-11-25T07:16:57Z'
 labels:
   - workflows
 dependencies:
@@ -35,3 +37,13 @@ Second part of PLMCP-87: one trigger or action cannot be changed without resendi
 - [ ] #3 Snapshot, gate or decision changes are deliberate and explained in the PR description
 - [ ] #4 Merged to main through the task's own pull request
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Tests first, bottom up: port and adapter (one PATCH of one list, parts by id), contract on fake and 3.5.1, services/workflow_parts.py, tool update_workflow_part, E2E.
+2. The comparison after a write uses a fresh read (P1).
+3. Hidden values lost: confirmed in the new tool and in update_workflow, also while disabled.
+4. decision-82, coverage, docs, snapshots, guide limit 2943 to 2966 (approved, 23 bytes of 42).
+5. Draft PR stacked on 87.1, one full hosted E2E on the finished head.
+<!-- SECTION:PLAN:END -->

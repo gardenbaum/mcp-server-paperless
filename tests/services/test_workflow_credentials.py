@@ -199,7 +199,7 @@ async def test_the_placeholder_is_never_written() -> None:
 async def test_an_empty_user_name_removes_the_credentials(empty: str, number: int | None) -> None:
     service, state = seeding(hooked(7, SECRET))
 
-    done = await write(service, given(f"https://{empty}h.example/x?k=1", number))
+    done = await write(service, given(f"https://{empty}h.example/x?k=1", number), confirm=True)
 
     assert url(state.workflows[0].actions[0]) == SHOWN
     assert done.note == (
@@ -213,7 +213,7 @@ async def test_an_empty_user_name_removes_the_credentials(empty: str, number: in
 async def test_an_empty_user_name_is_not_written_where_the_path_holds_an_at() -> None:
     service, state = seeding(hooked(7, "https://u:pw@h.example/@x"))
 
-    _ = await write(service, given("https://@h.example/@x", 7))
+    _ = await write(service, given("https://@h.example/@x", 7), confirm=True)
 
     assert url(state.workflows[0].actions[0]) == "https://h.example/@x"
 
@@ -226,6 +226,7 @@ async def test_another_url_never_gets_the_stored_credentials_and_the_result_says
         given("https://h.example/y", 7),
         given("https://new:n@h.example/z", 7),
         ActionInput(type="trash", id=8),
+        confirm=True,
     )
 
     actions = state.workflows[0].actions
@@ -311,7 +312,7 @@ async def test_the_confirmation_does_not_claim_credentials_that_cannot_be_told(
 async def test_the_note_does_not_claim_credentials_that_cannot_be_told() -> None:
     service, _ = seeding(hooked(7, NAME))
 
-    done = await write(service, given("https://n.example/x", 7))
+    done = await write(service, given("https://n.example/x", 7), confirm=True)
 
     assert done.note == "Removed any credentials of: the webhook URL of action 1."
 
@@ -345,7 +346,7 @@ async def test_another_spelling_of_the_shown_url_keeps_what_its_id_stored(spelli
 async def test_a_path_in_other_letters_is_another_url() -> None:
     service, state = seeding(hooked(7, SECRET))
 
-    _ = await write(service, given("https://h.example/X?k=1", 7))
+    _ = await write(service, given("https://h.example/X?k=1", 7), confirm=True)
 
     assert url(state.workflows[0].actions[0]) == "https://h.example/X?k=1"
 
@@ -421,7 +422,7 @@ async def test_nothing_is_said_where_no_webhook_could_be_the_stored_one(
 
     if sent[-1].id == 8 and len(sent) == 2:
         service, _ = seeding(hooked(7, SECRET), hooked(8, OTHER))
-    done = await write(service, *sent)
+    done = await write(service, *sent, confirm=True)
 
     assert "Removed" not in str(done.note)
 
@@ -601,6 +602,6 @@ async def test_an_empty_user_name_alone_is_not_called_credentials(stored: str) -
 async def test_an_unclear_url_after_an_empty_user_name_may_hold_credentials() -> None:
     service, _ = seeding(hooked(7, "https://@us/er:pw@h.example/x"))
 
-    done = await write(service, given("https://n.example/x", 7))
+    done = await write(service, given("https://n.example/x", 7), confirm=True)
 
     assert done.note == "Removed any credentials of: the webhook URL of action 1."

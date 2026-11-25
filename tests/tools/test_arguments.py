@@ -838,6 +838,7 @@ ACTIONS: list[Json] = [
 
 
 def with_workflow(state: FakeState) -> None:
+    state.workflow_object_id[0] = 10
     state.workflows.append(
         Workflow(
             id=1,
@@ -887,6 +888,36 @@ async def test_workflows_take_every_trigger_and_action_with_every_setting() -> N
         await sweep("list_workflows", given, (), prepare=with_workflow)
     await sweep(
         "list_workflows", {"uses_kind": "tag", "uses": "e2e-finance"}, (), prepare=with_workflow
+    )
+    part: Json = {"workflow": 1, "operation": "add"}
+    for trigger in TRIGGERS:
+        await sweep("update_workflow_part", {**part, "trigger": trigger}, (), prepare=with_workflow)
+    for action in ACTIONS:
+        placed: Json = {**part, "action": action, "position": 1}
+        await sweep("update_workflow_part", placed, (), prepare=with_workflow)
+    change: Json = {"workflow": 1, "operation": "change"}
+    await sweep(
+        "update_workflow_part",
+        {
+            **change,
+            "trigger_id": 1,
+            "trigger": {"type": "added", "has_tags": [2]},
+            "clear": ["match"],
+        },
+        (),
+        prepare=with_workflow,
+    )
+    await sweep(
+        "update_workflow_part",
+        {**change, "action_id": 2, "action": {"type": "assignment", "assign_title": "x"}},
+        (),
+        prepare=with_workflow,
+    )
+    await sweep(
+        "update_workflow_part",
+        {"workflow": 1, "operation": "remove", "trigger_id": 1},
+        (),
+        prepare=with_workflow,
     )
     await sweep("delete_workflow", {"workflow": 1}, (), prepare=with_workflow)
     filters: Json = {"title_contains": "e2e"}
