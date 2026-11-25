@@ -369,7 +369,7 @@ Off by default: `list_workflows`, `get_workflow`, `create_workflow`, `update_wor
 `update_workflow_part`, `delete_workflow`, `run_workflow`. Manages the workflows Paperless runs by itself, with triggers and actions as
 nested objects and tags, correspondents, document types, storage paths, custom fields, users and
 groups given by name. An enabled workflow keeps acting on every matching document, so
-`create_workflow` and `update_workflow` need `confirm` when it moves documents to the trash,
+`create_workflow`, `update_workflow` and `update_workflow_part` need `confirm` when it moves documents to the trash,
 e-mails them, calls a webhook, asks the AI, removes tags or other values, or changes owner or permissions
 (disabled workflows and plain filing, such as tags and titles, need none), and `delete_workflow`
 always does. Password removal is not written by these tools (it

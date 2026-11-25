@@ -744,3 +744,36 @@ async def test_credentials_counted_as_kept_by_no_action_are_not_named_again() ->
 
     assert "the stored credentials of 2 webhook URLs" in raised.value.message
     assert "credentials of its URL" not in raised.value.message
+
+
+@pytest.mark.decision("decision-82")
+async def test_credentials_of_an_action_of_another_type_are_named() -> None:
+    odd = WorkflowAction.model_validate(
+        {"id": 8, "type": 1, "settings": {"webhook": {"url": "https://b:planted@b.example/"}}}
+    )
+    service, _ = seeding(hidden(7, SECRET), odd, enabled=True)
+
+    with pytest.raises(ConfirmationRequired) as raised:
+        _ = await write(service, given("https://n.example/"))
+
+    assert "the stored credentials of 1 webhook URL" in raised.value.message
+    assert "of the assignment action 8 the credentials of its URL" in raised.value.message
+
+
+@pytest.mark.decision("decision-82")
+async def test_only_the_action_with_the_id_keeps_what_is_hidden() -> None:
+    service, _ = seeding(hidden(7, "https://h.example/x", A="planted"))
+    kept = WebhookSettings(url="https://h.example/x", headers={"A": "planted"})
+    other = WebhookSettings(url="https://h.example/x", headers={})
+
+    # Another action holds the same values, but the one with the id has lost them.
+    with pytest.raises(ConfirmationRequired):
+        _ = await write(
+            service,
+            ActionInput(type=4, id=7, webhook=other),
+            ActionInput(type=4, webhook=kept),
+        )
+    # Of two actions with the id, one keeps them.
+    _ = await write(
+        service, ActionInput(type=4, id=7, webhook=other), ActionInput(type=4, id=7, webhook=kept)
+    )

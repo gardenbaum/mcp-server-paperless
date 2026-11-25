@@ -1108,7 +1108,25 @@ async def test_the_far_reaching_actions_come_first_wherever_they_stand() -> None
                 "ai_overwrite_existing": True,
             },
             (
-                "for title, document type, over existing values, creating tags, "
+                "for title, document type, over existing values, creating document types that do "
+                "not exist."
+            ),
+        ),
+        (
+            {"ai_suggestion_fields": ["title", "created"], "ai_create_missing": True},
+            (
+                "for title, created, only where there is no value (title and created always have "
+                "one, so they stay), without creating anything."
+            ),
+        ),
+        (
+            {
+                "ai_suggestion_fields": ["tags", "correspondent", "document_type", "title"],
+                "ai_create_missing": True,
+            },
+            (
+                "for tags, correspondent, document type, title, only where there is no value "
+                "(title always has one, so it stays; tags are only added), creating tags, "
                 "correspondents and document types that do not exist."
             ),
         ),
@@ -1129,7 +1147,7 @@ async def test_what_the_ai_may_do_is_told_in_words(
     setup.flow(action(8, **settings))
 
     assert (
-        f"of each of them and apply what it suggests {told} It runs"
+        f"at least once each, about the text of each of them and apply what it suggests {told} It "
         in (await setup.asked()).message
     )
 

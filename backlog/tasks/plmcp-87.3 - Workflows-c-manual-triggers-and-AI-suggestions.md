@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:06Z'
-updated_date: '2026-11-25T09:19:48Z'
+updated_date: '2026-11-25T09:32:36Z'
 labels:
   - workflows
 dependencies:
@@ -51,4 +51,6 @@ Third part of PLMCP-87: run_workflow runs manual triggers, but only the web UI c
 Owner approval (2026-11-24): 'Alle wie empfohlen' (question quoted in decision-81), here 4a and 5a. Implemented on plmcp-87-3-types (PR #160, stacked on #159), decision-86 (created by the CLI in a copy of backlog/, 83 is taken elsewhere). Red first at domain, service, contract (fake); tool and E2E tests written with them. 12 hand mutants, all killed. Full hosted E2E 45576104128 on f7bbcbe dispatched; AC 3 waits for it.
 
 Full hosted E2E 45578885550 on f238efc green (contract 35, e2e 10, parts 6 of the workflow modules). After it only README numbers, the backlog archive of main and this note changed.
+
+First review of #160 (F1 to F8) fixed; run_workflow's AI wording is truer too, its measured confirmations grow by 56 characters. The AI backend is not checked when writing (not cheap: three requests and a right of its own); documented in decision-86.
 <!-- SECTION:NOTES:END -->

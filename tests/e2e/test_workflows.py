@@ -242,7 +242,7 @@ async def test_manual_triggers_and_ai_suggestions_are_written(
     [raw] = stored(stack, name)
 
     assert "runs only when a user runs it by hand (manual, filtered by" in text
-    assert "ask the AI backend about the text of every matching document" in text
+    assert "ask the AI backend, at least once each, about the text of every document" in text
     [trigger] = cast("list[Json]", raw["triggers"])
     assert (trigger["type"], trigger["filter_filename"]) == (5, "never-*")
     [action] = cast("list[Json]", raw["actions"])

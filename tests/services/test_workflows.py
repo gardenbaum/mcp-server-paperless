@@ -713,9 +713,10 @@ async def test_applying_ai_suggestions_is_written_and_confirmed_while_enabled(
         _ = await setup.workflows.update("n", WorkflowEdit(enabled=True), confirm=False)
 
     assert (
-        "ask the AI backend about the text of every matching document and apply what it suggests "
-        "for title, tags, only where there is no value (tags are only added), creating tags, "
-        "correspondents and document types that do not exist"
+        "ask the AI backend, at least once each, about the text of every document that matches a "
+        "trigger other than consumption and apply what it suggests for title, tags, only where "
+        "there is no value (title always has one, so it stays; tags are only added), creating tags "
+        "that do not exist"
     ) in raised.value.message
     [action] = off.actions
     assert (action.type, action.type_name) == (8, "apply AI suggestions")
@@ -1683,4 +1684,31 @@ async def test_a_blank_filter_is_refused_when_a_workflow_is_created_or_changed(n
         _ = await setup.workflows.create(WorkflowCreate(name="n", triggers=(blank,)), confirm=True)
     with pytest.raises(Validation, match=f"'{name}' is blank"):
         _ = await setup.workflows.update("w", WorkflowEdit(triggers=(blank,)), confirm=True)
+    assert setup.fake.writes == []
+
+
+@pytest.mark.decision("decision-86")
+async def test_ai_fields_are_stored_once_in_their_order() -> None:
+    setup = Setup()
+    ai = ActionInput(type=8, ai_suggestion_fields=["tags", "title", "tags"])
+
+    made = await setup.workflows.create(
+        WorkflowCreate(
+            name="n", enabled=False, triggers=(TriggerInput(type="manual"),), actions=(ai,)
+        ),
+        confirm=False,
+    )
+
+    assert made.actions[0].settings == {"ai_suggestion_fields": ["tags", "title"]}
+
+
+@pytest.mark.decision("decision-86")
+async def test_a_manual_trigger_with_an_algorithm_needs_a_match() -> None:
+    setup = Setup()
+    trigger = TriggerInput(type="manual", matching_algorithm="any")
+
+    with pytest.raises(Validation, match="would match no document"):
+        _ = await setup.workflows.create(
+            WorkflowCreate(name="n", triggers=(trigger,)), confirm=True
+        )
     assert setup.fake.writes == []

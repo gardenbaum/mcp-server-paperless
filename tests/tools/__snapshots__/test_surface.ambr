@@ -5534,16 +5534,17 @@
         correspondents, document types, storage paths and a custom field query. Taxonomy values are names
         or ids, as in search_documents.
         
-        Actions run in order on the matching document: 'assignment' (assign_title as a template such as
-        '{{ correspondent }} {{ created_year }}', tags, correspondent, document type, storage path, owner,
-        view and change permissions, custom fields with values), 'removal' (remove_all_* flags and
-        remove_* lists), 'email' (email: subject, body, to, include_document), 'webhook' (a POST request:
-        webhook: url, headers, params or body, include_document), 'move to trash' (undo with
-        restore_from_trash, trash toolset, or in the web UI), 'remote OCR' (consumption triggers only) and
-        'apply AI suggestions' (ai_suggestion_fields; asks the AI backend once per matching document; not
-        for consumption triggers). Settings of another action type than the one given are an error. Password
-        removal cannot be written here; use the Paperless web UI. A 'manual' trigger filters as 'added'
-        does, and by filename; its workflow runs with run_workflow.
+        Actions run in order on the matching document: 'assignment' (assign_title as a template such as '{{
+        correspondent }} {{ created_year }}', tags, correspondent, document type, storage path, owner, view
+        and change permissions, custom fields with values), 'removal' (remove_all_* flags and remove_*
+        lists), 'email' (email: subject, body, to, include_document), 'webhook' (a POST request: webhook:
+        url, headers, params or body, include_document), 'move to trash' (undo with restore_from_trash,
+        trash toolset, or in the web UI), 'remote OCR' (consumption triggers only) and 'apply AI
+        suggestions' (ai_suggestion_fields; asks the AI backend at least once per matching document; not
+        for consumption triggers; title and created only change with ai_overwrite_existing; a change also
+        counts for documents already queued, and removing it drops them). Settings of another action type
+        than the one given are an error. Password removal cannot be written here; use the Paperless web UI.
+        A 'manual' trigger filters as 'added' does, and by filename; its workflow runs with run_workflow.
         
         A workflow runs by itself on every matching document once it is enabled (one with only manual
         triggers runs only with run_workflow or in the web UI). Without confirm, an enabled workflow that
@@ -27929,16 +27930,17 @@
         correspondents, document types, storage paths and a custom field query. Taxonomy values are names
         or ids, as in search_documents.
         
-        Actions run in order on the matching document: 'assignment' (assign_title as a template such as
-        '{{ correspondent }} {{ created_year }}', tags, correspondent, document type, storage path, owner,
-        view and change permissions, custom fields with values), 'removal' (remove_all_* flags and
-        remove_* lists), 'email' (email: subject, body, to, include_document), 'webhook' (a POST request:
-        webhook: url, headers, params or body, include_document), 'move to trash' (undo with
-        restore_from_trash, trash toolset, or in the web UI), 'remote OCR' (consumption triggers only) and
-        'apply AI suggestions' (ai_suggestion_fields; asks the AI backend once per matching document; not
-        for consumption triggers). Settings of another action type than the one given are an error. Password
-        removal cannot be written here; use the Paperless web UI. A 'manual' trigger filters as 'added'
-        does, and by filename; its workflow runs with run_workflow.
+        Actions run in order on the matching document: 'assignment' (assign_title as a template such as '{{
+        correspondent }} {{ created_year }}', tags, correspondent, document type, storage path, owner, view
+        and change permissions, custom fields with values), 'removal' (remove_all_* flags and remove_*
+        lists), 'email' (email: subject, body, to, include_document), 'webhook' (a POST request: webhook:
+        url, headers, params or body, include_document), 'move to trash' (undo with restore_from_trash,
+        trash toolset, or in the web UI), 'remote OCR' (consumption triggers only) and 'apply AI
+        suggestions' (ai_suggestion_fields; asks the AI backend at least once per matching document; not
+        for consumption triggers; title and created only change with ai_overwrite_existing; a change also
+        counts for documents already queued, and removing it drops them). Settings of another action type
+        than the one given are an error. Password removal cannot be written here; use the Paperless web UI.
+        A 'manual' trigger filters as 'added' does, and by filename; its workflow runs with run_workflow.
         
         A workflow runs by itself on every matching document once it is enabled (one with only manual
         triggers runs only with run_workflow or in the web UI). Without confirm, an enabled workflow that
