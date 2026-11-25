@@ -135,8 +135,6 @@ class TrashedRecord(DocumentFacts):
 class TrashedNote(Note):
     """A note on a document in the trash."""
 
-    format: str | None
-
 
 class TrashedDetail(DocumentRecord):
     """Everything the API tells of an entry, with ids; ``content`` is the row's own text."""

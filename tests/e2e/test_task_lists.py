@@ -238,6 +238,19 @@ async def test_the_system_report_follows_the_rights_of_the_user(stack: Stack) ->
     assert restricted["status"] is None
 
 
+@pytest.mark.decision("decision-105")
+async def test_the_system_report_says_that_the_update_check_is_switched_off(
+    stack: Stack,
+) -> None:
+    report = await run(stack, "get_system_report", check_for_update=True)
+    plain = await run(stack, "get_system_report")
+
+    update = cast("Json", report["update"])
+    assert (update["newest_release"], update["update_available"]) == (None, None)
+    assert "switched off" in str(update["note"])
+    assert plain["update"] is None
+
+
 @pytest.mark.decision("decision-95")
 async def test_a_history_of_sixty_changes_is_read_page_by_page(stack: Stack) -> None:
     document = consume_text(stack.admin, f"{PREFIX}{uuid.uuid4().hex}")

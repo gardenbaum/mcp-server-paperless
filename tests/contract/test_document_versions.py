@@ -561,3 +561,20 @@ async def test_an_added_version_is_the_newest_until_it_is_deleted(backend: Backe
 
     _ = await backend.admin.document_writes.delete_version(document, added)
     assert await reader.get_newest_versions([document]) == {document: document}
+
+
+@pytest.mark.contract("DocumentReader.get_document_thumbnail")
+async def test_the_thumbnail_of_each_version_is_its_own(backend: Backend) -> None:
+    ports, document = backend.admin, backend.new_document()
+    other = backend.new_document()
+    version = await add_version(backend, document, "plmcp83 another look of a version")
+    read = ports.documents.get_document_thumbnail
+
+    newest = await read(document)
+    new = await read(document, version_id=version)
+    root = await read(document, version_id=document)
+
+    assert new.content == newest.content != root.content
+    for wrong in (other, 999_999_999):
+        with pytest.raises(NotFound, match=f"No version {wrong} exists"):
+            _ = await read(document, version_id=wrong)

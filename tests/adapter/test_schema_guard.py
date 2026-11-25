@@ -695,3 +695,17 @@ async def test_a_good_answer_is_kept_per_operation_for_the_replay(
     assert (status, headers["content-type"]) == (200, "application/json")
     assert "content-length" not in headers
     assert json.loads(content) == TRASH_PAGE
+
+
+def test_a_response_that_may_be_empty_is_checked_when_it_is_not() -> None:
+    request = httpx2.Request(
+        "POST",
+        "http://paperless.test/api/storage_paths/test/",
+        json={"document": 1, "path": "x"},
+    )
+
+    check_response(request, httpx2.Response(200, content=b""))
+    check_response(request, httpx2.Response(200, json="a.pdf"))
+    for wrong in ({"path": "a.pdf"}, 5, ["a.pdf"]):
+        with pytest.raises(SchemaViolationError):
+            check_response(request, httpx2.Response(200, json=wrong))

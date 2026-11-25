@@ -49,9 +49,9 @@ from mcp_server_paperless.paperless.queued import Queued, TaskWaiter, not_applie
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Sequence
 
-    from mcp_server_paperless.domain.documents import DocumentQuery, FileVersion
+    from mcp_server_paperless.domain.documents import DocumentQuery, FileVersion, NoteFormat
     from mcp_server_paperless.domain.files import OpenedFile
-    from mcp_server_paperless.domain.selection import ReadField
+    from mcp_server_paperless.domain.selection import CountedKind, ReadField
     from mcp_server_paperless.domain.tasks import Unconfirmed
     from mcp_server_paperless.domain.versions import VersionUpload
     from mcp_server_paperless.paperless.client import PaperlessClient, Params
@@ -130,8 +130,28 @@ class _User(BaseModel):
 class _Note(BaseModel):
     id: int
     note: str
+    format: str | None = None
     created: datetime | None = None
     user: _User | None = None
+
+
+class _Count(BaseModel):
+    id: int
+    document_count: int
+
+
+class _SelectionData(BaseModel):
+    """Every object of the instance with how many of the documents have it."""
+
+    selected_tags: list[_Count]
+    selected_correspondents: list[_Count]
+    selected_document_types: list[_Count]
+    selected_storage_paths: list[_Count]
+    selected_custom_fields: list[_Count]
+
+
+class _Words(RootModel[tuple[str, ...]]):
+    """A bare list of words."""
 
 
 class _Chosen(BaseModel):
@@ -308,6 +328,7 @@ def params(query: DocumentQuery) -> dict[str, str | int]:
         "more_like_id": query.more_like,
         "text": query.text,
         "title_search": query.title_search,
+        "original_filename__icontains": query.file_name_contains,
         "title__icontains": query.title_contains,
         "content__icontains": query.content_contains,
         "correspondent__id": query.correspondent,
@@ -327,6 +348,8 @@ def params(query: DocumentQuery) -> dict[str, str | int]:
         "tags__id__none": _csv(query.tags_none),
         "is_tagged": _flag(query.tagged),
         "archive_serial_number": query.archive_serial_number,
+        "archive_serial_number__gte": query.asn_from,
+        "archive_serial_number__lte": query.asn_to,
         "archive_serial_number__gt": query.asn_gt,
         "archive_serial_number__lt": query.asn_lt,
         "archive_serial_number__isnull": _flag(query.asn_isnull),
@@ -341,6 +364,8 @@ def params(query: DocumentQuery) -> dict[str, str | int]:
         "added__date__lte": _day(query.added_to),
         "added__date__gt": _day(query.added_gt),
         "added__date__lt": _day(query.added_lt),
+        "modified__date__gte": _day(query.modified_from),
+        "modified__date__lte": _day(query.modified_to),
         "modified__date__gt": _day(query.modified_gt),
         "modified__date__lt": _day(query.modified_lt),
         "owner__id": query.owner,
@@ -402,7 +427,11 @@ def beyond_last_page(page: int) -> NotFound:
 
 def _note(row: _Note) -> Note:
     return Note(
-        id=row.id, note=row.note, created=row.created, user=row.user.username if row.user else None
+        id=row.id,
+        note=row.note,
+        format=row.format,
+        created=row.created,
+        user=row.user.username if row.user else None,
     )
 
 
@@ -535,6 +564,36 @@ class PaperlessDocumentReader:
                 raise
             raise unseen_document(query.more_like) from None
         return _page(found)
+
+    async def count_selection(
+        self, document_ids: Sequence[int]
+    ) -> dict[CountedKind, dict[int, int]]:
+        """See ``DocumentReader.count_selection``."""
+        row = await self._client.call(
+            "POST",
+            f"{PATH}selection_data/",
+            _SelectionData,
+            json={"documents": list(document_ids)},
+            timeout=MANY_TIMEOUT,
+        )
+        kinds: dict[CountedKind, list[_Count]] = {
+            "tag": row.selected_tags,
+            "correspondent": row.selected_correspondents,
+            "document_type": row.selected_document_types,
+            "storage_path": row.selected_storage_paths,
+            "custom_field": row.selected_custom_fields,
+        }
+        return {
+            kind: {c.id: c.document_count for c in counts if c.document_count}
+            for kind, counts in kinds.items()
+        }
+
+    async def suggest_words(self, term: str, limit: int) -> tuple[str, ...]:
+        """See ``DocumentReader.suggest_words``."""
+        found = await self._client.get(
+            "/api/search/autocomplete/", _Words, params={"term": term, "limit": limit}
+        )
+        return found.root
 
     async def read_rows(
         self, document_ids: Sequence[int], fields: Sequence[ReadField], *, max_bytes: int
@@ -679,18 +738,23 @@ class PaperlessDocumentReader:
             dates=tuple(row.dates),
         )
 
-    async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
+    async def get_document_thumbnail(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> DocumentFile:
         """See ``DocumentReader.get_document_thumbnail``.
 
         Paperless sends WebP. A document the user may not see is answered 403 (text/html),
         a missing one 404, as for the other sub-resources.
         """
         try:
-            found = await self._file(document_id, "thumb/", THUMBNAIL_LIMIT)
+            found = await self._file(
+                document_id, "thumb/", THUMBNAIL_LIMIT, _of_version(version_id)
+            )
         except NotFound:
-            # Says so itself if the document does not exist.
-            _ = await self.get_document_metadata(document_id)
-            message = f"Paperless cannot find the thumbnail of document {document_id}."
+            # Says so itself if the document or version does not exist.
+            _ = await self.get_document_metadata(document_id, version_id=version_id)
+            version = "" if version_id is None else f"version {version_id} of "
+            message = f"Paperless cannot find the thumbnail of {version}document {document_id}."
             raise NotFound(message, hint=NO_THUMBNAIL_HINT) from None
         if found.truncated:
             message = f"Paperless sent an unexpected response for the thumbnail of {document_id}."
@@ -916,25 +980,35 @@ class PaperlessDocumentWriter:
             raise unseen_version(document_id, version_id) from None
         return row.content
 
-    async def add_note(self, document_id: int, text: str) -> Note:
+    async def add_note(
+        self, document_id: int, text: str, note_format: NoteFormat = "plain"
+    ) -> Note:
         """See ``DocumentWriter.add_note``.
 
         Paperless answers 200 with every note of the document, the new one last (picked as the
-        newest with the text that was sent, without the whitespace around it, which Paperless
-        drops; others may add notes meanwhile, and an answer without it is unusable), or with
-        ``{"error": ...}`` and status 200 when it could not save it. A 403 means the global note
-        permission is missing, the document is hidden, or the user may not change it.
+        newest with the text and format that were sent, without the whitespace around the text,
+        which Paperless drops; others may add notes meanwhile, and an answer without it is
+        unusable), or with ``{"error": ...}`` and status 200 when it could not save it. A 403
+        means the global note permission is missing, the document is hidden, or the user may not
+        change it.
         """
         try:
             answer = await self._client.call(
-                "POST", f"{PATH}{document_id}/notes/", _Saved, json={"note": text}
+                "POST",
+                f"{PATH}{document_id}/notes/",
+                _Saved,
+                json={"note": text, "format": note_format},
             )
         except NotFound:
             raise unseen_document(document_id) from None
         if isinstance(answer.root, _SaveError):
             message = "Paperless could not save the note."
             raise Validation(message, hint="Check the Paperless log for the reason.")
-        mine = [row for row in answer.root if row.note.strip() == text.strip()]
+        mine = [
+            row
+            for row in answer.root
+            if row.note.strip() == text.strip() and row.format == note_format
+        ]
         if not mine:
             message = f"Paperless sent an unexpected response for POST {PATH}{document_id}/notes/."
             raise PaperlessMcpError(message, hint=MAY_BE_APPLIED)

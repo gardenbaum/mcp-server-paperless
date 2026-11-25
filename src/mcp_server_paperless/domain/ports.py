@@ -49,12 +49,13 @@ if TYPE_CHECKING:
         FileVersion,
         HistoryEntry,
         Note,
+        NoteFormat,
         SignedIn,
         Suggestions,
     )
     from mcp_server_paperless.domain.duplicates import DuplicateRecord
     from mcp_server_paperless.domain.files import OpenedFile
-    from mcp_server_paperless.domain.instance import InstanceOverview, SystemReport
+    from mcp_server_paperless.domain.instance import InstanceOverview, SystemReport, UpdateCheck
     from mcp_server_paperless.domain.mail import (
         MailAccount,
         MailAccountTestResult,
@@ -83,8 +84,13 @@ if TYPE_CHECKING:
         UserPage,
     )
     from mcp_server_paperless.domain.raw import RawReply
-    from mcp_server_paperless.domain.selection import DocumentRow, ReadField
-    from mcp_server_paperless.domain.sharing import FileVersionKind, ShareBundle, ShareLink
+    from mcp_server_paperless.domain.selection import CountedKind, DocumentRow, ReadField
+    from mcp_server_paperless.domain.sharing import (
+        BundleStatus,
+        FileVersionKind,
+        ShareBundle,
+        ShareLink,
+    )
     from mcp_server_paperless.domain.task_lists import (
         RunnableTask,
         TaskCounts,
@@ -138,6 +144,13 @@ class SystemReportReader(Protocol):
         """
         ...
 
+    async def check_for_update(self) -> UpdateCheck:
+        """The newest release; Paperless asks GitHub, which can take seconds or fail (unknown).
+
+        Nobody is asked where the operator switched the check off, or where that cannot be read.
+        """
+        ...
+
 
 class TaxonomyReader(Protocol):
     """Tags, correspondents, document types, storage paths, custom fields, views, users, groups."""
@@ -147,6 +160,30 @@ class TaxonomyReader(Protocol):
 
         Raises:
             PermissionDenied: The user lacks the global view permission for ``kind``.
+        """
+        ...
+
+    async def get_storage_path_template(self, item_id: int) -> str:
+        """The stored template of a storage path.
+
+        Raises:
+            NotFound: No such storage path, or the user may not see it.
+            PermissionDenied: The user may not view storage paths.
+        """
+        ...
+
+    async def render_storage_path(self, document_id: int, template: str) -> str | None:
+        """The path ``template`` gives the file of the document; nothing is changed.
+
+        None: the template cannot be rendered for the document, or the path would be unsafe. Empty:
+        it renders to nothing. The old style (``{title}``) is not converted.
+
+        Raises:
+            Validation: No such document, or the user may not see it, or the template is blank.
+            AnswerTooLarge: The path is larger than 64 KiB; it is not read to its end.
+            UpstreamUnavailable: Paperless failed; with status 500 on this template (a path that is
+                only a dot does that).
+            PermissionDenied: The user may not view documents.
         """
         ...
 
@@ -177,6 +214,29 @@ class DocumentReader(Protocol):
             Validation: Paperless rejected the query.
             AnswerTooLarge: The answer is larger than ``max_bytes``.
             AnswerCompressed: The answer was compressed, so its size is not known.
+        """
+        ...
+
+    async def count_selection(
+        self, document_ids: Sequence[int]
+    ) -> Mapping[CountedKind, Mapping[int, int]]:
+        """How many of the documents have each object, by kind and id, hidden objects too.
+
+        Objects none of them has are left out.
+
+        Raises:
+            Validation: A document does not exist or is named twice.
+            PermissionDenied: The user may not view documents, or one of these.
+        """
+        ...
+
+    async def suggest_words(self, term: str, limit: int) -> tuple[str, ...]:
+        """At most ``limit`` words of the search index that begin with ``term``.
+
+        Most frequent first, lower case and without accents, from documents the user sees.
+
+        Raises:
+            PermissionDenied: The user may not view documents.
         """
         ...
 
@@ -285,11 +345,15 @@ class DocumentReader(Protocol):
         """
         ...
 
-    async def get_document_thumbnail(self, document_id: int) -> DocumentFile:
+    async def get_document_thumbnail(
+        self, document_id: int, *, version_id: int | None = None
+    ) -> DocumentFile:
         """The thumbnail image of a document (WebP), also in the trash (of its first version).
 
+        ``version_id`` names a version of the document (default: the newest).
+
         Raises:
-            NotFound: No such document, or Paperless cannot find the thumbnail.
+            NotFound: No such document or version, or Paperless cannot find the thumbnail.
             PermissionDenied: The user may not see the document.
         """
         ...
@@ -431,7 +495,9 @@ class DocumentWriter(Protocol):
         """
         ...
 
-    async def add_note(self, document_id: int, text: str) -> Note:
+    async def add_note(
+        self, document_id: int, text: str, note_format: NoteFormat = "plain"
+    ) -> Note:
         """Add a note authored by the user and return it.
 
         Paperless answers with all notes of the document; the new one is the one with the
@@ -1105,8 +1171,12 @@ class SharingReader(Protocol):
         """
         ...
 
-    async def list_share_bundles(self) -> tuple[ShareBundle, ...]:
+    async def list_share_bundles(
+        self, *, status: BundleStatus | None = None, document_id: int | None = None
+    ) -> tuple[ShareBundle, ...]:
         """Every share-link bundle the user may see, over all pages, in Paperless order.
+
+        Only those with ``status``, and only those that hold the document, if given.
 
         Raises:
             PermissionDenied: The user lacks the global ``view_sharelinkbundle`` permission.
@@ -1658,6 +1728,17 @@ class AdminWriter(Protocol):
         Raises:
             NotFound: No such user.
             PermissionDenied: The user may not delete users.
+        """
+        ...
+
+    async def remove_second_factor(self, user_id: int) -> None:
+        """Remove the TOTP of an existing user, who then signs in with the password alone.
+
+        Never repeated.
+
+        Raises:
+            NotFound: The user has none.
+            PermissionDenied: The caller is no superuser.
         """
         ...
 

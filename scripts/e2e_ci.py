@@ -234,7 +234,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "run_workflow": ("test_workflow_runs",),
     # tools/selection.py selects toolsets; domain/ and services/selection.py choose documents.
     "selection": ("test_bulk", "test_read_documents", "test_toolset_guide"),
-    "read_documents": ("test_bulk_items", "test_selection"),
+    "read_documents": ("test_bulk_items", "test_lookups", "test_selection"),
     # tools/bulk.py also reads many documents, and changes them one by one.
     "bulk": ("test_bulk_items", "test_read_documents", "test_selection"),
     "page_ranges": ("test_pages", "test_pdf"),
@@ -261,7 +261,12 @@ ALIASES: dict[str, tuple[str, ...]] = {
         "test_taxonomy_writer",
     ),
     "taxonomy_edits": ("test_taxonomy_edits",),
-    "instance": ("test_instance_reader", "test_minimum_release", "test_toolset_guide"),
+    "instance": (
+        "test_instance_reader",
+        "test_lookups",
+        "test_minimum_release",
+        "test_toolset_guide",
+    ),
     "ai": ("test_ai_reader",),
     "mail": ("test_mail_import", "test_mail_steps"),
     "mail_explanation": ("test_mail", "test_mail_import", "test_mail_steps"),
