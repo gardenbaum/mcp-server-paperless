@@ -11,9 +11,10 @@ import subprocess
 import time
 import uuid
 
+import httpx2
 import pytest
 
-from e2e.helpers import PORT, client, consume, consume_text, in_container, pdf, token_for
+from e2e.helpers import PORT, consume, consume_text, pdf
 
 pytestmark = pytest.mark.e2e
 
@@ -37,7 +38,9 @@ def user(stack, perms, **more):
     made = stack.admin.post(
         "/api/users/", json={"username": name, "password": pw, "user_permissions": perms, **more}
     ).json()
-    return made["id"], client(token_for(name, pw))
+    return made["id"], httpx2.Client(
+        base_url=stack.base_url, auth=(name, pw), headers={"Accept": "application/json; version=10"}, timeout=60
+    )
 
 
 def test_p1(stack):
