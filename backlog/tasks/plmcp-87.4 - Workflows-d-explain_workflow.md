@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-24T22:43:07Z'
-updated_date: '2026-11-25T10:16:45Z'
+updated_date: '2026-11-25T10:37:49Z'
 labels:
   - workflows
 dependencies:
@@ -50,4 +50,6 @@ Owner approval (2026-11-24): 'Alle wie empfohlen' (question in decision-81), her
 Shared helper for 81d: services/log_records.py.
 
 Full hosted E2E 45588369857 on 87f27da: e2e test_workflows 11 (explain_workflow for a run, a non-matching and a later workflow, restricted user), contract, stdio and parts green. Afterwards: records count only with logger and whole text (review of 81d), tests red first; log_records.py is a copy of 81d's, which owns it.
+
+Independent review of #161 (2cb483c): H1, H2, M1 to M7, L1 to L4, L6, L7 fixed, tests first (red). did_run is likely, never yes. 39 further hand mutants: one survived, equivalent (other errors are raised again). L5, L8 and L9 were not described. log_records.py and its test are those of PLMCP-81.4 (9d55a71).
 <!-- SECTION:NOTES:END -->

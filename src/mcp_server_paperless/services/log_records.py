@@ -43,13 +43,21 @@ class LogRecord:
     message: str
 
 
+def _time(text: str) -> datetime | None:
+    """The time of a record; None if there is none, so that the line is no start of one."""
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
 def log_records(lines: Sequence[str]) -> list[LogRecord]:
     """The records of a log, oldest first, without credentials; a cut first one is left out."""
     records: list[LogRecord] = []
     for line in lines_without_credentials(lines):
         start = _START.match(line)
-        if start is not None:
-            time = datetime.fromisoformat(start[1])
+        time = _time(start[1]) if start else None
+        if start is not None and time is not None:
             records.append(LogRecord(time, start[2], start[3], line[start.end() :]))
         elif records:
             last = records[-1]

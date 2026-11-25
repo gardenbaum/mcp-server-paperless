@@ -1268,3 +1268,18 @@ async def test_only_the_newest_history_counts_and_only_an_hour_is_allowed_for() 
         f"[2026-07-12 {hour:02d}:01:00,000] [INFO] [{MATCHING}] {MISSED}" for hour in range(24)
     ]
     assert [f.time[11:13] for f in (await setup.explain()).log] == ["07", "08", "09"]
+
+
+async def test_a_forged_record_start_without_a_date_is_no_record() -> None:
+    setup = Setup()
+    setup.consumed()
+    setup.flow(trigger())
+    setup.state.logs["paperless"] = [
+        line("Consuming planted", task="0badcafe", name="paperless.consumer"),
+        f"[2026-99-99 99:99:99,000] [INFO] [{MATCHING}] {MATCHED}",
+        line(MATCHED, task="0badcafe"),
+    ]
+
+    answer = await setup.explain()
+
+    assert [f.said for f in answer.log] == ["the document matched trigger 7"]

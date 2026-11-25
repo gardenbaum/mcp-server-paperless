@@ -663,7 +663,7 @@ class WorkflowExplanations:
                 facts.queries[query] = False
                 return
             except Validation as error:
-                if False:
+                if REJECTED_QUERY not in error.message:
                     raise
                 facts.queries[query] = False  # Paperless takes a query it rejects as no match
                 return
