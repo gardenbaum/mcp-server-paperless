@@ -7908,6 +7908,123 @@
       '_meta': dict({
         'fastmcp': dict({
           'tags': list([
+            'mail',
+          ]),
+        }),
+      }),
+      'annotations': dict({
+        'destructiveHint': True,
+        'idempotentHint': False,
+        'openWorldHint': False,
+        'readOnlyHint': False,
+        'title': 'Delete processed mail',
+      }),
+      'description': '''
+        Delete records of processed mail, so that Paperless can fetch those mails again.
+        
+        The records cannot be brought back; documents and the mail itself stay. What follows depends on
+        the rule: a mail that failed is taken again at the next fetch; once it is imported the rule acts
+        on it, which can DELETE or move it on the mail server without another question; one that was
+        imported can become a second document. Without confirm a dialog, or an error for you to show
+        the user, first names each mail and what follows (see confirm); dry_run shows the same. A text
+        above 100,000 characters is refused: delete fewer per call. One id that does not exist refuses
+        the call. Each record is read again afterwards, since Paperless also reports ids as deleted that
+        it skipped. Needs view_processedmail and delete_processedmail, and
+        records that the user owns or that have no owner.
+      ''',
+      'inputSchema': dict({
+        'additionalProperties': False,
+        'properties': dict({
+          'confirm': dict({
+            'default': False,
+            'description': 'Must be true to go ahead at once. Without it a client that can show dialogs asks the user, and the tool runs only if they accept; with any other nothing changes and the error says what would happen. Describe that to the user and pass true only once they agree, or if they already asked for exactly this.',
+            'type': 'boolean',
+          }),
+          'dry_run': dict({
+            'default': False,
+            'description': 'true returns a preview (how many change, a sample, what changes) and writes nothing; it needs no confirm. Do it first.',
+            'type': 'boolean',
+          }),
+          'mail_ids': dict({
+            'description': 'Processed mail ids from list_processed_mail, 1 to 100.',
+            'items': dict({
+              'ge': 1,
+              'type': 'integer',
+            }),
+            'maxItems': 100,
+            'minItems': 1,
+            'type': 'array',
+          }),
+        }),
+        'required': list([
+          'mail_ids',
+        ]),
+        'type': 'object',
+      }),
+      'name': 'delete_processed_mail',
+      'outputSchema': dict({
+        'description': 'What became of records of processed mail, or what would.',
+        'properties': dict({
+          'dry_run': dict({
+            'type': 'boolean',
+          }),
+          'mails': dict({
+            'items': dict({
+              'description': 'A record of processed mail that was to be deleted.',
+              'properties': dict({
+                'id': dict({
+                  'type': 'integer',
+                }),
+                'outcome': dict({
+                  'description': 'unknown: what happened to it could not be read afterwards.',
+                  'enum': list([
+                    'would_delete',
+                    'deleted',
+                    'still_there',
+                    'unknown',
+                  ]),
+                  'type': 'string',
+                }),
+                'rule_id': dict({
+                  'type': 'integer',
+                }),
+                'status': dict({
+                  'type': 'string',
+                }),
+                'subject': dict({
+                  'description': 'Cut to 60 characters.',
+                  'type': 'string',
+                }),
+              }),
+              'required': list([
+                'id',
+                'rule_id',
+                'subject',
+                'status',
+                'outcome',
+              ]),
+              'type': 'object',
+            }),
+            'type': 'array',
+          }),
+          'message': dict({
+            'description': 'What was deleted; in a preview each mail and what follows.',
+            'type': 'string',
+          }),
+        }),
+        'required': list([
+          'dry_run',
+          'mails',
+          'message',
+        ]),
+        'type': 'object',
+      }),
+      'title': 'Delete processed mail',
+    }),
+    dict({
+      '_meta': dict({
+        'fastmcp': dict({
+          'tags': list([
             'views',
           ]),
         }),
