@@ -8,6 +8,8 @@ and what Paperless answers and logs (probes P1 to P4). The tests run on a stack 
 import base64
 import json
 import os
+from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
@@ -15,16 +17,20 @@ import httpx2
 import pytest
 from fastmcp import Client
 from harness import paperless_settings, server_settings
+from interleaving import before
+from ratelimit import LimitingTransport, RateLimit
 
 from e2e.echo_server import HOST as ECHO
 from e2e.echo_server import echo_server
 from e2e.helpers import API_VERSION, in_container, num, obj, parse, results
 from e2e.mailbox import BROKEN, PASSWORD, Mailbox, note, wait
 from mcp_server_paperless.domain.urls import ANSWER_NOT_SHOWN
-from mcp_server_paperless.server import create_server
+from mcp_server_paperless.paperless.auth import StaticTokenProvider
+from mcp_server_paperless.paperless.client import PaperlessClient, RetryPolicy
+from mcp_server_paperless.server import Ports, create_server, paperless_ports
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
 
     from fastmcp.client.transports import FastMCPTransport
 
@@ -1072,6 +1078,98 @@ async def test_a_restricted_user_is_told_what_is_missing_and_deletes_unowned_rec
 
     assert "You lack the permission delete_processedmail. Nothing was deleted." in lacking
     assert done["message"] == "1 of 1 record was deleted."
+    assert box.records(rule, 0) == []
+
+
+@asynccontextmanager
+async def acting(
+    stack: Stack, limit: RateLimit, ports: Callable[[Ports], Ports] = lambda ports: ports
+) -> AsyncGenerator[Connected]:
+    """A client of the server whose way to Paperless can lose answers or end."""
+    async with httpx2.AsyncClient(
+        base_url=stack.base_url, transport=LimitingTransport(limit), timeout=30
+    ) as http:
+        paperless = PaperlessClient(
+            http, StaticTokenProvider(stack.admin_token), retry=RetryPolicy(), upload_timeout=30
+        )
+        server = create_server(
+            paperless_settings(stack.base_url, stack.admin_token),
+            server_settings(toolsets=["core", "mail"]),
+            ports=lambda _client: ports(paperless_ports(paperless)),
+        )
+        async with Client(server) as connected:
+            yield connected
+
+
+def outcomes(answer: Json) -> list[object]:
+    return [row["outcome"] for row in cast("list[Json]", answer["mails"])]
+
+
+NOT_REPEATED = "It is not repeated: check with list_processed_mail before you call this again."
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_record_that_is_there_again_is_not_said_to_be_deleted(
+    box: Mailbox, stack: Stack
+) -> None:
+    rule, ids = recorded(box, 3)
+    uid = next(row["uid"] for row in box.records(rule, 3) if row["id"] == ids[1])
+
+    async def returns(*_args: object) -> None:
+        # Paperless stores the record again under its id before the answer is checked.
+        code = (
+            "from paperless_mail.models import ProcessedMail\n"
+            "from django.utils.timezone import now\n"
+            f"ProcessedMail.objects.create(pk={ids[1]}, rule_id={rule}, folder='INBOX', "
+            f"subject='{box.name} again', uid='{uid}', status='FAILED', received=now())\n"
+        )
+        in_container("python", "manage.py", "shell", "-c", code)
+
+    def ports(real: Ports) -> Ports:
+        # Every record is read once before the deletion: the fourth read is the first afterwards.
+        return replace(real, mail=before(real.mail, "get_processed_mail", returns, at=4))
+
+    async with acting(stack, RateLimit(), ports) as client:
+        done = await call(client, "delete_processed_mail", mail_ids=ids, confirm=True)
+
+    assert outcomes(done) == ["deleted", "still_there", "deleted"]
+    assert done["message"] == f"2 of 3 records were deleted. Still there: {ids[1]}."
+    assert [row["id"] for row in box.records(rule, 1)] == [ids[1]]
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_deletion_whose_answer_is_lost_is_read_back_and_not_repeated(
+    box: Mailbox, stack: Stack
+) -> None:
+    rule, ids = recorded(box, 2)
+    limit = RateLimit(lost=frozenset({"POST /api/processed_mail/bulk_delete/"}))
+
+    async with acting(stack, limit) as client:
+        done = await call(client, "delete_processed_mail", mail_ids=ids, confirm=True)
+
+    assert outcomes(done) == ["deleted", "deleted"]
+    assert "Paperless did not confirm the deletion: " in str(done["message"])
+    assert str(done["message"]).endswith(NOT_REPEATED)
+    assert box.records(rule, 0) == []
+
+
+@pytest.mark.decision("decision-83")
+async def test_records_that_cannot_be_read_again_are_unknown(box: Mailbox, stack: Stack) -> None:
+    rule, ids = recorded(box, 3)
+    limit = RateLimit()
+
+    def ports(real: Ports) -> Ports:
+        return replace(real, mail=before(real.mail, "get_processed_mail", limit.begin, at=5))
+
+    async with acting(stack, limit, ports) as client:
+        done = await call(client, "delete_processed_mail", mail_ids=ids, confirm=True)
+
+    assert outcomes(done) == ["deleted", "unknown", "unknown"]
+    message = str(done["message"])
+    assert message.startswith("1 of 3 records were seen to be deleted. ")
+    assert f"Not known: {ids[1]}, {ids[2]}." in message
+    assert message.endswith(NOT_REPEATED)
+    assert len(set(limit.asked)) == 1, limit.asked
     assert box.records(rule, 0) == []
 
 

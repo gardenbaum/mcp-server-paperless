@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Literal, cast
 
 import pytest
 from confirmation import YES, answering
-from fakes.mail import FakeMailAccount
-from fakes.paperless import FakePaperless, FakeState, seeded
+from fakes.mail import FakeMailAccount, FakeMailRule
+from fakes.paperless import FakePaperless, FakeState, FakeUser, seeded
 from fastmcp import Client
 from harness import serve
 
@@ -367,3 +367,97 @@ async def test_a_client_with_dialogs_is_asked_before_a_view_is_shared(
     assert "\u202e" not in message
     assert result.is_error is (action == "decline")
     assert (state.saved_views[0].owner == READER_ID) is (action == "accept")
+
+
+# --- mail accounts and rules, by who may and who may not
+
+MAILING = frozenset(
+    {
+        *("view_mailaccount", "change_mailaccount", "view_mailrule", "change_mailrule"),
+        *("view_user", "view_group", "view_uisettings"),
+    }
+)
+
+
+def mail_world(owner: int | None, *, editor: bool = False) -> FakeState:
+    """A mail account and its rule of this owner; the user `mailman` (id 77), maybe a grantee."""
+    state = seeded()
+    state.users.append(FakeUser(id=77, username="mailman", permissions=MAILING))
+    grantee = {77} if editor else set[int]()
+    state.mail_accounts.append(
+        FakeMailAccount(
+            id=5,
+            name="Work",
+            imap_server="h",
+            imap_port=1,
+            username="u",
+            password="pa55-x",
+            owner=owner,
+            viewers=set(grantee),
+            editors=set(grantee),
+        )
+    )
+    state.mail_rules.append(
+        FakeMailRule(
+            id=6, name="Bills", account=5, owner=owner, viewers=set(grantee), editors=set(grantee)
+        )
+    )
+    return state
+
+
+def mail_grants(state: FakeState, kind: str) -> tuple[set[int], set[int]]:
+    found = state.mail_accounts[0] if kind == "mail_account" else state.mail_rules[0]
+    return found.viewers, found.editors
+
+
+MAIL_OBJECTS = pytest.mark.parametrize(("kind", "number"), [("mail_account", 5), ("mail_rule", 6)])
+
+
+@pytest.mark.decision("decision-87")
+async def test_a_mail_rule_is_shared_by_a_superuser_after_a_confirmation() -> None:
+    state = mail_world(owner=3)
+    source = fake(state)
+    arguments = {"kind": "mail_rule", "items": [6], "change_users": ["e2e-reader"]}
+
+    message = await refusal(source, "set_permissions", **arguments)
+    untouched = mail_grants(state, "mail_rule")
+    output = await call(source, "set_permissions", **arguments, confirm=True)
+
+    assert "gains change: user 'e2e-reader'" in message
+    assert untouched == (set(), set())
+    assert output["changed_count"] == 1
+    assert mail_grants(state, "mail_rule")[1] == {3}
+
+
+@pytest.mark.decision("decision-87")
+@MAIL_OBJECTS
+async def test_the_owner_of_a_mail_object_shares_it_after_a_confirmation(
+    kind: str, number: int
+) -> None:
+    state = mail_world(owner=77)
+    source = FakePaperless(state, user="mailman", allow_writes=True)
+    arguments = {"kind": kind, "items": [number], "view_users": ["e2e-reader"]}
+
+    message = await refusal(source, "set_permissions", **arguments)
+    untouched = mail_grants(state, kind)
+    output = await call(source, "set_permissions", **arguments, confirm=True)
+
+    assert "gains view: user 'e2e-reader'" in message
+    assert untouched == (set(), set())
+    assert output["changed_count"] == 1
+    assert mail_grants(state, kind) == ({3}, set())
+
+
+@pytest.mark.decision("decision-87")
+@MAIL_OBJECTS
+async def test_a_change_grant_on_a_mail_object_does_not_let_share_it(
+    kind: str, number: int
+) -> None:
+    state = mail_world(owner=2, editor=True)
+    source = FakePaperless(state, user="mailman", allow_writes=True)
+    arguments = {"kind": kind, "items": [number], "view_users": ["e2e-reader"], "confirm": True}
+
+    message = await refusal(source, "set_permissions", **arguments)
+
+    assert "may not" in message
+    assert mail_grants(state, kind) == ({77}, {77})

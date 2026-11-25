@@ -20,6 +20,7 @@ from fastmcp import Client
 from harness import server_settings
 
 from e2e.helpers import obj, parse, results
+from e2e.uploading import Scope, output, text
 from mcp_server_paperless.server import create_server
 from mcp_server_paperless.settings import PaperlessSettings
 
@@ -395,3 +396,51 @@ async def test_an_account_and_its_rule_are_shared_one_by_one(
     )
     assert len(cast("list[int]", obj(obj(wire["permissions"])["change"])["users"])) == 1
     assert obj(parse(stack.admin.get(f"/api/mail_rules/{rule['id']}/")))["owner"] is None
+
+
+@pytest.mark.decision("decision-87")
+async def test_who_may_share_a_mail_account_and_a_rule(client: Connected, stack: Stack) -> None:
+    """The owner, who is no superuser, may; a change grant is not enough."""
+    made = await account(client, "owned")
+    rule = await call(client, "create_mail_rule", name=f"{PREFIX}owned", account_id=made["id"])
+    people = Scope(stack)
+    rights = (
+        *("view_mailaccount", "change_mailaccount", "view_mailrule", "change_mailrule"),
+        *("view_user", "view_group", "view_uisettings"),
+    )
+    objects = {"mail_account": made["id"], "mail_rule": rule["id"]}
+    try:
+        tokens = {who: people.user(*rights) for who in ("owner", "grantee")}
+        owner, grantee = people.users
+        for kind, number in objects.items():
+            path = f"/api/{kind}s/{number}/"
+            change = {"users": [grantee], "groups": []}
+            body = {"owner": owner, "set_permissions": {"view": change, "change": change}}
+            _ = stack.admin.patch(path, json=body).raise_for_status()
+            wanted: Json = {"kind": kind, "items": [number], "view_users": ["e2e-reader"]}
+
+            refused = await people.call(
+                "set_permissions", tokens["grantee"], **wanted, confirm=True
+            )
+            asked = await people.call("set_permissions", tokens["owner"], **wanted)
+            kept = wire(stack, path)
+            shared = await people.call("set_permissions", tokens["owner"], **wanted, confirm=True)
+
+            assert refused.is_error
+            assert "may not" in text(refused)
+            assert asked.is_error
+            assert "gains view: user 'e2e-reader'" in text(asked)
+            assert (kept["owner"], obj(kept["permissions"])["view"]) == (owner, change)
+            assert output(shared)["changed_count"] == 1
+            viewers = cast("list[int]", obj(obj(wire(stack, path)["permissions"])["view"])["users"])
+            assert len(viewers) == 2
+            assert obj(wire(stack, path)["permissions"])["change"] == change
+            # So that the cleanup of this module, as the admin, finds what it made.
+            _ = stack.admin.patch(path, json={"owner": None}).raise_for_status()
+    finally:
+        people.clean_up()
+
+
+def wire(stack: Stack, path: str) -> Json:
+    """An object with its grants, as Paperless stores them."""
+    return obj(parse(stack.admin.get(path, params={"full_perms": "true"}).raise_for_status()))

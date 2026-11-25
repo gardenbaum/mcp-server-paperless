@@ -6,7 +6,7 @@ structured content or log line.
 """
 
 import logging
-from typing import cast
+from typing import TYPE_CHECKING, cast, override
 
 import pytest
 from confirmation import YES, answering
@@ -15,6 +15,13 @@ from fakes.mail import FakeMailAccount, FakeMailRule, FakeProcessedMail
 from fakes.paperless import FakePaperless, FakeState, FakeUser, seeded
 from fastmcp import Client
 from harness import serve
+
+from mcp_server_paperless.domain.errors import UpstreamTimeout
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from mcp_server_paperless.domain.mail import ProcessedMail
 
 pytestmark = [
     pytest.mark.anyio,
@@ -718,3 +725,138 @@ async def test_no_credential_of_a_log_is_in_the_explanation() -> None:
 
     assert len(cast("list[str]", found["logs"])) == 1
     assert PASSWORD not in repr(found)
+
+
+class Records(FakePaperless):
+    """A fake whose deletion of records can go wrong, and that counts the reads of records."""
+
+    kept: frozenset[int] = frozenset()
+    lost: bool = False
+    unreadable: frozenset[int] = frozenset()
+    sent: int = 0
+    read: int = 0
+
+    @override
+    async def delete_processed_mail(self, mail_ids: Sequence[int]) -> None:
+        self.sent += 1
+        if gone := [number for number in mail_ids if number not in self.kept]:
+            await super().delete_processed_mail(gone)
+        if self.lost:
+            message = "Paperless did not respond in time."
+            raise UpstreamTimeout(message)
+
+    @override
+    async def get_processed_mail(self, mail_id: int) -> ProcessedMail:
+        self.read += 1
+        if self.sent and mail_id in self.unreadable:
+            message = "Paperless did not respond in time."
+            raise UpstreamTimeout(message)
+        return await super().get_processed_mail(mail_id)
+
+
+def records(count: int = 3) -> Records:
+    source = Records(seeded(), user="admin", allow_writes=True)
+    with_records(source, count)
+    return source
+
+
+def outcomes(answer: Json) -> list[object]:
+    return [row["outcome"] for row in cast("list[Json]", answer["mails"])]
+
+
+NOT_REPEATED = "It is not repeated: check with list_processed_mail before you call this again."
+
+
+@pytest.mark.decision("decision-83")
+async def test_what_is_fetched_again_is_the_same_before_and_after_the_confirmation() -> None:
+    source = records(2)
+    source.state.processed_mail[1].uid = "2"
+    source.state.processed_mail.append(
+        FakeProcessedMail(id=3, rule=1, subject="Twin", uid="1", status="SUCCESS")
+    )
+
+    read = await call(source, "get_processed_mail", mail_id=1)
+    preview = await call(source, "delete_processed_mail", mail_ids=[1, 2], dry_run=True)
+    asked = await refusal(source, "delete_processed_mail", mail_ids=[1, 2])
+
+    assert "keep it out until they are deleted too: 3." in str(read["refetch"])
+    for text in (str(preview["message"]), asked):
+        assert "takes the mail again" in text
+        assert "the rule then DELETES the mail on the mail server" in text
+        assert "kept out by the records 3 with its uid" in text
+    assert (source.sent, len(source.state.processed_mail)) == (0, 3)
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_record_that_is_still_there_is_not_said_to_be_deleted() -> None:
+    source = records()
+    source.kept = frozenset({2})
+
+    done = await call(source, "delete_processed_mail", mail_ids=[1, 2, 3], confirm=True)
+
+    assert outcomes(done) == ["deleted", "still_there", "deleted"]
+    assert done["message"] == "2 of 3 records were deleted. Still there: 2."
+    assert [row.id for row in source.state.processed_mail] == [2]
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_deletion_without_an_answer_is_read_back_and_not_repeated() -> None:
+    source = records()
+    source.lost, source.unreadable = True, frozenset({2})
+
+    done = await call(source, "delete_processed_mail", mail_ids=[1, 2, 3], confirm=True)
+
+    assert outcomes(done) == ["deleted", "unknown", "deleted"]
+    message = str(done["message"])
+    assert message.startswith("2 of 3 records were seen to be deleted. Not known: 2.")
+    assert "did not confirm the deletion" in message
+    assert message.endswith(NOT_REPEATED)
+    assert source.sent == 1
+
+
+@pytest.mark.decision("decision-83")
+@pytest.mark.parametrize(
+    ("rights", "owner", "told"),
+    [
+        ({"view_processedmail"}, None, "You lack the permission delete_processedmail."),
+        ({"delete_processedmail"}, None, "may not"),
+        ({"view_processedmail", "delete_processedmail"}, 2, "No processed mail 1, 2 exists"),
+    ],
+)
+async def test_a_restricted_user_deletes_no_record_and_is_told_why(
+    rights: set[str], owner: int | None, told: str
+) -> None:
+    source = records(2)
+    for row in source.state.processed_mail:
+        row.owner = owner
+    source.state.users.append(
+        FakeUser(id=77, username="mailman", permissions=frozenset(rights | {"view_uisettings"}))
+    )
+    limited = fake(source.state, writes=False, user="mailman")
+
+    text = await refusal(limited, "delete_processed_mail", mail_ids=[1, 2], confirm=True)
+
+    assert told in text
+    assert "Nothing was deleted." in text
+    assert len(source.state.processed_mail) == 2
+
+
+@pytest.mark.decision("decision-83")
+async def test_a_user_with_the_permission_deletes_unowned_records() -> None:
+    source = records(1)
+    source.state.users.append(
+        FakeUser(
+            id=77,
+            username="mailman",
+            permissions=frozenset(
+                {"view_processedmail", "delete_processedmail", "view_uisettings"}
+            ),
+        )
+    )
+
+    done = await call(
+        fake(source.state, user="mailman"), "delete_processed_mail", mail_ids=[1], confirm=True
+    )
+
+    assert outcomes(done) == ["deleted"]
+    assert source.state.processed_mail == []

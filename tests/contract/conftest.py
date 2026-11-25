@@ -373,6 +373,8 @@ class Backend:
     new_processed: NewProcessed
     # Takes a file of a document with one version away from Paperless, or its file names.
     lose_file: Callable[[int, FilePart], None]
+    # Writes an error into the mail log, as Paperless itself does.
+    log_mail_error: Callable[[str], None]
     # The admin behind something that limits the rate of requests, once `rate_limit` begins.
     limited: Ports
     rate_limit: RateLimit
@@ -500,6 +502,19 @@ def live_processed(rule_id: int, rows: Sequence[Processed], *, owner: int | None
         f"    ProcessedMail.objects.create(rule_id={rule_id}, owner_id={owner}, folder='INBOX', "
         "subject=subject, uid=uid, status=status, error=error, received=now())\n"
     )
+    in_container("python", "manage.py", "shell", "-c", code)
+
+
+def fake_log_mail_error(state: FakeState) -> Callable[[str], None]:
+    def log(message: str) -> None:
+        line = f"[2026-11-25 10:00:00,1] [ERROR] [paperless_mail] {message}"
+        state.logs["mail"] = [*state.logs["mail"], line]
+
+    return log
+
+
+def live_log_mail_error(message: str) -> None:
+    code = f"import logging; logging.getLogger('paperless_mail').error({message!r})"
     in_container("python", "manage.py", "shell", "-c", code)
 
 
@@ -645,6 +660,7 @@ def fake_backend(*, ai_enabled: bool = False) -> Backend:
         new_processed=fake_processed(state),
         new_token_account=fake_token_account(state),
         lose_file=fake_lose_file(state),
+        log_mail_error=fake_log_mail_error(state),
         limited=limited(fake_ports(state, ADMIN[0]), rate_limit),
         rate_limit=rate_limit,
     )
@@ -918,6 +934,7 @@ async def live_backend(stack: Stack) -> AsyncGenerator[Backend]:
                 new_processed=live_processed,
                 new_token_account=lambda: live_token_account(stack),
                 lose_file=lambda document, part: lose_file(stack.admin, document, part),
+                log_mail_error=live_log_mail_error,
                 limited=ports(stack.admin_token, limited_http),
                 rate_limit=rate_limit,
             )

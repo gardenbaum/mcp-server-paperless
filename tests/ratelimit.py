@@ -1,7 +1,8 @@
-"""Paperless behind something that limits the rate of requests (HTTP 429).
+"""Paperless behind something that limits the rate of requests (HTTP 429) or loses answers.
 
 Paperless itself limits only its sign-in, a proxy in front of it everything. From `begin` on every
-request is answered 429, and what is asked after that is noted.
+request is answered 429, and what is asked after that is noted. A request whose answer is lost was
+carried out.
 """
 
 import inspect
@@ -10,7 +11,7 @@ from typing import TYPE_CHECKING, cast, override
 
 import httpx2
 
-from mcp_server_paperless.domain.errors import UpstreamUnavailable
+from mcp_server_paperless.domain.errors import UpstreamTimeout, UpstreamUnavailable
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -23,10 +24,12 @@ class RateLimit:
     Attributes:
         after: The limit begins by itself once a request of this kind ("POST /api/...") was
             answered.
+        lost: The requests, or the port methods of the fake, whose answers are lost.
     """
 
     began: bool = False
     after: str = ""
+    lost: frozenset[str] = frozenset()
     asked: list[str] = field(default_factory=list[str])
 
     async def begin(self, *_args: object) -> None:
@@ -53,6 +56,10 @@ class LimitingTransport(httpx2.AsyncHTTPTransport):
         response = await super().handle_async_request(request)
         if what == self._limit.after:
             await self._limit.begin()
+        if what in self._limit.lost:
+            await response.aclose()
+            message = "The answer was lost on the way."
+            raise httpx2.ReadTimeout(message, request=request)
         return response
 
 
@@ -70,7 +77,11 @@ class _Limited:
             if self._limit.refuses(name):
                 message = "Paperless is temporarily unavailable (HTTP 429)."
                 raise UpstreamUnavailable(message, status=429)
-            return await real(*args, **kwargs)
+            answer = await real(*args, **kwargs)
+            if name in self._limit.lost:
+                message = "Paperless did not respond in time."
+                raise UpstreamTimeout(message)
+            return answer
 
         return call
 
