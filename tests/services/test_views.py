@@ -36,6 +36,7 @@ from mcp_server_paperless.paperless.auth import StaticTokenProvider
 from mcp_server_paperless.services.documents import DocumentService
 from mcp_server_paperless.services.filter_rules import translate
 from mcp_server_paperless.services.taxonomy import TaxonomyResolver
+from mcp_server_paperless.services.view_pins import ViewPins
 from mcp_server_paperless.services.views import ViewService
 
 if TYPE_CHECKING:
@@ -107,7 +108,9 @@ class Setup:
         self.documents: DocumentService = DocumentService(
             self.fake, self.fake, self.resolver, web_url=WEB
         )
-        self.views: ViewService = ViewService(self.fake, self.fake, self.resolver, self.documents)
+        self.views: ViewService = ViewService(
+            self.fake, self.fake, self.resolver, self.documents, ViewPins(self.fake, self.fake)
+        )
 
     def view(self, name: str) -> FakeSavedView:
         return next(v for v in self.state.saved_views if v.name == name)
@@ -668,7 +671,7 @@ async def test_a_write_is_reported_also_when_the_names_of_custom_fields_cannot_b
     setup.view("e2e-view").display_fields = ("custom_field_1",)
     fake = Unreadable(setup.state, user=ADMIN[0], writes=True)
     resolver = TaxonomyResolver(fake, StaticTokenProvider("t"), ttl=3600.0)
-    views = ViewService(fake, fake, resolver, setup.documents)
+    views = ViewService(fake, fake, resolver, setup.documents, ViewPins(fake, fake))
 
     after = await views.update("e2e-view", ViewEdit(icon="heart"))
 

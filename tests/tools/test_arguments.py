@@ -1036,6 +1036,8 @@ async def test_saved_views_take_every_rule_type_and_are_run() -> None:
     await sweep("update_saved_view", cleared, ())
     await sweep("list_saved_views", {}, ())
     await sweep("get_saved_view", {"view": 1}, ())
+    for pinned in ({"dashboard": True}, {"sidebar": True}, {"dashboard": True, "sidebar": False}):
+        await sweep("pin_saved_view", {"view": 1, **pinned}, ())
     await sweep("delete_saved_view", {"view": 1}, ())
     assert not FAILED, "\n".join(FAILED)
 

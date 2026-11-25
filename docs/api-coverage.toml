@@ -62,7 +62,6 @@ operations = [
 task = "PLMCP-88"
 operations = [
   "GET /api/saved_views/{id}/",
-  "POST /api/ui_settings/",
 ]
 
 [[open]]
